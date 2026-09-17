@@ -1,0 +1,243 @@
+name: Deploy (Staging)
+
+# ── Trigger ─────────────────────────────────────────────────────────────────
+# Push-to-`staging` is the primary trigger. workflow_dispatch lets an operator
+# re-run a staging deploy from the Actions tab (e.g. after rotating the
+# STAGING_DATABASE_URL secret or after a Cloudflare incident) without an extra
+# commit.
+#
+# Prod's deploy.yml (push-to-`main`) is untouched — its trigger doesn't
+# overlap this one's, and `concurrency` is scoped per-environment so a
+# staging deploy never queues behind / cancels a prod deploy.
+# This workflow mirrors a release onto staging; it does not gate or promote the
+# separate production workflow.
+on:
+  push:
+    # Owner 2026-07-04 had this as [main, staging]: staging must TRACK prod, so
+    # every main release also shipped to the staging stack.
+    #
+    # PAUSED on 2026-07-31 (owner: "暂时不需要staging的"). The Staging
+    # environment's CLOUDFLARE_API_TOKEN stopped working on 2026-07-30, so this
+    # workflow failed every run after that and took Staging E2E (smoke) with it.
+    #
+    # CORRECTED 2026-08-12: this comment used to say the token had been failing
+    # "since it was set on 2026-07-01". That was an inference from the secret's
+    # updated_at, never checked against the run history, and it is FALSE - the
+    # token deployed staging successfully for four weeks, last at 2026-07-29
+    # 16:20 UTC (run 30470280714). The first failure is run 30518266259 at
+    # 2026-07-30 06:00, already carrying `Invalid access token [code: 9109]`, so
+    # the credential was revoked or expired on Cloudflare's side while nothing
+    # in GitHub changed. The wrong version was copied into a COE before anyone
+    # opened the run list - see docs/staging-bench-rot-coe.md.
+    #
+    # It is paused rather than left red because a permanently-red workflow is
+    # not free: it trains everyone to ignore red, and on 2026-07-31 that is
+    # exactly why a two-hour production deploy outage went unnoticed while every
+    # dashboard looked normal. Noise that hides signal is a fault of its own.
+    #
+    # TO RESTORE: MINT A NEW token — do not try to widen the existing one. A
+    # re-dispatch on 2026-08-12 (run 31566944717) put the specific code in the
+    # log: alongside `Authentication error [code: 10000]` it returns
+    # `Invalid access token [code: 9109]`, which means the credential is not a
+    # valid token at all rather than an under-scoped one. Scope the new token
+    # like the working Production one (Account -> Cloudflare Pages:Edit,
+    # Workers Scripts:Edit), set it in the GitHub **Staging** environment, prove
+    # it with `workflow_dispatch`, and only then put `main` back in the list
+    # below. Restoring `main` before the token works just recreates the
+    # permanently-red workflow this pause was correct to remove.
+    # See docs/staging-bench-rot-coe.md.
+    #
+    # WORTH RESTORING, not abandoning: docs/SECURITY-DX-ROADMAP.md names the
+    # staging bench as the thing that unblocks everything else, and the deferred
+    # FIFO ledger fix in docs/inventory-ledger-divergence-coe.md is explicitly
+    # STAGING-first, so it cannot start until this works.
+    #
+    # DECOUPLED 2026-08-22: the pause muted more than it meant to. Removing
+    # `main` above also stopped MIGRATION application — the one step that never
+    # touched the dead token (STAGING_DATABASE_URL kept working; the 2026-08-12
+    # re-dispatches applied 0281 and failed only at wrangler). Staging's ledger
+    # then froze for ten days while main reached 0322, and migration 0321
+    # (written against a column 0307 had renamed) met its first real database
+    # on PROD, blocking deploys — docs/bugs/0514. Schema rehearsal now lives in
+    # staging-migrate.yml, push-to-main on migration paths, Cloudflare-free.
+    # This workflow still owns the Worker + Pages deploy, and restoring `main`
+    # here still requires the new token first; the shared `deploy-staging`
+    # concurrency group keeps the two off the tracker table at the same time.
+    #
+    # RESTORED 2026-09-12: `main` is back. The precondition above ("prove the
+    # new token with workflow_dispatch first") is met — dispatches on main
+    # succeeded on 2026-09-08 (c9d3ea6) and 2026-09-12 (run 34626351932,
+    # 72c21a2, both Worker and Pages). Without `main` here staging had drifted
+    # 430 commits behind production and the nightly rehearsal was proving a
+    # three-day-old build (docs/bugs/0824). A rehearsal that does not track
+    # what ships is the 0083 shape again.
+    branches: [main, staging]
+  workflow_dispatch:
+    inputs:
+      skip_migrate:
+        description: 'Skip applying migrations only; still require a read-only checksum/schema verification before deploying'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    # GitHub Environment "Staging" — lets the repo owner add protection rules
+    # later (required reviewers, wait timer, secret scoping) without
+    # restructuring the workflow. The matching environment for prod is
+    # "Production" (see deploy.yml).
+    environment: Staging
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      # Staging also runs on main and supports workflow_dispatch, so it must
+      # enforce the same route-capability drift gate as PR/prod CI.
+      - run: npm run audit:routes
+      # Does the rate card still price every job we can dispatch? Reads the
+      # migrations, so a stale copy of scm.trip_stop_type in the code cannot
+      # pass. Filesystem-based, hence a script and not a unit test — the
+      # backend suite runs in workerd and has no filesystem.
+      - run: npm run audit:job-types
+      - run: npm run audit:work-order-states
+      - run: npm run typecheck
+      - run: npm test
+      # Apply pending Postgres migrations against the STAGING Supabase before
+      # the Worker swap. STAGING_DATABASE_URL is the staging-only direct
+      # connection string — separate secret from prod's DATABASE_URL so a
+      # mis-scoped run cannot reach prod. pg-migrate.mjs reads DATABASE_URL
+      # from env, so we rebind the env var to the staging secret for this
+      # one step only. Same script, isolated target.
+      #
+      # Migrations are idempotent by convention (IF NOT EXISTS / ON CONFLICT);
+      # a deploy with no pending migration files is a no-op against
+      # _pg_migrations and exits 0.
+      #
+      # `skip_migrate` (workflow_dispatch only) skips SQL application, never the
+      # gate: a read-only verify still requires a reachable DB, no drift, no
+      # unverified legacy rows and zero pending migrations before Worker deploy.
+      # Free-tier staging Supabase can auto-pause while idle. Retry transient
+      # wake-up/connection failures, but never swallow migration errors: schema
+      # drift or a persistently unavailable database must block the Worker
+      # deploy rather than releasing code against an unknown schema.
+      - name: Apply or verify staging migrations
+        shell: bash
+        run: |
+          if [ "$SKIP_MIGRATE" = "true" ]; then
+            echo "Migration application skipped by operator; running mandatory read-only verification"
+            node scripts/pg-migrate.mjs --verify-only
+            exit 0
+          fi
+
+          max_attempts=3
+          for attempt in $(seq 1 "$max_attempts"); do
+            echo "Migration attempt ${attempt}/${max_attempts}"
+            if node scripts/pg-migrate.mjs; then
+              exit 0
+            else
+              status=$?
+            fi
+
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              echo "::warning title=Staging migration retry::The staging database may be paused or waking. Retrying in $((attempt * 10)) seconds."
+              sleep $((attempt * 10))
+            fi
+          done
+
+          echo "::error title=Staging migration failed::Migrations are fail-closed after ${max_attempts} attempts. If Supabase staging is paused, restore it in the dashboard and re-run this workflow."
+          exit "$status"
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          SKIP_MIGRATE: ${{ inputs.skip_migrate || 'false' }}
+          # GitHub-hosted runners have no IPv6 egress. Supabase's pooler
+          # hostname resolves to both A and AAAA records; Node 22's default
+          # DNS lookup follows the OS's returned order, which on ubuntu-latest
+          # can put IPv6 first and Happy-Eyeballs then times out with
+          # ENETUNREACH before falling back. Forcing ipv4first sidesteps the
+          # dual-stack race entirely. Prod's deploy.yml doesn't need this
+          # because it points at a direct-connection hostname that resolves
+          # IPv4-only; the pooler is different DNS territory.
+          NODE_OPTIONS: --dns-result-order=ipv4first
+      # Bake the commit sha INTO the bundle (src/build-info.ts) — the same
+      # reliable stamp prod uses. GET /health reads this bundled constant, which
+      # no var/secret operation can drop (see backend/src/build-info.ts). The
+      # --var below is kept as a fallback.
+      - name: Stamp the build with the commit sha
+        run: |
+          set -euo pipefail
+          # Replace ONLY the placeholder value — never the whole file, so
+          # resolveBuildSha() survives. Fails loudly if the anchor drifts.
+          sed -i 's|^export const GIT_SHA: string = "dev";$|export const GIT_SHA: string = "'"$GITHUB_SHA"'";|' src/build-info.ts
+          grep -qF "\"$GITHUB_SHA\"" src/build-info.ts || { echo "::error title=Build stamp failed::src/build-info.ts export line did not become $GITHUB_SHA — did the anchor change?"; exit 1; }
+      # Deploy the Worker to the staging env block in wrangler.toml
+      # ([env.staging] → name autocount-sync-api-staging, isolated Hyperdrive,
+      # crons=[]). Same Cloudflare account as prod, so the existing
+      # CLOUDFLARE_API_TOKEN works — the token's scope (Workers:Edit,
+      # Account:Read) already covers both env names.
+      - uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: backend
+          # --var GIT_SHA stamps the Worker with the commit it was built from,
+          # surfaced at GET /health. Prod has carried this since a stale clone
+          # overwrote prod four times; staging did NOT, and answered
+          # {"ok":true,"sha":null} — so when this workflow stopped running on
+          # 2026-07-31 there was no way, from outside, to tell that staging had
+          # frozen on the 2026-07-29 build while the nightly E2E went on passing
+          # against it for two weeks. See docs/staging-bench-rot-coe.md.
+          command: deploy --env staging --var GIT_SHA:${{ github.sha }}
+      # Post-deploy smoke check. STAGING_SMOKE_URL repo VAR overrides the
+      # default workers.dev origin if the staging Worker is served from a
+      # custom domain. The authed SCM probes need DASHBOARD_API_KEY to run;
+      # without it the script logs a WARN and skips them — mirrors the prod
+      # behaviour so we don't introduce a new failure mode here.
+      - run: node scripts/smoke-check.mjs "${{ vars.STAGING_SMOKE_URL || 'https://autocount-sync-api-staging.houzs-erp.workers.dev' }}"
+
+  # Staging frontend — mirrors deploy.yml's frontend job onto the
+  # houzs-erp-staging Pages project, bundle pointed at the staging Worker.
+  frontend:
+    runs-on: ubuntu-latest
+    environment: Staging
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+        env:
+          VITE_API_URL: https://autocount-sync-api-staging.houzs-erp.workers.dev
+      # See deploy.yml: the bundle gate needs a merge base and has none here.
+      - run: npm run check:sw
+      - uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: frontend
+          command: pages deploy ./dist --project-name=houzs-erp-staging --commit-dirty=true
+      # See deploy.yml for why the script's 16s default is too tight for
+      # Cloudflare Pages propagation.
+      - run: npm run smoke -- "${{ vars.STAGING_FRONTEND_SMOKE_URL || 'https://houzs-erp-staging.pages.dev' }}"
+        env:
+          FRONTEND_SMOKE_ATTEMPTS: 20
+          FRONTEND_SMOKE_RETRY_MS: 5000

@@ -1,0 +1,531 @@
+{
+ "_note": "Owner-approved compartment + seat-size corrections for the AutoCount cutover, 2026-08-10. Every entry names the DOCUMENTS it applies to (SO and the PO raised from it are corrected together so they stay aligned), the MODEL, the target piece list left-to-right, and where known the seat depth in inches and the colour string as written on the source. `why` records how the answer was reached, because a year from now the reason matters more than the value.",
+ "_rules": "Money never moves: the price rides the FIRST piece and every other piece is 0, exactly as the importer wrote it. Lines are matched to target pieces and UPDATED in place wherever the code already exists, so an id - and any PO allocation hanging off it - survives. A document can hold MORE THAN ONE sofa build, so every entry carries desc2Match: only the lines whose description2 contains it are touched. Without that the script treats a second, perfectly good build as surplus and tries to delete it (caught on HC-SO-011957, which holds a 1R+1NA+1R sofa AND a Stool).",
+ "corrections": [
+  {
+   "docs": [
+    "HC-PO-009550",
+    "HC-SO-010882"
+   ],
+   "model": "8030",
+   "pieces": [
+    "1A(LHF)",
+    "CNR",
+    "2A(RHF)"
+   ],
+   "seat": "32",
+   "why": "Desc2 1R+C+2R - the corner was eaten by the NOISE regex (#1856). MODEL CORRECTED 2026-09-08 from 9058 to 8030: the book's own line (SO DtlKey 758395, PO DtlKey 868619) carries DSL-8030 SOFA, which autocount-erp-mapping-1561.csv maps to 8030-1S, and SOFA_MODEL_ALIAS does not fold 8030. The 9058 here was never justified - this entry's `why` argues the PIECES only - and it is Sulaiman's model (HC-SO-011660), whose entry held this one's. Owner 2026-09-08: 我们一定要对回账本.",
+   "desc2Match": "BO315-23 (BEIGE)/32”/1R+C+2R"
+  },
+  {
+   "docs": [
+    "HC-PO-009679",
+    "HC-SO-010955"
+   ],
+   "model": "9058",
+   "pieces": [
+    "1A(LHF)",
+    "CNR",
+    "2A(RHF)"
+   ],
+   "seat": "28",
+   "why": "Desc2 2ER+C+1ER | SUPERSEDED 2026-09-10 by the TV re-read: the TV on this drawing is above the run, so the reading below was mirrored. Corrected here as well as in sofa-compartment-corrections-tv-direction.json, because the loader takes whichever round runs last and two disagreeing rounds let file order decide a sofa. Owner: 「纠正direction 要根据看TV」.",
+   "desc2Match": "{SIZE:2ER+C+1ER+(28\")}/{COL:CH141-12 MET"
+  },
+  {
+   "docs": [
+    "HC-PO-009712",
+    "HC-SO-012629"
+   ],
+   "model": "5535",
+   "pieces": [
+    "1A(LHF)",
+    "CNR",
+    "2A(RHF)"
+   ],
+   "seat": "30",
+   "why": "Desc2 1R+C+2R. MODEL CORRECTED 2026-09-08 from 8030 to 5535: the book's own line (SO DtlKey 860757, PO DtlKey 884504) carries HOK-5535 SOFA -> 5535-1S. 5535 is deliberately ABSENT from SOFA_MODEL_ALIAS - the owner has ruled twice that it is its own model and must never be folded - so 8030 could only have come from treating it like 5537/5540, which do fold there. Owner 2026-09-08: 我们一定要对回账本. desc2Match SHORTENED the same day, from '...BO315-3 BEIGE / BOT': the ERP's own description2 reads BO315-03 where the book reads BO315-3, so the old needle reached neither document (prod run 34186295345 reported 'no line matches' on both) and this entry could not apply at all. The prefix that survives is the one both sides agree on; all three rows on each document carry one identical text, so it is not ambiguous.",
+   "desc2Match": "1R+C+2R (30\") / COL: BO315-"
+  },
+  {
+   "docs": [
+    "HC-PO-009017",
+    "HC-SO-011660"
+   ],
+   "model": "9058",
+   "pieces": [
+    "1B(LHF)",
+    "CNR",
+    "2A(RHF)"
+   ],
+   "seat": "30",
+   "why": "Desc2 1B+C+2R. MODEL CORRECTED 2026-09-08 from 8030 to 9058: the book's own line (SO DtlKey 803503) carries AMN-SF9058 SOFA -> 9058-1S, and 9058 does not fold. The 8030 here is Tee's model (HC-SO-010882), whose entry held this one's - the two were written into each other's rows. DOCUMENT CORRECTED in the same pass: the book raises this sofa's purchase order as PO-009017 (PODTL 829659, FromSODtlKey 803503). PO-010026 was an SO-linked-import number, and in the book it is a bedframe (NB-KHA01(K)) on someone else's order, so this entry has never reached a purchase order by number since the migrated POs were renumbered to follow AutoCount. Owner 2026-09-08: 我们一定要对回账本.",
+   "desc2Match": "GD2502#09-SANDY/30”/1B+C+2R"
+  },
+  {
+   "docs": [
+    "HC-PO-010045",
+    "HC-SO-012525"
+   ],
+   "model": "9058",
+   "pieces": [
+    "2A(LHF)",
+    "1A(RHF)",
+    "STOOL"
+   ],
+   "seat": "30",
+   "why": "Desc2 1R+1NA+C+1R | SUPERSEDED 2026-09-10 by the TV re-read: the TV on this drawing is above the run, so the reading below was mirrored. Corrected here as well as in sofa-compartment-corrections-tv-direction.json, because the loader takes whichever round runs last and two disagreeing rounds let file order decide a sofa. Owner: 「纠正direction 要根据看TV」. | SUPERSEDED 2026-09-11 by the SUPPLIER'S OWN LISTING (propose-supplier-sofa-corrections production run 34502972739). The owner ruled these four follow the supplier even though the two readings are different sofas, not a from-the-other-end reversal: 「ok 四张跟supplier的」. The supplier's system records what it BUILT; this entry was a reading of a photograph.",
+   "desc2Match": "1R+1NA+C+1R/Size:30”/Col:GD2502#18-Grey/"
+  },
+  {
+   "docs": [
+    "HC-PO-010025",
+    "HC-SO-011965"
+   ],
+   "model": "9058",
+   "pieces": [
+    "1A(LHF)",
+    "1NA",
+    "1NA",
+    "CNR"
+   ],
+   "seat": "30",
+   "why": "Desc2 1+1NA+1NA+C",
+   "desc2Match": "1+1NA+1NA+C(30'INCH)/COL:CH141-3"
+  },
+  {
+   "docs": [
+    "HC-PO-010140"
+   ],
+   "model": "9058",
+   "pieces": [
+    "1A(LHF)",
+    "1NA",
+    "1NA",
+    "CNR",
+    "1A(RHF)"
+   ],
+   "seat": "30",
+   "why": "Desc2 1R+1NA+1NA+C+1R",
+   "desc2Match": "CH141-1 (CREAM)/30”/1R+1NA+1NA+C+1R"
+  },
+  {
+   "docs": [
+    "HC-PO-010143"
+   ],
+   "model": "9058",
+   "pieces": [
+    "1A(LHF)",
+    "1NA",
+    "CNR",
+    "1A(RHF)"
+   ],
+   "seat": "30",
+   "why": "Desc2 1+1NA+C+1",
+   "desc2Match": "1+1NA+C+1(30’Inch)/Col:HR805-90/BackRest"
+  },
+  {
+   "docs": [
+    "HC-SO-013164"
+   ],
+   "model": "8030",
+   "pieces": [
+    "2A(LHF)",
+    "CNR",
+    "2NA",
+    "Console"
+   ],
+   "seat": "28",
+   "why": "Desc2 2+C+2NA+C TABLE",
+   "desc2Match": "2+C+2NA+C TABLE(28'INCH)/COL:BOO315-31/B"
+  },
+  {
+   "docs": [
+    "HC-PO-010061",
+    "HC-SO-012774"
+   ],
+   "model": "9050",
+   "pieces": [
+    "CNR",
+    "2A(RHF)"
+   ],
+   "seat": "28",
+   "why": "photo: slip reads Sofa Model 9050 (C+2) 28\" each, drawn [C]+[28|28] with one arm at the right",
+   "desc2Match": "C+2(28'INCH)/COL:BOO315-23/BOTTOM USE UM"
+  },
+  {
+   "docs": [
+    "HC-PO-010062",
+    "HC-SO-012775"
+   ],
+   "model": "9050",
+   "pieces": [
+    "CNR",
+    "2A(RHF)"
+   ],
+   "seat": "28",
+   "why": "same slip, HR805-90",
+   "desc2Match": "C+2(28'INCH)/COL:HR805-90/BOTTOM USE UMB"
+  },
+  {
+   "docs": [
+    "HC-SO-012624"
+   ],
+   "model": "9050",
+   "pieces": [
+    "1A(LHF)",
+    "2A(RHF)"
+   ],
+   "seat": "28",
+   "why": "photo: 9050 (28 inch) 1+2, drawn [|28]+[28|28] with arms only at the two ends - the document's third piece (a surplus 2S) goes",
+   "desc2Match": "1+2(28'INCH)/COL:BOO315-2"
+  },
+  {
+   "docs": [
+    "HC-SO-013167"
+   ],
+   "model": "8030",
+   "pieces": [
+    "2A(LHF)",
+    "1A(RHF)"
+   ],
+   "seat": "28",
+   "why": "photo: 8030 (2+1) 28 inch - the document's surplus 2S goes",
+   "desc2Match": "2+1(28'INCH)/COL:BOO315-25/BOTTOM USE UM"
+  },
+  {
+   "docs": [
+    "HC-PO-007709"
+   ],
+   "model": "9058",
+   "pieces": [
+    "1A(LHF)",
+    "1NA",
+    "CNR",
+    "1NA",
+    "1A(RHF)"
+   ],
+   "seat": "30",
+   "why": "photo: the slip writes the string out by hand - 1EL + 1NA + C + 1NA + 1ER",
+   "desc2Match": "colour : HR 805-9\\nwrap bottom to Nilon "
+  },
+  {
+   "docs": [
+    "HC-PO-010027",
+    "HC-SO-011957"
+   ],
+   "model": "9028",
+   "pieces": [
+    "STOOL"
+   ],
+   "why": "photo: one box labelled Stool, 32 x 49 — this document holds TWO sofa builds; the key picks the Stool line only",
+   "desc2Match": "X 49"
+  },
+  {
+   "docs": [
+    "HC-SO-012929"
+   ],
+   "model": "9028",
+   "pieces": [
+    "1S",
+    "1A(LHF)",
+    "2A(RHF)"
+   ],
+   "seat": "26",
+   "why": "photo: slip writes 3S: Size 26\" / 1S: Size 28\"; owner split the 3S because 26\" is not 24\"",
+   "desc2Match": "Size:26”/Col:Modenza 02 Barley/Bottom wr"
+  },
+  {
+   "docs": [
+    "HC-PO-009781",
+    "HC-SO-012107"
+   ],
+   "model": "9058",
+   "pieces": [
+    "1A(LHF)",
+    "1A(RHF)"
+   ],
+   "seat": "32",
+   "why": "photo: two 32\" boxes, one arm on each outer edge, 273cm overall",
+   "desc2Match": "back rest change 8030 \\nbottom wrap to N"
+  },
+  {
+   "docs": [
+    "HC-PO-010029",
+    "HC-SO-012113"
+   ],
+   "model": "8030",
+   "pieces": [
+    "1A(LHF)",
+    "1A(RHF)"
+   ],
+   "seat": "35",
+   "why": "photo: two 35\" boxes, arms on the outer edges",
+   "desc2Match": "fully cover replace the leg \\nbottom Nil"
+  },
+  {
+   "docs": [
+    "HC-SO-012361"
+   ],
+   "model": "8030",
+   "pieces": [
+    "1A(LHF)",
+    "1A(RHF)"
+   ],
+   "seat": "30",
+   "why": "photo: two 30\" boxes",
+   "desc2Match": "Col: CHINO -12 \\n30 icnh per seat \\nwrap"
+  },
+  {
+   "docs": [
+    "HC-SO-012922"
+   ],
+   "model": "8030",
+   "pieces": [
+    "1A(LHF)",
+    "1A(RHF)"
+   ],
+   "seat": "35",
+   "why": "photo: two 35\" boxes, 7.8 feet overall",
+   "desc2Match": "35 inch per seat \\nNilon bottom \\nCol : "
+  },
+  {
+   "docs": [
+    "HC-SO-012634"
+   ],
+   "model": "8030",
+   "pieces": [
+    "1A(LHF)",
+    "1A(RHF)"
+   ],
+   "seat": "30",
+   "why": "photo: two 30\" boxes, noted 'no this stitching'",
+   "desc2Match": "Nilon bottom \\nback rest need separate i"
+  },
+  {
+   "docs": [
+    "HC-PO-010059",
+    "HC-SO-012636"
+   ],
+   "model": "8030",
+   "pieces": [
+    "1A(LHF)",
+    "1NA",
+    "1A(RHF)"
+   ],
+   "seat": "24",
+   "why": "photo: three 24\" boxes, arms only at the two ends",
+   "desc2Match": "Col: modenza 04: mustard \\nNilon bottom"
+  },
+  {
+   "docs": [
+    "HC-SO-012179"
+   ],
+   "model": "9058",
+   "pieces": [
+    "1A(LHF)",
+    "CNR",
+    "2A(RHF)"
+   ],
+   "seat": "32",
+   "why": "photo at 5x: slip says Corner; triangle = the corner, right leg two 32\" boxes, left leg one",
+   "desc2Match": "Size:32”/Col:HR805-40/Bottom wrap nylon"
+  },
+  {
+   "docs": [
+    "HC-PO-009597",
+    "HC-SO-012828"
+   ],
+   "model": "8030",
+   "pieces": [
+    "1A(LHF)",
+    "1NA",
+    "1NA",
+    "CNR",
+    "1A(RHF)"
+   ],
+   "seat": "28",
+   "why": "photo at 5x, corner position corrected by the owner | SUPERSEDED 2026-09-10 by the TV re-read: the TV on this drawing is above the run, so the reading below was mirrored. Corrected here as well as in sofa-compartment-corrections-tv-direction.json, because the loader takes whichever round runs last and two disagreeing rounds let file order decide a sofa. Owner: 「纠正direction 要根据看TV」.",
+   "desc2Match": "28 inch per seat \\nfully cover replace t"
+  },
+  {
+   "docs": [
+    "HC-PO-010060",
+    "HC-SO-012715"
+   ],
+   "model": "8030",
+   "pieces": [
+    "1A(LHF)",
+    "1A(RHF)"
+   ],
+   "seat": "35",
+   "why": "photo at 5x: left box hatched on the left, right box on the right, labelled (2 seater)",
+   "desc2Match": "Nilon botom \\ncol: B0315-21 \\n35 inch pe"
+  },
+  {
+   "docs": [
+    "HC-PO-009827",
+    "HC-SO-002861"
+   ],
+   "model": "8060",
+   "pieces": [
+    "1A(LHF)",
+    "1NA",
+    "1NA",
+    "CNR",
+    "2A(RHF)"
+   ],
+   "seat": "28",
+   "why": "photo at 5x; the wooden arm is a special order, not a compartment (owner)",
+   "desc2Match": "Size:28”/Col:Modenza-Houston Cream/Botto"
+  },
+  {
+   "docs": [
+    "HC-PO-009587",
+    "HC-SO-010209"
+   ],
+   "pieces": [
+    "1A(LHF)",
+    "1NA",
+    "L(RHF)"
+   ],
+   "seat": "26",
+   "why": "photo: three boxes all marked 26, arms only at the two ends | 2026-09-08 OWNER, re-reading his own slip: 1AL + 1NA + 1L(R). The right-hand piece is the CHAISE, not a one-seat arm. His 1L(R) is slip shorthand for one chaise on the right; the ERP code for that piece carries NO count prefix - scripts/lib/parse-sofa.mjs:602 emits L(LHF)/L(RHF) for the chaise token, and :545/:557 fold a 1L standing beside other pieces into ONE chaise - so 1L(R) is written here as L(RHF), never as a minted 1L(RHF). This is a CORRECTED READING, not a regression: the ERP's earlier value never drifted - he read the same slip again and changed his own answer. Recorded in docs/sofa-compartment-owner-rulings-2026-09-08.md. This document is already DELIVERED, so this is a records correction; its migrated delivery note follows the parent by the same paperwork-only rule the rest of this file rests on.",
+   "desc2Match": "L shape \\nbottom Nilon \\nColour : modenz"
+  },
+  {
+   "docs": [
+    "HC-PO-010024",
+    "HC-SO-011449"
+   ],
+   "model": "8030",
+   "pieces": [
+    "1A(LHF)",
+    "1NA",
+    "1A(RHF)"
+   ],
+   "seat": "35",
+   "why": "photo: [hatch|35][ ][35|hatch]",
+   "desc2Match": "colour : B0315-2 feather \\nwrap bottom t"
+  },
+  {
+   "docs": [
+    "HC-PO-010117"
+   ],
+   "pieces": [
+    "L(LHF)",
+    "1NA",
+    "2A(RHF)"
+   ],
+   "seat": "28",
+   "why": "RE-POINTED 2026-09-05. Was 1ABOX(LHF)+1NA+2A(RHF), reached from the spelling alone - the original why read \"Desc2 (1 ELT/T + NA + 2ER)(28\\\") - the ELT/T spelling has no parser rule\", i.e. nobody could decode it and the shape of the letters was the whole argument. The owner then ruled: \"1ELT 就是L来的\" - 1ELT IS the chaise L - and \"1Abox 是1NALT\", so 1ABOX is a DIFFERENT spelling this line does not use. The first piece is L(LHF). Edited in place rather than left standing and overridden by the 2026-09 round: this file is loaded on every run, and two rounds disagreeing about one document would silently revert the owner's ruling whenever FILE=2026-08 was planned alone. Both files now say the same thing, and scripts/lib/sofa-corrections-source.test.mjs asserts they always will. The sales order half of the same build is HC-SO-000814 in sofa-compartment-corrections-2026-09.json. NOTE: HC-PO-010117 no longer exists under that number - the migrated POs were renumbered to follow AutoCount and this build now lives on HC-PO-000254 (linked_ac_docno PO-000254), which the script finds by the desc2Match below.",
+   "desc2Match": "[ (1 ELT / T + NA +2ER) (28\") / COL: J98"
+  },
+  {
+   "docs": [
+    "HC-PO-000136"
+   ],
+   "pieces": [
+    "STOOL"
+   ],
+   "why": "Desc2 says (STOOL); the brackets hid it from the parser",
+   "desc2Match": "(STOOL) / (L 38' x W 30\") / Col: Harring"
+  },
+  {
+   "docs": [
+    "HC-SO-008942",
+    "HC-PO-010034"
+   ],
+   "model": "9058",
+   "pieces": [
+    "1A(LHF)",
+    "CNR",
+    "1NA",
+    "1A(RHF)"
+   ],
+   "seat": "30",
+   "colour": "modenza 05",
+   "why": "owner read the original slip (our photo is cropped) | SUPERSEDED 2026-09-10 by the TV re-read: the TV on this drawing is above the run, so the reading below was mirrored. Corrected here as well as in sofa-compartment-corrections-tv-direction.json, because the loader takes whichever round runs last and two disagreeing rounds let file order decide a sofa. Owner: 「纠正direction 要根据看TV」.",
+   "desc2Match": "colour  : MODENZA 05- DARK OLIVE \\nchang"
+  },
+  {
+   "docs": [
+    "HC-PO-010153"
+   ],
+   "model": "9050",
+   "pieces": [
+    "1A(LHF)",
+    "1NA",
+    "CNR",
+    "1A(RHF)",
+    "1S"
+   ],
+   "seat": "30",
+   "why": "owner read the original slip (our photo is cropped)",
+   "desc2Match": "bottom to Nilon \\n30 inch , all adjustab"
+  },
+  {
+   "docs": [
+    "HC-SO-011733",
+    "HC-PO-010023"
+   ],
+   "model": "9058",
+   "pieces": [
+    "2A(LHF)",
+    "CNR",
+    "1NA",
+    "1NA",
+    "Console",
+    "1A(RHF)"
+   ],
+   "seat": "30",
+   "colour": "ch141-8S",
+   "why": "owner | 2026-09-08 THE NEEDLE WAS REPAIRED, THE ANSWER WAS NOT TOUCHED. It read \"{COL:CH141-8 ARMY}/{SEAT HEIGHT: +1\\\"INCH\" and the fabric library RENUMBERED CH141-8 to CH141-08 on 2026-08-11, so production has held \"{COL:CH141-08 ARMY}\" ever since and this needle has matched nothing. A ruling nothing can find is a ruling the reconcile does not have, so a build the owner had personally answered kept reporting as CANNOT BE COMPARED - HC-SO-011733 is one of the 43 in the 2026-09-08 sales-order tally (run 34237658597), and it is PROCEEDED. Same class as docs/bugs/0718: a correction gone silently inert when the fabric library renumbered itself. The needle is now \"{SEAT HEIGHT: +1\", which both the account book and the ERP carry and no colour renumbering can move. Measured on prod, read-only probe run 34242061732: this document holds exactly one sofa build and its six compartments are 2A(LHF)+CNR+1NA+1NA+CONSOLE+1A(RHF) at seat 30 - the answer below, already written, so re-applying it is a no-op. HE RE-READ THE SAME SLIP ON 2026-09-08 and gave the same five seats and arms without mentioning the Console; that reading is recorded in sofa-compartment-corrections-2026-09.json's `_held` list with the one question it leaves open, and nothing is deleted until he answers it.",
+   "desc2Match": "{SEAT HEIGHT: +1"
+  },
+  {
+   "docs": [
+    "HC-SO-012877"
+   ],
+   "pieces": [
+    "L(LHF)",
+    "2A(RHF)"
+   ],
+   "seat": "30",
+   "why": "owner; ready stock, colour is the physical unit's",
+   "desc2Match": "SL0095 Ready Stock"
+  },
+  {
+   "docs": [
+    "HC-SO-011099",
+    "HC-PO-009882"
+   ],
+   "pieces": [
+    "2S"
+   ],
+   "seat": "30",
+   "why": "photo: two 30\" boxes, a small arm at each end | 2026-09-08 OWNER, re-reading his own slip: 2S. It is ONE two-seater, not two one-seat arms - which is also what the book's own words say (2S / colour :BO315-4), so this ruling moves the ERP TOWARDS the book rather than away from it. This is a CORRECTED READING, not a regression: the ERP's earlier value never drifted - he read the same slip again and changed his own answer. Recorded in docs/sofa-compartment-owner-rulings-2026-09-08.md. The model resolves from the rows themselves (HOK-5530 aliases to 9028), so the target piece is 9028-2S. This build drops from two rows to one: the surviving row is UPDATED in place so its id, its dedication and its linked_ac_dtlkey all survive, and the second row is deleted ONLY if nothing downstream points at it - apply-sofa-compartment-corrections.mjs refuses the whole build otherwise. | 2026-09-07: the purchase order was missing from this entry, so the build was written onto the sales order alone and HC-PO left holding the lead piece only (chain audit run 34134017406 reported it as PIECE ABSENT). HC-PO-009882 added so the pair is corrected together, which is what this file's own rule says. | 2026-09-08 UNHELD: the second repair this needed now exists. apply-sofa-compartment-corrections.mjs RELEASES a purchase dedication that a collapse strands (sets so_item_id = NULL in the same transaction as the delete) instead of refusing the build, under five conditions that are all refusals - sales side only, the build must collapse to ONE piece, nothing delivered against the dropped row, the purchase line free of goods receipts, and this entry must NAME the purchase order so the half that deletes the released line runs. It is released, never re-pointed: a second purchase line aimed at the surviving row would read as two incoming units of one ordered piece. See docs/bugs/0719.",
+   "desc2Match": "2S / colour :BO315-4"
+  }
+ ],
+ "_held": [
+  {
+   "docs": [
+    "HC-PO-010056",
+    "HC-SO-012696"
+   ],
+   "seat": "30",
+   "why": "photo shows a corner plus three 30\" seats but the piece ORDER is not readable - left for the owner"
+  },
+  {
+   "docs": [
+    "HC-PO-000162"
+   ],
+   "model": "5526",
+   "pieces": [
+    "DB"
+   ],
+   "why": "blocked: 5526 must first exist as its own model (the mapping wrongly points it at 8038) and DB must be in the compartment pool"
+  }
+ ]
+}

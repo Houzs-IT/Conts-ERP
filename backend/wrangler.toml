@@ -1,0 +1,381 @@
+name = "autocount-sync-api"
+main = "src/index.ts"
+# Pin the production account so `wrangler deploy` / `secret put` can never target
+# the wrong account (a stray `wrangler login` once cached a different account id,
+# which made `secret put` create an empty look-alike worker elsewhere). The
+# account id is not a secret. Account: hello@houzscentury.com.
+account_id = "816e457307d7fa0491c2a08a72ad5dcd"
+compatibility_date = "2024-12-01"
+# Required by @cloudflare/vitest-pool-workers; also enables Node-style
+# APIs (Buffer, process.env shims) in production. Purely additive —
+# nothing in the worker today depends on the absence of these.
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+AUTOCOUNT_API_URL = "https://it-houzs.dev/"
+
+# Inbound AutoCount sync kill switch. "true" = skip every AutoCount pull
+# (cron SO/PO/overdue/creditors/stock + manual /api/sync/pull). Non-AutoCount
+# cron jobs keep running. Disabled "true" 2026-06-13 at owner request ("暂时关闭,
+# 不需要数据进来"); re-enabled "false" 2026-07-14 at owner request to resume
+# inbound sync. Flip back to "true" + redeploy to halt pulls again. NOTE:
+# outbound writes stay OFF (AUTOCOUNT_WRITES_DISABLED, autocount.ts) — this
+# only re-opens reads from AutoCount, not writes back to it.
+AUTOCOUNT_SYNC_DISABLED = "false"
+# ERP -> AutoCount WRITE-BACK (outbound; the opposite direction to the two
+# settings above, which are the legacy inbound pull). Base URL of AcSyncService,
+# the service that runs ON the AutoCount host and drives the licensed 2.2 SDK.
+# SET 2026-08-11. The Cloudflare tunnel's public hostname was repointed from the
+# cutover file server to the service itself, and the service answered:
+#
+#   POST https://autocount.houzscentury.com/health
+#   -> {"ok":true,"book":"AED_HOUZS","service":"AcSyncService"}   HTTP 200
+#   GET  /ac-svc-key.txt -> 405 Method Not Allowed  (the file server is gone,
+#                                                    and with it the publicly
+#                                                    downloadable API key)
+#
+# THIS ALONE SENDS NOTHING. The second gate is the DB toggle scm.app_config
+# 'scm.autocount_writeback', seeded 'off' by migration 0277: with the URL set
+# and the toggle off, nothing is enqueued and nothing is drained. BOTH must be
+# on for a document to reach the live account book. The API key beside it is a
+# SECRET (AC_SYNC_KEY), never a var. See docs/modules/autocount-writeback.md.
+AC_SYNC_URL = "https://autocount.houzscentury.com"
+# Cost/margin DISPLAY switch. "true" (or absent) = ON — the current prod state,
+# cost/margin reach finance viewers on SCM sales documents exactly as before.
+# "false" = OFF: canViewScmFinance returns false for EVERYONE, so every
+# sales-document response STRIPS cost/margin, and the scm.finance.view capability
+# is dropped so the frontend hides the columns too (no "RM undefined"). This is
+# the AUTHORITATIVE switch — it mirrors the frontend build-time
+# COSTING_DISPLAY_ENABLED and, unlike it, actually withholds cost from the wire.
+# Does NOT gate SKU product cost (cost_price_sen — its own scm.productCost.view
+# path), by design. Flip to "false" + redeploy to hide; parsed by
+# scm/lib/costing-enabled.isCostingDisplayEnabled.
+COSTING_DISPLAY_ENABLED = "true"
+# ── SESSION-REVOCATION FALLBACK (security relaxation — OFF by default) ───────
+# "false"/absent (CURRENT STATE) = session revocation is strictly authoritative:
+# if the authoritative DB read fails, the request is REJECTED. A cold-start 503
+# or a Supavisor blip therefore logs everyone out until it clears — the pre-2026-07
+# behaviour, unchanged.
+# "true" = during a DB READ FAILURE ONLY, getUserBySession may re-serve a session
+# the DB most recently CONFIRMED active, for up to SESSION_FALLBACK_TTL_MS. That
+# buys availability across brief blips at the cost of a BOUNDED (<= TTL) delay
+# before a revocation takes effect while the DB is unreachable. With a reachable
+# DB, revocation is immediate either way.
+# Off is the default because absence must never relax a security control. To
+# enable: set "true" here + redeploy (`cd backend && npx wrangler deploy` from a
+# branch rebased on origin/main). To disable again: set "false" + redeploy.
+# Parsed by services/sessionCache.isSessionFallbackEnabled.
+SESSION_FALLBACK_ENABLED = "false"
+# How long (ms) a DB-confirmed session may be re-served while the DB is down.
+# Read ONLY when SESSION_FALLBACK_ENABLED = "true". Default 60000; clamped to
+# 1000..300000, and anything non-numeric falls back to the default. Lower it to
+# shorten the worst-case revocation delay during an outage.
+SESSION_FALLBACK_TTL_MS = "60000"
+# ── CUTOVER FLIP SWITCH (task #15) ──────────────────────────────────────────
+# "false" (pre-flip): 2990's apps/api is the WRITER of the `2990-` doc namespace
+# and Houzs holds a READ-ONLY mirror, so the mirror guards (companyScope.ts
+# houzsOwns2990) refuse Houzs-side create/edit of `2990-` SOs/amendments/POs.
+# "true" (post-flip): Houzs IS the writer — the guards stop blocking so the
+# repointed POS writes `2990-` orders natively. Flip to "true" + redeploy IN THE
+# SAME DEPLOY as the POS VITE_BACKEND_TARGET=houzs flip, AFTER draining the 2990
+# SO outbox + stopping 2990's minter/crons. Rehearse "true" on staging first.
+HOUZS_OWNS_2990 = "true"
+# Public origin used to build email links (survey, portal, supplier invite,
+# member invitations, password resets). The canonical user-facing domain —
+# pages.dev still serves, but every link we hand out reads this.
+PUBLIC_APP_URL = "https://erp.houzscentury.com"
+# From address for outbound transactional + document email. 2026-06-13:
+# houzscentury.com is VERIFIED in Resend and live — a real send returns Resend
+# status=sent from this domain (confirmed end-to-end). Off the departed dev's
+# mail.it-houzs.dev for good.
+EMAIL_FROM = "Houzs ERP <no-reply@houzscentury.com>"
+#EMAIL_FROM = "Houzs ERP <no-reply@mail.it-houzs.dev>"  # departed dev's domain — do not use
+#EMAIL_FROM = "Houzs ERP <onboarding@resend.dev>"        # fallback: works with any key, no domain verify
+# Reply-to: no-reply@ can't receive, so point customer replies at the real
+# company mailbox (Google Workspace). Applied to every email via deliverViaResend.
+EMAIL_REPLY_TO = "Houzs Century <hello@houzscentury.com>"
+# R2 bucket the SO / PO line photos live in. The signed-URL routes read this to
+# build the SigV4 request; without it soItemPhotoBindings throws and every photo
+# thumbnail renders as "err" — which is exactly what production did until
+# 2026-08-10, when 983 imported AutoCount photos landed in R2 and none of them
+# would display. The BUCKET NAME is not a secret (it is the same bucket the
+# [[r2_buckets]] bindings below name); only R2_ACCESS_KEY_ID /
+# R2_SECRET_ACCESS_KEY / R2_ENDPOINT are, and those stay wrangler secrets.
+SO_ITEM_PHOTOS_BUCKET_NAME = "houzs-erp"
+
+# D1 — REMOVED 2026-06-13 (write lockout). Prod is fully on Supabase/Postgres:
+# every request (dbInject) and every cron (withPgDb) runs through the d1-compat
+# shim over Hyperdrive, so the bound D1 was never written post-cutover — only
+# the vitest fallback used it, and that now declares its own D1 in
+# vitest.config.ts (miniflare d1Databases). The D1 `autocount-sync`
+# (d0401549-c099-407b-ae95-57a5f85e5ad5) still exists in the CF account as a
+# cold backup; to roll back, re-add this binding. There is no env.DB binding in
+# prod anymore.
+
+# Supabase Postgres via Hyperdrive (the cutover target). Project
+# ctbaifabbzghtsrmpirm under the COMPANY Supabase account
+# (hello@houzscentury.com). The earlier load target xxoszhxglfgkqkokvofa
+# was abandoned 2026-06-13 pre-go-live: it lived under the departed
+# developer's own account and its password no longer works. Create once:
+#   wrangler hyperdrive create houzs-erp-pg \
+#     --connection-string="postgresql://postgres.ctbaifabbzghtsrmpirm:<pw>@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
+# then uncomment and paste the printed id. Local dev/scripts read DATABASE_URL
+# from .dev.vars instead of this binding.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+# Config f0f9bd0d (houzs-erp-pg-v2) -> SG company project anogrigyjbduyzclzjgn.
+# 2026-06-13 OUTAGE + FIX: the transaction pooler (port 6543) got stuck/
+# exhausted after heavy deploy+load churn (Hyperdrive hung reaching origin for
+# ~hours; DB itself stayed healthy via direct connect). Switching this config to
+# the SESSION pooler (port 5432) restored prod immediately (login 5/5, ~0.1s).
+# The connection string (incl. the 5432 port) lives in the Hyperdrive config on
+# Cloudflare, NOT here — so this survives redeploys. Tradeoff: session pooler
+# holds a dedicated backend per connection; the SG micro caps at 60 conns —
+# fine for current low traffic, monitor under load. Can move back to 6543 once
+# that pooler's throttle clears, or upsize off micro. Old config:
+# 4e820fcfa4f945929ab77e164060e694 (left stuck on 6543; spare).
+id = "f0f9bd0d6b924496981b97b9ebcfe898"
+
+# R2 bucket for proof-of-delivery photos and signatures.
+[[r2_buckets]]
+binding = "POD_BUCKET"
+bucket_name = "houzs-erp"
+
+# Ported 2990's SCM photo features. The deploy token lacks R2 perms (can't create
+# dedicated buckets), so these reuse the existing houzs-erp bucket — each feature
+# writes under its own key prefix, so they don't collide with POD objects.
+# Reversible: point at dedicated buckets later (e.g. houzs-scm-photos /
+# houzs-scm-public) once an R2-scoped token is available.
+#   • SO_ITEM_PHOTOS — private SO/consignment item photos (served via proxy).
+#   • PUBLIC_ASSETS  — category hero images. NOTE: storage works here, but true
+#     public-URL serving needs a public bucket policy / custom domain (separate).
+#   • SLIPS          — payment-slip uploads (keys under slips/YYYY/MM/…).
+#     2026-07-04: was intentionally unbound while the flow used browser
+#     presigned PUTs (needed R2 S3 creds that were never created — every
+#     /slips/init 500'd "R2 binding SLIPS not configured"). The flow is now a
+#     Worker-proxy upload (init → POST /slips/:id/upload → confirm), same as
+#     branding-logo / scan uploads, so ONLY this binding is needed — no
+#     R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY secrets.
+[[r2_buckets]]
+binding = "SO_ITEM_PHOTOS"
+bucket_name = "houzs-erp"
+
+[[r2_buckets]]
+binding = "PUBLIC_ASSETS"
+bucket_name = "houzs-erp"
+
+[[r2_buckets]]
+binding = "SLIPS"
+bucket_name = "houzs-erp"
+
+# Cloudflare Queue for the background scan-so OCR pipeline. The producer
+# (/scan-so/enqueue) sends only { jobId }; the consumer (index.ts `queue()`)
+# rebuilds everything from the scan_jobs row + R2 photos and runs the OCR +
+# draft-SO create — a queue-owned attempt survives the isolate eviction that
+# stranded the old waitUntil pipeline. Queue + DLQ already created on the
+# account. NOTE: `wrangler deploy` needs the API token to carry Queues:Edit to
+# bind the consumer, else deploy fails with a 10xxx queue-permission error.
+[[queues.producers]]
+binding = "SCAN_QUEUE"
+queue = "houzs-scan-ocr"
+
+[[queues.consumers]]
+queue = "houzs-scan-ocr"
+max_batch_size = 1
+max_retries = 3
+dead_letter_queue = "houzs-scan-ocr-dlq"
+
+# KV cache for the hydrated session user (services/sessionCache.ts). 60s TTL,
+# busted on logout. Pure optimization — auth falls back to the DB if absent.
+[[kv_namespaces]]
+binding = "SESSION_CACHE"
+id = "c25f593faf5a46a2b94155eba91083e1"
+
+# Analytics Engine — System Health observability (phase 2, ported from Hookka).
+# PREREQUISITE (one-time, account-level, must happen BEFORE this binding merges):
+# Cloudflare Dashboard -> Workers & Pages -> Analytics Engine -> Enable.
+# Deploying with the binding while AE is disabled fails with "code: 10089 You
+# need to enable Analytics Engine" — and because push-to-main runs deploy.yml,
+# that failure repeats on EVERY prod deploy until AE is enabled (or this block
+# is re-commented). The write path (middleware/requestLog.ts) is guarded
+# (env.ERP_METRICS?.writeDataPoint?.() inside try/catch), so the Worker is
+# runtime-safe with or without the binding — only the deploy gate cares.
+# Staging intentionally has NO AE binding: bindings do not inherit into named
+# envs, so `deploy --env staging` (deploy-staging.yml) stays green regardless
+# of AE state, and staging traffic must not pollute the prod dataset. If
+# staging collection is ever wanted, add [[env.staging.analytics_engine_datasets]]
+# with its own dataset (e.g. houzs_erp_metrics_staging) — the same account-level
+# enable covers it.
+[[analytics_engine_datasets]]
+binding = "ERP_METRICS"
+dataset = "houzs_erp_metrics"
+
+# Reads (the phase-2 /api/admin/health/perf endpoint queries AE over the
+# Cloudflare SQL API) need two secrets (set with `wrangler secret put`):
+#   AE_QUERY_TOKEN       — Cloudflare API token, Account Analytics:Read
+#   CF_ACCOUNT_ID        — Cloudflare account id
+# Other worker secrets:
+#   SENTRY_DSN           — error tracking. NOT SET, deliberately: while it is
+#                          absent the reporter (src/services/errorTracking.ts)
+#                          makes no network call and no log line, so production
+#                          behaves exactly as it did before it was added. One
+#                          command turns it on for BOTH the Worker and relayed
+#                          browser crashes:
+#                            wrangler secret put SENTRY_DSN
+#                          Accepts a Sentry DSN or a self-hosted GlitchTip DSN
+#                          (same wire protocol) — the choice of who holds the
+#                          data is the DSN, not the code. Full rationale, cost
+#                          and the exact list of fields that leave the building:
+#                          docs/error-tracking-options.md.
+#   AUTOCOUNT_API_KEY
+#   AC_SYNC_KEY          — X-API-KEY for AcSyncService, the ERP -> AutoCount
+#                          write-back service on the AutoCount host. NOT SET.
+#                          Set it with `wrangler secret put AC_SYNC_KEY` when
+#                          the write-back is turned on; the URL beside it
+#                          (AC_SYNC_URL) is config and lives in [vars], this is
+#                          the credential and never does.
+#                          See docs/modules/autocount-writeback.md.
+#   DASHBOARD_API_KEY
+#   CONNECT_SERVICE_TOKEN — dedicated service-tier key for Houzs Connect's org
+#                          sync (middleware/auth.ts). Set with `wrangler secret
+#                          put CONNECT_SERVICE_TOKEN`; lets Connect authenticate
+#                          with its own credential so DASHBOARD_API_KEY never
+#                          needs rotating.
+#   GOOGLE_MAPS_API_KEY  — used by the planner geocoder (Phase 2)
+#   RESEND_API_KEY       — transactional email (see src/services/email.ts).
+#                          If unset the email service silently no-ops so
+#                          deploys never break on missing keys.
+
+[triggers]
+# Cron schedule. This line USED to read "kept under the Workers free-plan trigger
+# cap" — written 2026-04-30 (7b98025b, which folded the monthly gifting reset into
+# the daily batch to shed a trigger) and true THEN. It is not the constraint now:
+# the `houzs-scan-ocr` Queues producer/consumer bound above is a Workers PAID
+# product and cannot exist on the free plan, and production runs on it since
+# 2026-07-04 (PR #260). Repo evidence therefore proves PAID, not free; the exact
+# plan + change date live in a billing console this repo cannot see, so nothing
+# here asserts them (docs/cloudflare-plan-cap-coe.md §3, §5).
+#
+# Consolidating to three triggers is still the right shape — fewer cold starts,
+# one place to reason about the daily batch — so the schedule is UNCHANGED. Do
+# not read the old cap into it, and do not treat "we are on Paid" as licence to
+# un-batch the SCM subrequest diet, which is a latency and cost discipline in its
+# own right (same COE, §4).
+#
+# After the strip-to-core cutover the AutoCount pulls + gamify jobs are gone;
+# what runs:
+#   */5    → Hyperdrive keep-warm ping + durable email-outbox drain
+#   */15   → MRP stored-planning snapshot refresh, per company (option B,
+#            2026-08-19) — so the MRP page opens instantly from a fresh plan
+#   */30   → ASSR per-stage alert scan + scheduled lead-time activations
+#            + announcement overdue escalation (supervisors notified once a
+#            must-acknowledge notice is 48h old, 2026-09-06)
+#   0 2    → Daily batch: SLA escalation, ASSR daily digest, project
+#            checklist reminders, idempotency-key TTL sweep
+#   5 16   → Month-end stock close sweep (00:05 MYT): posts/heals the
+#            closing-stock pair for the two most recent closed months
+crons = [
+  "*/5 * * * *",
+  "*/15 * * * *",
+  "*/30 * * * *",
+  "0 2 * * *",
+  "5 16 * * *"
+]
+
+[observability]
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+[observability.traces]
+
+# Resolve the bare `zod` import inside the out-of-tree shared/ module to THIS
+# worker's own node_modules. Without it, esbuild (wrangler deploy) walks up from
+# /shared, finds no node_modules, and fails "Could not resolve zod" on a clean
+# CI build (Cloudflare's own error suggests this alias).
+[alias]
+zod = "./node_modules/zod"
+
+# ── Staging environment (isolated from prod) ──────────────────────────────
+# Separate Worker on its own Hyperdrive -> the staging Supabase
+# (minnapsemfzjmtvnnvdd). No crons (staging must never pull AutoCount or run
+# prod jobs). Used to build + verify the stack upgrade before promoting.
+[env.staging]
+name = "autocount-sync-api-staging"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+[env.staging.vars]
+AUTOCOUNT_API_URL = "https://it-houzs.dev/"
+AUTOCOUNT_SYNC_DISABLED = "true"
+# Cost/margin DISPLAY switch — ON in staging too (mirrors prod). See the prod
+# [vars] block for what "false" does. Set "false" here to rehearse the hidden
+# state before flipping prod.
+COSTING_DISPLAY_ENABLED = "true"
+# Session-revocation fallback (see prod block) — OFF here too, so staging mirrors
+# prod's current state. Set "true" here first to rehearse the relaxed behaviour
+# (kill the Hyperdrive origin, confirm sessions survive <= TTL) before flipping
+# prod.
+SESSION_FALLBACK_ENABLED = "false"
+SESSION_FALLBACK_TTL_MS = "60000"
+# Cutover flip switch (see prod block). Set "true" on staging to rehearse the
+# post-flip write path (POS creates 2990- SOs natively) before flipping prod.
+HOUZS_OWNS_2990 = "true"
+PUBLIC_APP_URL = "https://houzs-erp-staging.pages.dev"
+EMAIL_FROM = "Houzs ERP Staging <no-reply@houzscentury.com>"
+EMAIL_REPLY_TO = "Houzs Century <hello@houzscentury.com>"
+# Same bucket as prod (staging shares the R2 bucket); see the prod vars block.
+SO_ITEM_PHOTOS_BUCKET_NAME = "houzs-erp"
+# Environment label stamped on every reported error (services/errorTracking.ts).
+# Inert on its own — nothing is reported until SENTRY_DSN is set. It exists so
+# that if staging ever gets a DSN, its noise lands under environment=staging and
+# can be excluded from the production alert rule instead of paging someone at
+# 2am for a rehearsal. Prod needs no counterpart: the default is "production".
+SENTRY_ENVIRONMENT = "staging"
+# Admin "login as member" on the Team page (routes/users.ts). Staging-only:
+# the flag must never be added to the prod vars block.
+IMPERSONATION_ENABLED = "true"
+
+[[env.staging.hyperdrive]]
+binding = "HYPERDRIVE"
+id = "b776100058d04d609bb6e19182263683"
+
+[[env.staging.r2_buckets]]
+binding = "POD_BUCKET"
+bucket_name = "houzs-erp"
+
+# SCM photo features (see prod block) — reuse houzs-erp, prefix-keyed.
+[[env.staging.r2_buckets]]
+binding = "SO_ITEM_PHOTOS"
+bucket_name = "houzs-erp"
+
+[[env.staging.r2_buckets]]
+binding = "PUBLIC_ASSETS"
+bucket_name = "houzs-erp"
+
+[[env.staging.r2_buckets]]
+binding = "SLIPS"
+bucket_name = "houzs-erp"
+
+# Scan-OCR queue — staging has its OWN queues (a Cloudflare queue allows only
+# ONE consumer worker; prod + staging sharing houzs-scan-ocr made the second
+# deploy fail 11004 "already has a consumer"). Dedicated staging queues keep
+# the two environments fully isolated.
+[[env.staging.queues.producers]]
+binding = "SCAN_QUEUE"
+queue = "houzs-scan-ocr-staging"
+
+[[env.staging.queues.consumers]]
+queue = "houzs-scan-ocr-staging"
+max_batch_size = 1
+max_retries = 3
+dead_letter_queue = "houzs-scan-ocr-staging-dlq"
+
+[[env.staging.kv_namespaces]]
+binding = "SESSION_CACHE"
+# Isolated namespace — must NOT share id with prod (sessions would cross-write).
+# Created 2026-06-30 via `wrangler kv namespace create SESSION_CACHE --env staging`.
+id = "5f33988b7dc64e96837a1d76eec615e8"
+
+[env.staging.triggers]
+crons = []
