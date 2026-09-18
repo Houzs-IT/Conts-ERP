@@ -1,0 +1,541 @@
+/* ============================================================================
+ * THE CONTS — Design tokens
+ * Brand: premium property operations — deep black, warm white, champagne gold.
+ * Tone: architectural, calm, financially precise.
+ *
+ * Source of truth: The Conts Digital Brand Guide v1.0 (16 Sep 2026), extended
+ * to the depth of the shared Houzs ERP and Hookka ERP token layers so the three
+ * products are theme-swappable siblings.
+ *
+ * Structure mirrors hookka-erp/src/app/globals.css:
+ *   brand ramps → semantic pairs → sidebar → surfaces → text → borders →
+ *   channels → typography → radius → shadow → motion → utilities
+ *
+ * PROVISIONAL values are replaced centrally when original brand artwork is
+ * supplied (brand guide 2.2). Nothing outside this file hard-codes a brand value.
+ * ========================================================================== */
+
+:root,
+[data-theme="theconts"] {
+
+  /* ---------- Brand core ---------- */
+  --color-brand-black: #151515;   /* PROVISIONAL */
+  --color-brand-gold:  #C8A46A;   /* PROVISIONAL — champagne gold */
+  --color-brand-stone: #FAF9F6;   /* PROVISIONAL — warm white workspace */
+  --color-brand-white: #FFFFFF;
+
+  /* ---------- Gold scale (generated from #C8A46A) ----------
+   * 500 is the brand value. 700 is the lightest step that passes WCAG AA for
+   * body text on white — use gold-700 for gold TEXT, never gold-500.
+   * Gold is identity, selection and premium emphasis only. Never a status. */
+  --color-gold-50:  #FBF7F0;
+  --color-gold-100: #F5EEDF;
+  --color-gold-200: #EADCBD;
+  --color-gold-300: #DDC597;
+  --color-gold-400: #D0B37E;
+  --color-gold-500: #C8A46A;
+  --color-gold-600: #AE8B52;
+  --color-gold-700: #8A6A2F;
+  --color-gold-800: #6B5223;
+  --color-gold-900: #4A3817;
+
+  /* ---------- Basalt scale (warm blacks for the shell and inverted surfaces) ---------- */
+  --color-basalt-900: #0F0F0F;
+  --color-basalt-800: #151515;
+  --color-basalt-700: #1E1E1E;
+  --color-basalt-600: #242424;
+  --color-basalt-500: #333331;
+  --color-basalt-400: #4A4844;
+  --color-basalt-300: #706D67;
+  --color-basalt-200: #8A8680;
+  --color-basalt-100: #B8B1A8;
+
+  /* ---------- Stone scale (warm neutrals for light surfaces and borders) ---------- */
+  --color-stone-50:  #FFFFFF;
+  --color-stone-100: #FAF9F6;
+  --color-stone-200: #F1F0ED;
+  --color-stone-300: #EDEAE4;
+  --color-stone-400: #DEDAD3;
+  --color-stone-500: #C7C1B6;
+
+  /* ---------- Semantic pairs (brand guide 4.2, with an accessibility correction) ----------
+   * Each state has THREE roles, because one hex cannot do all three jobs:
+   *   --color-{state}       tint background
+   *   --color-{state}-fg    TEXT on that tint. Measured >= 4.5:1 (WCAG AA, normal text)
+   *   --color-{state}-line  dot, border, chart and solid-fill colour. Non-text, 3:1 applies
+   *
+   * ACCESSIBILITY CORRECTION TO THE BRAND GUIDE — take back to the client.
+   * The guide's §4.2 base values fail AA as 11px badge text on their own tints:
+   *   #16845B on #E9F5EF = 4.18:1   #B7791F on #FFF4D8 = 3.32:1   #C2413B on #FCECEB = 4.45:1
+   * The guide's own §4.3 requires AA for body text and interactive controls, and these are
+   * status labels in dense operational tables — exactly where legibility matters. So the
+   * guide's hexes are retained as -line (non-text) and -fg is darkened to pass. Info and
+   * neutral already passed and are unchanged.
+   * Ratios were computed with the WCAG relative-luminance formula, not estimated. */
+  --color-success:     #E9F5EF;
+  --color-success-fg:  #11694A;   /* 5.97:1 on tint, 6.68:1 on white. Guide value #16845B = 4.18:1 */
+  --color-success-line:#16845B;   /* guide §4.2 value, non-text use */
+  --color-warning:     #FFF4D8;
+  --color-warning-fg:  #8A5A12;   /* 5.40:1 on tint, 5.91:1 on white. Guide value #B7791F = 3.32:1 */
+  --color-warning-line:#B7791F;
+  --color-critical:    #FCECEB;
+  --color-critical-fg: #A8352F;   /* 5.70:1 on tint, 6.53:1 on white. Guide value #C2413B = 4.45:1 */
+  --color-critical-line:#C2413B;
+  --color-info:        #EAF2FA;
+  --color-info-fg:     #2E6DA4;   /* 4.83:1 on tint — guide value, passes unchanged */
+  --color-info-line:   #2E6DA4;
+  --color-neutral:     #F1F0ED;
+  --color-neutral-fg:  #706D67;   /* 4.52:1 on tint — guide value, passes unchanged */
+  --color-neutral-line:#C7C1B6;
+
+  /* Solid semantic fills. White text on these: #A8352F = 6.53:1, #11694A = 6.68:1 */
+  --color-critical-solid: #A8352F;
+  --color-critical-solid-hover: #8F2C27;
+  --color-success-solid: #11694A;
+  --color-success-solid-hover: #0E5C41;
+
+  /* ---------- Sidebar (the dark shell) ---------- */
+  --color-sidebar-bg:          #151515;
+  --color-sidebar-bg-elevated: #1E1E1E;
+  --color-sidebar-text:        #DEDAD3;
+  --color-sidebar-text-muted:  #8A8680;
+  --color-sidebar-text-active: #FFFFFF;
+  --color-sidebar-accent:      #C8A46A;
+  --color-sidebar-hover:       rgba(255, 255, 255, 0.06);
+  --color-sidebar-active:      #242424;
+  --color-sidebar-active-l3:   rgba(200, 164, 106, 0.14);
+  --color-sidebar-border:      #242424;
+  --color-sidebar-guide:       rgba(255, 255, 255, 0.12);
+
+  /* ---------- Surfaces ---------- */
+  --color-surface-page:     #FAF9F6;
+  --color-surface-card:     #FFFFFF;
+  --color-surface-elevated: #FFFFFF;
+  --color-surface-muted:    #F1F0ED;   /* table headers, tertiary surface */
+  --color-surface-sunken:   #EDEAE4;
+  --color-surface-inverse:  #151515;
+  --color-surface-selected: #FBF7F0;   /* gold-50: selected row */
+  --color-surface-hover:    #FAF9F6;
+  --color-surface-press:    #F1F0ED;
+  --color-surface-scrim:    rgba(21, 21, 21, 0.44);
+  --color-surface-skeleton: #EDEAE4;
+
+  /* ---------- Text ---------- */
+  --color-text-primary:   #252525;   /* PROVISIONAL */
+  --color-text-secondary: #4A4844;
+  --color-text-muted:     #706D67;   /* PROVISIONAL */
+  --color-text-faint:     #A8A29A;   /* placeholders and disabled only — never body copy */
+  --color-text-inverse:   #FFFFFF;
+  --color-text-on-dark:   #DEDAD3;   /* 13.10:1 on #151515 — body and labels on the shell */
+  --color-text-on-dark-muted: #8A8680; /* 5.04:1 — quietest micro labels. NEVER a white alpha:
+                                          rgba(255,255,255,0.3) on #121110 is 2.72:1 and fails AA */
+  --color-text-accent:    #8A6A2F;   /* gold-family text on light surfaces */
+  --color-text-link:      #252525;
+  --color-text-link-hover:#8A6A2F;
+
+  /* ---------- Borders ---------- */
+  --color-border-default:  #DEDAD3;   /* PROVISIONAL */
+  --color-border-strong:   #C7C1B6;
+  --color-border-muted:    #EDEAE4;   /* inner dividers inside a bordered card */
+  --color-border-hairline: #E5E1DA;
+  --color-border-inverse:  #151515;
+  --color-border-focus:    #C8A46A;
+  --color-border-on-dark:  rgba(255, 255, 255, 0.10);
+
+  /* ---------- Focus ---------- */
+  --focus-ring: 0 0 0 2px rgba(200, 164, 106, 0.35);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* ---------- Booking channels (brand guide 14.4) ----------
+   * Block and owner-stay use the -line values: they are borders and fills, not text.
+   * The Conts equivalent of Hookka's department bands. Channel must stay
+   * distinguishable WITHOUT colour: every block also carries a text label,
+   * and non-revenue blocks use a dashed or dotted border. */
+  /* Each OTA carries its own brand colour, the way a channel manager does — an
+   * operator reads the source before they read the name. These are identification
+   * marks for third-party platforms, not part of The Conts palette.
+   * Direct is gold on purpose: it is our own channel and carries no commission,
+   * which is the same rule the charts use — gold marks The Conts. */
+  --color-channel-airbnb:       #FF5A5F;  /* Airbnb Rausch */
+  --color-channel-airbnb-tint:  #FFF0F0;
+  --color-channel-airbnb-ink:   #B3383C;  /* 4.9:1 on tint */
+  --color-channel-booking:      #003B95;  /* Booking.com blue */
+  --color-channel-booking-tint: #EAF0FA;
+  --color-channel-booking-ink:  #003B95;  /* 11.2:1 on tint */
+  --color-channel-agoda:        #5C2D91;  /* Agoda violet */
+  --color-channel-agoda-tint:   #F2ECF9;
+  --color-channel-agoda-ink:    #4A2475;  /* 8.4:1 on tint */
+  --color-channel-direct:       #C8A46A;  /* ours — no commission */
+  --color-channel-direct-tint:  #FBF7F0;
+  --color-channel-direct-ink:   #8A6A2F;  /* 4.8:1 on tint */
+  --color-channel-block:        #C2413B;  /* dashed border, non-text */
+  --color-channel-block-tint:   #FCECEB;
+  --color-channel-block-ink:    #A8352F;
+  --color-channel-owner-stay:   #706D67;  /* dotted border */
+  --color-channel-owner-tint:   #FAF9F6;
+  --color-channel-owner-ink:    #5C5952;
+
+  /* ---------- Data visualisation (brand guide 12) ----------
+   * Gold marks The Conts or the selected series only. Max 5 categorical colours. */
+  --color-chart-selected: #C8A46A;
+  --color-chart-1: #242424;
+  --color-chart-2: #706D67;
+  --color-chart-3: #B8B1A8;
+  --color-chart-4: #2E6DA4;
+  --color-chart-grid: #EDEAE4;
+  --color-chart-axis: #706D67;
+
+  /* ---------- Typography ----------
+   * ONE shared UI font across Houzs, Hookka and The Conts (brand guide 5.1).
+   * UNRESOLVED AT HANDOFF: houzs-erp ships Tahoma; hookka-erp ships IBM Plex Sans.
+   * The Conts is built on IBM Plex Sans. Normalising the shared stack changes
+   * these two lines and nothing else.
+   * Mono is for tabular data only — codes, IDs, references. Money and metrics
+   * use the sans face with tabular numerals, matching Hookka's rule. */
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", monospace;
+
+  /* Type scale — desktop / mobile (brand guide 5.2) */
+  --text-display:      40px;  --text-display-mobile:    32px;
+  --text-page-title:   28px;  --text-page-title-mobile: 24px;
+  --text-section:      20px;  --text-section-mobile:    18px;
+  --text-card-title:   16px;  --text-card-title-mobile: 16px;
+  --text-body:         14px;
+  --text-small:        12px;
+  --text-micro:        11px;
+
+  --leading-display:    1.10;
+  --leading-page-title: 1.20;
+  --leading-section:    1.30;
+  --leading-card-title: 1.35;
+  --leading-body:       1.50;
+  --leading-small:      1.45;
+  --leading-micro:      1.35;
+
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --weight-semibold:600;
+
+  --tracking-display:  -0.02em;
+  --tracking-title:    -0.01em;
+  --tracking-normal:    0;
+  --tracking-label:     0.05em;   /* small uppercase table and stat labels */
+  --tracking-group:     0.13em;   /* sidebar L1 group labels */
+  --tracking-wordmark:  0.18em;   /* THE CONTS only */
+
+  /* ---------- Spacing (8px base, brand guide 6) ---------- */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ---------- Radius ----------
+   * Named steps for the scale; semantic aliases are what components use. */
+  --radius-xs:  4px;
+  --radius-sm:  6px;
+  --radius-md:  8px;
+  --radius-lg:  12px;
+  --radius-xl:  16px;
+  --radius-full:999px;
+
+  --radius-control: var(--radius-md);   /* buttons, inputs, selects */
+  --radius-card:    var(--radius-lg);   /* cards, dialogs, panels */
+  --radius-pill:    var(--radius-full); /* status badges, compact filters */
+
+  /* ---------- Elevation (brand guide 7.1) ----------
+   * Flat is the default: a 1px border and no shadow. Shadows are reserved for
+   * things that genuinely float. */
+  --shadow-flat:     none;
+  --shadow-card:     0 1px 2px 0 rgba(21, 21, 21, 0.04), 0 0 0 1px rgba(21, 21, 21, 0.04);
+  --shadow-raised:   0 2px 8px 0 rgba(21, 21, 21, 0.06);
+  --shadow-dropdown: 0 4px 6px -1px rgba(21, 21, 21, 0.08), 0 2px 4px -2px rgba(21, 21, 21, 0.06);
+  --shadow-overlay:  0 12px 32px 0 rgba(21, 21, 21, 0.16);
+  --shadow-modal:    0 20px 25px -5px rgba(21, 21, 21, 0.12), 0 8px 10px -6px rgba(21, 21, 21, 0.10);
+
+  /* ---------- Shell and grid (brand guide 6.1) ---------- */
+  --shell-sidebar-width:     244px;
+  --shell-sidebar-collapsed: 68px;
+  --shell-content-max:       1600px;
+  --shell-grid-columns:      12;
+  --shell-gutter:            24px;
+  --page-padding-desktop:    32px;
+  --page-padding-tablet:     24px;
+  --page-padding-mobile:     16px;
+
+  /* ---------- Controls ---------- */
+  --control-height:        40px;  /* desktop */
+  --control-height-sm:     36px;  /* toolbar and filter row */
+  --control-height-touch:  44px;  /* touch, field app, owner portal */
+  --touch-target-min:      44px;
+  --table-row-height:      48px;
+  --table-row-height-compact: 40px;
+
+  /* ---------- Navigation depth (L1 group → L2 item → L3 child) ---------- */
+  --nav-item-height:     34px;
+  --nav-item-height-l3:  30px;
+  --nav-indent-l2:       12px;
+  --nav-indent-l3:       32px;
+
+  /* ---------- Iconography (brand guide 7.2) ----------
+   * Library: lucide-react ^0.477.0 — the exact dependency in houzs-erp and hookka-erp
+   * (hookka-erp/src/components/layout/sidebar.tsx renders it at 16px, strokeWidth 1.75).
+   * The Conts adds no second icon family. In HTML-only surfaces, load the matching
+   * static SVGs from lucide-static@0.477.0 and tint them with currentColor via a mask. */
+  --icon-library: "lucide-react@0.477.0";
+  --icon-source: "./icons/ — lucide 0.477.0 SVGs copied into the project, stroke set to 1.75 to match the shared ERP sidebar";
+  --icon-size-sm:      16px;  /* inside tables, and the shared ERP sidebar size */
+  --icon-size:         20px;  /* default */
+  --icon-size-lg:      24px;  /* high-level actions */
+  --icon-size-nav:     17px;
+  --icon-stroke:       1.75px;
+
+  /* ---------- Motion (brand guide 7.4) ---------- */
+  --motion-fast:     120ms;  /* hover, pressed: 100–150ms */
+  --motion-standard: 200ms;  /* menus, drawers: 180–220ms */
+  --motion-slow:     240ms;  /* dialogs: 200–240ms */
+  --ease-out:      cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---------- Locale (brand guide 17) ---------- */
+  --locale-default: "en-MY";
+  --timezone: "Asia/Kuala_Lumpur";
+  --currency: "MYR";
+  --currency-prefix: "RM ";
+}
+
+/* ============================================================================
+ * Base
+ * ========================================================================== */
+
+html,
+body {
+  background-color: var(--color-surface-page);
+  color: var(--color-text-primary);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv02", "cv11";
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Every financial value, date, metric, SLA and table column is tabular
+ * (brand guide 5.3). Applied globally so a number can never reflow a column. */
+.tabular,
+table,
+.font-mono,
+[data-tabular] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "zero", "ss01";
+}
+
+::selection {
+  background: var(--color-gold-300);
+  color: var(--color-brand-black);
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-default);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-border-strong); }
+
+a { color: var(--color-text-link); text-decoration: none; }
+a:hover { color: var(--color-text-link-hover); }
+
+/* ============================================================================
+ * Utilities
+ * ========================================================================== */
+
+/* Sub-pixel-crisp hairline, for dense tables where a 1px border doubles up */
+.hairline   { box-shadow: inset 0  0 0 1px var(--color-border-hairline); }
+.hairline-b { box-shadow: inset 0 -1px 0 0 var(--color-border-hairline); }
+.hairline-t { box-shadow: inset 0  1px 0 0 var(--color-border-hairline); }
+
+/* Small label above a value — stat cards, table headers */
+.eyebrow {
+  font-size: var(--text-micro);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.eyebrow-light { color: var(--color-sidebar-text-muted); }
+
+/* Sidebar L1 group label */
+.nav-group-label {
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-group);
+  text-transform: uppercase;
+  color: var(--color-sidebar-text-muted);
+}
+
+/* Corporate wordmark — the only other uppercase in the product */
+.wordmark {
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wordmark);
+  text-transform: uppercase;
+}
+
+/* Architectural blueprint grid — auth stage and inverted brand surfaces */
+.bg-blueprint {
+  background-color: var(--color-basalt-800);
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: -1px -1px;
+}
+
+/* Warm dotted texture — empty modules and unconfigured states */
+.bg-stone-grid {
+  background-color: var(--color-surface-page);
+  background-image: radial-gradient(circle at 1px 1px, var(--color-border-hairline) 1px, transparent 0);
+  background-size: 16px 16px;
+}
+
+/* Diagonal tape — blocked units and unavailable dates */
+.bg-diagonal {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--color-border-muted) 0 8px,
+    transparent 8px 16px
+  );
+}
+
+/* Photograph scrim: keeps headline text at AA over property imagery
+ * (brand guide 7.3 — never place dense UI text directly on photography) */
+.photo-scrim {
+  background: linear-gradient(105deg,
+    var(--color-basalt-800) 6%,
+    rgba(21, 21, 21, 0.92) 46%,
+    rgba(21, 21, 21, 0.58) 100%);
+}
+
+/* Lucide icon rendered as a mask so it inherits currentColor.
+ * Set --icon to the icon's static SVG URL:
+ *   <span class="icon" style="--icon:url(https://unpkg.com/lucide-static@0.477.0/icons/wallet.svg)"></span>
+ * React surfaces import the component from lucide-react instead. */
+.icon {
+  display: inline-block;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  flex: none;
+  background-color: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+}
+.icon-sm { width: var(--icon-size-sm); height: var(--icon-size-sm); }
+.icon-nav { width: var(--icon-size-nav); height: var(--icon-size-nav); }
+.icon-lg { width: var(--icon-size-lg); height: var(--icon-size-lg); }
+
+/* Status dot with a soft ring — pairs with a text label, never used alone */
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in oklab, currentColor 18%, transparent);
+}
+
+/* Standard field. Radius follows the brand guide (8px), not Hookka's square
+ * inputs — the one deliberate divergence from the shared stylesheet. */
+.field-input {
+  display: block;
+  width: 100%;
+  height: var(--control-height);
+  padding: 0 14px;
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  color: var(--color-text-primary);
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-control);
+  outline: none;
+  transition: border-color var(--motion-fast) var(--ease-out),
+              box-shadow var(--motion-fast) var(--ease-out);
+}
+.field-input::placeholder { color: var(--color-text-faint); }
+.field-input:focus { border-color: var(--color-border-focus); box-shadow: var(--focus-ring); }
+.field-input[readonly] { background: var(--color-surface-muted); color: var(--color-text-muted); }
+.field-input[aria-invalid="true"] { border-color: var(--color-critical-line); }
+textarea.field-input { height: auto; padding: 11px 14px; resize: vertical; }
+select.field-input { appearance: none; cursor: pointer; }
+
+@media (pointer: coarse) {
+  .field-input { height: var(--control-height-touch); }
+}
+
+/* ============================================================================
+ * Animations — brand guide 7.4. No decorative looping. Never animate a
+ * financial value in a way that delays reading or implies false live activity.
+ * ========================================================================== */
+
+@keyframes rise      { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes fade-in   { from { opacity: 0; } to { opacity: 1; } }
+@keyframes draw      { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(8px) scale(0.99); } to { opacity: 1; transform: none; } }
+@keyframes toast-in  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes grow      { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes spin      { to { transform: rotate(360deg); } }
+@keyframes pulse-soft{ 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes shimmer   { from { background-position: -200% 0; } to { background-position: 200% 0; } }
+
+.animate-rise     { animation: rise var(--motion-standard) var(--ease-out) both; }
+.animate-dialog   { animation: dialog-in var(--motion-slow) var(--ease-out) both; }
+.animate-toast    { animation: toast-in var(--motion-standard) var(--ease-out) both; }
+.animate-submenu  { animation: grow 180ms var(--ease-out) both; transform-origin: top; }
+.animate-spin     { animation: spin 700ms linear infinite; }
+
+/* The ONE permitted loop: a live-connection indicator. Never on a number. */
+.animate-live     { animation: pulse-soft 2.4s ease-in-out infinite; }
+
+/* Loading block for predictable content (brand guide 9.3) */
+.skeleton {
+  background: linear-gradient(90deg,
+    var(--color-surface-skeleton) 25%,
+    var(--color-stone-200) 37%,
+    var(--color-surface-skeleton) 63%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--radius-xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  :root { --motion-fast: 0ms; --motion-standard: 0ms; --motion-slow: 0ms; }
+}
+
+/* ============================================================================
+ * Print — statements, owner reports and operational run sheets
+ * ========================================================================== */
+
+@media print {
+  body { background: #FFFFFF !important; color: #000000 !important; }
+  nav, aside, .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  table { page-break-inside: auto; width: 100% !important; }
+  tr { page-break-inside: avoid; }
+  thead { display: table-header-group; }
+  .shadow-card, .shadow-raised, .shadow-dropdown, .shadow-overlay { box-shadow: none !important; }
+}
+
+.print-only { display: none; }

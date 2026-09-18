@@ -1,0 +1,26 @@
+# Scheduled worker, deployed separately from Pages.
+#   npx wrangler deploy --config wrangler.cron.toml
+#
+# Pages Functions route by file path; a cron handler cannot live in functions/.
+# This Worker shares the same D1 database as the Pages app.
+
+name = "theconts-cron"
+main = "worker/scheduled.ts"
+compatibility_date = "2026-09-17"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "theconts-prod"
+database_id = "499007e9-ea9f-4582-8170-28d90345f5f4"
+
+[triggers]
+crons = [
+  "*/15 * * * *",   # drain the quiet-hours notification queue
+  "0 * * * *",      # SLA sweep: move overdue tasks, flag unsent statements
+]
+
+[vars]
+TIMEZONE = "Asia/Kuala_Lumpur"
+QUIET_HOURS_START = "22"
+QUIET_HOURS_END = "8"

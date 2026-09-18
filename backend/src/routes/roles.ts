@@ -1,227 +1,113 @@
-import { Hono } from "hono";
-import type { Env } from "../types";
-import { PERMISSIONS, isValidPermission, parsePermissions, droppedPermissions } from "../services/permissions";
-import { requirePermission, requirePermissionOrSalesDirector } from "../middleware/auth";
-import { audit } from "../services/audit";
-import { getDb } from "../db/client";
-import { roles, users } from "../db/schema";
-import { eq, sql } from "drizzle-orm";
+import { Hono } from 'hono';
+import { z } from 'zod';
+import type { Env, Vars } from '../lib/types';
+import { requirePermission } from '../lib/auth';
+import { writeAudit } from '../lib/audit';
+import { badRequest, conflict, forbidden, notFound, requestMeta } from '../lib/http';
 
-const app = new Hono<{ Bindings: Env }>();
+export const roles = new Hono<{ Bindings: Env; Variables: Vars }>();
 
-/**
- * GET /api/roles/permissions
- * Returns the permission catalog so the frontend can render the
- * permission picker. Anyone with roles.read can see this.
- */
-app.get("/permissions", requirePermission("roles.read"), async (c) => {
-  return c.json({ permissions: PERMISSIONS });
+roles.get('/', requirePermission('settings.roles.view'), async (c) => {
+  const db = c.get('db');
+  const rows = await db`
+    select r.*,
+           (select count(*) from app.user_roles ur where ur.role_id = r.id) as user_count,
+           coalesce((select json_agg(rp.permission_code order by rp.permission_code)
+                     from app.role_permissions rp where rp.role_id = r.id), '[]') as permissions,
+           coalesce((select json_agg(rpg.page_key order by rpg.page_key)
+                     from app.role_pages rpg where rpg.role_id = r.id), '[]') as pages
+    from app.roles r order by r.is_system desc, r.name
+  `;
+  return c.json({ roles: rows });
 });
 
-/**
- * GET /api/roles
- * Returns all roles + their permission arrays + member counts.
- *
- * Admitted for a Sales Director too (READ-ONLY, additive on top of roles.read):
- * the Team member-invite / edit forms render a Role picker sourced from this
- * list, and a dept-scoped Sales Director has no roles.read in the matrix
- * (positions get no backfill) so it 403'd — breaking the mobile Member form.
- * Roles are a global, non-sensitive lookup; the WRITE routes below stay
- * roles.manage-only, and a scoped invite/patch forces a baseline role
- * server-side (routes/users.ts) regardless of what the picker sends.
- */
-app.get("/", requirePermissionOrSalesDirector("roles.read"), async (c) => {
-  const db = getDb(c.env);
-  const rows = await db
-    .select({
-      id: roles.id,
-      name: roles.name,
-      description: roles.description,
-      permissions: roles.permissions,
-      is_system: roles.is_system,
-      scope_to_pic: roles.scope_to_pic,
-      created_at: roles.created_at,
-      // Subquery for the member count keeps this single-round-trip.
-      member_count: sql<number>`(SELECT COUNT(*) FROM ${users} WHERE ${users.role_id} = ${roles.id})`,
-    })
-    .from(roles)
-    .orderBy(sql`${roles.is_system} DESC`, roles.name);
-
-  return c.json({
-    roles: rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      description: r.description,
-      permissions: parsePermissions(r.permissions),
-      // The other half of the same answer. parsePermissions DISCARDS any stored
-      // key this build does not declare, so a role row can carry keys that
-      // decide nothing and the list looked identical to a clean one. Surfaced
-      // here because Team > Roles is the one place a human looks at a role.
-      unknown_permissions: droppedPermissions(r.permissions),
-      is_system: !!r.is_system,
-      scope_to_pic: !!r.scope_to_pic,
-      member_count: r.member_count ?? 0,
-      created_at: r.created_at,
-    })),
-  });
+/** The full catalogue, so the UI can draw the permission checkboxes. */
+roles.get('/catalogue', requirePermission('settings.roles.view'), async (c) => {
+  const db = c.get('db');
+  const permissions = await db`select code, module, description from app.permissions order by module, code`;
+  const pages = await db`select key, label, path, module, sort_order from app.pages order by sort_order`;
+  return c.json({ permissions, pages });
 });
 
-/**
- * POST /api/roles
- * Body: { name, description?, permissions: string[] }
- * Create a custom role.
- */
-app.post("/", requirePermission("roles.manage"), async (c) => {
-  const body = await c.req.json<{
-    name: string;
-    description?: string;
-    permissions?: string[];
-    scope_to_pic?: boolean;
-  }>();
-  if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
+roles.post('/', requirePermission('settings.roles.manage'), async (c) => {
+  const db = c.get('db');
+  const parsed = z.object({
+    code: z.string().trim().min(1).max(32).regex(/^[a-z0-9_-]+$/, 'Lowercase letters, numbers, - and _'),
+    name: z.string().trim().min(1).max(60),
+    description: z.string().trim().max(200).optional(),
+  }).safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) throw badRequest('Check the fields', parsed.error.flatten());
 
-  const perms = (body.permissions || []).filter(isValidPermission);
-  const name = body.name.trim();
+  const [existing] = await db`select id from app.roles where code = ${parsed.data.code}`;
+  if (existing) throw conflict('A role with that code already exists');
 
-  const db = getDb(c.env);
-  const exists = await db
-    .select({ id: roles.id })
-    .from(roles)
-    .where(eq(roles.name, name))
-    .limit(1);
-  if (exists.length > 0) {
-    return c.json({ error: "A role with that name already exists" }, 409);
-  }
-
-  const inserted = await db
-    .insert(roles)
-    .values({
-      name,
-      description: body.description?.trim() || null,
-      permissions: JSON.stringify(perms),
-      is_system: 0,
-      scope_to_pic: body.scope_to_pic ? 1 : 0,
-    })
-    .returning({ id: roles.id });
-
-  await audit(c, {
-    action: "role.create",
-    entityType: "role",
-    entityId: inserted[0]?.id,
-    summary: `Created role "${name}"`,
-    meta: { name, permissions: perms, scope_to_pic: !!body.scope_to_pic },
-  });
-
-  return c.json({
-    id: inserted[0]?.id,
-    name,
-    description: body.description?.trim() || null,
-    permissions: perms,
-    is_system: false,
-    scope_to_pic: !!body.scope_to_pic,
-    member_count: 0,
-  });
+  const [row] = await db`
+    insert into app.roles (code, name, description) values (${parsed.data.code}, ${parsed.data.name}, ${parsed.data.description ?? null})
+    returning *
+  `;
+  await writeAudit(db, { actorId: c.get('auth').id, action: 'role.create', entity: 'role', entityId: row!.id as string, after: row, ...requestMeta(c) });
+  return c.json({ role: row }, 201);
 });
 
-/**
- * PATCH /api/roles/:id
- * Body: { name?, description?, permissions? }
- * Update a custom role. System roles' permissions are locked.
- */
-app.patch("/:id", requirePermission("roles.manage"), async (c) => {
-  const id = parseInt(c.req.param("id"), 10);
-  if (!id) return c.json({ error: "Invalid ID." }, 400);
+roles.put('/:id/permissions', requirePermission('settings.roles.manage'), async (c) => {
+  const db = c.get('db');
+  const auth = c.get('auth');
+  const id = c.req.param('id');
+  const parsed = z.object({ permissions: z.array(z.string()) }).safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) throw badRequest('Send permissions as a list', parsed.error.flatten());
 
-  const db = getDb(c.env);
-  const row = await db
-    .select({ id: roles.id, is_system: roles.is_system })
-    .from(roles)
-    .where(eq(roles.id, id))
-    .limit(1);
-  if (row.length === 0) return c.json({ error: "Role not found" }, 404);
+  const [role] = await db<{ id: string; code: string }[]>`select id, code from app.roles where id = ${id}`;
+  if (!role) throw notFound('Role not found');
+  // The Owner role is the last way back in if a permission set goes wrong.
+  if (role.code === 'owner') throw forbidden('The Owner role always keeps every permission');
 
-  const body = await c.req.json<{
-    name?: string;
-    description?: string;
-    permissions?: string[];
-    scope_to_pic?: boolean;
-  }>();
+  const known = await db<{ code: string }[]>`select code from app.permissions where code = any(${parsed.data.permissions}::text[])`;
+  if (known.length !== parsed.data.permissions.length) throw badRequest('One of those permissions does not exist');
 
-  // System roles: only description editable, never name or permissions.
-  if (row[0].is_system) {
-    if (body.name !== undefined || body.permissions !== undefined) {
-      return c.json(
-        { error: "System roles cannot be renamed or have permissions changed" },
-        400
-      );
+  const before = await db`select permission_code from app.role_permissions where role_id = ${id}`;
+  await db.begin(async (tx) => {
+    await tx`delete from app.role_permissions where role_id = ${id}`;
+    for (const code of parsed.data.permissions) {
+      await tx`insert into app.role_permissions (role_id, permission_code) values (${id}, ${code})`;
     }
-  }
-
-  const set: Record<string, any> = {};
-  if (body.name !== undefined) set.name = body.name.trim();
-  if (body.description !== undefined) {
-    set.description = body.description?.trim() || null;
-  }
-  if (body.permissions !== undefined) {
-    set.permissions = JSON.stringify(body.permissions.filter(isValidPermission));
-  }
-  if (body.scope_to_pic !== undefined) {
-    set.scope_to_pic = body.scope_to_pic ? 1 : 0;
-  }
-  if (Object.keys(set).length === 0) {
-    return c.json({ error: "No fields to update" }, 400);
-  }
-
-  await db.update(roles).set(set).where(eq(roles.id, id));
-  await audit(c, {
-    action: "role.update",
-    entityType: "role",
-    entityId: id,
-    summary: `Updated role #${id}`,
-    meta: { changed: Object.keys(set), permissions: body.permissions },
   });
-  return c.json({ ok: true });
+  const after = await db`select permission_code from app.role_permissions where role_id = ${id}`;
+  await writeAudit(db, { actorId: auth.id, action: 'role.permissions.set', entity: 'role', entityId: id, before, after, ...requestMeta(c) });
+  return c.json({ permissions: after });
 });
 
-/**
- * DELETE /api/roles/:id
- * Delete a custom role. Refuses if any user still holds it.
- */
-app.delete("/:id", requirePermission("roles.manage"), async (c) => {
-  const id = parseInt(c.req.param("id"), 10);
-  if (!id) return c.json({ error: "Invalid ID." }, 400);
+roles.put('/:id/pages', requirePermission('settings.roles.manage'), async (c) => {
+  const db = c.get('db');
+  const id = c.req.param('id');
+  const parsed = z.object({ pages: z.array(z.string()) }).safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) throw badRequest('Send pages as a list', parsed.error.flatten());
 
-  const db = getDb(c.env);
-  const row = await db
-    .select({ id: roles.id, is_system: roles.is_system })
-    .from(roles)
-    .where(eq(roles.id, id))
-    .limit(1);
-  if (row.length === 0) return c.json({ error: "Role not found" }, 404);
-  if (row[0].is_system) {
-    return c.json({ error: "System roles cannot be deleted" }, 400);
-  }
+  const [role] = await db`select id from app.roles where id = ${id}`;
+  if (!role) throw notFound('Role not found');
 
-  const inUse = await db
-    .select({ count: sql<number>`COUNT(*)` })
-    .from(users)
-    .where(eq(users.role_id, id));
-  const count = inUse[0]?.count ?? 0;
-  if (count > 0) {
-    return c.json(
-      { error: `Role is in use by ${count} user(s) — reassign them first` },
-      409
-    );
-  }
-
-  await db.delete(roles).where(eq(roles.id, id));
-  await audit(c, {
-    action: "role.delete",
-    entityType: "role",
-    entityId: id,
-    summary: `Deleted role #${id}`,
+  const before = await db`select page_key from app.role_pages where role_id = ${id}`;
+  await db.begin(async (tx) => {
+    await tx`delete from app.role_pages where role_id = ${id}`;
+    for (const key of parsed.data.pages) {
+      await tx`insert into app.role_pages (role_id, page_key) values (${id}, ${key})`;
+    }
   });
-  return c.json({ ok: true });
+  const after = await db`select page_key from app.role_pages where role_id = ${id}`;
+  await writeAudit(db, { actorId: c.get('auth').id, action: 'role.pages.set', entity: 'role', entityId: id, before, after, ...requestMeta(c) });
+  return c.json({ pages: after });
 });
 
-export default app;
+roles.delete('/:id', requirePermission('settings.roles.manage'), async (c) => {
+  const db = c.get('db');
+  const id = c.req.param('id');
+  const [role] = await db<{ id: string; code: string; is_system: boolean }[]>`select id, code, is_system from app.roles where id = ${id}`;
+  if (!role) throw notFound('Role not found');
+  if (role.is_system) throw forbidden('Built-in roles cannot be deleted');
+
+  const [{ count } = { count: '0' }] = await db<{ count: string }[]>`select count(*)::text as count from app.user_roles where role_id = ${id}`;
+  if (Number(count) > 0) throw conflict(`${count} users still have this role`);
+
+  await db`delete from app.roles where id = ${id}`;
+  await writeAudit(db, { actorId: c.get('auth').id, action: 'role.delete', entity: 'role', entityId: id, before: role, ...requestMeta(c) });
+  return c.json({ deleted: true });
+});

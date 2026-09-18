@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="./tokens.css" />
+<style>
+  body { margin: 0; background: #FAF9F6; -webkit-font-smoothing: antialiased; }
+  * { font-variant-numeric: tabular-nums; }
+</style>
+</helmet>
+<div style="font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif; font-size:14px; line-height:1.5; color:#252525; background:#FAF9F6">
+
+  <div class="bg-blueprint" style="padding:56px 40px 48px; color:#FFFFFF; display:flex; flex-direction:column; gap:36px">
+    <div style="display:flex; align-items:center; gap:14px">
+      <div style="width:44px; height:44px; flex:none; border-radius:8px; border:1px dashed #706D67; display:grid; place-items:center; font-size:11px; color:#8A8680" title="Logo placeholder">SVG</div>
+      <div style="display:flex; flex-direction:column; gap:3px">
+        <div class="wordmark" style="font-size:14px">THE CONTS</div>
+        <div style="font-size:12px; color:#8A8680">Brand and product design system &#183; v1.1</div>
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:16px; max-width:760px">
+      <h1 style="margin:0; font-size:40px; line-height:1.1; font-weight:600; letter-spacing:-0.02em">Premium property operations, rendered precisely.</h1>
+      <p style="margin:0; font-size:16px; line-height:1.5; color:#DEDAD3; text-wrap:pretty">Deep black, warm white, champagne gold. Every value on this page is a semantic token in <span style="color:#C8A46A">tokens.css</span>, at the same depth as the Houzs and Hookka token layers, so the three products are theme-swappable siblings.</p>
+    </div>
+    <div style="display:flex; gap:44px; flex-wrap:wrap; padding-top:8px; border-top:1px solid #242424">
+      <sc-for list="{{ siblings }}" as="s" hint-placeholder-count="3">
+        <div style="display:flex; align-items:center; gap:12px">
+          <div style="{{ s.swatchStyle }}"></div>
+          <div style="display:flex; flex-direction:column; gap:2px">
+            <span style="font-size:13px; font-weight:600">{{ s.name }}</span>
+            <span style="font-size:11.5px; color:#8A8680">{{ s.detail }}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="padding:44px 40px 64px; display:flex; flex-direction:column; gap:56px; max-width:1500px">
+
+    <div style="display:flex; flex-direction:column; gap:22px">
+      <div style="display:flex; flex-direction:column; gap:5px">
+        <div class="eyebrow">01 &#183; Colour</div>
+        <h2 style="margin:0; font-size:20px; font-weight:600">Brand ramps</h2>
+        <p style="margin:0; font-size:14px; color:#706D67; max-width:740px; text-wrap:pretty">Three ramps carry the whole product. Gold for identity and selection, basalt for the shell, stone for the workspace. Pick a step by role, never by eye.</p>
+      </div>
+
+      <sc-for list="{{ ramps }}" as="r" hint-placeholder-count="3">
+        <div style="display:flex; flex-direction:column; gap:10px">
+          <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap">
+            <span style="font-size:16px; font-weight:600">{{ r.name }}</span>
+            <span style="font-size:12px; color:#706D67">{{ r.note }}</span>
+          </div>
+          <div style="display:flex; border:1px solid #DEDAD3; border-radius:12px; overflow:hidden">
+            <sc-for list="{{ r.steps }}" as="s" hint-placeholder-count="10">
+              <div style="{{ s.cellStyle }}">
+                <span style="{{ s.stepStyle }}">{{ s.step }}</span>
+                <span style="{{ s.hexStyle }}">{{ s.hex }}</span>
+                <sc-if value="{{ s.role }}" hint-placeholder-val="{{ true }}">
+                  <span style="{{ s.roleStyle }}">{{ s.role }}</span>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:20px">
+      <div style="display:flex; flex-direction:column; gap:5px">
+        <div class="eyebrow">02 &#183; Colour</div>
+        <h2 style="margin:0; font-size:20px; font-weight:600">Semantic states</h2>
+        <p style="margin:0; font-size:14px; color:#706D67; max-width:740px; text-wrap:pretty">Three roles per state, because one hex cannot do all three jobs: a tint background, a <span style="color:#252525; font-weight:500">-fg</span> for text at 4.5:1 or better, and a <span style="color:#252525; font-weight:500">-line</span> for dots, borders and fills where 3:1 applies. Gold appears nowhere here, and every badge carries its meaning in words.</p>
+      </div>
+      <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; overflow:hidden">
+        <div style="display:grid; grid-template-columns:minmax(100px,0.9fr) 104px 104px 104px minmax(200px,1.8fr); gap:14px; padding:10px 22px; background:#F1F0ED; border-bottom:1px solid #DEDAD3; font-size:12px; font-weight:600; color:#706D67">
+          <div>State</div><div>Text &#183; -fg</div><div>Tint &#183; bg</div><div>Line &#183; -line</div><div>States that use it</div>
+        </div>
+        <sc-for list="{{ semantic }}" as="s" hint-placeholder-count="5">
+          <div style="display:grid; grid-template-columns:minmax(100px,0.9fr) 104px 104px 104px minmax(200px,1.8fr); gap:14px; align-items:center; padding:13px 22px; border-bottom:1px solid #EDEAE4">
+            <div style="display:flex; flex-direction:column; gap:2px">
+              <span style="font-size:13.5px; font-weight:600">{{ s.name }}</span>
+              <span style="font-size:11.5px; color:#706D67">{{ s.meaning }}</span>
+            </div>
+            <div style="{{ s.fgStyle }}">
+              <span>{{ s.fg }}</span>
+              <span style="{{ s.ratioStyle }}">{{ s.ratio }}</span>
+            </div>
+            <span style="{{ s.bgStyle }}">{{ s.bg }}</span>
+            <div style="{{ s.lineStyle }}">
+              <span>{{ s.line }}</span>
+              <sc-if value="{{ s.lineNote }}" hint-placeholder-val="{{ true }}">
+                <span style="font-size:10px; opacity:0.75">{{ s.lineNote }}</span>
+              </sc-if>
+            </div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap">
+              <sc-for list="{{ s.chips }}" as="c" hint-placeholder-count="4">
+                <span style="{{ c.style }}">{{ c.label }}</span>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:20px">
+      <div style="display:flex; flex-direction:column; gap:5px">
+        <div class="eyebrow">03 &#183; Colour</div>
+        <h2 style="margin:0; font-size:20px; font-weight:600">Contrast rules</h2>
+        <p style="margin:0; font-size:14px; color:#706D67; max-width:740px; text-wrap:pretty">Every ratio below was computed with the WCAG relative-luminance formula. Two traps caught this way: gold reads beautifully on black and fails as text on white, and three of the brand guide's status colours fail as badge text on their own tints.</p>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:20px">
+        <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; overflow:hidden">
+          <div style="padding:16px 20px; border-bottom:1px solid #EDEAE4; display:flex; align-items:center; gap:9px">
+            <span style="font-size:11px; font-weight:500; padding:3px 9px; border-radius:999px; background:#E9F5EF; color:#16845B">Passes AA</span>
+            <span style="font-size:14px; font-weight:600">Use freely</span>
+          </div>
+          <sc-for list="{{ contrastPass }}" as="c" hint-placeholder-count="6">
+            <div style="display:flex; align-items:center; gap:14px; padding:10px 20px; border-bottom:1px solid #EDEAE4">
+              <div style="{{ c.sampleStyle }}">Aa</div>
+              <div style="display:flex; flex-direction:column; gap:1px; min-width:0; flex:1">
+                <span style="font-size:12.5px; font-weight:500">{{ c.use }}</span>
+                <span style="font-size:11.5px; color:#706D67">{{ c.pair }}</span>
+              </div>
+              <span style="font-size:12.5px; font-weight:600; color:#16845B">{{ c.ratio }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; overflow:hidden">
+          <div style="padding:16px 20px; border-bottom:1px solid #EDEAE4; display:flex; align-items:center; gap:9px">
+            <span style="font-size:11px; font-weight:500; padding:3px 9px; border-radius:999px; background:#FCECEB; color:#C2413B">Fails</span>
+            <span style="font-size:14px; font-weight:600">Non-text use only</span>
+          </div>
+          <sc-for list="{{ contrastFail }}" as="c" hint-placeholder-count="3">
+            <div style="display:flex; align-items:flex-start; gap:14px; padding:12px 20px; border-bottom:1px solid #EDEAE4">
+              <div style="{{ c.sampleStyle }}">Aa</div>
+              <div style="display:flex; flex-direction:column; gap:3px; min-width:0; flex:1">
+                <span style="font-size:11.5px; color:#706D67">{{ c.pair }}</span>
+                <span style="font-size:12.5px; text-wrap:pretty">{{ c.instead }}</span>
+              </div>
+              <span style="font-size:12.5px; font-weight:600; color:#C2413B">{{ c.ratio }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:20px">
+      <div style="display:flex; flex-direction:column; gap:5px">
+        <div class="eyebrow">04 &#183; Typography</div>
+        <h2 style="margin:0; font-size:20px; font-weight:600">Type scale</h2>
+        <p style="margin:0; font-size:14px; color:#706D67; max-width:740px; text-wrap:pretty">One shared UI face, set at the sizes below and nowhere in between. Unresolved at handoff: Houzs ships Tahoma, Hookka ships IBM Plex Sans. The Conts is built on IBM Plex Sans through <span style="color:#252525; font-weight:500">--font-sans</span>.</p>
+      </div>
+
+      <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; overflow:hidden">
+        <sc-for list="{{ typeScale }}" as="t" hint-placeholder-count="8">
+          <div style="display:grid; grid-template-columns:minmax(200px,2fr) minmax(280px,2.4fr); gap:20px; align-items:center; padding:16px 22px; border-bottom:1px solid #EDEAE4">
+            <div style="{{ t.sampleStyle }}">{{ t.sample }}</div>
+            <div style="display:flex; flex-direction:column; gap:3px">
+              <span style="font-size:13.5px; font-weight:600">{{ t.name }}</span>
+              <span style="font-size:12px; color:#706D67">{{ t.spec }}</span>
+              <span style="font-size:12px; color:#706D67">{{ t.use }}</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px">
+        <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; padding:22px; display:flex; flex-direction:column; gap:16px">
+          <span style="font-size:16px; font-weight:600">Numbers</span>
+          <sc-for list="{{ numericRules }}" as="n" hint-placeholder-count="6">
+            <div style="display:flex; align-items:baseline; justify-content:space-between; gap:16px; padding-bottom:11px; border-bottom:1px solid #EDEAE4">
+              <span style="font-size:12px; color:#706D67">{{ n.label }}</span>
+              <span style="font-size:14px; font-weight:500">{{ n.value }}</span>
+            </div>
+          </sc-for>
+          <span style="font-size:12px; color:#706D67; text-wrap:pretty">Tabular numerals globally. Money right-aligned. Mono is reserved for references and IDs, not for money.</span>
+          <div style="display:flex; flex-direction:column; gap:5px; padding:12px 14px; border-radius:8px; background:#FAF9F6; border:1px solid #DEDAD3">
+            <span style="font-size:11px; color:#706D67">Booking reference, mono</span>
+            <span style="font-family:'IBM Plex Mono',monospace; font-size:13px">HMXK-2026-0916-A1203</span>
+          </div>
+        </div>
+
+        <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; padding:22px; display:flex; flex-direction:column; gap:16px">
+          <span style="font-size:16px; font-weight:600">Casing</span>
+          <div style="display:flex; flex-direction:column; gap:12px">
+            <sc-for list="{{ casing }}" as="c" hint-placeholder-count="3">
+              <div style="display:flex; flex-direction:column; gap:5px; padding-bottom:12px; border-bottom:1px solid #EDEAE4">
+                <span style="{{ c.sampleStyle }}">{{ c.sample }}</span>
+                <span style="font-size:12px; color:#706D67; text-wrap:pretty">{{ c.rule }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; padding:22px; display:flex; flex-direction:column; gap:14px">
+          <span style="font-size:16px; font-weight:600">Component sizes</span>
+          <span style="font-size:12px; color:#706D67; text-wrap:pretty">The sizes the build actually uses, recorded so implementation cannot drift from the scale.</span>
+          <sc-for list="{{ componentSizes }}" as="c" hint-placeholder-count="8">
+            <div style="display:flex; align-items:baseline; justify-content:space-between; gap:14px; padding-bottom:8px; border-bottom:1px solid #EDEAE4">
+              <span style="font-size:12px; color:#706D67">{{ c.label }}</span>
+              <span style="font-size:12.5px; font-weight:500">{{ c.value }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:20px">
+      <div style="display:flex; flex-direction:column; gap:5px">
+        <div class="eyebrow">05 &#183; Navigation</div>
+        <h2 style="margin:0; font-size:20px; font-weight:600">Three levels of depth</h2>
+        <p style="margin:0; font-size:14px; color:#706D67; max-width:740px; text-wrap:pretty">A group label that is not clickable, an icon row that expands, and an indented child behind a guide line. Collapsed, the shell keeps only the icons.</p>
+      </div>
+      <div style="display:grid; grid-template-columns:auto auto minmax(260px,1fr); gap:24px; align-items:start; flex-wrap:wrap">
+        <div style="width:244px; background:#151515; border-radius:12px; padding:14px 10px; display:flex; flex-direction:column; gap:10px">
+          <div class="nav-group-label" style="padding:4px 9px">OPERATIONS</div>
+          <sc-for list="{{ navDemo }}" as="n" hint-placeholder-count="3">
+            <div style="display:flex; flex-direction:column; gap:2px">
+              <div style="{{ n.style }}">
+                <span class="icon icon-nav" style="{{ n.iconStyle }}"></span>
+                <span style="flex:1; font-size:13px">{{ n.label }}</span>
+                <sc-if value="{{ n.badge }}" hint-placeholder-val="{{ true }}">
+                  <span style="{{ n.badgeStyle }}">{{ n.badge }}</span>
+                </sc-if>
+                <sc-if value="{{ n.chevron }}" hint-placeholder-val="{{ true }}">
+                  <span class="icon" style="{{ n.chevronStyle }}"></span>
+                </sc-if>
+              </div>
+              <sc-if value="{{ n.children }}" hint-placeholder-val="{{ true }}">
+                <div style="margin:2px 0 4px 20px; padding-left:12px; border-left:1px solid rgba(255,255,255,0.12); display:flex; flex-direction:column; gap:1px">
+                  <sc-for list="{{ n.children }}" as="c" hint-placeholder-count="3">
+                    <div style="{{ c.style }}">
+                      <span style="flex:1; font-size:12.5px">{{ c.label }}</span>
+                      <sc-if value="{{ c.badge }}" hint-placeholder-val="{{ true }}">
+                        <span style="{{ c.badgeStyle }}">{{ c.badge }}</span>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="width:68px; background:#151515; border-radius:12px; padding:14px 10px; display:flex; flex-direction:column; gap:4px; align-items:center">
+          <sc-for list="{{ navCollapsed }}" as="n" hint-placeholder-count="5">
+            <div style="{{ n.style }}">
+              <span class="icon icon-nav" style="{{ n.iconStyle }}"></span>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:4px">
+          <sc-for list="{{ navRules }}" as="r" hint-placeholder-count="4">
+            <div style="padding:13px 0; border-bottom:1px solid #DEDAD3; display:flex; flex-direction:column; gap:3px">
+              <span style="font-size:13.5px; font-weight:600">{{ r.level }}</span>
+              <span style="font-size:12.5px; color:#706D67; text-wrap:pretty">{{ r.rule }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:20px">
+      <div style="display:flex; flex-direction:column; gap:5px">
+        <div class="eyebrow">06 &#183; Components</div>
+        <h2 style="margin:0; font-size:20px; font-weight:600">Buttons, fields, feedback</h2>
+        <p style="margin:0; font-size:14px; color:#706D67; max-width:740px; text-wrap:pretty">One primary action per decision area. Labels persist above fields. A disabled action always says why.</p>
+      </div>
+
+      <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; padding:22px; display:flex; flex-direction:column; gap:18px">
+        <div style="display:flex; gap:11px; flex-wrap:wrap; align-items:center">
+          <sc-for list="{{ buttons }}" as="b" hint-placeholder-count="6">
+            <div style="{{ b.style }}" style-hover="{{ b.hover }}">{{ b.label }}</div>
+          </sc-for>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; padding-top:16px; border-top:1px solid #EDEAE4">
+          <sc-for list="{{ buttonNotes }}" as="n" hint-placeholder-count="6">
+            <div style="display:flex; flex-direction:column; gap:2px">
+              <span style="font-size:12.5px; font-weight:600">{{ n.name }}</span>
+              <span style="font-size:12px; color:#706D67; text-wrap:pretty">{{ n.use }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:20px">
+        <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; padding:22px; display:flex; flex-direction:column; gap:18px">
+          <span style="font-size:16px; font-weight:600">Field states</span>
+          <sc-for list="{{ inputs }}" as="i" hint-placeholder-count="5">
+            <div style="display:flex; flex-direction:column; gap:6px">
+              <label style="font-size:12px; font-weight:500; color:#706D67">{{ i.label }}</label>
+              <div style="{{ i.fieldStyle }}">{{ i.text }}</div>
+              <sc-if value="{{ i.help }}" hint-placeholder-val="{{ true }}">
+                <span style="{{ i.helpStyle }}">{{ i.help }}</span>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; padding:22px; display:flex; flex-direction:column; gap:16px">
+          <span style="font-size:16px; font-weight:600">Feedback</span>
+          <sc-for list="{{ feedback }}" as="f" hint-placeholder-count="4">
+            <div style="{{ f.style }}">
+              <span style="font-size:13.5px; font-weight:600">{{ f.title }}</span>
+              <span style="font-size:12px; text-wrap:pretty">{{ f.body }}</span>
+            </div>
+          </sc-for>
+          <div style="display:flex; flex-direction:column; gap:8px; padding-top:14px; border-top:1px solid #EDEAE4">
+            <span style="font-size:12px; color:#706D67">Loading, for predictable blocks</span>
+            <div class="skeleton" style="height:13px; width:70%"></div>
+            <div class="skeleton" style="height:13px; width:45%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:20px">
+      <div style="display:flex; flex-direction:column; gap:5px">
+        <div class="eyebrow">07 &#183; Domain colour</div>
+        <h2 style="margin:0; font-size:20px; font-weight:600">Booking channels</h2>
+        <p style="margin:0; font-size:14px; color:#706D67; max-width:740px; text-wrap:pretty">Channel is never colour alone. Every calendar block prints its channel and status, and non-revenue blocks carry a dashed or dotted border so they read without hue.</p>
+      </div>
+      <div style="display:flex; gap:12px; flex-wrap:wrap">
+        <sc-for list="{{ channels }}" as="c" hint-placeholder-count="6">
+          <div style="{{ c.style }}">{{ c.label }}</div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:20px">
+      <div style="display:flex; flex-direction:column; gap:5px">
+        <div class="eyebrow">08 &#183; Surface</div>
+        <h2 style="margin:0; font-size:20px; font-weight:600">Elevation, radius, texture</h2>
+        <p style="margin:0; font-size:14px; color:#706D67; max-width:740px; text-wrap:pretty">Flat is the default. Shadows are for things that genuinely float.</p>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:20px; align-items:start">
+        <div style="display:flex; flex-direction:column; gap:14px">
+          <sc-for list="{{ elevation }}" as="e" hint-placeholder-count="5">
+            <div style="{{ e.boxStyle }}">
+              <span style="font-size:13.5px; font-weight:600">{{ e.name }}</span>
+              <span style="font-size:12px; color:#706D67">{{ e.use }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; padding:22px; display:flex; flex-direction:column; gap:16px">
+          <span style="font-size:16px; font-weight:600">Radius</span>
+          <div style="display:flex; gap:14px; flex-wrap:wrap">
+            <sc-for list="{{ radii }}" as="r" hint-placeholder-count="4">
+              <div style="display:flex; flex-direction:column; gap:7px; align-items:center">
+                <div style="{{ r.boxStyle }}"></div>
+                <span style="font-size:11.5px; color:#706D67">{{ r.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <span style="font-size:16px; font-weight:600; padding-top:6px">Spacing</span>
+          <sc-for list="{{ spacing }}" as="s" hint-placeholder-count="9">
+            <div style="display:flex; align-items:center; gap:12px">
+              <span style="font-size:11.5px; color:#706D67; width:54px">{{ s.token }}</span>
+              <span style="font-size:11.5px; width:34px">{{ s.value }}</span>
+              <span style="{{ s.barStyle }}"></span>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:14px">
+          <sc-for list="{{ textures }}" as="t" hint-placeholder-count="3">
+            <div style="border:1px solid #DEDAD3; border-radius:12px; overflow:hidden">
+              <div class="{{ t.cls }}" style="height:74px"></div>
+              <div style="padding:12px 14px; background:#FFFFFF; display:flex; flex-direction:column; gap:2px">
+                <span style="font-size:12.5px; font-weight:600">{{ t.name }}</span>
+                <span style="font-size:11.5px; color:#706D67; text-wrap:pretty">{{ t.use }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:20px">
+      <div style="display:flex; flex-direction:column; gap:5px">
+        <div class="eyebrow">09 &#183; Motion and icons</div>
+        <h2 style="margin:0; font-size:20px; font-weight:600">Restraint</h2>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px; align-items:start">
+        <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; padding:22px; display:flex; flex-direction:column; gap:14px">
+          <span style="font-size:16px; font-weight:600">Motion</span>
+          <sc-for list="{{ motion }}" as="m" hint-placeholder-count="4">
+            <div style="display:flex; flex-direction:column; gap:2px; padding-bottom:11px; border-bottom:1px solid #EDEAE4">
+              <div style="display:flex; justify-content:space-between; gap:12px">
+                <span style="font-size:13px; font-weight:500">{{ m.label }}</span>
+                <span style="font-size:12px; color:#706D67">{{ m.duration }}</span>
+              </div>
+              <span style="font-size:11.5px; color:#706D67">{{ m.use }}</span>
+            </div>
+          </sc-for>
+          <div style="display:flex; align-items:center; gap:9px; padding:11px 13px; border-radius:8px; background:#FAF9F6; border:1px solid #DEDAD3">
+            <span class="animate-live" style="width:6px; height:6px; border-radius:999px; background:#16845B"></span>
+            <span style="font-size:12px; color:#706D67">The only permitted loop: a live-connection dot. Never on a number.</span>
+          </div>
+        </div>
+
+        <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; padding:22px; display:flex; flex-direction:column; gap:16px">
+          <span style="font-size:16px; font-weight:600">Icons</span>
+          <div style="display:flex; flex-direction:column; gap:4px; padding:11px 13px; border-radius:8px; background:#FAF9F6; border:1px solid #DEDAD3">
+            <span style="font-size:12.5px; font-weight:600">lucide-react ^0.477.0</span>
+            <span style="font-size:11.5px; color:#706D67; text-wrap:pretty">The exact dependency already in both ERPs. Hookka's sidebar renders it at 16px, strokeWidth 1.75. The Conts adds domain mappings, not glyphs.</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(104px,1fr)); gap:10px">
+            <sc-for list="{{ icons }}" as="i" hint-placeholder-count="14">
+              <div style="display:flex; align-items:center; gap:9px; padding:10px 11px; border:1px solid #EDEAE4; border-radius:8px">
+                <span class="icon" style="{{ i.style }}"></span>
+                <div style="display:flex; flex-direction:column; gap:1px; min-width:0">
+                  <span style="font-size:11.5px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ i.name }}</span>
+                  <span style="font-size:10.5px; color:#706D67; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ i.lucide }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <span style="font-size:12px; color:#706D67; text-wrap:pretty">16px in tables and the shared sidebar, 17px in The Conts nav, 20px default, 24px for high-level actions. React surfaces import from lucide-react; HTML surfaces mask the matching lucide-static SVG with currentColor. The full destination-to-icon map is in tokens.json.</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:20px">
+      <div style="display:flex; flex-direction:column; gap:5px">
+        <div class="eyebrow">10 &#183; Voice</div>
+        <h2 style="margin:0; font-size:20px; font-weight:600">How the product speaks</h2>
+        <p style="margin:0; font-size:14px; color:#706D67; max-width:740px; text-wrap:pretty">Direct, specific, calm, accountable. Verb-first for actions, concise nouns for navigation.</p>
+      </div>
+      <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; overflow:hidden">
+        <div style="display:grid; grid-template-columns:minmax(110px,0.7fr) minmax(220px,1.6fr) minmax(220px,1.6fr); gap:20px; padding:10px 22px; background:#F1F0ED; border-bottom:1px solid #DEDAD3; font-size:12px; font-weight:600; color:#706D67">
+          <div>Quality</div><div>Write this</div><div>Not this</div>
+        </div>
+        <sc-for list="{{ voice }}" as="v" hint-placeholder-count="6">
+          <div style="display:grid; grid-template-columns:minmax(110px,0.7fr) minmax(220px,1.6fr) minmax(220px,1.6fr); gap:20px; padding:13px 22px; border-bottom:1px solid #EDEAE4; align-items:baseline">
+            <span style="font-size:12.5px; font-weight:600">{{ v.quality }}</span>
+            <span style="font-size:13px; text-wrap:pretty">{{ v.good }}</span>
+            <span style="font-size:13px; color:#A8A29A; text-decoration:line-through; text-wrap:pretty">{{ v.bad }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:20px">
+      <div style="display:flex; flex-direction:column; gap:5px">
+        <div class="eyebrow">11 &#183; Logo and photography</div>
+        <h2 style="margin:0; font-size:20px; font-weight:600">Assets we still need</h2>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:16px">
+        <sc-for list="{{ required }}" as="r" hint-placeholder-count="6">
+          <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; padding:18px 20px; display:flex; flex-direction:column; gap:7px">
+            <span style="{{ r.badgeStyle }}">{{ r.status }}</span>
+            <span style="font-size:13.5px; font-weight:600">{{ r.item }}</span>
+            <span style="font-size:12px; color:#706D67; text-wrap:pretty">{{ r.note }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:10px; padding:18px 20px; border-radius:12px; background:#FBF7F0; border:1px solid #EADCBD">
+        <span style="font-size:13.5px; font-weight:600; color:#6B5223">Logo rules, provisional until the vector arrives</span>
+        <sc-for list="{{ logoRules }}" as="l" hint-placeholder-count="5">
+          <span style="font-size:12.5px; color:#6B5223; text-wrap:pretty">{{ l.text }}</span>
+        </sc-for>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440}}">
+class Component extends DCLogic {
+  renderVals() {
+    const BORDER = '#DEDAD3', SUBTLE = '#EDEAE4', MUTED = '#706D67', INK = '#252525', G = '#C8A46A', GINK = '#8A6A2F', BLACK = '#151515';
+    const sem = {
+      success: ['#11694A', '#E9F5EF'], warning: ['#8A5A12', '#FFF4D8'],
+      critical: ['#A8352F', '#FCECEB'], info: ['#2E6DA4', '#EAF2FA'], neutral: [MUTED, '#F1F0ED'],
+    };
+    const chip = (label, tone) => ({
+      label,
+      style: 'display:inline-flex; font-size:11px; font-weight:500; padding:3px 9px; border-radius:999px; white-space:nowrap; background:' + sem[tone][1] + '; color:' + sem[tone][0],
+    });
+
+    const siblings = [
+      { name: 'The Conts', detail: '#C8A46A gold \u00b7 #151515 shell \u00b7 IBM Plex Sans', c: '#C8A46A' },
+      { name: 'Houzs ERP', detail: '#0F766E teal \u00b7 #0A1F2E navy \u00b7 Tahoma', c: '#0F766E' },
+      { name: 'Hookka ERP', detail: '#6B5C32 taupe \u00b7 #1F1D1B raisin \u00b7 IBM Plex Sans', c: '#6B5C32' },
+    ].map(s => ({
+      name: s.name, detail: s.detail,
+      swatchStyle: 'width:34px; height:34px; flex:none; border-radius:8px; background:' + s.c + '; box-shadow:0 0 0 1px rgba(255,255,255,0.14)',
+    }));
+
+    const rampDef = [
+      { name: 'Gold', note: '500 is brand. 700 is the lightest AA-safe step for text on white.', dark: 500,
+        steps: [['50', '#FBF7F0', ''], ['100', '#F5EEDF', ''], ['200', '#EADCBD', ''], ['300', '#DDC597', 'Selection'], ['400', '#D0B37E', 'Hover on dark'],
+                ['500', '#C8A46A', 'Brand'], ['600', '#AE8B52', ''], ['700', '#8A6A2F', 'Text on light'], ['800', '#6B5223', ''], ['900', '#4A3817', '']] },
+      { name: 'Basalt', note: 'Warm blacks for the shell and inverted surfaces.', dark: 300,
+        steps: [['100', '#B8B1A8', ''], ['200', '#8A8680', 'Group labels'], ['300', '#706D67', 'Muted text'], ['400', '#4A4844', ''], ['500', '#333331', ''],
+                ['600', '#242424', 'Active nav'], ['700', '#1E1E1E', ''], ['800', '#151515', 'Shell'], ['900', '#0F0F0F', '']] },
+      { name: 'Stone', note: 'Warm neutrals for light surfaces and borders.', dark: 999,
+        steps: [['50', '#FFFFFF', 'Card'], ['100', '#FAF9F6', 'Canvas'], ['200', '#F1F0ED', 'Table header'], ['300', '#EDEAE4', 'Inner divider'],
+                ['400', '#DEDAD3', 'Border'], ['500', '#C7C1B6', 'Border strong']] },
+    ];
+    const ramps = rampDef.map(r => ({
+      name: r.name, note: r.note,
+      steps: r.steps.map(([step, hex, role]) => {
+        const light = parseInt(step, 10) >= r.dark;
+        const fg = light ? '#FFFFFF' : INK;
+        return {
+          step, hex, role,
+          cellStyle: 'flex:1; min-width:0; min-height:104px; padding:12px 10px; display:flex; flex-direction:column; gap:3px; background:' + hex,
+          stepStyle: 'font-size:11px; font-weight:600; color:' + fg + '; opacity:0.85',
+          hexStyle: 'font-size:10.5px; color:' + fg + '; opacity:0.7',
+          roleStyle: 'margin-top:auto; font-size:10.5px; font-weight:500; color:' + fg,
+        };
+      }),
+    }));
+
+    const semantic = [
+      { name: 'success', tone: 'success', ratio: '5.97:1', line: '#16845B', lineNote: 'guide 4.18:1', meaning: 'Completed, healthy, available', states: ['Ready', 'Resolved', 'Checked in', 'Paid'] },
+      { name: 'warning', tone: 'warning', ratio: '5.40:1', line: '#B7791F', lineNote: 'guide 3.32:1', meaning: 'Attention without failure', states: ['Dirty', 'Waiting', 'Pending', 'Not sent'] },
+      { name: 'critical', tone: 'critical', ratio: '5.70:1', line: '#C2413B', lineNote: 'guide 4.45:1', meaning: 'Safety, failure, overdue', states: ['Overdue', 'Maintenance', 'No show', 'Failed'] },
+      { name: 'info', tone: 'info', ratio: '4.83:1', line: '#2E6DA4', lineNote: '', meaning: 'Neutral system information', states: ['Confirmed', 'Occupied', 'Cleaning', 'Assigned'] },
+      { name: 'neutral', tone: 'neutral', ratio: '4.52:1', line: '#C7C1B6', lineNote: '', meaning: 'Draft, inactive, unknown', states: ['Inquiry', 'Checked out', 'Blocked', 'Provisional'] },
+    ].map(s => ({
+      name: s.name, meaning: s.meaning, ratio: s.ratio, line: s.line, lineNote: s.lineNote,
+      fg: sem[s.tone][0], bg: sem[s.tone][1],
+      fgStyle: 'display:flex; flex-direction:column; gap:2px; font-size:11px; padding:6px 7px; border-radius:6px; text-align:center; color:#FFFFFF; background:' + sem[s.tone][0],
+      ratioStyle: 'font-size:10px; opacity:0.8',
+      bgStyle: 'font-size:11px; padding:6px 7px; border-radius:6px; text-align:center; border:1px solid ' + BORDER + '; background:' + sem[s.tone][1] + '; color:' + sem[s.tone][0],
+      lineStyle: 'display:flex; flex-direction:column; gap:1px; font-size:11px; padding:6px 7px; border-radius:6px; text-align:center; background:#FFFFFF; color:' + s.line + '; border:1px solid ' + s.line,
+      chips: s.states.map(l => chip(l, s.tone)),
+    }));
+
+    const sampleBox = (fg, bg, border) => 'width:40px; height:40px; flex:none; border-radius:8px; display:grid; place-items:center; font-size:14px; font-weight:600; color:' +
+      fg + '; background:' + bg + (border ? '; border:1px solid ' + BORDER : '');
+    const contrastPass = [
+      { use: 'Body on card', pair: '#252525 on #FFFFFF', ratio: '15.32', fg: INK, bg: '#FFFFFF', b: true },
+      { use: 'Secondary text', pair: '#4A4844 on #FFFFFF', ratio: '9.12', fg: '#4A4844', bg: '#FFFFFF', b: true },
+      { use: 'Muted metadata', pair: '#706D67 on #FFFFFF', ratio: '5.15', fg: MUTED, bg: '#FFFFFF', b: true },
+      { use: 'Gold text on light', pair: '#8A6A2F on #FFFFFF', ratio: '5.01', fg: GINK, bg: '#FFFFFF', b: true },
+      { use: 'Success badge', pair: '#11694A on #E9F5EF', ratio: '5.97', fg: '#11694A', bg: '#E9F5EF', b: false },
+      { use: 'Warning badge', pair: '#8A5A12 on #FFF4D8', ratio: '5.40', fg: '#8A5A12', bg: '#FFF4D8', b: false },
+      { use: 'Critical badge', pair: '#A8352F on #FCECEB', ratio: '5.70', fg: '#A8352F', bg: '#FCECEB', b: false },
+      { use: 'Info badge', pair: '#2E6DA4 on #EAF2FA', ratio: '4.83', fg: '#2E6DA4', bg: '#EAF2FA', b: false },
+      { use: 'Shell text', pair: '#FFFFFF on #151515', ratio: '18.26', fg: '#FFFFFF', bg: BLACK, b: false },
+      { use: 'Gold on shell', pair: '#C8A46A on #151515', ratio: '7.80', fg: G, bg: BLACK, b: false },
+      { use: 'Group labels on shell', pair: '#8A8680 on #151515', ratio: '5.04', fg: '#8A8680', bg: BLACK, b: false },
+    ].map(c => ({ use: c.use, pair: c.pair, ratio: c.ratio + ':1', sampleStyle: sampleBox(c.fg, c.bg, c.b) }));
+
+    const contrastFail = [
+      { pair: '#C8A46A on #FFFFFF', ratio: '2.34', instead: 'Gold-500 is not a text colour. Use gold-700 #8A6A2F, and keep gold-500 for fills, borders and accents.', fg: G, bg: '#FFFFFF', b: true },
+      { pair: '#FFFFFF on #C8A46A', ratio: '2.34', instead: 'On a gold fill use #151515, as on the bulk-action button.', fg: '#FFFFFF', bg: G, b: false },
+      { pair: '#16845B on #E9F5EF', ratio: '4.18', instead: 'Brand guide success value. Keep it as -line for dots and borders; badge text uses #11694A.', fg: '#16845B', bg: '#E9F5EF', b: false },
+      { pair: '#B7791F on #FFF4D8', ratio: '3.32', instead: 'Brand guide warning value. -line only; badge text uses #8A5A12.', fg: '#B7791F', bg: '#FFF4D8', b: false },
+      { pair: '#C2413B on #FCECEB', ratio: '4.45', instead: 'Brand guide critical value. -line only; badge text uses #A8352F.', fg: '#C2413B', bg: '#FCECEB', b: false },
+      { pair: '#A8A29A on #FFFFFF', ratio: '2.53', instead: 'Placeholders and disabled states only, never body copy.', fg: '#A8A29A', bg: '#FFFFFF', b: true },
+    ].map(c => ({ pair: c.pair, ratio: c.ratio + ':1', instead: c.instead, sampleStyle: sampleBox(c.fg, c.bg, c.b) }));
+
+    const typeScale = [
+      { name: 'Display', sample: 'Every ringgit accounted for', size: 34, weight: 600, track: '-0.02em', spec: '40 / 32 px \u00b7 600 \u00b7 1.10 \u00b7 -0.02em', use: 'Auth stage headline, one per screen at most' },
+      { name: 'Page title', sample: 'Owner statements', size: 26, weight: 600, track: '-0.01em', spec: '28 / 24 px \u00b7 600 \u00b7 1.20 \u00b7 -0.01em', use: 'Page heading' },
+      { name: 'Section title', sample: 'Revenue and occupancy', size: 20, weight: 600, track: '0', spec: '20 / 18 px \u00b7 600 \u00b7 1.30', use: 'Major section, unit record title' },
+      { name: 'Card title', sample: 'Needs attention', size: 16, weight: 600, track: '0', spec: '16 px \u00b7 600 \u00b7 1.35', use: 'Card and panel heading' },
+      { name: 'Body', sample: 'The Establishment #A-21-02 is Dirty.', size: 14, weight: 400, track: '0', spec: '14 px \u00b7 400 \u00b7 1.50', use: 'Default UI text and table cells' },
+      { name: 'Body strong', sample: 'Assign cleaner', size: 14, weight: 600, track: '0', spec: '14 px \u00b7 600 \u00b7 1.50', use: 'Important labels and row actions' },
+      { name: 'Small', sample: 'Updated by Aina at 2:14 PM', size: 12, weight: 400, track: '0', spec: '12 px \u00b7 400 \u00b7 1.45', use: 'Metadata, helper text, column headers' },
+      { name: 'Micro', sample: 'OVERDUE', size: 11, weight: 500, track: '0.05em', spec: '11 px \u00b7 500 \u00b7 1.35', use: 'Status badges and count pills only' },
+    ].map(t => ({
+      name: t.name, sample: t.sample, spec: t.spec, use: t.use,
+      sampleStyle: 'font-size:' + t.size + 'px; font-weight:' + t.weight + '; letter-spacing:' + t.track + '; line-height:1.25; color:' + INK + '; text-wrap:pretty',
+    }));
+
+    const numericRules = [
+      { label: 'Money, cents matter', value: 'RM 12,450.00' },
+      { label: 'Money, KPI card', value: 'RM 12,450' },
+      { label: 'Deduction', value: '\u2212 RM 2,315.00' },
+      { label: 'Percent', value: '82.4%' },
+      { label: 'Rating', value: '4.91 / 5' },
+      { label: 'Date', value: '16 Sep 2026' },
+      { label: 'Date range', value: '16 Sep \u2013 29 Sep 2026' },
+      { label: 'SLA', value: 'Due in 1 h 20 m' },
+    ];
+
+    const casing = [
+      { sample: 'THE CONTS', rule: 'Uppercase, 0.18em tracking. The corporate wordmark only.', size: 14, weight: 600, track: '0.18em' },
+      { sample: 'OPERATIONS', rule: 'Uppercase, 0.13em tracking, 10px. Sidebar group labels only.', size: 10, weight: 600, track: '0.13em' },
+      { sample: 'Assign cleaner', rule: 'Sentence case for every heading, button, tab, table header and menu item.', size: 14, weight: 500, track: '0' },
+    ].map(c => ({
+      sample: c.sample, rule: c.rule,
+      sampleStyle: 'font-size:' + c.size + 'px; font-weight:' + c.weight + '; letter-spacing:' + c.track + '; color:' + INK,
+    }));
+
+    const componentSizes = [
+      { label: 'KPI value', value: '26 px / 600' },
+      { label: 'Table cell', value: '13.5 px / 400' },
+      { label: 'Table metadata', value: '11.5 px / 400' },
+      { label: 'Table header', value: '12 px / 600' },
+      { label: 'Nav item, L2', value: '13 px' },
+      { label: 'Nav child, L3', value: '12.5 px' },
+      { label: 'Nav group, L1', value: '10 px / 600' },
+      { label: 'Button, desktop', value: '13 px / 500' },
+      { label: 'Dialog title', value: '18 px / 600' },
+      { label: 'Badge', value: '11 px / 500' },
+    ];
+
+    // Icons come from lucide-react ^0.477.0 — the dependency already in both ERPs.
+    // In this HTML surface the matching lucide-static SVG is masked with currentColor.
+    const lucide = n => '--icon:url(./icons/' + n + '.svg)';
+    const iconMap = [
+      ['Dashboard', 'layout-dashboard'], ['Portfolio', 'layers'], ['Reservations', 'calendar-days'],
+      ['Operations', 'clipboard-check'], ['Housekeeping', 'sparkles'], ['Maintenance', 'wrench'],
+      ['Properties', 'building-2'], ['Inventory', 'boxes'], ['Access and keys', 'key-round'],
+      ['Finance', 'wallet'], ['Owner statements', 'file-text'], ['Payouts', 'banknote'],
+      ['Owners', 'users'], ['Performance', 'trending-up'], ['Inbox', 'inbox'],
+      ['Users and roles', 'shield-check'], ['Integrations', 'plug'], ['Settings', 'settings'],
+      ['Profile', 'user'], ['Log out', 'log-out'], ['Alerts', 'bell'], ['Search', 'search'],
+    ];
+    const icons = iconMap.map(([name, n]) => ({ name, lucide: n, style: lucide(n) }));
+
+    const navBadge = on => 'font-size:10.5px; font-weight:600; padding:1px 6px; border-radius:999px; flex:none; background:' +
+      (on ? 'rgba(200,164,106,0.18)' : 'rgba(255,255,255,0.08)') + '; color:' + (on ? G : '#8A8680');
+    const navItem = (active, expanded) => 'display:flex; align-items:center; gap:10px; height:34px; padding:0 9px; border-radius:8px; cursor:default; color:' +
+      (active ? '#FFFFFF' : '#DEDAD3') + '; background:' + (active ? '#242424' : 'transparent') + '; box-shadow:' + (active ? 'inset 2px 0 0 ' + G : 'none');
+    const navChild = on => 'display:flex; align-items:center; gap:8px; height:30px; padding:0 9px; border-radius:7px; color:' +
+      (on ? '#FFFFFF' : '#A8A29A') + '; background:' + (on ? 'rgba(200,164,106,0.14)' : 'transparent') + '; font-weight:' + (on ? '500' : '400');
+
+    const chev = 'width:13px; height:13px; flex:none; opacity:0.6; ' + lucide('chevron-right');
+    const navDemo = [
+      { label: 'Reservations', iconStyle: lucide('calendar-days'), badge: '', chevron: true, style: navItem(false), chevronStyle: chev, children: null },
+      { label: 'Operations', iconStyle: lucide('clipboard-check'), badge: '7', badgeStyle: navBadge(true), chevron: true, style: navItem(true), chevronStyle: chev + '; transform:rotate(90deg)',
+        children: [
+          { label: 'Today', badge: '7', badgeStyle: navBadge(true), style: navChild(true) },
+          { label: 'Housekeeping', badge: '', style: navChild(false) },
+          { label: 'Maintenance', badge: '3', badgeStyle: navBadge(false), style: navChild(false) },
+        ] },
+      { label: 'Properties', iconStyle: lucide('building-2'), badge: '', chevron: true, style: navItem(false), chevronStyle: chev, children: null },
+    ];
+    const navCollapsed = ['layout-dashboard', 'calendar-days', 'clipboard-check', 'building-2', 'wallet'].map((d, i) => ({
+      iconStyle: lucide(d),
+      style: 'width:40px; height:34px; display:grid; place-items:center; border-radius:8px; color:' + (i === 2 ? '#FFFFFF' : '#DEDAD3') +
+        '; background:' + (i === 2 ? '#242424' : 'transparent') + '; box-shadow:' + (i === 2 ? 'inset 2px 0 0 ' + G : 'none'),
+    }));
+    const navRules = [
+      { level: 'L1 \u00b7 group label', rule: 'Uppercase, 10px, 600, 0.13em tracking, basalt-200. Not clickable and never badged.' },
+      { level: 'L2 \u00b7 item', rule: 'Icon plus label, 13px, 34px high. Active fills basalt-600 with a 2px gold inset bar. Parents expand rather than navigate.' },
+      { level: 'L3 \u00b7 child', rule: 'Label only, 12.5px, 30px high, indented 32px behind a 1px vertical guide. Active gets a gold wash at 14%.' },
+      { level: 'Collapsed', rule: '68px wide, icons only, labels move to tooltips. Group labels and badges are dropped, not truncated.' },
+      { level: 'Icons', rule: 'lucide-react at 17px, strokeWidth 1.75. Each destination maps to one named lucide icon; the full map lives in tokens.json.' },
+    ];
+
+    const buttons = [
+      { label: 'Assign cleaner', style: 'display:inline-flex; align-items:center; height:38px; padding:0 15px; border-radius:8px; background:' + BLACK + '; color:#FFFFFF; font-size:13px; font-weight:500; cursor:pointer; transition:background 120ms', hover: 'background:#242424' },
+      { label: 'Export', style: 'display:inline-flex; align-items:center; height:38px; padding:0 15px; border-radius:8px; background:#FFFFFF; border:1px solid ' + BORDER + '; color:' + INK + '; font-size:13px; font-weight:500; cursor:pointer; transition:background 120ms', hover: 'background:#FAF9F6' },
+      { label: 'Open task', style: 'display:inline-flex; align-items:center; height:38px; padding:0 11px; border-radius:8px; color:' + MUTED + '; font-size:13px; font-weight:500; cursor:pointer; transition:color 120ms', hover: 'color:' + INK },
+      { label: 'Download statement', style: 'display:inline-flex; align-items:center; height:38px; padding:0 15px; border-radius:8px; background:transparent; border:1px solid ' + G + '; color:' + GINK + '; font-size:13px; font-weight:500; cursor:pointer; transition:background 120ms', hover: 'background:#FBF7F0' },
+      { label: 'Cancel reservation', style: 'display:inline-flex; align-items:center; height:38px; padding:0 15px; border-radius:8px; background:#C2413B; color:#FFFFFF; font-size:13px; font-weight:500; cursor:pointer; transition:background 120ms', hover: 'background:#A8352F' },
+      { label: 'Send statements', style: 'display:inline-flex; align-items:center; height:38px; padding:0 15px; border-radius:8px; background:#F1F0ED; color:#A8A29A; font-size:13px; font-weight:500; cursor:not-allowed', hover: 'background:#F1F0ED' },
+    ];
+    const buttonNotes = [
+      { name: 'Primary', use: 'Deep black fill. One per decision area.' },
+      { name: 'Secondary', use: 'White fill, neutral border.' },
+      { name: 'Tertiary', use: 'Text only. Row actions and low-emphasis links.' },
+      { name: 'Brand accent', use: 'Gold border with gold-700 text. Premium or brand-specific, never a routine save.' },
+      { name: 'Danger', use: 'Red fill, only after an explicit confirmation dialog.' },
+      { name: 'Disabled', use: 'Always paired with a reason: this statement is still provisional.' },
+    ];
+
+    const fieldBase = 'display:flex; align-items:center; height:40px; padding:0 14px; border-radius:8px; font-size:14px; background:#FFFFFF; border:1px solid ';
+    const inputs = [
+      { label: 'Default', text: 'you@theconts.com', fieldStyle: fieldBase + BORDER + '; color:#A8A29A', help: '' },
+      { label: 'Focus', text: 'aina@theconts.com', fieldStyle: fieldBase + G + '; color:' + INK + '; box-shadow:0 0 0 2px rgba(200,164,106,0.35)', help: '' },
+      { label: 'Error', text: 'aina@theconts', fieldStyle: fieldBase + sem.critical[0] + '; color:' + INK, help: 'Enter a valid work email address.', helpStyle: 'font-size:12px; color:' + sem.critical[0] },
+      { label: 'Read-only', text: 'RM 6,482.00', fieldStyle: fieldBase + BORDER + '; background:#F1F0ED; color:' + INK, help: 'You can view this payout but cannot edit it. Ask a Finance Admin for access.', helpStyle: 'font-size:12px; color:' + MUTED },
+      { label: 'Disabled', text: 'Not available', fieldStyle: fieldBase + SUBTLE + '; background:#F1F0ED; color:#A8A29A', help: 'Bank details are managed by Finance.', helpStyle: 'font-size:12px; color:' + MUTED },
+    ];
+
+    const feedback = [
+      { title: 'Cleaner assigned.', body: 'Nurul Huda has been notified.', tone: 'success' },
+      { title: 'Check-in is at risk in 48 minutes.', body: '#A-21-02 is Dirty with no cleaner assigned.', tone: 'warning' },
+      { title: 'Statement could not be generated.', body: 'Check the date range and try again.', tone: 'critical' },
+      { title: 'No issues match these filters.', body: 'Clear filters to see all open issues.', tone: 'neutral' },
+    ].map(f => ({
+      title: f.title, body: f.body,
+      style: 'display:flex; flex-direction:column; gap:4px; padding:13px 15px; border-left:2px solid ' + sem[f.tone][0] + '; background:' + sem[f.tone][1] + '; color:' + sem[f.tone][0],
+    }));
+
+    const channels = [
+      ['Airbnb \u00b7 Checked in', '#242424', 'solid'],
+      ['Booking.com \u00b7 Confirmed', '#2E6DA4', 'solid'],
+      ['Agoda \u00b7 Confirmed', '#6B4E9E', 'solid'],
+      ['Direct \u00b7 Confirmed', '#16845B', 'solid'],
+      ['Block \u00b7 Maintenance', '#C2413B', 'dashed'],
+      ['Owner stay', '#706D67', 'dotted'],
+    ].map(([label, c, bs]) => ({
+      label,
+      style: 'display:inline-flex; align-items:center; height:32px; padding:0 13px; border-radius:7px; font-size:12px; font-weight:500; background:' +
+        (bs === 'solid' ? c : '#FFFFFF') + '; color:' + (bs === 'solid' ? '#FFFFFF' : c) + '; border:1px ' + bs + ' ' + c,
+    }));
+
+    const elevation = [
+      ['Flat', 'Default. Tables, cards, inline panels.', 'none', '1px solid ' + BORDER],
+      ['Card', 'Standalone card on a busy surface.', '0 1px 2px 0 rgba(21,21,21,0.04), 0 0 0 1px rgba(21,21,21,0.04)', '1px solid ' + BORDER],
+      ['Raised', 'Sticky toolbars.', '0 2px 8px 0 rgba(21,21,21,0.06)', '1px solid ' + BORDER],
+      ['Dropdown', 'Menus and the profile popover.', '0 4px 6px -1px rgba(21,21,21,0.08), 0 2px 4px -2px rgba(21,21,21,0.06)', '1px solid ' + BORDER],
+      ['Overlay', 'Dialogs, command menu, toasts.', '0 12px 32px 0 rgba(21,21,21,0.16)', '1px solid ' + BORDER],
+    ].map(([name, use, shadow, border]) => ({
+      name, use,
+      boxStyle: 'padding:14px 16px; border-radius:12px; background:#FFFFFF; display:flex; flex-direction:column; gap:2px; border:' + border + '; box-shadow:' + shadow,
+    }));
+
+    const radii = [['xs 4', 4], ['sm 6', 6], ['control 8', 8], ['card 12', 12], ['pill', 999]].map(([label, r]) => ({
+      label, boxStyle: 'width:58px; height:42px; border:1px solid ' + BORDER + '; background:#FAF9F6; border-radius:' + r + 'px',
+    }));
+
+    const spacing = [['space-1', '4', 4], ['space-2', '8', 8], ['space-3', '12', 12], ['space-4', '16', 16], ['space-5', '20', 20], ['space-6', '24', 24], ['space-8', '32', 32], ['space-10', '40', 40], ['space-12', '48', 48]]
+      .map(([token, value, px]) => ({
+        token, value, barStyle: 'height:9px; border-radius:2px; background:' + INK + '; width:' + px * 1.8 + 'px',
+      }));
+
+    const textures = [
+      { cls: 'bg-blueprint', name: 'Blueprint grid', use: 'Auth stage and inverted brand surfaces. 32px grid at 3.5% white.' },
+      { cls: 'bg-stone-grid', name: 'Stone grid', use: 'Empty modules and unconfigured states.' },
+      { cls: 'bg-diagonal', name: 'Diagonal tape', use: 'Blocked units and unavailable dates.' },
+    ];
+
+    const motion = [
+      { label: 'Hover and pressed', duration: '120 ms', use: 'Colour and background transitions' },
+      { label: 'Menus, drawers, submenu', duration: '200 ms', use: 'Expand and collapse' },
+      { label: 'Dialogs', duration: '240 ms', use: 'Scrim fade plus an 8px rise' },
+      { label: 'Data refresh', duration: 'skeleton', use: 'Shimmer on predictable blocks, no spinner over loaded numbers' },
+    ];
+
+    const voice = [
+      { quality: 'Direct', good: 'Assign cleaner', bad: 'Proceed to cleaner assignment execution' },
+      { quality: 'Specific', good: 'Payment failed. Try another method.', bad: 'Something went wrong.' },
+      { quality: 'Calm', good: 'Check-in is at risk in 48 minutes.', bad: 'URGENT!!!' },
+      { quality: 'Accountable', good: 'Updated by Aina at 2:14 PM', bad: 'Recently updated' },
+      { quality: 'Human', good: 'Guest requested a late check-out.', bad: 'PAX LCO request' },
+      { quality: 'Consistent', good: 'Owner statement, every time', bad: 'Owner report / owner account interchangeably' },
+    ];
+
+    const statusPill = st => 'align-self:flex-start; font-size:11px; font-weight:500; padding:2px 9px; border-radius:999px; background:' +
+      (st === 'Required' ? sem.critical[1] : st === 'Unresolved' ? sem.warning[1] : sem.neutral[1]) +
+      '; color:' + (st === 'Required' ? sem.critical[0] : st === 'Unresolved' ? sem.warning[0] : sem.neutral[0]);
+    const required = [
+      { item: 'Vector logo and all lockups', status: 'Required', note: 'SVG, AI, EPS or print-ready PDF. Every logo position in the build is a marked placeholder.' },
+      { item: 'Official Pantone, CMYK, RGB, HEX', status: 'Required', note: 'Replaces the provisional steps in all three ramps, centrally.' },
+      { item: 'Corporate font and licence', status: 'Unresolved', note: 'Houzs ships Tahoma, Hookka ships IBM Plex Sans. One shared face is required. Built on IBM Plex Sans.' },
+      { item: 'Property photography with rights', status: 'Required', note: 'Property, unit, photographer, rights, date and approved crops recorded. Photo slots in the build accept drops directly.' },
+      { item: 'Example owner statements', status: 'Required', note: 'Confirms line categories, legal wording and the PDF layout.' },
+      { item: 'Representative real data', status: 'Required', note: 'For density and edge-case testing. All current figures are placeholders.' },
+    ].map(r => ({ ...r, badgeStyle: statusPill(r.status) }));
+
+    const logoRules = [
+      { text: 'Preferred combinations: gold on deep black, black on warm white, white on deep black.' },
+      { text: 'Clear space of at least the cap height of the T on every side.' },
+      { text: 'Minimum 120px wide for a full lockup, 24px for the symbol alone.' },
+      { text: 'Never stretch, rotate, outline, bevel, glow, or recolour with a semantic colour.' },
+      { text: 'Never place the gold mark on pale gold, yellow, beige or low-contrast imagery.' },
+      { text: 'The logo ships as an SVG with an accessible name. It is never retyped as text.' },
+    ];
+
+    return {
+      siblings, ramps, semantic, contrastPass, contrastFail,
+      typeScale, numericRules, casing, componentSizes,
+      navDemo, navCollapsed, navRules,
+      buttons, buttonNotes, inputs, feedback,
+      channels, elevation, radii, spacing, textures, motion, icons, voice,
+      required, logoRules,
+    };
+  }
+}
+</script>
+</body>
+</html>

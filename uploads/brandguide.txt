@@ -1,0 +1,847 @@
+The Conts Digital Brand Guide
+Property Management System and Owner Portal
+Version 1.0  |  16 September 2026
+Prepared for The Conts product design and engineering teams
+Purpose
+This guide translates The Conts existing premium property-management identity into a consistent, scalable digital product system. It is the working specification for Claude Design, Figma, frontend implementation, and future product QA.
+Brand basis
+Public-facing materials consistently support a black, white and champagne-gold architectural direction. Exact official logo geometry, master color values and legacy font licenses were not publicly available; the values marked Provisional below are implementation recommendations pending verification against original brand assets.
+1 Brand foundation
+1.1 Positioning
+The Conts digital product should present the company as a premium Property Operations Company that combines hospitality, asset performance, operational execution and owner transparency. The PMS is not a generic ERP and should not imitate Airbnb.
+Dimension
+Direction
+Avoid
+Product idea
+Property Management Operating System
+Booking-only software
+Brand character
+Premium, calm, precise, trustworthy
+Flashy, playful, ornamental
+User promise
+Visibility, control and accountable execution
+Luxury styling without operational clarity
+Visual category
+Architecture, hospitality, investment, technology
+Generic blue SaaS or accounting ERP
+1.2 Brand attributes
+Premium without being decorative
+Operational before promotional
+Transparent with financial data
+Calm under high task density
+Human in guest and owner communication
+Consistent across staff PMS, mobile operations and owner portal
+1.3 Design principles
+Principle
+Every screen must do this
+Clarity first
+Make the current state, risk and next action obvious.
+Exceptions lead
+Show overdue, blocked or high-impact work before routine work.
+One source of truth
+Keep unit, booking, finance and activity context connected.
+Progressive detail
+Summary first; reveal operational depth only when needed.
+Brand restraint
+Use gold for identity and selection, not as a general status color.
+Role relevance
+Adapt density and actions for management, staff, field teams and owners.
+1.4 Brand architecture
+Layer
+Recommended name
+Use
+Corporate brand
+THE CONTS Property Management
+Company, proposals, contracts, public presence
+Internal product
+THE CONTS Property OS
+Staff PMS and operational command centre
+Owner experience
+The Conts Owner Portal
+Owner statements, performance and maintenance visibility
+Future SaaS option
+ContsOS
+Reserve until commercial software positioning is approved
+2 Brand asset status and governance
+2.1 Confidence classification
+Label
+Meaning
+Implementation rule
+Confirmed direction
+Repeated across public-facing brand materials
+Use as the governing visual direction.
+Provisional token
+Recommended digital value inferred from visible materials
+Use now; replace centrally when original values are supplied.
+Required asset
+Cannot be responsibly reconstructed from compressed online media
+Obtain the original file before final brand lock.
+2.2 Confirmed and pending items
+Item
+Status
+Guidance
+Black, white and gold palette
+Confirmed direction
+Core visual identity for the digital product.
+Architectural premium aesthetic
+Confirmed direction
+Use disciplined geometry and property imagery.
+Gold master value
+Provisional
+Use #C8A46A until source artwork is sampled or documented.
+Corporate typeface
+Pending
+Do not claim Geist or Inter as the legacy brand font.
+Logo clear space and minimum size
+Provisional
+Apply the rules in this document until vector artwork is available.
+Logo vector files
+Required asset
+Request SVG, AI, EPS or print-ready PDF.
+Photography originals
+Required asset
+Build an approved library with rights and metadata.
+2.3 Ownership and change control
+Assign one brand owner and one product-design owner.
+Store design tokens in one Figma variable collection and one code token source.
+Changes to primary color, typography, logo, spacing scale or semantic statuses require approval and release notes.
+Audit production screens quarterly for token drift, one-off colors and inconsistent component variants.
+3 Logo system
+3.1 Approved lockups
+Lockup
+Recommended placement
+Primary stacked mark
+Login, formal documents, marketing and wide empty surfaces
+Horizontal mark
+Desktop sidebar expanded state and application header
+Symbol only
+Collapsed sidebar, favicon and app icon only after recognition testing
+One-colour mark
+Small sizes, embossing and constrained production
+3.2 Usage rules
+Preferred combinations: gold on deep black; black on warm white; white on deep black.
+Provisional clear space: at least the height of the capital T around every side.
+Provisional minimum size: 120 px wide for a full digital lockup; 24 px for a symbol-only icon.
+Never stretch, rotate, outline, bevel, glow, recolor with semantic colors or place over busy photography.
+Do not place the gold logo on pale gold, yellow, beige or low-contrast imagery.
+The logo must be an image or SVG with an accessible text name, not rebuilt from typed characters.
+4 Colour system
+The palette keeps the identity visibly The Conts while preserving the readability and state clarity required by daily operational software.
+4.1 Core palette
+Token
+HEX
+Role
+Status
+brand.black
+#151515
+Sidebar, premium dark surfaces
+Provisional
+brand.charcoal
+#242424
+Secondary dark surface, dark hover
+Provisional
+brand.gold
+#C8A46A
+Logo, active selection, focus accents
+Provisional
+canvas.warm
+#FAF9F6
+Primary workspace background
+Provisional
+surface.white
+#FFFFFF
+Cards, dialogs, tables
+Standard
+border.warm
+#DEDAD3
+Dividers and component borders
+Provisional
+text.primary
+#252525
+Body and primary labels
+Provisional
+text.muted
+#706D67
+Secondary labels and metadata
+Provisional
+4.2 Semantic palette
+Meaning
+Base
+Tint
+Use
+Success / Ready
+#16845B
+#E9F5EF
+Completed, healthy, available
+Warning / Due soon
+#B7791F
+#FFF4D8
+Attention without immediate failure
+Critical / Blocked
+#C2413B
+#FCECEB
+Safety, failure, overdue escalation
+Information
+#2E6DA4
+#EAF2FA
+Neutral system information
+Neutral
+#706D67
+#F1F0ED
+Draft, inactive, unknown
+4.3 Application rules
+Gold communicates brand, selection and premium emphasis. It must never mean success, warning or error.
+Primary destructive actions remain red. Confirmation actions may use black or a context-appropriate semantic color.
+Use a maximum of one dominant accent per view.
+Never communicate status by color alone; pair color with text, icon or shape.
+Body text and interactive controls must meet WCAG AA contrast. Large display text does not exempt operational data from readability.
+4.4 Dark mode
+Do not launch a full dark mode by simply inverting the palette. Treat dark mode as a separate tested theme. The initial release should use a dark navigation shell and warm-light workspace; this retains brand impact while supporting long work sessions and dense tables.
+5 Typography
+5.1 Recommended family
+Use the same production UI font and loading method already adopted by Houzs ERP and Hookka ERP. If the shared frontend currently uses Inter, retain Inter. Do not introduce Geist or another font only for The Conts, because that adds bundle, visual and maintenance differences. The brand distinction should come from tokens, hierarchy and selected display treatments, not a separate application-font stack.
+5.2 Type scale
+Style
+Desktop
+Mobile
+Weight
+Line height
+Use
+Display
+40 px
+32 px
+600
+1.10
+Login and rare portfolio headline
+Page title
+28 px
+24 px
+600
+1.20
+Primary page heading
+Section title
+20 px
+18 px
+600
+1.30
+Major content section
+Card title
+16 px
+16 px
+600
+1.35
+Card and panel heading
+Body
+14 px
+14 px
+400
+1.50
+Default UI text
+Body strong
+14 px
+14 px
+600
+1.50
+Important labels and actions
+Small
+12 px
+12 px
+400
+1.45
+Metadata and helper text
+Micro
+11 px
+11 px
+500
+1.35
+Dense badges only
+5.3 Numeric typography
+Enable tabular numerals for financial values, dates, occupancy, ADR, RevPAR, SLAs and table columns.
+Right-align financial and comparable numeric columns; keep their currency label consistent.
+Use RM 12,450.00 where cents matter; use RM 12,450 in high-level KPI cards.
+Use 82.4%, not .824; use 4.91 / 5 for ratings in detailed views.
+Negative values use a minus sign and semantic styling only when the value represents a problem.
+5.4 Writing and casing
+Use sentence case for headings, buttons, tabs and table headers.
+Reserve uppercase for the corporate wordmark and very short navigation group labels.
+Avoid all-caps operational messages.
+Use concise nouns for navigation and verb-first language for actions: Add property, Assign cleaner, Resolve issue.
+6 Layout and spacing
+Token
+Value
+Typical use
+space.1
+4 px
+Icon gap and micro spacing
+space.2
+8 px
+Inline elements
+space.3
+12 px
+Compact controls
+space.4
+16 px
+Default component gap
+space.5
+20 px
+Card padding compact
+space.6
+24 px
+Card padding standard
+space.8
+32 px
+Section spacing
+space.10
+40 px
+Large section separation
+space.12
+48 px
+Page rhythm
+6.1 Grid and shell
+Desktop content grid: 12 columns, 24 px gutters, maximum useful content width 1600 px.
+Expanded sidebar: 240 px; collapsed sidebar: 72 px.
+Main page padding: 32 px desktop, 24 px tablet, 16 px mobile.
+Use an 8 px base grid; allow 4 px only for optical correction and dense internal alignment.
+Default card radius: 12 px. Controls: 8 px. Pills: fully rounded only for status and compact filters.
+7 Elevation iconography imagery and motion
+7.1 Borders and elevation
+Level
+Treatment
+Use
+Flat
+1 px #DEDAD3, no shadow
+Tables, inline panels, most cards
+Raised
+Subtle 0 2 8 rgba(21,21,21,.06)
+Dropdowns and sticky toolbars
+Overlay
+0 12 32 rgba(21,21,21,.16)
+Dialogs and command menus
+7.2 Iconography
+Use one outline icon family throughout; recommended stroke 1.75 to 2 px.
+Default size 20 px; 16 px in tables; 24 px for high-level actions.
+Every unfamiliar icon needs a label or tooltip.
+Do not mix filled, outline and emoji icon styles in one workflow.
+7.3 Photography
+Prioritise real The Conts properties, teams and operational moments.
+Use straight architectural lines, clean perspective and natural warm-neutral grading.
+Avoid fake ultra-luxury stock scenes that misrepresent managed units.
+Never place dense UI text directly over detailed property photography.
+Record property, unit, photographer, rights, date and approved crops in the asset library.
+7.4 Motion
+Interaction
+Duration
+Easing
+Hover and pressed
+100-150 ms
+ease-out
+Menus and drawers
+180-220 ms
+standard ease
+Dialogs
+200-240 ms
+ease-out
+Data refresh
+Use skeleton or localized progress
+No decorative looping
+Respect prefers-reduced-motion. Never animate core financial values in a way that delays reading or implies false live activity.
+8 Core components
+Component
+Required variants
+Key rule
+Button
+Primary, secondary, tertiary, danger, icon
+One primary action per decision area; disabled actions explain why.
+Input
+Default, focus, error, disabled, read-only
+Labels persist above fields; placeholders are examples, not labels.
+Select
+Single, multi, searchable
+Show selected count and clear action.
+Date and time
+Single, range, time, timezone
+Use Malaysia time explicitly where cross-channel timing matters.
+Badge
+Semantic status, channel, role
+Never use brand gold as a generic status.
+Card
+KPI, action, summary, media
+Cards group related content; they are not decoration.
+Dialog
+Confirmation, edit, destructive
+State consequence and target clearly.
+Toast
+Success, warning, failure
+Do not rely on toast for information users must revisit.
+Tabs
+Page-level and local
+Maximum practical count before overflow menu.
+Empty state
+First use, filtered, error
+Explain cause and give a relevant next action.
+9 Buttons forms and feedback
+9.1 Buttons
+Variant
+Appearance
+Use
+Primary
+Deep black fill, white text
+Main forward action
+Secondary
+White fill, neutral border
+Alternative action
+Tertiary
+Text or subtle surface
+Low-emphasis action
+Brand accent
+Gold treatment used selectively
+Premium or brand-specific action, not routine save
+Danger
+Red fill or red text
+Destructive actions after clear confirmation
+9.2 Forms
+Default field height 40 px desktop and 44 px touch contexts.
+Group fields by user decision, not database structure.
+Validate on blur for field-level issues and on submit for cross-field rules.
+Preserve user input after recoverable errors.
+Required fields use both text and an indicator; explain optionality consistently.
+Financial edits require currency, date, source and audit trail where relevant.
+9.3 Loading and system states
+Use skeletons for predictable content blocks and progress indicators for actions.
+Show last updated time on operational and financial dashboards.
+For partial failures, retain successful content and identify only what failed.
+Optimistic updates are allowed only when reversal is safe and visible.
+Offline field workflows must distinguish queued, synced and failed states.
+10 Tables filters and bulk work
+Area
+Specification
+Row height
+48 px standard; 40 px compact; expand for multiline content.
+Header
+Sticky where the table scrolls; sentence case; visible sort state.
+Alignment
+Text left; money and comparable numbers right; short status centred or left consistently.
+Filters
+Search, building, unit, channel, date, status and assignee where relevant.
+Saved views
+Allow role-based personal and shared views for repeat operations.
+Bulk actions
+Appear after selection; show selection count and scope.
+Pagination
+Use explicit page size for audit and finance tables; virtualization for very large operational lists.
+Export
+Display applied filters, generated time and data scope.
+Auditability
+Expose who changed what and when for sensitive records.
+Do not hide critical row actions exclusively behind hover. Touch users and keyboard users must be able to discover them.
+11 Status taxonomy
+Status language must be finite, documented and shared across modules. Avoid creating synonyms such as Complete, Completed and Done for the same state.
+11.1 Reservation
+State
+Meaning
+Tone
+Inquiry
+No confirmed reservation
+Neutral
+Pending
+Awaiting payment or confirmation
+Warning
+Confirmed
+Reservation accepted
+Information
+Checked in
+Guest currently occupying unit
+Success
+Checked out
+Stay completed
+Neutral
+Cancelled
+Reservation cancelled
+Neutral or critical when action is required
+No show
+Guest did not arrive
+Critical
+11.2 Unit readiness
+State
+Meaning
+Tone
+Occupied
+Current guest in unit
+Information
+Dirty
+Checkout completed; cleaning not started
+Warning
+Cleaning
+Cleaning in progress
+Information
+Inspection
+Awaiting or undergoing QC
+Warning
+Ready
+Approved for check-in
+Success
+Maintenance
+Unavailable due to maintenance
+Critical
+Blocked
+Unavailable by rule or manual block
+Neutral
+11.3 Task and issue
+State
+Meaning
+Tone
+Open
+Unassigned or not started
+Neutral
+Assigned
+Owner established
+Information
+In progress
+Work underway
+Information
+Waiting
+Blocked by guest, vendor or approval
+Warning
+Resolved
+Outcome completed
+Success
+Overdue
+Past committed time
+Critical
+Reopened
+Issue returned after resolution
+Critical
+12 Data visualisation
+Use direct labels where possible and keep legends close to charts.
+Reserve gold for The Conts or the selected series. Comparison series use charcoal and neutral grey.
+Use semantic green and red only when direction is genuinely good or bad. Revenue decline is not automatically red if it is expected seasonality.
+Every chart needs timeframe, unit, source or freshness indicator, and an accessible table or summary.
+Avoid 3D charts, decorative gradients, gauges and more than five simultaneous categorical colours.
+Metric
+Definition
+Occupancy
+Occupied available nights divided by available nights.
+ADR
+Accommodation revenue divided by occupied nights.
+RevPAR
+Accommodation revenue divided by available nights, or ADR multiplied by occupancy.
+Gross booking value
+Total booking value before defined deductions.
+Owner net payout
+Amount payable after documented fees, expenses and adjustments.
+SLA remaining
+Time until operational commitment is breached.
+13 Navigation and information architecture
+Group
+Destinations
+Overview
+Dashboard; Portfolio
+Reservations
+Bookings; Calendar; Guests
+Operations
+Today; Housekeeping; Maintenance; Tasks; Inspections
+Properties
+Properties; Units; Inventory; Access and keys
+Finance
+Revenue; Expenses; Owner statements; Payouts
+Owners
+Owners; Contracts
+Performance
+Analytics; Pricing; Reviews
+Communication
+Inbox; Automations
+System
+Users and roles; Integrations; Settings
+13.1 Navigation rules
+Organise around jobs and decisions, never raw database tables.
+Keep the current building, unit, owner or date context visible when moving between related pages.
+Use breadcrumbs for deep entity pages; do not duplicate the page title in every navigation layer.
+Global search should find units, bookings, guests, owners, tasks and transaction references.
+Permission restrictions should remove inaccessible destinations or clearly explain access; do not tease unusable actions.
+14 Screen patterns
+14.1 Management dashboard
+Top row: Revenue, Occupancy, ADR, RevPAR and Net Owner Payout with comparison periods.
+Primary visual: revenue and occupancy trend with selectable timeframe.
+Today panel: check-ins, check-outs, cleaning pending, maintenance issues and guest escalations.
+Portfolio table: property, revenue, occupancy, ADR, rating and exception status.
+Default emphasis is business health and exceptions, not decorative property imagery.
+14.2 Operations today
+Start with overdue and check-in-risk items.
+Group by operational urgency, then time; do not force a decorative Kanban if a prioritized list is faster.
+Each item shows unit, issue, next guest time, assignee, SLA and one clear action.
+Provide shift and building filters plus a role-appropriate mobile view.
+14.3 Property and unit record
+Header: property, unit, live status and active channels.
+Tabs: Overview, Reservations, Operations, Financials, Maintenance, Documents and Activity.
+Overview combines current guest, next check-in, readiness, open issues, owner and monthly P and L.
+Activity is chronological, attributable and filterable.
+14.4 Reservation calendar
+Rows represent units; columns represent dates; booking blocks show channel and status.
+Differentiate Airbnb, Booking.com, Agoda, direct booking, maintenance block and owner stay without relying on color alone.
+Prevent accidental drag changes with confirmation and conflict feedback.
+Keep unit names frozen while horizontal scrolling.
+15 Owner portal
+The owner portal inherits The Conts identity but uses lower density and simpler language than the internal PMS. It should prioritise confidence and traceability.
+Priority
+Owner-facing answer
+Earnings
+How much did the property earn this month?
+Performance
+How do occupancy, ADR and rating compare?
+Deductions
+What fees and expenses were deducted, and why?
+Payout
+What is payable, paid or pending?
+Property health
+Are maintenance or damage issues open?
+Evidence
+Can the owner access statements, invoices and relevant photos?
+15.1 Recommended hierarchy
+Monthly earnings and payout status
+Occupancy, ADR, bookings and rating
+Gross-to-net financial breakdown
+Performance trend and comparison
+Maintenance and significant property updates
+Downloadable monthly statement and supporting documents
+15.2 Transparency rules
+Every deduction has a category, date, amount and supporting reference where applicable.
+Do not mix gross revenue, collected revenue and payout without explicit definitions.
+Identify provisional data and finalized statements.
+Owner-facing maintenance language should be factual and avoid internal shorthand.
+16 Responsive and field experience
+Breakpoint
+Guidance
+Mobile below 768 px
+Single column; bottom or compact navigation; 44 px minimum touch targets; priority actions fixed only when they do not obscure content.
+Tablet 768 to 1199 px
+Collapsible sidebar; two-column summaries; full field workflows.
+Desktop 1200 px and above
+Persistent navigation; dense tables; multi-panel operational views.
+Wide 1600 px and above
+Use extra width for contextual panels, not excessively long text lines.
+16.1 Cleaner and technician mobile screens
+Show property address, access instruction, task checklist, due time and contact route.
+Support photo evidence, notes, parts or cost, and offline queue status.
+Require confirmation for ready-for-guest status and high-risk completion.
+Do not expose owner financial data to field roles without permission.
+17 Accessibility and localisation
+Target WCAG 2.2 AA for contrast, keyboard use, focus visibility, error identification and names of controls.
+Visible focus ring: 2 px minimum with offset; choose black or high-contrast gold based on surface.
+Minimum touch target 44 by 44 px in field and owner experiences.
+Do not rely on placeholder text, color, icons or hover alone.
+Support English first, with architecture ready for Bahasa Malaysia and Simplified Chinese.
+Allow at least 30 percent text expansion without clipping.
+Dates: use 16 Sep 2026 in compact English contexts; always disambiguate date ranges.
+Timezone: Asia Kuala Lumpur. Currency: MYR with RM presentation.
+Do not encode meaning in flags; language and market are separate concepts.
+18 Voice and content design
+Quality
+Write like this
+Avoid
+Direct
+Assign cleaner
+Proceed to cleaner assignment execution
+Specific
+Payment failed. Try another method.
+Something went wrong.
+Calm
+Check-in is at risk in 48 minutes.
+URGENT!!!
+Accountable
+Updated by Aina at 2:14 PM
+Recently updated
+Human
+Guest requested a late check-out.
+PAX LCO request
+Consistent
+Owner statement
+Owner report / owner account interchangeably
+18.1 Microcopy patterns
+Situation
+Pattern
+Example
+Confirmation
+Action plus target
+Assign Nurul to Trion B-32-05?
+Destructive
+Consequence plus recovery
+Cancel this reservation? This releases the dates and notifies the guest.
+Empty state
+Reason plus next action
+No maintenance issues match these filters. Clear filters.
+Error
+What failed plus recovery
+Statement could not be generated. Check the date range and try again.
+Success
+Completed action and result
+Cleaner assigned. Nurul has been notified.
+Permission
+Restriction plus route
+You can view this payout but cannot edit it. Ask a Finance Admin for access.
+19 Security trust and audit cues
+Financial, identity, access-code and owner data require role-based access and least privilege.
+Sensitive values should be masked by default where full display is not necessary.
+Destructive and financial actions show target, amount, consequence and actor.
+Audit trails include actor, timestamp, before and after state, and source where appropriate.
+Session and integration states must distinguish connected, expired, degraded and failed.
+Never use a green success state before server confirmation for irreversible actions.
+20 Design tokens for implementation
+Use semantic names in code and Figma. Avoid naming tokens after a one-off screen or raw visual appearance when the role is semantic.
+Category
+Examples
+Brand
+brand.black, brand.charcoal, brand.gold
+Surface
+surface.canvas, surface.primary, surface.dark
+Text
+text.primary, text.secondary, text.inverse, text.link
+Border
+border.default, border.strong, border.focus
+Status
+status.success, status.warning, status.critical, status.info, status.neutral
+Spacing
+space.1 through space.12
+Radius
+radius.control 8; radius.card 12; radius.pill 999
+Elevation
+elevation.flat, elevation.raised, elevation.overlay
+Typography
+type.display, type.pageTitle, type.section, type.body, type.small
+Motion
+motion.fast, motion.standard, motion.slow
+21 Shared React frontend architecture
+The Conts must be implemented as a branded extension of the existing Houzs ERP and Hookka ERP frontend foundation. The goal is one maintainable React product family with shared behavior and different theme tokens, navigation and domain modules.
+21.1 Reuse without redesign
+Reuse from existing ERPs
+The Conts-specific layer
+React application foundation and routing conventions
+Property-management routes and permissions
+Authentication, session and role patterns
+Owner, operator, cleaner and technician roles
+Shared app shell, responsive grid and navigation primitives
+The Conts black, warm-white and gold theme
+Buttons, fields, dialogs, drawers, tabs and notifications
+Property and hospitality copy and status vocabulary
+Table, filter, pagination and saved-view behavior
+Bookings, units, owner statements and operations columns
+Form validation and data-fetching patterns
+PMS schemas, actions and error cases
+Icon library, date utilities and localization utilities
+Reservation channels, access and housekeeping concepts
+Testing, linting, CI and package versions
+The Conts visual regression fixtures and workflows
+21.2 Shared component hierarchy
+Layer
+Responsibility
+Rule
+Foundation
+React stack, build, routing, data fetching, auth and utilities
+One agreed version set across products.
+UI primitives
+Button, Input, Select, Dialog, Table, Tabs, Badge, Toast
+Never fork merely to change color or radius.
+Shared patterns
+AppShell, PageHeader, FilterBar, DataTable, FormSection, AuditTimeline
+Extend through documented props and slots.
+Brand theme
+CSS variables or design tokens for The Conts, Houzs and Hookka
+No hard-coded brand values inside shared components.
+Domain modules
+ReservationCalendar, UnitReadiness, OwnerStatement, OperationsQueue
+Product-specific composition may remain in The Conts.
+Page routes
+Role-based workflows and page composition
+Pages consume shared patterns and domain modules.
+21.3 Theme contract
+Implement visual differences through a theme provider or root data attribute that maps semantic CSS variables. Keep component markup and behavior shared. Example token contract:
+--brand-primary; --brand-accent; --surface-canvas; --surface-card;
+--text-primary; --text-muted; --border-default; --focus-ring;
+--status-success; --status-warning; --status-critical; --status-info;
+--radius-control; --radius-card; --shadow-raised; --sidebar-background;
+21.4 Engineering rules
+Confirm the exact current Houzs and Hookka package stack before implementation; do not replace libraries for aesthetic reasons.
+Prefer composition and variants over copying shared components into a The Conts folder.
+A brand change must require token changes, not edits across pages.
+A shared behavior fix should be released to all three systems through the same source package or monorepo workspace.
+Product-specific components may be promoted to shared patterns only after their API is stable.
+Keep one Storybook or equivalent component catalogue showing Houzs, Hookka and The Conts themes side by side.
+Add visual regression tests for all shared components under each theme.
+Document any unavoidable fork with an owner, reason and removal condition.
+21.5 Migration and rollout sequence
+Step
+Action
+1 Audit
+Inventory the exact React, styling, component, icon, form, table, chart and data-fetching libraries used by both existing ERPs.
+2 Normalize
+Resolve differences between Houzs and Hookka before The Conts adds a third consumer.
+3 Tokenize
+Extract hard-coded colors, typography, spacing, radius and elevation into semantic tokens.
+4 Theme
+Add The Conts token set without changing shared component APIs.
+5 Compose
+Build PMS domain modules from shared components and patterns.
+6 Verify
+Run unit, interaction, accessibility and theme visual-regression tests.
+7 Release
+Roll out module by module; avoid a parallel rewrite of the shared frontend.
+22 Claude Design master brief
+Copy the following specification into Claude Design together with the product requirements for each screen.
+Design a complete Property Management System and Owner Portal for The Conts Property Management in Malaysia. Strictly extend the existing The Conts identity: premium architectural black, white and champagne gold. Do not create a new generic SaaS brand and do not imitate Airbnb.
+Position the product as The Conts Property OS: a calm, precise and operational platform connecting properties, owners, guests, reservations, revenue, pricing, housekeeping, maintenance, customer service, payments, staff and analytics.
+Use a deep black or charcoal navigation shell, a warm-white workspace, white primary surfaces, warm-neutral borders and champagne gold only for brand identity, selection and restrained premium emphasis. Gold must not represent success, warning or errors. Use green, amber, red, blue and neutral grey only for semantic operational states. Status must never depend on color alone.
+Use the exact same application font, React frontend foundation, component library, icon library, form patterns, tables, charts and interaction conventions already used by Houzs ERP and Hookka ERP. Do not invent a separate frontend system for The Conts. Apply The Conts identity through semantic theme tokens and PMS-specific composition. Use sentence case, tabular numerals, right-aligned financial columns and strong but restrained numerical hierarchy. Default body text is 14 px. Use the shared spacing, radius and elevation primitives; introduce a new token only when the existing shared system cannot express a documented requirement.
+Design desktop-first for managers and operational staff, with responsive tablet and mobile workflows for cleaners and technicians. The owner portal must be simpler, lower-density and focused on earnings, deductions, payout, performance and property health.
+Every screen must answer: What is happening? What needs attention? What action should I take next? Surface overdue, blocked and check-in-risk work before routine work. Keep context connected across units, bookings, operations and finance.
+Map Figma components one to one to the existing shared React components for buttons, inputs, selects, date controls, badges, cards, tables, tabs, dialogs, toasts, loading, empty states and charts. Preserve current component APIs and states. New PMS components should be compositions of shared primitives unless a genuine domain interaction requires a new component. Target WCAG 2.2 AA and 44 px touch targets for field workflows.
+Main navigation: Overview; Reservations; Operations; Properties; Finance; Owners; Performance; Communication; System. Organize by user workflow, never database structure.
+The result must feel like a premium property operations product: information-dense, highly usable, financially transparent and unmistakably The Conts. Avoid excessive gradients, glassmorphism, decorative gold, oversized cards, playful illustration, generic blue SaaS styling and ornamental luxury that slows daily work.
+23 Delivery checklist
+Deliverable
+Acceptance criteria
+Foundations
+Colors, typography, spacing, grid, radius, elevation, icon and motion variables created.
+Components
+All core components include interactive and validation states.
+Templates
+Dashboard, list, record, workflow, calendar, finance and owner-portal patterns created.
+Responsive
+Desktop, tablet and mobile behavior documented for critical flows.
+Accessibility
+Contrast, focus, keyboard, target size, labels and error recovery checked.
+Data
+Metrics have definitions, units, timeframes and freshness treatment.
+Content
+Navigation, statuses and action labels use the approved vocabulary.
+Engineering
+Tokens map to code; component names and variants match Figma.
+QA
+No one-off colors, shadows, radii or status synonyms in production.
+24 Required source assets before final brand lock
+Original vector logo and every approved lockup
+Official Pantone, CMYK, RGB and HEX values
+Corporate font names, files and licence terms
+Existing printed and digital brand guide, if any
+Approved property and team image library with usage rights
+Legal company naming and product naming approval
+Examples of owner statements, contracts and operational forms
+Representative real data for density and edge-case testing
+25 Reference basis
+The public evidence below was used to confirm the company category and visible brand direction. It does not replace The Conts original source artwork or an internal brand manual.
+Source
+Use in this guide
+The Conts company profile on Hiredly
+Corporate positioning and publicly visible company identity.
+The Conts Property Management Facebook presence
+Public category and service framing.
+The Conts Airbnb Proposal on Scribd
+Visible black, white and gold architectural presentation direction.
+CTOS company profile excerpt
+Real-estate management business classification.
+Airbtics company profile
+Third-party confirmation of short-term-rental portfolio context; not used as an internal KPI source.
+Links
+Hiredly company profile: https://my.hiredly.com/companies/the-conts-sdn-bhd
+Facebook page: https://www.facebook.com/100093973115462/
+Airbnb proposal: https://www.scribd.com/document/841623744/TheContsAirbnb-Proposal
+CTOS company report: https://businessreport.ctoscredit.com.my/oneoffreport_api/single-report/malaysia-company/202001022790/
+Airbtics company profile: https://airbtics.com/airbnb-management-companies/the-conts-478504689

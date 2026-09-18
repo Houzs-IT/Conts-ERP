@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conts API Console</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #6a7282; --line: #dfe3ea;
+    --accent: #2f5bd3; --accent-text: #ffffff; --ok: #1f7a4a; --ok-bg: #e5f4ec;
+    --bad: #b3261e; --bad-bg: #fbe9e7; --warn-bg: #fff6de; --warn: #7a5a00; --code-bg: #f1f3f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171c; --panel: #1c2027; --text: #e6e9ef; --muted: #98a0ad; --line: #2e343e;
+      --accent: #7b9cff; --accent-text: #0e1320; --ok: #6fd39c; --ok-bg: #16301f;
+      --bad: #ff8a80; --bad-bg: #3a1a18; --warn-bg: #3a3013; --warn: #f2d27a; --code-bg: #232833;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; }
+  .tag { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: var(--warn-bg); color: var(--warn); }
+  .spacer { flex: 1; }
+  main { display: grid; grid-template-columns: 190px 1fr; min-height: calc(100vh - 50px); }
+  nav { border-right: 1px solid var(--line); background: var(--panel); padding: 8px; }
+  nav button { display: block; width: 100%; text-align: left; margin: 2px 0; background: none; color: var(--text); border: 0; padding: 7px 10px; border-radius: 6px; cursor: pointer; font: inherit; }
+  nav button.on { background: var(--accent); color: var(--accent-text); }
+  nav button:disabled { color: var(--muted); cursor: default; }
+  #view { padding: 16px; min-width: 0; }
+  h2 { font-size: 18px; margin: 0 0 12px; }
+  h3 { font-size: 15px; margin: 18px 0 8px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  tr.click { cursor: pointer; } tr.click:hover { background: var(--code-bg); } tr.sel { background: var(--code-bg); }
+  .scroll { overflow-x: auto; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  input, select, textarea { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; width: 100%; }
+  input[type=checkbox] { width: auto; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  button.b { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-text); cursor: pointer; }
+  button.b2 { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+  button.danger { border-color: var(--bad); color: var(--bad); background: var(--panel); }
+  .checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 12px; }
+  .checks label { display: flex; gap: 6px; align-items: flex-start; color: var(--text); font-size: 13px; }
+  .muted { color: var(--muted); }
+  .pill { display: inline-block; font-size: 12px; padding: 1px 7px; border-radius: 10px; background: var(--code-bg); margin: 1px 3px 1px 0; }
+  .msg { padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; }
+  .msg.ok { background: var(--ok-bg); color: var(--ok); } .msg.bad { background: var(--bad-bg); color: var(--bad); } .msg.warn { background: var(--warn-bg); color: var(--warn); }
+  pre { background: var(--code-bg); padding: 10px; border-radius: 6px; overflow: auto; max-height: 320px; font-size: 12px; margin: 6px 0 0; }
+  details summary { cursor: pointer; color: var(--muted); }
+  .tree ul { list-style: none; padding-left: 20px; border-left: 1px dashed var(--line); margin: 4px 0; }
+  .tree li { margin: 6px 0; }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; vertical-align: middle; background: var(--code-bg); }
+  #signin { max-width: 440px; margin: 40px auto; }
+  @media (max-width: 720px) { main { grid-template-columns: 1fr; } nav { border-right: 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; } nav button { width: auto; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Conts API Console</h1><span class="tag">STAGING test tool, not the real app</span>
+  <span class="spacer"></span><span id="who" class="muted"></span>
+  <button id="signout" class="b2" hidden>Sign out</button>
+</header>
+<div id="app"></div>
+
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+const STAGING_REF = 'ecgyrmblqfxvbfjlqkdq';
+const SUPABASE_URL = `https://${STAGING_REF}.supabase.co`;
+const API = 'http://localhost:8787';
+const KEY_STORE = 'conts.console.publishableKey';
+
+const store = {
+  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
+};
+
+// Tiny DOM builder: text always goes in as text, never as HTML.
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs ?? {})) {
+    if (v == null || v === false) continue;
+    if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'value') el.value = v;
+    else if (k === 'checked') el.checked = !!v;
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat(Infinity)) if (kid != null && kid !== false) el.append(kid instanceof Node ? kid : String(kid));
+  return el;
+}
+const $app = document.getElementById('app');
+const field = (label, input) => h('div', null, h('label', null, label), input);
+const inp = (name, value, type = 'text', extra = {}) => h('input', { name, type, value: value ?? '', ...extra });
+const sel = (name, value, options, blank = '(none)') =>
+  h('select', { name }, blank !== null ? h('option', { value: '' }, blank) : null,
+    options.map(([v, t]) => { const o = h('option', { value: v }, t); if (String(v) === String(value ?? '')) o.selected = true; return o; }));
+const formData = (form) => Object.fromEntries(new FormData(form).entries());
+const orNull = (v) => (v === '' || v == null ? null : v);
+const when = (iso) => (iso ? new Date(iso).toLocaleString() : '');
+
+// ── Publishable key: public by design, but refuse anything secret or from another project.
+function checkKey(key) {
+  if (!key) return 'Paste the key first.';
+  if (key.startsWith('sb_secret_')) return 'That is a SECRET key. Use the publishable key (sb_publishable_...) or the anon key.';
+  if (key.startsWith('eyJ')) {
+    try {
+      const p = JSON.parse(atob(key.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      if (p.role !== 'anon') return `That key has role "${p.role}". Only the anon/publishable key belongs in a browser.`;
+      if (p.ref !== STAGING_REF) return `That key is for project ${p.ref}, not staging ${STAGING_REF}.`;
+    } catch { return 'That does not look like a valid key.'; }
+  } else if (!key.startsWith('sb_publishable_')) return 'Expected a key starting with sb_publishable_ or eyJ.';
+  return null;
+}
+
+let sb = null, me = null, catalogue = null, current = 'account';
+let flash = null;
+
+function keyScreen(error) {
+  $app.replaceChildren(h('div', { id: 'signin' }, h('div', { class: 'card' },
+    h('h2', null, 'One-time setup'),
+    h('p', null, 'Paste the staging project\'s publishable key. Supabase dashboard, project ', h('b', null, STAGING_REF),
+      ': Project Settings, API Keys, "Publishable key". It is public by design. It is stored only in this browser.'),
+    error && h('div', { class: 'msg bad' }, error),
+    h('form', { onsubmit: (e) => { e.preventDefault(); const k = e.target.key.value.trim(); const err = checkKey(k); if (err) return keyScreen(err); store.set(KEY_STORE, k); boot(); } },
+      field('Publishable key', inp('key', '', 'text', { autocomplete: 'off', spellcheck: 'false' })),
+      h('div', { class: 'row' }, h('button', { class: 'b' }, 'Save'))))));
+}
+
+async function boot() {
+  const key = store.get(KEY_STORE);
+  if (!key || checkKey(key)) return keyScreen(key ? checkKey(key) : null);
+  sb = createClient(SUPABASE_URL, key, { auth: { persistSession: true, detectSessionInUrl: true } });
+  const hashErr = new URLSearchParams(location.hash.slice(1)).get('error_description');
+  if (hashErr) { flash = ['bad', `Sign-in link problem: ${hashErr}. Links work once; ask for a new one.`]; history.replaceState(null, '', '/'); }
+  const { data } = await sb.auth.getSession();
+  if (location.hash.includes('access_token')) history.replaceState(null, '', '/');
+  sb.auth.onAuthStateChange((evt) => { if (evt === 'SIGNED_OUT') { me = null; signInScreen(); } });
+  data.session ? start() : signInScreen();
+}
+
+function signInScreen(note) {
+  document.getElementById('who').textContent = '';
+  document.getElementById('signout').hidden = true;
+  const status = h('div');
+  const show = (kind, text) => status.replaceChildren(h('div', { class: `msg ${kind}` }, text));
+  if (note) show(...note); else if (flash) { show(...flash); flash = null; }
+  $app.replaceChildren(h('div', { id: 'signin' },
+    h('div', { class: 'card' }, h('h2', null, 'Sign in (staging)'), status,
+      h('form', { onsubmit: async (e) => {
+        e.preventDefault(); const f = formData(e.target);
+        if (f.password) {
+          const { error } = await sb.auth.signInWithPassword({ email: f.email, password: f.password });
+          return error ? show('bad', error.message) : start();
+        }
+        const { error } = await sb.auth.signInWithOtp({ email: f.email, options: { shouldCreateUser: false, emailRedirectTo: location.origin + '/' } });
+        error ? show('bad', error.message) : show('ok', `Email sent to ${f.email}. Open the link once, in this browser.`);
+      } },
+        field('Email', inp('email', '', 'email', { required: true, autocomplete: 'username' })),
+        h('div', { style: 'height:8px' }),
+        field('Password (leave empty to get an email link instead)', inp('password', '', 'password', { autocomplete: 'current-password' })),
+        h('div', { class: 'row' }, h('button', { class: 'b' }, 'Sign in'))),
+      h('p', { class: 'muted' }, 'No password yet? Leave it empty, use the email link, then set one under "My account".')),
+    h('div', { class: 'row' }, h('button', { class: 'b2', onclick: () => { store.set(KEY_STORE, null); keyScreen(); } }, 'Change publishable key'))));
+}
+
+// ── API calls: every result also lands in the "last response" box.
+let lastCall = null;
+async function api(method, path, body, rawType) {
+  const { data } = await sb.auth.getSession();
+  const token = data.session?.access_token;
+  const headers = { authorization: `Bearer ${token}` };
+  let payload;
+  if (rawType) { headers['content-type'] = rawType; payload = body; }
+  else if (body !== undefined) { headers['content-type'] = 'application/json'; payload = JSON.stringify(body); }
+  let status = 0, json = null;
+  try {
+    const res = await fetch(API + path, { method, headers, body: payload });
+    status = res.status;
+    json = await res.json().catch(() => null);
+  } catch (e) {
+    json = { error: `Could not reach the API at ${API}. Is "npm run dev" running? (${e.message})` };
+  }
+  lastCall = { method, path, body: rawType ? `(${rawType}, ${body?.size ?? '?'} bytes)` : body, status, json };
+  if (status === 401) { flash = ['bad', 'Signed out: the login expired. Sign in again.']; }
+  return { ok: status >= 200 && status < 300, status, data: json };
+}
+function result(r, okText) {
+  if (r.ok) flash = ['ok', okText];
+  else {
+    const d = r.data?.detail?.fieldErrors ? Object.entries(r.data.detail.fieldErrors).map(([k, v]) => `${k}: ${v.join(', ')}`).join('; ') : '';
+    flash = ['bad', `${r.status || 'No connection'}: ${r.data?.error ?? 'failed'}${d ? ' (' + d + ')' : ''}`];
+  }
+  return r.ok;
+}
+
+const VIEWS = [
+  ['account', 'My account', null],
+  ['users', 'Users', 'settings.users.view'],
+  ['roles', 'Roles & access', 'settings.roles.view'],
+  ['departments', 'Departments', 'settings.departments.view'],
+  ['positions', 'Positions', 'settings.positions.view'],
+  ['company', 'Company profile', 'settings.company.view'],
+  ['docnumbers', 'Document numbers', 'settings.docnumbers.view'],
+  ['orgchart', 'Organisation chart', 'orgchart.view'],
+  ['audit', 'Audit log', 'settings.audit.view'],
+];
+const can = (p) => !p || me?.permissions.includes(p);
+
+async function start() {
+  const r = await api('GET', '/api/me');
+  if (!r.ok) {
+    await sb.auth.signOut({ scope: 'local' });
+    return signInScreen(['bad', `${r.status || 'No connection'}: ${r.data?.error ?? 'the API refused this login'}`]);
+  }
+  me = r.data;
+  document.getElementById('who').textContent = `${me.user.full_name} (${me.roles.map((x) => x.name ?? x.code).join(', ')})`;
+  const so = document.getElementById('signout'); so.hidden = false; so.onclick = () => sb.auth.signOut();
+  render();
+}
+
+async function render() {
+  const nav = h('nav', null, VIEWS.map(([k, label, perm]) =>
+    h('button', { class: k === current ? 'on' : null, disabled: !can(perm), title: can(perm) ? null : `Needs ${perm}`, onclick: () => { current = k; render(); } }, label)));
+  const view = h('div', { id: 'view' }, h('p', { class: 'muted' }, 'Loading...'));
+  $app.replaceChildren(h('main', null, nav, view));
+  let body;
+  try { body = await RENDER[current](); } catch (e) { body = h('div', { class: 'msg bad' }, `Page error: ${e.message}`); }
+  const top = flash ? h('div', { class: `msg ${flash[0]}` }, flash[1]) : null; flash = null;
+  const last = lastCall ? h('details', { class: 'card' }, h('summary', null, `Last API call: ${lastCall.method} ${lastCall.path} -> ${lastCall.status}`),
+    lastCall.body !== undefined ? h('pre', null, 'Sent: ' + (typeof lastCall.body === 'string' ? lastCall.body : JSON.stringify(lastCall.body, null, 2))) : null,
+    h('pre', null, JSON.stringify(lastCall.json, null, 2))) : null;
+  view.replaceChildren(...[top, body, last].flat().filter(Boolean));
+}
+const act = async (promise, okText) => { result(await promise, okText); if (lastCall?.status === 401) return signInScreen(); render(); };
+
+async function lists() {
+  const [d, p, u] = await Promise.all([
+    can('settings.departments.view') ? api('GET', '/api/departments') : null,
+    can('settings.positions.view') ? api('GET', '/api/positions') : null,
+    can('settings.users.view') ? api('GET', '/api/users?include_inactive=true') : null,
+  ]);
+  return { depts: d?.data?.departments ?? [], positions: p?.data?.positions ?? [], people: u?.data?.users ?? [] };
+}
+
+const RENDER = {
+  async account() {
+    const r = await api('GET', '/api/me'); if (r.ok) me = r.data;
+    const u = me.user;
+    return [h('h2', null, 'My account'),
+      h('div', { class: 'card' },
+        h('div', { class: 'row', style: 'margin:0' }, u.photo_url ? h('img', { class: 'avatar', src: u.photo_url, style: 'width:56px;height:56px' }) : null,
+          h('div', null, h('b', null, u.full_name), h('div', { class: 'muted' }, u.email))),
+        h('table', null, h('tbody', null,
+          [['Staff code', u.staff_code], ['Phone', u.phone], ['Department', u.department_name], ['Position', u.position_name],
+           ['Roles', me.roles.map((x) => h('span', { class: 'pill' }, x.name ?? x.code))],
+           ['Permissions', me.permissions.map((x) => h('span', { class: 'pill' }, x))],
+           ['Menu pages', me.pages.map((x) => h('span', { class: 'pill' }, x.label))]]
+            .map(([k, v]) => h('tr', null, h('th', null, k), h('td', null, v ?? h('span', { class: 'muted' }, '-'))))))),
+      h('div', { class: 'card' }, h('h3', { style: 'margin-top:0' }, 'My photo'),
+        h('p', { class: 'muted' }, 'JPEG, PNG or WebP, under 2 MB. Needs the private "avatars" bucket in staging Storage.'),
+        photoForm(u.id)),
+      h('div', { class: 'card' }, h('h3', { style: 'margin-top:0' }, 'Set my password'),
+        h('p', { class: 'muted' }, 'So you can sign in without an email link next time. Goes straight to Supabase; the API never sees it.'),
+        h('form', { onsubmit: async (e) => { e.preventDefault(); const f = formData(e.target);
+          if (f.p1 !== f.p2) { flash = ['bad', 'The two passwords differ.']; return render(); }
+          const { error } = await sb.auth.updateUser({ password: f.p1 });
+          flash = error ? ['bad', error.message] : ['ok', 'Password set.']; render(); } },
+          h('div', { class: 'grid' }, field('New password', inp('p1', '', 'password', { required: true, minlength: 8, autocomplete: 'new-password' })),
+            field('Again', inp('p2', '', 'password', { required: true, minlength: 8, autocomplete: 'new-password' }))),
+          h('div', { class: 'row' }, h('button', { class: 'b' }, 'Set password'))))];
+  },
+
+  async users() {
+    const q = h('input', { placeholder: 'Search name, email or staff code' });
+    const inactive = h('input', { type: 'checkbox' });
+    const [{ depts, positions, people }, rolesR] = await Promise.all([lists(), can('settings.roles.view') ? api('GET', '/api/roles') : null]);
+    const roles = rolesR?.data?.roles ?? [];
+    const tbody = h('tbody');
+    const detail = h('div');
+    const draw = () => {
+      const s = q.value.trim().toLowerCase();
+      tbody.replaceChildren(...people.filter((p) => (inactive.checked || p.is_active) &&
+        (!s || [p.full_name, p.email, p.staff_code].some((x) => (x ?? '').toLowerCase().includes(s))))
+        .map((p) => h('tr', { class: 'click', onclick: () => openUser(p.id) },
+          h('td', null, p.full_name), h('td', null, p.email), h('td', null, p.staff_code ?? ''), h('td', null, p.department_name ?? ''),
+          h('td', null, p.position_name ?? ''), h('td', null, p.roles.map((r) => h('span', { class: 'pill' }, r.name))),
+          h('td', null, p.is_active ? 'yes' : h('b', null, 'no')))));
+    };
+    q.oninput = draw; inactive.onchange = draw; draw();
+
+    const personOpts = people.filter((p) => p.is_active).map((p) => [p.id, p.full_name]);
+    const deptOpts = depts.filter((d) => d.is_active).map((d) => [d.id, d.name]);
+    const posOpts = positions.filter((p) => p.is_active).map((p) => [p.id, p.name]);
+
+    async function openUser(id) {
+      const r = await api('GET', `/api/users/${id}`); if (!r.ok) { result(r); return render(); }
+      const u = r.data.user, held = new Set(r.data.roles.map((x) => x.id));
+      detail.replaceChildren(h('div', { class: 'card' },
+        h('div', { class: 'row', style: 'margin:0' }, u.photo_url ? h('img', { class: 'avatar', src: u.photo_url, style: 'width:48px;height:48px' }) : null,
+          h('h3', { style: 'margin:0' }, `${u.full_name} `, h('span', { class: 'muted' }, u.email)), u.is_active ? null : h('span', { class: 'pill' }, 'deactivated')),
+        can('settings.users.edit') ? h('form', { onsubmit: (e) => { e.preventDefault(); const f = formData(e.target);
+          act(api('PATCH', `/api/users/${id}`, { full_name: f.full_name, staff_code: orNull(f.staff_code), phone: orNull(f.phone),
+            department_id: orNull(f.department_id), position_id: orNull(f.position_id), reports_to: orNull(f.reports_to) }), 'User saved.'); } },
+          h('h3', null, 'Details'),
+          h('div', { class: 'grid' }, field('Full name', inp('full_name', u.full_name, 'text', { required: true })), field('Staff code', inp('staff_code', u.staff_code)),
+            field('Phone', inp('phone', u.phone)), field('Department', sel('department_id', u.department_id, deptOpts)),
+            field('Position', sel('position_id', u.position_id, posOpts)), field('Reports to', sel('reports_to', u.reports_to, personOpts.filter(([pid]) => pid !== id)))),
+          h('div', { class: 'row' }, h('button', { class: 'b' }, 'Save details'))) : null,
+        can('settings.roles.manage') ? h('form', { onsubmit: (e) => { e.preventDefault();
+          const ids = [...e.target.querySelectorAll('input[name=role]:checked')].map((x) => x.value);
+          act(api('PUT', `/api/users/${id}/roles`, { role_ids: ids }), 'Roles saved.'); } },
+          h('h3', null, 'Roles'),
+          h('div', { class: 'checks' }, roles.map((r) => h('label', null, h('input', { type: 'checkbox', name: 'role', value: r.id, checked: held.has(r.id) }), r.name))),
+          h('div', { class: 'row' }, h('button', { class: 'b' }, 'Save roles'))) : null,
+        can('settings.users.edit') || id === me.user.id ? [h('h3', null, 'Photo'), photoForm(id)] : null,
+        can('settings.users.deactivate') ? h('div', { class: 'row' }, u.is_active
+          ? h('button', { class: 'b2 danger', onclick: () => confirm(`Deactivate ${u.full_name}? They can no longer sign in.`) && act(api('POST', `/api/users/${id}/deactivate`), 'User deactivated.') }, 'Deactivate')
+          : h('button', { class: 'b2', onclick: () => act(api('POST', `/api/users/${id}/reactivate`), 'User reactivated.') }, 'Reactivate')) : null));
+      detail.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    const invite = can('settings.users.create') ? h('details', { class: 'card' }, h('summary', null, 'Invite a new user'),
+      h('div', { class: 'msg warn', style: 'margin-top:10px' }, 'This sends a REAL invitation email to that address. Use your own or a colleague\'s.'),
+      h('form', { onsubmit: (e) => { e.preventDefault(); const f = formData(e.target);
+        const ids = [...e.target.querySelectorAll('input[name=role]:checked')].map((x) => x.value);
+        const body = { email: f.email, full_name: f.full_name, role_ids: ids, department_id: orNull(f.department_id), position_id: orNull(f.position_id), reports_to: orNull(f.reports_to) };
+        if (f.staff_code) body.staff_code = f.staff_code; if (f.phone) body.phone = f.phone;
+        act(api('POST', '/api/users/invite', body), `Invitation sent to ${f.email}.`); } },
+        h('div', { class: 'grid' }, field('Email', inp('email', '', 'email', { required: true })), field('Full name', inp('full_name', '', 'text', { required: true })),
+          field('Staff code', inp('staff_code', '')), field('Phone', inp('phone', '')), field('Department', sel('department_id', '', deptOpts)),
+          field('Position', sel('position_id', '', posOpts)), field('Reports to', sel('reports_to', '', personOpts))),
+        h('h3', null, 'Roles (at least one)'),
+        h('div', { class: 'checks' }, roles.map((r) => h('label', null, h('input', { type: 'checkbox', name: 'role', value: r.id, checked: r.code === 'staff' }), r.name))),
+        h('div', { class: 'row' }, h('button', { class: 'b' }, 'Send invitation')))) : null;
+
+    return [h('h2', null, 'Users'), invite,
+      h('div', { class: 'card' }, h('div', { class: 'row', style: 'margin:0 0 8px' }, h('div', { style: 'flex:1;min-width:200px' }, q), h('label', { style: 'display:flex;gap:6px;color:inherit' }, inactive, 'Show deactivated')),
+        h('div', { class: 'scroll' }, h('table', null, h('thead', null, h('tr', null, ['Name', 'Email', 'Staff code', 'Department', 'Position', 'Roles', 'Active'].map((t) => h('th', null, t)))), tbody)),
+        h('p', { class: 'muted' }, 'Click a row to edit.')), detail];
+  },
+
+  async roles() {
+    const r = await api('GET', '/api/roles'); if (!r.ok) { result(r); return []; }
+    if (!catalogue) { const c = await api('GET', '/api/roles/catalogue'); catalogue = c.data; }
+    const manage = can('settings.roles.manage');
+    const detail = h('div');
+    const open = (role) => {
+      const perms = new Set(role.permissions), pages = new Set(role.pages);
+      const byModule = {}; for (const p of catalogue.permissions) (byModule[p.module] ??= []).push(p);
+      detail.replaceChildren(h('div', { class: 'card' },
+        h('h3', { style: 'margin-top:0' }, `${role.name} `, h('span', { class: 'muted' }, `(${role.code}${role.is_system ? ', built-in' : ''})`)),
+        role.code === 'owner' ? h('div', { class: 'msg warn' }, 'Owner always keeps every permission; the API refuses to reduce it.') : null,
+        h('form', { onsubmit: (e) => { e.preventDefault();
+          act(api('PUT', `/api/roles/${role.id}/permissions`, { permissions: [...e.target.querySelectorAll('input:checked')].map((x) => x.value) }), `Permissions saved for ${role.name}.`); } },
+          h('h3', null, 'Permissions (what the API allows)'),
+          Object.entries(byModule).map(([m, list]) => [h('div', { class: 'muted', style: 'margin:8px 0 4px' }, m),
+            h('div', { class: 'checks' }, list.map((p) => h('label', null, h('input', { type: 'checkbox', value: p.code, checked: perms.has(p.code), disabled: !manage }), h('span', null, p.description, h('br'), h('span', { class: 'muted' }, p.code)))))]),
+          manage ? h('div', { class: 'row' }, h('button', { class: 'b' }, 'Save permissions')) : null),
+        h('form', { onsubmit: (e) => { e.preventDefault();
+          act(api('PUT', `/api/roles/${role.id}/pages`, { pages: [...e.target.querySelectorAll('input:checked')].map((x) => x.value) }), `Menu pages saved for ${role.name}.`); } },
+          h('h3', null, 'Menu pages (what the menu shows)'),
+          h('div', { class: 'checks' }, catalogue.pages.map((p) => h('label', null, h('input', { type: 'checkbox', value: p.key, checked: pages.has(p.key), disabled: !manage }), p.label))),
+          manage ? h('div', { class: 'row' }, h('button', { class: 'b' }, 'Save pages')) : null),
+        manage && !role.is_system ? h('div', { class: 'row' }, h('button', { class: 'b2 danger', onclick: () => confirm(`Delete role ${role.name}?`) && act(api('DELETE', `/api/roles/${role.id}`), 'Role deleted.') }, 'Delete role')) : null));
+    };
+    return [h('h2', null, 'Roles & access'),
+      manage ? h('details', { class: 'card' }, h('summary', null, 'Create a role'),
+        h('form', { onsubmit: (e) => { e.preventDefault(); const f = formData(e.target);
+          const body = { code: f.code, name: f.name }; if (f.description) body.description = f.description;
+          act(api('POST', '/api/roles', body), `Role ${f.name} created. Open it to give it permissions.`); } },
+          h('div', { class: 'grid', style: 'margin-top:10px' }, field('Code (lowercase, e.g. sales)', inp('code', '', 'text', { required: true, pattern: '[a-z0-9_\\-]+' })),
+            field('Name', inp('name', '', 'text', { required: true })), field('Description', inp('description', ''))),
+          h('div', { class: 'row' }, h('button', { class: 'b' }, 'Create')))) : null,
+      h('div', { class: 'card scroll' }, h('table', null, h('thead', null, h('tr', null, ['Role', 'Code', 'Users', 'Permissions', 'Pages', 'Built-in'].map((t) => h('th', null, t)))),
+        h('tbody', null, r.data.roles.map((role) => h('tr', { class: 'click', onclick: () => open(role) },
+          h('td', null, role.name), h('td', null, role.code), h('td', null, role.user_count), h('td', null, role.permissions.length),
+          h('td', null, role.pages.length), h('td', null, role.is_system ? 'yes' : ''))))),
+        h('p', { class: 'muted' }, 'Click a role to see or change its permissions and menu pages.')), detail];
+  },
+
+  async departments() {
+    const { depts } = await lists();
+    const manage = can('settings.departments.manage');
+    const names = Object.fromEntries(depts.map((d) => [d.id, d.name]));
+    const formBox = h('div');
+    const form = (d) => h('form', { onsubmit: (e) => { e.preventDefault(); const f = formData(e.target);
+      const body = { code: f.code, name: f.name, parent_id: orNull(f.parent_id), sort_order: Number(f.sort_order || 0) };
+      if (d) body.is_active = f.is_active === 'on';
+      act(d ? api('PATCH', `/api/departments/${d.id}`, body) : api('POST', '/api/departments', body), d ? 'Department saved.' : `Department ${f.name} created.`); } },
+      h('h3', { style: 'margin-top:0' }, d ? `Edit ${d.name}` : 'New department'),
+      h('div', { class: 'grid' }, field('Code (letters, numbers, - _)', inp('code', d?.code, 'text', { required: true, pattern: '[A-Za-z0-9_\\-]+' })), field('Name', inp('name', d?.name, 'text', { required: true })),
+        field('Parent department', sel('parent_id', d?.parent_id, depts.filter((x) => x.id !== d?.id && (x.is_active || x.id === d?.parent_id)).map((x) => [x.id, x.name]))),
+        field('Sort order', inp('sort_order', d?.sort_order ?? 0, 'number', { min: 0, max: 9999 })),
+        d ? h('label', { style: 'display:flex;gap:6px;align-items:center;color:inherit;margin-top:18px' }, h('input', { type: 'checkbox', name: 'is_active', checked: d.is_active }), 'Active') : null),
+      h('div', { class: 'row' }, h('button', { class: 'b' }, d ? 'Save' : 'Create'),
+        d ? h('button', { type: 'button', class: 'b2', onclick: () => formBox.replaceChildren(h('div', { class: 'card' }, form(null))) }, 'Cancel') : null,
+        d?.is_active ? h('button', { type: 'button', class: 'b2 danger', onclick: () => confirm(`Deactivate ${d.name}? Refused while it still has people.`) && act(api('DELETE', `/api/departments/${d.id}`), 'Department deactivated.') }, 'Deactivate') : null));
+    if (manage) formBox.replaceChildren(h('div', { class: 'card' }, form(null)));
+    return [h('h2', null, 'Departments'), formBox,
+      h('div', { class: 'card scroll' }, h('table', null, h('thead', null, h('tr', null, ['Code', 'Name', 'Parent', 'Staff', 'Order', 'Active'].map((t) => h('th', null, t)))),
+        h('tbody', null, depts.map((d) => h('tr', { class: manage ? 'click' : null, onclick: manage ? () => { formBox.replaceChildren(h('div', { class: 'card' }, form(d))); formBox.scrollIntoView({ behavior: 'smooth' }); } : null },
+          h('td', null, d.code), h('td', null, d.name), h('td', null, names[d.parent_id] ?? ''), h('td', null, d.staff_count), h('td', null, d.sort_order), h('td', null, d.is_active ? 'yes' : 'no'))))),
+        depts.length ? (manage ? h('p', { class: 'muted' }, 'Click a row to edit or deactivate.') : null) : h('p', { class: 'muted' }, 'No departments yet.'))];
+  },
+
+  async positions() {
+    const { depts, positions } = await lists();
+    const manage = can('settings.positions.manage');
+    const names = Object.fromEntries(depts.map((d) => [d.id, d.name]));
+    const formBox = h('div');
+    const form = (p) => h('form', { onsubmit: (e) => { e.preventDefault(); const f = formData(e.target);
+      const body = { code: f.code, name: f.name, department_id: orNull(f.department_id), sort_order: Number(f.sort_order || 0) };
+      if (p) body.is_active = f.is_active === 'on';
+      act(p ? api('PATCH', `/api/positions/${p.id}`, body) : api('POST', '/api/positions', body), p ? 'Position saved.' : `Position ${f.name} created.`); } },
+      h('h3', { style: 'margin-top:0' }, p ? `Edit ${p.name}` : 'New position'),
+      h('div', { class: 'grid' }, field('Code', inp('code', p?.code, 'text', { required: true, pattern: '[A-Za-z0-9_\\-]+' })), field('Name', inp('name', p?.name, 'text', { required: true })),
+        field('Department', sel('department_id', p?.department_id, depts.filter((x) => x.is_active || x.id === p?.department_id).map((x) => [x.id, x.name]))), field('Sort order', inp('sort_order', p?.sort_order ?? 0, 'number', { min: 0, max: 9999 })),
+        p ? h('label', { style: 'display:flex;gap:6px;align-items:center;color:inherit;margin-top:18px' }, h('input', { type: 'checkbox', name: 'is_active', checked: p.is_active }), 'Active') : null),
+      h('div', { class: 'row' }, h('button', { class: 'b' }, p ? 'Save' : 'Create'),
+        p ? h('button', { type: 'button', class: 'b2', onclick: () => formBox.replaceChildren(h('div', { class: 'card' }, form(null))) }, 'Cancel') : null));
+    if (manage) formBox.replaceChildren(h('div', { class: 'card' }, form(null)));
+    return [h('h2', null, 'Positions'), formBox,
+      h('div', { class: 'card scroll' }, h('table', null, h('thead', null, h('tr', null, ['Code', 'Name', 'Department', 'Order', 'Active'].map((t) => h('th', null, t)))),
+        h('tbody', null, positions.map((p) => h('tr', { class: manage ? 'click' : null, onclick: manage ? () => { formBox.replaceChildren(h('div', { class: 'card' }, form(p))); formBox.scrollIntoView({ behavior: 'smooth' }); } : null },
+          h('td', null, p.code), h('td', null, p.name), h('td', null, names[p.department_id] ?? ''), h('td', null, p.sort_order), h('td', null, p.is_active ? 'yes' : 'no'))))),
+        positions.length ? null : h('p', { class: 'muted' }, 'No positions yet.'))];
+  },
+
+  async company() {
+    const r = await api('GET', '/api/settings/company'); if (!r.ok) { result(r); return []; }
+    const c = r.data.company, edit = can('settings.company.edit');
+    const F = [['name', 'Trading name'], ['legal_name', 'Legal name'], ['registration_no', 'Registration no.'], ['address_line1', 'Address line 1'],
+      ['address_line2', 'Address line 2'], ['postcode', 'Postcode'], ['city', 'City'], ['state', 'State'], ['country', 'Country'],
+      ['phone', 'Phone'], ['email', 'Email'], ['website', 'Website'], ['timezone', 'Time zone'], ['currency', 'Currency (3 letters)']];
+    const notNull = new Set(['name', 'country', 'timezone', 'currency']);
+    return [h('h2', null, 'Company profile'), h('div', { class: 'card' }, h('form', { onsubmit: (e) => { e.preventDefault(); const f = formData(e.target);
+      const body = {}; for (const [k] of F) body[k] = notNull.has(k) ? (f[k] || undefined) : orNull(f[k]);
+      act(api('PUT', '/api/settings/company', body), 'Company profile saved.'); } },
+      h('div', { class: 'grid' }, F.map(([k, label]) => field(label, inp(k, c[k], k === 'email' ? 'email' : 'text', { disabled: !edit })))),
+      c.updated_at ? h('p', { class: 'muted' }, `Last changed ${when(c.updated_at)}`) : null,
+      edit ? h('div', { class: 'row' }, h('button', { class: 'b' }, 'Save')) : null))];
+  },
+
+  async docnumbers() {
+    const r = await api('GET', '/api/settings/doc-numbers'); if (!r.ok) { result(r); return []; }
+    const rules = r.data.rules, manage = can('settings.docnumbers.manage');
+    const box = h('div');
+    const preview = (f) => `${f.prefix ?? ''}${String(f.next_number ?? 1).padStart(Number(f.padding) || 1, '0')}`;
+    const form = (rule) => {
+      const pv = h('b');
+      const el = h('form', { oninput: () => { pv.textContent = preview(formData(el)); }, onsubmit: (e) => { e.preventDefault(); const f = formData(e.target);
+        act(api('PUT', `/api/settings/doc-numbers/${encodeURIComponent(f.doc_type)}`, { prefix: f.prefix, padding: Number(f.padding), next_number: Number(f.next_number), reset_period: f.reset_period }), `Numbering for ${f.doc_type} saved.`); } },
+        h('h3', { style: 'margin-top:0' }, rule ? `Edit ${rule.doc_type}` : 'Add or change a rule'),
+        h('div', { class: 'grid' }, field('Document type (e.g. sales_order)', inp('doc_type', rule?.doc_type, 'text', { required: true, readonly: !!rule })),
+          field('Prefix (e.g. SO-)', inp('prefix', rule?.prefix, 'text', { required: true, maxlength: 12 })),
+          field('Digits', inp('padding', rule?.padding ?? 5, 'number', { required: true, min: 1, max: 12 })),
+          field('Next number', inp('next_number', rule?.next_number ?? 1, 'number', { required: true, min: 1 })),
+          field('Restart numbering', sel('reset_period', rule?.reset_period ?? 'never', [['never', 'Never'], ['yearly', 'Every year'], ['monthly', 'Every month']], null))),
+        h('p', null, 'Next document will look like: ', pv),
+        h('div', { class: 'row' }, h('button', { class: 'b' }, 'Save')));
+      pv.textContent = preview(formData(el));
+      return h('div', { class: 'card' }, el);
+    };
+    if (manage) box.replaceChildren(form(null));
+    return [h('h2', null, 'Document numbers'), box,
+      h('div', { class: 'card scroll' }, rules.length ? h('table', null, h('thead', null, h('tr', null, ['Document type', 'Prefix', 'Digits', 'Next number', 'Next looks like', 'Restart'].map((t) => h('th', null, t)))),
+        h('tbody', null, rules.map((x) => h('tr', { class: manage ? 'click' : null, onclick: manage ? () => box.replaceChildren(form(x)) : null },
+          h('td', null, x.doc_type), h('td', null, x.prefix), h('td', null, x.padding), h('td', null, x.next_number), h('td', null, preview(x)), h('td', null, x.reset_period)))))
+        : h('p', { class: 'muted' }, 'No numbering rules yet.'))];
+  },
+
+  async orgchart() {
+    const r = await api('GET', '/api/org-chart'); if (!r.ok) { result(r); return []; }
+    const person = (p) => h('li', null, p.photo_url ? h('img', { class: 'avatar', src: p.photo_url }) : null, ' ', h('b', null, p.full_name),
+      p.position ? h('span', { class: 'muted' }, ` - ${p.position}`) : null);
+    const dept = (d) => h('li', null, h('b', null, d.name), h('span', { class: 'muted' }, ` (${d.code}, ${d.people.length} people)`),
+      h('ul', null, d.people.map(person), d.children.map(dept)));
+    return [h('h2', null, 'Organisation chart'),
+      h('div', { class: 'card tree' }, r.data.departments.length ? h('ul', { style: 'border:0;padding-left:0' }, r.data.departments.map(dept)) : h('p', { class: 'muted' }, 'No departments yet.'),
+        r.data.unassigned.length ? [h('h3', null, 'Not in a department'), h('ul', null, r.data.unassigned.map(person))] : null)];
+  },
+
+  async audit() {
+    const params = new URLSearchParams(location.hash.slice(1));
+    const entity = params.get('entity') ?? '', limit = params.get('limit') ?? '100';
+    const r = await api('GET', `/api/settings/audit?limit=${encodeURIComponent(limit)}${entity ? `&entity=${encodeURIComponent(entity)}` : ''}`);
+    if (!r.ok) { result(r); return []; }
+    return [h('h2', null, 'Audit log'),
+      h('form', { class: 'card', onsubmit: (e) => { e.preventDefault(); const f = formData(e.target); location.hash = new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString(); render(); } },
+        h('div', { class: 'grid' }, field('Entity', sel('entity', entity, ['profile', 'role', 'department', 'position', 'company_settings', 'doc_number_rule'].map((x) => [x, x]), '(all)')),
+          field('How many', inp('limit', limit, 'number', { min: 1, max: 500 }))), h('div', { class: 'row' }, h('button', { class: 'b' }, 'Show'))),
+      h('div', { class: 'card scroll' }, h('table', null, h('thead', null, h('tr', null, ['When', 'Who', 'Action', 'Entity', 'Change'].map((t) => h('th', null, t)))),
+        h('tbody', null, r.data.entries.map((a) => h('tr', null, h('td', null, when(a.created_at)), h('td', null, a.actor_name ?? a.actor_id ?? ''), h('td', null, a.action),
+          h('td', null, a.entity), h('td', null, h('details', null, h('summary', null, 'before / after'), h('pre', null, JSON.stringify({ before: a.before, after: a.after }, null, 2)))))))))];
+  },
+};
+
+function photoForm(userId) {
+  return h('form', { class: 'row', onsubmit: (e) => { e.preventDefault(); const file = e.target.photo.files[0];
+    if (!file) return; act(api('POST', `/api/users/${userId}/photo`, file, file.type), 'Photo uploaded.'); } },
+    h('input', { type: 'file', name: 'photo', accept: 'image/jpeg,image/png,image/webp', style: 'width:auto' }), h('button', { class: 'b2' }, 'Upload photo'));
+}
+
+boot();
+</script>
+</body>
+</html>

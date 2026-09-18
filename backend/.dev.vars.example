@@ -1,0 +1,16 @@
+# Copy to .dev.vars and fill in. STAGING VALUES ONLY — never production.
+# .dev.vars is git-ignored. Never paste these keys into chat, tickets or email.
+
+# Supabase staging (ecgyrmblqfxvbfjlqkdq) session pooler, port 5432
+DATABASE_URL="postgresql://postgres.ecgyrmblqfxvbfjlqkdq:<STAGING-DB-PASSWORD>@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
+
+SUPABASE_URL="https://ecgyrmblqfxvbfjlqkdq.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY="<STAGING-SERVICE-ROLE-KEY>"
+
+# Only if the Supabase project still signs tokens with the older shared secret.
+# Leave it out first; the backend checks the project's public keys instead.
+#SUPABASE_JWT_SECRET="<STAGING-JWT-SECRET>"
+
+ALLOWED_ORIGINS="http://localhost:3000,http://localhost:5173,http://localhost:8787"
+AVATAR_BUCKET="avatars"
+ENVIRONMENT="local"

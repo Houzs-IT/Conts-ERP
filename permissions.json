@@ -1,0 +1,868 @@
+{
+  "$meta": {
+    "product": "The Conts Property OS",
+    "purpose": "Machine-readable permission matrix. Consumed by backend middleware, the frontend navigation builder and QA.",
+    "model": "role → resource → actions. Deny by default: an action absent from the list is forbidden.",
+    "scopes": {
+      "all": "Every record",
+      "own_properties": "Records whose unit.owner_id matches the session owner",
+      "assigned": "Records where the signed-in user is the assignee",
+      "none": "No access. The field must be absent from the response payload, not hidden in the UI."
+    }
+  },
+  "actions": [
+    "view",
+    "create",
+    "edit",
+    "delete",
+    "assign",
+    "approve",
+    "send",
+    "export",
+    "reveal"
+  ],
+  "resources": {
+    "dashboard": {
+      "label": "Dashboard and KPIs"
+    },
+    "portfolio": {
+      "label": "Portfolio performance"
+    },
+    "reservations": {
+      "label": "Bookings and calendar"
+    },
+    "guests": {
+      "label": "Guest records"
+    },
+    "tasks": {
+      "label": "Housekeeping and operational tasks"
+    },
+    "maintenance": {
+      "label": "Maintenance issues"
+    },
+    "inspections": {
+      "label": "Inspections"
+    },
+    "properties": {
+      "label": "Properties and units"
+    },
+    "inventory": {
+      "label": "Furniture and inventory"
+    },
+    "access_credentials": {
+      "label": "Access codes and keys",
+      "sensitive": true
+    },
+    "revenue": {
+      "label": "Revenue records",
+      "financial": true
+    },
+    "expenses": {
+      "label": "Expense records",
+      "financial": true
+    },
+    "statements": {
+      "label": "Owner statements",
+      "financial": true
+    },
+    "payouts": {
+      "label": "Payouts",
+      "financial": true
+    },
+    "owners": {
+      "label": "Owner records"
+    },
+    "contracts": {
+      "label": "Management agreements",
+      "financial": true
+    },
+    "pricing": {
+      "label": "Pricing rules"
+    },
+    "reviews": {
+      "label": "Guest reviews"
+    },
+    "messages": {
+      "label": "Guest and owner messaging"
+    },
+    "automations": {
+      "label": "Message automations"
+    },
+    "users": {
+      "label": "Users and roles",
+      "sensitive": true
+    },
+    "integrations": {
+      "label": "Channel and bank integrations",
+      "sensitive": true
+    },
+    "settings": {
+      "label": "System settings"
+    },
+    "audit": {
+      "label": "Audit trail",
+      "sensitive": true
+    }
+  },
+  "matrix": {
+    "management": {
+      "dashboard": {
+        "actions": [
+          "view",
+          "export"
+        ],
+        "scope": "all"
+      },
+      "portfolio": {
+        "actions": [
+          "view",
+          "export"
+        ],
+        "scope": "all"
+      },
+      "reservations": {
+        "actions": [
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "scope": "all"
+      },
+      "guests": {
+        "actions": [
+          "view",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "tasks": {
+        "actions": [
+          "view",
+          "create",
+          "edit",
+          "assign",
+          "delete"
+        ],
+        "scope": "all"
+      },
+      "maintenance": {
+        "actions": [
+          "view",
+          "create",
+          "edit",
+          "approve",
+          "delete"
+        ],
+        "scope": "all"
+      },
+      "inspections": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "properties": {
+        "actions": [
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "scope": "all"
+      },
+      "inventory": {
+        "actions": [
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "scope": "all"
+      },
+      "access_credentials": {
+        "actions": [
+          "view",
+          "create",
+          "edit",
+          "reveal"
+        ],
+        "scope": "all"
+      },
+      "revenue": {
+        "actions": [
+          "view",
+          "export"
+        ],
+        "scope": "all"
+      },
+      "expenses": {
+        "actions": [
+          "view",
+          "create",
+          "edit",
+          "delete",
+          "export"
+        ],
+        "scope": "all"
+      },
+      "statements": {
+        "actions": [
+          "view",
+          "create",
+          "edit",
+          "send",
+          "export"
+        ],
+        "scope": "all"
+      },
+      "payouts": {
+        "actions": [
+          "view",
+          "create",
+          "edit",
+          "export"
+        ],
+        "scope": "all"
+      },
+      "owners": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "contracts": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "pricing": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "reviews": {
+        "actions": [
+          "view",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "messages": {
+        "actions": [
+          "view",
+          "create"
+        ],
+        "scope": "all"
+      },
+      "automations": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "users": {
+        "actions": [
+          "view",
+          "create",
+          "edit",
+          "delete"
+        ],
+        "scope": "all"
+      },
+      "integrations": {
+        "actions": [
+          "view",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "settings": {
+        "actions": [
+          "view",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "audit": {
+        "actions": [
+          "view",
+          "export"
+        ],
+        "scope": "all"
+      }
+    },
+    "operations_manager": {
+      "dashboard": {
+        "actions": [
+          "view",
+          "export"
+        ],
+        "scope": "all"
+      },
+      "portfolio": {
+        "actions": [
+          "view"
+        ],
+        "scope": "all"
+      },
+      "reservations": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "guests": {
+        "actions": [
+          "view",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "tasks": {
+        "actions": [
+          "view",
+          "create",
+          "edit",
+          "assign"
+        ],
+        "scope": "all"
+      },
+      "maintenance": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "inspections": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "properties": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "inventory": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "access_credentials": {
+        "actions": [
+          "view",
+          "edit",
+          "reveal"
+        ],
+        "scope": "all"
+      },
+      "revenue": {
+        "actions": [
+          "view"
+        ],
+        "scope": "all"
+      },
+      "expenses": {
+        "actions": [
+          "view",
+          "create"
+        ],
+        "scope": "all"
+      },
+      "statements": {
+        "actions": [
+          "view"
+        ],
+        "scope": "all",
+        "note": "Cannot send. UI shows: You can view this statement but cannot send it. Ask a Finance Admin for access."
+      },
+      "payouts": {
+        "actions": [
+          "view"
+        ],
+        "scope": "all"
+      },
+      "owners": {
+        "actions": [
+          "view",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "contracts": {
+        "actions": [
+          "view"
+        ],
+        "scope": "all"
+      },
+      "pricing": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "reviews": {
+        "actions": [
+          "view",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "messages": {
+        "actions": [
+          "view",
+          "create"
+        ],
+        "scope": "all"
+      },
+      "automations": {
+        "actions": [
+          "view",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "audit": {
+        "actions": [
+          "view"
+        ],
+        "scope": "all"
+      }
+    },
+    "operations_staff": {
+      "dashboard": {
+        "actions": [
+          "view"
+        ],
+        "scope": "all",
+        "note": "Financial KPI cards are omitted from the response for this role."
+      },
+      "reservations": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "guests": {
+        "actions": [
+          "view",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "tasks": {
+        "actions": [
+          "view",
+          "create",
+          "edit",
+          "assign"
+        ],
+        "scope": "all"
+      },
+      "maintenance": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "inspections": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "properties": {
+        "actions": [
+          "view"
+        ],
+        "scope": "all"
+      },
+      "inventory": {
+        "actions": [
+          "view",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "access_credentials": {
+        "actions": [
+          "view"
+        ],
+        "scope": "all",
+        "note": "Instruction visible, secret masked. Reveal is denied."
+      },
+      "reviews": {
+        "actions": [
+          "view"
+        ],
+        "scope": "all"
+      },
+      "messages": {
+        "actions": [
+          "view",
+          "create"
+        ],
+        "scope": "all"
+      },
+      "revenue": {
+        "actions": [],
+        "scope": "none"
+      },
+      "expenses": {
+        "actions": [],
+        "scope": "none"
+      },
+      "statements": {
+        "actions": [],
+        "scope": "none"
+      },
+      "payouts": {
+        "actions": [],
+        "scope": "none"
+      },
+      "contracts": {
+        "actions": [],
+        "scope": "none"
+      }
+    },
+    "finance_admin": {
+      "dashboard": {
+        "actions": [
+          "view",
+          "export"
+        ],
+        "scope": "all"
+      },
+      "portfolio": {
+        "actions": [
+          "view",
+          "export"
+        ],
+        "scope": "all"
+      },
+      "reservations": {
+        "actions": [
+          "view"
+        ],
+        "scope": "all"
+      },
+      "properties": {
+        "actions": [
+          "view"
+        ],
+        "scope": "all"
+      },
+      "revenue": {
+        "actions": [
+          "view",
+          "edit",
+          "export"
+        ],
+        "scope": "all"
+      },
+      "expenses": {
+        "actions": [
+          "view",
+          "create",
+          "edit",
+          "delete",
+          "export"
+        ],
+        "scope": "all"
+      },
+      "statements": {
+        "actions": [
+          "view",
+          "create",
+          "edit",
+          "send",
+          "export"
+        ],
+        "scope": "all"
+      },
+      "payouts": {
+        "actions": [
+          "view",
+          "create",
+          "edit",
+          "export"
+        ],
+        "scope": "all"
+      },
+      "owners": {
+        "actions": [
+          "view",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "contracts": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "all"
+      },
+      "audit": {
+        "actions": [
+          "view",
+          "export"
+        ],
+        "scope": "all"
+      },
+      "tasks": {
+        "actions": [
+          "view"
+        ],
+        "scope": "all"
+      },
+      "maintenance": {
+        "actions": [
+          "view"
+        ],
+        "scope": "all"
+      }
+    },
+    "housekeeper": {
+      "tasks": {
+        "actions": [
+          "view",
+          "edit"
+        ],
+        "scope": "assigned",
+        "note": "Edit means complete, add photo, add note. Cannot reassign."
+      },
+      "maintenance": {
+        "actions": [
+          "view",
+          "create"
+        ],
+        "scope": "assigned",
+        "note": "Create is the damage report. View is limited to issues on units they are assigned to."
+      },
+      "properties": {
+        "actions": [
+          "view"
+        ],
+        "scope": "assigned",
+        "note": "Address and access instruction only."
+      },
+      "access_credentials": {
+        "actions": [
+          "view"
+        ],
+        "scope": "assigned",
+        "note": "Instruction for the assigned unit on the assigned day only."
+      },
+      "inventory": {
+        "actions": [
+          "view"
+        ],
+        "scope": "assigned"
+      },
+      "revenue": {
+        "actions": [],
+        "scope": "none"
+      },
+      "expenses": {
+        "actions": [],
+        "scope": "none"
+      },
+      "statements": {
+        "actions": [],
+        "scope": "none"
+      },
+      "payouts": {
+        "actions": [],
+        "scope": "none"
+      },
+      "owners": {
+        "actions": [],
+        "scope": "none"
+      },
+      "contracts": {
+        "actions": [],
+        "scope": "none"
+      },
+      "guests": {
+        "actions": [],
+        "scope": "none",
+        "note": "Guest name only where the task requires it. No contact details."
+      }
+    },
+    "technician": {
+      "tasks": {
+        "actions": [
+          "view",
+          "edit"
+        ],
+        "scope": "assigned"
+      },
+      "maintenance": {
+        "actions": [
+          "view",
+          "create",
+          "edit"
+        ],
+        "scope": "assigned"
+      },
+      "properties": {
+        "actions": [
+          "view"
+        ],
+        "scope": "assigned"
+      },
+      "access_credentials": {
+        "actions": [
+          "view"
+        ],
+        "scope": "assigned"
+      },
+      "inventory": {
+        "actions": [
+          "view",
+          "edit"
+        ],
+        "scope": "assigned"
+      },
+      "revenue": {
+        "actions": [],
+        "scope": "none"
+      },
+      "expenses": {
+        "actions": [
+          "create"
+        ],
+        "scope": "assigned",
+        "note": "Parts and cost on their own job only. Amount is provisional until Finance confirms."
+      },
+      "statements": {
+        "actions": [],
+        "scope": "none"
+      },
+      "payouts": {
+        "actions": [],
+        "scope": "none"
+      }
+    },
+    "owner": {
+      "statements": {
+        "actions": [
+          "view",
+          "export"
+        ],
+        "scope": "own_properties"
+      },
+      "payouts": {
+        "actions": [
+          "view"
+        ],
+        "scope": "own_properties"
+      },
+      "expenses": {
+        "actions": [
+          "view"
+        ],
+        "scope": "own_properties",
+        "note": "Only lines appearing on their own statements, with category, date, amount and reference."
+      },
+      "maintenance": {
+        "actions": [
+          "view",
+          "approve"
+        ],
+        "scope": "own_properties",
+        "note": "Approve applies to issues in state waiting with owner_approval_required."
+      },
+      "properties": {
+        "actions": [
+          "view"
+        ],
+        "scope": "own_properties"
+      },
+      "reservations": {
+        "actions": [
+          "view"
+        ],
+        "scope": "own_properties",
+        "note": "Guest first name and last initial only. No contact details, no channel pricing internals."
+      },
+      "reviews": {
+        "actions": [
+          "view"
+        ],
+        "scope": "own_properties"
+      },
+      "contracts": {
+        "actions": [
+          "view"
+        ],
+        "scope": "own_properties"
+      },
+      "dashboard": {
+        "actions": [],
+        "scope": "none",
+        "note": "Owners get the owner portal summary, never the internal dashboard."
+      },
+      "tasks": {
+        "actions": [],
+        "scope": "none"
+      },
+      "access_credentials": {
+        "actions": [],
+        "scope": "none"
+      },
+      "users": {
+        "actions": [],
+        "scope": "none"
+      },
+      "audit": {
+        "actions": [],
+        "scope": "none"
+      }
+    }
+  },
+  "enforcement": [
+    "Backend derives scope from the session, never from a client-supplied id. A mismatched owner id or unit id is 403, not an empty list.",
+    "Fields marked scope none are omitted from the serialised response for that role.",
+    "Navigation is built from the session permission list: unreachable destinations are removed, not disabled.",
+    "A visible-but-not-editable value renders the permission microcopy pattern: restriction plus route.",
+    "Every action on a resource flagged financial or sensitive writes an audit_log entry with actor, before and after state.",
+    "Revealing an access credential is itself an auditable action, even though it is only a read."
+  ]
+}

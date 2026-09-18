@@ -1,0 +1,79 @@
+# The Conts Property OS — Cloudflare Pages configuration
+#
+# Only bindings the code actually uses are active. Unused bindings with
+# placeholder ids fail `wrangler deploy` immediately, so anything not yet wired
+# up is commented out with a note on what to do when it is needed.
+#
+# Cron lives in wrangler.cron.toml, not here: Pages Functions route by file
+# path, so a scheduled handler has to be its own Worker.
+
+name = "theconts-os"
+compatibility_date = "2026-09-17"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "dist"
+
+# ---------------------------------------------------------------------------
+# Production
+# ---------------------------------------------------------------------------
+
+# `npm run setup` creates this and writes the id in for you. Doing it by hand:
+#   npx wrangler d1 create theconts-prod
+[[d1_databases]]
+binding = "DB"
+database_name = "theconts-prod"
+database_id = "499007e9-ea9f-4582-8170-28d90345f5f4"
+migrations_dir = "migrations"
+
+# Media storage — not yet used. Photo upload writes to `documents.storage_key`
+# but the upload endpoint is not built. Uncomment together with that endpoint:
+#   npx wrangler r2 bucket create theconts-media
+# [[r2_buckets]]
+# binding = "MEDIA"
+# bucket_name = "theconts-media"
+
+# Not used. Sessions are stateless HMAC-signed cookies — see
+# functions/_lib/auth.ts. A KV namespace would only be needed to support
+# server-side revocation of individual sessions.
+# [[kv_namespaces]]
+# binding = "SESSIONS"
+# id = "REPLACE_ME_KV_ID"
+
+[vars]
+APP_NAME = "The Conts Property OS"
+DEFAULT_LOCALE = "en-MY"
+TIMEZONE = "Asia/Kuala_Lumpur"
+CURRENCY = "MYR"
+CURRENCY_PREFIX = "RM "
+# Money is stored as INTEGER sen. 1245000 = RM 12,450.00
+MONEY_MINOR_UNITS = "100"
+SESSION_TTL_HOURS = "8"
+SESSION_ABSOLUTE_DAYS = "30"
+LOGIN_MAX_ATTEMPTS = "5"
+LOGIN_LOCKOUT_MINUTES = "15"
+RESET_TOKEN_MINUTES = "60"
+QUIET_HOURS_START = "22"
+QUIET_HOURS_END = "8"
+
+# ---------------------------------------------------------------------------
+# Secrets — never in this file. Set each with:
+#   npx wrangler secret put NAME
+#
+#   SESSION_SECRET     required. Any long random string; rotating it signs
+#                      everyone out. `npm run setup` generates one for local dev
+#                      in .dev.vars, which is gitignored.
+#   MAIL_API_KEY       optional. Transactional email provider.
+#   WHATSAPP_TOKEN     optional. WhatsApp Business Cloud API token.
+#   WHATSAPP_PHONE_ID  optional. WhatsApp Business phone number id.
+#
+# Without the mail or WhatsApp values, notify() records the send as queued and
+# returns without throwing — a missing provider never breaks the action that
+# triggered it. See functions/_lib/notify.ts.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Staging: Pages does not support custom named environments like this project
+# template assumed (only "production" and "preview" are valid for Pages). Every
+# deploy from a non-production branch already gets its own *.pages.dev preview
+# automatically; if a separate staging D1 is wanted later, bind it under
+# `[env.preview]` instead, following Cloudflare's Pages environments docs.
+# ---------------------------------------------------------------------------

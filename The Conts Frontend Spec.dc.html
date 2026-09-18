@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; -webkit-font-smoothing: antialiased; }
+  doc-page:not(:defined) { visibility: hidden; }
+  a { color: #252525; }
+  a:hover { color: #C8A46A; }
+  doc-page * { font-variant-numeric: tabular-nums; }
+  doc-page table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; }
+  doc-page th { text-align: left; font-size: 10.5pt; font-weight: 600; color: #706D67; padding: 7px 10px; background: #F1F0ED; border-bottom: 1px solid #DEDAD3; }
+  doc-page td { font-size: 10.5pt; padding: 8px 10px; border-bottom: 1px solid #DEDAD3; vertical-align: top; }
+  doc-page tr { break-inside: avoid; }
+  doc-page code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 9.5pt; background: #F1F0ED; padding: 1px 5px; border-radius: 4px; }
+  doc-page h1 { font-size: 24pt; line-height: 1.15; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 8px; }
+  doc-page h2 { font-size: 15pt; line-height: 1.25; font-weight: 600; margin: 30px 0 4px; break-after: avoid; }
+  doc-page h3 { font-size: 11.5pt; line-height: 1.3; font-weight: 600; margin: 20px 0 4px; break-after: avoid; }
+  doc-page p { font-size: 10.5pt; line-height: 1.55; margin: 0 0 10px; }
+  doc-page ul { font-size: 10.5pt; line-height: 1.55; margin: 0 0 12px; padding-left: 20px; }
+  doc-page li { margin-bottom: 4px; }
+  doc-page .lede { font-size: 12pt; line-height: 1.5; color: #706D67; margin-bottom: 20px; }
+  doc-page .meta { font-size: 9.5pt; color: #706D67; }
+  doc-page .rule { height: 2px; background: #C8A46A; width: 64px; margin: 0 0 20px; }
+  doc-page .note { border-left: 2px solid #C8A46A; background: #FBF6EC; padding: 12px 14px; margin: 0 0 16px; break-inside: avoid; }
+  doc-page .warn { border-left: 2px solid #C2413B; background: #FCECEB; padding: 12px 14px; margin: 0 0 16px; break-inside: avoid; }
+  doc-page .note p, doc-page .warn p { margin: 0; font-size: 10pt; }
+</style>
+<script src="./doc-page.js"></script>
+</helmet>
+<doc-page margin="0.85in">
+
+  <div slot="header" style="display:flex; justify-content:space-between; align-items:baseline; padding-bottom:8px; border-bottom:1px solid #DEDAD3; font-family:'IBM Plex Sans',sans-serif; font-size:8.5pt; color:#706D67">
+    <span style="letter-spacing:0.14em; font-weight:600; color:#252525">THE CONTS · PROPERTY OS</span>
+    <span>Frontend specification · v1.0</span>
+  </div>
+
+  <div slot="footer" style="display:flex; justify-content:space-between; align-items:baseline; padding-top:8px; border-top:1px solid #DEDAD3; font-family:'IBM Plex Sans',sans-serif; font-size:8.5pt; color:#706D67">
+    <span>The Conts Sdn Bhd · 202301027399 (1521322-V)</span>
+    <span>16 September 2026</span>
+  </div>
+
+  <div style="font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif; color:#252525">
+
+    <p class="meta" style="letter-spacing:0.14em; font-weight:600; margin-bottom:10px">FRONTEND SPECIFICATION</p>
+    <h1>The Conts Property OS and Owner Portal</h1>
+    <div class="rule"></div>
+    <p class="lede">Implementation handoff for the shared React frontend, the API layer and the database. Derived from The Conts Digital Brand Guide v1.0. Every visual value is a semantic token; every button has a destination, a request and a string.</p>
+
+    <h2>Package contents</h2>
+    <table>
+      <thead><tr><th>File</th><th>Consumed by</th><th>Contains</th></tr></thead>
+      <tbody>
+        <tr><td><code>tokens.css</code></td><td>Frontend, theme provider</td><td>Semantic CSS variables for colour, type, spacing, radius, elevation, motion, shell, locale. The only file a brand change touches.</td></tr>
+        <tr><td><code>tokens.json</code></td><td>Figma variables, Storybook, tests</td><td>The same contract as data, with provisional and unresolved flags.</td></tr>
+        <tr><td><code>routes.json</code></td><td>Router, QA</td><td>Every route, navigation group, button target, request, confirmation copy, empty state.</td></tr>
+        <tr><td><code>permissions.json</code></td><td>Authorisation middleware, navigation builder</td><td>Role × resource × action matrix, deny by default, with record scope per role.</td></tr>
+        <tr><td><code>schema.sql</code></td><td>PostgreSQL</td><td>Tables, closed status enums, constraints, indexes, audit log, metric views.</td></tr>
+        <tr><td><code>api.md</code></td><td>Backend, frontend data layer</td><td>Request and response shapes per screen, error codes with the exact UI behaviour.</td></tr>
+        <tr><td><code>seed.sql</code></td><td>Local and staging databases</td><td>Demo data reproducing the exact figures in the designs.</td></tr>
+        <tr><td><code>copy.md</code></td><td>Frontend, localisation</td><td>Every visible string keyed, plus status labels and formatting rules.</td></tr>
+        <tr><td><code>components.md</code></td><td>Frontend</td><td>Component inventory with required states, domain modules, validation contract, keyboard map.</td></tr>
+        <tr><td><code>notifications.md</code></td><td>Backend, content</td><td>Every email, WhatsApp, push and in-app message with trigger, timing and payload.</td></tr>
+        <tr><td><code>README.md</code></td><td>Everyone</td><td>Package index and reading order.</td></tr>
+        <tr><td><code>The Conts Design System</code></td><td>Design, review</td><td>Rendered foundations and component states.</td></tr>
+        <tr><td><code>The Conts Property OS</code></td><td>Design, engineering</td><td>Working screens: sign-in, dashboard, operations today, calendar, unit record, owner statements, owner portal, field app. Switch context in the header.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="warn">
+      <p><strong>Two decisions block final brand lock.</strong> The logo is a marked placeholder in every screen until the vector lockup arrives. The shared UI font is unresolved: Houzs ERP ships Tahoma, Hookka ERP ships IBM Plex Sans, and the guide requires one shared font. These designs use IBM Plex Sans via <code>--font-ui</code>; normalising the shared stack changes one token and nothing else.</p>
+    </div>
+
+    <h2>1 · Architecture position</h2>
+    <p>The Conts is a branded extension of the existing Houzs and Hookka React foundation, not a new frontend. Reuse the application shell, routing, authentication, tables, forms, dialogs, icon library and data-fetching patterns exactly as they are. Apply The Conts identity through the theme token contract and compose property-management domain modules from shared primitives.</p>
+    <table>
+      <thead><tr><th>Layer</th><th>Rule for this project</th></tr></thead>
+      <tbody>
+        <tr><td>Foundation</td><td>One agreed version set across the three products. Confirm the exact package stack before implementation; do not swap libraries for aesthetic reasons.</td></tr>
+        <tr><td>UI primitives</td><td>Button, Input, Select, Dialog, Table, Tabs, Badge, Toast. Never fork to change colour or radius.</td></tr>
+        <tr><td>Shared patterns</td><td>AppShell, PageHeader, FilterBar, DataTable, FormSection, AuditTimeline. Extend through documented props and slots.</td></tr>
+        <tr><td>Brand theme</td><td><code>tokens.css</code> under <code>[data-theme="theconts"]</code>. No hard-coded brand values inside shared components.</td></tr>
+        <tr><td>Domain modules</td><td>ReservationCalendar, UnitReadiness, OwnerStatement, OperationsQueue. The Conts-specific until their API stabilises.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>2 · Roles and permissions</h2>
+    <p>Navigation is built from the session response. Destinations a role cannot reach are removed, not disabled. Where a value is visible but not editable, use the permission microcopy pattern: restriction plus route.</p>
+    <table>
+      <thead><tr><th>Role</th><th>App</th><th>Scope</th><th>Financial data</th></tr></thead>
+      <tbody>
+        <tr><td>Management</td><td>Property OS</td><td>All modules, read and approve</td><td>Full</td></tr>
+        <tr><td>Operations manager</td><td>Property OS</td><td>All operations, assign work, edit units</td><td>Full</td></tr>
+        <tr><td>Operations staff</td><td>Property OS</td><td>Reservations and operations</td><td>None</td></tr>
+        <tr><td>Finance admin</td><td>Property OS</td><td>Revenue, expenses, statements, payouts</td><td>Full</td></tr>
+        <tr><td>Housekeeper</td><td>Field mobile</td><td>Own assigned tasks only</td><td>None. Field responses exclude financial fields entirely.</td></tr>
+        <tr><td>Technician</td><td>Field mobile</td><td>Own assigned maintenance only</td><td>None</td></tr>
+        <tr><td>Property owner</td><td>Owner portal</td><td>Own properties, scoped server-side by session owner id</td><td>Own statements only</td></tr>
+      </tbody>
+    </table>
+
+    <h2>3 · Authentication</h2>
+    <p>Four states, all designed. Password policy is enforced in the UI as a live checklist and again server-side: minimum 8 characters, at least one uppercase letter, at least one digit.</p>
+    <table>
+      <thead><tr><th>Route</th><th>Submit</th><th>On success</th><th>On failure</th></tr></thead>
+      <tbody>
+        <tr><td><code>/login</code></td><td>Sign in → <code>POST /api/auth/login</code></td><td><code>must_change_password</code> → <code>/change-password</code>; field roles → <code>/field/today</code>; owner → <code>/owner</code>; otherwise <code>/</code></td><td>401 renders the inline error block and preserves the email: “Invalid email or password. Five failed attempts lock the account for 15 minutes.” 423 adds the unlock time.</td></tr>
+        <tr><td><code>/forgot-password</code></td><td>Send reset link → <code>POST /api/auth/forgot-password</code></td><td>Always the same success block. Token expires in 60 minutes.</td><td>Never discloses whether an account exists.</td></tr>
+        <tr><td><code>/reset-password</code></td><td>Save and sign in</td><td>Signs in and routes to the role home</td><td>410 offers “Request a new link”.</td></tr>
+        <tr><td><code>/change-password</code></td><td>Save and continue</td><td>Clears the flag, routes to the role home</td><td>422 marks the failing requirement in the checklist.</td></tr>
+      </tbody>
+    </table>
+    <p>Secondary links: <em>Forgot password?</em> → <code>/forgot-password</code>. <em>Back to sign in</em> → <code>/login</code>. <em>Go to owner portal</em> → <code>/owner/login</code>.</p>
+
+    <h2>4 · Navigation</h2>
+    <p>Nine groups, organised by job rather than database structure. Group labels are the only uppercase strings besides the wordmark. Sidebar is 240 px expanded, 72 px collapsed.</p>
+    <table>
+      <thead><tr><th>Group</th><th>Destinations and routes</th><th>Designed</th></tr></thead>
+      <tbody>
+        <tr><td>Overview</td><td>Dashboard <code>/</code> · Portfolio <code>/portfolio</code></td><td>Dashboard</td></tr>
+        <tr><td>Reservations</td><td>Bookings <code>/reservations/bookings</code> · Calendar <code>/reservations/calendar</code> · Guests <code>/reservations/guests</code></td><td>Calendar</td></tr>
+        <tr><td>Operations</td><td>Today <code>/operations/today</code> · Housekeeping · Maintenance · Tasks · Inspections</td><td>Today</td></tr>
+        <tr><td>Properties</td><td>Properties · Units <code>/properties/units</code> · Inventory · Access and keys</td><td>Units and unit record</td></tr>
+        <tr><td>Finance</td><td>Revenue · Expenses · Owner statements <code>/finance/statements</code> · Payouts</td><td>Owner statements</td></tr>
+        <tr><td>Owners</td><td>Owners · Contracts</td><td>—</td></tr>
+        <tr><td>Performance</td><td>Analytics · Pricing · Reviews</td><td>—</td></tr>
+        <tr><td>Communication</td><td>Inbox · Automations</td><td>—</td></tr>
+        <tr><td>System</td><td>Users and roles · Integrations · Settings</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <p>Undesigned destinations render the reason-plus-next-action empty state rather than a dead link. Sidebar counts are live: items needing action today, open maintenance issues, statements not yet sent, unread threads.</p>
+
+    <h2>5 · Screen specifications</h2>
+
+    <h3>5.1 Dashboard · <code>/</code></h3>
+    <p>Answers business health and exceptions first. KPI row carries Accommodation revenue, Occupancy, ADR, RevPAR and Net owner payout, each with a comparison period. The trend chart uses charcoal bars for revenue and the gold series for occupancy; gold marks the selected series only. The header shows the last updated time and the integration sync state.</p>
+    <table>
+      <thead><tr><th>Control</th><th>Type</th><th>Destination or request</th><th>Copy</th></tr></thead>
+      <tbody>
+        <tr><td>Add property</td><td>Primary</td><td><code>/properties/new</code></td><td>Add property</td></tr>
+        <tr><td>Range switch</td><td>Segmented</td><td><code>GET /api/dashboard/trend?range=</code></td><td>3 months · 12 months · Year to date</td></tr>
+        <tr><td>Open operations</td><td>Tertiary</td><td><code>/operations/today</code></td><td>Open operations</td></tr>
+        <tr><td>View all units</td><td>Tertiary</td><td><code>/properties/units</code></td><td>View all units</td></tr>
+        <tr><td>Exception action</td><td>Tertiary, one per row</td><td>Dialog or route supplied by the API in <code>action</code></td><td>Assign cleaner · Notify owner · Review and send · Open pricing</td></tr>
+        <tr><td>Portfolio row</td><td>Row click</td><td><code>/properties/units/:unitId</code></td><td>—</td></tr>
+      </tbody>
+    </table>
+
+    <h3>5.2 Operations today · <code>/operations/today</code></h3>
+    <p>A prioritised list, not a Kanban. The backend supplies <code>riskRank</code> and the SLA label so the order and countdown are authoritative. Each row shows unit, work, readiness, next guest time, SLA and exactly one action. Row edge colour repeats the SLA tone; the label always carries the meaning in words.</p>
+    <table>
+      <thead><tr><th>Control</th><th>Request</th><th>Confirmation and result copy</th></tr></thead>
+      <tbody>
+        <tr><td>Filters</td><td><code>GET /api/operations/today?filter=</code></td><td>All work · Check-in risk · Housekeeping · Maintenance · Unassigned</td></tr>
+        <tr><td>Assign cleaner</td><td><code>POST /api/housekeeping/tasks/:id/assign</code></td><td>“Assign Nurul to Trion B-32-05?” → “Cleaner assigned. Nurul has been notified.” A 409 offers: “Nurul has 2 overlapping tasks at 13:45. Assign anyway?”</td></tr>
+        <tr><td>Open task</td><td>route</td><td><code>/operations/tasks/:taskId</code></td></tr>
+        <tr><td>Confirm with guest</td><td><code>POST /api/messages</code></td><td>Opens the message dialog prefilled with the early check-in request.</td></tr>
+        <tr><td>Start inspection</td><td><code>POST /api/inspections</code></td><td>Routes into the new inspection.</td></tr>
+        <tr><td>Update owner</td><td><code>POST /api/owners/:id/notify</code></td><td>“Notify Tan Boon Huat that #C-31-14 is blocked until 22 Sep?”</td></tr>
+      </tbody>
+    </table>
+
+    <h3>5.3 Reservation calendar · <code>/reservations/calendar</code></h3>
+    <p>Units as rows, dates as columns, unit names frozen during horizontal scroll. Channel and status are printed on every block, so Airbnb, Booking.com, Agoda, direct, maintenance block and owner stay remain distinguishable without colour. Dragging a block never saves silently.</p>
+    <ul>
+      <li><strong>Add booking</strong> → <code>POST /api/reservations</code>. A 409 returns the conflicting reservation: “Blocked. #A-12-03 already has Chen Y. on those dates.”</li>
+      <li><strong>Drag a block</strong> → <code>PATCH /api/reservations/:id/dates</code>. Without <code>confirm</code> the API returns 428 and the dialog states the consequence: “Move Nadia Abdullah to 18–21 Sep? This updates the channel and notifies the guest.”</li>
+      <li><strong>Block dates</strong> → a reservation with channel <code>maintenance_block</code> or <code>owner_stay</code>, excluded from occupancy and ADR.</li>
+    </ul>
+
+    <h3>5.4 Unit record · <code>/properties/units/:unitId</code></h3>
+    <p>Seven tabs: Overview, Reservations, Operations, Financials, Maintenance, Documents, Activity. Overview combines current guest, next check-in, readiness, open issues, owner and the monthly profit and loss. The Financials tab requires a finance-permitted role. Activity is the audit trail: actor, timestamp, before and after state, source.</p>
+    <p>Access codes are masked by default. Revealing one requires an operations or management role and writes an <code>access.reveal</code> audit entry.</p>
+
+    <h3>5.5 Owner statements · <code>/finance/statements</code></h3>
+    <p>The gross-to-net chain is explicit and the three revenue definitions are never merged. A statement can only be sent once finalised; provisional rows show the state and disable sending with a reason.</p>
+    <table>
+      <thead><tr><th>Control</th><th>Request</th><th>Copy</th></tr></thead>
+      <tbody>
+        <tr><td>Generate statements</td><td><code>POST /api/statements/generate</code></td><td>“Statements generated for 19 owners. Review before sending.”</td></tr>
+        <tr><td>Send n statements</td><td><code>POST /api/statements/send</code></td><td>“Send 2 statements to owners? Owners receive an email and portal notification.” → “2 statements sent.”</td></tr>
+        <tr><td>Export</td><td><code>GET /api/statements/export</code></td><td>Export header prints the applied filters, generated time and data scope.</td></tr>
+        <tr><td>Row click</td><td>route</td><td><code>/finance/statements/:statementId</code></td></tr>
+        <tr><td>Disabled send</td><td>—</td><td>“Cannot send. This statement is still provisional.”</td></tr>
+      </tbody>
+    </table>
+
+    <h3>5.6 Owner portal · <code>/owner</code></h3>
+    <p>Lower density, plain language, confidence and traceability first. Hierarchy: payout and status, then occupancy, ADR, bookings and rating, then the gross-to-net breakdown, then the trend, then property health, then documents. Every deduction carries a category, date, amount and reference. Provisional periods are labelled as such.</p>
+    <ul>
+      <li><strong>Download statement</strong> → <code>GET /api/owner/statements/:id/pdf</code></li>
+      <li><strong>Download</strong> per document row → <code>GET /api/documents/:id/download</code></li>
+      <li><strong>Approve quote</strong> on a waiting issue → <code>POST /api/maintenance/issues/:id/approve</code>, confirming: “Approve RM 890 for blackout curtains? The Conts will schedule the work and deduct the amount from your next statement.”</li>
+    </ul>
+
+    <h3>5.7 Field mobile · <code>/field/today</code></h3>
+    <p>Single column, 44 px minimum targets, readable in a car park. Shows address, access instruction, checklist, due time and a contact route. Financial data is never present in the response, not merely hidden.</p>
+    <ul>
+      <li><strong>Add photo</strong> → <code>POST /api/tasks/:id/photos</code>. At least one photo is required before a unit can be marked ready.</li>
+      <li><strong>Mark ready</strong> → <code>POST /api/tasks/:id/complete</code>, confirming: “Mark #A-12-03 ready for guest? Next check-in is 15:00.” Sets unit readiness to Ready.</li>
+      <li><strong>Report damage or missing item</strong> → <code>POST /api/maintenance/issues</code>, creating an open issue on that unit with photos.</li>
+      <li><strong>Call operations</strong> → <code>tel:+60174658868</code>.</li>
+      <li>Offline queue shows Queued, Synced and Failed to sync as distinct states. Nothing reads as success before the server confirms.</li>
+    </ul>
+
+    <h2>6 · Table, filter and export behaviour</h2>
+    <ul>
+      <li>Rows 48 px standard, 40 px compact. Headers sticky, sentence case, with visible sort state.</li>
+      <li>Text left; money and comparable numbers right with a consistent currency label; status left, consistently.</li>
+      <li>Critical row actions are always visible — never hover-only, for touch and keyboard users.</li>
+      <li>Bulk actions appear after selection and state the selection count and scope.</li>
+      <li>Finance and audit tables use explicit pagination with a stated page size; very large operational lists may virtualise.</li>
+      <li>Every export prints applied filters, generated time and data scope.</li>
+    </ul>
+
+    <h2>7 · System states</h2>
+    <table>
+      <thead><tr><th>State</th><th>Treatment</th></tr></thead>
+      <tbody>
+        <tr><td>Loading</td><td>Skeletons for predictable blocks; localised progress for actions. No decorative spinners on financial values.</td></tr>
+        <tr><td>Partial failure</td><td>Keep the successful content and name only what failed: “Some data could not load: pricing. Everything else is current.”</td></tr>
+        <tr><td>Empty, filtered</td><td>Reason plus next action: “No maintenance issues match these filters. Clear filters.”</td></tr>
+        <tr><td>Empty, first use</td><td>“No units yet. Add your first unit to start tracking readiness and revenue.”</td></tr>
+        <tr><td>Integration</td><td>Connected, expired, degraded and failed are distinct and worded honestly in the shell pill.</td></tr>
+        <tr><td>Irreversible action</td><td>Never show a green success state before server confirmation.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>8 · Accessibility and localisation</h2>
+    <ul>
+      <li>WCAG 2.2 AA for contrast, keyboard use, focus visibility, error identification and control names.</li>
+      <li>Focus ring 2 px with offset, gold on light surfaces and gold on dark; never removed.</li>
+      <li>Minimum touch target 44 × 44 px in field and owner experiences.</li>
+      <li>Status never depends on colour, placeholder text, icon or hover alone.</li>
+      <li>English first, architecture ready for Bahasa Malaysia and Simplified Chinese, with 30 percent text expansion headroom.</li>
+      <li>Timezone Asia/Kuala Lumpur, currency MYR shown as RM, compact dates as 16 Sep 2026, ranges always disambiguated.</li>
+    </ul>
+
+    <h2>9 · Backend obligations summary</h2>
+    <table>
+      <thead><tr><th>Obligation</th><th>Why the frontend depends on it</th></tr></thead>
+      <tbody>
+        <tr><td>Supply <code>riskRank</code> and SLA labels</td><td>Operations ordering and countdowns must not drift with client clocks.</td></tr>
+        <tr><td>Supply the exception <code>action</code> object</td><td>One action per row, decided by business rules rather than the view.</td></tr>
+        <tr><td>Decide delta <code>tone</code></td><td>Expected seasonality must not render as a red failure.</td></tr>
+        <tr><td>Return <code>generatedAt</code> and <code>filtersApplied</code></td><td>Dashboards show freshness; exports print their scope.</td></tr>
+        <tr><td>Return channel and status labels</td><td>Calendar blocks stay readable without colour.</td></tr>
+        <tr><td>Enforce the password policy and lockout</td><td>The client checklist is convenience, not security.</td></tr>
+        <tr><td>Scope owner queries by session</td><td>A mismatched owner id is 403, never a silent empty list.</td></tr>
+        <tr><td>Exclude financial fields for field roles</td><td>Least privilege by payload, not by hiding in the UI.</td></tr>
+        <tr><td>Write <code>audit_log</code> on financial and destructive actions</td><td>Activity tabs and audit views read directly from it.</td></tr>
+        <tr><td>Reject overlapping reservations and return the conflict</td><td>Drag interactions need the conflicting booking to explain the refusal.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>10 · Notifications</h2>
+    <p>Full trigger, timing and payload table in <code>notifications.md</code>. The frontend surfaces these under Communication, Automations; the backend owns delivery. Four constraints shape the UI:</p>
+    <ul>
+      <li>Access codes are never sent earlier than two hours before check-in, and only once the unit is Ready.</li>
+      <li>Quiet hours 22:00 to 08:00 MYT for non-urgent guest and owner messages. Check-in risk and payout failure override.</li>
+      <li>A failed send is a visible state on the related record with a retry action, never a silent drop.</li>
+      <li>Every notification has a durable destination in the product — a toast is never the only record.</li>
+    </ul>
+
+    <h2>11 · Data formats</h2>
+    <table>
+      <thead><tr><th>Value</th><th>Display</th><th>Transport</th></tr></thead>
+      <tbody>
+        <tr><td>Money, cents matter</td><td>RM 12,450.00</td><td>String decimal <code>"12450.00"</code> plus <code>currency: "MYR"</code>. Never float.</td></tr>
+        <tr><td>Money, KPI card</td><td>RM 12,450</td><td>Same value; rounding is a display decision.</td></tr>
+        <tr><td>Deduction</td><td>− RM 2,315.00</td><td>Negative decimal. Semantic colour only when it represents a problem.</td></tr>
+        <tr><td>Percent</td><td>82.4%</td><td><code>"82.4"</code> with <code>unit: "percent"</code>. Never <code>.824</code>.</td></tr>
+        <tr><td>Rating</td><td>4.91 / 5 in detail views, 4.91 in dense tables</td><td><code>"4.91"</code></td></tr>
+        <tr><td>Date, compact</td><td>16 Sep 2026</td><td><code>"2026-09-16"</code></td></tr>
+        <tr><td>Date range</td><td>16 Sep – 29 Sep 2026</td><td>Two dates. Always disambiguated, never <code>16–29 Sep</code> across months.</td></tr>
+        <tr><td>Time</td><td>15:00, and 14:06 MYT where cross-channel timing matters</td><td>ISO 8601 UTC timestamp. Client converts.</td></tr>
+        <tr><td>Duration and SLA</td><td>Due in 1 h 20 m · Overdue 12 min</td><td>Signed minutes from the server plus a server-rendered label.</td></tr>
+        <tr><td>Nights</td><td>3 nights</td><td>Integer, derived as check-out minus check-in.</td></tr>
+        <tr><td>Unit reference</td><td>Vista Jaya One #A-12-03</td><td>Property name and unit number as separate fields.</td></tr>
+        <tr><td>Phone</td><td>+60 17-465 8868</td><td>E.164 <code>"+60174658868"</code></td></tr>
+        <tr><td>Masked secret</td><td>••••17#</td><td>Server sends the mask. The raw value requires an explicit, audited reveal.</td></tr>
+      </tbody>
+    </table>
+    <p>Casing: sentence case for headings, buttons, tabs and table headers. Uppercase is reserved for the corporate wordmark and the nine navigation group labels. No all-caps operational messages.</p>
+
+    <h2>12 · Still to specify</h2>
+    <p>Designed and documented so far: authentication, dashboard, operations today, reservation calendar, unit record, owner statements, owner portal and the field app. The remaining destinations exist in the navigation and the route map, and need screen design before build.</p>
+    <table>
+      <thead><tr><th>Area</th><th>What it still needs</th></tr></thead>
+      <tbody>
+        <tr><td>Bookings list and reservation record</td><td>Column set, filters, the reservation detail layout, cancellation and modification flows with channel consequences.</td></tr>
+        <tr><td>Guests</td><td>Guest record, stay history, blocklist handling, data-retention rule.</td></tr>
+        <tr><td>Housekeeping and Tasks</td><td>Weekly roster view, cleaner capacity and availability, recurring task templates, linen set definitions.</td></tr>
+        <tr><td>Inspections</td><td>Checklist templates per unit type, pass and fail consequences, photo requirements.</td></tr>
+        <tr><td>Properties and Inventory</td><td>Property record, unit creation wizard, fit-out and depreciation tracking, stock levels for consumables.</td></tr>
+        <tr><td>Revenue and Expenses</td><td>Ledger views, expense approval thresholds, recurring expenses, tax treatment (SST) and its statement presentation.</td></tr>
+        <tr><td>Payouts</td><td>Batch payout run, bank file export format, failure and retry handling.</td></tr>
+        <tr><td>Owners and Contracts</td><td>Owner onboarding pipeline, contract versioning, fee-structure variants beyond a flat percentage.</td></tr>
+        <tr><td>Analytics and Pricing</td><td>Report definitions, saved views, pricing rule editor, seasonality and minimum-stay rules.</td></tr>
+        <tr><td>Reviews</td><td>Response workflow, rating-drop alert thresholds.</td></tr>
+        <tr><td>Inbox and Automations</td><td>Unified thread view across channels, template editor, send-window rules.</td></tr>
+        <tr><td>System</td><td>User invitation flow, role editor, integration connection and reconnection flows, audit log viewer.</td></tr>
+        <tr><td>Cross-cutting</td><td>Global search results page, notification centre, saved views, bulk-action confirmations, tablet layouts, an onboarding empty state for a brand-new tenant.</td></tr>
+      </tbody>
+    </table>
+    <p>Each of these follows the same documentation pattern as the designed screens: a control table naming every button, its destination, its request and its exact copy, added to <code>routes.json</code> and <code>copy.md</code> as it is designed.</p>
+
+    <h2>13 · Outstanding from the client</h2>
+    <p>Everything below is required before final brand lock. Until then the provisional tokens are safe to build on, because replacing them is a token change and not a page-by-page edit.</p>
+    <table>
+      <thead><tr><th>Item</th><th>Effect on this build</th></tr></thead>
+      <tbody>
+        <tr><td>Vector logo and all approved lockups</td><td>Every logo position is a marked placeholder slot sized to the guide’s 120 px minimum.</td></tr>
+        <tr><td>Official Pantone, CMYK, RGB and HEX values</td><td>Replaces the eight provisional colour tokens centrally.</td></tr>
+        <tr><td>Shared font decision</td><td>One line in <code>tokens.css</code>. Blocking for visual regression baselines.</td></tr>
+        <tr><td>Approved property photography with rights metadata</td><td>The login stage and any media cards remain typographic until real imagery exists. Note that we cannot generate photography.</td></tr>
+        <tr><td>Example owner statements and contracts</td><td>Confirms statement line categories, legal wording and the PDF layout.</td></tr>
+        <tr><td>Representative real data</td><td>All figures in the current screens are placeholders in a Kuala Lumpur and Petaling Jaya context.</td></tr>
+        <tr><td>Houzs and Hookka package stack audit</td><td>Step one of the rollout sequence; determines which shared components exist to compose against.</td></tr>
+      </tbody>
+    </table>
+
+  </div>
+</doc-page>
+</x-dc>
+</body>
+</html>

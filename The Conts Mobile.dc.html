@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="./tokens.css" />
+<style>
+  body {
+    margin: 0;
+    background: #EDEAE4;
+    font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #252525;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* The runtime wrapper must fill the viewport, otherwise the phone column below
+     resolves its width against shrink-to-fit content instead of the 430px cap. */
+  #dc-root { width: 100%; }
+  * { font-variant-numeric: tabular-nums; }
+  input { font-family: inherit; }
+  input::placeholder { color: #A8A29A; }
+  @keyframes kenburns { from { transform: scale(1) translate(0,0); } to { transform: scale(1.09) translate(-1.6%,-1.2%); } }
+  @keyframes pool-a { 0% { transform: translate3d(-8%,-5%,0) scale(1); } 50% { transform: translate3d(9%,7%,0) scale(1.2); } 100% { transform: translate3d(-8%,-5%,0) scale(1); } }
+  @keyframes pool-b { 0% { transform: translate3d(12%,9%,0) scale(1.1); } 50% { transform: translate3d(-5%,-7%,0) scale(1); } 100% { transform: translate3d(12%,9%,0) scale(1.1); } }
+  @keyframes beam { 0% { transform: translateX(-160%) skewX(-14deg); opacity: 0; } 14% { opacity: 1; } 56% { opacity: 1; } 100% { transform: translateX(260%) skewX(-14deg); opacity: 0; } }
+  /* Same mark as the desktop: the plan of a unit, drawing itself. */
+  @keyframes plan-draw { 0% { stroke-dashoffset: var(--len); } 26% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 0; } }
+  @keyframes plan-fill { 0%, 22% { opacity: 0; } 46%, 100% { opacity: 1; } }
+  @keyframes plan-float { 0%, 100% { transform: translate3d(0,0,0); } 50% { transform: translate3d(-7px,-9px,0); } }
+  @keyframes spark { 0%, 100% { opacity: 0.25; transform: scale(1); } 50% { opacity: 1; transform: scale(1.5); } }
+</style>
+<script src="./image-slot.js"></script>
+<script src="./registry.js"></script>
+</helmet>
+<div style="{{ appStyle }}">
+
+
+    <sc-if value="{{ isLogin }}" hint-placeholder-val="{{ true }}">
+      <div style="position:relative; flex:1; min-height:0; overflow-y:auto; background:linear-gradient(170deg, #1A1917 0%, #121110 44%, #0E0D0C 100%); display:flex; flex-direction:column">
+
+        <div style="position:absolute; inset:0; overflow:hidden">
+          <div style="position:absolute; left:50%; top:8%; width:126%; transform:translateX(-50%); pointer-events:none; animation:plan-float 30s ease-in-out infinite">
+            <svg viewBox="0 0 520 420" fill="none" style="width:100%; height:auto" aria-hidden="true">
+              <g stroke="#C8A46A" stroke-linecap="square" opacity="0.8">
+                <rect x="40" y="40" width="440" height="340" stroke-width="2" style="--len:1560; stroke-dasharray:1560; animation:plan-draw 22s cubic-bezier(0.4,0,0.2,1) infinite"></rect>
+              </g>
+              <g stroke="#C8A46A" stroke-width="1.2" stroke-linecap="square" opacity="0.55">
+                <path d="M40 220 H260" style="--len:220; stroke-dasharray:220; animation:plan-draw 22s cubic-bezier(0.4,0,0.2,1) 1.1s infinite"></path>
+                <path d="M260 40 V380" style="--len:340; stroke-dasharray:340; animation:plan-draw 22s cubic-bezier(0.4,0,0.2,1) 1.5s infinite"></path>
+                <path d="M260 150 H480" style="--len:220; stroke-dasharray:220; animation:plan-draw 22s cubic-bezier(0.4,0,0.2,1) 1.9s infinite"></path>
+              </g>
+              <g stroke="#FFFFFF" stroke-width="1" opacity="0.22">
+                <rect x="78" y="82" width="126" height="94" rx="3" style="--len:440; stroke-dasharray:440; animation:plan-draw 22s cubic-bezier(0.4,0,0.2,1) 2.4s infinite"></rect>
+                <rect x="300" y="196" width="72" height="140" rx="3" style="--len:424; stroke-dasharray:424; animation:plan-draw 22s cubic-bezier(0.4,0,0.2,1) 2.8s infinite"></rect>
+                <circle cx="420" cy="300" r="30" style="--len:190; stroke-dasharray:190; animation:plan-draw 22s cubic-bezier(0.4,0,0.2,1) 3.2s infinite"></circle>
+              </g>
+              <g fill="#8A8680" font-family="IBM Plex Sans, sans-serif" font-size="11" letter-spacing="2" style="animation:plan-fill 22s cubic-bezier(0.4,0,0.2,1) infinite">
+                <text x="84" y="208" opacity="0.85">LIVING</text>
+                <text x="286" y="136" opacity="0.85">BEDROOM</text>
+              </g>
+              <g fill="#C8A46A" style="animation:plan-fill 22s cubic-bezier(0.4,0,0.2,1) infinite">
+                <circle cx="40" cy="40" r="3.5" style="animation:spark 5s ease-in-out infinite"></circle>
+                <circle cx="480" cy="40" r="3.5" style="animation:spark 5s ease-in-out 1.6s infinite"></circle>
+                <circle cx="40" cy="380" r="3.5" style="animation:spark 5s ease-in-out 3.2s infinite"></circle>
+              </g>
+            </svg>
+          </div>
+          <div style="position:absolute; left:-24%; top:-12%; width:106%; height:64%; border-radius:50%; pointer-events:none; background:radial-gradient(closest-side, rgba(200,164,106,0.3), transparent 72%); filter:blur(42px); animation:pool-a 26s ease-in-out infinite"></div>
+          <div style="position:absolute; right:-26%; top:22%; width:92%; height:56%; border-radius:50%; pointer-events:none; background:radial-gradient(closest-side, rgba(120,150,190,0.15), transparent 70%); filter:blur(46px); animation:pool-b 34s ease-in-out infinite"></div>
+          <div style="position:absolute; inset:0; pointer-events:none; opacity:0.5; background-image:linear-gradient(rgba(255,255,255,0.026) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.026) 1px, transparent 1px); background-size:38px 38px"></div>
+          <div style="position:absolute; top:0; bottom:0; left:0; width:44%; pointer-events:none; background:linear-gradient(100deg, transparent, rgba(255,255,255,0.06) 46%, transparent); animation:beam 19s cubic-bezier(0.4,0,0.2,1) infinite 3s"></div>
+        </div>
+        <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(14,13,12,0.18) 0%, rgba(14,13,12,0.06) 34%, rgba(14,13,12,0.72) 78%, rgba(14,13,12,0.94) 100%); pointer-events:none"></div>
+
+        <div style="position:relative; flex:1 0 auto; min-height:286px; width:100%; max-width:430px; margin:0 auto; box-sizing:border-box; display:flex; flex-direction:column; justify-content:space-between; gap:20px; padding:26px 22px 20px; pointer-events:none">
+          <div style="display:flex; align-items:center gap:13px; display:flex; gap:13px; align-items:center; animation:rise 600ms cubic-bezier(0.16,1,0.3,1) both">
+            <div style="width:42px; height:42px; flex:none; border-radius:8px; border:1px dashed #8A8680; display:grid; place-items:center; font-size:11px; color:#8A8680">SVG</div>
+            <div style="display:flex; flex-direction:column; gap:3px">
+              <span style="font-size:13px; font-weight:600; letter-spacing:0.2em; color:#FFFFFF">THE CONTS</span>
+              <span style="font-size:11px; letter-spacing:0.18em; color:#8A8680">PROPERTY MANAGEMENT</span>
+            </div>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:18px">
+            <div style="height:2px; width:52px; background:#C8A46A; transform-origin:left; animation:draw 800ms cubic-bezier(0.16,1,0.3,1) 240ms both"></div>
+            <h1 style="margin:0; font-size:36px; line-height:1.04; font-weight:600; letter-spacing:-0.03em; color:#FFFFFF; text-wrap:pretty; animation:rise 700ms cubic-bezier(0.16,1,0.3,1) 320ms both">We furnish it.<br />We host it.</h1>
+            <div style="display:flex; align-items:center; gap:22px; animation:rise 700ms cubic-bezier(0.16,1,0.3,1) 440ms both">
+              <sc-for list="{{ loginStats }}" as="st" hint-placeholder-count="3">
+                <div style="display:flex; align-items:baseline; gap:7px">
+                  <span style="font-size:19px; line-height:1; font-weight:600; color:#C8A46A">{{ st.value }}</span>
+                  <span style="font-size:11px; letter-spacing:0.12em; color:#DEDAD3">{{ st.label }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <div style="{{ sheetStyle }}">
+          <div style="display:flex; flex-direction:column; gap:5px">
+            <span style="font-size:11px; font-weight:600; letter-spacing:0.16em; color:#8A6A2F">{{ authEyebrow }}</span>
+            <h2 style="margin:0; font-size:24px; line-height:1.18; font-weight:600; letter-spacing:-0.015em; color:#252525">{{ authHeading }}</h2>
+            <span style="font-size:12.5px; color:#706D67">{{ authSub }}</span>
+          </div>
+
+          <sc-if value="{{ showAuthError }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #A8352F; background:#FCECEB; padding:11px 13px; font-size:12px; color:#A8352F">Invalid email or password. Five failed attempts lock the account for 15 minutes.</div>
+          </sc-if>
+
+          <sc-if value="{{ showAuthSent }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #11694A; background:#E9F5EF; padding:11px 13px; font-size:12px; color:#11694A">Reset link sent. It expires in 60 minutes.</div>
+          </sc-if>
+
+          <div style="display:flex; flex-direction:column; gap:14px">
+            <div style="display:flex; flex-direction:column; gap:7px">
+              <label for="m-email" style="font-size:11px; font-weight:600; letter-spacing:0.12em; color:#706D67">EMAIL</label>
+              <div style="{{ fieldWrapStyle }}">
+                <span class="icon icon-sm" style="color:#A8A29A; {{ mailIcon }}"></span>
+                <input id="m-email" type="email" value="{{ email }}" onChange="{{ setEmail }}" placeholder="you@theconts.com" autoComplete="email" style="{{ inputStyle }}" />
+              </div>
+            </div>
+            <sc-if value="{{ showAuthPassword }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex; flex-direction:column; gap:7px">
+                <label for="m-pw" style="font-size:11px; font-weight:600; letter-spacing:0.12em; color:#706D67">PASSWORD</label>
+                <div style="{{ fieldWrapStyle }}">
+                  <span class="icon icon-sm" style="color:#A8A29A; {{ lockIcon }}"></span>
+                  <input id="m-pw" type="{{ pwType }}" value="{{ password }}" onChange="{{ setPassword }}" placeholder="Enter password" autoComplete="current-password" style="{{ inputStyle }}" />
+                  <span onClick="{{ toggleShow }}" class="icon icon-sm" style="color:#706D67; cursor:pointer; {{ eyeIcon }}"></span>
+                </div>
+              </div>
+            </sc-if>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px">
+              <div onClick="{{ toggleRemember }}" style="display:flex; align-items:center; gap:9px; min-height:44px; cursor:pointer">
+                <div style="{{ rememberBoxStyle }}">{{ rememberMark }}</div>
+                <span style="font-size:12px; color:#706D67">Keep me signed in</span>
+              </div>
+              <div onClick="{{ goForgot }}" style="min-height:44px; display:flex; align-items:center; font-size:12px; font-weight:500; color:#8A6A2F; cursor:pointer">{{ forgotLabel }}</div>
+            </div>
+          </div>
+
+          <div onClick="{{ authSubmit }}" style="{{ authButtonStyle }}">
+            <sc-if value="{{ busy }}" hint-placeholder-val="{{ true }}">
+              <span class="animate-spin" style="width:15px; height:15px; border-radius:999px; border:2px solid rgba(255,255,255,0.35); border-top-color:#FFFFFF"></span>
+            </sc-if>
+            <span style="white-space:nowrap">{{ authButtonLabel }}</span>
+          </div>
+
+          <span style="font-size:11px; color:#A8A29A; text-align:center">The Conts Sdn Bhd &#183; 202301027399</span>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isApp }}" hint-placeholder-val="{{ true }}">
+      <div style="{{ headerStyle }}">
+        <div style="width:100%; max-width:430px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; gap:12px">
+          <div style="display:flex; flex-direction:column; gap:2px; min-width:0">
+            <span style="font-size:11.5px; color:{{ headerMuted }}">{{ headerEyebrow }}</span>
+            <span style="font-size:20px; font-weight:600; letter-spacing:-0.01em">{{ headerTitle }}</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; flex:none">
+            <div onClick="{{ openNotifications }}" style="{{ headerIconStyle }}">
+              <span class="icon icon-nav" style="{{ bellIcon }}"></span>
+              <span style="position:absolute; top:7px; right:8px; width:6px; height:6px; border-radius:999px; background:#C2413B"></span>
+            </div>
+            <div onClick="{{ toggleProfile }}" style="width:36px; height:36px; flex:none; border-radius:999px; background:#242424; color:#C8A46A; display:grid; place-items:center; font-size:12px; font-weight:600; cursor:pointer">{{ user.initials }}</div>
+          </div>
+        </div>
+        <sc-if value="{{ headerSub }}" hint-placeholder-val="{{ true }}">
+          <span style="font-size:12px; color:{{ headerMuted }}">{{ headerSub }}</span>
+        </sc-if>
+      </div>
+
+      <div style="flex:1; overflow-y:auto; background:#FAF9F6"><div style="width:100%; max-width:430px; margin:0 auto">
+
+        <sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:16px 16px 24px; display:flex; flex-direction:column; gap:14px">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+              <sc-for list="{{ kpis }}" as="k" hint-placeholder-count="4">
+                <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:5px">
+                  <span style="font-size:11.5px; color:#706D67">{{ k.label }}</span>
+                  <span style="font-size:22px; font-weight:600; letter-spacing:-0.01em">{{ k.value }}</span>
+                  <span style="{{ k.deltaStyle }}">{{ k.delta }}</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; overflow:hidden">
+              <div style="padding:15px 16px 12px; display:flex; align-items:center; justify-content:space-between; gap:10px">
+                <span style="font-size:15px; font-weight:600">Today</span>
+                <div onClick="{{ goToday }}" style="font-size:12px; font-weight:600; color:#8A6A2F; cursor:pointer">Open</div>
+              </div>
+              <sc-for list="{{ todayRows }}" as="t" hint-placeholder-count="5">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 16px; border-top:1px solid #EDEAE4">
+                  <span style="font-size:13px">{{ t.label }}</span>
+                  <div style="display:flex; align-items:center; gap:9px">
+                    <span style="font-size:14px; font-weight:600">{{ t.count }}</span>
+                    <span style="{{ t.badgeStyle }}">{{ t.badge }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; overflow:hidden">
+              <div style="padding:15px 16px 12px; font-size:15px; font-weight:600">Needs attention</div>
+              <sc-for list="{{ exceptions }}" as="e" hint-placeholder-count="3">
+                <div onClick="{{ e.go }}" style="padding:13px 16px; border-top:1px solid #EDEAE4; display:flex; flex-direction:column; gap:6px; cursor:pointer">
+                  <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+                    <span style="{{ e.badgeStyle }}">{{ e.badge }}</span>
+                    <span style="font-size:13px; font-weight:600">{{ e.title }}</span>
+                  </div>
+                  <span style="font-size:12px; color:#706D67; text-wrap:pretty">{{ e.detail }}</span>
+                  <div style="display:flex; align-items:center; gap:5px; font-size:12px; font-weight:600; color:#252525">
+                    <span>{{ e.action }}</span>
+                    <span class="icon icon-sm" style="{{ arrowIcon }}"></span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; overflow:hidden">
+              <div style="padding:15px 16px 12px; display:flex; align-items:center; justify-content:space-between; gap:10px">
+                <span style="font-size:15px; font-weight:600">Units</span>
+                <div onClick="{{ goUnits }}" style="font-size:12px; font-weight:600; color:#8A6A2F; cursor:pointer">All 24</div>
+              </div>
+              <sc-for list="{{ unitCards }}" as="u" hint-placeholder-count="4">
+                <div onClick="{{ u.open }}" style="display:flex; align-items:center; gap:12px; padding:11px 16px; border-top:1px solid #EDEAE4; cursor:pointer">
+                  <div style="width:42px; height:42px; flex:none; border-radius:8px; overflow:hidden; background:#F1F0ED">
+                    <image-slot id="{{ u.slotId }}" shape="rounded" radius="8" fit="cover" placeholder=""></image-slot>
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:2px; min-width:0; flex:1">
+                    <span style="font-size:13.5px; font-weight:600">{{ u.name }}</span>
+                    <span style="font-size:11.5px; color:#706D67; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ u.building }}</span>
+                  </div>
+                  <div style="display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex:none">
+                    <span style="{{ u.badgeStyle }}">{{ u.state }}</span>
+                    <span style="font-size:11.5px; color:#706D67">{{ u.occ }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isToday }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:14px 16px 24px; display:flex; flex-direction:column; gap:12px">
+            <div style="display:flex; gap:7px; overflow-x:auto; padding-bottom:2px">
+              <sc-for list="{{ opsFilters }}" as="f" hint-placeholder-count="4">
+                <div onClick="{{ f.go }}" style="{{ f.style }}">{{ f.label }}</div>
+              </sc-for>
+            </div>
+            <sc-for list="{{ opsCards }}" as="r" hint-placeholder-count="5">
+              <div style="{{ r.cardStyle }}">
+                <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px">
+                  <div style="display:flex; flex-direction:column; gap:2px; min-width:0">
+                    <span style="font-size:14.5px; font-weight:600">{{ r.unit }}</span>
+                    <span style="font-size:11.5px; color:#706D67">{{ r.building }}</span>
+                  </div>
+                  <span style="{{ r.slaStyle }}">{{ r.sla }}</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+                  <span style="{{ r.readyStyle }}">{{ r.ready }}</span>
+                  <span style="font-size:12px; color:#706D67">{{ r.work }}</span>
+                </div>
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding-top:11px; border-top:1px solid #EDEAE4">
+                  <div style="display:flex; flex-direction:column; gap:1px">
+                    <span style="font-size:11px; color:#706D67">Next guest {{ r.next }}</span>
+                    <span style="font-size:12.5px; font-weight:500">{{ r.assignee }}</span>
+                  </div>
+                  <div onClick="{{ r.go }}" style="{{ r.actionStyle }}">{{ r.action }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isRes }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:14px 16px 24px; display:flex; flex-direction:column; gap:14px">
+            <div style="display:flex; gap:7px; overflow-x:auto; padding-bottom:2px">
+              <sc-for list="{{ resFilters }}" as="rf" hint-placeholder-count="4">
+                <div onClick="{{ rf.go }}" style="{{ rf.style }}">{{ rf.label }}</div>
+              </sc-for>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+              <sc-for list="{{ resSummary }}" as="rs" hint-placeholder-count="2">
+                <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:5px">
+                  <span style="font-size:11.5px; color:#706D67">{{ rs.label }}</span>
+                  <span style="font-size:22px; font-weight:600">{{ rs.value }}</span>
+                  <span style="{{ rs.badgeStyle }}">{{ rs.badge }}</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <sc-for list="{{ resCards }}" as="rc" hint-placeholder-count="5">
+              <div onClick="{{ rc.open }}" style="{{ rc.cardStyle }}">
+                <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px">
+                  <div style="display:flex; align-items:center; gap:11px; min-width:0">
+                    <div style="{{ rc.avatarStyle }}">{{ rc.initials }}</div>
+                    <div style="display:flex; flex-direction:column; gap:2px; min-width:0">
+                      <span style="font-size:14.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ rc.guest }}</span>
+                      <span style="font-size:11.5px; color:#706D67">{{ rc.guests }}</span>
+                    </div>
+                  </div>
+                  <span style="{{ rc.badgeStyle }}">{{ rc.state }}</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+                  <span style="{{ rc.channelStyle }}">{{ rc.channel }}</span>
+                  <span style="font-size:12px; color:#706D67">{{ rc.unitNo }} &#183; {{ rc.building }}</span>
+                </div>
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding-top:11px; border-top:1px solid #EDEAE4">
+                  <div style="display:flex; flex-direction:column; gap:1px">
+                    <span style="font-size:12.5px; font-weight:500">{{ rc.stay }}</span>
+                    <span style="font-size:11px; color:#706D67">{{ rc.checkInTime }}</span>
+                  </div>
+                  <span style="font-size:13px; font-weight:600">{{ rc.gross }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isUnit }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; flex-direction:column">
+            <div style="height:170px; flex:none; background:#F1F0ED; position:relative">
+              <image-slot id="{{ unit.heroSlot }}" shape="rect" fit="cover" placeholder="Drop a photo of this unit"></image-slot>
+            </div>
+            <div style="padding:16px; display:flex; flex-direction:column; gap:14px">
+              <div style="display:flex; flex-direction:column; gap:7px">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+                  <span style="{{ unit.badgeStyle }}">{{ unit.state }}</span>
+                  <span style="font-size:11.5px; color:#706D67">{{ unit.channels }}</span>
+                </div>
+                <h2 style="margin:0; font-size:20px; line-height:1.25; font-weight:600">{{ unit.name }}</h2>
+                <span style="font-size:12px; color:#706D67; text-wrap:pretty">{{ unit.address }}</span>
+              </div>
+
+              <div style="display:flex; gap:4px; overflow-x:auto; border-bottom:1px solid #DEDAD3">
+                <sc-for list="{{ unitTabs }}" as="t" hint-placeholder-count="5">
+                  <div onClick="{{ t.go }}" style="{{ t.style }}">{{ t.label }}</div>
+                </sc-for>
+              </div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+                <sc-for list="{{ unit.stats }}" as="s" hint-placeholder-count="4">
+                  <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; padding:13px; display:flex; flex-direction:column; gap:3px">
+                    <span style="font-size:11.5px; color:#706D67">{{ s.label }}</span>
+                    <span style="font-size:19px; font-weight:600">{{ s.value }}</span>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; overflow:hidden">
+                <div style="padding:14px 16px; font-size:15px; font-weight:600; border-bottom:1px solid #EDEAE4">Stays</div>
+                <sc-for list="{{ unit.stays }}" as="s" hint-placeholder-count="3">
+                  <div style="padding:12px 16px; border-bottom:1px solid #EDEAE4; display:flex; justify-content:space-between; gap:12px; align-items:center">
+                    <div style="display:flex; flex-direction:column; gap:2px; min-width:0">
+                      <span style="font-size:13.5px; font-weight:500">{{ s.guest }}</span>
+                      <span style="font-size:11.5px; color:#706D67">{{ s.detail }}</span>
+                    </div>
+                    <span style="{{ s.badgeStyle }}">{{ s.state }}</span>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; overflow:hidden">
+                <div style="padding:14px 16px; font-size:15px; font-weight:600; border-bottom:1px solid #EDEAE4">August P and L</div>
+                <sc-for list="{{ unit.pnl }}" as="p" hint-placeholder-count="5">
+                  <div style="display:flex; justify-content:space-between; gap:12px; padding:10px 16px; border-bottom:1px solid #EDEAE4">
+                    <span style="{{ p.labelStyle }}">{{ p.label }}</span>
+                    <span style="{{ p.valueStyle }}">{{ p.value }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isField }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:14px 16px 24px; display:flex; flex-direction:column; gap:14px">
+            <div style="background:#151515; border-radius:12px; padding:17px; display:flex; flex-direction:column; gap:13px">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:12px">
+                <span style="font-size:12px; color:#8A8680">{{ fieldProgress }}</span>
+                <span style="{{ syncStyle }}">
+                  <span class="animate-live" style="width:5px; height:5px; border-radius:999px; background:#11694A"></span>
+                  <span>{{ syncLabel }}</span>
+                </span>
+              </div>
+              <div style="height:4px; border-radius:999px; background:#242424">
+                <div style="{{ progressStyle }}"></div>
+              </div>
+            </div>
+
+            <sc-for list="{{ fieldTasks }}" as="t" hint-placeholder-count="4">
+              <div style="{{ t.cardStyle }}">
+                <div style="display:flex; gap:13px; align-items:flex-start">
+                  <div onClick="{{ t.toggle }}" style="{{ t.checkStyle }}">
+                    <sc-if value="{{ t.done }}" hint-placeholder-val="{{ true }}">
+                      <span class="icon icon-sm" style="{{ checkIcon }}"></span>
+                    </sc-if>
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:7px; flex:1; min-width:0">
+                    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px">
+                      <span style="{{ t.titleStyle }}">{{ t.unit }}</span>
+                      <span style="font-size:11.5px; color:#706D67; white-space:nowrap">Due {{ t.due }}</span>
+                    </div>
+                    <span style="font-size:12px; color:#706D67; text-wrap:pretty">{{ t.address }}</span>
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+                      <span style="{{ t.badgeStyle }}">{{ t.state }}</span>
+                      <span style="font-size:12px; color:#706D67">{{ t.work }}</span>
+                    </div>
+                    <div style="display:flex; align-items:flex-start; gap:8px; padding:10px 11px; border-radius:8px; background:#F1F0ED">
+                      <span class="icon icon-sm" style="color:#706D67; {{ keyIcon }}"></span>
+                      <span style="font-size:12px; text-wrap:pretty">{{ t.access }}</span>
+                    </div>
+                    <sc-if value="{{ t.flag }}" hint-placeholder-val="{{ true }}">
+                      <span style="font-size:12px; font-weight:500; color:#A8352F; text-wrap:pretty">{{ t.flag }}</span>
+                    </sc-if>
+                  </div>
+                </div>
+                <div style="display:flex; gap:9px">
+                  <div onClick="{{ t.photo }}" style="flex:1; min-height:44px; display:flex; align-items:center; justify-content:center; gap:7px; border:1px solid #DEDAD3; border-radius:8px; background:#FFFFFF; font-size:13px; font-weight:500; cursor:pointer">
+                    <span class="icon icon-sm" style="{{ cameraIcon }}"></span>
+                    <span>Photo</span>
+                  </div>
+                  <div onClick="{{ t.ready }}" style="flex:1; min-height:44px; display:flex; align-items:center; justify-content:center; border-radius:8px; background:#151515; color:#FFFFFF; font-size:13px; font-weight:500; cursor:pointer">Mark ready</div>
+                </div>
+              </div>
+            </sc-for>
+
+            <div style="display:flex; flex-direction:column; gap:9px">
+              <div onClick="{{ reportDamage }}" style="min-height:44px; display:flex; align-items:center; justify-content:center; gap:7px; border:1px solid #A8352F; border-radius:8px; color:#A8352F; font-size:13px; font-weight:500; cursor:pointer; background:#FFFFFF">
+                <span class="icon icon-sm" style="{{ alertIcon }}"></span>
+                <span>Report damage</span>
+              </div>
+              <div style="min-height:44px; display:flex; align-items:center; justify-content:center; gap:7px; border:1px solid #DEDAD3; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; background:#FFFFFF">
+                <span class="icon icon-sm" style="{{ phoneIcon }}"></span>
+                <span>Call operations</span>
+              </div>
+              <span style="font-size:11.5px; color:#706D67; text-align:center">Financial data is not available to field roles.</span>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isOwner }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:14px 16px 24px; display:flex; flex-direction:column; gap:14px">
+            <div style="background:#151515; border-radius:12px; padding:22px; display:flex; flex-direction:column; gap:14px">
+              <div style="display:flex; flex-direction:column; gap:7px">
+                <span style="font-size:11.5px; color:#8A8680">Net payout &#183; August 2026</span>
+                <span style="font-size:34px; line-height:1.1; font-weight:600; letter-spacing:-0.02em; color:#C8A46A">{{ ownerPayout }}</span>
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+                  <span style="font-size:11px; font-weight:500; padding:3px 9px; border-radius:999px; background:#E9F5EF; color:#11694A">Paid</span>
+                  <span style="font-size:11.5px; color:#DEDAD3">3 Sep &#183; Maybank &#183;&#183;&#183;&#183;4417</span>
+                </div>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:9px; padding-top:13px; border-top:1px solid #242424">
+                <sc-for list="{{ ownerLines }}" as="l" hint-placeholder-count="5">
+                  <div style="display:flex; justify-content:space-between; gap:12px">
+                    <span style="{{ l.labelStyle }}">{{ l.label }}</span>
+                    <span style="{{ l.valueStyle }}">{{ l.value }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div onClick="{{ downloadStatement }}" style="min-height:44px; display:flex; align-items:center; justify-content:center; gap:7px; border:1px solid #C8A46A; border-radius:8px; color:#C8A46A; font-size:13px; font-weight:600; cursor:pointer">
+                <span class="icon icon-sm" style="{{ downloadIcon }}"></span>
+                <span>Download statement</span>
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+              <sc-for list="{{ ownerStats }}" as="s" hint-placeholder-count="4">
+                <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:4px">
+                  <span style="font-size:11.5px; color:#706D67">{{ s.label }}</span>
+                  <span style="font-size:21px; font-weight:600">{{ s.value }}</span>
+                  <span style="font-size:11px; color:#706D67">{{ s.note }}</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="background:#FFFFFF; border:1px solid #DEDAD3; border-radius:12px; overflow:hidden">
+              <div style="padding:14px 16px; font-size:15px; font-weight:600; border-bottom:1px solid #EDEAE4">Property health</div>
+              <sc-for list="{{ ownerIssues }}" as="i" hint-placeholder-count="3">
+                <div style="padding:13px 16px; border-bottom:1px solid #EDEAE4; display:flex; flex-direction:column; gap:6px">
+                  <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+                    <span style="{{ i.badgeStyle }}">{{ i.state }}</span>
+                    <span style="font-size:13.5px; font-weight:500">{{ i.title }}</span>
+                  </div>
+                  <span style="font-size:12px; color:#706D67; text-wrap:pretty">{{ i.detail }}</span>
+                  <sc-if value="{{ i.needsApproval }}" hint-placeholder-val="{{ true }}">
+                    <div onClick="{{ approveQuote }}" style="min-height:44px; display:flex; align-items:center; justify-content:center; margin-top:3px; border:1px solid #C8A46A; border-radius:8px; font-size:13px; font-weight:600; color:#8A6A2F; cursor:pointer">Approve quote</div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+      </div>
+
+      </div>
+
+      <div style="flex:none; display:flex; justify-content:center; border-top:1px solid #DEDAD3; background:#FFFFFF; padding:6px 4px 10px">
+        <div style="display:flex; width:100%; max-width:430px">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+          <div onClick="{{ t.go }}" style="{{ t.style }}">
+            <span class="icon icon-nav" style="{{ t.iconStyle }}"></span>
+            <span style="font-size:11px; font-weight:500">{{ t.label }}</span>
+            <sc-if value="{{ t.badge }}" hint-placeholder-val="{{ true }}">
+              <span style="position:absolute; top:4px; right:50%; transform:translateX(16px); font-size:11px; font-weight:600; min-width:15px; height:15px; padding:0 4px; border-radius:999px; background:#C2413B; color:#FFFFFF; display:grid; place-items:center">{{ t.badge }}</span>
+            </sc-if>
+          </div>
+        </sc-for>
+        </div>
+      </div>
+
+      <sc-if value="{{ profileOpen }}" hint-placeholder-val="{{ true }}">
+        <div style="position:absolute; inset:0; z-index:40; display:flex; flex-direction:column; justify-content:flex-end; background:rgba(21,21,21,0.44); animation:fade-in 160ms ease-out both">
+          <div onClick="{{ toggleProfile }}" style="flex:1"></div>
+          <div style="width:100%; max-width:430px; margin:0 auto; background:#FFFFFF; border-radius:20px 20px 0 0; padding:20px 16px 18px; display:flex; flex-direction:column; gap:14px; animation:rise 240ms cubic-bezier(0.16,1,0.3,1) both">
+            <div style="width:38px; height:4px; border-radius:999px; background:#DEDAD3; align-self:center"></div>
+            <div style="display:flex; align-items:center; gap:13px; padding-bottom:14px; border-bottom:1px solid #EDEAE4">
+              <div style="width:46px; height:46px; flex:none; border-radius:999px; background:#151515; color:#C8A46A; display:grid; place-items:center; font-size:15px; font-weight:600">{{ user.initials }}</div>
+              <div style="display:flex; flex-direction:column; gap:2px; min-width:0">
+                <span style="font-size:15px; font-weight:600">{{ user.name }}</span>
+                <span style="font-size:12px; color:#706D67">{{ user.email }}</span>
+                <span style="{{ user.roleBadgeStyle }}">{{ user.role }}</span>
+              </div>
+            </div>
+            <sc-for list="{{ profileMenu }}" as="m" hint-placeholder-count="4">
+              <div onClick="{{ m.go }}" style="{{ m.style }}">
+                <span class="icon icon-nav" style="{{ m.iconStyle }}"></span>
+                <span style="flex:1; font-size:14px">{{ m.label }}</span>
+                <span class="icon icon-sm" style="opacity:0.4; {{ arrowIcon }}"></span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+    </sc-if>
+
+    <sc-if value="{{ dialogOpen }}" hint-placeholder-val="{{ true }}">
+      <div style="position:absolute; inset:0; z-index:60; display:flex; flex-direction:column; justify-content:flex-end; background:rgba(21,21,21,0.44); animation:fade-in 160ms ease-out both">
+        <div onClick="{{ closeDialog }}" style="flex:1"></div>
+        <div style="background:#FFFFFF; border-radius:20px 20px 0 0; padding:22px 18px 18px; display:flex; flex-direction:column; gap:14px; animation:rise 240ms cubic-bezier(0.16,1,0.3,1) both">
+          <div style="width:38px; height:4px; border-radius:999px; background:#DEDAD3; align-self:center"></div>
+          <h3 style="margin:0; font-size:18px; line-height:1.3; font-weight:600; text-wrap:pretty">{{ dialog.title }}</h3>
+          <p style="margin:0; font-size:13px; line-height:1.55; color:#706D67; text-wrap:pretty">{{ dialog.body }}</p>
+          <sc-if value="{{ dialog.meta }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:10px 12px; border-radius:8px; background:#FAF9F6; border:1px solid #DEDAD3; font-size:12px">{{ dialog.meta }}</div>
+          </sc-if>
+          <div style="display:flex; flex-direction:column; gap:9px; padding-top:4px">
+            <div onClick="{{ runDialog }}" style="{{ dialog.confirmStyle }}">
+              <sc-if value="{{ dialog.busy }}" hint-placeholder-val="{{ true }}">
+                <span class="animate-spin" style="width:15px; height:15px; border-radius:999px; border:2px solid rgba(255,255,255,0.35); border-top-color:#FFFFFF"></span>
+              </sc-if>
+              <span>{{ dialog.confirmLabel }}</span>
+            </div>
+            <div onClick="{{ closeDialog }}" style="min-height:48px; display:flex; align-items:center; justify-content:center; border:1px solid #DEDAD3; border-radius:8px; font-size:14px; font-weight:500; cursor:pointer">Cancel</div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ hasToasts }}" hint-placeholder-val="{{ true }}">
+      <div style="position:absolute; left:14px; right:14px; bottom:86px; z-index:70; display:flex; flex-direction:column; gap:8px">
+        <sc-for list="{{ toasts }}" as="t" hint-placeholder-count="1">
+          <div style="{{ t.style }}">
+            <span style="{{ t.titleStyle }}">{{ t.title }}</span>
+            <span style="font-size:12px; color:#706D67; text-wrap:pretty">{{ t.body }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:460,&quot;height&quot;:1000},&quot;startRole&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;staff&quot;,&quot;field&quot;,&quot;owner&quot;],&quot;default&quot;:&quot;staff&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Prototype&quot;},&quot;startSignedIn&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Prototype&quot;}}">
+class Component extends DCLogic {
+  state = {
+    view: 'login', authScreen: 'signin', email: '', password: '', show: false,
+    busy: false, authSent: false, authError: false,
+    screen: 'owner', unitIdx: 0, tab: 'Overview', opsFilter: 'All',
+    profileOpen: false, dialog: null, toasts: [], done: { 0: true },
+  };
+
+  componentWillUnmount() { clearTimeout(this._t); clearTimeout(this._d); }
+
+  renderVals() {
+    const G = '#C8A46A', GINK = '#8A6A2F', BLACK = '#151515', CHAR = '#242424';
+    const BORDER = '#DEDAD3', SUBTLE = '#EDEAE4', MUTED = '#706D67', INK = '#252525', DIM = '#8A8680';
+    const sem = {
+      success: ['#11694A', '#E9F5EF', '#16845B'], warning: ['#8A5A12', '#FFF4D8', '#B7791F'],
+      critical: ['#A8352F', '#FCECEB', '#C2413B'], info: ['#2E6DA4', '#EAF2FA', '#2E6DA4'], neutral: [MUTED, '#F1F0ED', '#C7C1B6'],
+    };
+    const badge = (text, tone) => ({
+      badge: text, state: text,
+      badgeStyle: 'display:inline-flex; align-items:center; font-size:11px; font-weight:500; padding:3px 9px; border-radius:999px; white-space:nowrap; background:' + sem[tone][1] + '; color:' + sem[tone][0],
+    });
+
+    // lucide-react ^0.477.0 — same library as houzs-erp and hookka-erp
+    const lucide = n => '--icon:url(./icons/' + n + '.svg)';
+
+    // Shared with The Conts Desktop — see registry.js. LIANG WOOI KEE is the
+    // three-unit owner, so the one-to-many case is real data on both products.
+    const REG = window.ContsRegistry || {};
+    const flatUnits = REG.flatUnits || [];
+    const perf = REG.perf || {};
+    const readiness = REG.readiness || {};
+    const shortUnit = REG.shortUnit || (c => c);
+    const OWNER_NAME = 'LIANG WOOI KEE';
+    const myUnits = flatUnits.filter(u => u.owner === OWNER_NAME);
+    const ownerMeta = (REG.ownerContact || {})[OWNER_NAME] || { email: '', phone: '' };
+    const netOf = u => {
+      const p = perf[u.code] || { gross: 0 };
+      if (u.model === 'LT' && u.grr !== '\u2014') return Number(u.grr.replace(/[^0-9.]/g, ''));
+      const pct = u.split === '\u2014' ? 25 : Number(u.split.split('/')[1]);
+      return Math.round(p.gross * (1 - pct / 100));
+    };
+    const myGross = myUnits.reduce((a, u) => a + (perf[u.code] || { gross: 0 }).gross, 0);
+    const myNet = myUnits.reduce((a, u) => a + netOf(u), 0);
+    const rm2 = n => 'RM ' + n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    // Mobile is the owner portal. Staff run the desktop.
+    const role = 'owner';
+    const view = this.state.viewTouched ? this.state.view : ((this.props.startSignedIn ?? false) ? 'app' : 'login');
+    const s = this.state.screen;
+    const openDialog = d => () => this.setState({ dialog: d, profileOpen: false });
+    const closeDialog = () => this.setState({ dialog: null });
+    const pushToast = t => {
+      const id = Date.now() + Math.random();
+      this.setState(st => ({ toasts: [...st.toasts, { ...t, id }] }));
+      setTimeout(() => this.setState(st => ({ toasts: st.toasts.filter(x => x.id !== id) })), 4600);
+    };
+    const runDialog = () => {
+      const d = this.state.dialog;
+      if (!d) return;
+      this.setState({ dialog: { ...d, busy: true } });
+      this._d = setTimeout(() => {
+        if (d.thenLogout) {
+          this.setState({ dialog: null, view: 'login', viewTouched: true, authScreen: 'signin', password: '', screen: 'home', profileOpen: false });
+          return;
+        }
+        this.setState({ dialog: null });
+        pushToast({ tone: d.resultTone || 'success', title: d.resultTitle, body: d.resultBody });
+      }, 1000);
+    };
+    const dlg = this.state.dialog;
+    const dialog = dlg ? {
+      title: dlg.title, body: dlg.body, meta: dlg.meta || '',
+      confirmLabel: dlg.busy ? dlg.busyLabel : dlg.confirmLabel, busy: !!dlg.busy,
+      confirmStyle: 'display:flex; align-items:center; justify-content:center; gap:8px; min-height:48px; border-radius:8px; font-size:14px; font-weight:500; cursor:pointer; color:#FFFFFF; opacity:' +
+        (dlg.busy ? '0.65' : '1') + '; background:' + (dlg.danger ? sem.critical[0] : BLACK),
+    } : { title: '', body: '', meta: '', confirmLabel: '', busy: false, confirmStyle: '' };
+
+    const toasts = this.state.toasts.map(t => ({
+      title: t.title, body: t.body,
+      style: 'display:flex; flex-direction:column; gap:3px; padding:13px 15px; border-radius:12px; background:#FFFFFF; border:1px solid ' + BORDER +
+        '; border-left:3px solid ' + sem[t.tone][0] + '; box-shadow:0 12px 32px rgba(21,21,21,0.16); animation:toast-in 200ms cubic-bezier(0.16,1,0.3,1) both',
+      titleStyle: 'font-size:13.5px; font-weight:600; color:' + sem[t.tone][0],
+    }));
+
+    // ---------- role switch ----------
+    // ---------- auth ----------
+    const as = this.state.authScreen;
+    const roleHome = 'owner';
+    const authMap = {
+      signin: ['Sign in', 'Use the email your administrator invited.', 'Sign in'],
+      error: ['Sign in', 'Use the email your administrator invited.', 'Sign in'],
+      forgot: ['Reset password', 'We will email you a reset link.', 'Send reset link'],
+    };
+    const [authHeading, authSub, authButtonLabel] = authMap[as];
+    const authSubmit = () => {
+      if (this.state.busy) return;
+      this.setState({ busy: true });
+      this._t = setTimeout(() => {
+        if (as === 'forgot') this.setState({ busy: false, authSent: true });
+        else if (as === 'signin') this.setState({ busy: false, view: 'app', viewTouched: true, screen: roleHome });
+        else this.setState({ busy: false, authScreen: 'error', authError: true });
+      }, 950);
+    };
+
+    // ---------- header ----------
+    const heads = {
+      home: ['September to date', 'Dashboard', 'Updated 14:06 MYT'],
+      res: ['Wed 16 Sep', 'Bookings', '3 arriving \u00b7 3 departing'],
+      today: ['Wed 16 Sep', 'Today', '7 items need action'],
+      unit: ['Your units', 'Unit', ''],
+      field: ['Wed 16 Sep', 'My tasks', 'Offline queue supported'],
+      owner: ['Owner portal', 'Your properties', myUnits.length + ' units \u00b7 ' + ownerMeta.email],
+    };
+    const dark = s === 'owner' || s === 'field';
+    const [headerEyebrow, headerTitle, headerSub] = heads[s] || heads.home;
+
+    const user = role === 'field'
+      ? { name: 'Nurul Huda', email: 'nurul@theconts.com', role: 'Housekeeping', initials: 'NH', tone: 'info' }
+      : role === 'owner'
+        ? { name: 'Lim Chee Keong', email: 'limck@example.com', role: 'Property owner', initials: 'LK', tone: 'neutral' }
+        : { name: 'Aina Zulkifli', email: 'aina@theconts.com', role: 'Operations manager', initials: 'AZ', tone: 'info' };
+    user.roleBadgeStyle = 'align-self:flex-start; margin-top:3px; font-size:11px; font-weight:500; padding:2px 8px; border-radius:999px; background:' + sem[user.tone][1] + '; color:' + sem[user.tone][0];
+
+    const logoutDialog = openDialog({
+      title: 'Log out?', body: 'You will need to sign in again. Anything queued offline stays queued and syncs when you return.',
+      meta: 'Signed in as ' + user.email, confirmLabel: 'Log out', busyLabel: 'Signing out\u2026', danger: true, thenLogout: true,
+    });
+    const profileMenu = [
+      { label: 'Personal profile', icon: 'user' },
+      { label: 'Notifications', icon: 'bell' },
+      { label: 'Security', icon: 'shield-check' },
+      { label: 'Log out', icon: 'log-out', danger: true },
+    ].map(m => ({
+      label: m.label, iconStyle: lucide(m.icon),
+      go: m.danger ? logoutDialog : () => this.setState({ profileOpen: false }),
+      style: 'display:flex; align-items:center; gap:13px; min-height:52px; padding:0 4px; cursor:pointer; color:' + (m.danger ? sem.critical[0] : INK),
+    }));
+
+    // ---------- bottom tabs, per role ----------
+    const tabDef = {
+      owner: [['owner', 'Statement', 'file-text', ''], ['res', 'Bookings', 'calendar-days', ''], ['unit', 'My units', 'building-2', String(myUnits.length)]],
+    }[role];
+    const tabs = tabDef.map(([k, label, icon, badgeCount]) => {
+      const on = s === k;
+      return {
+        label, badge: badgeCount, iconStyle: lucide(icon),
+        go: () => this.setState({ screen: k, profileOpen: false }),
+        style: 'position:relative; flex:1; min-height:52px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; border-radius:10px; cursor:pointer; color:' +
+          (on ? INK : MUTED) + '; background:' + (on ? '#FBF7F0' : 'transparent') + '; font-weight:' + (on ? '600' : '400'),
+      };
+    });
+
+    // ---------- home ----------
+    const delta = (t, tone) => ({ delta: t, deltaStyle: 'font-size:11.5px; font-weight:500; color:' + sem[tone][0] });
+    const kpis = [
+      { label: 'Revenue', value: 'RM 121.9k', ...delta('+9.4%', 'success') },
+      { label: 'Occupancy', value: '86.2%', ...delta('+3.1 pts', 'success') },
+      { label: 'ADR', value: 'RM 276', ...delta('+RM 14', 'success') },
+      { label: 'Owner payout', value: 'RM 79.4k', ...delta('+8.2%', 'success') },
+    ];
+    const todayRows = [
+      { label: 'Check-ins', count: '3', ...badge('Confirmed', 'info') },
+      { label: 'Check-outs', count: '3', ...badge('Checked out', 'neutral') },
+      { label: 'Cleaning', count: '5', ...badge('Due soon', 'warning') },
+      { label: 'Maintenance', count: '3', ...badge('Overdue', 'critical') },
+    ];
+    const goScreen = k => () => this.setState({ screen: k, profileOpen: false });
+    const exceptions = [
+      { title: 'Check-in at risk in 48 min', detail: '#A-21-02 is Dirty with no cleaner assigned.', action: 'Assign cleaner', ...badge('Overdue', 'critical'),
+        go: openDialog({ title: 'Assign Nurul Huda to #A-21-02?', body: 'She is 12 minutes away and is notified immediately.',
+          meta: 'Guest arrives 15:00', confirmLabel: 'Assign cleaner', busyLabel: 'Assigning\u2026',
+          resultTitle: 'Cleaner assigned.', resultBody: 'Nurul Huda has been notified.' }) },
+      { title: '#C-31-14 blocked 6 nights', detail: 'Plumbing works to 22 Sep. RM 1,680 at risk.', action: 'Notify owner', ...badge('Maintenance', 'critical'),
+        go: openDialog({ title: 'Notify Tan Boon Huat?', body: 'Sends the dates blocked, the reason and the expected return date.',
+          meta: 'RM 1,680 at risk', confirmLabel: 'Notify owner', busyLabel: 'Sending\u2026',
+          resultTitle: 'Owner notified.', resultBody: 'Emailed and posted to his portal.' }) },
+      { title: '2 statements unsent', detail: 'Nur Aisyah and Tan Boon Huat, both finalised.', action: 'Review', ...badge('Due soon', 'warning'), go: goScreen('owner') },
+    ];
+
+    const unitsRaw = myUnits.map(u => {
+      const p = perf[u.code] || { occ: '\u2014', adr: 0 };
+      const [rState, rTone] = readiness[u.code] || ['Ready', 'success'];
+      return { name: shortUnit(u.code, u.addr), building: u.building, state: rState, tone: rTone, occ: p.occ, adr: p.adr, addr: u.addr, reg: u };
+    });
+
+    const unitCards = unitsRaw.slice(0, 4).map((u, i) => ({
+      ...u, slotId: 'conts-m-unit-' + i, ...badge(u.state, u.tone),
+      open: () => this.setState({ screen: 'unit', unitIdx: i }),
+    }));
+
+    // ---------- today ----------
+    const opsFilters = ['All', 'Risk', 'Cleaning', 'Maintenance'].map(f => {
+      const on = this.state.opsFilter === f;
+      return {
+        label: f, go: () => this.setState({ opsFilter: f }),
+        style: 'min-height:36px; display:flex; align-items:center; padding:0 14px; border-radius:999px; font-size:12.5px; font-weight:500; cursor:pointer; white-space:nowrap; flex:none; border:1px solid ' +
+          (on ? BLACK : BORDER) + '; background:' + (on ? BLACK : '#FFFFFF') + '; color:' + (on ? '#FFFFFF' : MUTED),
+      };
+    });
+    const opsDefs = [
+      { unit: '#A-21-02', building: 'The Establishment', work: 'Turnover, 2BR', ready: ['Dirty', 'warning'], next: '15:00', sla: ['Overdue 12 min', 'critical'], assignee: 'Unassigned', action: 'Assign' },
+      { unit: '#C-31-14', building: 'Sentral Suites', work: 'Plumbing works', ready: ['Maintenance', 'critical'], next: '\u2014', sla: ['Escalated', 'critical'], assignee: 'AquaFix', action: 'Update owner' },
+      { unit: '#15-06', building: 'Scarletz KLCC', work: 'Deep clean', ready: ['Dirty', 'warning'], next: '18:00', sla: ['Due in 1 h 20 m', 'warning'], assignee: 'Faridah', action: 'Open' },
+      { unit: '#B-08-11', building: 'Arcoris Mont Kiara', work: 'Turnover, studio', ready: ['Cleaning', 'info'], next: '16:00', sla: ['Due in 2 h', 'warning'], assignee: 'Nurul', action: 'Confirm' },
+      { unit: '#A-12-03', building: 'Vista Jaya One', work: 'Turnover, 2BR', ready: ['Cleaning', 'info'], next: '15:00', sla: ['On track', 'success'], assignee: 'Nurul', action: 'Open' },
+    ];
+    const opsCards = opsDefs.map(r => ({
+      unit: r.unit, building: r.building, work: r.work, next: r.next, assignee: r.assignee, action: r.action,
+      ready: r.ready[0], readyStyle: badge(r.ready[0], r.ready[1]).badgeStyle,
+      sla: r.sla[0],
+      slaStyle: 'display:inline-flex; font-size:11px; font-weight:500; padding:3px 9px; border-radius:999px; white-space:nowrap; flex:none; background:' + sem[r.sla[1]][1] + '; color:' + sem[r.sla[1]][0],
+      cardStyle: 'background:#FFFFFF; border:1px solid ' + BORDER + '; border-left:3px solid ' + sem[r.sla[1]][2] + '; border-radius:12px; padding:15px; display:flex; flex-direction:column; gap:11px',
+      actionStyle: 'min-height:40px; display:flex; align-items:center; padding:0 14px; border-radius:8px; background:' + BLACK + '; color:#FFFFFF; font-size:12.5px; font-weight:500; cursor:pointer; flex:none',
+      go: openDialog({ title: r.action + ' \u00b7 ' + r.building + ' ' + r.unit,
+        body: 'Confirms the action, notifies whoever is affected and writes an audit entry.',
+        meta: 'Next guest ' + r.next, confirmLabel: r.action, busyLabel: 'Saving\u2026',
+        resultTitle: r.action + ' done.', resultBody: r.building + ' ' + r.unit + ' updated.' }),
+    }));
+
+    // ---------- reservations (mobile): same vocabulary as desktop, one column ----------
+    const CHm = {
+      airbnb: ['Airbnb', '#242424', 'solid'],
+      booking_com: ['Booking.com', sem.info[2], 'solid'],
+      agoda: ['Agoda', '#6B4E9E', 'solid'],
+      direct: ['Direct', sem.success[2], 'solid'],
+      maintenance_block: ['Block', sem.critical[2], 'dashed'],
+      owner_stay: ['Owner stay', MUTED, 'dotted'],
+    };
+    const channelChip = key => {
+      const [clabel, col, bs] = CHm[key];
+      return {
+        channel: clabel,
+        channelStyle: 'display:inline-flex; align-items:center; font-size:11px; font-weight:500; padding:3px 9px; border-radius:6px; white-space:nowrap; border:1px ' + bs + ' ' + col +
+          '; background:' + (bs === 'solid' ? col : '#FFFFFF') + '; color:' + (bs === 'solid' ? '#FFFFFF' : col),
+      };
+    };
+    const initialsOf = n => n.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    const resDefs = [
+      { guest: 'Aaron Lee', guests: '2 guests', unitNo: '#A-12-03', building: 'Vista Jaya One', channel: 'direct', stay: '16 \u2013 20 Sep', checkInTime: 'Arrives 15:00', gross: 'RM 1,136', state: 'Arriving', tone: 'info', group: 'Arriving' },
+      { guest: 'Priya Sundaram', guests: '2 guests', unitNo: '#B-08-11', building: 'Arcoris Mont Kiara', channel: 'booking_com', stay: '16 \u2013 23 Sep', checkInTime: 'Early check-in 14:00', gross: 'RM 1,617', state: 'Arriving', tone: 'info', group: 'Arriving' },
+      { guest: 'Nadia Abdullah', guests: '2 guests', unitNo: '#A-12-03', building: 'Vista Jaya One', channel: 'airbnb', stay: '13 \u2013 16 Sep', checkInTime: 'Departs 11:00', gross: 'RM 852', state: 'Departing', tone: 'warning', group: 'Departing' },
+      { guest: 'Chen Yu', guests: '2 guests', unitNo: '#B-08-11', building: 'Arcoris Mont Kiara', channel: 'airbnb', stay: '18 \u2013 25 Sep', checkInTime: 'In house, night 2 of 7', gross: 'RM 1,617', state: 'In house', tone: 'success', group: 'In house' },
+      { guest: 'Marcus Wong', guests: '2 guests', unitNo: '#2207', building: 'Tribeca', channel: 'agoda', stay: '17 \u2013 22 Sep', checkInTime: 'In house, night 1 of 5', gross: 'RM 1,590', state: 'In house', tone: 'success', group: 'In house' },
+      { guest: 'Siti Rahmah', guests: '3 guests', unitNo: '#2207', building: 'Tribeca', channel: 'booking_com', stay: '25 \u2013 29 Sep', checkInTime: 'Awaiting payment', gross: 'RM 1,272', state: 'Pending', tone: 'warning', group: 'Pending' },
+    ];
+    const resFilter = this.state.resFilter || 'Today';
+    const resFilters = ['Today', 'Arriving', 'In house', 'Pending'].map(rf => {
+      const on = resFilter === rf;
+      return {
+        label: rf, go: () => this.setState({ resFilter: rf }),
+        style: 'min-height:36px; display:flex; align-items:center; padding:0 14px; border-radius:999px; font-size:12.5px; font-weight:500; cursor:pointer; white-space:nowrap; flex:none; border:1px solid ' +
+          (on ? BLACK : BORDER) + '; background:' + (on ? BLACK : '#FFFFFF') + '; color:' + (on ? '#FFFFFF' : MUTED),
+      };
+    });
+    const visibleRes = resFilter === 'Today'
+      ? resDefs.filter(r => r.group === 'Arriving' || r.group === 'Departing')
+      : resDefs.filter(r => r.group === resFilter);
+    const resSummary = [
+      { label: 'Arriving today', value: '3', ...badge('Confirmed', 'info') },
+      { label: 'Departing today', value: '3', ...badge('Check-out 11:00', 'warning') },
+    ];
+    const resCards = visibleRes.map(r => ({
+      guest: r.guest, guests: r.guests, unitNo: r.unitNo, building: r.building,
+      stay: r.stay, checkInTime: r.checkInTime, gross: r.gross,
+      initials: initialsOf(r.guest),
+      avatarStyle: 'width:38px; height:38px; flex:none; border-radius:999px; display:grid; place-items:center; font-size:12.5px; font-weight:600; background:' + sem[r.tone][1] + '; color:' + sem[r.tone][0],
+      ...channelChip(r.channel), ...badge(r.state, r.tone),
+      cardStyle: 'background:#FFFFFF; border:1px solid ' + BORDER + '; border-left:3px solid ' + sem[r.tone][2] + '; border-radius:12px; padding:15px; display:flex; flex-direction:column; gap:11px; cursor:pointer',
+      open: openDialog({ title: r.guest + ' \u00b7 ' + r.unitNo,
+        body: 'Opens the reservation: stay dates, money breakdown and the booking-to-check-in timeline.',
+        meta: r.building + ' \u00b7 ' + r.stay, confirmLabel: 'Open reservation', busyLabel: 'Opening\u2026',
+        resultTitle: 'Reservation opened.', resultBody: r.guest + ' \u00b7 ' + r.stay }),
+    }));
+
+    // ---------- unit ----------
+    const di = Math.min(this.state.unitIdx, Math.max(0, unitsRaw.length - 1));
+    const ur = unitsRaw[di] || { name: '', building: '', addr: '', occ: '\u2014', adr: 0, reg: {} };
+    const unitTabs = ['Overview', 'Stays', 'Operations', 'Financials', 'Activity'].map(t => {
+      const on = this.state.tab === t;
+      return {
+        label: t, go: () => this.setState({ tab: t }),
+        style: 'min-height:40px; display:flex; align-items:center; padding:0 3px; margin-right:14px; font-size:13px; font-weight:' + (on ? '600' : '400') +
+          '; color:' + (on ? INK : MUTED) + '; cursor:pointer; white-space:nowrap; flex:none; box-shadow:' + (on ? 'inset 0 -2px 0 ' + G : 'none'),
+      };
+    });
+    const unit = {
+      name: ur.building + ' ' + ur.name,
+      address: ur.addr, heroSlot: 'conts-m-hero-' + di,
+      channels: 'Airbnb \u00b7 Direct', ...badge(ur.state, ur.tone),
+      stats: [
+        { label: 'Occupancy', value: ur.occ }, { label: 'ADR', value: ur.adr ? 'RM ' + ur.adr : '\u2014' },
+        { label: 'Rating', value: '4.92' }, { label: 'Open issues', value: '1' },
+      ],
+      stays: [
+        { guest: 'Nadia Abdullah', detail: 'Airbnb \u00b7 13\u201316 Sep', ...badge('Checked in', 'success') },
+        { guest: 'Aaron Lee', detail: 'Direct \u00b7 16\u201320 Sep', ...badge('Confirmed', 'info') },
+        { guest: 'Priya Sundaram', detail: 'Booking.com \u00b7 24 Sep', ...badge('Pending', 'warning') },
+      ],
+      pnl: [
+        { label: 'Gross booking value', value: 'RM 9,260' },
+        { label: 'Management fee 25%', value: '\u2212 RM 2,315' },
+        { label: 'Housekeeping', value: '\u2212 RM 385' },
+        { label: 'Maintenance', value: '\u2212 RM 78' },
+        { label: 'Net payout', value: 'RM 6,482.00', strong: true },
+      ].map(p => ({
+        label: p.label, value: p.value,
+        labelStyle: 'font-size:13px; font-weight:' + (p.strong ? '600' : '400') + '; color:' + (p.strong ? INK : MUTED),
+        valueStyle: 'font-size:13px; font-weight:' + (p.strong ? '600' : '500'),
+      })),
+    };
+
+    // ---------- field ----------
+    const taskDefs = [
+      { unit: 'Vista Jaya One #A-12-03', address: 'C-41-06, Jaya One, Jalan Universiti, PJ', work: 'Linen set B', due: '13:00', access: 'Smart lock 4417#. Lobby via guard, say The Conts.', state: ['Cleaning', 'info'], flag: '' },
+      { unit: 'Arcoris #B-08-11', address: 'Arcoris Residences, Jalan Kiara, Mont Kiara', work: 'Studio turnover', due: '13:45', access: 'Key box B2, code 2208. Lift card at counter.', state: ['Dirty', 'warning'], flag: 'Guest reported a broken blind' },
+      { unit: 'Scarletz #15-06', address: 'Scarletz Suites, Jalan Yap Kwan Seng, KL', work: 'Deep clean, run aircon', due: '14:30', access: 'Smart lock 9021#. Parking level B2.', state: ['Dirty', 'warning'], flag: '' },
+      { unit: 'The Establishment #A-21-02', address: 'The Establishment, Jalan Kuchai Lama', work: 'Linen set A', due: '15:00', access: 'Collect key from site office before 14:00.', state: ['Dirty', 'warning'], flag: 'Check-in at risk' },
+    ];
+    const doneCount = Object.values(this.state.done).filter(Boolean).length;
+    const fieldTasks = taskDefs.map((t, i) => {
+      const on = !!this.state.done[i];
+      return {
+        unit: t.unit, address: t.address, work: t.work, due: t.due, access: t.access, flag: t.flag,
+        ...badge(t.state[0], t.state[1]), done: on,
+        toggle: () => this.setState(st => ({ done: { ...st.done, [i]: !st.done[i] } })),
+        checkStyle: 'width:44px; height:44px; flex:none; border-radius:8px; display:grid; place-items:center; cursor:pointer; color:#FFFFFF; border:1px solid ' +
+          (on ? sem.success[0] : BORDER) + '; background:' + (on ? sem.success[0] : '#FFFFFF'),
+        titleStyle: 'font-size:14.5px; font-weight:600; text-decoration:' + (on ? 'line-through' : 'none') + '; color:' + (on ? MUTED : INK),
+        cardStyle: 'border:1px solid ' + BORDER + '; border-radius:12px; padding:15px; display:flex; flex-direction:column; gap:13px; background:' + (on ? '#F6F4F0' : '#FFFFFF'),
+        photo: openDialog({ title: 'Add a photo', body: 'Opens the camera. At least one photo is required before a unit can be marked ready.',
+          meta: t.unit, confirmLabel: 'Open camera', busyLabel: 'Opening\u2026',
+          resultTitle: 'Photo added.', resultBody: 'Attached to this task and queued for sync.' }),
+        ready: openDialog({ title: 'Mark ' + t.unit + ' ready?', body: 'The unit flips to Ready in the PMS and operations sees it without a message.',
+          meta: 'Next check-in ' + t.due + ' \u00b7 1 photo attached', confirmLabel: 'Mark ready', busyLabel: 'Saving\u2026',
+          resultTitle: 'Marked ready.', resultBody: t.unit + ' is now Ready for check-in.' }),
+      };
+    });
+    const reportDamage = openDialog({
+      title: 'Report damage or a missing item?',
+      body: 'Creates a maintenance issue on this unit with your photos and notes. The office adds the cost.',
+      meta: 'Operations is alerted if it blocks the unit', confirmLabel: 'Submit report', busyLabel: 'Submitting\u2026',
+      danger: true, resultTone: 'warning', resultTitle: 'Damage reported.', resultBody: 'Operations was alerted.',
+    });
+
+    // ---------- owner ----------
+    const ownerLines = [
+      { label: 'Gross booking value', value: 'RM 9,260.00' },
+      { label: 'Management fee 25%', value: '\u2212 RM 2,315.00' },
+      { label: 'Housekeeping', value: '\u2212 RM 385.00' },
+      { label: 'Maintenance', value: '\u2212 RM 78.00' },
+      { label: 'Net payout', value: 'RM 6,482.00', strong: true },
+    ].map(l => ({
+      label: l.label, value: l.value,
+      labelStyle: 'font-size:12.5px; color:' + (l.strong ? '#FFFFFF' : '#DEDAD3') + '; font-weight:' + (l.strong ? '600' : '400'),
+      valueStyle: 'font-size:12.5px; font-weight:' + (l.strong ? '600' : '500') + '; color:' + (l.strong ? G : '#FFFFFF'),
+    }));
+    const ownerStats = [
+      { label: 'Units', value: String(myUnits.length), note: myUnits.map(u => u.buildingCode).join(' \u00b7 ') },
+      { label: 'Occupancy', value: (myUnits.reduce((a, u) => a + parseFloat((perf[u.code] || { occ: '0' }).occ), 0) / Math.max(1, myUnits.length)).toFixed(1) + '%', note: 'Across your units' },
+      { label: 'Gross', value: rm2(myGross), note: 'August 2026' },
+      { label: 'Rating', value: '4.92', note: 'Guest average' },
+    ];
+    const ownerIssues = [
+      { title: 'Blackout curtains', detail: 'Quoted RM 890 on 12 Sep. Your approval is needed.', needsApproval: true, ...badge('Waiting', 'warning') },
+      { title: 'Aircon service', detail: 'Completed 12 Sep. RM 180 on your August statement.', needsApproval: false, ...badge('Resolved', 'success') },
+      { title: 'Water heater replaced', detail: 'Completed 28 Aug under the fit-out warranty.', needsApproval: false, ...badge('Resolved', 'success') },
+    ];
+
+    return {
+      isLogin: view === 'login', isApp: view === 'app',
+      lockIcon: lucide('lock'), mailIcon: lucide('mail'),
+      loginStats: [['4.91', 'RATING'], ['86.2%', 'OCCUPANCY'], [String(flatUnits.length), 'UNITS']].map(([value, label]) => ({ value, label })),
+      motes: [[12, 26], [78, 18], [86, 52], [20, 62], [52, 40]].map(([x, y], i) => ({
+        style: 'position:absolute; left:' + x + '%; top:' + y + '%; width:3px; height:3px; border-radius:999px; background:#C8A46A; pointer-events:none; animation:drift ' + (9 + i * 1.6) + 's ease-in-out infinite ' + (i * 0.7) + 's',
+      })),
+      sheetStyle: 'position:relative; flex:none; width:100%; max-width:430px; margin:0 auto; box-sizing:border-box; background:#FFFFFF; border-top:1px solid ' + G + '; border-radius:22px 22px 0 0; padding:26px 22px 22px; display:flex; flex-direction:column; gap:18px; box-shadow:0 -1px 0 rgba(200,164,106,0.35), 0 -18px 46px rgba(0,0,0,0.55); animation:rise 560ms cubic-bezier(0.16,1,0.3,1) 180ms both',
+      fieldWrapStyle: 'display:flex; align-items:center; gap:10px; height:50px; padding:0 14px; border-radius:8px; border:1px solid ' + BORDER + '; background:#FFFFFF',
+      authEyebrow: { signin: 'PROPERTY OS', error: 'PROPERTY OS', forgot: 'ACCOUNT RECOVERY' }[as],
+      rememberMark: this.state.remember === false ? '' : '\u2713',
+      rememberBoxStyle: 'width:17px; height:17px; flex:none; border-radius:4px; display:grid; place-items:center; font-size:11px; color:#FFFFFF; border:1px solid ' +
+        (this.state.remember === false ? BORDER : sem.success[0]) + '; background:' + (this.state.remember === false ? '#FFFFFF' : sem.success[0]),
+      toggleRemember: () => this.setState(st => ({ remember: st.remember === false })),
+      accountLabel: { staff: 'operations account', field: 'housekeeping account', owner: 'owner account' }[role],
+      // The real page, not a mockup: full viewport, no bezel, no simulated status bar.
+      // height (not min-height) so the tab bar pins and the content region scrolls itself.
+      // No double quotes in this value — they break inline style parsing; the font is on body.
+      appStyle: 'position:relative; width:430px; max-width:100%; margin-inline:auto; height:100dvh; display:flex; flex-direction:column; overflow:hidden; background:#FFFFFF; box-shadow:0 0 0 1px ' + BORDER,
+
+      authHeading, authSub, authButtonLabel, authSubmit,
+      email: this.state.email, password: this.state.password,
+      setEmail: e => this.setState({ email: e.target.value }),
+      setPassword: e => this.setState({ password: e.target.value }),
+      pwType: this.state.show ? 'text' : 'password',
+      showPwLabel: this.state.show ? 'Hide' : 'Show',
+      eyeIcon: lucide(this.state.show ? 'eye-off' : 'eye'),
+      toggleShow: () => this.setState(st => ({ show: !st.show })),
+      showAuthPassword: as !== 'forgot',
+      showAuthError: this.state.authError && as === 'error',
+      showAuthSent: this.state.authSent && as === 'forgot',
+      forgotLabel: as === 'forgot' ? 'Back to sign in' : 'Forgot password?',
+      goForgot: () => this.setState(st => ({ authScreen: st.authScreen === 'forgot' ? 'signin' : 'forgot', authError: false, authSent: false })),
+      busy: this.state.busy,
+      inputStyle: 'flex:1; min-width:0; height:100%; padding:0; font-size:14px; color:' + INK + '; background:transparent; border:none; outline:none',
+      authButtonStyle: 'display:flex; align-items:center; justify-content:center; gap:9px; min-height:52px; border-radius:8px; border:none; background:' + BLACK + '; color:#FFFFFF; font-size:14px; font-weight:500; cursor:pointer; opacity:' + (this.state.busy ? '0.65' : '1'),
+
+      headerEyebrow, headerTitle, headerSub,
+      headerStyle: 'flex:none; padding:14px 16px 16px; display:flex; flex-direction:column; gap:7px; background:' + (dark ? BLACK : '#FFFFFF') +
+        '; color:' + (dark ? '#FFFFFF' : INK) + '; border-bottom:1px solid ' + (dark ? CHAR : BORDER),
+      headerMuted: dark ? DIM : MUTED,
+      headerIconStyle: 'position:relative; width:36px; height:36px; flex:none; display:grid; place-items:center; border-radius:8px; cursor:pointer; color:' +
+        (dark ? '#DEDAD3' : INK) + '; border:1px solid ' + (dark ? CHAR : BORDER),
+      bellIcon: lucide('bell'), arrowIcon: lucide('arrow-right'), checkIcon: lucide('check'),
+      keyIcon: lucide('key-round'), cameraIcon: lucide('camera'), alertIcon: lucide('triangle-alert'),
+      phoneIcon: lucide('phone'), downloadIcon: lucide('download'),
+      openNotifications: openDialog({ title: 'Notifications', body: '1 check-in at risk, 2 statements unsent, 1 damage report.',
+        meta: 'Every notification has a destination in the app', confirmLabel: 'Open inbox', busyLabel: 'Opening\u2026',
+        resultTitle: 'Inbox opened.', resultBody: 'Threads marked as read.' }),
+
+      user, profileMenu, profileOpen: this.state.profileOpen,
+      toggleProfile: () => this.setState(st => ({ profileOpen: !st.profileOpen })),
+
+      tabs,
+      isHome: s === 'home', isToday: s === 'today', isUnit: s === 'unit', isField: s === 'field', isOwner: s === 'owner', isRes: s === 'res',
+      resFilters, resSummary, resCards,
+      goToday: goScreen('today'), goUnits: goScreen('unit'),
+      kpis, todayRows, exceptions, unitCards,
+      opsFilters, opsCards,
+      unit, unitTabs,
+      fieldTasks, reportDamage,
+      fieldProgress: doneCount + ' of ' + taskDefs.length + ' tasks done',
+      progressStyle: 'width:' + Math.round((doneCount / taskDefs.length) * 100) + '%; height:100%; border-radius:999px; background:' + G + '; transition:width 200ms cubic-bezier(0.16,1,0.3,1)',
+      syncLabel: 'Synced 14:06',
+      syncStyle: 'display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:500; padding:3px 9px; border-radius:999px; background:' + sem.success[1] + '; color:' + sem.success[0],
+      ownerLines, ownerStats, ownerIssues, ownerPayout: rm2(myNet),
+      approveQuote: openDialog({ title: 'Approve RM 890 for blackout curtains?',
+        body: 'The Conts schedules the work and deducts the amount from your next statement.',
+        meta: 'Quoted 12 Sep by Kiara Interiors', confirmLabel: 'Approve', busyLabel: 'Approving\u2026',
+        resultTitle: 'Quote approved.', resultBody: 'The Conts will confirm the work date.' }),
+      downloadStatement: openDialog({ title: 'Download your August statement?',
+        body: 'A finalised PDF of every booking, fee and expense behind your RM 6,482.00 payout.',
+        meta: 'Finalised 1 Sep 2026', confirmLabel: 'Download', busyLabel: 'Preparing\u2026',
+        resultTitle: 'Statement downloaded.', resultBody: 'Saved to your device.' }),
+
+      dialogOpen: !!dlg, dialog, closeDialog, runDialog, toasts, hasToasts: toasts.length > 0,
+    };
+  }
+}
+</script>
+</body>
+</html>
