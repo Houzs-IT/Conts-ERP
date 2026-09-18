@@ -1,0 +1,1053 @@
+{
+  "$meta": {
+    "product": "The Conts Property OS",
+    "source": "The Conts Digital Brand Guide v1.0 — sections 13, 14, 15, 16",
+    "note": "Route map shared by frontend router, backend permission middleware and QA. Navigation is organised by job, never by database table (13.1).",
+    "apps": {
+      "staff": {
+        "basePath": "/",
+        "shell": "AppShell",
+        "nav": "sidebar 240px / collapsed 72px"
+      },
+      "owner": {
+        "basePath": "/owner",
+        "shell": "OwnerShell",
+        "nav": "top bar, lower density (15)"
+      },
+      "field": {
+        "basePath": "/field",
+        "shell": "FieldShell",
+        "nav": "bottom bar, 44px targets (16.1)"
+      },
+      "mobile": {
+        "basePath": "/m",
+        "shell": "MobileShell",
+        "nav": "bottom bar, 44px targets",
+        "file": "The Conts Mobile.dc.html",
+        "note": "Owner portal only, capped to 430px. Bottom navigation: Statement, Bookings, My units. Staff run the desktop; a field-crew app is a later phase."
+      }
+    },
+    "structure": {
+      "rule": "Two products, not many pages. Every module lives inside the desktop app or the mobile app.",
+      "files": {
+        "The Conts Desktop.dc.html": "Desktop product: sign-in plus every staff module behind the sidebar.",
+        "The Conts Mobile.dc.html": "Mobile product: sign-in plus role-aware screens behind bottom navigation.",
+        "The Conts Design System.dc.html": "Visual reference, not a product surface.",
+        "The Conts Frontend Spec.dc.html": "Printable handoff document."
+      }
+    }
+  },
+  "roles": {
+    "management": {
+      "label": "Management",
+      "scope": "All modules, read + approve",
+      "seesFinance": true
+    },
+    "operations_manager": {
+      "label": "Operations manager",
+      "scope": "All operations, assign work, edit units",
+      "seesFinance": true
+    },
+    "operations_staff": {
+      "label": "Operations staff",
+      "scope": "Reservations and operations, no finance edit",
+      "seesFinance": false
+    },
+    "finance_admin": {
+      "label": "Finance admin",
+      "scope": "Revenue, expenses, statements, payouts",
+      "seesFinance": true
+    },
+    "housekeeper": {
+      "label": "Housekeeper",
+      "scope": "Field app only, assigned tasks",
+      "seesFinance": false
+    },
+    "technician": {
+      "label": "Technician",
+      "scope": "Field app only, assigned maintenance",
+      "seesFinance": false
+    },
+    "owner": {
+      "label": "Property owner",
+      "scope": "Owner portal, own properties only",
+      "seesFinance": "own"
+    }
+  },
+  "permissionRules": [
+    "Remove inaccessible destinations from navigation, or explain access. Never tease unusable actions (13.1).",
+    "Field roles must not see owner financial data without explicit permission (16.1).",
+    "Owners are scoped to their own properties by owner_id on every query.",
+    "Read-without-edit shows the value plus the permission microcopy pattern (18.1)."
+  ],
+  "navigation": [
+    {
+      "group": "Overview",
+      "groupLabel": "OVERVIEW",
+      "items": [
+        {
+          "label": "Dashboard",
+          "path": "/",
+          "component": "DashboardPage",
+          "api": [
+            "GET /api/dashboard/kpis",
+            "GET /api/dashboard/trend",
+            "GET /api/dashboard/today",
+            "GET /api/dashboard/exceptions",
+            "GET /api/portfolio/performance"
+          ],
+          "roles": [
+            "management",
+            "operations_manager",
+            "operations_staff",
+            "finance_admin"
+          ],
+          "status": "designed"
+        },
+        {
+          "label": "Portfolio",
+          "path": "/portfolio",
+          "component": "PortfolioPage",
+          "api": [
+            "GET /api/portfolio/performance"
+          ],
+          "roles": [
+            "management",
+            "operations_manager",
+            "finance_admin"
+          ],
+          "status": "not_designed"
+        }
+      ]
+    },
+    {
+      "group": "Reservations",
+      "groupLabel": "RESERVATIONS",
+      "items": [
+        {
+          "label": "Bookings",
+          "path": "/reservations/bookings",
+          "component": "BookingsPage",
+          "api": [
+            "GET /api/reservations"
+          ],
+          "roles": [
+            "management",
+            "operations_manager",
+            "operations_staff"
+          ],
+          "status": "designed",
+          "file": "The Conts Desktop.dc.html",
+          "notes": "Full reservation records: reference, guest, unit, channel, stay, nights, gross, status. Filters: All, Arriving today, In house, Pending payment, Blocks, Cancelled."
+        },
+        {
+          "label": "Calendar",
+          "path": "/reservations/calendar",
+          "component": "ReservationCalendarPage",
+          "api": [
+            "GET /api/reservations/calendar"
+          ],
+          "roles": [
+            "management",
+            "operations_manager",
+            "operations_staff"
+          ],
+          "status": "designed",
+          "file": "The Conts Desktop.dc.html",
+          "notes": "Unit rows carry a photo thumbnail, unit number, building and nightly rate. Blocks print channel and guest; non-revenue blocks use a dashed or dotted edge. Clicking a block opens the reservation drawer."
+        },
+        {
+          "label": "Guests",
+          "path": "/reservations/guests",
+          "component": "GuestsPage",
+          "api": [
+            "GET /api/guests"
+          ],
+          "roles": [
+            "management",
+            "operations_manager",
+            "operations_staff"
+          ],
+          "status": "designed",
+          "file": "The Conts Desktop.dc.html",
+          "notes": "Guest list with tag and stay count; profile carries lifetime value, stay history with unit photos, and operations notes. Contact details are restricted to operations roles."
+        }
+      ],
+      "note": "Lives inside the desktop app under sidebar Reservations. Not a separate page."
+    },
+    {
+      "group": "Operations",
+      "groupLabel": "OPERATIONS",
+      "items": [
+        {
+          "label": "Today",
+          "path": "/operations/today",
+          "component": "OperationsTodayPage",
+          "api": [
+            "GET /api/operations/today"
+          ],
+          "roles": [
+            "management",
+            "operations_manager",
+            "operations_staff"
+          ],
+          "status": "designed",
+          "badge": "count of items needing action"
+        },
+        {
+          "label": "Housekeeping",
+          "path": "/operations/housekeeping",
+          "component": "HousekeepingPage",
+          "api": [
+            "GET /api/housekeeping/tasks"
+          ],
+          "roles": [
+            "management",
+            "operations_manager",
+            "operations_staff"
+          ],
+          "status": "not_designed"
+        },
+        {
+          "label": "Maintenance",
+          "path": "/operations/maintenance",
+          "component": "MaintenancePage",
+          "api": [
+            "GET /api/maintenance/issues"
+          ],
+          "roles": [
+            "management",
+            "operations_manager",
+            "operations_staff"
+          ],
+          "status": "not_designed",
+          "badge": "open issue count"
+        },
+        {
+          "label": "Tasks",
+          "path": "/operations/tasks",
+          "component": "TasksPage",
+          "api": [
+            "GET /api/tasks"
+          ],
+          "roles": [
+            "management",
+            "operations_manager",
+            "operations_staff"
+          ],
+          "status": "not_designed"
+        },
+        {
+          "label": "Inspections",
+          "path": "/operations/inspections",
+          "component": "InspectionsPage",
+          "api": [
+            "GET /api/inspections"
+          ],
+          "roles": [
+            "management",
+            "operations_manager",
+            "operations_staff"
+          ],
+          "status": "not_designed"
+        }
+      ]
+    },
+    {
+      "group": "Properties",
+      "groupLabel": "PROPERTIES",
+      "items": [
+        {
+          "label": "Properties",
+          "path": "/properties",
+          "component": "PropertiesPage",
+          "api": [
+            "GET /api/properties"
+          ],
+          "roles": [
+            "management",
+            "operations_manager"
+          ],
+          "status": "designed",
+          "file": "The Conts Desktop.dc.html",
+          "notes": "State → building → unit tree. Add building at the top level, add unit on each building row. Unit record carries all 34 workbook columns across Details, Monthly expenses and Contract tabs, each field labelled free text / dropdown / date / amount / secret."
+        },
+        {
+          "label": "Units",
+          "path": "/properties/units",
+          "component": "UnitsPage",
+          "api": [
+            "GET /api/units"
+          ],
+          "roles": [
+            "management",
+            "operations_manager",
+            "operations_staff"
+          ],
+          "status": "designed",
+          "badge": "unit count"
+        }
+      ],
+      "note": "Inventory and access keys removed at the client’s request."
+    },
+    {
+      "group": "Finance",
+      "groupLabel": "FINANCE",
+      "items": [
+        {
+          "label": "Revenue",
+          "path": "/finance/revenue",
+          "component": "RevenuePage",
+          "api": [
+            "GET /api/finance/revenue"
+          ],
+          "roles": [
+            "management",
+            "finance_admin"
+          ],
+          "status": "not_designed"
+        },
+        {
+          "label": "Expenses",
+          "path": "/finance/expenses",
+          "component": "ExpensesPage",
+          "api": [
+            "GET /api/finance/expenses"
+          ],
+          "roles": [
+            "management",
+            "finance_admin"
+          ],
+          "status": "not_designed"
+        },
+        {
+          "label": "Owner statements",
+          "path": "/finance/statements",
+          "component": "OwnerStatementsPage",
+          "api": [
+            "GET /api/statements"
+          ],
+          "roles": [
+            "management",
+            "finance_admin"
+          ],
+          "status": "designed",
+          "badge": "statements not yet sent"
+        },
+        {
+          "label": "Payouts",
+          "path": "/finance/payouts",
+          "component": "PayoutsPage",
+          "api": [
+            "GET /api/payouts"
+          ],
+          "roles": [
+            "management",
+            "finance_admin"
+          ],
+          "status": "not_designed"
+        }
+      ]
+    },
+    {
+      "group": "Owners",
+      "groupLabel": "OWNERS",
+      "items": [
+        {
+          "label": "Owners",
+          "path": "/owners",
+          "component": "OwnersPage",
+          "api": [
+            "GET /api/owners"
+          ],
+          "roles": [
+            "management",
+            "operations_manager",
+            "finance_admin"
+          ],
+          "status": "designed",
+          "file": "The Conts Desktop.dc.html",
+          "notes": "One owner, several units. Header rolls up net payout across every unit; the table breaks it down per unit with terms, occupancy, ADR, gross and net, and each row opens that unit. Owner and payout details plus combined statement history alongside."
+        },
+        {
+          "label": "Contracts",
+          "path": "/owners/contracts",
+          "component": "ContractsPage",
+          "api": [
+            "GET /api/contracts"
+          ],
+          "roles": [
+            "management",
+            "finance_admin"
+          ],
+          "status": "not_designed"
+        }
+      ]
+    },
+    {
+      "group": "Performance",
+      "groupLabel": "PERFORMANCE",
+      "items": [
+        {
+          "label": "Analytics",
+          "path": "/performance/analytics",
+          "component": "AnalyticsPage",
+          "api": [
+            "GET /api/analytics"
+          ],
+          "roles": [
+            "management",
+            "finance_admin"
+          ],
+          "status": "not_designed"
+        },
+        {
+          "label": "Pricing",
+          "path": "/performance/pricing",
+          "component": "PricingPage",
+          "api": [
+            "GET /api/pricing/rules"
+          ],
+          "roles": [
+            "management",
+            "operations_manager"
+          ],
+          "status": "not_designed"
+        },
+        {
+          "label": "Reviews",
+          "path": "/performance/reviews",
+          "component": "ReviewsPage",
+          "api": [
+            "GET /api/reviews"
+          ],
+          "roles": [
+            "management",
+            "operations_manager",
+            "operations_staff"
+          ],
+          "status": "not_designed"
+        }
+      ]
+    },
+    {
+      "group": "Communication",
+      "groupLabel": "COMMUNICATION",
+      "items": [
+        {
+          "label": "Inbox",
+          "path": "/communication/inbox",
+          "component": "InboxPage",
+          "api": [
+            "GET /api/messages/threads"
+          ],
+          "roles": [
+            "management",
+            "operations_manager",
+            "operations_staff"
+          ],
+          "status": "not_designed",
+          "badge": "unread threads"
+        },
+        {
+          "label": "Automations",
+          "path": "/communication/automations",
+          "component": "AutomationsPage",
+          "api": [
+            "GET /api/automations"
+          ],
+          "roles": [
+            "management",
+            "operations_manager"
+          ],
+          "status": "not_designed"
+        }
+      ]
+    },
+    {
+      "group": "System",
+      "groupLabel": "SYSTEM",
+      "items": [
+        {
+          "label": "Users and roles",
+          "path": "/system/users",
+          "component": "UsersPage",
+          "api": [
+            "GET /api/users"
+          ],
+          "roles": [
+            "management"
+          ],
+          "status": "designed",
+          "file": "The Conts Desktop.dc.html",
+          "notes": "Three tabs: user list with role and reporting line, a deny-by-default permission matrix across six roles and eleven modules, and an organisation chart that is explicitly a reporting line rather than a permission source."
+        },
+        {
+          "label": "Integrations",
+          "path": "/system/integrations",
+          "component": "IntegrationsPage",
+          "api": [
+            "GET /api/integrations"
+          ],
+          "roles": [
+            "management"
+          ],
+          "status": "designed",
+          "note": "Must distinguish connected, expired, degraded, failed (19)",
+          "file": "The Conts Desktop.dc.html",
+          "notes": "Six connections with honest states: Airbnb and Booking.com connected, Agoda expired with a Reconnect action, WhatsApp connected, Maybank degraded, utilities manual."
+        },
+        {
+          "label": "Settings",
+          "path": "/system/settings",
+          "component": "SettingsPage",
+          "api": [
+            "GET /api/settings"
+          ],
+          "roles": [
+            "management"
+          ],
+          "status": "designed",
+          "file": "The Conts Desktop.dc.html",
+          "notes": "Company, locale and money, operations defaults, statements and payouts, security."
+        }
+      ]
+    }
+  ],
+  "detailRoutes": [
+    {
+      "path": "/properties/units/:unitId",
+      "component": "UnitRecordPage",
+      "status": "designed",
+      "tabs": [
+        {
+          "label": "Overview",
+          "path": "/properties/units/:unitId",
+          "api": [
+            "GET /api/units/:unitId"
+          ]
+        },
+        {
+          "label": "Reservations",
+          "path": "/properties/units/:unitId/reservations",
+          "api": [
+            "GET /api/units/:unitId/reservations"
+          ]
+        },
+        {
+          "label": "Operations",
+          "path": "/properties/units/:unitId/operations",
+          "api": [
+            "GET /api/units/:unitId/tasks"
+          ]
+        },
+        {
+          "label": "Financials",
+          "path": "/properties/units/:unitId/financials",
+          "api": [
+            "GET /api/units/:unitId/pnl"
+          ],
+          "roles": [
+            "management",
+            "operations_manager",
+            "finance_admin"
+          ]
+        },
+        {
+          "label": "Maintenance",
+          "path": "/properties/units/:unitId/maintenance",
+          "api": [
+            "GET /api/units/:unitId/maintenance"
+          ]
+        },
+        {
+          "label": "Documents",
+          "path": "/properties/units/:unitId/documents",
+          "api": [
+            "GET /api/units/:unitId/documents"
+          ]
+        },
+        {
+          "label": "Activity",
+          "path": "/properties/units/:unitId/activity",
+          "api": [
+            "GET /api/units/:unitId/activity"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/reservations/bookings/:reservationId",
+      "component": "ReservationRecordPage",
+      "status": "not_designed"
+    },
+    {
+      "path": "/owners/:ownerId",
+      "component": "OwnerRecordPage",
+      "status": "not_designed"
+    },
+    {
+      "path": "/finance/statements/:statementId",
+      "component": "StatementDetailPage",
+      "status": "not_designed"
+    },
+    {
+      "path": "/reservations/bookings/:reservationId",
+      "component": "ReservationDrawer",
+      "status": "designed",
+      "file": "The Conts Desktop.dc.html",
+      "pattern": "Right-hand drawer over the calendar or list, so context is never lost.",
+      "sections": [
+        "Unit photograph",
+        "Status, channel and reference",
+        "Check-in / check-out / nights / guests",
+        "Gross to collected money breakdown",
+        "Timeline from booking to check-in"
+      ],
+      "actions": [
+        {
+          "label": "Message guest",
+          "api": "POST /api/messages",
+          "note": "Sends on the channel the booking came from."
+        },
+        {
+          "label": "Change dates",
+          "api": "PATCH /api/reservations/:id/dates",
+          "confirm": "Moving a stay updates the channel, re-checks availability and notifies the guest. Housekeeping is rescheduled automatically."
+        },
+        {
+          "label": "Cancel",
+          "api": "POST /api/reservations/:id/cancel",
+          "variant": "danger",
+          "confirm": "This releases the dates, notifies the guest and reverses the payout line on the owner statement."
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "routes": [
+      {
+        "path": "/login",
+        "component": "LoginPage",
+        "public": true,
+        "status": "designed",
+        "submit": {
+          "label": "Sign in",
+          "api": "POST /api/auth/login",
+          "body": [
+            "email",
+            "password"
+          ],
+          "onSuccess": [
+            {
+              "when": "must_change_password === true",
+              "goto": "/change-password"
+            },
+            {
+              "when": "role in [housekeeper, technician]",
+              "goto": "/field/today"
+            },
+            {
+              "when": "role === owner",
+              "goto": "/owner"
+            },
+            {
+              "when": "default",
+              "goto": "/"
+            }
+          ],
+          "onError": {
+            "status": 401,
+            "render": "inline error block",
+            "copy": "Invalid email or password. Five failed attempts lock the account for 15 minutes."
+          },
+          "onLockout": {
+            "status": 423,
+            "copy": "Account locked for 15 minutes after five failed attempts. Try again at {unlockAt} or ask an administrator to reset it."
+          },
+          "note": "No portal picker. One sign-in for every role: the response's user.role decides the landing screen. An owner signing in reaches the owner portal without choosing it, and staff never see owner-portal chrome."
+        },
+        "links": [
+          {
+            "label": "Forgot password?",
+            "goto": "/forgot-password"
+          }
+        ]
+      },
+      {
+        "path": "/forgot-password",
+        "component": "ForgotPasswordPage",
+        "public": true,
+        "status": "designed",
+        "submit": {
+          "label": "Send reset link",
+          "api": "POST /api/auth/forgot-password",
+          "body": [
+            "email"
+          ],
+          "onSuccess": {
+            "render": "success block",
+            "copy": "If that email belongs to a Property OS account, a reset link is on its way. The link expires in 60 minutes.",
+            "note": "Always the same response — never disclose whether an account exists."
+          }
+        },
+        "links": [
+          {
+            "label": "Back to sign in",
+            "goto": "/login"
+          }
+        ]
+      },
+      {
+        "path": "/reset-password",
+        "component": "ResetPasswordPage",
+        "public": true,
+        "query": [
+          "token"
+        ],
+        "status": "not_designed",
+        "submit": {
+          "label": "Save and sign in",
+          "api": "POST /api/auth/reset-password",
+          "body": [
+            "token",
+            "password"
+          ]
+        }
+      },
+      {
+        "path": "/change-password",
+        "component": "ChangePasswordPage",
+        "public": false,
+        "status": "designed",
+        "note": "Forced when users.must_change_password is true. No other route is reachable until satisfied.",
+        "submit": {
+          "label": "Save and continue",
+          "api": "POST /api/auth/change-password",
+          "body": [
+            "password"
+          ],
+          "onSuccess": {
+            "goto": "role home"
+          }
+        }
+      },
+      {
+        "path": "/logout",
+        "api": "POST /api/auth/logout",
+        "onSuccess": {
+          "goto": "/login"
+        }
+      }
+    ],
+    "passwordPolicy": {
+      "minLength": 8,
+      "requireUppercase": 1,
+      "requireDigit": 1,
+      "validateOn": "change (live checklist) + submit",
+      "copy": [
+        "At least 8 characters",
+        "At least 1 uppercase letter",
+        "At least 1 digit"
+      ]
+    },
+    "session": {
+      "strategy": "httpOnly cookie",
+      "inactivityTimeout": "8h",
+      "absoluteTimeout": "30d",
+      "states": [
+        "connected",
+        "expired",
+        "degraded",
+        "failed"
+      ]
+    },
+    "lockout": {
+      "maxAttempts": 5,
+      "windowMinutes": 15
+    },
+    "portalSelection": {
+      "decision": "Rejected",
+      "rationale": "A portal picker asks the user to answer what the server already knows, leaks internal structure to owners, and adds a step to the most-used screen in the product. The role on the account is authoritative.",
+      "implementation": "POST /api/auth/login returns user.role and a resolved home path. The client redirects; it never branches on a user choice."
+    }
+  },
+  "ownerPortal": [
+    {
+      "label": "Statement",
+      "path": "/owner",
+      "component": "OwnerDashboardPage",
+      "status": "designed",
+      "api": [
+        "GET /api/owner/summary",
+        "GET /api/owner/statements/current",
+        "GET /api/owner/trend",
+        "GET /api/owner/property-health",
+        "GET /api/owner/documents"
+      ],
+      "buttons": [
+        {
+          "label": "Download statement",
+          "action": "GET /api/owner/statements/:id/pdf",
+          "result": "PDF download"
+        },
+        {
+          "label": "Download",
+          "scope": "each document row",
+          "action": "GET /api/documents/:id/download"
+        },
+        {
+          "label": "Approve quote",
+          "scope": "property-health row where state = waiting",
+          "action": "POST /api/maintenance/issues/:id/approve",
+          "confirm": "Approve RM {amount} for {title}? The Conts will schedule the work and deduct the amount from your next statement."
+        }
+      ]
+    },
+    {
+      "label": "Performance",
+      "path": "/owner/performance",
+      "status": "not_designed"
+    },
+    {
+      "label": "Documents",
+      "path": "/owner/documents",
+      "status": "not_designed"
+    }
+  ],
+  "fieldApp": [
+    {
+      "label": "Today",
+      "path": "/field/today",
+      "component": "FieldTodayPage",
+      "status": "designed",
+      "api": [
+        "GET /api/field/tasks?date=today"
+      ],
+      "buttons": [
+        {
+          "label": "Add photo",
+          "action": "POST /api/tasks/:id/photos",
+          "input": "camera or file, multipart",
+          "required": "at least 1 before Mark ready"
+        },
+        {
+          "label": "Mark ready",
+          "action": "POST /api/tasks/:id/complete",
+          "confirm": "Mark {unit} ready for guest? Next check-in is {time}.",
+          "requires": [
+            "photo"
+          ],
+          "writes": "units.readiness = ready"
+        },
+        {
+          "label": "Report damage or missing item",
+          "action": "POST /api/maintenance/issues",
+          "variant": "danger",
+          "creates": "maintenance issue on that unit with state = open"
+        },
+        {
+          "label": "Call operations",
+          "action": "tel:+60174658868"
+        }
+      ],
+      "offline": {
+        "queueStates": [
+          "queued",
+          "synced",
+          "failed"
+        ],
+        "rule": "Never show a success state before server confirmation (19)."
+      }
+    },
+    {
+      "label": "Schedule",
+      "path": "/field/schedule",
+      "status": "not_designed"
+    }
+  ],
+  "actionCatalogue": [
+    {
+      "screen": "Dashboard",
+      "label": "Add property",
+      "variant": "primary",
+      "goto": "/properties/new"
+    },
+    {
+      "screen": "Dashboard",
+      "label": "Open operations",
+      "variant": "tertiary",
+      "goto": "/operations/today"
+    },
+    {
+      "screen": "Dashboard",
+      "label": "View all units",
+      "variant": "tertiary",
+      "goto": "/properties/units"
+    },
+    {
+      "screen": "Dashboard",
+      "label": "Assign cleaner",
+      "variant": "tertiary",
+      "scope": "exception row",
+      "opens": "AssignCleanerDialog",
+      "api": "POST /api/housekeeping/tasks/:id/assign",
+      "confirm": "Assign {cleaner} to {unit}?",
+      "success": "Cleaner assigned. {cleaner} has been notified."
+    },
+    {
+      "screen": "Dashboard",
+      "label": "Notify owner",
+      "variant": "tertiary",
+      "scope": "exception row",
+      "opens": "NotifyOwnerDialog",
+      "api": "POST /api/owners/:id/notify"
+    },
+    {
+      "screen": "Dashboard",
+      "label": "Review and send",
+      "variant": "tertiary",
+      "scope": "exception row",
+      "goto": "/finance/statements?period=latest&status=finalised"
+    },
+    {
+      "screen": "Dashboard",
+      "label": "Open pricing",
+      "variant": "tertiary",
+      "scope": "exception row",
+      "goto": "/performance/pricing?unitId=:unitId"
+    },
+    {
+      "screen": "Operations today",
+      "label": "Assign cleaner",
+      "variant": "primary",
+      "api": "POST /api/housekeeping/tasks/:id/assign"
+    },
+    {
+      "screen": "Operations today",
+      "label": "Open task",
+      "variant": "tertiary",
+      "goto": "/operations/tasks/:taskId"
+    },
+    {
+      "screen": "Operations today",
+      "label": "Confirm with guest",
+      "variant": "tertiary",
+      "opens": "MessageGuestDialog",
+      "api": "POST /api/messages"
+    },
+    {
+      "screen": "Operations today",
+      "label": "Start inspection",
+      "variant": "tertiary",
+      "api": "POST /api/inspections",
+      "goto": "/operations/inspections/:id"
+    },
+    {
+      "screen": "Operations today",
+      "label": "Update owner",
+      "variant": "tertiary",
+      "opens": "NotifyOwnerDialog"
+    },
+    {
+      "screen": "Calendar",
+      "label": "Add booking",
+      "variant": "primary",
+      "opens": "CreateBookingDialog",
+      "api": "POST /api/reservations"
+    },
+    {
+      "screen": "Calendar",
+      "label": "drag a booking block",
+      "variant": "interaction",
+      "api": "PATCH /api/reservations/:id/dates",
+      "confirm": "Move {guest} to {newRange}? This updates the channel and notifies the guest.",
+      "conflict": "Blocked. {unit} already has {conflictGuest} on those dates."
+    },
+    {
+      "screen": "Unit record",
+      "label": "Add unit",
+      "variant": "primary",
+      "opens": "CreateUnitDialog",
+      "api": "POST /api/units"
+    },
+    {
+      "screen": "Owner statements",
+      "label": "Generate statements",
+      "variant": "primary",
+      "api": "POST /api/statements/generate",
+      "body": [
+        "period"
+      ],
+      "success": "Statements generated for {count} owners. Review before sending."
+    },
+    {
+      "screen": "Owner statements",
+      "label": "Send {n} statements",
+      "variant": "primary",
+      "api": "POST /api/statements/send",
+      "body": [
+        "statementIds"
+      ],
+      "confirm": "Send {n} statements to owners? Owners receive an email and portal notification.",
+      "success": "{n} statements sent."
+    },
+    {
+      "screen": "Owner statements",
+      "label": "Export",
+      "variant": "secondary",
+      "api": "GET /api/statements/export",
+      "note": "Export must display applied filters, generated time and data scope (10)."
+    },
+    {
+      "screen": "Any table",
+      "label": "Bulk actions",
+      "variant": "contextual",
+      "rule": "Appear only after selection; show selection count and scope (10)."
+    }
+  ],
+  "emptyStates": [
+    {
+      "screen": "Operations today",
+      "condition": "filtered, no results",
+      "copy": "No maintenance issues match these filters.",
+      "action": {
+        "label": "Clear filters",
+        "resets": "all filters"
+      }
+    },
+    {
+      "screen": "Owner statements",
+      "condition": "no period generated",
+      "copy": "No statements for August 2026 yet.",
+      "action": {
+        "label": "Generate statements",
+        "api": "POST /api/statements/generate"
+      }
+    },
+    {
+      "screen": "Units",
+      "condition": "first use",
+      "copy": "No units yet. Add your first unit to start tracking readiness and revenue.",
+      "action": {
+        "label": "Add unit"
+      }
+    },
+    {
+      "screen": "Any",
+      "condition": "request failed",
+      "copy": "This list could not load. Check your connection and try again.",
+      "action": {
+        "label": "Retry"
+      }
+    },
+    {
+      "screen": "Any",
+      "condition": "route not designed",
+      "copy": "{destination} is not designed yet.",
+      "action": {
+        "label": "Go to dashboard"
+      }
+    }
+  ]
+}
