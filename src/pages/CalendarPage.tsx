@@ -1,10 +1,9 @@
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
-import { color, radius, text, channel as CH } from '../theme';
+import { color, radius, text, tone as toneMap } from '../theme';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
-import ChannelMark from '../components/ChannelMark';
 import { Dialog, Drawer, type DialogSpec } from '../components/Dialog';
 import { Field } from '../components/Field';
 import { StaleBanner } from '../components/DataState';
@@ -12,22 +11,29 @@ import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
 import { rm } from '../lib/format';
-import type { BookingChannel, ReservationState } from '../lib/types';
+import { CHANNEL } from '../lib/vocabulary';
+import type { BookingChannel, ReservationState, Tone } from '../lib/types';
 
-const DAYS = 14;
 const COL = 62;
 const UNIT_COL = 240;
 const ALL: BookingChannel[] = ['airbnb', 'booking_com', 'agoda', 'direct', 'maintenance_block', 'owner_stay'];
-const STATUSES: { key: ReservationState; label: string }[] = [
-  { key: 'confirmed', label: 'Confirmed' }, { key: 'checked_in', label: 'Checked in' },
-  { key: 'checked_out', label: 'Checked out' }, { key: 'pending', label: 'Pending' },
+
+/** Booking-status filter chips. `blocked` is a pseudo-status: the maintenance
+ *  hold channel has no reservation_state, so its chip filters that channel. */
+const STATUS_FILTERS: { key: string; label: string; tone: Tone }[] = [
+  { key: 'confirmed', label: 'Confirmed', tone: 'info' },
+  { key: 'checked_in', label: 'Checked in', tone: 'success' },
+  { key: 'checked_out', label: 'Checked out', tone: 'neutral' },
+  { key: 'pending', label: 'Pending', tone: 'warning' },
+  { key: 'blocked', label: 'Blocked', tone: 'critical' },
 ];
+
 // The rate rows revealed by "Expand rates": the web rate plus each connected channel.
-const RATE_ROWS: { key: 'web' | BookingChannel; label: string; sync: string; tone: string }[] = [
-  { key: 'web', label: 'Web rate', sync: 'No commission', tone: color.textMuted },
-  { key: 'airbnb', label: 'Airbnb rate', sync: 'Synced', tone: '#11694A' },
-  { key: 'booking_com', label: 'Booking.com rate', sync: 'Synced', tone: '#11694A' },
-  { key: 'agoda', label: 'Agoda rate', sync: 'Expired', tone: '#A8352F' },
+const RATE_ROWS: { key: 'web' | BookingChannel; label: string; sync: string; syncTone: Tone; dot: string }[] = [
+  { key: 'web', label: 'Web rate', sync: 'Direct', syncTone: 'success', dot: CHANNEL.direct.color },
+  { key: 'airbnb', label: 'Airbnb rate', sync: 'Synced', syncTone: 'success', dot: CHANNEL.airbnb.color },
+  { key: 'booking_com', label: 'Booking.com rate', sync: 'Synced', syncTone: 'success', dot: CHANNEL.booking_com.color },
+  { key: 'agoda', label: 'Agoda rate', sync: 'Expired', syncTone: 'critical', dot: CHANNEL.agoda.color },
 ];
 const UPLIFT: Record<string, number> = { web: 1, airbnb: 1.12, booking_com: 1.18, agoda: 1.16 };
 
@@ -66,16 +72,19 @@ const FALLBACK: Payload = {
 };
 
 export default function CalendarPage() {
+  const [view, setView] = useState<'2weeks' | 'month'>('2weeks');
+  const span = view === 'month' ? 28 : 14;
   const [weekOffset, setWeekOffset] = useState(0);
-  const start = addDays(today, weekOffset * 7);
-  const from = iso(start), to = iso(addDays(start, DAYS - 1));
+  const start = addDays(today, weekOffset * span);
+  const from = iso(start), to = iso(addDays(start, span - 1));
   const { data, error, reload } = useApi<Payload>(`/reservations/calendar?from=${from}&to=${to}`, FALLBACK);
   const toast = useToast();
 
   const [off, setOff] = useState<Partial<Record<BookingChannel, boolean>>>({});
-  const [statusOff, setStatusOff] = useState<Partial<Record<ReservationState, boolean>>>({});
+  const [statusOff, setStatusOff] = useState<Record<string, boolean>>({});
   const [property, setProperty] = useState('all');
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
+  const [unitOpen, setUnitOpen] = useState<Record<string, boolean>>({});
   const [rateEdits, setRateEdits] = useState<Record<string, number>>({});
   const [dialog, setDialog] = useState<DialogSpec | null>(null);
   const [priceModal, setPriceModal] = useState<null | { unit: Unit; channel: string; dayIso: string; current: number }>(null);
@@ -86,10 +95,15 @@ export default function CalendarPage() {
   const allUnits = data?.units ?? [];
   const properties = useMemo(() => Array.from(new Set(allUnits.map(u => u.propertyName))), [allUnits]);
   const units = property === 'all' ? allUnits : allUnits.filter(u => u.propertyName === property);
-  const blocks = (data?.blocks ?? []).filter(b => !off[b.channel] && !statusOff[b.state]);
+  const blocks = (data?.blocks ?? []).filter(b => {
+    if (off[b.channel]) return false;
+    if (b.channel === 'maintenance_block') return !statusOff.blocked;
+    return !statusOff[b.state];
+  });
   const gridStart = new Date(data?.from ?? from);
   const dayIndex = (d: string) => Math.round((new Date(d).getTime() - gridStart.getTime()) / 864e5);
   const dayIso = (i: number) => iso(addDays(gridStart, i));
+  const todayIdx = dayIndex(iso(today));
 
   function rateFor(unitId: string, channel: string, i: number) {
     const key = `${unitId}:${channel}:${i}`;
@@ -119,8 +133,8 @@ export default function CalendarPage() {
 
   return (
     <>
-      <PageHeader title="Calendar" sub={`${units.length} units · ${new Date(from).getDate()}–${new Date(to).getDate()} ${new Date(to).toLocaleDateString('en-MY', { month: 'short', year: 'numeric' })}`}
-        right={<Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => toast({ tone: 'info', title: 'Add booking', body: 'Manual booking, same validation as a channel sync.' })}>Add booking</Button>} />
+      <PageHeader title="Calendar" sub="24 units · 6 buildings · Asia/Kuala Lumpur"
+        right={<Segmented value={view} onChange={v => { setView(v); setWeekOffset(0); }} />} />
 
       {error && <StaleBanner message={`Showing the last board we have. ${error}`} onRetry={reload} />}
 
@@ -128,7 +142,9 @@ export default function CalendarPage() {
         {/* Filters */}
         <div style={{ padding: '13px 20px', borderBottom: `1px solid ${color.border}`, display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <FilterLabel label="Host"><span style={{ fontSize: 13, fontWeight: 500 }}>The Conts Sdn Bhd</span></FilterLabel>
+            <FilterLabel label="Host">
+              <span style={{ fontSize: 13, fontWeight: 500, color: color.textMuted, background: color.muted, border: `1px solid ${color.border}`, borderRadius: radius.control, padding: '7px 12px' }}>The Conts Sdn Bhd</span>
+            </FilterLabel>
             <FilterLabel label="Property">
               <select value={property} onChange={e => setProperty(e.target.value)} style={selectStyle}>
                 <option value="all">All properties</option>
@@ -136,59 +152,71 @@ export default function CalendarPage() {
               </select>
             </FilterLabel>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+
+          {/* Channel checkboxes */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
             {ALL.map(k => {
-              const on = !off[k]; const c = CH[k];
+              const on = !off[k]; const c = CHANNEL[k];
               return (
-                <button key={k} onClick={() => setOff(o => ({ ...o, [k]: on }))}
-                  style={{ display: 'flex', alignItems: 'center', gap: 7, height: 32, padding: '0 11px 0 6px', borderRadius: radius.pill, cursor: 'pointer', font: 'inherit', border: `1px solid ${on ? c.fill + '40' : 'transparent'}`, background: on ? c.tint : color.page }}>
-                  <ChannelMark ch={k} size={20} muted={!on} />
-                  <span style={{ fontSize: 12, fontWeight: on ? 500 : 400, color: on ? color.ink : color.textMuted }}>{c.label}</span>
+                <button key={k} type="button" onClick={() => setOff(o => ({ ...o, [k]: on }))}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}>
+                  <span style={{ width: 18, height: 18, flex: 'none', borderRadius: 4, display: 'grid', placeItems: 'center', background: on ? c.color : color.card, border: `1.5px solid ${on ? c.color : color.borderStrong}`, transition: 'background var(--motion-fast)' }}>
+                    {on && <Icon name="Check" size="sm" color="#FFFFFF" style={{ width: 13, height: 13 }} />}
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: on ? color.ink : color.textMuted }}>{c.label}</span>
                 </button>
               );
             })}
-            <span style={{ marginLeft: 'auto', display: 'flex', gap: 12 }}>
-              <button onClick={() => setOff({})} style={linkBtn}>Select all</button>
-              <button onClick={() => setOff(Object.fromEntries(ALL.map(k => [k, true])))} style={linkBtn}>Deselect all</button>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 14 }}>
+              <button type="button" onClick={() => setOff({})} style={linkBtn}>Select all</button>
+              <button type="button" onClick={() => setOff(Object.fromEntries(ALL.map(k => [k, true])))} style={linkBtn}>Deselect all</button>
             </span>
           </div>
+
+          {/* Booking status chips */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            {STATUSES.map(s => {
-              const on = !statusOff[s.key];
+            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', color: color.textMuted, marginRight: 4 }}>BOOKING STATUS</span>
+            {STATUS_FILTERS.filter(s => !statusOff[s.key]).map(s => {
+              const t = toneMap[s.tone];
               return (
-                <button key={s.key} onClick={() => setStatusOff(o => ({ ...o, [s.key]: on }))}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, height: 28, padding: '0 10px', borderRadius: radius.pill, cursor: 'pointer', font: 'inherit', fontSize: 12, border: `1px solid ${color.border}`, background: on ? color.muted : color.page, color: on ? color.ink : color.textMuted }}>
-                  {on && <Icon name="Check" size="sm" />} {s.label}
-                </button>
+                <span key={s.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 28, padding: '0 8px 0 10px', borderRadius: radius.pill, fontSize: 12, fontWeight: 500, color: color.ink, background: color.card, border: `1px solid ${color.border}` }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: t.line, flex: 'none' }} />
+                  {s.label}
+                  <button type="button" aria-label={`Remove ${s.label}`} onClick={() => setStatusOff(o => ({ ...o, [s.key]: true }))}
+                    style={{ display: 'grid', placeItems: 'center', width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'none', cursor: 'pointer', color: color.faint, padding: 0 }}>
+                    <Icon name="X" size="sm" style={{ width: 13, height: 13 }} />
+                  </button>
+                </span>
               );
             })}
-            <button onClick={() => { setOff({}); setStatusOff({}); setProperty('all'); }} style={{ ...linkBtn, marginLeft: 'auto' }}>Reset</button>
+            <button type="button" onClick={() => { setOff({}); setStatusOff({}); setProperty('all'); }} style={{ ...linkBtn, marginLeft: 'auto' }}>Reset</button>
           </div>
         </div>
 
         {/* Toolbar */}
         <div style={{ padding: '11px 20px', borderBottom: `1px solid ${color.border}`, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-          <Button size="sm" variant={expanded ? 'primary' : 'secondary'} icon={<Icon name="ChevronsRight" size="sm" />} onClick={() => setExpanded(v => !v)}>Expand rates</Button>
+          <Button size="sm" variant={expanded ? 'primary' : 'secondary'} icon={<Icon name={expanded ? 'ChevronsLeft' : 'ChevronsRight'} size="sm" />} onClick={() => setExpanded(v => !v)}>{expanded ? 'Collapse rates' : 'Expand rates'}</Button>
           <Button size="sm" variant="secondary" onClick={() => setRateUpdate(true)}>Rate update</Button>
-          <Button size="sm" variant="brand" onClick={() => setBlockWizard(true)}>Block wizard</Button>
+          <Button size="sm" variant="secondary" style={{ color: toneMap.critical.fg, borderColor: toneMap.critical.line }} onClick={() => setBlockWizard(true)}>Block wizard</Button>
           <Button size="sm" variant="secondary" icon={<Icon name="RefreshCw" size="sm" />} onClick={() => toast({ tone: 'success', title: 'Sync started.', body: 'Airbnb, Booking.com and Agoda · Agoda skipped (expired).' })}>Refresh</Button>
+          <span style={{ fontSize: 12, color: color.textMuted }}>Airbnb, Booking.com and Agoda synced 14:06 MYT</span>
           <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button onClick={() => setWeekOffset(w => w - 1)} style={navBtn} aria-label="Previous"><Icon name="ChevronsLeft" size="sm" /></button>
+            <button type="button" onClick={() => setWeekOffset(w => w - 1)} style={navBtn} aria-label="Previous"><Icon name="ChevronsLeft" size="sm" /></button>
             <span style={{ fontSize: 12.5, fontWeight: 500, minWidth: 150, textAlign: 'center' }}>{new Date(from).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })} – {new Date(to).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-            <button onClick={() => setWeekOffset(w => w + 1)} style={navBtn} aria-label="Next"><Icon name="ChevronsRight" size="sm" /></button>
+            <button type="button" onClick={() => setWeekOffset(w => w + 1)} style={navBtn} aria-label="Next"><Icon name="ChevronsRight" size="sm" /></button>
             <Button size="sm" variant="secondary" onClick={() => setWeekOffset(0)}>Today</Button>
           </span>
         </div>
 
         {/* Grid */}
         <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: UNIT_COL + DAYS * COL }}>
+          <div style={{ minWidth: UNIT_COL + span * COL }}>
             <div style={{ display: 'flex', background: color.muted, borderBottom: `1px solid ${color.border}` }}>
               <div style={{ width: UNIT_COL, boxSizing: 'border-box', flex: 'none', position: 'sticky', left: 0, zIndex: 3, background: color.muted, padding: '10px 16px', borderRight: `1px solid ${color.border}`, fontSize: text.small, fontWeight: 600, color: color.textMuted }}>Unit</div>
-              {Array.from({ length: DAYS }, (_, i) => {
+              {Array.from({ length: span }, (_, i) => {
                 const d = addDays(gridStart, i); const wk = [5, 6].includes(d.getDay());
                 return (
-                  <div key={i} style={{ flex: 1, boxSizing: 'border-box', minWidth: 58, padding: '8px 4px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, borderLeft: `1px solid ${color.border}`, background: i === 0 ? color.goldTint : wk ? color.page : 'transparent' }}>
+                  <div key={i} style={{ flex: 1, boxSizing: 'border-box', minWidth: 58, padding: '8px 4px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, borderLeft: `1px solid ${color.border}`, background: i === todayIdx ? color.goldTint : wk ? color.page : 'transparent' }}>
                     <span style={{ fontSize: text.micro, color: color.textMuted }}>{d.toLocaleDateString('en-MY', { weekday: 'short' })}</span>
                     <span style={{ fontSize: 12.5, fontWeight: 600 }}>{d.getDate()}</span>
                   </div>
@@ -197,67 +225,83 @@ export default function CalendarPage() {
             </div>
 
             {units.map(u => {
-              const cells: ({ b: Block; first: boolean; last: boolean } | null)[] = Array(DAYS).fill(null);
+              const cells: ({ b: Block; first: boolean; last: boolean } | null)[] = Array(span).fill(null);
               blocks.filter(b => b.unitId === u.id).forEach(b => {
-                const s = Math.max(0, dayIndex(b.checkIn)); const e = Math.min(DAYS, dayIndex(b.checkOut));
+                const s = Math.max(0, dayIndex(b.checkIn)); const e = Math.min(span, dayIndex(b.checkOut));
                 for (let i = s; i < e; i++) cells[i] = { b, first: i === s, last: i === e - 1 };
               });
+              const rowOpen = expanded || unitOpen[u.id];
+              const c0 = cells[0];
+              const readiness = !c0 ? { label: 'Available', dot: toneMap.neutral.line }
+                : c0.b.channel === 'maintenance_block' ? { label: 'Blocked', dot: toneMap.neutral.line }
+                : c0.b.channel === 'owner_stay' ? { label: 'Owner stay', dot: toneMap.neutral.line }
+                : { label: 'Occupied', dot: toneMap.success.line };
               return (
                 <div key={u.id}>
-                  <div style={{ display: 'flex', minHeight: 60, borderBottom: `1px solid ${color.border}` }}>
-                    <div style={{ width: UNIT_COL, boxSizing: 'border-box', flex: 'none', position: 'sticky', left: 0, zIndex: 3, background: '#FFFFFF', padding: '10px 16px', borderRight: `1px solid ${color.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ width: 30, height: 30, flex: 'none', borderRadius: 6, background: color.muted, display: 'grid', placeItems: 'center', color: color.textMuted }}><Icon name="Image" size="sm" /></span>
-                      <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', minHeight: 64, borderBottom: `1px solid ${color.border}` }}>
+                    <div style={{ width: UNIT_COL, boxSizing: 'border-box', flex: 'none', position: 'sticky', left: 0, zIndex: 3, background: '#FFFFFF', padding: '10px 14px', borderRight: `1px solid ${color.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <button type="button" aria-label={rowOpen ? 'Collapse unit' : 'Expand unit'} onClick={() => setUnitOpen(o => ({ ...o, [u.id]: !rowOpen }))}
+                        style={{ width: 22, height: 22, flex: 'none', display: 'grid', placeItems: 'center', border: 'none', background: 'none', cursor: 'pointer', color: color.textMuted, padding: 0 }}>
+                        <Icon name={rowOpen ? 'ChevronDown' : 'ChevronRight'} size="sm" />
+                      </button>
+                      <span style={{ width: 40, height: 40, flex: 'none', borderRadius: 8, background: color.muted, border: `1px solid ${color.borderMuted}`, display: 'grid', placeItems: 'center', color: color.faint }}><Icon name="Image" size="sm" /></span>
+                      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
                         <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{u.unitNumber}</div>
                         <div style={{ fontSize: 11, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.propertyName}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: color.textMuted }}>
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: readiness.dot, flex: 'none' }} />{readiness.label}
+                        </div>
                       </div>
                     </div>
                     {cells.map((c, i) => {
-                      const base: CSSProperties = { position: 'relative', boxSizing: 'border-box', flex: 1, minWidth: 58, borderLeft: `1px solid ${color.borderMuted}`, display: 'flex', alignItems: 'center', padding: '7px 5px' };
+                      const base: CSSProperties = { position: 'relative', boxSizing: 'border-box', flex: 1, minWidth: 58, borderLeft: `1px solid ${color.borderMuted}`, display: 'flex', alignItems: 'center', padding: '7px 5px', background: i === todayIdx ? color.goldTint : undefined };
                       if (!c) return <div key={i} onClick={() => emptyNight(u, i)} style={{ ...base, cursor: 'pointer' }} title={`${u.unitNumber} · available`} />;
-                      const ch = CH[c.b.channel]; const dashed = ch.border !== 'solid';
+                      const ch = CHANNEL[c.b.channel]; const hold = ch.border !== 'solid';
                       const nights = dayIndex(c.b.checkOut) - dayIndex(c.b.checkIn);
+                      const lineColor = hold ? ch.color : 'rgba(21,21,21,0.06)';
                       return (
                         <div key={i} onClick={() => setOpenBlock(c.b)} title={`${c.b.guestName} · ${ch.label}${c.b.ref ? ' · ' + c.b.ref : ''}`}
-                          style={{ ...base, margin: '11px 0', cursor: 'pointer', background: ch.tint, borderTop: `1px ${dashed ? ch.border : 'solid'} ${dashed ? ch.fill : 'rgba(21,21,21,0.06)'}`, borderBottom: `1px ${dashed ? ch.border : 'solid'} ${dashed ? ch.fill : 'rgba(21,21,21,0.06)'}`, boxShadow: c.first ? `inset 3px 0 0 ${ch.fill}` : undefined, borderRadius: c.first && c.last ? 6 : c.first ? '6px 0 0 6px' : c.last ? '0 6px 6px 0' : undefined, borderRight: c.last ? `1px ${dashed ? ch.border : 'solid'} ${dashed ? ch.fill : 'rgba(21,21,21,0.06)'}` : undefined }}>
-                          {c.first && <>
-                            <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', zIndex: 3, pointerEvents: 'none' }}><ChannelMark ch={c.b.channel} size={18} /></span>
-                            <span style={{ position: 'absolute', left: 32, maxWidth: nights * COL - 40, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', pointerEvents: 'none', zIndex: 2, color: ch.ink }}>{c.b.guestName}{c.b.grossBookingValue > 0 ? ` · ${rm(c.b.grossBookingValue, { cents: false })}` : ''}</span>
-                          </>}
+                          style={{ ...base, margin: '11px 0', cursor: 'pointer', background: hold ? 'transparent' : ch.tint, borderTop: `1px ${hold ? ch.border : 'solid'} ${lineColor}`, borderBottom: `1px ${hold ? ch.border : 'solid'} ${lineColor}`, boxShadow: c.first && !hold ? `inset 3px 0 0 ${ch.color}` : undefined, borderRadius: c.first && c.last ? 6 : c.first ? '6px 0 0 6px' : c.last ? '0 6px 6px 0' : undefined, borderLeft: c.first && hold ? `1px ${ch.border} ${ch.color}` : undefined, borderRight: c.last ? `1px ${hold ? ch.border : 'solid'} ${lineColor}` : undefined }}>
+                          {c.first && (
+                            <span style={{ position: 'absolute', left: 12, maxWidth: nights * COL - 22, fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', pointerEvents: 'none', zIndex: 2, color: ch.ink }}>{c.b.guestName}{c.b.grossBookingValue > 0 ? ` · ${rm(c.b.grossBookingValue, { cents: false })}` : ''}</span>
+                          )}
                         </div>
                       );
                     })}
                   </div>
 
-                  {expanded && (
+                  {rowOpen && (
                     <>
                       <div style={{ display: 'flex', borderBottom: `1px solid ${color.borderMuted}`, background: color.page }}>
-                        <div style={{ width: UNIT_COL, boxSizing: 'border-box', flex: 'none', position: 'sticky', left: 0, zIndex: 2, background: color.page, padding: '6px 16px', borderRight: `1px solid ${color.border}`, fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', color: color.textMuted }}>INVENTORY</div>
-                        {Array.from({ length: DAYS }, (_, i) => {
+                        <div style={{ width: UNIT_COL, boxSizing: 'border-box', flex: 'none', position: 'sticky', left: 0, zIndex: 2, background: color.page, padding: '6px 16px', borderRight: `1px solid ${color.border}`, fontSize: 11.5, fontWeight: 500, color: color.textMuted }}>Inventory</div>
+                        {Array.from({ length: span }, (_, i) => {
                           const booked = cells[i] != null;
-                          return <div key={i} style={{ flex: 1, minWidth: 58, boxSizing: 'border-box', borderLeft: `1px solid ${color.borderMuted}`, display: 'grid', placeItems: 'center', fontSize: 11, color: booked ? color.textMuted : color.ink }}>{booked ? '0 | 1' : '1 | 1'}</div>;
+                          return <div key={i} style={{ flex: 1, minWidth: 58, boxSizing: 'border-box', borderLeft: `1px solid ${color.borderMuted}`, display: 'grid', placeItems: 'center', fontSize: 11, fontVariantNumeric: 'tabular-nums', color: booked ? color.textMuted : color.ink, background: i === todayIdx ? color.goldTint : undefined }}>{booked ? '0 | 1' : '1 | 1'}</div>;
                         })}
                       </div>
-                      {RATE_ROWS.map(r => (
-                        <div key={r.key} style={{ display: 'flex', borderBottom: `1px solid ${color.borderMuted}` }}>
-                          <div style={{ width: UNIT_COL, boxSizing: 'border-box', flex: 'none', position: 'sticky', left: 0, zIndex: 2, background: '#FFFFFF', padding: '7px 16px', borderRight: `1px solid ${color.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-                            {r.key === 'web' ? <span style={{ width: 18, height: 18, borderRadius: 4, background: color.black, color: color.gold, display: 'grid', placeItems: 'center', fontSize: 9, fontWeight: 700 }}>TC</span> : <ChannelMark ch={r.key as BookingChannel} size={18} />}
-                            <span style={{ fontSize: 12, fontWeight: 500 }}>{r.label}</span>
-                            <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: radius.pill, background: color.page, color: r.tone, border: `1px solid ${r.tone}22` }}>{r.sync}</span>
+                      {RATE_ROWS.map(r => {
+                        const t = toneMap[r.syncTone];
+                        return (
+                          <div key={r.key} style={{ display: 'flex', borderBottom: `1px solid ${color.borderMuted}` }}>
+                            <div style={{ width: UNIT_COL, boxSizing: 'border-box', flex: 'none', position: 'sticky', left: 0, zIndex: 2, background: '#FFFFFF', padding: '7px 16px', borderRight: `1px solid ${color.border}`, display: 'flex', alignItems: 'center', gap: 9 }}>
+                              <span style={{ width: 9, height: 9, flex: 'none', borderRadius: '50%', background: r.dot }} />
+                              <span style={{ fontSize: 12, fontWeight: 500 }}>{r.label}</span>
+                              <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 600, padding: '1px 8px', borderRadius: radius.pill, background: t.bg, color: t.fg }}>{r.sync}</span>
+                            </div>
+                            {Array.from({ length: span }, (_, i) => {
+                              const price = rateFor(u.id, r.key, i);
+                              const edited = rateEdits[`${u.id}:${r.key}:${i}`] != null;
+                              return (
+                                <button key={i} type="button" onClick={() => setPriceModal({ unit: u, channel: r.key, dayIso: dayIso(i), current: price })}
+                                  style={{ flex: 1, minWidth: 58, boxSizing: 'border-box', background: edited ? color.goldTint : i === todayIdx ? color.goldTint : '#FFFFFF', border: 'none', borderLeft: `1px solid ${color.borderMuted}`, cursor: 'pointer', font: 'inherit', fontSize: 11.5, color: color.ink, padding: '7px 2px', fontVariantNumeric: 'tabular-nums' }}
+                                  title="Set price">
+                                  {rm(price, { cents: false }).replace('RM', 'RM ')}
+                                </button>
+                              );
+                            })}
                           </div>
-                          {Array.from({ length: DAYS }, (_, i) => {
-                            const price = rateFor(u.id, r.key, i);
-                            const edited = rateEdits[`${u.id}:${r.key}:${i}`] != null;
-                            return (
-                              <button key={i} onClick={() => setPriceModal({ unit: u, channel: r.key, dayIso: dayIso(i), current: price })}
-                                style={{ flex: 1, minWidth: 58, boxSizing: 'border-box', borderLeft: `1px solid ${color.borderMuted}`, background: edited ? color.goldTint : '#FFFFFF', border: 'none', borderLeftWidth: 1, borderLeftStyle: 'solid', borderLeftColor: color.borderMuted, cursor: 'pointer', font: 'inherit', fontSize: 11.5, color: color.ink, padding: '7px 2px', fontVariantNumeric: 'tabular-nums' }}
-                                title="Set price">
-                                {rm(price, { cents: false }).replace('RM', 'RM ')}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </>
                   )}
                 </div>
@@ -271,11 +315,14 @@ export default function CalendarPage() {
       <Drawer open={!!openBlock} onClose={() => setOpenBlock(null)} width={380}>
         {openBlock && <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><ChannelMark ch={openBlock.channel} size={22} /><span style={{ fontSize: 15, fontWeight: 600 }}>{openBlock.guestName}</span></div>
-            <button onClick={() => setOpenBlock(null)} aria-label="Close" style={navBtn}><Icon name="X" size="sm" /></button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ width: 12, height: 12, flex: 'none', borderRadius: 3, background: CHANNEL[openBlock.channel].color }} />
+              <span style={{ fontSize: 15, fontWeight: 600 }}>{openBlock.guestName}</span>
+            </div>
+            <button type="button" onClick={() => setOpenBlock(null)} aria-label="Close" style={navBtn}><Icon name="X" size="sm" /></button>
           </div>
           <div style={{ fontSize: 12.5, color: color.textMuted, lineHeight: 1.8 }}>
-            <div>{CH[openBlock.channel].label} · {openBlock.ref ?? '—'}</div>
+            <div>{CHANNEL[openBlock.channel].label} · {openBlock.ref ?? '—'}</div>
             <div>{openBlock.checkIn} → {openBlock.checkOut}</div>
             {openBlock.grossBookingValue > 0 && <div>Gross {rm(openBlock.grossBookingValue)}</div>}
             {openBlock.reason && <div>{openBlock.reason}</div>}
@@ -294,6 +341,23 @@ export default function CalendarPage() {
       {rateUpdate && <RateUpdate onClose={() => setRateUpdate(false)}
         onSave={() => { setRateUpdate(false); toast({ tone: 'success', title: 'Rates pushed.', body: 'Applied across the selected units, channels and dates.' }); }} />}
     </>
+  );
+}
+
+function Segmented({ value, onChange }: { value: '2weeks' | 'month'; onChange: (v: '2weeks' | 'month') => void }) {
+  const opts: { key: '2weeks' | 'month'; label: string }[] = [{ key: '2weeks', label: '2 weeks' }, { key: 'month', label: 'Month' }];
+  return (
+    <div style={{ display: 'inline-flex', padding: 3, gap: 2, background: color.muted, borderRadius: radius.control, border: `1px solid ${color.border}` }}>
+      {opts.map(o => {
+        const active = value === o.key;
+        return (
+          <button key={o.key} type="button" onClick={() => onChange(o.key)}
+            style={{ height: 28, padding: '0 14px', border: 'none', borderRadius: radius.sm, cursor: 'pointer', font: 'inherit', fontSize: 13, fontWeight: active ? 600 : 500, background: active ? color.black : 'transparent', color: active ? '#FFFFFF' : color.ink }}>
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -324,7 +388,7 @@ function CentreModal({ title, sub, onClose, onSave, saveLabel, canSave, children
 
 function SetPriceModal({ m, onClose, onSave }: { m: { unit: Unit; channel: string; dayIso: string; current: number }; onClose: () => void; onSave: (rm: number) => void }) {
   const [v, setV] = useState(String(Math.round(m.current / 100)));
-  const label = m.channel === 'web' ? 'Web rate' : CH[m.channel as BookingChannel].label;
+  const label = m.channel === 'web' ? 'Web rate' : CHANNEL[m.channel as BookingChannel].label;
   return (
     <CentreModal title="Set price" sub={`${m.unit.unitNumber} · ${label} · ${m.dayIso}`} onClose={onClose} saveLabel="Set price" canSave={v !== '' && Number(v) >= 0} onSave={() => onSave(Number(v))}>
       <Field label="Price (RM / night)" type="number" min={0} numeric value={v} onChange={e => setV(e.target.value)} help="Pushed to the connected channel for this night. Confirmed bookings keep their original rate." />
