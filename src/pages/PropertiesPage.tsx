@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { color, text } from '../theme';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { color, radius, text } from '../theme';
 import { Card } from '../components/Card';
-import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
 import Icon from '../components/Icon';
 import { Button } from '../components/Button';
@@ -11,77 +10,96 @@ import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
 import { rm } from '../lib/format';
-import type { Tone, UnitReadiness } from '../lib/types';
-
-const READY_TONE: Record<UnitReadiness, Tone> = {
-  occupied: 'info', dirty: 'warning', cleaning: 'info', inspection: 'warning',
-  ready: 'success', maintenance: 'critical', blocked: 'neutral',
-};
 
 const STATES = ['Kuala Lumpur', 'Selangor', 'Penang', 'Johor', 'Melaka', 'Perak', 'Negeri Sembilan'];
+const BANKS = ['MBBE', 'PBBB', 'CIBB', 'RHBB', 'HLBB', 'AMBB', 'BIMB', 'UOVB', 'OCBC'];
+const PACKAGES = ['Package A', 'Package B', 'Package C'];
+const TERMS = ['Long term', 'Short term'];
+const SPLITS = ['Not set', 'Profit share', 'GRR — guaranteed rent'];
 
+interface Expense { id: string; category: string; amount: number; note: string }
 interface Unit {
-  id: string; unitNumber: string; propertyId: string; propertyName: string;
-  city: string; state: string; ownerId: string; ownerName: string;
-  readiness: UnitReadiness; bedrooms: number; bathrooms: number; maxGuests: number;
-  baseRate?: number; isListed: boolean;
+  id: string; buildingId: string;
+  listingName: string; unitCode: string; state: string; address: string;
+  ownerName: string; ic: string; bankName: string; bankAccount: string; accountHolder: string;
+  pkg: string; term: string; split: string; splitValue: number | null;
+  expenses: Expense[];
+  contract: { feePct: number; startedOn: string; renewsOn: string; documents: { id: string; name: string }[] };
 }
-interface Payload { data: Unit[]; generatedAt: string }
-interface AddedBuilding { name: string; city: string; state: string }
+interface Building { id: string; name: string; city: string; state: string }
+interface Payload { buildings: Building[]; units: Unit[]; generatedAt: string }
+
+const ex = (id: string, category: string, amount: number, note = ''): Expense => ({ id, category, amount, note });
+const mkUnit = (id: string, buildingId: string, listingName: string, unitCode: string, state: string, address: string, owner: Partial<Unit>): Unit => ({
+  id, buildingId, listingName, unitCode, state, address,
+  ownerName: owner.ownerName ?? '', ic: owner.ic ?? '', bankName: owner.bankName ?? BANKS[1], bankAccount: owner.bankAccount ?? '', accountHolder: owner.accountHolder ?? owner.ownerName ?? '',
+  pkg: owner.pkg ?? 'Package C', term: owner.term ?? 'Long term', split: owner.split ?? 'Not set', splitValue: owner.splitValue ?? null,
+  expenses: owner.expenses ?? [ex('e1', 'Internet', 12900), ex('e2', 'Electricity', 18000), ex('e3', 'Water', 4500), ex('e4', 'Cleaning', 35000)],
+  contract: owner.contract ?? { feePct: 25, startedOn: '2025-06-01', renewsOn: '2027-06-01', documents: [{ id: 'd1', name: 'Management agreement.pdf' }, { id: 'd2', name: 'Offer letter.pdf' }] },
+});
 
 const FALLBACK: Payload = {
   generatedAt: '',
-  data: [
-    { id: 'u1', unitNumber: '#A-12-03', propertyId: 'p1', propertyName: 'Vista Jaya One', city: 'Petaling Jaya', state: 'Selangor', ownerId: 'o1', ownerName: 'Lim Chee Keong', readiness: 'occupied', bedrooms: 2, bathrooms: 2, maxGuests: 4, baseRate: 28400, isListed: true },
-    { id: 'u2', unitNumber: '#B-08-11', propertyId: 'p2', propertyName: 'Arcoris Mont Kiara', city: 'Mont Kiara', state: 'Kuala Lumpur', ownerId: 'o2', ownerName: 'Wong Mei Ling', readiness: 'cleaning', bedrooms: 0, bathrooms: 1, maxGuests: 2, baseRate: 23100, isListed: true },
-    { id: 'u3', unitNumber: '#2207', propertyId: 'p3', propertyName: 'Tribeca', city: 'Bukit Bintang', state: 'Kuala Lumpur', ownerId: 'o3', ownerName: 'Rajesh Kumar', readiness: 'ready', bedrooms: 1, bathrooms: 1, maxGuests: 3, baseRate: 31800, isListed: true },
-    { id: 'u4', unitNumber: '#15-06', propertyId: 'p4', propertyName: 'Scarletz', city: 'KLCC', state: 'Kuala Lumpur', ownerId: 'o4', ownerName: 'Chong Wei Han', readiness: 'dirty', bedrooms: 1, bathrooms: 1, maxGuests: 2, baseRate: 26500, isListed: true },
-    { id: 'u5', unitNumber: '#A-21-02', propertyId: 'p5', propertyName: 'The Establishment', city: 'Kuchai Lama', state: 'Kuala Lumpur', ownerId: 'o5', ownerName: 'Nur Aisyah', readiness: 'dirty', bedrooms: 2, bathrooms: 2, maxGuests: 4, baseRate: 24200, isListed: true },
-    { id: 'u6', unitNumber: '#C-31-14', propertyId: 'p6', propertyName: 'Sentral Suites', city: 'KL Sentral', state: 'Kuala Lumpur', ownerId: 'o6', ownerName: 'Tan Boon Huat', readiness: 'maintenance', bedrooms: 0, bathrooms: 1, maxGuests: 2, baseRate: 22800, isListed: true },
+  buildings: [
+    { id: 'b1', name: 'Agile Bukit Bintang', city: 'Imbi, 55100 KL', state: 'Kuala Lumpur' },
+    { id: 'b2', name: 'Arte Mont Kiara', city: 'Mont Kiara, 50480 KL', state: 'Kuala Lumpur' },
+    { id: 'b3', name: 'Anggun Residences', city: 'Chow Kit, 50300 KL', state: 'Kuala Lumpur' },
+    { id: 'b4', name: '8th Stellar Sri Petaling', city: 'Sri Petaling, 57000 KL', state: 'Kuala Lumpur' },
+    { id: 'b5', name: 'Skyline KLCC', city: 'Jalan Yap Kwan Seng, 50450 KL', state: 'Kuala Lumpur' },
+    { id: 'b6', name: 'Continew', city: 'Cheras, 56000 KL', state: 'Selangor' },
+  ],
+  units: [
+    mkUnit('u1', 'b1', 'Hikari Grove #400M>TRX #500M>Pavilion #105', 'AGILE-C1313A', 'Kuala Lumpur', 'C-13-13A, Lot 1160, Jalan Bukit Bintang', { ownerName: 'LIANG WOOI KEE', ic: '680606-08-5101', bankName: 'PBBB', bankAccount: '4605371109', accountHolder: 'LIANG WOOI KEE & TAN KA CHENG', pkg: 'Package C' }),
+    mkUnit('u2', 'b1', 'Agile Skyline Suite', 'AGILE-C3713A', 'Kuala Lumpur', 'C-37-13A, Lot 1160, Jalan Bukit Bintang', { ownerName: 'WONG SIEW MING', ic: '710214-14-5220', bankName: 'MBBE', bankAccount: '1512988771', pkg: 'Package A' }),
+    mkUnit('u3', 'b2', 'Arte KLCC View 2BR', 'ARTE-MK2-0916', 'Kuala Lumpur', 'MK2-09-16, Jalan Dutamas, Mont Kiara', { ownerName: 'Rajesh Kumar', ic: '650930-10-5333', bankName: 'CIBB', bankAccount: '7024551200', pkg: 'Package B', split: 'GRR — guaranteed rent', splitValue: 350000 }),
+    mkUnit('u4', 'b2', 'Arte Garden Studio', 'ARTE-MK2-0915', 'Kuala Lumpur', 'MK2-09-15, Jalan Dutamas, Mont Kiara', { ownerName: 'Chong Wei Han', ic: '730118-08-5019', bankName: 'PBBB', bankAccount: '3388120945' }),
+    mkUnit('u5', 'b3', 'Anggun City Loft', 'ANGG-2207', 'Kuala Lumpur', '#2207, Jalan Raja Bot, Chow Kit', { ownerName: 'Nur Aisyah', ic: '820903-14-5108', bankName: 'RHBB', bankAccount: '2140099231' }),
+    mkUnit('u6', 'b4', '8th Stellar 1BR', 'STEL-A1706', 'Kuala Lumpur', 'A-17-06, Jalan Radin, Sri Petaling', { ownerName: 'Tan Boon Huat', ic: '690722-08-5411', bankName: 'HLBB', bankAccount: '1990552073' }),
+    mkUnit('u7', 'b5', 'Skyline KLCC High Floor', 'SKY-D2613', 'Kuala Lumpur', 'D-26-13, Jalan Yap Kwan Seng', { ownerName: 'Lim Chee Keong', ic: '660118-10-5223', bankName: 'PBBB', bankAccount: '4605371109', pkg: 'Package B' }),
+    mkUnit('u8', 'b5', 'Skyline KLCC 2BR', 'SKY-C1513', 'Kuala Lumpur', 'C-15-13, Jalan Yap Kwan Seng', { ownerName: 'Goh Family Trust', ic: 'A2244551', bankName: 'OCBC', bankAccount: '7013220041' }),
+    mkUnit('u9', 'b5', 'Skyline KLCC Studio', 'SKY-B3201', 'Kuala Lumpur', 'B-32-01, Jalan Yap Kwan Seng', { ownerName: 'Cassandra Low', ic: '900511-14-6002', bankName: 'MBBE', bankAccount: '5120087744' }),
+    mkUnit('u10', 'b6', 'Continew Cheras 2BR', 'CONT-B2603A', 'Selangor', 'B-26-03A, Jalan Cheras', { ownerName: 'Lim Chun Teck', ic: '780304-10-5119', bankName: 'CIBB', bankAccount: '7024119002' }),
   ],
 };
 
-const READY_LABEL = (r: string) => r[0].toUpperCase() + r.slice(1);
-const beds = (n: number) => n === 0 ? 'Studio' : `${n} bed`;
+const FT: CSSProperties = { fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: color.faint };
 
-/** state → building → unit, the layering the business actually thinks in. */
 export default function PropertiesPage() {
-  const { data, loading, error, reload } = useApi<Payload>('/units', FALLBACK);
+  const { data, loading, error, reload } = useApi<Payload>('/properties', FALLBACK);
   const toast = useToast();
-
+  const [addedB, setAddedB] = useState<Building[]>([]);
+  const [addedU, setAddedU] = useState<Unit[]>([]);
+  const [edits, setEdits] = useState<Record<string, Partial<Unit>>>({});
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [added, setAdded] = useState<Unit[]>([]);
-  const [addedBuildings, setAddedBuildings] = useState<AddedBuilding[]>([]);
-  const [modal, setModal] = useState<null | { kind: 'building' } | { kind: 'unit'; building: string; city: string; state: string }>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [tab, setTab] = useState<'details' | 'expenses' | 'contract'>('details');
+  const [modal, setModal] = useState<null | { kind: 'building' } | { kind: 'unit'; buildingId: string }>(null);
 
-  const units = [...added, ...(data?.data ?? [])];
+  const buildings = [...addedB, ...(data?.buildings ?? [])];
+  const units = useMemo(() => [...addedU, ...(data?.units ?? [])].map(u => ({ ...u, ...edits[u.id] })), [addedU, data, edits]);
+  const selected = units.find(u => u.id === selectedId) ?? units[0] ?? null;
 
-  // state → building → { city, units }. Seeded with just-added buildings so an
-  // empty building still appears with its own "Add unit" affordance.
-  const byState: Record<string, Record<string, { city: string; units: Unit[] }>> = {};
-  const ensure = (state: string, building: string, city: string) => {
-    (byState[state] ??= {})[building] ??= { city, units: [] };
-    if (city && !byState[state][building].city) byState[state][building].city = city;
-    return byState[state][building];
-  };
-  addedBuildings.forEach(b => ensure(b.state, b.name, b.city));
-  units.forEach(u => ensure(u.state, u.propertyName, u.city).units.push(u));
+  useEffect(() => { if (!selectedId && units[0]) setSelectedId(units[0].id); }, [units, selectedId]);
 
-  const buildingCount = new Set([...units.map(u => u.propertyName), ...addedBuildings.map(b => b.name)]).size;
+  const byState: Record<string, Building[]> = {};
+  buildings.forEach(b => (byState[b.state] ??= []).push(b));
+  const unitsOf = (bid: string) => units.filter(u => u.buildingId === bid);
 
-  function addBuilding(b: AddedBuilding) {
-    setAddedBuildings(list => [b, ...list]);
-    setCollapsed(c => ({ ...c, [b.name]: false }));
-    toast({ tone: 'success', title: 'Building added.', body: `${b.name} — now add units to it.` });
-    api.post('/properties', b).catch(() => {});
-    setModal(null);
+  function patch(id: string, p: Partial<Unit>) { setEdits(e => ({ ...e, [id]: { ...e[id], ...p } })); }
+  function save(u: Unit) {
+    toast({ tone: 'success', title: 'Changes saved.', body: `${u.listingName || u.unitCode} updated.` });
+    api.patch(`/units/${u.id}`, u).catch(() => {});
   }
-
-  function addUnit(building: string, city: string, state: string, u: Omit<Unit, 'id' | 'propertyId' | 'propertyName' | 'city' | 'state'>) {
-    const unit: Unit = { id: crypto.randomUUID(), propertyId: '', propertyName: building, city, state, ...u };
-    setAdded(a => [unit, ...a]);
-    toast({ tone: 'success', title: 'Unit added.', body: `${u.unitNumber} added to ${building}.` });
-    api.post('/units', { ...u, building }).catch(() => {});
+  function addBuilding(b: Omit<Building, 'id'>) {
+    const nb = { id: crypto.randomUUID(), ...b };
+    setAddedB(l => [nb, ...l]); setCollapsed(c => ({ ...c, [nb.id]: false }));
+    toast({ tone: 'success', title: 'Building added.', body: `${b.name} — add units to it.` });
+    api.post('/properties', b).catch(() => {}); setModal(null);
+  }
+  function addUnit(buildingId: string) {
+    const nu = mkUnit(crypto.randomUUID(), buildingId, '', '', buildings.find(b => b.id === buildingId)?.state ?? STATES[0], '', { ownerName: '' });
+    setAddedU(l => [nu, ...l]); setSelectedId(nu.id); setTab('details');
+    toast({ tone: 'success', title: 'Unit added.', body: 'Fill in its details on the right.' });
     setModal(null);
   }
 
@@ -89,187 +107,269 @@ export default function PropertiesPage() {
 
   return (
     <>
-      <PageHeader
-        title="Properties"
-        sub={`${totalUnits} units · ${buildingCount} buildings · ${Object.keys(byState).length} states`}
-        right={<Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button>}
-      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: text.small, color: color.textMuted, marginBottom: 4 }}>
+        <span>Properties</span><Icon name="ChevronRight" size="sm" /><span style={{ color: color.ink, fontWeight: 500 }}>Buildings and units</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap', marginBottom: 16 }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: text.pageTitle, fontWeight: 600, letterSpacing: '-0.01em' }}>Properties</h1>
+          <div style={{ fontSize: text.small, color: color.textMuted, marginTop: 4 }}>{totalUnits} units · add a building, then add units to it</div>
+        </div>
+        <Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button>
+      </div>
 
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
-      {loading && units.length === 0 ? <Card><TableSkeleton rows={6} cols={5} /></Card> : totalUnits === 0 && addedBuildings.length === 0 ? (
-        <Card>
-          <EmptyState onAdd={() => setModal({ kind: 'building' })} />
-        </Card>
-      ) : (
-        <Card>
-          {Object.entries(byState).map(([state, group]) => (
-            <div key={state}>
-              <div style={{ padding: '11px 22px', background: color.muted, borderBottom: `1px solid ${color.border}`, fontSize: text.micro, fontWeight: 600, letterSpacing: '0.1em', color: color.textMuted }}>
-                {state.toUpperCase()}
-              </div>
-              {Object.entries(group).map(([building, { city, units: list }]) => {
-                const open = !collapsed[building];
-                return (
-                  <div key={building}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 22px 11px 16px', borderBottom: `1px solid ${color.borderMuted}`, background: '#FFFFFF' }}>
-                      <button onClick={() => setCollapsed(c => ({ ...c, [building]: open }))}
-                        style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left', padding: 0, minWidth: 0 }}>
-                        <span style={{ display: 'flex', transition: 'transform 180ms', transform: `rotate(${open ? 90 : 0}deg)`, color: color.textMuted }}>
-                          <Icon name="ChevronRight" size="sm" />
-                        </span>
-                        <span style={{ fontSize: text.cardTitle, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{building}</span>
-                        <span style={{ fontSize: text.small, color: color.textMuted, whiteSpace: 'nowrap' }}>{city} · {list.length} unit{list.length === 1 ? '' : 's'}</span>
-                      </button>
-                      <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />}
-                        onClick={() => setModal({ kind: 'unit', building, city, state })}>Add unit</Button>
-                    </div>
-                    {open && (list.length === 0 ? (
-                      <div style={{ padding: '14px 22px 14px 54px', fontSize: 12.5, color: color.textMuted, borderBottom: `1px solid ${color.borderMuted}` }}>
-                        No units in this building yet. Use <strong style={{ fontWeight: 600 }}>Add unit</strong> to add the first.
-                      </div>
-                    ) : list.map(u => (
-                      <a key={u.id} href={`#/properties/units/${encodeURIComponent(u.id)}`}
-                        style={{ display: 'grid', gridTemplateColumns: 'minmax(130px,1.1fr) minmax(110px,0.9fr) minmax(150px,1.3fr) minmax(110px,1fr) minmax(90px,0.8fr)', gap: 14, alignItems: 'center', minHeight: 52, padding: '9px 22px 9px 54px', borderBottom: `1px solid ${color.borderMuted}`, textDecoration: 'none', color: 'inherit' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                          <span style={{ fontSize: 13.5, fontWeight: 500 }}>{u.unitNumber}</span>
-                          <span style={{ fontSize: 11.5, color: color.textMuted }}>{beds(u.bedrooms)} · sleeps {u.maxGuests}</span>
-                        </div>
-                        <div><Badge tone={READY_TONE[u.readiness]} label={READY_LABEL(u.readiness)} /></div>
-                        <span style={{ fontSize: 12.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.ownerName || '—'}</span>
-                        <span style={{ fontSize: 13, textAlign: 'right' }}>
-                          {u.baseRate != null ? rm(u.baseRate, { cents: false }) : '—'}
-                        </span>
-                        <div>{!u.isListed && <Badge tone="neutral" label="Not listed" />}</div>
-                      </a>
-                    )))}
-                  </div>
-                );
-              })}
+      {loading && units.length === 0 ? <Card><TableSkeleton rows={6} cols={3} /></Card> : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px,340px) 1fr', gap: 20, alignItems: 'start' }}>
+          {/* LEFT: building / unit tree */}
+          <Card>
+            <div style={{ padding: '13px 16px', borderBottom: `1px solid ${color.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: color.textMuted }}>{totalUnits} units · {buildings.length} buildings</span>
+              <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button>
             </div>
-          ))}
-        </Card>
+            <div style={{ maxHeight: '68vh', overflowY: 'auto' }}>
+              {Object.entries(byState).map(([state, list]) => (
+                <div key={state}>
+                  <div style={{ padding: '9px 16px', background: color.page, borderBottom: `1px solid ${color.borderMuted}`, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', color: color.textMuted, display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{state.toUpperCase()}</span><span>{list.reduce((s, b) => s + unitsOf(b.id).length, 0)} units</span>
+                  </div>
+                  {list.map(b => {
+                    const us = unitsOf(b.id); const open = !collapsed[b.id];
+                    return (
+                      <div key={b.id}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px 10px 14px', borderBottom: `1px solid ${color.borderMuted}` }}>
+                          <button onClick={() => setCollapsed(c => ({ ...c, [b.id]: open }))} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left', minWidth: 0, padding: 0 }}>
+                            <span style={{ transition: 'transform 160ms', transform: `rotate(${open ? 90 : 0}deg)`, color: color.textMuted, display: 'flex' }}><Icon name="ChevronRight" size="sm" /></span>
+                            <span style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.name}</div>
+                              <div style={{ fontSize: 11, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.city}</div>
+                            </span>
+                            <span style={{ fontSize: 11.5, color: color.textMuted, flex: 'none' }}>{us.length}</span>
+                          </button>
+                          <button onClick={() => setModal({ kind: 'unit', buildingId: b.id })} aria-label="Add unit" style={{ width: 26, height: 26, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.control, border: `1px solid ${color.border}`, background: '#FFF', cursor: 'pointer', color: color.textMuted }}><Icon name="Plus" size="sm" /></button>
+                        </div>
+                        {open && us.map(u => {
+                          const on = u.id === selected?.id;
+                          return (
+                            <button key={u.id} onClick={() => { setSelectedId(u.id); setTab('details'); }}
+                              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 16px 9px 34px', border: 'none', borderBottom: `1px solid ${color.borderMuted}`, cursor: 'pointer', font: 'inherit', textAlign: 'left', background: on ? color.goldTint : '#FFF', boxShadow: on ? `inset 3px 0 0 ${color.gold}` : undefined }}>
+                              <span style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12.5, fontWeight: on ? 600 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.unitCode || 'New unit'}</div>
+                                <div style={{ fontSize: 11, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.ownerName || 'No owner yet'}</div>
+                              </span>
+                              <span style={{ fontSize: 9.5, fontWeight: 700, color: color.goldInk, flex: 'none' }}>{u.pkg.replace('Package ', 'Pkg ')}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* RIGHT: unit edit form */}
+          {selected ? <UnitForm key={selected.id} u={selected} buildings={buildings}
+            onChange={p => patch(selected.id, p)} onSave={() => save(selected)} tab={tab} setTab={setTab} /> : (
+            <Card><div style={{ padding: 40, textAlign: 'center', color: color.textMuted, fontSize: 13.5 }}>Select a unit on the left, or add one.</div></Card>
+          )}
+        </div>
       )}
 
-      {modal?.kind === 'building' && (
-        <AddBuildingModal onClose={() => setModal(null)} onSubmit={addBuilding} />
-      )}
-      {modal?.kind === 'unit' && (
-        <AddUnitModal building={modal.building}
-          onClose={() => setModal(null)}
-          onSubmit={u => addUnit(modal.building, modal.city, modal.state, u)} />
-      )}
+      {modal?.kind === 'building' && <AddBuildingModal onClose={() => setModal(null)} onSubmit={addBuilding} />}
+      {modal?.kind === 'unit' && <ConfirmAddUnit building={buildings.find(b => b.id === modal.buildingId)?.name ?? ''} onClose={() => setModal(null)} onConfirm={() => addUnit(modal.buildingId)} />}
     </>
   );
 }
 
-function EmptyState({ onAdd }: { onAdd: () => void }) {
+function UnitForm({ u, buildings, onChange, onSave, tab, setTab }: {
+  u: Unit; buildings: Building[]; onChange: (p: Partial<Unit>) => void; onSave: () => void;
+  tab: 'details' | 'expenses' | 'contract'; setTab: (t: 'details' | 'expenses' | 'contract') => void;
+}) {
+  const buildingName = buildings.find(b => b.id === u.buildingId)?.name ?? '';
   return (
-    <div style={{ padding: '48px 22px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, textAlign: 'center' }}>
-      <span style={{ color: color.textMuted }}><Icon name="Building2" /></span>
-      <div style={{ fontSize: 14, color: color.textMuted, maxWidth: 340 }}>No buildings yet. Add a building, then add units to it.</div>
-      <Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={onAdd}>Add building</Button>
+    <Card>
+      <div style={{ padding: '18px 22px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: color.textMuted }}>{buildingName.toUpperCase()} · {u.state}</div>
+            <h2 style={{ margin: '4px 0 0', fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em' }}>{u.listingName || 'New unit'}</h2>
+            <div style={{ display: 'flex', gap: 7, marginTop: 9, flexWrap: 'wrap' }}>
+              <Badge tone="neutral" label={u.pkg} />
+              <Badge tone="info" label={u.term} />
+              <Badge tone={u.split === 'Not set' ? 'neutral' : 'success'} label={u.split === 'Not set' ? 'Split not set' : u.split.split(' ')[0]} />
+            </div>
+          </div>
+          <Button variant="primary" size="sm" onClick={onSave}>Save changes</Button>
+        </div>
+        <div style={{ display: 'flex', gap: 2, marginTop: 16, borderBottom: `1px solid ${color.border}` }}>
+          {([['details', 'Details'], ['expenses', 'Monthly expenses'], ['contract', 'Contract and documents']] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)} style={{ padding: '11px 4px', marginRight: 20, border: 'none', background: 'none', cursor: 'pointer', font: 'inherit', fontSize: 13, fontWeight: tab === k ? 600 : 400, color: tab === k ? color.ink : color.textMuted, boxShadow: tab === k ? `inset 0 -2px 0 ${color.gold}` : 'none' }}>{label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ padding: 22 }}>
+        {tab === 'details' && <>
+          <SectionHead>Listing</SectionHead>
+          <Grid3>
+            <Labeled label="Listing name" hint="FREE TEXT" help="Exactly as published on the channels">
+              <Field label="" value={u.listingName} onChange={e => onChange({ listingName: e.target.value })} />
+            </Labeled>
+            <Labeled label="Unit code" hint="FREE TEXT" help="Building prefix plus unit, created by The Conts">
+              <Field label="" value={u.unitCode} onChange={e => onChange({ unitCode: e.target.value })} />
+            </Labeled>
+            <Labeled label="Building" hint="DROPDOWN">
+              <Select value={u.buildingId} onChange={v => onChange({ buildingId: v })} options={buildings.map(b => ({ value: b.id, label: b.name }))} />
+            </Labeled>
+            <Labeled label="State" hint="DROPDOWN">
+              <Select value={u.state} onChange={v => onChange({ state: v })} options={STATES.map(s => ({ value: s, label: s }))} />
+            </Labeled>
+            <Labeled label="Address" hint="FREE TEXT" span2>
+              <Field label="" value={u.address} onChange={e => onChange({ address: e.target.value })} />
+            </Labeled>
+          </Grid3>
+
+          <SectionHead>Owner</SectionHead>
+          <Grid3>
+            <Labeled label="Owner name" hint="FREE TEXT"><Field label="" value={u.ownerName} onChange={e => onChange({ ownerName: e.target.value })} /></Labeled>
+            <Labeled label="IC or passport" hint="FREE TEXT" help="Accepts both formats"><Field label="" value={u.ic} onChange={e => onChange({ ic: e.target.value })} /></Labeled>
+            <Labeled label="Bank name" hint="DROPDOWN"><Select value={u.bankName} onChange={v => onChange({ bankName: v })} options={BANKS.map(b => ({ value: b, label: b }))} /></Labeled>
+            <Labeled label="Bank account" hint="FREE TEXT"><Field label="" value={u.bankAccount} onChange={e => onChange({ bankAccount: e.target.value })} /></Labeled>
+            <Labeled label="Account holder" hint="FREE TEXT" span2><Field label="" value={u.accountHolder} onChange={e => onChange({ accountHolder: e.target.value })} /></Labeled>
+          </Grid3>
+
+          <SectionHead>Revenue model</SectionHead>
+          <Grid3>
+            <Labeled label="Package" hint="DROPDOWN"><Select value={u.pkg} onChange={v => onChange({ pkg: v })} options={PACKAGES.map(p => ({ value: p, label: p }))} /></Labeled>
+            <Labeled label="Rental term" hint="DROPDOWN"><Select value={u.term} onChange={v => onChange({ term: v })} options={TERMS.map(t => ({ value: t, label: t }))} /></Labeled>
+            <Labeled label="Split / GRR" hint="DROPDOWN"><Select value={u.split} onChange={v => onChange({ split: v })} options={SPLITS.map(s => ({ value: s, label: s }))} /></Labeled>
+            {u.split.startsWith('GRR') && (
+              <Labeled label="Guaranteed rent (RM / month)" hint="AMOUNT"><Field label="" type="number" numeric value={u.splitValue != null ? String(Math.round(u.splitValue / 100)) : ''} onChange={e => onChange({ splitValue: e.target.value ? Math.round(Number(e.target.value) * 100) : null })} /></Labeled>
+            )}
+          </Grid3>
+        </>}
+
+        {tab === 'expenses' && <MonthlyExpenses u={u} onChange={onChange} />}
+        {tab === 'contract' && <ContractTab u={u} onChange={onChange} />}
+      </div>
+    </Card>
+  );
+}
+
+function MonthlyExpenses({ u, onChange }: { u: Unit; onChange: (p: Partial<Unit>) => void }) {
+  const total = u.expenses.reduce((s, e) => s + e.amount, 0);
+  const setAmt = (id: string, rmv: string) => onChange({ expenses: u.expenses.map(e => e.id === id ? { ...e, amount: Math.round(Number(rmv || 0) * 100) } : e) });
+  const add = () => onChange({ expenses: [...u.expenses, ex(crypto.randomUUID(), 'Other', 0)] });
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <SectionHead noMargin>Monthly expenses</SectionHead>
+        <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={add}>Add expense</Button>
+      </div>
+      <div style={{ border: `1px solid ${color.border}`, borderRadius: radius.card, overflow: 'hidden' }}>
+        {u.expenses.map(e => (
+          <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '1fr 160px', gap: 12, alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${color.borderMuted}` }}>
+            <input value={e.category} onChange={ev => onChange({ expenses: u.expenses.map(x => x.id === e.id ? { ...x, category: ev.target.value } : x) })} className="field-input" style={{ height: 38 }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 12, color: color.textMuted }}>RM</span>
+              <input type="number" value={String(Math.round(e.amount / 100))} onChange={ev => setAmt(e.id, ev.target.value)} className="field-input" style={{ height: 38, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />
+            </div>
+          </div>
+        ))}
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: color.muted }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Total monthly</span>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>{rm(total)}</span>
+        </div>
+      </div>
+      <p style={{ fontSize: 12, color: color.textMuted, marginTop: 10 }}>Deducted from the owner statement each month. Manual now; utilities API later.</p>
     </div>
   );
 }
 
-/* ---------- local form modal (centred), styled to match Dialog ---------- */
+function ContractTab({ u, onChange }: { u: Unit; onChange: (p: Partial<Unit>) => void }) {
+  const c = u.contract;
+  return (
+    <div>
+      <SectionHead>Contract</SectionHead>
+      <Grid3>
+        <Labeled label="Management fee %" hint="AMOUNT"><Field label="" type="number" numeric value={String(c.feePct)} onChange={e => onChange({ contract: { ...c, feePct: Number(e.target.value) || 0 } })} /></Labeled>
+        <Labeled label="Start date" hint="DATE"><Field label="" type="date" value={c.startedOn} onChange={e => onChange({ contract: { ...c, startedOn: e.target.value } })} /></Labeled>
+        <Labeled label="Renews on" hint="DATE"><Field label="" type="date" value={c.renewsOn} onChange={e => onChange({ contract: { ...c, renewsOn: e.target.value } })} /></Labeled>
+      </Grid3>
+      <SectionHead>Documents</SectionHead>
+      <div style={{ border: `1px solid ${color.border}`, borderRadius: radius.card, overflow: 'hidden' }}>
+        {c.documents.map(d => (
+          <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: `1px solid ${color.borderMuted}` }}>
+            <Icon name="FileText" size="sm" /><span style={{ fontSize: 13, flex: 1 }}>{d.name}</span>
+            <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-accent)', fontSize: 12.5, fontWeight: 500, font: 'inherit' }}>Download</button>
+          </div>
+        ))}
+        <button style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 14px', background: color.page, border: 'none', cursor: 'pointer', font: 'inherit', fontSize: 12.5, fontWeight: 500, color: color.textMuted }}>
+          <Icon name="Upload" size="sm" /> Upload a document
+        </button>
+      </div>
+    </div>
+  );
+}
 
-function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, children }: {
-  title: string; sub?: string; onClose: () => void; onSubmit: () => void;
-  submitLabel: string; canSubmit: boolean; children: ReactNode;
-}) {
+/* ---- small building blocks ---- */
+function SectionHead({ children, noMargin }: { children: ReactNode; noMargin?: boolean }) {
+  return <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: color.textMuted, margin: noMargin ? 0 : '4px 0 14px' }}>{String(children).toUpperCase()}</div>;
+}
+function Grid3({ children }: { children: ReactNode }) {
+  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 16, marginBottom: 22 }}>{children}</div>;
+}
+function Labeled({ label, hint, help, span2, children }: { label: string; hint: string; help?: string; span2?: boolean; children: ReactNode }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, gridColumn: span2 ? 'span 2' : undefined }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ fontSize: 'var(--text-small)', fontWeight: 500, color: 'var(--color-text-muted)' }}>{label}</span>
+        <span style={FT}>{hint}</span>
+      </div>
+      {children}
+      {help && <span style={{ fontSize: 11, color: color.textMuted }}>{help}</span>}
+    </div>
+  );
+}
+const selectStyle: CSSProperties = { height: 'var(--control-height)', width: '100%', boxSizing: 'border-box', padding: '0 12px', fontFamily: 'var(--font-sans)', fontSize: 14, color: 'var(--color-text-primary)', background: 'var(--color-surface-card)', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-control)', outline: 'none' };
+function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
+  return <select value={value} onChange={e => onChange(e.target.value)} style={selectStyle}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>;
+}
+
+function CentreModal({ title, sub, onClose, footer, children }: { title: string; sub?: string; onClose: () => void; footer: ReactNode; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    ref.current?.querySelector<HTMLInputElement>('input,select')?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useEffect(() => { ref.current?.querySelector<HTMLInputElement>('input,select')?.focus(); const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, [onClose]);
   return (
-    <div role="dialog" aria-modal="true" aria-label={title}
-      style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24, background: 'var(--color-surface-scrim)', animation: 'fade-in var(--motion-standard) var(--ease-out) both' }}>
+    <div role="dialog" aria-modal="true" aria-label={title} style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24, background: 'var(--color-surface-scrim)' }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div ref={ref} style={{ position: 'relative', width: '100%', maxWidth: 460, maxHeight: '88vh', overflowY: 'auto', background: 'var(--color-surface-card)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-overlay)' }}>
-        <form onSubmit={e => { e.preventDefault(); if (canSubmit) onSubmit(); }}>
-          <div style={{ padding: '22px 22px 4px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{title}</h2>
-            {sub && <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>{sub}</p>}
-          </div>
-          <div style={{ padding: '16px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>{children}</div>
-          <div style={{ padding: '14px 22px', borderTop: '1px solid var(--color-border-default)', background: 'var(--color-surface-page)', display: 'flex', justifyContent: 'flex-end', gap: 9 }}>
-            <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button size="sm" variant="primary" type="submit" disabled={!canSubmit} disabledReason="Fill the required fields first">{submitLabel}</Button>
-          </div>
-        </form>
+      <div ref={ref} style={{ position: 'relative', width: '100%', maxWidth: 440, background: 'var(--color-surface-card)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-overlay)' }}>
+        <div style={{ padding: '22px 22px 4px' }}><h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{title}</h2>{sub && <p style={{ margin: '5px 0 0', fontSize: 13, color: 'var(--color-text-muted)' }}>{sub}</p>}</div>
+        <div style={{ padding: '16px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>{children}</div>
+        <div style={{ padding: '14px 22px', borderTop: '1px solid var(--color-border-default)', background: 'var(--color-surface-page)', display: 'flex', justifyContent: 'flex-end', gap: 9 }}>{footer}</div>
       </div>
     </div>
   );
 }
-
-const selectStyle: CSSProperties = {
-  height: 'var(--control-height)', width: '100%', boxSizing: 'border-box', padding: '0 12px',
-  fontFamily: 'var(--font-sans)', fontSize: 14, color: 'var(--color-text-primary)',
-  background: 'var(--color-surface-card)', border: '1px solid var(--color-border-default)',
-  borderRadius: 'var(--radius-control)', outline: 'none',
-};
-function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
+function AddBuildingModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (b: Omit<Building, 'id'>) => void }) {
+  const [name, setName] = useState(''); const [city, setCity] = useState(''); const [state, setState] = useState(STATES[0]);
+  const ok = name.trim() !== '' && city.trim() !== '';
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-      <label style={{ fontSize: 'var(--text-small)', fontWeight: 500, color: 'var(--color-text-muted)' }}>{label}</label>
-      <select value={value} onChange={e => onChange(e.target.value)} style={selectStyle}>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
-    </div>
+    <CentreModal title="Add building" sub="A building holds units. Add units to it next." onClose={onClose}
+      footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" disabled={!ok} disabledReason="Fill name and city" onClick={() => onSubmit({ name: name.trim(), city: city.trim(), state })}>Add building</Button></>}>
+      <Field label="Building name" placeholder="e.g. Arte Mont Kiara" value={name} onChange={e => setName(e.target.value)} />
+      <Field label="City / area" placeholder="e.g. Mont Kiara, 50480 KL" value={city} onChange={e => setCity(e.target.value)} />
+      <Labeled label="State" hint="DROPDOWN"><Select value={state} onChange={setState} options={STATES.map(s => ({ value: s, label: s }))} /></Labeled>
+    </CentreModal>
   );
 }
-
-function AddBuildingModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (b: AddedBuilding) => void }) {
-  const [name, setName] = useState('');
-  const [city, setCity] = useState('');
-  const [state, setState] = useState(STATES[0]);
-  const canSubmit = name.trim().length > 0 && city.trim().length > 0;
+function ConfirmAddUnit({ building, onClose, onConfirm }: { building: string; onClose: () => void; onConfirm: () => void }) {
   return (
-    <Modal title="Add building" sub="A building holds units. Add units to it next." onClose={onClose}
-      submitLabel="Add building" canSubmit={canSubmit}
-      onSubmit={() => onSubmit({ name: name.trim(), city: city.trim(), state })}>
-      <Field label="Building name" placeholder="e.g. Arcoris Mont Kiara" value={name} onChange={e => setName(e.target.value)} />
-      <Field label="City / area" placeholder="e.g. Mont Kiara" value={city} onChange={e => setCity(e.target.value)} />
-      <SelectField label="State" value={state} onChange={setState} options={STATES} />
-    </Modal>
-  );
-}
-
-function AddUnitModal({ building, onClose, onSubmit }: {
-  building: string; onClose: () => void;
-  onSubmit: (u: { unitNumber: string; ownerId: string; ownerName: string; readiness: UnitReadiness; bedrooms: number; bathrooms: number; maxGuests: number; baseRate?: number; isListed: boolean }) => void;
-}) {
-  const [unitNumber, setUnitNumber] = useState('');
-  const [bedrooms, setBedrooms] = useState('1');
-  const [bathrooms, setBathrooms] = useState('1');
-  const [maxGuests, setMaxGuests] = useState('2');
-  const [rate, setRate] = useState('');
-  const [ownerName, setOwnerName] = useState('');
-  const canSubmit = unitNumber.trim().length > 0;
-  return (
-    <Modal title={`Add unit to ${building}`} sub="Core details now; full record (owner, GRR, expenses, contract) on the unit page." onClose={onClose}
-      submitLabel="Add unit" canSubmit={canSubmit}
-      onSubmit={() => onSubmit({
-        unitNumber: unitNumber.trim(),
-        ownerId: '', ownerName: ownerName.trim(),
-        readiness: 'ready',
-        bedrooms: Number(bedrooms) || 0, bathrooms: Number(bathrooms) || 0, maxGuests: Number(maxGuests) || 1,
-        baseRate: rate ? Math.round(Number(rate) * 100) : undefined,
-        isListed: false,
-      })}>
-      <Field label="Unit code" placeholder="e.g. #B-08-11" value={unitNumber} onChange={e => setUnitNumber(e.target.value)} />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-        <Field label="Bedrooms" type="number" min={0} numeric value={bedrooms} onChange={e => setBedrooms(e.target.value)} />
-        <Field label="Bathrooms" type="number" min={0} numeric value={bathrooms} onChange={e => setBathrooms(e.target.value)} />
-        <Field label="Sleeps" type="number" min={1} numeric value={maxGuests} onChange={e => setMaxGuests(e.target.value)} />
-      </div>
-      <Field label="Base rate (RM / night)" type="number" min={0} numeric placeholder="e.g. 288" value={rate} onChange={e => setRate(e.target.value)} help="Optional now; set per-channel rates later on the calendar." />
-      <Field label="Owner name" placeholder="Optional — assign on the unit page" value={ownerName} onChange={e => setOwnerName(e.target.value)} />
-    </Modal>
+    <CentreModal title={`Add a unit to ${building}`} sub="A blank unit will open on the right for you to fill in." onClose={onClose}
+      footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" onClick={onConfirm}>Add unit</Button></>}>
+      <p style={{ margin: 0, fontSize: 13, color: color.textMuted }}>You will set the listing name, code, owner, package and GRR on the unit form.</p>
+    </CentreModal>
   );
 }

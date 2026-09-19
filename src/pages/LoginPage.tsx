@@ -111,7 +111,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
           <div style={{ display: 'flex', flexDirection: 'column', gap: 26, maxWidth: 620 }}>
             <div style={{ height: 1, width: 72, background: color.gold }} />
             <h2 style={{ margin: 0, fontSize: 56, lineHeight: 1.04, fontWeight: 600, letterSpacing: '-0.025em', color: '#FFFFFF', textWrap: 'pretty' }}>
-              Homes worth staying in.<br />Numbers worth trusting.
+              We furnish it.<br />We host it.<br />You get the statement.
             </h2>
           </div>
 
