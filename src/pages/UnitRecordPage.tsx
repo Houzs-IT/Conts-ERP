@@ -150,7 +150,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
                 {u.addressLine}, {u.postcode} {u.city}
               </span>
               <span style={{ fontSize: 12.5, color: color.textMuted }}>
-                {u.bedrooms === 0 ? 'Studio' : `${u.bedrooms} bed`} &middot; {u.bathrooms} bath &middot; sleeps {u.maxGuests}
+                {u.bedrooms === 0 ? 'Studio' : `${u.bedrooms} bed`} · {u.bathrooms} bath · sleeps {u.maxGuests}
                 {u.sizeSqft ? ` · ${u.sizeSqft} sq ft` : ''}
                 {u.fittedOutAt ? ` · fitted out by The Conts ${u.fittedOutAt}` : ''}
               </span>
@@ -161,7 +161,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
               <a href={`#/owners`} style={{ fontSize: 14, fontWeight: 600, textDecoration: 'none', color: color.ink }}>{u.owner.name}</a>
               {u.contract && (
                 <span style={{ fontSize: 11.5, color: color.textMuted }}>
-                  {u.contract.managementFeePct}% &middot; renews {u.contract.renewsOn ?? '\u2014'}
+                  {u.contract.managementFeePct}% · renews {u.contract.renewsOn ?? '\u2014'}
                 </span>
               )}
             </div>
@@ -271,7 +271,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 200 }}>
                     <span style={{ fontSize: 13.5, fontWeight: 500 }}>{t.title}</span>
                     <span style={{ fontSize: 11.5, color: color.textMuted }}>
-                      {cap(t.kind)} &middot; {t.assigneeName ?? 'Unassigned'}
+                      {cap(t.kind)} · {t.assigneeName ?? 'Unassigned'}
                       {t.completedAt ? ` · done ${t.completedAt}` : t.dueAt ? ` · due ${t.dueAt}` : ''}
                     </span>
                   </div>
@@ -317,7 +317,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
                         {m.blocksUnit && <Badge tone="critical" label="Blocks the unit" />}
                       </div>
                       <span style={{ fontSize: 11.5, color: color.textMuted }}>
-                        {m.reportedAt}{m.vendorName ? ` · ${m.vendorName}` : ''} &middot; charged to {cap(m.chargeTo)}
+                        {m.reportedAt}{m.vendorName ? ` · ${m.vendorName}` : ''} · charged to {cap(m.chargeTo)}
                       </span>
                       {m.detail && <span style={{ fontSize: 12.5, textWrap: 'pretty' }}>{m.detail}</span>}
                     </div>
@@ -363,7 +363,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
                   <Icon name="KeyRound" size="nav" color={color.textMuted} />
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 200 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 13.5, fontWeight: 600 }}>{cap(a.kind)} &middot; {a.label}</span>
+                      <span style={{ fontSize: 13.5, fontWeight: 600 }}>{cap(a.kind)} · {a.label}</span>
                       {a.rotatesAfterStay && <Badge tone="info" label="Rotates after each stay" />}
                     </div>
                     <span style={{ fontSize: 12.5, color: color.textMuted, textWrap: 'pretty' }}>{a.instruction}</span>
@@ -373,7 +373,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
               ))}
               <div style={{ padding: '14px 20px' }}>
                 <a href="#/properties/access" style={{ fontSize: text.small, fontWeight: 600, color: color.goldInk, textDecoration: 'none' }}>
-                  Open Access and keys &rarr;
+                  Open Access and keys →
                 </a>
               </div>
             </Card>
@@ -392,7 +392,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
                   </span>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 180 }}>
                     <span style={{ fontSize: 13 }}>
-                      <strong style={{ fontWeight: 600 }}>{a.actorLabel}</strong> &middot; {a.action.replace(/[._]/g, ' ')}
+                      <strong style={{ fontWeight: 600 }}>{a.actorLabel}</strong> · {a.action.replace(/[._]/g, ' ')}
                     </span>
                     <span style={{ fontSize: 11.5, color: color.textMuted }}>{a.source.replace(/_/g, ' ')}</span>
                   </div>

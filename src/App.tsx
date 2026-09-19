@@ -119,7 +119,7 @@ function Routed() {
   }
 
   // Record routes carry an id, so they are matched before the static table.
-  const unitMatch = path.match(/^\/properties\/units\/(.+)$/);
+  const unitMatch = pathname.match(/^\/properties\/units\/(.+)$/);
   if (unitMatch) {
     return (
       <AppShell path="/properties/units" navigate={navigate}>
@@ -128,9 +128,9 @@ function Routed() {
     );
   }
 
-  const Page = ROUTES[path] ?? NotDesignedPage;
+  const Page = ROUTES[pathname] ?? NotDesignedPage;
   return (
-    <AppShell path={path} navigate={navigate}>
+    <AppShell path={pathname} navigate={navigate}>
       <Page />
     </AppShell>
   );

@@ -124,7 +124,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
                 </div>
               ))}
             </div>
-            <span style={{ fontSize: text.micro, letterSpacing: '0.14em', color: color.dim }}>KUALA LUMPUR &middot; PETALING JAYA</span>
+            <span style={{ fontSize: text.micro, letterSpacing: '0.14em', color: color.dim }}>KUALA LUMPUR · PETALING JAYA</span>
           </div>
         </div>
       </div>
@@ -155,7 +155,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
             )}
 
             {screen === 'reset' && tokenState === 'checking' && (
-              <div style={{ fontSize: text.small, color: color.textMuted }}>Checking your link&hellip;</div>
+              <div style={{ fontSize: text.small, color: color.textMuted }}>Checking your link…</div>
             )}
 
             {screen !== 'forgot' && (screen !== 'reset' || tokenState === 'valid') && (
@@ -222,7 +222,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
         </form>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', fontSize: text.micro, color: color.faint }}>
-          <span>The Conts Sdn Bhd &middot; 202301027399</span>
+          <span>The Conts Sdn Bhd · 202301027399</span>
           <span>+60 17-465 8868</span>
         </div>
       </div>
