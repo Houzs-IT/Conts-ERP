@@ -1,606 +1,148 @@
-import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { TONE, cx } from '../lib/design-tokens';
+import { useState } from 'react';
+import { color, radius, text } from '../theme';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
-import { Button } from '../components/Button';
-import { Dialog, type DialogSpec } from '../components/Dialog';
+import { Dialog } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, ApiFailure } from '../lib/api';
 import { rm } from '../lib/format';
-import { TASK } from '../lib/vocabulary';
-import type { TaskState } from '../lib/types';
+import type { Tone, TaskState } from '../lib/types';
 
-// Charge-to is a closed set — the owner statement, a guest's deposit, our own
-// pocket, or a warranty claim. Never invent a fifth.
-type ChargeTo = 'owner' | 'guest_deposit' | 'the_conts' | 'warranty';
-const CHARGE_LABEL: Record<ChargeTo, string> = {
-  owner: 'Owner', guest_deposit: 'Guest deposit', the_conts: 'The Conts', warranty: 'Warranty',
+const STATE_TONE: Record<TaskState, Tone> = {
+  open: 'neutral', assigned: 'info', in_progress: 'info', waiting: 'warning',
+  resolved: 'success', overdue: 'critical', reopened: 'critical',
 };
-const CHARGE_OPTIONS: ChargeTo[] = ['owner', 'guest_deposit', 'the_conts', 'warranty'];
-
-// Technicians and in-house crew that a job can be assigned to. Mirrors the
-// technician accounts in Users and the standing vendor list.
-const TECHS = ['Hafiz Omar', 'In-house crew', 'AquaFix', 'CoolCare', 'Kiara Interiors'];
+const STATE_LABEL: Record<TaskState, string> = {
+  open: 'Open', assigned: 'Assigned', in_progress: 'In progress', waiting: 'Waiting',
+  resolved: 'Resolved', overdue: 'Overdue', reopened: 'Reopened',
+};
+const CHARGE_LABEL: Record<string, string> = { owner: 'Owner', guest_deposit: 'Guest deposit', the_conts: 'The Conts', warranty: 'Warranty' };
 
 interface Issue {
   id: string; unitNumber: string; propertyName: string; title: string; detail: string | null;
   state: TaskState; vendorName: string | null; quotedAmount: number | null; finalAmount: number | null;
-  ownerApprovalRequired: boolean; blocksUnit: boolean; reportedAt: string; chargeTo: ChargeTo;
-  assigneeName?: string | null; photoCount?: number; documentCount?: number; ownerApprovedAt?: string | null;
+  ownerApprovalRequired: boolean; blocksUnit: boolean; reportedAt: string; chargeTo: string;
 }
 interface Payload { data: Issue[]; generatedAt: string }
 
 const FALLBACK: Payload = {
   generatedAt: '',
   data: [
-    { id: 'MNT-0914', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', title: 'Plumbing works', detail: 'Riser replacement. Unit offline until 22 Sep.', state: 'in_progress', vendorName: 'AquaFix', quotedAmount: 320000, finalAmount: null, ownerApprovalRequired: false, blocksUnit: true, reportedAt: '14 Sep', chargeTo: 'owner', assigneeName: 'AquaFix', photoCount: 1, documentCount: 0 },
-    { id: 'MNT-0912', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', title: 'Curtain replacement quoted', detail: 'Blackout curtains, 3 windows. Awaiting owner approval.', state: 'waiting', vendorName: 'Kiara Interiors', quotedAmount: 89000, finalAmount: null, ownerApprovalRequired: true, blocksUnit: false, reportedAt: '12 Sep', chargeTo: 'owner', assigneeName: 'Kiara Interiors', photoCount: 0, documentCount: 0 },
-    { id: 'MNT-0916', unitNumber: '#B-08-11', propertyName: 'Arcoris', title: 'Broken blind, living room', detail: 'Guest reported on arrival. Inspect before next stay.', state: 'open', vendorName: null, quotedAmount: null, finalAmount: null, ownerApprovalRequired: false, blocksUnit: false, reportedAt: '16 Sep', chargeTo: 'owner', assigneeName: null, photoCount: 0, documentCount: 0 },
-    { id: 'MNT-0910', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', title: 'Aircon service', detail: 'Quarterly service. Gas top-up not required.', state: 'resolved', vendorName: 'CoolCare', quotedAmount: null, finalAmount: 18000, ownerApprovalRequired: false, blocksUnit: false, reportedAt: '10 Sep', chargeTo: 'owner', assigneeName: 'CoolCare', photoCount: 2, documentCount: 1 },
-    { id: 'MNT-0828', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', title: 'Water heater replaced', detail: 'Guest reported no hot water. Same-day replacement.', state: 'resolved', vendorName: 'In-house crew', quotedAmount: null, finalAmount: 64000, ownerApprovalRequired: false, blocksUnit: false, reportedAt: '28 Aug', chargeTo: 'warranty', assigneeName: 'In-house crew', photoCount: 2, documentCount: 1 },
+    { id: 'MNT-0914', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', title: 'Plumbing works', detail: 'Riser replacement. Unit offline until 22 Sep.', state: 'in_progress', vendorName: 'AquaFix', quotedAmount: 320000, finalAmount: null, ownerApprovalRequired: false, blocksUnit: true, reportedAt: '14 Sep', chargeTo: 'owner' },
+    { id: 'MNT-0912', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', title: 'Curtain replacement quoted', detail: 'Blackout curtains, 3 windows. Awaiting owner approval.', state: 'waiting', vendorName: 'Kiara Interiors', quotedAmount: 89000, finalAmount: null, ownerApprovalRequired: true, blocksUnit: false, reportedAt: '12 Sep', chargeTo: 'owner' },
+    { id: 'MNT-0916', unitNumber: '#B-08-11', propertyName: 'Arcoris', title: 'Broken blind, living room', detail: 'Guest reported on arrival. Inspect before next stay.', state: 'open', vendorName: null, quotedAmount: null, finalAmount: null, ownerApprovalRequired: false, blocksUnit: false, reportedAt: '16 Sep', chargeTo: 'owner' },
+    { id: 'MNT-0910', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', title: 'Aircon service', detail: 'Quarterly service. Gas top-up not required.', state: 'resolved', vendorName: 'CoolCare', quotedAmount: null, finalAmount: 18000, ownerApprovalRequired: false, blocksUnit: false, reportedAt: '10 Sep', chargeTo: 'owner' },
+    { id: 'MNT-0828', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', title: 'Water heater replaced', detail: 'Guest reported no hot water. Same-day replacement.', state: 'resolved', vendorName: 'In-house crew', quotedAmount: null, finalAmount: 64000, ownerApprovalRequired: false, blocksUnit: false, reportedAt: '28 Aug', chargeTo: 'warranty' },
   ],
 };
 
 const FILTERS = ['All', 'Needs approval', 'Blocking a unit', 'Open', 'Resolved'];
 
-// Attention-first order. Overdue and reopened sit above quiet work; resolved
-// sinks to the bottom. Every state renders its own section when it has rows.
-const GROUP_ORDER: TaskState[] = ['overdue', 'reopened', 'waiting', 'in_progress', 'assigned', 'open', 'resolved'];
-
-const INPUT_CX = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-[16px] font-normal';
-const LABEL_CX = 'text-[12px] font-medium text-muted-ink';
-
-const todayShort = () => new Date().toLocaleDateString('en-MY', { day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' });
-const toSen = (s: string): number | null => {
-  const n = parseFloat(s.replace(/[^0-9.]/g, ''));
-  return Number.isFinite(n) ? Math.round(n * 100) : null;
-};
-
 export default function MaintenancePage() {
   const [filter, setFilter] = useState('All');
   const { data, loading, error, reload } = useApi<Payload>('/maintenance/issues', FALLBACK);
+  const [send, setSend] = useState<Issue | null>(null);
+  const [busy, setBusy] = useState(false);
   const toast = useToast();
 
-  // Optimistic overlay: created jobs live in `added`, every edit lands in
-  // `edits` keyed by id. There is no backend in dev, so the real call is
-  // attempted and its failure swallowed — the interaction still lands.
-  const [added, setAdded] = useState<Issue[]>([]);
-  const [edits, setEdits] = useState<Record<string, Partial<Issue>>>({});
-
-  const merged = useMemo(
-    () => [...added, ...(data?.data ?? [])].map(i => ({ ...i, ...edits[i.id] })),
-    [added, data, edits],
-  );
-
-  const patch = (id: string, delta: Partial<Issue>) =>
-    setEdits(e => ({ ...e, [id]: { ...e[id], ...delta } }));
-  const bumpCount = (issue: Issue, field: 'photoCount' | 'documentCount') =>
-    setEdits(e => {
-      const cur = (e[issue.id]?.[field] ?? issue[field] ?? 0) as number;
-      return { ...e, [issue.id]: { ...e[issue.id], [field]: cur + 1 } };
-    });
-  const fire = (p: Promise<unknown>) => { void p.catch(() => { /* dev: no backend, keep optimistic */ }); };
-
-  // Modal state
-  const [creating, setCreating] = useState(false);
-  const [assignFor, setAssignFor] = useState<Issue | null>(null);
-  const [completeFor, setCompleteFor] = useState<Issue | null>(null);
-  const [photoFor, setPhotoFor] = useState<Issue | null>(null);
-  const [docFor, setDocFor] = useState<Issue | null>(null);
-  const [confirm, setConfirm] = useState<{ kind: 'approval' | 'block' | 'reopen'; issue: Issue } | null>(null);
-
-  const rows = merged.filter(i =>
+  const all = data?.data ?? [];
+  const rows = all.filter(i =>
     filter === 'All' ? true
-    : filter === 'Needs approval' ? i.ownerApprovalRequired && !i.ownerApprovedAt
+    : filter === 'Needs approval' ? i.ownerApprovalRequired
     : filter === 'Blocking a unit' ? i.blocksUnit
     : filter === 'Resolved' ? i.state === 'resolved'
     : i.state !== 'resolved');
 
-  const groups = GROUP_ORDER
-    .map(state => ({ state, items: rows.filter(i => i.state === state) }))
-    .filter(g => g.items.length > 0);
-
-  // ---- Actions -------------------------------------------------------------
-
-  function createJob(input: Omit<Issue, 'id' | 'state' | 'finalAmount' | 'ownerApprovalRequired' | 'reportedAt' | 'photoCount' | 'documentCount'>) {
-    const optimistic: Issue = {
-      ...input, id: `MNT-${Math.floor(1000 + Math.random() * 9000)}`, state: 'open',
-      finalAmount: null, ownerApprovalRequired: false, reportedAt: todayShort(),
-      photoCount: 0, documentCount: 0, ownerApprovedAt: null,
-    };
-    setAdded(a => [optimistic, ...a]);
-    setCreating(false);
-    toast({
-      tone: 'success', title: 'Job created.',
-      body: `${optimistic.propertyName} ${optimistic.unitNumber} now has an open maintenance issue${optimistic.blocksUnit ? ' and is off sale' : ''}.`,
-    });
-    fire(api.post('/maintenance/issues', {
-      unitId: optimistic.unitNumber, title: optimistic.title, detail: optimistic.detail,
-      photoIds: [], blocksUnit: optimistic.blocksUnit, quotedAmount: optimistic.quotedAmount, chargeTo: optimistic.chargeTo,
-    }));
+  async function sendForApproval() {
+    if (!send) return;
+    setBusy(true);
+    try {
+      await api.post('/messages', { threadId: send.id, body: `Approval requested for ${send.title}` });
+      toast.push({ tone: 'success', title: 'Sent for approval.', body: 'The owner was emailed and the request is on their portal.' });
+      setSend(null);
+      reload();
+    } catch (e) {
+      toast.push({ tone: 'critical', title: 'Could not send.', body: e instanceof ApiFailure ? e.message : 'Try again in a moment.' });
+    } finally { setBusy(false); }
   }
-
-  function assignTechnician(issue: Issue, tech: string) {
-    patch(issue.id, { assigneeName: tech, state: issue.state === 'open' ? 'assigned' : issue.state });
-    setAssignFor(null);
-    toast({ tone: 'success', title: `${tech} assigned.`, body: 'They have been notified by push.' });
-    fire(api.patch(`/maintenance/issues/${issue.id}`, { assigneeId: tech }));
-  }
-
-  function requestApproval(issue: Issue) {
-    patch(issue.id, { ownerApprovalRequired: true, state: 'waiting' });
-    setConfirm(null);
-    toast({ tone: 'success', title: 'Sent for approval.', body: 'The owner sees the quote in their portal. Work is not scheduled until they approve.' });
-    fire(api.post(`/maintenance/issues/${issue.id}/request-approval`, {}));
-  }
-
-  function blockUnit(issue: Issue) {
-    patch(issue.id, { blocksUnit: true });
-    setConfirm(null);
-    toast({ tone: 'success', title: 'Unit blocked.', body: `${issue.propertyName} ${issue.unitNumber} is off sale and the dates are held.` });
-    fire(api.post('/blocks', { unitId: issue.unitNumber, reason: 'maintenance', issueId: issue.id }));
-  }
-
-  function attachPhoto(issue: Issue, kind: 'Before' | 'After') {
-    bumpCount(issue, 'photoCount');
-    setPhotoFor(null);
-    toast({ tone: 'success', title: `${kind} photo added.`, body: 'Kept as evidence on the job.' });
-    fire(api.post(`/maintenance/issues/${issue.id}/photos`, { kind: kind.toLowerCase() }));
-  }
-
-  function attachDocument(issue: Issue, kind: 'POD' | 'Invoice') {
-    bumpCount(issue, 'documentCount');
-    setDocFor(null);
-    toast({ tone: 'success', title: `${kind} uploaded.`, body: 'Attached to the job for the owner statement.' });
-    fire(api.post(`/maintenance/issues/${issue.id}/documents`, { kind: kind.toLowerCase() }));
-  }
-
-  function markComplete(issue: Issue, finalAmount: number) {
-    patch(issue.id, { state: 'resolved', finalAmount, blocksUnit: false, ownerApprovalRequired: false });
-    setCompleteFor(null);
-    toast({
-      tone: 'success', title: 'Marked complete.',
-      body: `The ${rm(finalAmount)} expense was created${issue.blocksUnit ? ` and ${issue.unitNumber} is back on sale` : ''}.`,
-    });
-    fire(api.post(`/maintenance/issues/${issue.id}/complete`, { finalAmount }));
-  }
-
-  function reopen(issue: Issue) {
-    patch(issue.id, { state: 'reopened', finalAmount: null });
-    setConfirm(null);
-    toast({ tone: 'warning', title: 'Reopened.', body: `${issue.title} is active again.` });
-    fire(api.patch(`/maintenance/issues/${issue.id}`, { state: 'reopened' }));
-  }
-
-  // ---- Confirmation dialog spec -------------------------------------------
-
-  const dialogSpec: DialogSpec | null = !confirm ? null
-    : confirm.kind === 'approval' ? {
-        title: `Send ${rm(confirm.issue.quotedAmount ?? 0)} to the owner for approval?`,
-        body: 'They receive the quote and the reason. Work is not scheduled until they approve.',
-        meta: `${confirm.issue.propertyName} ${confirm.issue.unitNumber} · ${confirm.issue.vendorName ?? 'no vendor yet'}`,
-        confirmLabel: 'Send', onConfirm: () => requestApproval(confirm.issue),
-      }
-    : confirm.kind === 'block' ? {
-        title: `Block ${confirm.issue.propertyName} ${confirm.issue.unitNumber}?`,
-        body: 'This holds the dates and takes the unit off sale until the work is done.',
-        meta: `${confirm.issue.title} · reported ${confirm.issue.reportedAt}`,
-        danger: true, confirmLabel: 'Block unit', onConfirm: () => blockUnit(confirm.issue),
-      }
-    : {
-        title: `Reopen ${confirm.issue.title}?`,
-        body: 'This moves the issue back to active work. Its expense and the unit are affected again.',
-        meta: `${confirm.issue.propertyName} ${confirm.issue.unitNumber} · was ${TASK[confirm.issue.state].label.toLowerCase()}`,
-        danger: true, confirmLabel: 'Reopen', onConfirm: () => reopen(confirm.issue),
-      };
-
-  const openCount = merged.filter(i => i.state !== 'resolved').length;
-  const approvalCount = merged.filter(i => i.ownerApprovalRequired && !i.ownerApprovedAt).length;
-  const blockingCount = merged.filter(i => i.blocksUnit).length;
 
   return (
     <>
-      <PageHeader
-        title="Maintenance"
-        sub={`${openCount} open · ${approvalCount} awaiting owner approval · ${blockingCount} blocking a unit`}
-        right={<Button variant="primary" onClick={() => setCreating(true)}>Create job</Button>}
-      />
+      <PageHeader title="Maintenance" sub={`${all.filter(i => i.state !== 'resolved').length} open · ${all.filter(i => i.ownerApprovalRequired).length} awaiting owner approval · ${all.filter(i => i.blocksUnit).length} blocking a unit`} />
 
       {error && <StaleBanner message={`Showing the last issues we have. ${error}`} onRetry={reload} />}
 
-      <div className="flex gap-[7px] flex-wrap">
+      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
         {FILTERS.map(fl => {
           const on = fl === filter;
           return (
             <button key={fl} onClick={() => setFilter(fl)}
-              className={cx('h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border border-solid',
-                on ? 'border-black bg-black text-white' : 'border-line bg-white text-muted-ink')}>
+              style={{ height: 32, display: 'flex', alignItems: 'center', padding: '0 13px', borderRadius: radius.pill, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', font: 'inherit',
+                border: `1px solid ${on ? color.black : color.border}`, background: on ? color.black : '#FFFFFF', color: on ? '#FFFFFF' : color.textMuted }}>
               {fl}
             </button>
           );
         })}
       </div>
 
-      {loading && merged.length === 0 ? (
-        <Card><TableSkeleton rows={4} cols={3} /></Card>
-      ) : rows.length === 0 ? (
-        <Card>
-          <div className="px-[22px] py-[28px] flex flex-col gap-2">
-            <span className="text-[13px]">No maintenance issues match these filters.</span>
-            <button onClick={() => setFilter('All')} className="self-start text-gold-ink bg-transparent border-none cursor-pointer [font:inherit]">Clear filters</button>
+      <Card>
+        {loading && all.length === 0 ? <TableSkeleton rows={4} cols={3} /> : rows.length === 0 ? (
+          <div style={{ padding: '28px 22px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span style={{ fontSize: 13 }}>No maintenance issues match these filters.</span>
+            <button onClick={() => setFilter('All')} style={{ alignSelf: 'flex-start', fontSize: text.small, fontWeight: 600, color: color.goldInk, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit' }}>Clear filters</button>
           </div>
-        </Card>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {groups.map(g => (
-            <div key={g.state} className="flex flex-col gap-2">
-              <div className="flex items-center gap-[9px] pl-0.5">
-                <Badge tone={TASK[g.state].tone} label={TASK[g.state].label} />
-                <span className="text-[12px] text-muted-ink">{g.items.length}</span>
+        ) : rows.map(i => (
+          <div key={i.id} style={{ padding: '15px 20px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', flexDirection: 'column', gap: 9 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 220, flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+                  <span style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: text.micro, color: color.textMuted }}>{i.id}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>{i.title}</span>
+                  <Badge tone={STATE_TONE[i.state]} label={STATE_LABEL[i.state]} />
+                  {i.blocksUnit && <Badge tone="critical" label="Blocks the unit" />}
+                </div>
+                <span style={{ fontSize: text.small, color: color.textMuted }}>
+                  {i.propertyName} {i.unitNumber} · reported {i.reportedAt}{i.vendorName ? ` · ${i.vendorName}` : ''}
+                </span>
+                <span style={{ fontSize: 13, textWrap: 'pretty' }}>{i.detail}</span>
               </div>
-              <Card>
-                {g.items.map((i, idx) => (
-                  <IssueRow
-                    key={i.id}
-                    issue={i}
-                    last={idx === g.items.length - 1}
-                    onAssign={() => setAssignFor(i)}
-                    onRequestApproval={() => setConfirm({ kind: 'approval', issue: i })}
-                    onBlock={() => setConfirm({ kind: 'block', issue: i })}
-                    onPhoto={() => setPhotoFor(i)}
-                    onDoc={() => setDocFor(i)}
-                    onComplete={() => setCompleteFor(i)}
-                    onReopen={() => setConfirm({ kind: 'reopen', issue: i })}
-                  />
-                ))}
-              </Card>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flex: 'none' }}>
+                <span style={{ fontSize: 16, fontWeight: 600 }}>
+                  {i.finalAmount != null ? rm(i.finalAmount) : i.quotedAmount != null ? rm(i.quotedAmount) : '\u2014'}
+                </span>
+                <span style={{ fontSize: text.micro, color: color.textMuted }}>
+                  {i.finalAmount != null ? 'Final' : i.quotedAmount != null ? 'Quoted' : 'Not quoted'} · {CHARGE_LABEL[i.chargeTo] ?? i.chargeTo}
+                </span>
+              </div>
             </div>
-          ))}
-        </div>
-      )}
 
-      {/* Confirmations: request approval, block unit, reopen */}
-      <Dialog busy={false} onClose={() => setConfirm(null)} spec={dialogSpec} />
-
-      {creating && <CreateJobModal onClose={() => setCreating(false)} onCreate={createJob} />}
-      {assignFor && <AssignModal issue={assignFor} onClose={() => setAssignFor(null)} onAssign={assignTechnician} />}
-      {photoFor && <PhotoModal issue={photoFor} onClose={() => setPhotoFor(null)} onAttach={attachPhoto} />}
-      {docFor && <DocumentModal issue={docFor} onClose={() => setDocFor(null)} onAttach={attachDocument} />}
-      {completeFor && (
-        <CompleteModal
-          issue={{ ...completeFor, photoCount: edits[completeFor.id]?.photoCount ?? completeFor.photoCount ?? 0 }}
-          onClose={() => setCompleteFor(null)}
-          onComplete={markComplete}
-          onNeedsPhoto={() => { setPhotoFor(completeFor); setCompleteFor(null); }}
-        />
-      )}
-    </>
-  );
-}
-
-// ---- Row -------------------------------------------------------------------
-
-function IssueRow({
-  issue: i, last, onAssign, onRequestApproval, onBlock, onPhoto, onDoc, onComplete, onReopen,
-}: {
-  issue: Issue; last: boolean;
-  onAssign: () => void; onRequestApproval: () => void; onBlock: () => void;
-  onPhoto: () => void; onDoc: () => void; onComplete: () => void; onReopen: () => void;
-}) {
-  const resolved = i.state === 'resolved';
-  const photos = i.photoCount ?? 0;
-  const docs = i.documentCount ?? 0;
-  const evidence = [
-    photos > 0 ? `${photos} ${photos === 1 ? 'photo' : 'photos'}` : null,
-    docs > 0 ? `${docs} ${docs === 1 ? 'document' : 'documents'}` : null,
-  ].filter(Boolean).join(' · ');
-
-  return (
-    <div className={cx('px-5 py-[15px] flex flex-col gap-2.5', !last && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex flex-col gap-[3px] min-w-[220px] flex-1">
-          <div className="flex items-center gap-[9px] flex-wrap">
-            <span className="font-mono text-[11px] text-muted-ink">{i.id}</span>
-            <span className="text-[14px] font-semibold">{i.title}</span>
-            {i.blocksUnit && <Badge tone="critical" label="Blocks the unit" />}
-          </div>
-          <span className="text-[12px] text-muted-ink">
-            {i.propertyName} {i.unitNumber} · reported {i.reportedAt}
-            {i.assigneeName ? ` · ${i.assigneeName}` : i.vendorName ? ` · ${i.vendorName}` : ''}
-            {evidence ? ` · ${evidence}` : ''}
-          </span>
-          {i.detail && <span className="text-[13px] text-pretty">{i.detail}</span>}
-        </div>
-        <div className="flex flex-col items-end gap-1 flex-none">
-          <span className="text-[16px] font-semibold">
-            {i.finalAmount != null ? rm(i.finalAmount) : i.quotedAmount != null ? rm(i.quotedAmount) : '—'}
-          </span>
-          <span className="text-[11px] text-muted-ink">
-            {i.finalAmount != null ? 'Final' : i.quotedAmount != null ? 'Quoted' : 'Not quoted'} · {CHARGE_LABEL[i.chargeTo]}
-          </span>
-        </div>
-      </div>
-
-      {i.ownerApprovalRequired && !i.ownerApprovedAt && i.quotedAmount != null && (
-        <div className="flex items-center gap-3 flex-wrap px-3 py-[10px] rounded-control bg-gold-tint border border-solid border-[var(--color-gold-200)]">
-          <span className="text-[12.5px] text-gold-ink flex-1 min-w-[200px]">
-            The owner must approve {rm(i.quotedAmount)} before this is scheduled.
-          </span>
-          <button onClick={onRequestApproval} className="h-[34px] px-[13px] py-0 rounded-control border-none bg-black text-white cursor-pointer [font:inherit]">
-            Request owner approval
-          </button>
-        </div>
-      )}
-
-      <div className="flex gap-[7px] flex-wrap">
-        {resolved ? (
-          <RowAction onClick={onReopen} danger>Reopen</RowAction>
-        ) : (
-          <>
-            <RowAction onClick={onAssign}>{i.assigneeName ? 'Reassign' : 'Assign technician'}</RowAction>
-            {i.quotedAmount != null && !i.ownerApprovalRequired && (
-              <RowAction onClick={onRequestApproval}>Request owner approval</RowAction>
+            {i.ownerApprovalRequired && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '10px 12px', borderRadius: radius.control, background: color.goldTint, border: `1px solid ${color.gold200}` }}>
+                <span style={{ fontSize: 12.5, color: color.goldInk, flex: 1, minWidth: 200 }}>
+                  The owner must approve {rm(i.quotedAmount!)} before this is scheduled.
+                </span>
+                <button onClick={() => setSend(i)} style={{ height: 34, padding: '0 13px', borderRadius: radius.control, border: 'none', background: color.black, color: '#FFFFFF', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' }}>
+                  Send for approval
+                </button>
+              </div>
             )}
-            {!i.blocksUnit && <RowAction onClick={onBlock}>Block the unit</RowAction>}
-            <RowAction onClick={onPhoto}>Upload photo</RowAction>
-            <RowAction onClick={onDoc}>Upload POD / invoice</RowAction>
-            <RowAction onClick={onComplete} primary>Mark complete</RowAction>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
+          </div>
+        ))}
+      </Card>
 
-function RowAction({ children, onClick, primary, danger }: { children: ReactNode; onClick: () => void; primary?: boolean; danger?: boolean }) {
-  const skin = primary
-    ? 'border-none bg-black text-white'
-    : danger
-      ? cx('border border-solid border-[#E4B4B1] bg-white', TONE.critical.text)
-      : 'border border-solid border-line bg-white text-ink';
-  return (
-    <button onClick={onClick} className={cx('h-8 px-3 py-0 rounded-control cursor-pointer [font:inherit] whitespace-nowrap', skin)}>
-      {children}
-    </button>
-  );
-}
-
-// ---- Local modal shell -----------------------------------------------------
-
-function Modal({ title, sub, onClose, footer, children, width = 480 }: {
-  title: string; sub?: string; onClose: () => void; footer: ReactNode; children: ReactNode; width?: number;
-}) {
-  return (
-    <div role="dialog" aria-modal="true" aria-label={title}
-      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
-      <div onClick={onClose} className="absolute inset-0" />
-      <div style={{ maxWidth: width }}
-        className="relative w-full max-h-[90vh] overflow-y-auto bg-white rounded-card shadow-[var(--shadow-overlay)] animate-dialog">
-        <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-1">
-          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold text-pretty">{title}</h2>
-          {sub && <p className="m-0 text-[13px] leading-[1.55] text-muted-ink text-pretty">{sub}</p>}
-        </div>
-        <div className="px-[22px] pt-0 pb-5 flex flex-col gap-[14px]">{children}</div>
-        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
-          {footer}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LabeledField({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className={LABEL_CX}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-// ---- Create job ------------------------------------------------------------
-
-function CreateJobModal({ onClose, onCreate }: { onClose: () => void; onCreate: (i: Omit<Issue, 'id' | 'state' | 'finalAmount' | 'ownerApprovalRequired' | 'reportedAt' | 'photoCount' | 'documentCount'>) => void }) {
-  const [propertyName, setPropertyName] = useState('');
-  const [unitNumber, setUnitNumber] = useState('');
-  const [title, setTitle] = useState('');
-  const [detail, setDetail] = useState('');
-  const [vendorName, setVendorName] = useState('');
-  const [quote, setQuote] = useState('');
-  const [chargeTo, setChargeTo] = useState<ChargeTo>('owner');
-  const [blocksUnit, setBlocksUnit] = useState(false);
-
-  const valid = propertyName.trim() && unitNumber.trim() && title.trim();
-
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!valid) return;
-    onCreate({
-      propertyName: propertyName.trim(), unitNumber: unitNumber.trim(), title: title.trim(),
-      detail: detail.trim() || null, vendorName: vendorName.trim() || null,
-      quotedAmount: toSen(quote), chargeTo, blocksUnit, assigneeName: null,
-    });
-  }
-
-  return (
-    <Modal title="Create maintenance job" sub="Logs an open issue on the unit. Add a quote now or after a vendor visit." onClose={onClose} width={520}
-      footer={<>
-        <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={submit} disabled={!valid} disabledReason="Add the property, unit and a title first.">Create job</Button>
-      </>}>
-      <form id="create-job" onSubmit={submit} className="flex flex-col gap-[14px]">
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
-          <LabeledField label="Property"><input required value={propertyName} onChange={e => setPropertyName(e.target.value)} placeholder="Vista Jaya One" className={INPUT_CX} /></LabeledField>
-          <LabeledField label="Unit"><input required value={unitNumber} onChange={e => setUnitNumber(e.target.value)} placeholder="#A-12-03" className={INPUT_CX} /></LabeledField>
-        </div>
-        <LabeledField label="Title"><input required value={title} onChange={e => setTitle(e.target.value)} placeholder="Broken blind, living room" className={INPUT_CX} /></LabeledField>
-        <LabeledField label="Detail">
-          <textarea value={detail} onChange={e => setDetail(e.target.value)} placeholder="What happened, and what needs doing." rows={3}
-            className="block w-full box-border h-auto px-3 py-[10px] text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-[16px] font-normal resize-y leading-[1.5]" />
-        </LabeledField>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
-          <LabeledField label="Vendor"><input value={vendorName} onChange={e => setVendorName(e.target.value)} placeholder="AquaFix" className={INPUT_CX} /></LabeledField>
-          <LabeledField label="Quote (RM, optional)"><input inputMode="decimal" value={quote} onChange={e => setQuote(e.target.value)} placeholder="320.00" className={cx(INPUT_CX, 'text-right tabular-nums')} /></LabeledField>
-        </div>
-        <LabeledField label="Charge to">
-          <select value={chargeTo} onChange={e => setChargeTo(e.target.value as ChargeTo)} className={INPUT_CX}>
-            {CHARGE_OPTIONS.map(c => <option key={c} value={c}>{CHARGE_LABEL[c]}</option>)}
-          </select>
-        </LabeledField>
-        <Toggle checked={blocksUnit} onChange={setBlocksUnit} label="This blocks the unit" hint="Takes the unit off sale and holds the dates while the work is open." />
-      </form>
-    </Modal>
-  );
-}
-
-// ---- Assign technician -----------------------------------------------------
-
-function AssignModal({ issue, onClose, onAssign }: { issue: Issue; onClose: () => void; onAssign: (i: Issue, tech: string) => void }) {
-  const [tech, setTech] = useState(issue.assigneeName ?? TECHS[0]);
-  return (
-    <Modal title="Assign technician" sub={`${issue.propertyName} ${issue.unitNumber} · ${issue.title}`} onClose={onClose}
-      footer={<>
-        <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={() => onAssign(issue, tech)}>Assign</Button>
-      </>}>
-      <LabeledField label="Technician or vendor">
-        <select value={tech} onChange={e => setTech(e.target.value)} className={INPUT_CX}>
-          {TECHS.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-      </LabeledField>
-      <span className="text-[12px] text-muted-ink">They are notified by push and the job moves to assigned.</span>
-    </Modal>
-  );
-}
-
-// ---- Upload photo ----------------------------------------------------------
-
-function PhotoModal({ issue, onClose, onAttach }: { issue: Issue; onClose: () => void; onAttach: (i: Issue, kind: 'Before' | 'After') => void }) {
-  const [kind, setKind] = useState<'Before' | 'After'>('Before');
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
-  return (
-    <Modal title="Upload photo" sub="Before-and-after evidence stays on the job and, once complete, on the owner statement." onClose={onClose}
-      footer={<>
-        <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={() => onAttach(issue, kind)}>Attach {kind.toLowerCase()} photo</Button>
-      </>}>
-      <LabeledField label="Type">
-        <Segmented options={['Before', 'After']} value={kind} onChange={v => setKind(v as 'Before' | 'After')} />
-      </LabeledField>
-      <div>
-        <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => setFileName(e.target.files?.[0]?.name ?? null)} />
-        <button type="button" onClick={() => fileRef.current?.click()}
-          className="flex w-full box-border h-auto min-h-[72px] px-3 py-0 items-center justify-center text-muted-ink bg-white border border-dashed border-line rounded-control outline-none [font:inherit] cursor-pointer">
-          {fileName ? fileName : 'Choose a photo'}
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-// ---- Upload POD / invoice --------------------------------------------------
-
-function DocumentModal({ issue, onClose, onAttach }: { issue: Issue; onClose: () => void; onAttach: (i: Issue, kind: 'POD' | 'Invoice') => void }) {
-  const [kind, setKind] = useState<'POD' | 'Invoice'>('Invoice');
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
-  return (
-    <Modal title="Upload POD / invoice" sub="Proof of delivery and the vendor invoice back the expense on the owner statement." onClose={onClose}
-      footer={<>
-        <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={() => onAttach(issue, kind)}>Upload {kind === 'POD' ? 'POD' : 'invoice'}</Button>
-      </>}>
-      <LabeledField label="Document">
-        <Segmented options={['Invoice', 'POD']} value={kind} onChange={v => setKind(v as 'POD' | 'Invoice')} />
-      </LabeledField>
-      <div>
-        <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={e => setFileName(e.target.files?.[0]?.name ?? null)} />
-        <button type="button" onClick={() => fileRef.current?.click()}
-          className="flex w-full box-border h-auto min-h-[72px] px-3 py-0 items-center justify-center text-muted-ink bg-white border border-dashed border-line rounded-control outline-none [font:inherit] cursor-pointer">
-          {fileName ? fileName : 'Choose a file'}
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-// ---- Mark complete ---------------------------------------------------------
-
-function CompleteModal({ issue, onClose, onComplete, onNeedsPhoto }: {
-  issue: Issue; onClose: () => void; onComplete: (i: Issue, final: number) => void; onNeedsPhoto: () => void;
-}) {
-  const [amount, setAmount] = useState(issue.quotedAmount != null ? (issue.quotedAmount / 100).toFixed(2) : '');
-  const hasPhoto = (issue.photoCount ?? 0) > 0;
-  const finalSen = toSen(amount);
-  const amountOk = finalSen != null && finalSen > 0;
-  const ready = hasPhoto && amountOk;
-
-  return (
-    <Modal title="Mark complete" sub="Completing the job creates the expense and, if the unit was blocked, puts it back on sale." onClose={onClose}
-      footer={<>
-        <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={() => finalSen != null && onComplete(issue, finalSen)} disabled={!ready}
-          disabledReason={!hasPhoto ? 'Add a photo before completing.' : 'Enter the final amount.'}>
-          Mark complete
-        </Button>
-      </>}>
-      <div className="px-3 py-[10px] rounded-control bg-page border border-solid border-line text-[12.5px] text-muted-ink">
-        {issue.propertyName} {issue.unitNumber} · {issue.title} · charged to {CHARGE_LABEL[issue.chargeTo]}
-      </div>
-      <LabeledField label="Final amount (RM)">
-        <input inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} placeholder="320.00" autoFocus
-          className={cx(INPUT_CX, 'text-right tabular-nums')} />
-      </LabeledField>
-      <div className={cx('flex items-center gap-2.5 flex-wrap px-3 py-[10px] rounded-control text-[12.5px]',
-        hasPhoto ? cx(TONE.success.bg, TONE.success.text) : cx(TONE.warning.bg, TONE.warning.text))}>
-        <span className="flex-1 min-w-[180px]">
-          {hasPhoto ? `${issue.photoCount} ${issue.photoCount === 1 ? 'photo' : 'photos'} attached — evidence requirement met.` : 'A photo is required before this job can be completed.'}
-        </span>
-        {!hasPhoto && (
-          <button onClick={onNeedsPhoto} className="h-[30px] px-3 py-0 rounded-control border border-solid border-current bg-transparent text-inherit cursor-pointer [font:inherit]">
-            Upload a photo
-          </button>
-        )}
-      </div>
-    </Modal>
-  );
-}
-
-// ---- Small controls --------------------------------------------------------
-
-function Segmented({ options, value, onChange }: { options: string[]; value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="inline-flex border border-solid border-line rounded-control overflow-hidden">
-      {options.map(o => {
-        const on = o === value;
-        return (
-          <button key={o} type="button" onClick={() => onChange(o)}
-            className={cx('px-4 py-2 cursor-pointer border-none [font:inherit]',
-              on ? 'bg-black text-white' : 'bg-white text-muted-ink')}>
-            {o}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
-  return (
-    <div className="flex items-start gap-3">
-      <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
-        className={cx('w-10 h-6 flex-none rounded-full border-none cursor-pointer p-0.5 mt-px [transition:background_160ms] flex',
-          checked ? 'bg-black justify-end' : 'bg-line-strong justify-start')}>
-        <span className="w-5 h-5 rounded-full bg-white" />
-      </button>
-      <div className="flex flex-col gap-0.5">
-        <span className="text-[13.5px] font-medium">{label}</span>
-        {hint && <span className="text-[12px] text-muted-ink">{hint}</span>}
-      </div>
-    </div>
+      <Dialog
+        busy={busy}
+        onClose={() => setSend(null)}
+        spec={!send ? null : {
+          title: `Send ${rm(send.quotedAmount ?? 0)} to the owner for approval?`,
+          body: 'They receive the quote, the reason and what happens if they decline. Work is not scheduled until they approve.',
+          meta: `${send.propertyName} ${send.unitNumber} · ${send.vendorName ?? 'no vendor yet'}`,
+          confirmLabel: 'Send', busyLabel: 'Sending\u2026', onConfirm: sendForApproval,
+        }}
+      />
+    </>
   );
 }

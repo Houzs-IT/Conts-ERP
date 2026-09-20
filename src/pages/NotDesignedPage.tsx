@@ -1,11 +1,13 @@
+import { color, radius, text } from '../theme';
+
 /** Undesigned destinations state the reason and offer the next action — they are
  *  never dead links. See copy.md section 12. */
 export default function NotDesignedPage() {
   return (
-    <div className="max-w-[460px] bg-card border border-solid border-line rounded-card p-7 flex flex-col gap-[11px]">
-      <div className="text-[16px] font-semibold">Not designed yet</div>
-      <div className="text-[13px] text-muted-ink">This module is specified in BUTTONS.md and api.md but has no screen yet.</div>
-      <a href="#/" className="self-start mt-1 h-9 flex items-center px-[14px] py-0 rounded-control bg-black text-white! text-[13px] font-medium no-underline">
+    <div style={{ maxWidth: 460, background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, padding: 28, display: 'flex', flexDirection: 'column', gap: 11 }}>
+      <div style={{ fontSize: text.cardTitle, fontWeight: 600 }}>Not designed yet</div>
+      <div style={{ fontSize: 13, color: color.textMuted }}>This module is specified in BUTTONS.md and api.md but has no screen yet.</div>
+      <a href="#/" style={{ alignSelf: 'flex-start', marginTop: 4, height: 36, display: 'flex', alignItems: 'center', padding: '0 14px', borderRadius: radius.control, background: color.black, color: '#FFFFFF', fontSize: 13, fontWeight: 500, textDecoration: 'none' }}>
         Dashboard
       </a>
     </div>

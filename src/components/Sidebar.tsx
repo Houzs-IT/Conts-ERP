@@ -118,14 +118,9 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
               <span style={{ fontSize: text.small, color: color.textMuted }}>{user!.email}</span>
             </div>
             {[
-              // BUTTONS §2: each routes to its destination. /profile and
-              // /profile/notifications are the spec routes (rendered by the
-              // catch-all NotDesignedPage until built); Security and sessions
-              // has no dedicated page, so it lands on the Settings → Security
-              // section per the task's fallback ruling.
-              { label: 'Personal profile', icon: 'User', go: () => { setProfileOpen(false); navigate('/profile'); } },
-              { label: 'Notification settings', icon: 'Bell', go: () => { setProfileOpen(false); navigate('/profile/notifications'); } },
-              { label: 'Security and sessions', icon: 'ShieldCheck', go: () => { setProfileOpen(false); navigate('/system/settings'); } },
+              { label: 'Personal profile', icon: 'User', go: () => setProfileOpen(false) },
+              { label: 'Notification settings', icon: 'Bell', go: () => setProfileOpen(false) },
+              { label: 'Security and sessions', icon: 'ShieldCheck', go: () => setProfileOpen(false) },
               { label: 'Log out', icon: 'LogOut', danger: true, go: logout },
             ].map(m => (
               <button key={m.label} onClick={m.go}

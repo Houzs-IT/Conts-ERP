@@ -1,56 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
-
-/* Tailwind v4 (the ERP convention) — utilities + theme only, NO preflight, so the
-   existing inline-styled pages are untouched while new/converted code uses classes. */
-@import 'tailwindcss/theme.css' layer(theme);
-@import 'tailwindcss/utilities.css' layer(utilities);
-
 /* The canonical token sheet lives at the project root as tokens.css.
+   This file re-exports it so Vite bundles it with the app.
    Keep them identical — root tokens.css is the source of truth. */
 @import '../../tokens.css';
-
-/* Design tokens -> Tailwind theme. Utilities such as text-ink, bg-page, bg-gold,
-   border-line, text-success now emit the exact brand values (keeps design 1:1
-   while adopting the ERP's Tailwind convention). */
-@theme {
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
-
-  --color-black: #151515;
-  --color-charcoal: #242424;
-  --color-ink: #252525;
-  --color-ink-2: #4A4844;
-  --color-muted-ink: #706D67;
-  --color-faint: #A8A29A;
-
-  --color-page: #FAF9F6;
-  --color-card: #FFFFFF;
-  --color-muted: #F1F0ED;
-  --color-sunken: #EDEAE4;
-
-  --color-line: #DEDAD3;
-  --color-line-soft: #EDEAE4;
-  --color-line-strong: #C7C1B6;
-
-  --color-gold: #C8A46A;
-  --color-gold-ink: #8A6A2F;
-  --color-gold-tint: #FBF7F0;
-
-  --color-success: #11694A;
-  --color-success-bg: #E9F5EF;
-  --color-warning: #8A5A12;
-  --color-warning-bg: #FFF4D8;
-  --color-critical: #A8352F;
-  --color-critical-bg: #FCECEB;
-  --color-info: #2E6DA4;
-  --color-info-bg: #EAF2FA;
-
-  --color-airbnb: #FF5A5F;
-  --color-booking: #003B95;
-  --color-agoda: #5C2D91;
-  --color-owner: #706D67;
-
-  --radius-card: 12px;
-  --radius-control: 8px;
-  --radius-pill: 999px;
-}
