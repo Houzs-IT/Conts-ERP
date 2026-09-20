@@ -101,7 +101,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
           <div className="flex flex-col gap-[26px] max-w-[620px]">
             <div className="h-px w-[72px] bg-gold" />
             <h2 className="m-0 text-[56px] leading-[1.04] font-semibold tracking-[-0.025em] text-white text-pretty">
-              We furnish it.<br />We host it.<br />You get the statement.
+              Homes worth staying in.<br />Numbers worth trusting.
             </h2>
           </div>
 
