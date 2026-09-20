@@ -30,6 +30,7 @@ const KPI_FALLBACK: KpiPayload = {
     { key: 'occupancy', value: '86.2', unit: 'percent' },
     { key: 'adr', value: 27600, currency: 'MYR' },
     { key: 'revpar', value: 23800, currency: 'MYR' },
+    { key: 'net_owner_payout', value: 8890000, currency: 'MYR' },
   ],
 };
 

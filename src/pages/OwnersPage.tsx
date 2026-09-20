@@ -12,6 +12,8 @@ import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
 import { rm } from '../lib/format';
 import { cx } from '../lib/design-tokens';
+import { STATEMENT } from '../lib/vocabulary';
+import type { StatementState } from '../lib/types';
 
 type FeeModel = 'management' | 'grr';
 interface UnitLine {
@@ -44,6 +46,31 @@ const netOf = (o: Owner) => o.units.reduce((s, u) => s + u.net, 0);
 const grossOf = (o: Owner) => o.units.reduce((s, u) => s + u.gross, 0);
 const terms = (u: UnitLine) => u.model === 'grr' ? `GRR ${rm(u.grrAmount ?? 0, { cents: false })}/mo` : `${u.feePct ?? 0}% fee`;
 
+// One statement per past period, combined across all of an owner's units.
+interface OwnerStatement { id: string; period: string; grossBookingValue: number; netPayout: number; state: StatementState }
+interface StatementsPayload { data: OwnerStatement[]; generatedAt: string }
+
+const periodLabel = (p: string) => {
+  const [y, m] = p.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('en-MY', { month: 'short', year: 'numeric' });
+};
+
+// Dev fallback until GET /api/owners/:id/statements is live: synthesise the last
+// few settled months from the owner's current combined gross/net. A brand-new
+// owner with no units has no history yet.
+function statementsFallback(o: Owner): StatementsPayload {
+  if (o.units.length === 0) return { generatedAt: '', data: [] };
+  const gross = grossOf(o), net = netOf(o);
+  const periods = ['2026-08', '2026-07', '2026-06', '2026-05'];
+  return {
+    generatedAt: '',
+    data: periods.map((period, i) => {
+      const factor = 1 - i * 0.05;
+      return { id: `${o.id}-${period}`, period, grossBookingValue: Math.round(gross * factor), netPayout: Math.round(net * factor), state: 'paid' as StatementState };
+    }),
+  };
+}
+
 export default function OwnersPage() {
   const { data, loading, error, reload } = useApi<Payload>('/owners', FALLBACK);
   const toast = useToast();
@@ -56,6 +83,10 @@ export default function OwnersPage() {
   const rows = useMemo(() => [...added, ...(data?.data ?? [])].map(o => ({ ...o, ...edits[o.id] })), [added, data, edits]);
   const open = rows.find(o => o.id === openId) ?? null;
   const unitCount = rows.reduce((s, o) => s + o.units.length, 0);
+  // Portfolio net-payout rollup — pure client compute over loaded owners (no
+  // /owners/summary endpoint in api.md), reusing the same per-owner net the drawer shows.
+  const portfolioNet = rows.reduce((s, o) => s + netOf(o), 0);
+  const portfolioGross = rows.reduce((s, o) => s + grossOf(o), 0);
 
   const patch = (id: string, p: Partial<Owner>) => setEdits(e => ({ ...e, [id]: { ...e[id], ...p } }));
 
@@ -101,6 +132,13 @@ export default function OwnersPage() {
         right={<Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal('owner')}>Add owner</Button>} />
 
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
+
+      <Card>
+        <div className="flex gap-[30px] flex-wrap py-4 px-[22px]">
+          <Roll label="Net payout, this month" value={rm(portfolioNet)} strong />
+          <Roll label="Gross, this month" value={rm(portfolioGross)} />
+        </div>
+      </Card>
 
       <Card>
         <div className="overflow-x-auto">
@@ -209,6 +247,8 @@ function OwnerPanel({ o, onClose, onLink, onContract, onInvite }: {
             <div>Account holder: {o.accountHolder ?? '—'}</div>
           </div>
         </Section>
+
+        <StatementHistory key={o.id} o={o} />
       </div>
 
       <div className="p-4 [border-top:1px_solid_var(--color-line)] bg-page flex gap-[9px] flex-none">
@@ -218,6 +258,32 @@ function OwnerPanel({ o, onClose, onLink, onContract, onInvite }: {
         <Button variant="secondary" onClick={onLink}>Link unit</Button>
       </div>
     </>
+  );
+}
+
+function StatementHistory({ o }: { o: Owner }) {
+  // Combined statement history across the owner's units. Hydrates from the live
+  // endpoint when present; the computed fallback keeps the section rendering in dev.
+  const { data } = useApi<StatementsPayload>(`/owners/${o.id}/statements`, statementsFallback(o));
+  const history = data?.data ?? [];
+  return (
+    <Section title="Statement history">
+      {history.length === 0 ? (
+        <div className="text-[12.5px] text-muted-ink">No statements yet. History appears here once a period is generated for this owner.</div>
+      ) : (
+        <div className="border border-solid border-line rounded-card overflow-hidden">
+          {history.map(s => (
+            <a key={s.id} href={`#/finance/statements/${encodeURIComponent(s.id)}`}
+              className="grid grid-cols-[1fr_0.9fr_0.9fr_auto] gap-2.5 items-center py-[11px] px-[13px] [border-bottom:1px_solid_var(--color-line-soft)] no-underline text-inherit!">
+              <div className="text-[12.5px] font-medium">{periodLabel(s.period)}</div>
+              <span className="text-[12px] text-right text-muted-ink tabular-nums">{rm(s.grossBookingValue, { cents: false })}</span>
+              <span className="text-[12.5px] text-right font-semibold tabular-nums">{rm(s.netPayout, { cents: false })}</span>
+              <span className="flex justify-end"><Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} size="sm" /></span>
+            </a>
+          ))}
+        </div>
+      )}
+    </Section>
   );
 }
 

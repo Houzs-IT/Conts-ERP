@@ -98,7 +98,7 @@ export default function PropertiesPage() {
     const nu = mkUnit(crypto.randomUUID(), buildingId, '', '', buildings.find(b => b.id === buildingId)?.state ?? STATES[0], '', { ownerName: '' });
     setAddedU(l => [nu, ...l]); setSelectedId(nu.id); setTab('details');
     toast({ tone: 'success', title: 'Unit added.', body: 'Fill in its details on the right.' });
-    setModal(null);
+    api.post('/units', nu).catch(() => {}); setModal(null);
   }
 
   const totalUnits = units.length;
@@ -258,14 +258,23 @@ function UnitForm({ u, buildings, onChange, onSave, tab, setTab }: {
 }
 
 function MonthlyExpenses({ u, onChange }: { u: Unit; onChange: (p: Partial<Unit>) => void }) {
+  const toast = useToast();
   const total = u.expenses.reduce((s, e) => s + e.amount, 0);
   const setAmt = (id: string, rmv: string) => onChange({ expenses: u.expenses.map(e => e.id === id ? { ...e, amount: Math.round(Number(rmv || 0) * 100) } : e) });
   const add = () => onChange({ expenses: [...u.expenses, ex(crypto.randomUUID(), 'Other', 0)] });
+  function generateReport() {
+    const period = new Date().toISOString().slice(0, 7);
+    toast({ tone: 'info', title: 'Preparing report', body: `Expenses for ${u.unitCode || 'this unit'} — served as a download.` });
+    api.get('/expenses/report', { unitId: u.id, period }).catch(() => { /* dev: no backend / binary body */ });
+  }
   return (
     <div>
       <div className="flex justify-between items-center mb-3">
         <SectionHead noMargin>Monthly expenses</SectionHead>
-        <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={add}>Add expense</Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={generateReport}>Generate report</Button>
+          <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={add}>Add expense</Button>
+        </div>
       </div>
       <div className="border border-solid border-line rounded-card overflow-hidden">
         {u.expenses.map(e => (
@@ -289,6 +298,20 @@ function MonthlyExpenses({ u, onChange }: { u: Unit; onChange: (p: Partial<Unit>
 
 function ContractTab({ u, onChange }: { u: Unit; onChange: (p: Partial<Unit>) => void }) {
   const c = u.contract;
+  const toast = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  function download(d: { id: string; name: string }) {
+    toast({ tone: 'info', title: 'Preparing download', body: `${d.name} — served as a signed link.` });
+    api.get(`/documents/${d.id}/download`).catch(() => { /* dev: no backend / binary body */ });
+  }
+  function upload(file: File) {
+    const doc = { id: crypto.randomUUID(), name: file.name };
+    onChange({ contract: { ...c, documents: [...c.documents, doc] } });
+    toast({ tone: 'success', title: 'Document uploaded.', body: `${file.name} added to this unit.` });
+    const fd = new FormData();
+    fd.append('file', file); fd.append('unitId', u.id); fd.append('kind', 'contract');
+    api.post('/documents', fd).catch(() => { /* dev: no backend */ });
+  }
   return (
     <div>
       <SectionHead>Contract</SectionHead>
@@ -302,12 +325,13 @@ function ContractTab({ u, onChange }: { u: Unit; onChange: (p: Partial<Unit>) =>
         {c.documents.map(d => (
           <div key={d.id} className="flex items-center gap-[10px] py-[11px] px-[14px] [border-bottom:1px_solid_var(--color-line-soft)]">
             <Icon name="FileText" size="sm" /><span className="text-[13px] flex-1">{d.name}</span>
-            <button className="bg-transparent [border:none] cursor-pointer text-gold-ink [font:inherit]">Download</button>
+            <button onClick={() => download(d)} className="bg-transparent [border:none] cursor-pointer text-gold-ink [font:inherit]">Download</button>
           </div>
         ))}
-        <button className="flex items-center gap-2 w-full py-[11px] px-[14px] bg-page [border:none] cursor-pointer font-sans text-[12.5px] font-medium text-muted-ink">
+        <button onClick={() => fileRef.current?.click()} className="flex items-center gap-2 w-full py-[11px] px-[14px] bg-page [border:none] cursor-pointer font-sans text-[12.5px] font-medium text-muted-ink">
           <Icon name="Upload" size="sm" /> Upload a document
         </button>
+        <input ref={fileRef} type="file" className="hidden" onChange={e => { const f = e.currentTarget.files?.item(0); if (f) upload(f); e.currentTarget.value = ''; }} />
       </div>
     </div>
   );

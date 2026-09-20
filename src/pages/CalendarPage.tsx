@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { color, tone as toneMap } from '../theme';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -10,13 +10,15 @@ import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
-import { rm } from '../lib/format';
+import { rm, dateRange } from '../lib/format';
 import { CHANNEL } from '../lib/vocabulary';
 import type { BookingChannel, ReservationState, Tone } from '../lib/types';
 
 const COL = 62;
 const UNIT_COL = 240;
 const ALL: BookingChannel[] = ['airbnb', 'booking_com', 'agoda', 'direct', 'maintenance_block', 'owner_stay'];
+// Channels a bulk rate push can target. Direct is the web rate itself.
+const PUSH: BookingChannel[] = ['direct', 'airbnb', 'booking_com', 'agoda'];
 
 /** Booking-status filter chips. `blocked` is a pseudo-status: the maintenance
  *  hold channel has no reservation_state, so its chip filters that channel. */
@@ -89,13 +91,26 @@ export default function CalendarPage() {
   const [dialog, setDialog] = useState<DialogSpec | null>(null);
   const [priceModal, setPriceModal] = useState<null | { unit: Unit; channel: string; dayIso: string; current: number }>(null);
   const [blockWizard, setBlockWizard] = useState(false);
+  const [blockPrefill, setBlockPrefill] = useState<{ unitId?: string; from?: string; to?: string }>({});
   const [rateUpdate, setRateUpdate] = useState(false);
   const [openBlock, setOpenBlock] = useState<Block | null>(null);
+  const [editDates, setEditDates] = useState<Block | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  // Optimistic overlays — there is no backend in dev.
+  const [dateEdits, setDateEdits] = useState<Record<string, { checkIn: string; checkOut: string }>>({});
+  const [addedBlocks, setAddedBlocks] = useState<Block[]>([]);
+  // Which booking is being dragged, and where within it the pointer grabbed.
+  const dragRef = useRef<{ id: string; grabOffset: number } | null>(null);
 
   const allUnits = data?.units ?? [];
   const properties = useMemo(() => Array.from(new Set(allUnits.map(u => u.propertyName))), [allUnits]);
   const units = property === 'all' ? allUnits : allUnits.filter(u => u.propertyName === property);
-  const blocks = (data?.blocks ?? []).filter(b => {
+  const liveBlocks = useMemo(
+    () => [...(data?.blocks ?? []), ...addedBlocks].map(b => ({ ...b, ...dateEdits[b.id] })),
+    [data, addedBlocks, dateEdits],
+  );
+  const blocks = liveBlocks.filter(b => {
     if (off[b.channel]) return false;
     if (b.channel === 'maintenance_block') return !statusOff.blocked;
     return !statusOff[b.state];
@@ -124,11 +139,66 @@ export default function CalendarPage() {
       body: 'This night is open. Block it, create a reservation, or set a price.',
       confirmLabel: 'Set price',
       extraActions: [
-        { label: 'Block dates', onClick: () => { setDialog(null); setBlockWizard(true); } },
-        { label: 'Create reservation', onClick: () => { setDialog(null); toast({ tone: 'info', title: 'Create reservation', body: 'Opens the manual booking form.' }); } },
+        { label: 'Block dates', onClick: () => { setDialog(null); setBlockPrefill({ unitId: unit.id, from: dayIso(i), to: dayIso(i + 1) }); setBlockWizard(true); } },
+        { label: 'Create reservation', onClick: () => { setDialog(null); window.location.hash = '#/reservations/bookings?create=1'; } },
       ],
       onConfirm: () => { setDialog(null); setPriceModal({ unit, channel: 'web', dayIso: dayIso(i), current: rateFor(unit.id, 'web', i) }); },
     });
+  }
+
+  /** An existing booking/block on the same unit that overlaps [ci, co). */
+  function conflictFor(unitId: string, ci: string, co: string, excludeId?: string) {
+    return liveBlocks.find(o =>
+      o.unitId === unitId && o.id !== excludeId
+      && dayIndex(o.checkIn) < dayIndex(co) && dayIndex(ci) < dayIndex(o.checkOut),
+    ) ?? null;
+  }
+
+  /** Move a booking to new dates: pre-check the range, then a 428-style consequence
+   *  confirm, then the optimistic patch. Shared by drag-drop and the drawer editor. */
+  function requestMove(b: Block, newCheckIn: string, newCheckOut: string) {
+    if (newCheckIn === b.checkIn && newCheckOut === b.checkOut) return;
+    const clash = conflictFor(b.unitId, newCheckIn, newCheckOut, b.id);
+    if (clash) {
+      toast({ tone: 'critical', title: 'Dates unavailable.', body: `${clash.guestName} already holds ${dateRange(clash.checkIn, clash.checkOut)} on this unit. Pick another range.` });
+      return;
+    }
+    setDialog({
+      title: 'Move this booking?',
+      body: 'Moving the stay re-checks availability, notifies the guest and re-pushes the new dates to every connected channel.',
+      meta: `${b.guestName} · ${dateRange(b.checkIn, b.checkOut)} → ${dateRange(newCheckIn, newCheckOut)}`,
+      confirmLabel: 'Move booking', busyLabel: 'Moving…',
+      onConfirm: async () => {
+        setBusy(true);
+        setDateEdits(e => ({ ...e, [b.id]: { checkIn: newCheckIn, checkOut: newCheckOut } }));
+        try { await api.patch(`/reservations/${b.id}/dates`, { checkIn: newCheckIn, checkOut: newCheckOut, confirm: true }); } catch { /* dev: no backend, keep optimistic */ }
+        setBusy(false); setDialog(null); setOpenBlock(null);
+        toast({ tone: 'success', title: 'Booking moved.', body: `${b.guestName} is now ${dateRange(newCheckIn, newCheckOut)}. Guest notified and channels updated.` });
+      },
+    });
+  }
+
+  /** A booking bar was dropped on day index `dropIndex` of `unitId`. */
+  function dropOnDay(unitId: string, dropIndex: number) {
+    const d = dragRef.current; dragRef.current = null;
+    if (!d) return;
+    const b = liveBlocks.find(x => x.id === d.id);
+    if (!b) return;
+    if (b.unitId !== unitId) {
+      toast({ tone: 'info', title: 'Same unit only.', body: 'Drag a booking within its own row. To move it to another unit, edit the booking.' });
+      return;
+    }
+    const nights = dayIndex(b.checkOut) - dayIndex(b.checkIn);
+    const startIdx = dropIndex - d.grabOffset;
+    requestMove(b, dayIso(startIdx), dayIso(startIdx + nights));
+  }
+
+  async function refresh() {
+    if (syncing) return;
+    setSyncing(true);
+    try { await api.post('/integrations/sync'); } catch { /* dev: no backend */ }
+    setSyncing(false);
+    toast({ tone: 'success', title: 'Channels synced.', body: 'Airbnb and Booking.com pulled · Agoda skipped (expired).' });
   }
 
   return (
@@ -198,8 +268,8 @@ export default function CalendarPage() {
         <div className="px-5 py-[11px] [border-bottom:1px_solid_var(--color-line)] flex items-center gap-[9px] flex-wrap">
           <Button size="sm" variant={expanded ? 'primary' : 'secondary'} icon={<Icon name={expanded ? 'ChevronsLeft' : 'ChevronsRight'} size="sm" />} onClick={() => setExpanded(v => !v)}>{expanded ? 'Collapse rates' : 'Expand rates'}</Button>
           <Button size="sm" variant="secondary" onClick={() => setRateUpdate(true)}>Rate update</Button>
-          <Button size="sm" variant="secondary" style={{ color: toneMap.critical.fg, borderColor: toneMap.critical.line }} onClick={() => setBlockWizard(true)}>Block wizard</Button>
-          <Button size="sm" variant="secondary" icon={<Icon name="RefreshCw" size="sm" />} onClick={() => toast({ tone: 'success', title: 'Sync started.', body: 'Airbnb, Booking.com and Agoda · Agoda skipped (expired).' })}>Refresh</Button>
+          <Button size="sm" variant="secondary" style={{ color: toneMap.critical.fg, borderColor: toneMap.critical.line }} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }}>Block wizard</Button>
+          <Button size="sm" variant="secondary" icon={<Icon name="RefreshCw" size="sm" />} loading={syncing} onClick={refresh}>Refresh</Button>
           <span className="text-[12px] text-muted-ink">Airbnb, Booking.com and Agoda synced 14:06 MYT</span>
           <span className="ml-auto flex items-center gap-1.5">
             <button type="button" onClick={() => setWeekOffset(w => w - 1)} className={navCls} aria-label="Previous"><Icon name="ChevronsLeft" size="sm" /></button>
@@ -256,13 +326,21 @@ export default function CalendarPage() {
                       </div>
                     </div>
                     {cells.map((c, i) => {
-                      if (!c) return <div key={i} onClick={() => emptyNight(u, i)} className="relative box-border flex-1 min-w-[58px] [border-left:1px_solid_var(--color-line-soft)] flex items-center px-[5px] py-[7px] cursor-pointer" style={{ background: i === todayIdx ? color.goldTint : undefined }} title={`${u.unitNumber} · available`} />;
+                      if (!c) return <div key={i} onClick={() => emptyNight(u, i)}
+                        onDragOver={e => { if (dragRef.current) e.preventDefault(); }}
+                        onDrop={e => { e.preventDefault(); dropOnDay(u.id, i); }}
+                        className="relative box-border flex-1 min-w-[58px] [border-left:1px_solid_var(--color-line-soft)] flex items-center px-[5px] py-[7px] cursor-pointer" style={{ background: i === todayIdx ? color.goldTint : undefined }} title={`${u.unitNumber} · available`} />;
                       const ch = CHANNEL[c.b.channel]; const hold = ch.border !== 'solid';
                       const nights = dayIndex(c.b.checkOut) - dayIndex(c.b.checkIn);
                       const lineColor = hold ? ch.color : 'rgba(21,21,21,0.06)';
                       return (
-                        <div key={i} onClick={() => setOpenBlock(c.b)} title={`${c.b.guestName} · ${ch.label}${c.b.ref ? ' · ' + c.b.ref : ''}`}
-                          className="relative box-border flex-1 min-w-[58px] flex items-center px-[5px] py-[7px] my-[11px] cursor-pointer"
+                        <div key={i} onClick={() => setOpenBlock(c.b)} title={`${c.b.guestName} · ${ch.label}${c.b.ref ? ' · ' + c.b.ref : ''} · drag to move`}
+                          draggable
+                          onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; dragRef.current = { id: c.b.id, grabOffset: i - dayIndex(c.b.checkIn) }; }}
+                          onDragEnd={() => { dragRef.current = null; }}
+                          onDragOver={e => { if (dragRef.current) e.preventDefault(); }}
+                          onDrop={e => { e.preventDefault(); dropOnDay(u.id, i); }}
+                          className="relative box-border flex-1 min-w-[58px] flex items-center px-[5px] py-[7px] my-[11px] cursor-grab active:cursor-grabbing"
                           style={{ background: hold ? 'transparent' : ch.tint, borderTop: `1px ${hold ? ch.border : 'solid'} ${lineColor}`, borderBottom: `1px ${hold ? ch.border : 'solid'} ${lineColor}`, boxShadow: c.first && !hold ? `inset 3px 0 0 ${ch.color}` : undefined, borderRadius: c.first && c.last ? 6 : c.first ? '6px 0 0 6px' : c.last ? '0 6px 6px 0' : undefined, borderLeft: c.first && hold ? `1px ${ch.border} ${ch.color}` : undefined, borderRight: c.last ? `1px ${hold ? ch.border : 'solid'} ${lineColor}` : undefined }}>
                           {c.first && (
                             <span className="absolute left-3 text-[11.5px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis pointer-events-none z-[2]" style={{ maxWidth: nights * COL - 22, color: ch.ink }}>{c.b.guestName}{c.b.grossBookingValue > 0 ? ` · ${rm(c.b.grossBookingValue, { cents: false })}` : ''}</span>
@@ -333,16 +411,42 @@ export default function CalendarPage() {
           <a href="#/reservations/bookings" onClick={() => setOpenBlock(null)} className="no-underline">
             <Button variant="primary" style={{ width: '100%' }}>View booking</Button>
           </a>
+          <Button variant="secondary" style={{ width: '100%' }} onClick={() => { const b = openBlock; setOpenBlock(null); setEditDates(b); }}>Change dates</Button>
         </div>}
       </Drawer>
 
-      <Dialog spec={dialog} busy={false} onClose={() => setDialog(null)} />
+      <Dialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
       {priceModal && <SetPriceModal m={priceModal} onClose={() => setPriceModal(null)}
         onSave={rmValue => { const i = dayIndex(priceModal.dayIso); setPrice(priceModal.unit.id, priceModal.channel, i, rmValue); setPriceModal(null); }} />}
-      {blockWizard && <BlockWizard units={units} onClose={() => setBlockWizard(false)}
-        onSave={() => { setBlockWizard(false); toast({ tone: 'success', title: 'Dates blocked.', body: 'Held on every channel so the nights cannot be sold.' }); }} />}
-      {rateUpdate && <RateUpdate onClose={() => setRateUpdate(false)}
-        onSave={() => { setRateUpdate(false); toast({ tone: 'success', title: 'Rates pushed.', body: 'Applied across the selected units, channels and dates.' }); }} />}
+      {editDates && <ChangeDatesModal b={editDates} onClose={() => setEditDates(null)}
+        onSave={(ci, co) => { const b = editDates; setEditDates(null); requestMove(b, ci, co); }} />}
+      {blockWizard && <BlockWizard units={units} initial={blockPrefill} onClose={() => setBlockWizard(false)}
+        onSave={v => {
+          const clash = conflictFor(v.unitId, v.from, v.to);
+          if (clash) { toast({ tone: 'critical', title: 'Dates unavailable.', body: `${clash.guestName} already holds ${dateRange(clash.checkIn, clash.checkOut)} on this unit.` }); return; }
+          const nb: Block = { id: `blk-${Date.now()}`, unitId: v.unitId, channel: 'maintenance_block', state: 'confirmed', guestName: v.reason, checkIn: v.from, checkOut: v.to, grossBookingValue: 0, ref: null, reason: v.reason };
+          setAddedBlocks(a => [...a, nb]);
+          setBlockWizard(false);
+          api.post('/blocks', { unitId: v.unitId, from: v.from, to: v.to, reason: v.reason }).catch(() => { /* dev: no backend */ });
+          toast({ tone: 'success', title: 'Dates blocked.', body: `Held on every channel · ${dateRange(v.from, v.to)}.` });
+        }} />}
+      {rateUpdate && <RateUpdate units={units} onClose={() => setRateUpdate(false)}
+        onSave={v => {
+          setRateEdits(prev => {
+            const next = { ...prev };
+            for (let i = 0; i < span; i++) {
+              const dIso = dayIso(i);
+              if (dIso < v.from || dIso > v.to) continue;
+              for (const uid of v.unitIds) for (const ch of v.channels) {
+                next[`${uid}:${ch === 'direct' ? 'web' : ch}:${i}`] = v.priceSen;
+              }
+            }
+            return next;
+          });
+          setRateUpdate(false);
+          api.post('/rates/bulk', { unitIds: v.unitIds, channels: v.channels, from: v.from, to: v.to, baseRate: v.priceSen }).catch(() => { /* dev: no backend */ });
+          toast({ tone: 'success', title: 'Rates pushed.', body: `${v.channels.length} ${v.channels.length === 1 ? 'channel' : 'channels'} · ${v.unitIds.length} ${v.unitIds.length === 1 ? 'unit' : 'units'} · ${dateRange(v.from, v.to)}.` });
+        }} />}
     </>
   );
 }
@@ -399,32 +503,76 @@ function SetPriceModal({ m, onClose, onSave }: { m: { unit: Unit; channel: strin
     </CentreModal>
   );
 }
-function BlockWizard({ units, onClose, onSave }: { units: Unit[]; onClose: () => void; onSave: () => void }) {
-  const [unit, setUnit] = useState(units[0]?.id ?? '');
-  const [fromD, setFromD] = useState(''); const [toD, setToD] = useState(''); const [reason, setReason] = useState('');
+function ChangeDatesModal({ b, onClose, onSave }: { b: Block; onClose: () => void; onSave: (checkIn: string, checkOut: string) => void }) {
+  const [ci, setCi] = useState(b.checkIn); const [co, setCo] = useState(b.checkOut);
   return (
-    <CentreModal title="Block wizard" sub="Hold nights so no channel can sell them." onClose={onClose} saveLabel="Block dates" canSave={!!unit && fromD !== '' && toD !== '' && reason.trim() !== ''} onSave={onSave}>
+    <CentreModal title="Change dates" sub={`${b.guestName} · currently ${dateRange(b.checkIn, b.checkOut)}`} onClose={onClose} saveLabel="Review move" canSave={ci !== '' && co !== '' && co > ci} onSave={() => onSave(ci, co)}>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Check-in" type="date" value={ci} onChange={e => setCi(e.target.value)} />
+        <Field label="Check-out" type="date" value={co} onChange={e => setCo(e.target.value)} />
+      </div>
+      <p className="m-0 text-[12px] text-muted-ink">The move is availability-checked and confirmed on the next step before anything is sent.</p>
+    </CentreModal>
+  );
+}
+function BlockWizard({ units, initial, onClose, onSave }: {
+  units: Unit[]; initial: { unitId?: string; from?: string; to?: string };
+  onClose: () => void; onSave: (v: { unitId: string; from: string; to: string; reason: string }) => void;
+}) {
+  const [unit, setUnit] = useState(initial.unitId ?? units[0]?.id ?? '');
+  const [fromD, setFromD] = useState(initial.from ?? ''); const [toD, setToD] = useState(initial.to ?? ''); const [reason, setReason] = useState('');
+  const valid = !!unit && fromD !== '' && toD !== '' && toD > fromD && reason.trim() !== '';
+  return (
+    <CentreModal title="Block wizard" sub="Hold nights so no channel can sell them." onClose={onClose} saveLabel="Block dates" canSave={valid} onSave={() => onSave({ unitId: unit, from: fromD, to: toD, reason: reason.trim() })}>
       <div className="flex flex-col gap-[7px]">
         <label className="text-[12px] font-medium text-muted-ink">Unit</label>
         <select value={unit} onChange={e => setUnit(e.target.value)} className={`${selectCls} h-[44px]`}>{units.map(u => <option key={u.id} value={u.id}>{u.unitNumber} — {u.propertyName}</option>)}</select>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="From" type="date" value={fromD} onChange={e => setFromD(e.target.value)} />
-        <Field label="To" type="date" value={toD} onChange={e => setToD(e.target.value)} />
+        <Field label="To" type="date" value={toD} min={fromD || undefined} onChange={e => setToD(e.target.value)} />
       </div>
       <Field label="Reason" placeholder="e.g. Plumbing works" value={reason} onChange={e => setReason(e.target.value)} help="Required. Shown on the block and pushed to every channel as unavailable." />
     </CentreModal>
   );
 }
-function RateUpdate({ onClose, onSave }: { onClose: () => void; onSave: () => void }) {
+function RateUpdate({ units, onClose, onSave }: {
+  units: Unit[]; onClose: () => void;
+  onSave: (v: { unitIds: string[]; channels: BookingChannel[]; from: string; to: string; priceSen: number }) => void;
+}) {
+  const [unitSel, setUnitSel] = useState<Record<string, boolean>>(Object.fromEntries(units.map(u => [u.id, true])));
+  const [chanSel, setChanSel] = useState<Record<string, boolean>>({ direct: true, airbnb: true, booking_com: true, agoda: true });
   const [fromD, setFromD] = useState(''); const [toD, setToD] = useState(''); const [price, setPrice] = useState('');
+  const unitIds = units.filter(u => unitSel[u.id]).map(u => u.id);
+  const channels = PUSH.filter(c => chanSel[c]);
+  const valid = unitIds.length > 0 && channels.length > 0 && fromD !== '' && toD !== '' && toD >= fromD && price !== '' && Number(price) >= 0;
+  const pill = (on: boolean) => `inline-flex items-center gap-[6px] h-[30px] px-[11px] rounded-pill cursor-pointer [font:inherit] text-[12px] border border-solid ${on ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink'}`;
   return (
-    <CentreModal title="Rate update" sub="Apply a rate across a date range, units and channels in one push." onClose={onClose} saveLabel="Push rates" canSave={fromD !== '' && toD !== '' && price !== ''} onSave={onSave}>
+    <CentreModal title="Rate update" sub="Apply a rate across a date range, units and channels in one push." onClose={onClose} saveLabel="Push rates" canSave={valid}
+      onSave={() => onSave({ unitIds, channels, from: fromD, to: toD, priceSen: Math.round(Number(price) * 100) })}>
+      <div className="flex flex-col gap-[7px]">
+        <label className="text-[12px] font-medium text-muted-ink">Units · {unitIds.length}/{units.length}</label>
+        <div className="flex gap-2 flex-wrap">
+          {units.map(u => { const on = !!unitSel[u.id]; return (
+            <button key={u.id} type="button" aria-pressed={on} onClick={() => setUnitSel(s => ({ ...s, [u.id]: !on }))} className={pill(on)}>{u.unitNumber}</button>
+          ); })}
+        </div>
+      </div>
+      <div className="flex flex-col gap-[7px]">
+        <label className="text-[12px] font-medium text-muted-ink">Channels</label>
+        <div className="flex gap-2 flex-wrap">
+          {PUSH.map(c => { const on = !!chanSel[c]; return (
+            <button key={c} type="button" aria-pressed={on} onClick={() => setChanSel(s => ({ ...s, [c]: !on }))} className={pill(on)}>
+              <span className="w-2 h-2 rounded-full flex-none" style={{ background: CHANNEL[c].color }} />{c === 'direct' ? 'Web / Direct' : CHANNEL[c].label}
+            </button>
+          ); })}
+        </div>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="From" type="date" value={fromD} onChange={e => setFromD(e.target.value)} />
-        <Field label="To" type="date" value={toD} onChange={e => setToD(e.target.value)} />
+        <Field label="To" type="date" value={toD} min={fromD || undefined} onChange={e => setToD(e.target.value)} />
       </div>
-      <Field label="Price (RM / night)" type="number" min={0} numeric value={price} onChange={e => setPrice(e.target.value)} help="Pushed to every connected channel across the range." />
+      <Field label="Price (RM / night)" type="number" min={0} numeric value={price} onChange={e => setPrice(e.target.value)} help="Pushed to every selected channel across the range." />
     </CentreModal>
   );
 }

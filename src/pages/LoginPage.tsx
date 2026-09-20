@@ -9,7 +9,7 @@ const COPY: Record<Screen, { eyebrow: string; heading: string; sub: string; subm
   signin: { eyebrow: 'PROPERTY OS', heading: 'Sign in', sub: 'Use the work email your administrator invited.', submit: 'Sign in' },
   forgot: { eyebrow: 'ACCOUNT RECOVERY', heading: 'Reset password', sub: 'We will email you a reset link.', submit: 'Send reset link' },
   change: { eyebrow: 'FIRST SIGN-IN', heading: 'Set a new password', sub: 'Your invitation used a temporary password.', submit: 'Save and continue' },
-  reset: { eyebrow: 'ACCOUNT RECOVERY', heading: 'Set a new password', sub: 'Choose a new password for your account.', submit: 'Save and continue' },
+  reset: { eyebrow: 'ACCOUNT RECOVERY', heading: 'Set a new password', sub: 'Choose a new password for your account.', submit: 'Save and sign in' },
 };
 
 const STATS = [
