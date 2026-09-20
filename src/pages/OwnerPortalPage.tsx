@@ -178,7 +178,14 @@ export default function OwnerPortalPage() {
       <div className="flex flex-col gap-1">
         <h1 className="m-0 text-[28px] font-semibold tracking-[-0.015em]">Your property</h1>
         <span className="text-[13.5px] text-muted-ink">
-          {st.units.length ? st.units.map(u => u.label).join(' · ') : 'No units are on your account yet.'}
+          {st.units.length
+            ? st.units.map((u, i) => (
+                <span key={u.id}>
+                  {i > 0 && ' · '}
+                  <a href={`#/properties/units/${encodeURIComponent(u.id)}`} className="no-underline text-inherit!">{u.label}</a>
+                </span>
+              ))
+            : 'No units are on your account yet.'}
         </span>
       </div>
 

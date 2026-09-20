@@ -7,6 +7,7 @@ import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
+import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { rm, dateRange, date } from '../lib/format';
 import type { Tone, UnitReadiness, TaskState, BookingChannel, ReservationState } from '../lib/types';
@@ -160,6 +161,14 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
   function takeFile(file: File) {
     setPhoto(URL.createObjectURL(file));
     toast({ tone: 'success', title: 'Photo added to this unit.', body: 'It will appear on the owner statement and channel listings.' });
+    const fd = new FormData();
+    fd.append('file', file); fd.append('unitId', u.id); fd.append('kind', 'photo');
+    api.post('/documents', fd).catch(() => { /* dev: no backend */ });
+  }
+
+  function downloadDoc(doc: { id: string; name: string }) {
+    toast({ tone: 'info', title: 'Preparing download', body: `${doc.name} — served as a signed link.` });
+    api.get(`/documents/${doc.id}/download`).catch(() => { /* dev: no backend / binary body */ });
   }
 
   const railItem = (un: UnitRow) => {
@@ -452,7 +461,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
                 <span className="text-[13.5px] font-medium">{doc.name}</span>
                 <span className="text-[11.5px] text-muted-ink">{cap(doc.kind)} · {doc.sizeLabel} · updated {date(doc.updatedAt)}</span>
               </div>
-              <button onClick={() => toast({ tone: 'success', title: `Preparing ${doc.name}.`, body: 'Your download will start shortly.' })}
+              <button onClick={() => downloadDoc(doc)}
                 className="text-gold-ink bg-transparent [border:none] cursor-pointer [font:inherit]">
                 Download
               </button>

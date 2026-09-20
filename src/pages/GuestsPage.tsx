@@ -46,6 +46,8 @@ interface Guest {
   stays: number; nights: number; lifetimeValue: number; ratingScore: number | null;
   history: Stay[];
   movement?: GuestMovement;
+  /** Internal operations notes, when the payload carries them. Ops roles only. */
+  notes?: string | null;
 }
 
 interface Payload { data: Guest[]; total: number; generatedAt: string }
@@ -474,6 +476,22 @@ function ProfilePanel({ g, canSeeContact, onMessage, onBookAgain, onPrepare, onS
         ) : (
           <span className="text-[12.5px] text-faint">
             Guest contact details are visible to operations roles only. Field roles see the guest name where a task requires it.
+          </span>
+        )}
+      </div>
+
+      {/* operations notes — internal, restricted to operations roles like contact */}
+      <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-2">
+        <span className="text-[16px] font-semibold">Operations notes</span>
+        {canSeeContact ? (
+          g.notes ? (
+            <span className="text-[13px] [text-wrap:pretty]">{g.notes}</span>
+          ) : (
+            <span className="text-[12.5px] text-muted-ink">No operations notes.</span>
+          )
+        ) : (
+          <span className="text-[12.5px] text-faint">
+            Operations notes are visible to operations roles only.
           </span>
         )}
       </div>
