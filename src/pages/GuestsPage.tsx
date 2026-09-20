@@ -1,5 +1,5 @@
-import { useMemo, useState, type FormEvent, type ReactNode, type CSSProperties } from 'react';
-import { color, radius, text, channel, shell } from '../theme';
+import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { color, channel } from '../theme';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
@@ -7,6 +7,7 @@ import { Dialog } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { StaleBanner } from '../components/DataState';
 import Icon from '../components/Icon';
+import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
@@ -276,14 +277,14 @@ export default function GuestsPage() {
 
       {error && <StaleBanner message={`Showing the last guest list we have. ${error}`} onRetry={reload} />}
 
-      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap', maxWidth: shell.contentMax }}>
+      <div className="flex gap-5 items-start flex-wrap max-w-[1600px]">
         {/* -------- left: directory list -------- */}
-        <div style={{ flex: '1 1 320px', minWidth: 280, maxWidth: 440, background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, overflow: 'hidden' }}>
-          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', flexDirection: 'column', gap: 11 }}>
-            <span style={{ fontSize: text.small, color: color.textMuted }}>
+        <div className="flex-[1_1_320px] min-w-[280px] max-w-[440px] bg-card border border-solid border-line rounded-card overflow-hidden">
+          <div className="py-[14px] px-[18px] [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-[11px]">
+            <span className="text-[12px] text-muted-ink">
               {total.toLocaleString('en-MY')} guests · {rows.length} shown
             </span>
-            <div role="tablist" aria-label="Filter guests" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <div role="tablist" aria-label="Filter guests" className="flex gap-[6px] flex-wrap">
               {FILTERS.map(f => {
                 const on = f.key === filter;
                 const n = counts[f.key];
@@ -291,24 +292,22 @@ export default function GuestsPage() {
                   <button
                     key={f.key} role="tab" aria-selected={on}
                     onClick={() => { setFilter(f.key); setSelectedId(null); }}
-                    style={{
-                      height: 28, display: 'inline-flex', alignItems: 'center', gap: 5, padding: '0 11px',
-                      borderRadius: radius.pill, fontSize: 12, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', font: 'inherit',
-                      border: `1px solid ${on ? color.black : color.border}`,
-                      background: on ? color.black : color.card, color: on ? '#FFFFFF' : color.textMuted,
-                    }}
+                    className={cx(
+                      'h-7 inline-flex items-center gap-[5px] px-[11px] py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border border-solid',
+                      on ? 'border-black bg-black text-white' : 'border-line bg-card text-muted-ink',
+                    )}
                   >
                     {f.label}
-                    {f.key !== 'all' && <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.85 }}>{n}</span>}
+                    {f.key !== 'all' && <span className="[font-variant-numeric:tabular-nums] opacity-85">{n}</span>}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          <div style={{ maxHeight: 640, overflowY: 'auto' }}>
+          <div className="max-h-[640px] overflow-y-auto">
             {rows.length === 0 ? (
-              <div style={{ padding: '24px 18px', fontSize: 13, color: color.textMuted }}>No guests match this filter.</div>
+              <div className="py-6 px-[18px] text-[13px] text-muted-ink">No guests match this filter.</div>
             ) : (
               rows.map(g => (
                 <GuestRow
@@ -321,7 +320,7 @@ export default function GuestsPage() {
         </div>
 
         {/* -------- right: guest profile -------- */}
-        <div style={{ flex: '1.6 1 460px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div className="flex-[1.6_1_460px] min-w-0 flex flex-col gap-[18px]">
           {selected ? (
             <ProfilePanel
               g={selected} canSeeContact={canSeeContact}
@@ -333,7 +332,7 @@ export default function GuestsPage() {
               onCheckOut={() => setCheckout(selected)}
             />
           ) : (
-            <div style={{ padding: '40px 22px', background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, fontSize: 13, color: color.textMuted }}>
+            <div className="py-10 px-[22px] bg-card border border-solid border-line rounded-card text-[13px] text-muted-ink">
               Select a guest to see their profile.
             </div>
           )}
@@ -374,24 +373,21 @@ function GuestRow({ g, selected, canSeeContact, onSelect }: {
     <button
       onClick={onSelect}
       aria-current={selected}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', font: 'inherit',
-        minHeight: 62, padding: '11px 16px', border: 'none', cursor: 'pointer',
-        borderBottom: `1px solid ${color.borderMuted}`,
-        background: selected ? color.goldTint : color.card,
-        boxShadow: selected ? `inset 3px 0 0 ${color.gold}` : 'none',
-      }}
+      className={cx(
+        'flex items-center gap-3 w-full text-left [font:inherit] min-h-[62px] py-[11px] px-4 cursor-pointer [border-top:0] [border-right:0] [border-left:0] [border-bottom:1px_solid_var(--color-line-soft)]',
+        selected ? 'bg-gold-tint shadow-[inset_3px_0_0_var(--color-gold)]' : 'bg-card shadow-none',
+      )}
     >
-      <span style={{ width: 34, height: 34, flex: 'none', borderRadius: 999, background: color.muted, color: color.textMuted, display: 'grid', placeItems: 'center', fontSize: text.small, fontWeight: 600 }}>
+      <span className="w-[34px] h-[34px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-[12px] font-semibold">
         {initials(g.fullName)}
       </span>
-      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
-        <span style={{ fontSize: 13.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.fullName}</span>
-        <span style={{ fontSize: 11.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{meta}</span>
+      <span className="flex flex-col gap-[2px] min-w-0 flex-1">
+        <span className="text-[13.5px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{g.fullName}</span>
+        <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{meta}</span>
       </span>
-      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flex: 'none' }}>
+      <span className="flex flex-col items-end gap-1 flex-none">
         <Badge tone={g.tag.tone} label={g.tag.label} size="sm" />
-        <span style={{ fontSize: 11.5, color: color.textMuted }}>{g.stays} {g.stays === 1 ? 'stay' : 'stays'}</span>
+        <span className="text-[11.5px] text-muted-ink">{g.stays} {g.stays === 1 ? 'stay' : 'stays'}</span>
       </span>
     </button>
   );
@@ -412,28 +408,28 @@ function ProfilePanel({ g, canSeeContact, onMessage, onBookAgain, onPrepare, onS
   return (
     <>
       {/* header + stats card */}
-      <div style={{ background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, padding: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
-            <span style={{ width: 46, height: 46, flex: 'none', borderRadius: 999, background: color.muted, color: color.textMuted, display: 'grid', placeItems: 'center', fontSize: 16, fontWeight: 600 }}>
+      <div className="bg-card border border-solid border-line rounded-card p-[22px] flex flex-col gap-[18px]">
+        <div className="flex items-start justify-between gap-[18px] flex-wrap">
+          <div className="flex items-center gap-[14px] min-w-0">
+            <span className="w-[46px] h-[46px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-[16px] font-semibold">
               {initials(g.fullName)}
             </span>
-            <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <h2 style={{ margin: 0, fontSize: 20, lineHeight: 1.25, fontWeight: 600 }}>{g.fullName}</h2>
-              <span style={{ fontSize: 12, color: color.textMuted }}>{contact}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', paddingTop: 2 }}>
+            <div className="min-w-0 flex flex-col gap-[3px]">
+              <h2 className="m-0 text-[20px] leading-[1.25] font-semibold">{g.fullName}</h2>
+              <span className="text-[12px] text-muted-ink">{contact}</span>
+              <div className="flex items-center gap-[7px] flex-wrap pt-[2px]">
                 <Badge tone={g.tag.tone} label={g.tag.label} size="sm" />
-                <span style={{ fontSize: 11.5, color: color.textMuted }}>{g.since}</span>
+                <span className="text-[11.5px] text-muted-ink">{g.since}</span>
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div className="flex gap-2 flex-wrap">
             <Button size="md" variant="secondary" icon={<Icon name="MessageSquare" size="sm" />} onClick={onMessage}>Message</Button>
             <Button size="md" variant="primary" onClick={onBookAgain}>Book again</Button>
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 14, paddingTop: 16, borderTop: `1px solid ${color.borderMuted}` }}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-[14px] pt-4 [border-top:1px_solid_var(--color-line-soft)]">
           <Stat label="Stays" value={String(g.stays)} />
           <Stat label="Nights" value={String(g.nights)} />
           <Stat label="Lifetime value" value={rm(g.lifetimeValue, { cents: false })} />
@@ -445,22 +441,22 @@ function ProfilePanel({ g, canSeeContact, onMessage, onBookAgain, onPrepare, onS
       {g.movement && <MovementStrip g={g} onPrepare={onPrepare} onSendAccess={onSendAccess} onCheckIn={onCheckIn} onCheckOut={onCheckOut} />}
 
       {/* stay history */}
-      <div style={{ background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, overflow: 'hidden' }}>
-        <div style={{ padding: '16px 20px', borderBottom: `1px solid ${color.borderMuted}`, fontSize: text.cardTitle, fontWeight: 600 }}>Stay history</div>
+      <div className="bg-card border border-solid border-line rounded-card overflow-hidden">
+        <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-[16px] font-semibold">Stay history</div>
         {g.history.length === 0 ? (
-          <div style={{ padding: '18px 20px', fontSize: 12.5, color: color.textMuted }}>This is their first stay.</div>
+          <div className="py-[18px] px-5 text-[12.5px] text-muted-ink">This is their first stay.</div>
         ) : (
           g.history.map((s, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 20px', borderBottom: i < g.history.length - 1 ? `1px solid ${color.borderMuted}` : 'none', flexWrap: 'wrap' }}>
-              <span aria-hidden style={{ width: 44, height: 44, flex: 'none', borderRadius: radius.sm, background: color.muted, display: 'grid', placeItems: 'center' }}>
+            <div key={i} className={cx('flex items-center gap-[14px] py-[13px] px-5 flex-wrap', i < g.history.length - 1 ? '[border-bottom:1px_solid_var(--color-line-soft)]' : '')}>
+              <span aria-hidden className="w-[44px] h-[44px] flex-none rounded-[6px] bg-muted grid place-items-center">
                 <Icon name="Image" size="sm" color={color.faint} />
               </span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 140, flex: 1 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 500 }}>{s.propertyName} {s.unitNumber}</span>
-                <span style={{ fontSize: 11.5, color: color.textMuted }}>{dateRange(s.checkIn, s.checkOut)} · {fmtNights(s.nights)}</span>
+              <div className="flex flex-col gap-[2px] min-w-[140px] flex-1">
+                <span className="text-[13.5px] font-medium">{s.propertyName} {s.unitNumber}</span>
+                <span className="text-[11.5px] text-muted-ink">{dateRange(s.checkIn, s.checkOut)} · {fmtNights(s.nights)}</span>
               </div>
               <ChannelChip ch={s.channel} />
-              <span style={{ fontSize: 13, fontWeight: 500, width: 92, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{rm(s.value, { cents: false })}</span>
+              <span className="text-[13px] font-medium w-[92px] text-right [font-variant-numeric:tabular-nums]">{rm(s.value, { cents: false })}</span>
               <Badge tone={RESERVATION[s.state].tone} label={RESERVATION[s.state].label} size="sm" />
             </div>
           ))
@@ -468,15 +464,15 @@ function ProfilePanel({ g, canSeeContact, onMessage, onBookAgain, onPrepare, onS
       </div>
 
       {/* contact / notes footnote */}
-      <div style={{ background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <span style={{ fontSize: text.cardTitle, fontWeight: 600 }}>Contact</span>
+      <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-2">
+        <span className="text-[16px] font-semibold">Contact</span>
         {canSeeContact ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <span style={{ fontSize: 13 }}>{g.email ?? '—'}</span>
-            <span style={{ fontSize: 13, color: color.textMuted }}>{g.phone ?? '—'}</span>
+          <div className="flex flex-col gap-[3px]">
+            <span className="text-[13px]">{g.email ?? '—'}</span>
+            <span className="text-[13px] text-muted-ink">{g.phone ?? '—'}</span>
           </div>
         ) : (
-          <span style={{ fontSize: 12.5, color: color.faint }}>
+          <span className="text-[12.5px] text-faint">
             Guest contact details are visible to operations roles only. Field roles see the guest name where a task requires it.
           </span>
         )}
@@ -498,22 +494,22 @@ function MovementStrip({ g, onPrepare, onSendAccess, onCheckIn, onCheckOut }: {
   const checkedOut = m.state === 'checked_out';
 
   return (
-    <div style={{ background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+    <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-[14px]">
+      <div className="flex items-center gap-3 flex-wrap">
         <ChannelMarkStub ch={m.channel} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
-          <span style={{ fontSize: 14, fontWeight: 600 }}>{heading}</span>
-          <span style={{ fontSize: 11.5, color: color.textMuted }}>
+        <div className="flex flex-col gap-[2px] min-w-0 flex-1">
+          <span className="text-[14px] font-semibold">{heading}</span>
+          <span className="text-[11.5px] text-muted-ink">
             {m.propertyName} {m.unitNumber} · {fmtGuests(m.guestsCount)} · {fmtNights(m.nights)}
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+        <div className="flex items-center gap-[7px]">
           <Badge tone={RESERVATION[m.state].tone} label={RESERVATION[m.state].label} size="sm" />
           <Badge tone={READINESS[m.readiness].tone} label={READINESS[m.readiness].label} size="sm" />
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <div className="flex items-center gap-2 flex-wrap">
         {arrival && !checkedIn && (
           <>
             <Button size="sm" variant="tertiary" onClick={onPrepare} disabled={!!m.preparedAt} disabledReason="Arrival is already prepared.">Prepare early</Button>
@@ -523,7 +519,7 @@ function MovementStrip({ g, onPrepare, onSendAccess, onCheckIn, onCheckOut }: {
             {m.accessSentAt && !m.preparedAt && <Chip label="Access sent" />}
           </>
         )}
-        {arrival && checkedIn && <span style={{ fontSize: text.small, color: color.textMuted }}>Checked in.</span>}
+        {arrival && checkedIn && <span className="text-[12px] text-muted-ink">Checked in.</span>}
         {!arrival && (
           <Button size="sm" variant="secondary" onClick={onCheckOut} disabled={checkedOut} disabledReason="Guest is already checked out.">
             {checkedOut ? 'Checked out' : 'Mark checked out'}
@@ -540,7 +536,9 @@ function ChannelMarkStub({ ch }: { ch: BookingChannel }) {
   const two = c.glyph.length > 1;
   const px = Math.max(11, two ? 9 : 12);
   return (
-    <span aria-hidden style={{ width: 24, height: 24, flex: 'none', borderRadius: 7, display: 'grid', placeItems: 'center', lineHeight: 1, fontWeight: 700, fontSize: px, letterSpacing: two ? '-0.03em' : 0, background: c.fill, color: c.markInk }}>
+    <span aria-hidden
+      className="w-[24px] h-[24px] flex-none rounded-[7px] grid place-items-center leading-none font-bold"
+      style={{ fontSize: px, letterSpacing: two ? '-0.03em' : 0, background: c.fill, color: c.markInk }}>
       {c.glyph}
     </span>
   );
@@ -549,7 +547,9 @@ function ChannelMarkStub({ ch }: { ch: BookingChannel }) {
 function ChannelChip({ ch }: { ch: BookingChannel }) {
   const c = channel[ch];
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', height: 22, padding: '0 9px', borderRadius: radius.pill, background: c.tint, color: c.ink, border: `1px solid ${color.border}`, fontSize: text.micro, fontWeight: 600, whiteSpace: 'nowrap' }}>
+    <span
+      className="inline-flex items-center h-[22px] px-[9px] py-0 rounded-full border border-solid border-line text-[11px] font-semibold whitespace-nowrap"
+      style={{ background: c.tint, color: c.ink }}>
       {c.label}
     </span>
   );
@@ -557,16 +557,16 @@ function ChannelChip({ ch }: { ch: BookingChannel }) {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <span style={{ fontSize: 11.5, color: color.textMuted }}>{label}</span>
-      <span style={{ fontSize: 19, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+    <div className="flex flex-col gap-[3px]">
+      <span className="text-[11.5px] text-muted-ink">{label}</span>
+      <span className="text-[19px] font-semibold [font-variant-numeric:tabular-nums]">{value}</span>
     </div>
   );
 }
 
 function Chip({ label }: { label: string }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', height: 22, padding: '0 9px', borderRadius: radius.pill, background: color.goldTint, color: color.goldInk, border: `1px solid ${color.gold200}`, fontSize: text.micro, fontWeight: 600 }}>
+    <span className="inline-flex items-center h-[22px] px-[9px] py-0 rounded-full bg-gold-tint text-gold-ink border border-solid border-[var(--color-gold-200)] text-[11px] font-semibold">
       {label}
     </span>
   );
@@ -576,22 +576,22 @@ function Chip({ label }: { label: string }) {
 /* Modals                                                              */
 /* ------------------------------------------------------------------ */
 
-const inputStyle: CSSProperties = {
-  display: 'block', width: '100%', boxSizing: 'border-box', height: 40, padding: '0 12px',
-  fontSize: text.body, color: color.ink, background: '#FFFFFF',
-  border: `1px solid ${color.border}`, borderRadius: radius.control, outline: 'none', font: 'inherit',
-};
-const labelStyle: CSSProperties = { fontSize: text.small, fontWeight: 500, color: color.textMuted };
+/** Shared field visuals minus height/padding, so per-control sizing composes cleanly.
+ *  `font:inherit` (last shorthand) intentionally resets the size/weight to the
+ *  inherited 16px / 400 — the controls genuinely render at that, not text-body. */
+const fieldBase = 'block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit]';
+const inputClass = cx(fieldBase, 'h-10 px-3 py-0');
+const labelClass = 'text-[12px] font-medium text-muted-ink';
 
 function ModalShell({ title, sub, onClose, children }: { title: string; sub?: string; onClose: () => void; children: ReactNode }) {
   return (
     <div role="dialog" aria-modal="true" aria-label={title}
-      style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24, background: 'var(--color-surface-scrim)', animation: 'fade-in var(--motion-standard) var(--ease-out) both' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div style={{ position: 'relative', width: '100%', maxWidth: 460, background: '#FFFFFF', borderRadius: radius.card, boxShadow: 'var(--shadow-overlay)', overflow: 'hidden', animation: 'dialog-in var(--motion-slow) var(--ease-out) both' }}>
-        <div style={{ padding: '20px 22px 6px' }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{title}</h2>
-          {sub && <p style={{ margin: '6px 0 0', fontSize: 13, color: color.textMuted }}>{sub}</p>}
+      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      <div onClick={onClose} className="absolute inset-0" />
+      <div className="relative w-full max-w-[460px] bg-white rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
+        <div className="pt-5 px-[22px] pb-[6px]">
+          <h2 className="m-0 text-[18px] font-semibold">{title}</h2>
+          {sub && <p className="mt-[6px] mx-0 mb-0 text-[13px] text-muted-ink">{sub}</p>}
         </div>
         {children}
       </div>
@@ -603,14 +603,14 @@ function MessageModal({ g, onClose, onSend }: { g: Guest; onClose: () => void; o
   const [body, setBody] = useState('');
   return (
     <ModalShell title={`Message ${g.fullName}`} sub={`Thread opens on ${threadName(g.channel)}.`} onClose={onClose}>
-      <form onSubmit={(e: FormEvent) => { e.preventDefault(); if (body.trim()) onSend(body.trim()); }} style={{ padding: '12px 22px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label htmlFor="msg-body" style={labelStyle}>Message</label>
+      <form onSubmit={(e: FormEvent) => { e.preventDefault(); if (body.trim()) onSend(body.trim()); }} className="pt-3 px-[22px] pb-5 flex flex-col gap-[14px]">
+        <div className="flex flex-col gap-[6px]">
+          <label htmlFor="msg-body" className={labelClass}>Message</label>
           <textarea id="msg-body" required value={body} onChange={e => setBody(e.target.value)} rows={4}
             placeholder={`Hi ${g.fullName.split(' ')[0]}, checking in on your upcoming stay…`}
-            style={{ ...inputStyle, height: 'auto', padding: '10px 12px', resize: 'vertical' }} />
+            className={cx(fieldBase, 'p-[10px_12px] resize-y')} />
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9 }}>
+        <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button type="submit" size="sm" variant="primary" disabled={!body.trim()} disabledReason="Write a message first.">Send message</Button>
         </div>
@@ -646,35 +646,35 @@ function AddGuestModal({ onClose, onAdd }: {
 
   return (
     <ModalShell title="Add guest" sub="For walk-ins and direct bookings. Placed in today’s arrivals." onClose={onClose}>
-      <form onSubmit={submit} style={{ padding: '12px 22px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label htmlFor="ag-name" style={labelStyle}>Full name</label>
-          <input id="ag-name" required value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" style={inputStyle} />
+      <form onSubmit={submit} className="pt-3 px-[22px] pb-5 flex flex-col gap-[14px]">
+        <div className="flex flex-col gap-[6px]">
+          <label htmlFor="ag-name" className={labelClass}>Full name</label>
+          <input id="ag-name" required value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" className={inputClass} />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label htmlFor="ag-phone" style={labelStyle}>Phone</label>
-            <input id="ag-phone" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+60 12-345 6789" style={inputStyle} />
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+          <div className="flex flex-col gap-[6px]">
+            <label htmlFor="ag-phone" className={labelClass}>Phone</label>
+            <input id="ag-phone" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+60 12-345 6789" className={inputClass} />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label htmlFor="ag-email" style={labelStyle}>Email</label>
-            <input id="ag-email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com" style={inputStyle} />
+          <div className="flex flex-col gap-[6px]">
+            <label htmlFor="ag-email" className={labelClass}>Email</label>
+            <input id="ag-email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com" className={inputClass} />
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label htmlFor="ag-unit" style={labelStyle}>Unit</label>
-            <select id="ag-unit" value={unitNumber} onChange={e => setUnitNumber(e.target.value)} style={inputStyle}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+          <div className="flex flex-col gap-[6px]">
+            <label htmlFor="ag-unit" className={labelClass}>Unit</label>
+            <select id="ag-unit" value={unitNumber} onChange={e => setUnitNumber(e.target.value)} className={inputClass}>
               {UNITS.map(u => <option key={u.unitNumber} value={u.unitNumber}>{u.propertyName} {u.unitNumber}</option>)}
             </select>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label htmlFor="ag-guests" style={labelStyle}>Guests</label>
+          <div className="flex flex-col gap-[6px]">
+            <label htmlFor="ag-guests" className={labelClass}>Guests</label>
             <input id="ag-guests" type="number" min={1} max={12} value={guestsCount}
-              onChange={e => setGuestsCount(Math.max(1, Number(e.target.value) || 1))} style={{ ...inputStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />
+              onChange={e => setGuestsCount(Math.max(1, Number(e.target.value) || 1))} className={cx(inputClass, 'text-right [font-variant-numeric:tabular-nums]!')} />
           </div>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9 }}>
+        <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button type="submit" size="sm" variant="primary" disabled={!fullName.trim()} disabledReason="A name is required.">Add guest</Button>
         </div>

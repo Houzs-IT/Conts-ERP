@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { color, radius, text, channel as CH } from '../theme';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -12,6 +11,7 @@ import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
 import { rm, dateRange } from '../lib/format';
+import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { Tone, BookingChannel, ReservationState } from '../lib/types';
 
 const STATE_TONE: Record<ReservationState, Tone> = {
@@ -55,7 +55,7 @@ const FILTERS = [
 type FilterKey = typeof FILTERS[number]['key'];
 const TODAY = '2026-09-16';
 
-const COLS = 'minmax(140px,1.2fr) minmax(150px,1.4fr) minmax(150px,1.2fr) minmax(96px,0.7fr) minmax(140px,1.1fr) minmax(96px,0.8fr) minmax(96px,0.8fr)';
+const COLS = 'grid-cols-[minmax(140px,1.2fr)_minmax(150px,1.4fr)_minmax(150px,1.2fr)_minmax(96px,0.7fr)_minmax(140px,1.1fr)_minmax(96px,0.8fr)_minmax(96px,0.8fr)]';
 
 function feeLines(r: Row) {
   const pct = FEE_PCT[r.channel] ?? 0;
@@ -116,14 +116,14 @@ export default function BookingsPage() {
     });
   }
   function message(r: Row) {
-    const ch = r.channel === 'direct' ? 'WhatsApp' : CH[r.channel].label;
+    const ch = r.channel === 'direct' ? 'WhatsApp' : CHANNEL_META[r.channel].label;
     toast({ tone: 'success', title: 'Message guest', body: `Opening the ${ch} thread with ${r.guestName}.` });
   }
 
   return (
     <>
       <PageHeader title="Bookings" sub={`${data?.total ?? rows.length} reservations`}
-        right={<div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+        right={<div className="flex gap-[9px] flex-wrap">
           <Button size="sm" variant="secondary" icon={<Icon name="Upload" size="sm" />} onClick={() => toast({ tone: 'info', title: 'Import reservations', body: 'CSV import returns per-row accepted / rejected.' })}>Import</Button>
           <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => toast({ tone: 'info', title: 'Export', body: 'CSV header prints the applied filters, generated time and scope.' })}>Download CSV</Button>
           <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => toast({ tone: 'info', title: 'Create reservation', body: 'Manual entry with the same validation as the calendar.' })}>Create reservation</Button>
@@ -132,49 +132,51 @@ export default function BookingsPage() {
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <Card>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '12px 22px', borderBottom: `1px solid ${color.border}` }}>
+        <div className="flex gap-2 flex-wrap py-3 px-[22px] [border-bottom:1px_solid_var(--color-line)]">
           {FILTERS.map(f => {
             const on = filter === f.key;
             return (
               <button key={f.key} onClick={() => setFilter(f.key)}
-                style={{ height: 32, padding: '0 13px', borderRadius: radius.pill, cursor: 'pointer', font: 'inherit', fontSize: 12.5, fontWeight: on ? 600 : 500,
-                  border: `1px solid ${on ? 'transparent' : color.border}`, background: on ? color.black : color.page, color: on ? '#FFFFFF' : color.textMuted }}>
+                className={cx(
+                  'h-8 px-[13px] py-0 rounded-pill cursor-pointer [font-family:inherit] text-[12.5px] border border-solid',
+                  on ? 'font-semibold border-transparent bg-black text-white' : 'font-medium border-line bg-page text-muted-ink',
+                )}>
                 {f.label}
               </button>
             );
           })}
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: 960 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, padding: '9px 22px', background: color.muted, borderBottom: `1px solid ${color.border}`, fontSize: text.small, fontWeight: 600, color: color.textMuted }}>
-              <div>Reference</div><div>Guest</div><div>Unit</div><div>Channel</div><div>Stay</div><div style={{ textAlign: 'right' }}>Gross</div><div>Status</div>
+        <div className="overflow-x-auto">
+          <div className="min-w-[960px]">
+            <div className={cx(COLS, 'grid gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink')}>
+              <div>Reference</div><div>Guest</div><div>Unit</div><div>Channel</div><div>Stay</div><div className="text-right">Gross</div><div>Status</div>
             </div>
             {loading && rows.length === 0 ? <TableSkeleton rows={6} cols={7} /> : shown.length === 0 ? (
-              <div style={{ padding: '34px 22px', textAlign: 'center', fontSize: 13.5, color: color.textMuted }}>No reservations match this filter.</div>
+              <div className="py-[34px] px-[22px] text-center text-[13.5px] text-muted-ink">No reservations match this filter.</div>
             ) : shown.map(b => {
-              const ch = CH[b.channel];
+              const ch = CHANNEL_META[b.channel];
               return (
                 <div key={b.id} role="button" tabIndex={0} onClick={() => setOpenId(b.id)}
                   onKeyDown={e => { if (e.key === 'Enter') setOpenId(b.id); }}
-                  style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, alignItems: 'center', minHeight: 54, padding: '9px 22px', borderBottom: `1px solid ${color.borderMuted}`, cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                  className={cx(COLS, 'grid gap-[14px] items-center min-h-[54px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer')}>
+                  <div className="flex items-center gap-[9px] min-w-0">
                     <ChannelMark ch={b.channel} size={20} />
-                    <span style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.externalRef ?? '—'}</span>
+                    <span className="font-mono text-[12px] whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? '—'}</span>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.guestName}</span>
-                    <span style={{ fontSize: 11.5, color: color.textMuted }}>{b.guestsCount > 0 ? `${b.guestsCount} guests` : 'No guest'}</span>
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{b.guestName}</span>
+                    <span className="text-[11.5px] text-muted-ink">{b.guestsCount > 0 ? `${b.guestsCount} guests` : 'No guest'}</span>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13 }}>{b.unitNumber}</span>
-                    <span style={{ fontSize: 11.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.propertyName}</span>
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[13px]">{b.unitNumber}</span>
+                    <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.propertyName}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', height: 22, padding: '0 9px', borderRadius: radius.pill, background: ch.tint, color: ch.ink, fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{ch.label}</span>
+                    <span className="inline-flex items-center h-[22px] px-[9px] rounded-pill text-[11.5px] font-semibold whitespace-nowrap" style={{ background: ch.tint, color: ch.ink }}>{ch.label}</span>
                   </div>
-                  <div style={{ fontSize: 12.5 }}>{dateRange(b.checkIn, b.checkOut)}</div>
-                  <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 500 }}>{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</div>
+                  <div className="text-[12.5px]">{dateRange(b.checkIn, b.checkOut)}</div>
+                  <div className="text-right text-[13px] font-medium">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</div>
                   <div><Badge tone={STATE_TONE[b.state]} label={STATE_LABEL[b.state]} /></div>
                 </div>
               );
@@ -194,7 +196,7 @@ export default function BookingsPage() {
 function ReservationPanel({ r, onClose, onMessage, onChangeDates, onCancel }: {
   r: Row; onClose: () => void; onMessage: () => void; onChangeDates: () => void; onCancel: () => void;
 }) {
-  const ch = CH[r.channel];
+  const ch = CHANNEL_META[r.channel];
   const f = feeLines(r);
   const cancelled = r.state === 'cancelled';
   const steps = [
@@ -212,64 +214,64 @@ function ReservationPanel({ r, onClose, onMessage, onChangeDates, onCancel }: {
 
   return (
     <>
-      <div style={{ position: 'relative', height: 132, background: color.black, flex: 'none', display: 'flex', alignItems: 'flex-end' }}>
-        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: 'rgba(255,255,255,0.25)' }}><Icon name="Image" /></div>
-        <button onClick={onClose} aria-label="Close" style={{ position: 'absolute', top: 12, right: 12, width: 30, height: 30, display: 'grid', placeItems: 'center', borderRadius: radius.pill, background: 'rgba(0,0,0,0.4)', border: 'none', color: '#FFF', cursor: 'pointer' }}><Icon name="X" size="sm" /></button>
-        <div style={{ position: 'relative', padding: 18, display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="relative h-[132px] bg-black flex-none flex items-end">
+        <div className="absolute inset-0 grid place-items-center text-[rgba(255,255,255,0.25)]"><Icon name="Image" /></div>
+        <button onClick={onClose} aria-label="Close" className="absolute top-3 right-3 w-[30px] h-[30px] grid place-items-center rounded-pill bg-[rgba(0,0,0,0.4)] [border:none] text-white cursor-pointer"><Icon name="X" size="sm" /></button>
+        <div className="relative p-[18px] flex items-center gap-[10px]">
           <ChannelMark ch={r.channel} size={22} />
-          <span style={{ color: '#FFF', fontSize: 13, fontWeight: 600 }}>{r.unitNumber}</span>
-          <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>{r.propertyName}</span>
+          <span className="text-white text-[13px] font-semibold">{r.unitNumber}</span>
+          <span className="text-[rgba(255,255,255,0.7)] text-[12px]">{r.propertyName}</span>
         </div>
       </div>
 
-      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 20, flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <div className="p-5 flex flex-col gap-5 flex-1">
+        <div className="flex items-center gap-[10px] flex-wrap">
           <Badge tone={STATE_TONE[r.state]} label={STATE_LABEL[r.state]} />
-          <span style={{ display: 'inline-flex', alignItems: 'center', height: 22, padding: '0 9px', borderRadius: radius.pill, background: ch.tint, color: ch.ink, fontSize: 11.5, fontWeight: 600 }}>{ch.label}</span>
-          <span style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: 12, color: color.textMuted }}>{r.externalRef}</span>
+          <span className="inline-flex items-center h-[22px] px-[9px] rounded-pill text-[11.5px] font-semibold" style={{ background: ch.tint, color: ch.ink }}>{ch.label}</span>
+          <span className="font-mono text-[12px] text-muted-ink">{r.externalRef}</span>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: color.border, border: `1px solid ${color.border}`, borderRadius: radius.card, overflow: 'hidden' }}>
+        <div className="grid grid-cols-2 gap-px bg-line border border-solid border-line rounded-card overflow-hidden">
           {[
             [`${r.checkIn} · ${r.checkInTime}`, 'Check-in'],
             [`${r.checkOut} · ${r.checkOutTime}`, 'Check-out'],
             [`${r.nights}`, 'Nights'],
             [`${r.guestsCount || '—'}`, 'Guests'],
           ].map(([v, l]) => (
-            <div key={l} style={{ background: '#FFF', padding: '11px 13px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{v}</span>
-              <span style={{ fontSize: 11, color: color.textMuted }}>{l}</span>
+            <div key={l} className="bg-card py-[11px] px-[13px] flex flex-col gap-0.5">
+              <span className="text-[13px] font-semibold">{v}</span>
+              <span className="text-[11px] text-muted-ink">{l}</span>
             </div>
           ))}
         </div>
 
         {r.grossBookingValue > 0 && (
-          <div style={{ border: `1px solid ${color.border}`, borderRadius: radius.card, overflow: 'hidden' }}>
+          <div className="border border-solid border-line rounded-card overflow-hidden">
             {money.map(m => (
-              <div key={m.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '10px 14px', borderBottom: `1px solid ${color.borderMuted}` }}>
-                <span style={{ fontSize: 12.5, color: color.textMuted }}>{m.label}</span>
-                <span style={{ fontSize: 12.5, fontVariantNumeric: 'tabular-nums' }}>{m.sign} {m.value}</span>
+              <div key={m.label} className="flex justify-between gap-3 py-[10px] px-[14px] [border-bottom:1px_solid_var(--color-line-soft)]">
+                <span className="text-[12.5px] text-muted-ink">{m.label}</span>
+                <span className="text-[12.5px] [font-variant-numeric:tabular-nums]">{m.sign} {m.value}</span>
               </div>
             ))}
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '11px 14px', background: color.muted }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>Collected revenue</span>
-              <span style={{ fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{rm(f.collected)}</span>
+            <div className="flex justify-between gap-3 py-[11px] px-[14px] bg-muted">
+              <span className="text-[13px] font-semibold">Collected revenue</span>
+              <span className="text-[13px] font-semibold [font-variant-numeric:tabular-nums]">{rm(f.collected)}</span>
             </div>
           </div>
         )}
 
         <div>
-          <div style={{ fontSize: text.small, fontWeight: 600, color: color.textMuted, marginBottom: 12 }}>Timeline</div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="text-[12px] font-semibold text-muted-ink mb-3">Timeline</div>
+          <div className="flex flex-col">
             {steps.map((s, i) => (
-              <div key={s.label} style={{ display: 'flex', gap: 12 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <span style={{ width: 11, height: 11, borderRadius: radius.pill, background: s.done ? '#11694A' : '#FFF', border: `2px solid ${s.done ? '#11694A' : color.border}` }} />
-                  {i < steps.length - 1 && <span style={{ width: 2, flex: 1, minHeight: 26, background: color.border }} />}
+              <div key={s.label} className="flex gap-3">
+                <div className="flex flex-col items-center">
+                  <span className={cx('w-[11px] h-[11px] rounded-pill border-2 border-solid', s.done ? 'bg-[var(--color-success-fg)] [border-color:var(--color-success-fg)]' : 'bg-card [border-color:var(--color-line)]')} />
+                  {i < steps.length - 1 && <span className="w-0.5 flex-1 min-h-[26px] bg-line" />}
                 </div>
-                <div style={{ paddingBottom: 16 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: s.done ? color.ink : color.textMuted }}>{s.label}</div>
-                  <div style={{ fontSize: 11.5, color: color.textMuted }}>{s.meta}</div>
+                <div className="pb-4">
+                  <div className={cx('text-[13px] font-medium', s.done ? 'text-ink' : 'text-muted-ink')}>{s.label}</div>
+                  <div className="text-[11.5px] text-muted-ink">{s.meta}</div>
                 </div>
               </div>
             ))}
@@ -277,10 +279,10 @@ function ReservationPanel({ r, onClose, onMessage, onChangeDates, onCancel }: {
         </div>
       </div>
 
-      <div style={{ padding: 16, borderTop: `1px solid ${color.border}`, background: color.page, display: 'flex', flexDirection: 'column', gap: 9, flex: 'none' }}>
+      <div className="p-4 [border-top:1px_solid_var(--color-line)] bg-page flex flex-col gap-[9px] flex-none">
         <Button variant="primary" icon={<Icon name="MessageSquare" size="sm" />} onClick={onMessage}>Message guest</Button>
         {!cancelled && (
-          <div style={{ display: 'flex', gap: 9 }}>
+          <div className="flex gap-[9px]">
             <Button variant="secondary" style={{ flex: 1 }} onClick={onChangeDates}>Change dates</Button>
             <Button variant="danger" style={{ flex: 1 }} onClick={onCancel}>Cancel</Button>
           </div>

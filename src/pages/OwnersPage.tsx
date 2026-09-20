@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { color, radius, text } from '../theme';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -12,6 +11,7 @@ import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
 import { rm } from '../lib/format';
+import { cx } from '../lib/design-tokens';
 
 type FeeModel = 'management' | 'grr';
 interface UnitLine {
@@ -39,7 +39,7 @@ const FALLBACK: Payload = {
   ],
 };
 
-const COLS = 'minmax(170px,1.5fr) minmax(190px,1.7fr) minmax(120px,0.9fr) minmax(120px,1fr) minmax(120px,1fr)';
+const COLS = 'grid-cols-[minmax(170px,1.5fr)_minmax(190px,1.7fr)_minmax(120px,0.9fr)_minmax(120px,1fr)_minmax(120px,1fr)]';
 const netOf = (o: Owner) => o.units.reduce((s, u) => s + u.net, 0);
 const grossOf = (o: Owner) => o.units.reduce((s, u) => s + u.gross, 0);
 const terms = (u: UnitLine) => u.model === 'grr' ? `GRR ${rm(u.grrAmount ?? 0, { cents: false })}/mo` : `${u.feePct ?? 0}% fee`;
@@ -103,28 +103,28 @@ export default function OwnersPage() {
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <Card>
-        <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: 860 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, padding: '9px 22px', background: color.muted, borderBottom: `1px solid ${color.border}`, fontSize: text.small, fontWeight: 600, color: color.textMuted }}>
-              <div>Owner</div><div>Units</div><div style={{ textAlign: 'right' }}>Terms</div><div style={{ textAlign: 'right' }}>Net this month</div><div>Portal</div>
+        <div className="overflow-x-auto">
+          <div className="min-w-[860px]">
+            <div className={cx(COLS, 'grid gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink')}>
+              <div>Owner</div><div>Units</div><div className="text-right">Terms</div><div className="text-right">Net this month</div><div>Portal</div>
             </div>
             {loading && rows.length === 0 ? <TableSkeleton rows={6} cols={5} /> : rows.map(o => (
               <div key={o.id} role="button" tabIndex={0} onClick={() => setOpenId(o.id)} onKeyDown={e => { if (e.key === 'Enter') setOpenId(o.id); }}
-                style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, alignItems: 'center', minHeight: 54, padding: '9px 22px', borderBottom: `1px solid ${color.borderMuted}`, cursor: 'pointer' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                  <span style={{ width: 30, height: 30, flex: 'none', borderRadius: 999, background: color.black, color: color.gold, display: 'grid', placeItems: 'center', fontSize: text.micro, fontWeight: 600 }}>
+                className={cx(COLS, 'grid gap-[14px] items-center min-h-[54px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer')}>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-[30px] h-[30px] flex-none rounded-[999px] bg-black text-gold grid place-items-center text-[11px] font-semibold">
                     {o.displayName.split(' ').map(n => n[0]).slice(0, 2).join('')}
                   </span>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.displayName}</span>
-                    <span style={{ fontSize: 11.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.email}</span>
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{o.displayName}</span>
+                    <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{o.email}</span>
                   </div>
                 </div>
-                <span style={{ fontSize: 12.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <span className="text-[12.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">
                   {o.units.length === 0 ? 'No units yet' : o.units.length === 1 ? o.units[0].unitLabel : `${o.units.length} units`}
                 </span>
-                <span style={{ fontSize: 12.5, textAlign: 'right', color: color.textMuted }}>{o.units[0] ? terms(o.units[0]) : '—'}</span>
-                <span style={{ fontSize: 13, textAlign: 'right', fontWeight: 500 }}>{rm(netOf(o), { cents: false })}</span>
+                <span className="text-[12.5px] text-right text-muted-ink">{o.units[0] ? terms(o.units[0]) : '—'}</span>
+                <span className="text-[13px] text-right font-medium">{rm(netOf(o), { cents: false })}</span>
                 <div>{o.portalInvited ? <Badge tone="success" label="Active" /> : <Badge tone="neutral" label="Not invited" />}</div>
               </div>
             ))}
@@ -151,59 +151,59 @@ function OwnerPanel({ o, onClose, onLink, onContract, onInvite }: {
   const net = netOf(o), gross = grossOf(o);
   return (
     <>
-      <div style={{ padding: '20px 20px 16px', borderBottom: `1px solid ${color.border}`, display: 'flex', flexDirection: 'column', gap: 14, flex: 'none' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-            <span style={{ width: 40, height: 40, flex: 'none', borderRadius: 999, background: color.black, color: color.gold, display: 'grid', placeItems: 'center', fontSize: 14, fontWeight: 600 }}>
+      <div className="pt-5 px-5 pb-4 [border-bottom:1px_solid_var(--color-line)] flex flex-col gap-[14px] flex-none">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-10 h-10 flex-none rounded-[999px] bg-black text-gold grid place-items-center text-[14px] font-semibold">
               {o.displayName.split(' ').map(n => n[0]).slice(0, 2).join('')}
             </span>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 16, fontWeight: 600 }}>{o.displayName}</div>
-              <div style={{ fontSize: 12, color: color.textMuted }}>{o.email}{o.phone ? ` · ${o.phone}` : ''}</div>
+            <div className="min-w-0">
+              <div className="text-[16px] font-semibold">{o.displayName}</div>
+              <div className="text-[12px] text-muted-ink">{o.email}{o.phone ? ` · ${o.phone}` : ''}</div>
             </div>
           </div>
-          <button onClick={onClose} aria-label="Close" style={{ width: 30, height: 30, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.pill, background: color.page, border: `1px solid ${color.border}`, cursor: 'pointer', color: color.textMuted }}><Icon name="X" size="sm" /></button>
+          <button onClick={onClose} aria-label="Close" className="w-[30px] h-[30px] flex-none grid place-items-center rounded-[999px] bg-page border border-solid border-line cursor-pointer text-muted-ink"><Icon name="X" size="sm" /></button>
         </div>
-        <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
+        <div className="flex gap-[22px] flex-wrap">
           <Roll label="Net payout, this month" value={rm(net)} strong />
           <Roll label="Gross" value={rm(gross)} />
           <Roll label="Units" value={String(o.units.length)} />
-          <div style={{ display: 'flex', alignItems: 'flex-end' }}>{o.portalInvited ? <Badge tone="success" label="Portal active" /> : <Badge tone="neutral" label="Not invited" />}</div>
+          <div className="flex items-end">{o.portalInvited ? <Badge tone="success" label="Portal active" /> : <Badge tone="neutral" label="Not invited" />}</div>
         </div>
       </div>
 
-      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 20, flex: 1 }}>
-        <Section title="Units" action={<button onClick={onLink} style={linkBtn}><Icon name="Plus" size="sm" /> Link unit</button>}>
+      <div className="p-5 flex flex-col gap-5 flex-1">
+        <Section title="Units" action={<button onClick={onLink} className={linkBtn}><Icon name="Plus" size="sm" /> Link unit</button>}>
           {o.units.length === 0 ? (
-            <div style={{ fontSize: 12.5, color: color.textMuted }}>No units linked yet. Use <strong style={{ fontWeight: 600 }}>Link unit</strong> to assign one and preset the fee or GRR.</div>
+            <div className="text-[12.5px] text-muted-ink">No units linked yet. Use <strong className="font-semibold">Link unit</strong> to assign one and preset the fee or GRR.</div>
           ) : (
-            <div style={{ border: `1px solid ${color.border}`, borderRadius: radius.card, overflow: 'hidden' }}>
+            <div className="border border-solid border-line rounded-card overflow-hidden">
               {o.units.map(u => (
                 <a key={u.unitId} href={`#/properties/units/${encodeURIComponent(u.unitId)}`}
-                  style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 0.9fr 0.9fr', gap: 10, alignItems: 'center', padding: '11px 13px', borderBottom: `1px solid ${color.borderMuted}`, textDecoration: 'none', color: 'inherit' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.unitLabel}</div>
-                    <div style={{ fontSize: 11, color: color.textMuted }}>{terms(u)} · {u.occupancy}% occ · ADR {rm(u.adr, { cents: false })}</div>
+                  className="grid grid-cols-[1.4fr_1fr_0.9fr_0.9fr] gap-2.5 items-center py-[11px] px-[13px] [border-bottom:1px_solid_var(--color-line-soft)] no-underline text-inherit!">
+                  <div className="min-w-0">
+                    <div className="text-[12.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{u.unitLabel}</div>
+                    <div className="text-[11px] text-muted-ink">{terms(u)} · {u.occupancy}% occ · ADR {rm(u.adr, { cents: false })}</div>
                   </div>
-                  <span style={{ fontSize: 12, textAlign: 'right', color: color.textMuted }}>{rm(u.gross, { cents: false })}</span>
-                  <span style={{ fontSize: 12.5, textAlign: 'right', fontWeight: 600 }}>{rm(u.net, { cents: false })}</span>
-                  <span style={{ display: 'flex', justifyContent: 'flex-end', color: color.textMuted }}><Icon name="ChevronRight" size="sm" /></span>
+                  <span className="text-[12px] text-right text-muted-ink">{rm(u.gross, { cents: false })}</span>
+                  <span className="text-[12.5px] text-right font-semibold">{rm(u.net, { cents: false })}</span>
+                  <span className="flex justify-end text-muted-ink"><Icon name="ChevronRight" size="sm" /></span>
                 </a>
               ))}
             </div>
           )}
         </Section>
 
-        <Section title="Contract" action={<button onClick={onContract} style={linkBtn}><Icon name="Plus" size="sm" /> {o.contract ? 'Update' : 'Add contract'}</button>}>
+        <Section title="Contract" action={<button onClick={onContract} className={linkBtn}><Icon name="Plus" size="sm" /> {o.contract ? 'Update' : 'Add contract'}</button>}>
           {o.contract ? (
-            <div style={{ fontSize: 12.5, color: color.textMuted }}>
+            <div className="text-[12.5px] text-muted-ink">
               {o.contract.feePct > 0 ? `${o.contract.feePct}% management fee` : 'GRR agreement'} · started {o.contract.startedOn}{o.contract.renewsOn ? ` · renews ${o.contract.renewsOn}` : ''}
             </div>
-          ) : <div style={{ fontSize: 12.5, color: color.textMuted }}>No contract on file.</div>}
+          ) : <div className="text-[12.5px] text-muted-ink">No contract on file.</div>}
         </Section>
 
         <Section title="Payout details">
-          <div style={{ fontSize: 12.5, color: color.textMuted, lineHeight: 1.7 }}>
+          <div className="text-[12.5px] text-muted-ink leading-[1.7]">
             <div>IC / passport: {o.ic ?? '—'}</div>
             <div>Bank: {o.bankName ?? '—'} · {o.bankAccount ?? '—'}</div>
             <div>Account holder: {o.accountHolder ?? '—'}</div>
@@ -211,7 +211,7 @@ function OwnerPanel({ o, onClose, onLink, onContract, onInvite }: {
         </Section>
       </div>
 
-      <div style={{ padding: 16, borderTop: `1px solid ${color.border}`, background: color.page, display: 'flex', gap: 9, flex: 'none' }}>
+      <div className="p-4 [border-top:1px_solid_var(--color-line)] bg-page flex gap-[9px] flex-none">
         <Button variant="primary" style={{ flex: 1 }} icon={<Icon name="Mail" size="sm" />} onClick={onInvite} disabled={o.portalInvited} disabledReason="This owner already has portal access">
           {o.portalInvited ? 'Portal active' : 'Invite to portal'}
         </Button>
@@ -221,20 +221,20 @@ function OwnerPanel({ o, onClose, onLink, onContract, onInvite }: {
   );
 }
 
-const linkBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', fontSize: 12.5, fontWeight: 500, color: 'var(--color-text-accent)' };
+const linkBtn = 'inline-flex items-center gap-[5px] bg-transparent [border:none] cursor-pointer font-sans text-[12.5px] font-medium text-gold-ink';
 function Roll({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <span style={{ fontSize: strong ? 19 : 15, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
-      <span style={{ fontSize: 11, color: color.textMuted }}>{label}</span>
+    <div className="flex flex-col gap-[3px]">
+      <span className={cx('font-semibold tabular-nums', strong ? 'text-[19px]' : 'text-[15px]')}>{value}</span>
+      <span className="text-[11px] text-muted-ink">{label}</span>
     </div>
   );
 }
 function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: text.small, fontWeight: 600, color: color.textMuted }}>{title}</span>
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[12px] font-semibold text-muted-ink">{title}</span>
         {action}
       </div>
       {children}
@@ -254,16 +254,16 @@ function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, children
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
   return (
-    <div role="dialog" aria-modal="true" aria-label={title} style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24, background: 'var(--color-surface-scrim)', animation: 'fade-in var(--motion-standard) var(--ease-out) both' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div ref={ref} style={{ position: 'relative', width: '100%', maxWidth: 480, maxHeight: '88vh', overflowY: 'auto', background: 'var(--color-surface-card)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-overlay)' }}>
+    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      <div onClick={onClose} className="absolute inset-0" />
+      <div ref={ref} className="relative w-full max-w-[480px] max-h-[88vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
         <form onSubmit={e => { e.preventDefault(); if (canSubmit) onSubmit(); }}>
-          <div style={{ padding: '22px 22px 4px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{title}</h2>
-            {sub && <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>{sub}</p>}
+          <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[5px]">
+            <h2 className="m-0 text-[18px] font-semibold">{title}</h2>
+            {sub && <p className="m-0 text-[13px] text-muted-ink">{sub}</p>}
           </div>
-          <div style={{ padding: '16px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>{children}</div>
-          <div style={{ padding: '14px 22px', borderTop: '1px solid var(--color-border-default)', background: 'var(--color-surface-page)', display: 'flex', justifyContent: 'flex-end', gap: 9 }}>
+          <div className="py-4 px-[22px] flex flex-col gap-[14px]">{children}</div>
+          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
             <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
             <Button size="sm" variant="primary" type="submit" disabled={!canSubmit} disabledReason="Fill the required fields first">{submitLabel}</Button>
           </div>
@@ -272,12 +272,12 @@ function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, children
     </div>
   );
 }
-const selectStyle: CSSProperties = { height: 'var(--control-height)', width: '100%', boxSizing: 'border-box', padding: '0 12px', fontFamily: 'var(--font-sans)', fontSize: 14, color: 'var(--color-text-primary)', background: 'var(--color-surface-card)', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-control)', outline: 'none' };
+const selectStyle = 'h-[var(--control-height)] w-full box-border py-0 px-3 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none';
 function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-      <label style={{ fontSize: 'var(--text-small)', fontWeight: 500, color: 'var(--color-text-muted)' }}>{label}</label>
-      <select value={value} onChange={e => onChange(e.target.value)} style={selectStyle}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+    <div className="flex flex-col gap-[7px]">
+      <label className="text-[12px] font-medium text-muted-ink">{label}</label>
+      <select value={value} onChange={e => onChange(e.target.value)} className={selectStyle}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
     </div>
   );
 }
@@ -290,12 +290,12 @@ function AddOwnerModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (
     <Modal title="Add owner" sub="Create the owner, then link units and preset the fee or GRR." onClose={onClose} submitLabel="Add owner" canSubmit={canSubmit}
       onSubmit={() => onSubmit({ displayName: f.displayName.trim(), email: f.email.trim(), phone: f.phone.trim() || null, ic: f.ic.trim() || null, bankName: f.bankName.trim() || null, bankAccount: f.bankAccount.trim() || null, accountHolder: f.accountHolder.trim() || f.displayName.trim() })}>
       <Field label="Owner name" placeholder="e.g. Lim Chee Keong" value={f.displayName} onChange={set('displayName')} />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="grid grid-cols-2 gap-3">
         <Field label="Email" type="email" placeholder="owner@email.com" value={f.email} onChange={set('email')} />
         <Field label="Phone" placeholder="+60 12-345 6789" value={f.phone} onChange={set('phone')} />
       </div>
       <Field label="IC / passport" placeholder="Accepts both formats" value={f.ic} onChange={set('ic')} />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="grid grid-cols-2 gap-3">
         <Field label="Bank" placeholder="e.g. PBBB" value={f.bankName} onChange={set('bankName')} />
         <Field label="Bank account" placeholder="Account number" value={f.bankAccount} onChange={set('bankAccount')} />
       </div>
@@ -332,7 +332,7 @@ function ContractModal({ owner, onClose, onSubmit }: { owner: string; onClose: (
     <Modal title="Management agreement" sub={`Record the contract terms for ${owner}.`} onClose={onClose} submitLabel="Save contract" canSubmit={canSubmit}
       onSubmit={() => onSubmit({ feePct: Number(feePct) || 0, startedOn, renewsOn: renewsOn || null })}>
       <Field label="Management fee %" type="number" min={0} max={100} numeric value={feePct} onChange={e => setFeePct(e.target.value)} help="Set 0 for a GRR-only arrangement." />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="grid grid-cols-2 gap-3">
         <Field label="Start date" type="date" value={startedOn} onChange={e => setStartedOn(e.target.value)} />
         <Field label="Renews on" type="date" value={renewsOn} onChange={e => setRenewsOn(e.target.value)} />
       </div>
