@@ -99,7 +99,7 @@ function Routed() {
         <Route path="/operations/tasks" element={<TasksPage />} />
         <Route path="/operations/inspections" element={<InspectionsPage />} />
         <Route path="/properties" element={<PropertiesPage />} />
-        <Route path="/properties/units" element={<PropertiesPage />} />
+        <Route path="/properties/units" element={<UnitRecordPage unitId="" />} />
         <Route path="/properties/units/:id" element={<UnitRecordRoute />} />
         <Route path="/properties/inventory" element={<InventoryPage />} />
         <Route path="/properties/access" element={<AccessPage />} />

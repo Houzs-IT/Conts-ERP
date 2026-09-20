@@ -70,7 +70,7 @@ const UNITS: { id: string; unitNumber: string; propertyName: string }[] = [
 /** Channels a manual entry may use — revenue channels only; blocks/owner stays are set on the calendar. */
 const CREATE_CHANNELS: BookingChannel[] = ['direct', 'airbnb', 'booking_com', 'agoda'];
 
-const COLS = 'grid-cols-[minmax(140px,1.2fr)_minmax(150px,1.4fr)_minmax(150px,1.2fr)_minmax(96px,0.7fr)_minmax(140px,1.1fr)_minmax(96px,0.8fr)_minmax(96px,0.8fr)]';
+const COLS = 'grid-cols-[minmax(140px,1.2fr)_minmax(150px,1.4fr)_minmax(150px,1.2fr)_minmax(96px,0.7fr)_minmax(140px,1.1fr)_minmax(96px,0.8fr)_minmax(96px,0.8fr)_48px]';
 
 type ColKey = 'reference' | 'guest' | 'unit' | 'channel' | 'stay' | 'gross' | 'status';
 interface ColDef { key: ColKey; label: string; align?: 'right'; text: (r: Row) => string; val: (r: Row) => string | number }
@@ -127,7 +127,9 @@ export default function BookingsPage() {
 
   const [creating, setCreating] = useState(false);
   const [importRows, setImportRows] = useState<ParsedRow[] | null>(null);
-  const [messageOpen, setMessageOpen] = useState(false);
+  // The message modal targets a specific reservation — the drawer's open row, or
+  // any row via its per-row chat icon — so it is keyed by row, not a bare boolean.
+  const [messageRow, setMessageRow] = useState<Row | null>(null);
   const [datesOpen, setDatesOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -286,13 +288,35 @@ export default function BookingsPage() {
     toast({ tone: 'success', title: 'Export ready.', body: 'The CSV header prints the applied filters, generated time and scope.' });
   }
 
-  // ---- Drawer → Message guest (POST /messages) ----
+  // ---- Message guest (POST /messages) — from the drawer or a row's chat icon ----
   function sendGuestMessage(body: string) {
-    if (!open) return;
-    const ch = open.channel === 'direct' ? 'WhatsApp' : CHANNEL_META[open.channel].label;
-    toast({ tone: 'success', title: `Message sent to ${open.guestName}.`, body: `Thread opened on ${ch}.` });
-    api.post('/messages', { reservationId: open.id, body }).catch(() => { /* dev: no backend */ });
-    setMessageOpen(false);
+    const r = messageRow;
+    if (!r) return;
+    const ch = r.channel === 'direct' ? 'WhatsApp' : CHANNEL_META[r.channel].label;
+    toast({ tone: 'success', title: `Message sent to ${r.guestName}.`, body: `Thread opened on ${ch}.` });
+    api.post('/messages', { reservationId: r.id, body }).catch(() => { /* dev: no backend */ });
+    setMessageRow(null);
+  }
+
+  // ---- Drawer → Duplicate booking (POST /reservations/:id/duplicate) — optimistic clone ----
+  function duplicateReservation(r: Row) {
+    const id = crypto.randomUUID();
+    const clone: Row = {
+      ...r, id, externalRef: `MAN-${id.slice(0, 6).toUpperCase()}`,
+      state: 'confirmed', paidAt: null, receivedAt: nowStamp(),
+    };
+    setAdded(a => [clone, ...a]);
+    setOpenId(clone.id);
+    toast({ tone: 'success', title: 'Reservation duplicated.', body: `${r.guestName} · ${clone.propertyName} ${clone.unitNumber} · ${dateRange(clone.checkIn, clone.checkOut)}. Adjust the dates as needed.` });
+    api.post(`/reservations/${r.id}/duplicate`, {}).catch(() => { /* dev: no backend */ });
+  }
+
+  // ---- Drawer → Quick status update (PATCH /reservations/:id) — optimistic ----
+  function updateStatus(r: Row, status: ReservationState) {
+    if (status === r.state) return;
+    patch(r.id, { state: status });
+    api.patch(`/reservations/${r.id}`, { status }).catch(() => { /* dev: no backend */ });
+    toast({ tone: 'neutral', title: 'Status updated.', body: `${r.externalRef ?? 'Reservation'} is now ${STATE_LABEL[status]}.` });
   }
 
   // ---- Drawer → Change dates (PATCH /reservations/:id/dates) — optimistic ----
@@ -336,7 +360,7 @@ export default function BookingsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <div className="min-w-[960px]">
+          <div className="min-w-[1010px]">
             {/* Sortable header */}
             <div className={cx(COLS, 'grid gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)]')}>
               {COLUMNS.map(c => {
@@ -350,6 +374,7 @@ export default function BookingsPage() {
                   </button>
                 );
               })}
+              <div className="flex items-center justify-center text-[12px] font-semibold text-muted-ink">Chat</div>
             </div>
             {/* Per-column search */}
             <div className={cx(COLS, 'grid gap-[14px] py-[7px] px-[22px] bg-page [border-bottom:1px_solid_var(--color-line-soft)]')}>
@@ -358,9 +383,10 @@ export default function BookingsPage() {
                   placeholder="Search" aria-label={`Search ${c.label}`}
                   className={cx('h-7 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-[12px] px-2 py-0 outline-none', c.align === 'right' && 'text-right')} />
               ))}
+              <div aria-hidden />
             </div>
 
-            {loading && rows.length === 0 ? <TableSkeleton rows={6} cols={7} /> : shown.length === 0 ? (
+            {loading && rows.length === 0 ? <TableSkeleton rows={6} cols={8} /> : shown.length === 0 ? (
               <div className="py-[34px] px-[22px] text-center text-[13.5px] text-muted-ink">No reservations match this filter.</div>
             ) : shown.map(b => {
               const ch = CHANNEL_META[b.channel];
@@ -386,6 +412,13 @@ export default function BookingsPage() {
                   <div className="text-[12.5px]">{dateRange(b.checkIn, b.checkOut)}</div>
                   <div className="text-right text-[13px] font-medium">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</div>
                   <div><Badge tone={STATE_TONE[b.state]} label={STATE_LABEL[b.state]} /></div>
+                  <div className="flex justify-center">
+                    <button type="button" title="Message guest" aria-label={`Message ${b.guestName}`}
+                      onClick={e => { e.stopPropagation(); setMessageRow(b); }}
+                      className="w-8 h-8 grid place-items-center rounded-control text-muted-ink bg-transparent border-none cursor-pointer hover:bg-muted">
+                      <Icon name="MessageSquare" size="sm" />
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -394,13 +427,13 @@ export default function BookingsPage() {
       </Card>
 
       <Drawer open={!!open} onClose={() => setOpenId(null)} width={440}>
-        {open && <ReservationPanel r={open} onClose={() => setOpenId(null)} onMessage={() => setMessageOpen(true)} onChangeDates={() => setDatesOpen(true)} onCancel={() => cancel(open)} />}
+        {open && <ReservationPanel key={open.id} r={open} onClose={() => setOpenId(null)} onMessage={() => setMessageRow(open)} onChangeDates={() => setDatesOpen(true)} onCancel={() => cancel(open)} onDuplicate={() => duplicateReservation(open)} onStatus={s => updateStatus(open, s)} />}
       </Drawer>
       <Dialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
 
       {creating && <CreateReservationModal onClose={() => setCreating(false)} onCreate={createReservation} />}
       {importRows && <ImportPreviewModal rows={importRows} onClose={() => setImportRows(null)} onConfirm={commitImport} />}
-      {open && messageOpen && <MessageModal r={open} onClose={() => setMessageOpen(false)} onSend={sendGuestMessage} />}
+      {messageRow && <MessageModal r={messageRow} onClose={() => setMessageRow(null)} onSend={sendGuestMessage} />}
       {open && datesOpen && <ChangeDatesModal r={open} onClose={() => setDatesOpen(false)} onConfirm={submitChangeDates} />}
     </>
   );
@@ -410,12 +443,14 @@ export default function BookingsPage() {
 /* Reservation drawer                                                  */
 /* ------------------------------------------------------------------ */
 
-function ReservationPanel({ r, onClose, onMessage, onChangeDates, onCancel }: {
+function ReservationPanel({ r, onClose, onMessage, onChangeDates, onCancel, onDuplicate, onStatus }: {
   r: Row; onClose: () => void; onMessage: () => void; onChangeDates: () => void; onCancel: () => void;
+  onDuplicate: () => void; onStatus: (status: ReservationState) => void;
 }) {
   const ch = CHANNEL_META[r.channel];
   const f = feeLines(r);
   const cancelled = r.state === 'cancelled';
+  const [showActivity, setShowActivity] = useState(false);
   const steps = [
     { label: 'Booking created', meta: `Channel sync · ${r.receivedAt}`, done: true },
     { label: 'Payment received', meta: r.paidAt ? `${rm(r.grossBookingValue, { cents: false })} · ${r.paidAt}` : 'Awaiting payment', done: !!r.paidAt },
@@ -446,6 +481,15 @@ function ReservationPanel({ r, onClose, onMessage, onChangeDates, onCancel }: {
           <Badge tone={STATE_TONE[r.state]} label={STATE_LABEL[r.state]} />
           <span className="inline-flex items-center h-[22px] px-[9px] rounded-pill text-[11.5px] font-semibold" style={{ background: ch.tint, color: ch.ink }}>{ch.label}</span>
           <span className="font-mono text-[12px] text-muted-ink">{r.externalRef}</span>
+        </div>
+
+        {/* Quick status update — closed list from the reservation_state enum */}
+        <div className="flex items-center gap-[10px]">
+          <label htmlFor="rv-status" className="text-[12px] font-medium text-muted-ink flex-none">Status</label>
+          <select id="rv-status" value={r.state} onChange={e => onStatus(e.target.value as ReservationState)}
+            className="h-9 flex-1 px-3 py-0 rounded-control border border-solid border-line bg-white text-ink [font:inherit] text-[13px] cursor-pointer">
+            {(Object.keys(STATE_LABEL) as ReservationState[]).map(s => <option key={s} value={s}>{STATE_LABEL[s]}</option>)}
+          </select>
         </div>
 
         <div className="grid grid-cols-2 gap-px bg-line border border-solid border-line rounded-card overflow-hidden">
@@ -494,10 +538,21 @@ function ReservationPanel({ r, onClose, onMessage, onChangeDates, onCancel }: {
             ))}
           </div>
         </div>
+
+        {/* Activity log — the reservation's audit trail, hydrated on demand */}
+        <div>
+          <button type="button" onClick={() => setShowActivity(v => !v)} aria-expanded={showActivity}
+            className="flex items-center justify-between w-full [font:inherit] bg-transparent border-none p-0 cursor-pointer text-[12px] font-semibold text-muted-ink mb-3">
+            <span>Activity log</span>
+            <Icon name={showActivity ? 'ChevronUp' : 'ChevronDown'} size="sm" />
+          </button>
+          {showActivity && <ActivityLog r={r} />}
+        </div>
       </div>
 
       <div className="p-4 [border-top:1px_solid_var(--color-line)] bg-page flex flex-col gap-[9px] flex-none">
         <Button variant="primary" icon={<Icon name="MessageSquare" size="sm" />} onClick={onMessage}>Message guest</Button>
+        <Button variant="secondary" icon={<Icon name="Copy" size="sm" />} onClick={onDuplicate}>Duplicate booking</Button>
         {!cancelled && (
           <div className="flex gap-[9px]">
             <Button variant="secondary" style={{ flex: 1 }} onClick={onChangeDates}>Change dates</Button>
@@ -506,6 +561,40 @@ function ReservationPanel({ r, onClose, onMessage, onChangeDates, onCancel }: {
         )}
       </div>
     </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Activity log — reservation audit trail                              */
+/* ------------------------------------------------------------------ */
+
+interface ActivityItem { actorLabel: string; action: string; source: string; occurredAt: string }
+
+/** Dev fallback so the section renders before the audit endpoint is live. */
+const ACTIVITY_FALLBACK: ActivityItem[] = [
+  { actorLabel: 'Channel sync', action: 'reservation.created', source: 'channel_webhook', occurredAt: '2026-09-12 10:02' },
+  { actorLabel: 'Aina Zulkifli', action: 'payment.recorded', source: 'operator', occurredAt: '2026-09-12 10:05' },
+  { actorLabel: 'System', action: 'access_code.sent', source: 'automation', occurredAt: '2026-09-16 13:00' },
+];
+
+function ActivityLog({ r }: { r: Row }) {
+  const { data } = useApi<ActivityItem[]>(`/audit?entityTable=reservations&entityId=${r.id}`, ACTIVITY_FALLBACK);
+  const items = data ?? [];
+  if (items.length === 0) return <div className="text-[12px] text-muted-ink py-2">No activity recorded yet.</div>;
+  return (
+    <div className="border border-solid border-line rounded-card overflow-hidden">
+      {items.map((a, i) => (
+        <div key={i} className={cx('flex items-start gap-3 py-[10px] px-[13px]', i < items.length - 1 && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
+          <span className="w-[26px] h-[26px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-[10px] font-semibold">
+            {a.actorLabel.split(' ').map(n => n[0]).slice(0, 2).join('')}
+          </span>
+          <div className="flex flex-col gap-px flex-1 min-w-0">
+            <span className="text-[12.5px]"><strong className="font-semibold">{a.actorLabel}</strong> · {a.action.replace(/[._]/g, ' ')}</span>
+            <span className="text-[11px] text-muted-ink">{a.source.replace(/_/g, ' ')} · {a.occurredAt}</span>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 

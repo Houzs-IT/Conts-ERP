@@ -11,7 +11,7 @@ import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
 import { rm, dateRange } from '../lib/format';
-import { CHANNEL } from '../lib/vocabulary';
+import { CHANNEL, RESERVATION } from '../lib/vocabulary';
 import type { BookingChannel, ReservationState, Tone } from '../lib/types';
 
 const COL = 62;
@@ -19,6 +19,10 @@ const UNIT_COL = 240;
 const ALL: BookingChannel[] = ['airbnb', 'booking_com', 'agoda', 'direct', 'maintenance_block', 'owner_stay'];
 // Channels a bulk rate push can target. Direct is the web rate itself.
 const PUSH: BookingChannel[] = ['direct', 'airbnb', 'booking_com', 'agoda'];
+
+/** The quick-status picker in the reservation drawer. Cancellation has its own
+ *  destructive Cancel flow (confirm + notify), so it is not offered here. */
+const QUICK_STATES: ReservationState[] = ['inquiry', 'pending', 'confirmed', 'checked_in', 'checked_out', 'no_show'];
 
 /** Booking-status filter chips. `blocked` is a pseudo-status: the maintenance
  *  hold channel has no reservation_state, so its chip filters that channel. */
@@ -95,10 +99,12 @@ export default function CalendarPage() {
   const [rateUpdate, setRateUpdate] = useState(false);
   const [openBlock, setOpenBlock] = useState<Block | null>(null);
   const [editDates, setEditDates] = useState<Block | null>(null);
+  const [chatBlock, setChatBlock] = useState<Block | null>(null);
   const [busy, setBusy] = useState(false);
   const [syncing, setSyncing] = useState(false);
   // Optimistic overlays — there is no backend in dev.
   const [dateEdits, setDateEdits] = useState<Record<string, { checkIn: string; checkOut: string }>>({});
+  const [stateEdits, setStateEdits] = useState<Record<string, ReservationState>>({});
   const [addedBlocks, setAddedBlocks] = useState<Block[]>([]);
   // Which booking is being dragged, and where within it the pointer grabbed.
   const dragRef = useRef<{ id: string; grabOffset: number } | null>(null);
@@ -107,10 +113,13 @@ export default function CalendarPage() {
   const properties = useMemo(() => Array.from(new Set(allUnits.map(u => u.propertyName))), [allUnits]);
   const units = property === 'all' ? allUnits : allUnits.filter(u => u.propertyName === property);
   const liveBlocks = useMemo(
-    () => [...(data?.blocks ?? []), ...addedBlocks].map(b => ({ ...b, ...dateEdits[b.id] })),
-    [data, addedBlocks, dateEdits],
+    () => [...(data?.blocks ?? []), ...addedBlocks].map(b => ({
+      ...b, ...dateEdits[b.id], ...(stateEdits[b.id] ? { state: stateEdits[b.id] } : null),
+    })),
+    [data, addedBlocks, dateEdits, stateEdits],
   );
   const blocks = liveBlocks.filter(b => {
+    if (b.state === 'cancelled') return false; // a cancelled reservation releases its dates on the board
     if (off[b.channel]) return false;
     if (b.channel === 'maintenance_block') return !statusOff.blocked;
     return !statusOff[b.state];
@@ -199,6 +208,54 @@ export default function CalendarPage() {
     try { await api.post('/integrations/sync'); } catch { /* dev: no backend */ }
     setSyncing(false);
     toast({ tone: 'success', title: 'Channels synced.', body: 'Airbnb and Booking.com pulled · Agoda skipped (expired).' });
+  }
+
+  // ---- Reservation drawer: chat with guest (POST /messages) ----
+  function sendGuestMessage(b: Block, body: string) {
+    const thread = b.channel === 'direct' ? 'WhatsApp' : CHANNEL[b.channel].label;
+    toast({ tone: 'success', title: `Message sent to ${b.guestName}.`, body: `Thread opened on ${thread}.` });
+    api.post('/messages', { reservationId: b.id, body }).catch(() => { /* dev: no backend */ });
+    setChatBlock(null);
+  }
+
+  // ---- Reservation drawer: quick status update (PATCH /reservations/:id) — optimistic ----
+  function quickStatus(b: Block, state: ReservationState) {
+    if (state === (stateEdits[b.id] ?? b.state)) return;
+    setStateEdits(e => ({ ...e, [b.id]: state }));
+    api.patch(`/reservations/${b.id}`, { state }).catch(() => { /* dev: no backend */ });
+    toast({ tone: 'success', title: 'Status updated.', body: `${b.guestName} is now ${RESERVATION[state].label}.` });
+  }
+
+  // ---- Reservation drawer: duplicate booking (POST /reservations/:id/duplicate) — optimistic add ----
+  function duplicateBooking(b: Block) {
+    const nights = dayIndex(b.checkOut) - dayIndex(b.checkIn);
+    const start = b.checkOut; // checkOut is exclusive, so this places the copy immediately after the stay
+    const nb: Block = {
+      id: `dup-${Date.now()}`, unitId: b.unitId, channel: b.channel, state: 'pending',
+      guestName: b.guestName, checkIn: start, checkOut: iso(addDays(new Date(start), nights)),
+      grossBookingValue: b.grossBookingValue, ref: null, reason: null,
+    };
+    setAddedBlocks(a => [...a, nb]);
+    setOpenBlock(null);
+    api.post(`/reservations/${b.id}/duplicate`).catch(() => { /* dev: no backend */ });
+    toast({ tone: 'success', title: 'Booking duplicated.', body: `A pending copy for ${b.guestName} was placed after the original — drag it to the dates you want.` });
+  }
+
+  // ---- Reservation drawer: cancel reservation (POST /reservations/:id/cancel) — optimistic release ----
+  function requestCancel(b: Block) {
+    setDialog({
+      title: `Cancel ${b.ref ?? 'this reservation'}?`,
+      body: `This releases the dates on every channel and notifies ${b.guestName}.`,
+      meta: `${b.guestName} · ${dateRange(b.checkIn, b.checkOut)}`,
+      confirmLabel: 'Cancel reservation', busyLabel: 'Cancelling…', danger: true,
+      onConfirm: async () => {
+        setBusy(true);
+        setStateEdits(e => ({ ...e, [b.id]: 'cancelled' }));
+        try { await api.post(`/reservations/${b.id}/cancel`, { reason: 'operator_cancelled' }); } catch { /* dev: no backend */ }
+        setBusy(false); setDialog(null); setOpenBlock(null);
+        toast({ tone: 'neutral', title: 'Reservation cancelled.', body: `${b.guestName} has been notified and the dates released.` });
+      },
+    });
   }
 
   return (
@@ -392,27 +449,60 @@ export default function CalendarPage() {
         </div>
       </Card>
 
-      {/* Block detail drawer */}
+      {/* Block detail drawer. Maintenance / owner-stay holds keep the light block
+          drawer; actual reservations get the full reservation-drawer actions. */}
       <Drawer open={!!openBlock} onClose={() => setOpenBlock(null)} width={380}>
-        {openBlock && <div className="p-5 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <span className="w-3 h-3 flex-none rounded-[3px]" style={{ background: CHANNEL[openBlock.channel].color }} />
-              <span className="text-[15px] font-semibold">{openBlock.guestName}</span>
+        {openBlock && (() => {
+          const b = openBlock;
+          const isReservation = b.channel !== 'maintenance_block' && b.channel !== 'owner_stay';
+          const liveState = stateEdits[b.id] ?? b.state;
+          return (
+          <div className="p-5 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="w-3 h-3 flex-none rounded-[3px]" style={{ background: CHANNEL[b.channel].color }} />
+                <span className="text-[15px] font-semibold">{b.guestName}</span>
+              </div>
+              <button type="button" onClick={() => setOpenBlock(null)} aria-label="Close" className={navCls}><Icon name="X" size="sm" /></button>
             </div>
-            <button type="button" onClick={() => setOpenBlock(null)} aria-label="Close" className={navCls}><Icon name="X" size="sm" /></button>
+            <div className="text-[12.5px] text-muted-ink leading-[1.8]">
+              <div>{CHANNEL[b.channel].label} · {b.ref ?? '—'}</div>
+              <div>{b.checkIn} → {b.checkOut}</div>
+              {b.grossBookingValue > 0 && <div>Gross {rm(b.grossBookingValue)}</div>}
+              {b.reason && <div>{b.reason}</div>}
+            </div>
+
+            {isReservation && (
+              <div className="flex flex-col gap-[7px]">
+                <label className="text-[12px] font-medium text-muted-ink">Status</label>
+                <select value={liveState} onChange={e => quickStatus(b, e.target.value as ReservationState)} className={`${selectCls} h-[38px]`} aria-label="Reservation status">
+                  {QUICK_STATES.map(s => <option key={s} value={s}>{RESERVATION[s].label}</option>)}
+                </select>
+              </div>
+            )}
+
+            <a href="#/reservations/bookings" onClick={() => setOpenBlock(null)} className="no-underline">
+              <Button variant="primary" style={{ width: '100%' }}>View booking</Button>
+            </a>
+            {isReservation && (
+              <Button variant="secondary" icon={<Icon name="MessageSquare" size="sm" />} style={{ width: '100%' }} onClick={() => setChatBlock(b)}>Chat with guest</Button>
+            )}
+            <Button variant="secondary" style={{ width: '100%' }} onClick={() => { setOpenBlock(null); setEditDates(b); }}>Change dates</Button>
+            {isReservation && (
+              <Button variant="secondary" icon={<Icon name="Copy" size="sm" />} style={{ width: '100%' }} onClick={() => duplicateBooking(b)}>Duplicate booking</Button>
+            )}
+            {isReservation && (
+              <Button variant="danger" style={{ width: '100%' }} onClick={() => requestCancel(b)}>Cancel reservation</Button>
+            )}
+
+            {isReservation && (
+              <div className="pt-4 [border-top:1px_solid_var(--color-line-soft)]">
+                <ActivityLog reservationId={b.id} />
+              </div>
+            )}
           </div>
-          <div className="text-[12.5px] text-muted-ink leading-[1.8]">
-            <div>{CHANNEL[openBlock.channel].label} · {openBlock.ref ?? '—'}</div>
-            <div>{openBlock.checkIn} → {openBlock.checkOut}</div>
-            {openBlock.grossBookingValue > 0 && <div>Gross {rm(openBlock.grossBookingValue)}</div>}
-            {openBlock.reason && <div>{openBlock.reason}</div>}
-          </div>
-          <a href="#/reservations/bookings" onClick={() => setOpenBlock(null)} className="no-underline">
-            <Button variant="primary" style={{ width: '100%' }}>View booking</Button>
-          </a>
-          <Button variant="secondary" style={{ width: '100%' }} onClick={() => { const b = openBlock; setOpenBlock(null); setEditDates(b); }}>Change dates</Button>
-        </div>}
+          );
+        })()}
       </Drawer>
 
       <Dialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
@@ -420,6 +510,7 @@ export default function CalendarPage() {
         onSave={rmValue => { const i = dayIndex(priceModal.dayIso); setPrice(priceModal.unit.id, priceModal.channel, i, rmValue); setPriceModal(null); }} />}
       {editDates && <ChangeDatesModal b={editDates} onClose={() => setEditDates(null)}
         onSave={(ci, co) => { const b = editDates; setEditDates(null); requestMove(b, ci, co); }} />}
+      {chatBlock && <MessageModal b={chatBlock} onClose={() => setChatBlock(null)} onSend={body => sendGuestMessage(chatBlock, body)} />}
       {blockWizard && <BlockWizard units={units} initial={blockPrefill} onClose={() => setBlockWizard(false)}
         onSave={v => {
           const clash = conflictFor(v.unitId, v.from, v.to);
@@ -513,6 +604,60 @@ function ChangeDatesModal({ b, onClose, onSave }: { b: Block; onClose: () => voi
       </div>
       <p className="m-0 text-[12px] text-muted-ink">The move is availability-checked and confirmed on the next step before anything is sent.</p>
     </CentreModal>
+  );
+}
+function MessageModal({ b, onClose, onSend }: { b: Block; onClose: () => void; onSend: (body: string) => void }) {
+  const [body, setBody] = useState('');
+  const thread = b.channel === 'direct' ? 'WhatsApp' : CHANNEL[b.channel].label;
+  return (
+    <CentreModal title={`Message ${b.guestName}`} sub={`Thread opens on ${thread}.`} onClose={onClose} saveLabel="Send message" canSave={body.trim() !== ''} onSave={() => onSend(body.trim())}>
+      <div className="flex flex-col gap-[6px]">
+        <label className="text-[12px] font-medium text-muted-ink">Message</label>
+        <textarea value={body} onChange={e => setBody(e.target.value)} rows={4}
+          placeholder={`Hi ${b.guestName.split(' ')[0]}, checking in on your upcoming stay…`}
+          className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit] p-[10px_12px] resize-y" />
+      </div>
+    </CentreModal>
+  );
+}
+
+interface ActivityEntry { actorLabel: string; action: string; source: string; occurredAt: string }
+interface ActivityPayload { data: ActivityEntry[] }
+const ACTIVITY_FALLBACK: ActivityPayload = {
+  data: [
+    { actorLabel: 'Channel sync', action: 'reservation.created', source: 'channel_webhook', occurredAt: '12 Sep 10:02' },
+    { actorLabel: 'Aina Zulkifli', action: 'reservation.dates_change', source: 'web', occurredAt: '14 Sep 09:18' },
+    { actorLabel: 'System', action: 'notification.sent', source: 'system', occurredAt: '14 Sep 09:18' },
+  ],
+};
+
+/** Activity log — the reservation's audit trail (actor, action, source, time),
+ *  read straight from `GET /api/audit?entityTable=reservations&entityId=`. */
+function ActivityLog({ reservationId }: { reservationId: string }) {
+  const { data: audit } = useApi<ActivityPayload>(`/audit?entityTable=reservations&entityId=${reservationId}`, ACTIVITY_FALLBACK);
+  const entries = audit?.data ?? [];
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-[12px] font-semibold text-muted-ink">Activity</span>
+      {entries.length === 0 ? (
+        <span className="text-[12px] text-muted-ink">No activity yet.</span>
+      ) : (
+        <div className="border border-solid border-line rounded-card overflow-hidden">
+          {entries.map((a, i) => (
+            <div key={i} className={`flex items-center gap-2.5 py-2 px-3 ${i < entries.length - 1 ? '[border-bottom:1px_solid_var(--color-line-soft)]' : ''}`}>
+              <span className="w-[26px] h-[26px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-[10px] font-semibold">
+                {a.actorLabel.split(' ').map(n => n[0]).slice(0, 2).join('')}
+              </span>
+              <div className="flex flex-col gap-px flex-1 min-w-0">
+                <span className="text-[12px]"><strong className="font-semibold">{a.actorLabel}</strong> · {a.action.replace(/[._]/g, ' ')}</span>
+                <span className="text-[11px] text-muted-ink">{a.source.replace(/_/g, ' ')}</span>
+              </div>
+              <span className="text-[11px] text-muted-ink whitespace-nowrap">{a.occurredAt}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 function BlockWizard({ units, initial, onClose, onSave }: {

@@ -151,7 +151,8 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
   const u = d.unit;
   const p = d.performance;
   const units = unitsData ?? UNITS_FALLBACK;
-  const selectedId = units.some(x => x.id === unitId) ? unitId : units[0].id;
+  const buildingCount = new Set(units.map(x => x.propertyName)).size;
+  const selectedId = units.length ? (units.some(x => x.id === unitId) ? unitId : units[0].id) : '';
   const openIssues = d.maintenance.filter(m => m.state !== 'resolved').length;
 
   // Financial sections are absent from the payload for roles without access,
@@ -500,7 +501,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div className="min-w-0">
           <h1 className="m-0 text-[28px] leading-[1.2] font-semibold tracking-[-0.01em]">Units</h1>
-          <div className="text-[12px] text-muted-ink mt-1">24 units · 6 buildings</div>
+          <div className="text-[12px] text-muted-ink mt-1">{units.length} {units.length === 1 ? 'unit' : 'units'} · {buildingCount} {buildingCount === 1 ? 'building' : 'buildings'}</div>
         </div>
         <div className="inline-flex gap-[3px] p-[3px] bg-muted rounded-control border border-solid border-line">
           {(['List', 'Grid'] as const).map(v => {
@@ -521,7 +522,16 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
 
       {error && <StaleBanner message={`Showing the last record we have. ${error}`} onRetry={reload} />}
 
-      {view === 'grid' ? (
+      {units.length === 0 ? (
+        <Card>
+          <div className="flex flex-col items-center gap-2 text-center py-[52px] px-6">
+            <span className="text-muted-ink"><Icon name="Building2" /></span>
+            <div className="text-[16px] font-semibold">No units yet</div>
+            <div className="text-[13px] text-muted-ink max-w-[360px]">Add your first unit from a building on the Properties page to see it here.</div>
+            <a href="#/properties" className="mt-1 h-9 flex items-center px-[14px] rounded-control bg-black text-white! text-[13px] font-medium no-underline">Go to Properties</a>
+          </div>
+        </Card>
+      ) : view === 'grid' ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
           {units.map(gridItem)}
         </div>
