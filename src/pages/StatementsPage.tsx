@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { color, radius, text } from '../theme';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -13,6 +12,7 @@ import { useToast } from '../components/Toast';
 import { api, ApiFailure } from '../lib/api';
 import { rm, date as fmtDate, time as fmtTime } from '../lib/format';
 import { STATEMENT } from '../lib/vocabulary';
+import { TONE } from '../lib/design-tokens';
 import type { StatementState } from '../lib/types';
 
 interface Statement {
@@ -57,7 +57,8 @@ const SELECT_REASON: Record<StatementState, string> = {
   paid: 'Paid — nothing left to send.',
 };
 
-const COLS = '32px minmax(160px,1.6fr) minmax(118px,1fr) minmax(96px,0.9fr) minmax(96px,0.9fr) minmax(110px,1fr) minmax(92px,0.9fr) 40px';
+// COLS as an arbitrary grid-template-columns utility (underscores == spaces).
+const gridCols = 'grid-cols-[32px_minmax(160px,1.6fr)_minmax(118px,1fr)_minmax(96px,0.9fr)_minmax(96px,0.9fr)_minmax(110px,1fr)_minmax(92px,0.9fr)_40px]';
 
 export default function StatementsPage() {
   const { data, loading, error, reload } = useApi<Payload>(`/statements?period=${BASE_PERIOD}`, FALLBACK);
@@ -185,17 +186,17 @@ export default function StatementsPage() {
         title="Owner statements"
         sub={`${periodLabel(viewPeriod)} period · ${notSent} ${notSent === 1 ? 'statement' : 'statements'} not yet sent`}
         right={
-          <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', alignItems: 'center' }}>
-            <label style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Statement period</span>
+          <div className="flex gap-[9px] flex-wrap items-center">
+            <label className="relative flex items-center">
+              <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Statement period</span>
               <select
                 value={viewPeriod}
                 onChange={e => { setViewPeriod(e.target.value); setSel({}); }}
-                style={{ height: 36, padding: '0 30px 0 12px', borderRadius: radius.control, border: `1px solid ${color.border}`, background: color.card, color: color.ink, fontSize: 13, fontWeight: 500, font: 'inherit', cursor: 'pointer', appearance: 'none' }}
+                className="h-9 py-0 pr-[30px] pl-3 rounded-control border border-solid border-line bg-card text-ink [font:inherit] cursor-pointer appearance-none"
               >
                 {PERIODS.map(p => <option key={p} value={p}>{periodLabel(p)}</option>)}
               </select>
-              <Icon name="ChevronDown" size="sm" style={{ position: 'absolute', right: 9, pointerEvents: 'none', color: color.textMuted }} />
+              <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" style={{ position: 'absolute', right: 9, pointerEvents: 'none' }} />
             </label>
             <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportCsv} disabled={rows.length === 0} disabledReason="Nothing to export for this period yet.">Export</Button>
             <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => openGenerate(lockedPeriods.has('2026-09') ? '2026-10' : '2026-09')}>Generate statements</Button>
@@ -214,26 +215,26 @@ export default function StatementsPage() {
       ) : (
         <Card>
           {selected.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', padding: '11px 22px', background: color.black, color: '#FFFFFF' }}>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>{selected.length} of {sendable.length} selected · {periodLabel(viewPeriod)}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <button onClick={() => setSel({})} style={{ fontSize: text.small, fontWeight: 500, color: color.onDark, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit' }}>Clear</button>
-                <button onClick={() => setSendConfirm(true)} style={{ padding: '7px 13px', borderRadius: radius.control, background: color.gold, color: color.black, fontSize: 12.5, fontWeight: 600, border: 'none', cursor: 'pointer' }}>
+            <div className="flex items-center justify-between gap-[14px] flex-wrap px-[22px] py-[11px] bg-black text-white">
+              <span className="text-[13px] font-medium">{selected.length} of {sendable.length} selected · {periodLabel(viewPeriod)}</span>
+              <div className="flex items-center gap-[10px]">
+                <button onClick={() => setSel({})} className="[font:inherit] text-[var(--color-text-on-dark)] bg-transparent border-none cursor-pointer">Clear</button>
+                <button onClick={() => setSendConfirm(true)} className="py-[7px] px-[13px] rounded-control bg-gold text-black text-[12.5px] font-semibold border-none cursor-pointer">
                   Send {selected.length} {selected.length === 1 ? 'statement' : 'statements'}
                 </button>
               </div>
             </div>
           )}
 
-          <div style={{ overflowX: 'auto' }}>
-            <div style={{ minWidth: 920 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, padding: '9px 22px', background: color.muted, borderBottom: `1px solid ${color.border}`, fontSize: text.small, fontWeight: 600, color: color.textMuted }}>
+          <div className="overflow-x-auto">
+            <div className="min-w-[920px]">
+              <div className={`grid ${gridCols} gap-[14px] px-[22px] py-[9px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink`}>
                 <div />
                 <div>Owner</div>
-                <div style={{ textAlign: 'right' }}>Gross booking value</div>
-                <div style={{ textAlign: 'right' }}>Fees</div>
-                <div style={{ textAlign: 'right' }}>Expenses</div>
-                <div style={{ textAlign: 'right' }}>Net payout</div>
+                <div className="text-right">Gross booking value</div>
+                <div className="text-right">Fees</div>
+                <div className="text-right">Expenses</div>
+                <div className="text-right">Net payout</div>
                 <div>Status</div>
                 <div />
               </div>
@@ -248,9 +249,9 @@ export default function StatementsPage() {
                     tabIndex={0}
                     onClick={() => openRow(s)}
                     onKeyDown={e => { if (e.key === 'Enter') openRow(s); }}
-                    style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, alignItems: 'center', minHeight: 50, padding: '8px 22px', borderBottom: `1px solid ${color.borderMuted}`, background: on ? color.goldTint : '#FFFFFF', cursor: 'pointer' }}
+                    className={`grid ${gridCols} gap-[14px] items-center min-h-[50px] py-2 px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer ${on ? 'bg-gold-tint' : 'bg-card'}`}
                   >
-                    <span onClick={e => e.stopPropagation()} style={{ display: 'flex' }}>
+                    <span onClick={e => e.stopPropagation()} className="flex">
                       <input
                         type="checkbox"
                         disabled={!can}
@@ -258,23 +259,23 @@ export default function StatementsPage() {
                         title={can ? undefined : SELECT_REASON[s.state]}
                         aria-label={can ? `Select ${s.ownerName}` : `${s.ownerName} cannot be selected — ${SELECT_REASON[s.state]}`}
                         onChange={() => setSel(v => ({ ...v, [s.id]: !v[s.id] }))}
-                        style={{ width: 17, height: 17, accentColor: '#11694A', cursor: can ? 'pointer' : 'not-allowed' }}
+                        className={`w-[17px] h-[17px] accent-[#11694A] ${can ? 'cursor-pointer' : 'cursor-not-allowed'}`}
                       />
                     </span>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                      <span style={{ fontSize: 13.5, fontWeight: 500 }}>{s.ownerName}</span>
-                      <span style={{ fontSize: 11.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.unitsLabel}</span>
+                    <div className="flex flex-col gap-px min-w-0">
+                      <span className="text-[13.5px] font-medium">{s.ownerName}</span>
+                      <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{s.unitsLabel}</span>
                     </div>
-                    <div style={{ textAlign: 'right', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>{rm(s.grossBookingValue, { cents: false })}</div>
-                    <div style={{ textAlign: 'right', fontSize: 13, color: color.textMuted, fontVariantNumeric: 'tabular-nums' }}>&minus; {rm(s.managementFee, { cents: false })}</div>
-                    <div style={{ textAlign: 'right', fontSize: 13, color: color.textMuted, fontVariantNumeric: 'tabular-nums' }}>&minus; {rm(s.expensesTotal, { cents: false })}</div>
-                    <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{rm(s.netPayout)}</div>
+                    <div className="text-right text-[13px] tabular-nums">{rm(s.grossBookingValue, { cents: false })}</div>
+                    <div className="text-right text-[13px] text-muted-ink tabular-nums">&minus; {rm(s.managementFee, { cents: false })}</div>
+                    <div className="text-right text-[13px] text-muted-ink tabular-nums">&minus; {rm(s.expensesTotal, { cents: false })}</div>
+                    <div className="text-right text-[13px] font-semibold tabular-nums">{rm(s.netPayout)}</div>
                     <div><Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} /></div>
                     <button
                       onClick={e => downloadPdf(s, e)}
                       aria-label={`Download PDF for ${s.ownerName}`}
                       title="Download PDF"
-                      style={{ display: 'grid', placeItems: 'center', width: 30, height: 30, borderRadius: radius.control, background: 'transparent', border: `1px solid ${color.border}`, color: color.textMuted, cursor: 'pointer' }}
+                      className="grid place-items-center w-[30px] h-[30px] rounded-control bg-transparent border border-solid border-line text-muted-ink cursor-pointer"
                     >
                       <Icon name="FileText" size="sm" />
                     </button>
@@ -284,7 +285,7 @@ export default function StatementsPage() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', padding: '11px 22px', borderTop: `1px solid ${color.border}`, background: color.page, fontSize: text.small, color: color.textMuted }}>
+          <div className="flex items-center justify-between gap-3 flex-wrap px-[22px] py-[11px] [border-top:1px_solid_var(--color-line)] bg-page text-[12px] text-muted-ink">
             <span>{rows.length} of {viewPeriod === BASE_PERIOD ? (data?.total ?? rows.length) : rows.length} owners · page size {data?.pageSize ?? 25}</span>
             <span>Every deduction carries a category, date, amount and reference</span>
           </div>
@@ -344,18 +345,18 @@ function GenerateDialog({ initialPeriod, periods, lockedPeriods, onClose, onGene
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Generate statements"
-      style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24, background: 'var(--color-surface-scrim)', animation: 'fade-in var(--motion-standard) var(--ease-out) both' }}>
-      <div onClick={busy ? undefined : onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div ref={ref} style={{ position: 'relative', width: '100%', maxWidth: 440, background: 'var(--color-surface-card)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-overlay)', overflow: 'hidden', animation: 'dialog-in var(--motion-slow) var(--ease-out) both' }}>
-        <div style={{ padding: '22px 22px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 18, lineHeight: 1.3, fontWeight: 600 }}>Generate statements</h2>
-          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--color-text-muted)' }}>
+      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
+      <div ref={ref} className="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
+        <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-3">
+          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold">Generate statements</h2>
+          <p className="m-0 text-[13px] leading-[1.55] text-muted-ink">
             Draws every settled booking, fee and documented expense for the period. Statements land as Provisional and must be reviewed before sending.
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <label htmlFor="gen-period" style={{ fontSize: text.small, fontWeight: 500, color: color.textMuted }}>Period</label>
+          <div className="flex flex-col gap-[7px]">
+            <label htmlFor="gen-period" className="text-[12px] font-medium text-muted-ink">Period</label>
             <select id="gen-period" value={period} onChange={e => setPeriod(e.target.value)} disabled={busy}
-              style={{ height: 40, padding: '0 12px', borderRadius: radius.control, border: `1px solid ${color.border}`, background: color.card, color: color.ink, fontSize: 14, font: 'inherit', cursor: 'pointer' }}>
+              className="h-10 py-0 px-3 rounded-control border border-solid border-line bg-card text-ink [font:inherit] cursor-pointer">
               {periods.map(p => (
                 <option key={p} value={p} disabled={lockedPeriods.has(p)}>
                   {periodLabel(p)}{lockedPeriods.has(p) ? ' — already sent' : ''}
@@ -363,11 +364,11 @@ function GenerateDialog({ initialPeriod, periods, lockedPeriods, onClose, onGene
               ))}
             </select>
           </div>
-          <div style={{ padding: '9px 11px', borderRadius: radius.control, background: color.page, border: `1px solid ${color.border}`, fontSize: 12, color: locked ? toneCritical() : color.textMuted }}>
+          <div className={`py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-[12px] ${locked ? TONE.critical.text : 'text-muted-ink'}`}>
             {locked ? 'This period has already been sent and cannot be regenerated.' : 'A period that has already been sent cannot be regenerated.'}
           </div>
         </div>
-        <div style={{ padding: '14px 22px', borderTop: `1px solid ${color.border}`, background: color.page, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 9, flexWrap: 'wrap' }}>
+        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
           <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button size="sm" variant="primary" loading={busy} disabled={locked} disabledReason="This period has already been sent." onClick={confirm}>
             {busy ? 'Generating…' : 'Generate'}
@@ -377,5 +378,3 @@ function GenerateDialog({ initialPeriod, periods, lockedPeriods, onClose, onGene
     </div>
   );
 }
-
-function toneCritical() { return 'var(--color-critical-fg)'; }

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { color, radius, text } from '../theme';
+import { cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -144,36 +144,36 @@ export default function IntegrationsPage() {
       {loading && rows.length === 0 ? (
         <Card><TableSkeleton rows={6} cols={3} /></Card>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: 16 }}>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(330px,1fr))] gap-4">
           {rows.map(row => {
             const label = PROVIDER_LABEL[row.provider] ?? row.provider;
             const m = META[row.state];
             const act = actionsFor(row.state);
             return (
               <Card key={row.id} style={{ display: 'flex', flexDirection: 'column' }}>
-                <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div className="py-[18px] px-5 flex flex-col gap-3 flex-1">
+                  <div className="flex items-center gap-3">
                     <Monogram label={label} />
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 }}>
-                      <span style={{ fontSize: text.cardTitle, fontWeight: 600 }}>{label}</span>
-                      <span style={{ fontSize: text.small, color: color.textMuted }}>{syncedLine(row)}</span>
+                    <div className="flex flex-col gap-[3px] flex-1 min-w-0">
+                      <span className="text-[16px] font-semibold">{label}</span>
+                      <span className="text-[12px] text-muted-ink">{syncedLine(row)}</span>
                     </div>
                     <Badge tone={m.tone} label={m.label} />
                   </div>
 
-                  <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: color.inkSecondary, textWrap: 'pretty' }}>{noteFor(row)}</p>
+                  <p className="m-0 text-[13px] leading-[1.5] text-[var(--color-ink-2)] [text-wrap:pretty]">{noteFor(row)}</p>
 
                   {row.lastError && (
-                    <div style={{ fontSize: text.small, color: 'var(--color-critical-fg)' }}>{row.lastError}</div>
+                    <div className="text-[12px] text-[var(--color-critical-fg)]">{row.lastError}</div>
                   )}
 
-                  <div style={{ marginTop: 'auto', paddingTop: 4, fontSize: text.small, color: color.textMuted }}>
+                  <div className="mt-auto pt-1 text-[12px] text-muted-ink">
                     {row.unitsLinked} {row.unitsLinked === 1 ? 'unit' : 'units'} linked
                     {row.syncInterval ? ` · ${row.syncInterval}` : ''}
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '13px 20px', borderTop: `1px solid ${color.borderMuted}`, background: color.page }}>
+                <div className="flex items-center gap-2 flex-wrap py-[13px] px-5 [border-top:1px_solid_var(--color-line-soft)] bg-page">
                   {act.reconnect && (
                     <Button size="sm" variant="brand" icon={<Icon name="PlugZap" size="sm" />} onClick={() => setReconnectId(row.id)}>
                       Reconnect
@@ -231,11 +231,7 @@ function Monogram({ label }: { label: string }) {
   return (
     <span
       aria-hidden
-      style={{
-        width: 38, height: 38, flex: 'none', display: 'grid', placeItems: 'center',
-        borderRadius: radius.sm, background: color.muted, border: `1px solid ${color.border}`,
-        fontSize: 15, fontWeight: 600, color: color.ink,
-      }}
+      className="w-[38px] h-[38px] flex-none grid place-items-center rounded-[6px] bg-muted border border-solid border-line text-[15px] font-semibold text-ink"
     >
       {label[0]}
     </span>
@@ -252,22 +248,22 @@ function ManagePanel({
   const act = actionsFor(row.state);
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '18px 22px', borderBottom: `1px solid ${color.border}` }}>
+      <div className="flex items-center gap-3 py-[18px] px-[22px] [border-bottom:1px_solid_var(--color-line)]">
         <Monogram label={label} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 }}>
-          <span style={{ fontSize: text.section, fontWeight: 600 }}>{label}</span>
-          <span style={{ fontSize: text.small, color: color.textMuted }}>{syncedLine(row)}</span>
+        <div className="flex flex-col gap-[3px] flex-1 min-w-0">
+          <span className="text-[20px] font-semibold">{label}</span>
+          <span className="text-[12px] text-muted-ink">{syncedLine(row)}</span>
         </div>
         <Badge tone={m.tone} label={m.label} />
-        <button onClick={onClose} aria-label="Close" style={{ display: 'flex', background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: color.textMuted }}>
+        <button onClick={onClose} aria-label="Close" className="flex bg-transparent border-none p-1 cursor-pointer text-muted-ink">
           <Icon name="X" size="base" />
         </button>
       </div>
 
-      <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 20, flex: 1, overflowY: 'auto' }}>
+      <div className="py-5 px-[22px] flex flex-col gap-5 flex-1 overflow-y-auto">
         <Section label="Connection">
-          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: color.inkSecondary, textWrap: 'pretty' }}>{noteFor(row)}</p>
-          {row.lastError && <div style={{ marginTop: 8, fontSize: text.small, color: 'var(--color-critical-fg)' }}>{row.lastError}</div>}
+          <p className="m-0 text-[13px] leading-[1.5] text-[var(--color-ink-2)] [text-wrap:pretty]">{noteFor(row)}</p>
+          {row.lastError && <div className="mt-2 text-[12px] text-[var(--color-critical-fg)]">{row.lastError}</div>}
         </Section>
 
         <Section label="Units linked">
@@ -282,7 +278,7 @@ function ManagePanel({
           {row.credentialMasked ? (
             <>
               <PanelValue mono>API key {row.credentialMasked}</PanelValue>
-              <div style={{ marginTop: 6, fontSize: text.small, color: color.textMuted }}>
+              <div className="mt-[6px] text-[12px] text-muted-ink">
                 Masked. Revealing a credential is audited and done from the secrets vault, not here.
               </div>
             </>
@@ -292,7 +288,7 @@ function ManagePanel({
         </Section>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 9, flexWrap: 'wrap', padding: '14px 22px', borderTop: `1px solid ${color.border}`, background: color.page }}>
+      <div className="flex items-center justify-end gap-[9px] flex-wrap py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page">
         {act.reconnect && (
           <Button size="sm" variant="brand" icon={<Icon name="PlugZap" size="sm" />} onClick={onReconnect}>Reconnect</Button>
         )}
@@ -309,8 +305,8 @@ function ManagePanel({
 
 function Section({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span style={{ fontSize: text.small, fontWeight: 600, color: color.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</span>
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[12px] font-semibold text-muted-ink uppercase tracking-[0.04em]">{label}</span>
       {children}
     </div>
   );
@@ -318,6 +314,6 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
 
 function PanelValue({ children, mono }: { children: ReactNode; mono?: boolean }) {
   return (
-    <span style={{ fontSize: 14, color: color.ink, fontFamily: mono ? 'var(--font-mono)' : undefined }}>{children}</span>
+    <span className={cx('text-[14px] text-ink', mono && 'font-mono')}>{children}</span>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { color, radius, text, tone as T } from '../theme';
+import { TONE, cx } from '../lib/design-tokens';
 import { Card, CardHeader } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -107,7 +107,20 @@ const FILTERS = [
 ] as const;
 type FilterKey = typeof FILTERS[number]['key'];
 
-const COLS = 'minmax(190px,1.5fr) minmax(170px,1.5fr) minmax(104px,0.9fr) minmax(78px,0.6fr) minmax(128px,1fr) minmax(128px,1fr) minmax(214px,1.5fr)';
+/* Seven-column track. Kept as an arbitrary grid-template so header and rows stay
+ * locked to identical columns; the minmax() ramp is off any Tailwind scale. */
+const COLS = 'grid-cols-[minmax(190px,1.5fr)_minmax(170px,1.5fr)_minmax(104px,0.9fr)_minmax(78px,0.6fr)_minmax(128px,1fr)_minmax(128px,1fr)_minmax(214px,1.5fr)]';
+
+/* The SLA tone drives the 3px accent on a row's left edge, using the design's
+ * -line (non-text) shade. TONE carries no line utility, so it is applied as an
+ * arbitrary border-left-color per tone (see design-tokens.ts note). */
+const LINE: Record<Tone, string> = {
+  success:  '[border-left-color:var(--color-success-line)]',
+  warning:  '[border-left-color:var(--color-warning-line)]',
+  critical: '[border-left-color:var(--color-critical-line)]',
+  info:     '[border-left-color:var(--color-info-line)]',
+  neutral:  '[border-left-color:var(--color-neutral-line)]',
+};
 
 const isCheckinRisk = (r: Row) =>
   !!r.nextGuestAt && (r.sla.state === 'overdue' || r.sla.state === 'escalated' || r.sla.state === 'due');
@@ -231,7 +244,7 @@ export default function OperationsTodayPage() {
 
       {error && <StaleBanner message={`Showing the last roster we have. ${error}`} onRetry={reload} />}
 
-      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+      <div className="flex gap-[7px] flex-wrap">
         {FILTERS.map(fl => {
           const on = fl.key === filter;
           return (
@@ -239,12 +252,10 @@ export default function OperationsTodayPage() {
               key={fl.key}
               onClick={() => setFilter(fl.key)}
               aria-pressed={on}
-              style={{
-                height: 32, display: 'flex', alignItems: 'center', padding: '0 13px', borderRadius: radius.pill,
-                fontSize: 12.5, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', font: 'inherit',
-                border: `1px solid ${on ? color.black : color.border}`, background: on ? color.black : '#FFFFFF',
-                color: on ? '#FFFFFF' : color.textMuted,
-              }}
+              className={cx(
+                'h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border border-solid',
+                on ? 'bg-black text-white border-black' : 'bg-white text-muted-ink border-line',
+              )}
             >
               {fl.label}
             </button>
@@ -254,53 +265,50 @@ export default function OperationsTodayPage() {
 
       <Card>
         <CardHeader title="All work, highest risk first" />
-        <div style={{ padding: '0 20px 12px', marginTop: -8, fontSize: text.small, color: color.textMuted }}>
+        <div className="pt-0 px-5 pb-3 -mt-2 text-[12px] text-muted-ink">
           Sorted by risk, then time{lastUpdated ? ` · last updated ${lastUpdated}` : ''}
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: 1040 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, padding: '9px 22px', background: color.muted, borderBottom: `1px solid ${color.border}`, fontSize: text.small, fontWeight: 600, color: color.textMuted }}>
+        <div className="overflow-x-auto">
+          <div className="min-w-[1040px]">
+            <div className={cx('grid', COLS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink')}>
               <div>Unit</div><div>Work</div><div>Readiness</div><div>Next guest</div><div>SLA</div><div>Assignee</div><div>Actions</div>
             </div>
 
             {loading && base.length === 0 ? (
               <TableSkeleton rows={5} cols={7} />
             ) : rows.length === 0 ? (
-              <div style={{ padding: '30px 22px', display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-start' }}>
-                <span style={{ fontSize: 13, color: color.inkSecondary }}>No work matches these filters.</span>
+              <div className="py-[30px] px-[22px] flex flex-col gap-2.5 items-start">
+                <span className="text-[13px] text-[#4A4844]">No work matches these filters.</span>
                 <Button variant="secondary" size="sm" onClick={() => setFilter('all')}>Clear filters</Button>
               </div>
             ) : rows.map(r => {
               const actions = actionsFor(r);
               return (
-                <div key={r.id} style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, alignItems: 'center', minHeight: 56, padding: '11px 22px', borderBottom: `1px solid ${color.borderMuted}`, borderLeft: `3px solid ${T[r.sla.tone].line}` }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 500 }}>{r.unitNumber}</span>
-                    <span style={{ fontSize: 11.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.propertyName}</span>
+                <div key={r.id} className={cx('grid', COLS, 'gap-[14px] items-center min-h-[56px] py-[11px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] border-l-[3px]', LINE[r.sla.tone])}>
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[13.5px] font-medium">{r.unitNumber}</span>
+                    <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.propertyName}</span>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13 }}>{r.work}</span>
-                    {r.note && <span style={{ fontSize: 11.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.note}</span>}
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[13px]">{r.work}</span>
+                    {r.note && <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.note}</span>}
                   </div>
                   <div><Badge tone={READINESS[r.readiness].tone} label={READINESS[r.readiness].label} /></div>
-                  <div style={{ fontSize: 13 }}>{r.nextGuestAt ?? '—'}</div>
+                  <div className="text-[13px]">{r.nextGuestAt ?? '—'}</div>
                   <div><Badge tone={r.sla.tone} label={r.sla.label} /></div>
-                  <div style={{ fontSize: 13, color: r.assigneeName ? color.ink : color.textMuted, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div className={cx('text-[13px] min-w-0 whitespace-nowrap overflow-hidden text-ellipsis', r.assigneeName ? 'text-ink' : 'text-muted-ink')}>
                     {r.assigneeName ?? 'Unassigned'}
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  <div className="flex flex-wrap gap-1.5">
                     {actions.map(a => (
                       <button
                         key={a.key}
                         onClick={a.run}
-                        style={{
-                          height: 28, display: 'inline-flex', alignItems: 'center', padding: '0 11px', borderRadius: radius.control,
-                          fontSize: 12, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', font: 'inherit',
-                          border: `1px solid ${a.primary ? color.black : color.border}`,
-                          background: a.primary ? color.black : '#FFFFFF',
-                          color: a.primary ? '#FFFFFF' : color.inkSecondary,
-                        }}
+                        className={cx(
+                          'h-7 inline-flex items-center px-[11px] py-0 rounded-control cursor-pointer whitespace-nowrap [font:inherit] border border-solid',
+                          a.primary ? 'bg-black text-white border-black' : 'bg-white text-[#4A4844] border-line',
+                        )}
                       >
                         {a.label}
                       </button>
@@ -325,20 +333,20 @@ export default function OperationsTodayPage() {
             </Button>
           </>}
         >
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <span style={{ fontSize: text.small, fontWeight: 500, color: color.textMuted }}>Cleaner</span>
+          <label className="flex flex-col gap-[7px]">
+            <span className="text-[12px] font-medium text-muted-ink">Cleaner</span>
             <select className="field-input" value={assign.cleanerId}
               onChange={e => setAssign(a => a && { ...a, cleanerId: e.target.value })}>
               {CREW.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>
           {assign.row.nextGuestAt && (
-            <div style={{ padding: '9px 11px', borderRadius: radius.control, background: color.page, border: `1px solid ${color.border}`, fontSize: 12 }}>
+            <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-[12px]">
               Next guest arrives {assign.row.nextGuestAt} {'·'} {assign.row.sla.label}
             </div>
           )}
           {assignOverlap(assign, allRows) && (
-            <div role="status" style={{ padding: '9px 11px', borderRadius: radius.control, background: T.warning.bg, color: T.warning.fg, fontSize: 12 }}>
+            <div role="status" className={cx('py-[9px] px-[11px] rounded-control text-[12px]', TONE.warning.bg, TONE.warning.text)}>
               {CREW.find(c => c.id === assign.cleanerId)?.name} already has {assignOverlap(assign, allRows)} task{assignOverlap(assign, allRows) === 1 ? '' : 's'} today. Assign anyway?
             </div>
           )}
@@ -355,8 +363,8 @@ export default function OperationsTodayPage() {
             <Button variant="primary" size="sm" disabled={!message.body.trim()} disabledReason="Write a message first." onClick={doMessage}>Send message</Button>
           </>}
         >
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <span style={{ fontSize: text.small, fontWeight: 500, color: color.textMuted }}>Message</span>
+          <label className="flex flex-col gap-[7px]">
+            <span className="text-[12px] font-medium text-muted-ink">Message</span>
             <textarea className="field-input" rows={5} value={message.body}
               onChange={e => setMessage(m => m && { ...m, body: e.target.value })} />
           </label>
@@ -418,15 +426,15 @@ function Modal({ title, sub, onClose, children, footer }: {
 
   return (
     <div role="dialog" aria-modal="true" aria-label={title}
-      style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24, background: 'var(--color-surface-scrim)', animation: 'fade-in var(--motion-standard) var(--ease-out) both' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div ref={ref} style={{ position: 'relative', width: '100%', maxWidth: 460, background: 'var(--color-surface-card)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-overlay)', overflow: 'hidden', animation: 'dialog-in var(--motion-slow) var(--ease-out) both' }}>
-        <div style={{ padding: '22px 22px 4px', display: 'flex', flexDirection: 'column', gap: 9 }}>
-          <h2 style={{ margin: 0, fontSize: 18, lineHeight: 1.3, fontWeight: 600, textWrap: 'pretty' }}>{title}</h2>
-          {sub && <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--color-text-muted)', textWrap: 'pretty' }}>{sub}</p>}
+      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      <div onClick={onClose} className="absolute inset-0" />
+      <div ref={ref} className="relative w-full max-w-[460px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
+        <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[9px]">
+          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold [text-wrap:pretty]">{title}</h2>
+          {sub && <p className="m-0 text-[13px] leading-[1.55] text-muted-ink [text-wrap:pretty]">{sub}</p>}
         </div>
-        <div style={{ padding: '14px 22px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>
-        <div style={{ padding: '14px 22px', borderTop: '1px solid var(--color-border-default)', background: 'var(--color-surface-page)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 9, flexWrap: 'wrap' }}>
+        <div className="pt-[14px] px-[22px] pb-[18px] flex flex-col gap-3">{children}</div>
+        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-border-default)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
           {footer}
         </div>
       </div>

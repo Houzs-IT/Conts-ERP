@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { color, radius, text, tone as palette, shadow } from '../theme';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -8,6 +7,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, ApiFailure } from '../lib/api';
+import { TONE, cx } from '../lib/design-tokens';
 import type { Tone, UserRole } from '../lib/types';
 
 /* ------------------------------------------------------------------ *
@@ -224,24 +224,29 @@ const MATRIX_MODULES: { module: string; note: string; resources: ResourceKey[] }
 ];
 
 /* ------------------------------- styles ------------------------------- */
-const inputStyle = {
-  display: 'block', width: '100%', boxSizing: 'border-box' as const, height: 40, padding: '0 12px',
-  fontSize: text.body, color: color.ink, background: '#FFFFFF',
-  border: `1px solid ${color.border}`, borderRadius: radius.control, outline: 'none', font: 'inherit',
+// The former inputStyle object ended with `font: 'inherit'` (last shorthand key),
+// so inputs/selects actually render at the inherited 16px / 400 / IBM Plex Sans —
+// reproduced with [font:inherit]. py-0 zeroes the UA vertical padding (no preflight).
+const inputClass = 'block w-full box-border h-10 px-3 py-0 [font:inherit] text-ink bg-card border border-solid border-line rounded-control outline-none';
+const labelClass = 'text-[12px] font-medium text-muted-ink';
+const errClass = cx('text-[12px]', TONE.critical.text);
+const LIST_COLS_CLASS = 'grid-cols-[minmax(180px,1.6fr)_minmax(180px,1.4fr)_150px_140px_120px_110px]';
+const MATRIX_COLS_CLASS = 'grid-cols-[minmax(200px,1.5fr)_repeat(6,minmax(104px,1fr))]';
+// Left accent on org cards — the -line tone shade, as a box-shadow inset (kept off
+// the border so it does not change the card geometry). Static per-tone literals so
+// the JIT scanner sees each class.
+const ORG_ACCENT: Record<Tone, string> = {
+  success:  '[box-shadow:inset_3px_0_0_var(--color-success-line,#16845B)]',
+  warning:  '[box-shadow:inset_3px_0_0_var(--color-warning-line,#B7791F)]',
+  critical: '[box-shadow:inset_3px_0_0_var(--color-critical-line,#C2413B)]',
+  info:     '[box-shadow:inset_3px_0_0_var(--color-info-line,#2E6DA4)]',
+  neutral:  '[box-shadow:inset_3px_0_0_var(--color-neutral-line,#C7C1B6)]',
 };
-const labelStyle = { fontSize: text.small, fontWeight: 500, color: color.textMuted };
-const errStyle = { fontSize: text.small, color: palette.critical.fg };
-const LIST_COLS = 'minmax(180px,1.6fr) minmax(180px,1.4fr) 150px 140px 120px 110px';
 
 function TierChip({ tier }: { tier: Tier }) {
   const t = TIER[tier];
-  const c = palette[t.tone];
   return (
-    <span style={{
-      display: 'inline-flex', justifyContent: 'center', minWidth: 64,
-      fontSize: 10.5, fontWeight: 600, padding: '3px 8px', borderRadius: radius.sm,
-      background: c.bg, color: c.fg,
-    }}>{t.label}</span>
+    <span className={cx('inline-flex justify-center min-w-[64px] text-[10.5px] font-semibold py-[3px] px-2 rounded-[6px]', TONE[t.tone].bg, TONE[t.tone].text)}>{t.label}</span>
   );
 }
 
@@ -256,25 +261,16 @@ function Modal({ title, sub, onClose, children, footer, width = 460 }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
   return (
-    <div role="dialog" aria-modal="true" aria-label={title} style={{
-      position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24,
-      background: 'rgba(21,21,21,0.44)', animation: 'fade-in var(--motion-standard) var(--ease-out) both',
-    }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div style={{
-        position: 'relative', width: '100%', maxWidth: width, maxHeight: 'calc(100vh - 48px)', overflowY: 'auto',
-        background: '#FFFFFF', borderRadius: radius.card, boxShadow: shadow.overlay,
-      }}>
-        <div style={{ padding: '20px 22px 4px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <h2 style={{ margin: 0, fontSize: 18, lineHeight: 1.3, fontWeight: 600 }}>{title}</h2>
-          {sub && <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: color.textMuted }}>{sub}</p>}
+    <div role="dialog" aria-modal="true" aria-label={title}
+      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[rgba(21,21,21,0.44)] animate-[fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      <div onClick={onClose} className="absolute inset-0" />
+      <div className="relative w-full max-h-[calc(100vh-48px)] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]" style={{ maxWidth: width }}>
+        <div className="pt-5 px-[22px] pb-1 flex flex-col gap-[5px]">
+          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold">{title}</h2>
+          {sub && <p className="m-0 text-[13px] leading-[1.5] text-muted-ink">{sub}</p>}
         </div>
-        <div style={{ padding: '16px 22px' }}>{children}</div>
-        <div style={{
-          padding: '14px 22px', borderTop: `1px solid ${color.border}`, background: color.page,
-          display: 'flex', justifyContent: 'flex-end', gap: 9, flexWrap: 'wrap',
-          position: 'sticky', bottom: 0,
-        }}>{footer}</div>
+        <div className="py-4 px-[22px]">{children}</div>
+        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page flex justify-end gap-[9px] flex-wrap sticky bottom-0">{footer}</div>
       </div>
     </div>
   );
@@ -444,7 +440,7 @@ export default function UsersPage() {
         )}
       />
 
-      <div role="tablist" aria-label="Users and roles sections" style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${color.border}`, overflowX: 'auto', marginTop: 2 }}>
+      <div role="tablist" aria-label="Users and roles sections" className="flex gap-1 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] overflow-x-auto mt-0.5">
         {tabs.map(t => {
           const on = tab === t.key;
           return (
@@ -453,12 +449,10 @@ export default function UsersPage() {
               role="tab"
               aria-selected={on}
               onClick={() => setTab(t.key)}
-              style={{
-                padding: '11px 6px', marginRight: 18, background: 'none', border: 'none', cursor: 'pointer',
-                font: 'inherit', fontSize: 13.5, fontWeight: on ? 600 : 400,
-                color: on ? color.ink : color.textMuted, whiteSpace: 'nowrap',
-                boxShadow: on ? `inset 0 -2px 0 ${color.gold}` : 'none',
-              }}
+              className={cx(
+                'px-[6px] py-[11px] mr-[18px] bg-transparent border-none cursor-pointer font-sans text-[13.5px] whitespace-nowrap',
+                on ? 'font-semibold text-ink [box-shadow:inset_0_-2px_0_var(--color-gold,#C8A46A)]' : 'font-normal text-muted-ink',
+              )}
             >{t.label}</button>
           );
         })}
@@ -469,13 +463,13 @@ export default function UsersPage() {
       {/* ------------------------------ Users tab ------------------------------ */}
       {tab === 'users' && (
         <Card>
-          <div style={{ padding: '13px 20px', borderBottom: `1px solid ${color.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: text.small, color: color.textMuted }}>Role sets what a person can do. The reporting line is separate — see the organisation chart.</span>
+          <div className="py-[13px] px-5 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] flex items-center justify-between gap-[14px] flex-wrap">
+            <span className="text-[12px] text-muted-ink">Role sets what a person can do. The reporting line is separate — see the organisation chart.</span>
             <Button variant="secondary" size="sm" onClick={() => { setLastTempPassword(null); setInviteOpen(true); }}>Invite user</Button>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <div style={{ minWidth: 940 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: LIST_COLS, gap: 14, padding: '9px 20px', background: color.muted, borderBottom: `1px solid ${color.border}`, fontSize: text.small, fontWeight: 600, color: color.textMuted }}>
+          <div className="overflow-x-auto">
+            <div className="min-w-[940px]">
+              <div className={cx('grid', LIST_COLS_CLASS, 'gap-[14px] py-[9px] px-5 bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-[12px] font-semibold text-muted-ink')}>
                 <div>Name</div><div>Email</div><div>Role</div><div>Reports to</div><div>Last sign-in</div><div>Status</div>
               </div>
               {loading && rows.length === 0 ? <TableSkeleton rows={7} cols={6} /> : rows.map(u => {
@@ -485,25 +479,21 @@ export default function UsersPage() {
                   <button
                     key={u.id}
                     onClick={() => openEdit(u)}
-                    style={{
-                      display: 'grid', gridTemplateColumns: LIST_COLS, gap: 14, alignItems: 'center', width: '100%',
-                      textAlign: 'left', minHeight: 54, padding: '9px 20px', borderBottom: `1px solid ${color.borderMuted}`,
-                      background: 'none', border: 'none', borderRadius: 0, cursor: 'pointer', font: 'inherit',
-                    }}
+                    className={cx('grid', LIST_COLS_CLASS, 'gap-[14px] items-center w-full text-left min-h-[54px] py-[9px] px-5 bg-transparent border-none rounded-none cursor-pointer [font:inherit]')}
                   >
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                      <span style={{ width: 30, height: 30, flex: 'none', borderRadius: 999, background: palette[roleTone[u.role]].bg, color: palette[roleTone[u.role]].fg, display: 'grid', placeItems: 'center', fontSize: text.micro, fontWeight: 600 }}>
+                    <span className="flex items-center gap-2.5 min-w-0">
+                      <span className={cx('w-[30px] h-[30px] flex-none rounded-full grid place-items-center text-[11px] font-semibold', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>
                         {initials(u.fullName)}
                       </span>
-                      <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                        <span style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.fullName}</span>
-                        <span style={{ fontSize: text.micro, color: color.textMuted, whiteSpace: 'nowrap' }}>{u.phone}</span>
+                      <span className="flex flex-col gap-px min-w-0">
+                        <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{u.fullName}</span>
+                        <span className="text-[11px] text-muted-ink whitespace-nowrap">{u.phone}</span>
                       </span>
                     </span>
-                    <span style={{ fontSize: 12.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</span>
-                    <span><span style={{ display: 'inline-flex', fontSize: text.micro, fontWeight: 500, padding: '3px 9px', borderRadius: 999, background: palette[roleTone[u.role]].bg, color: palette[roleTone[u.role]].fg, whiteSpace: 'nowrap' }}>{roleLabel(u.role)}</span></span>
-                    <span style={{ fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: manager ? color.ink : color.faint }}>{manager ?? '—'}</span>
-                    <span style={{ fontSize: 12.5, color: color.textMuted }}>{u.lastLoginAt ?? 'Never'}</span>
+                    <span className="text-[12.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.email}</span>
+                    <span><span className={cx('inline-flex text-[11px] font-medium py-[3px] px-[9px] rounded-full whitespace-nowrap', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>{roleLabel(u.role)}</span></span>
+                    <span className={cx('text-[12.5px] whitespace-nowrap overflow-hidden text-ellipsis', manager ? 'text-ink' : 'text-faint')}>{manager ?? '—'}</span>
+                    <span className="text-[12.5px] text-muted-ink">{u.lastLoginAt ?? 'Never'}</span>
                     <span><Badge tone={s.tone} label={s.label} /></span>
                   </button>
                 );
@@ -516,31 +506,31 @@ export default function UsersPage() {
       {/* --------------------------- Permissions tab --------------------------- */}
       {tab === 'permissions' && (
         <Card>
-          <div style={{ padding: '13px 20px', borderBottom: `1px solid ${color.border}`, fontSize: text.small, color: color.textMuted, lineHeight: 1.5 }}>
+          <div className="py-[13px] px-5 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-[12px] text-muted-ink leading-[1.5]">
             Deny by default. An action absent from a role is forbidden, and destinations a role cannot reach are removed from its navigation rather than disabled. This is a read-only view of the permission model — permissions are set in the role, not here.
           </div>
-          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', padding: '11px 20px', borderBottom: `1px solid ${color.borderMuted}` }}>
+          <div className="flex gap-[14px] flex-wrap py-[11px] px-5 [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
             {(['full', 'edit', 'view', 'own', 'none'] as Tier[]).map(t => (
-              <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: text.micro, color: color.textMuted }}>
+              <span key={t} className="inline-flex items-center gap-[7px] text-[11px] text-muted-ink">
                 <TierChip tier={t} />
                 <span>{t === 'full' ? 'Create, edit, delete' : t === 'edit' ? 'View and edit' : t === 'view' ? 'View only' : t === 'own' ? 'Own or assigned records' : 'No access'}</span>
               </span>
             ))}
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <div style={{ minWidth: 1020 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px,1.5fr) repeat(6,minmax(104px,1fr))', gap: 10, padding: '10px 20px', background: color.muted, borderBottom: `1px solid ${color.border}`, fontSize: text.micro, fontWeight: 600, color: color.textMuted }}>
+          <div className="overflow-x-auto">
+            <div className="min-w-[1020px]">
+              <div className={cx('grid', MATRIX_COLS_CLASS, 'gap-2.5 py-2.5 px-5 bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-[11px] font-semibold text-muted-ink')}>
                 <div>Module</div>
-                {MATRIX_COLS.map(c => <div key={c.label} title={c.title} style={{ textAlign: 'center' }}>{c.label}</div>)}
+                {MATRIX_COLS.map(c => <div key={c.label} title={c.title} className="text-center">{c.label}</div>)}
               </div>
               {MATRIX_MODULES.map(m => (
-                <div key={m.module} style={{ display: 'grid', gridTemplateColumns: 'minmax(200px,1.5fr) repeat(6,minmax(104px,1fr))', gap: 10, alignItems: 'center', padding: '9px 20px', borderBottom: `1px solid ${color.borderMuted}` }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13, fontWeight: 500 }}>{m.module}</span>
-                    <span style={{ fontSize: text.micro, color: color.textMuted }}>{m.note}</span>
+                <div key={m.module} className={cx('grid', MATRIX_COLS_CLASS, 'gap-2.5 items-center py-[9px] px-5 [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]')}>
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[13px] font-medium">{m.module}</span>
+                    <span className="text-[11px] text-muted-ink">{m.note}</span>
                   </div>
                   {MATRIX_COLS.map(c => (
-                    <div key={c.label} style={{ display: 'flex', justifyContent: 'center' }}>
+                    <div key={c.label} className="flex justify-center">
                       <TierChip tier={cellTier(m.resources, c.roles)} />
                     </div>
                   ))}
@@ -554,9 +544,9 @@ export default function UsersPage() {
       {/* --------------------------- Organisation tab -------------------------- */}
       {tab === 'org' && (
         <Card>
-          <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: text.small, color: color.textMuted, maxWidth: 640, lineHeight: 1.5 }}>
+          <div className="py-[18px] px-[22px] flex flex-col gap-5">
+            <div className="flex items-center justify-between gap-[14px] flex-wrap">
+              <span className="text-[12px] text-muted-ink max-w-[640px] leading-[1.5]">
                 Reporting line, not a permission source. It drives escalation and rosters. Permissions come from the role on each account — see the Permissions tab.
               </span>
               <Button variant="secondary" size="sm" onClick={openOrg}>Edit structure</Button>
@@ -579,42 +569,42 @@ export default function UsersPage() {
             </>
           }
         >
-          <form id="invite-form" onSubmit={submitInvite} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label htmlFor="inv-name" style={labelStyle}>Full name</label>
-              <input id="inv-name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" style={inputStyle} />
-              {fieldErrors.fullName && <span style={errStyle}>{fieldErrors.fullName}</span>}
+          <form id="invite-form" onSubmit={submitInvite} className="flex flex-col gap-[14px]">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="inv-name" className={labelClass}>Full name</label>
+              <input id="inv-name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" className={inputClass} />
+              {fieldErrors.fullName && <span className={errClass}>{fieldErrors.fullName}</span>}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label htmlFor="inv-email" style={labelStyle}>Work email</label>
-              <input id="inv-email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@theconts.com" style={inputStyle} />
-              {fieldErrors.email && <span style={errStyle}>{fieldErrors.email}</span>}
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="inv-email" className={labelClass}>Work email</label>
+              <input id="inv-email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@theconts.com" className={inputClass} />
+              {fieldErrors.email && <span className={errClass}>{fieldErrors.email}</span>}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 14 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label htmlFor="inv-role" style={labelStyle}>Role</label>
-                <select id="inv-role" value={role} onChange={e => setRole(e.target.value as UserRole)} style={{ ...inputStyle, textTransform: 'capitalize' }}>
-                  {ROLES.map(r => <option key={r} value={r} style={{ textTransform: 'capitalize' }}>{roleLabel(r)}</option>)}
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-[14px]">
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="inv-role" className={labelClass}>Role</label>
+                <select id="inv-role" value={role} onChange={e => setRole(e.target.value as UserRole)} className={cx(inputClass, 'capitalize')}>
+                  {ROLES.map(r => <option key={r} value={r} className="capitalize">{roleLabel(r)}</option>)}
                 </select>
               </div>
               {role !== 'owner' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <label htmlFor="inv-mgr" style={labelStyle}>Reports to</label>
-                  <select id="inv-mgr" value={managerId} onChange={e => setManagerId(e.target.value)} style={inputStyle}>
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="inv-mgr" className={labelClass}>Reports to</label>
+                  <select id="inv-mgr" value={managerId} onChange={e => setManagerId(e.target.value)} className={inputClass}>
                     <option value="">No manager</option>
                     {staff.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}
                   </select>
                 </div>
               )}
             </div>
-            <div style={{ fontSize: text.small, color: color.textMuted, lineHeight: 1.5 }}>
+            <div className="text-[12px] text-muted-ink leading-[1.5]">
               The role sets their permissions and landing screen. The reporting line is for escalation and rosters only.
             </div>
           </form>
           {lastTempPassword && (
-            <div style={{ marginTop: 14, padding: '11px 13px', borderRadius: radius.control, background: color.page, border: `1px solid ${color.border}` }}>
-              <div style={{ fontSize: text.small, color: color.textMuted }}>Temporary password for {lastTempPassword.name}</div>
-              <div style={{ fontSize: 15, fontWeight: 600, fontFamily: 'var(--font-mono)', marginTop: 3 }}>{lastTempPassword.password}</div>
+            <div className="mt-[14px] py-[11px] px-[13px] rounded-control bg-page border border-solid border-line">
+              <div className="text-[12px] text-muted-ink">Temporary password for {lastTempPassword.name}</div>
+              <div className="text-[15px] font-semibold font-mono mt-[3px]">{lastTempPassword.password}</div>
             </div>
           )}
         </Modal>
@@ -633,29 +623,29 @@ export default function UsersPage() {
             </>
           }
         >
-          <form id="edit-form" onSubmit={submitEdit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label htmlFor="ed-role" style={labelStyle}>Role</label>
-              <select id="ed-role" value={editRole} onChange={e => setEditRole(e.target.value as UserRole)} style={{ ...inputStyle, textTransform: 'capitalize' }}>
-                {ROLES.map(r => <option key={r} value={r} style={{ textTransform: 'capitalize' }}>{roleLabel(r)}</option>)}
+          <form id="edit-form" onSubmit={submitEdit} className="flex flex-col gap-[14px]">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="ed-role" className={labelClass}>Role</label>
+              <select id="ed-role" value={editRole} onChange={e => setEditRole(e.target.value as UserRole)} className={cx(inputClass, 'capitalize')}>
+                {ROLES.map(r => <option key={r} value={r} className="capitalize">{roleLabel(r)}</option>)}
               </select>
               {editRole !== editing.role && (
-                <span style={{ fontSize: text.small, color: palette.warning.fg }}>
+                <span className={cx('text-[12px]', TONE.warning.text)}>
                   Changing the role rebuilds this person’s navigation and permissions on their next sign-in.
                 </span>
               )}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label htmlFor="ed-mgr" style={labelStyle}>Reports to</label>
-              <select id="ed-mgr" value={editManager} onChange={e => setEditManager(e.target.value)} style={inputStyle}>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="ed-mgr" className={labelClass}>Reports to</label>
+              <select id="ed-mgr" value={editManager} onChange={e => setEditManager(e.target.value)} className={inputClass}>
                 <option value="">No manager</option>
                 {staff.filter(s => s.id !== editing.id).map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}
               </select>
-              <span style={{ fontSize: text.small, color: color.textMuted }}>Reporting line only. It does not grant or remove any access.</span>
+              <span className="text-[12px] text-muted-ink">Reporting line only. It does not grant or remove any access.</span>
             </div>
-            <label htmlFor="ed-active" style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
-              <input id="ed-active" type="checkbox" checked={editActive} onChange={e => setEditActive(e.target.checked)} style={{ width: 16, height: 16 }} />
-              <span style={{ fontSize: text.body }}>Account is active</span>
+            <label htmlFor="ed-active" className="flex items-center gap-[9px] cursor-pointer">
+              <input id="ed-active" type="checkbox" checked={editActive} onChange={e => setEditActive(e.target.checked)} className="w-4 h-4" />
+              <span className="text-[14px]">Account is active</span>
             </label>
           </form>
         </Modal>
@@ -675,18 +665,18 @@ export default function UsersPage() {
             </>
           }
         >
-          <form id="org-form" onSubmit={submitOrg} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <form id="org-form" onSubmit={submitOrg} className="flex flex-col gap-3">
             {staff.map(s => (
-              <div key={s.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12, alignItems: 'center' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.fullName}</span>
-                  <span style={{ fontSize: text.micro, color: color.textMuted, textTransform: 'capitalize' }}>{roleLabel(s.role)}</span>
+              <div key={s.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3 items-center">
+                <div className="flex flex-col gap-px min-w-0">
+                  <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{s.fullName}</span>
+                  <span className="text-[11px] text-muted-ink capitalize">{roleLabel(s.role)}</span>
                 </div>
                 <select
                   aria-label={`Manager for ${s.fullName}`}
                   value={orgDraft[s.id] ?? ''}
                   onChange={e => setOrgDraft(d => ({ ...d, [s.id]: e.target.value }))}
-                  style={inputStyle}
+                  className={inputClass}
                 >
                   <option value="">No manager</option>
                   {staff.filter(o => o.id !== s.id).map(o => <option key={o.id} value={o.id}>{o.fullName}</option>)}
@@ -727,14 +717,14 @@ function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, 
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div className="flex flex-col gap-5">
       {levels.filter(l => l.people.length).map(l => (
-        <div key={l.label} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: text.micro, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: color.textMuted }}>{l.label}</span>
-            <span style={{ flex: 1, height: 1, background: color.borderMuted }} />
+        <div key={l.label} className="flex flex-col gap-2.5">
+          <div className="flex items-center gap-2.5">
+            <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">{l.label}</span>
+            <span className="flex-1 h-px bg-[var(--color-line-soft,#EDEAE4)]" />
           </div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <div className="flex gap-3 flex-wrap">
             {l.people.map(p => {
               const reports = directReports(p.id);
               const manager = p.managerId ? nameById[p.managerId] : null;
@@ -742,21 +732,17 @@ function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, 
                 ? `${reports} direct report${reports === 1 ? '' : 's'}`
                 : manager ? `Reports to ${manager}` : null;
               return (
-                <div key={p.id} style={{
-                  minWidth: 188, padding: '13px 15px', borderRadius: radius.card, border: `1px solid ${color.border}`,
-                  background: '#FFFFFF', display: 'flex', flexDirection: 'column', gap: 8,
-                  boxShadow: `inset 3px 0 0 ${palette[roleTone[p.role]].line}`,
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ width: 32, height: 32, flex: 'none', borderRadius: 999, background: palette[roleTone[p.role]].bg, color: palette[roleTone[p.role]].fg, display: 'grid', placeItems: 'center', fontSize: text.micro, fontWeight: 600 }}>
+                <div key={p.id} className={cx('min-w-[188px] py-[13px] px-[15px] rounded-card border border-solid border-line bg-card flex flex-col gap-2', ORG_ACCENT[roleTone[p.role]])}>
+                  <div className="flex items-center gap-2.5">
+                    <span className={cx('w-8 h-8 flex-none rounded-full grid place-items-center text-[11px] font-semibold', TONE[roleTone[p.role]].bg, TONE[roleTone[p.role]].text)}>
                       {initials(p.fullName)}
                     </span>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>{p.fullName}</span>
-                      <span style={{ fontSize: text.micro, color: color.textMuted, whiteSpace: 'nowrap', textTransform: 'capitalize' }}>{roleLabel(p.role)}</span>
+                    <div className="flex flex-col gap-px min-w-0">
+                      <span className="text-[13px] font-semibold whitespace-nowrap">{p.fullName}</span>
+                      <span className="text-[11px] text-muted-ink whitespace-nowrap capitalize">{roleLabel(p.role)}</span>
                     </div>
                   </div>
-                  {meta && <span style={{ fontSize: text.micro, color: color.textMuted }}>{meta}</span>}
+                  {meta && <span className="text-[11px] text-muted-ink">{meta}</span>}
                 </div>
               );
             })}

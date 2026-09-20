@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { color, radius, text, tone as T } from '../theme';
 import { Card, CardHeader, LinkAction } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -10,6 +9,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
 import { rm, time, percent } from '../lib/format';
+import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
 /* ------------------------------------------------------------------ KPIs -- */
@@ -218,7 +218,22 @@ const CREW = [
 
 const go = (hash: string) => { window.location.hash = hash; };
 
-const PCOLS = 'minmax(190px,2fr) repeat(4,minmax(78px,0.9fr)) minmax(120px,1.1fr)';
+/* Portfolio table track template, as one arbitrary Tailwind grid-cols class so
+ * header and rows stay in lockstep. The literal lives here verbatim (repeat()
+ * expanded) so Tailwind can extract it. Was: minmax(190px,2fr)
+ * repeat(4,minmax(78px,0.9fr)) minmax(120px,1.1fr). */
+const PCOLS = 'grid-cols-[minmax(190px,2fr)_minmax(78px,0.9fr)_minmax(78px,0.9fr)_minmax(78px,0.9fr)_minmax(78px,0.9fr)_minmax(120px,1.1fr)]';
+
+/* The exception tone drives the 3px left accent. It uses the design's -line
+ * (non-text) shade, which lives only as a CSS var, applied per tone as a single
+ * -property arbitrary border so no phantom UA-width borders appear on other sides. */
+const LINE: Record<Tone, string> = {
+  success:  '[border-left:3px_solid_var(--color-success-line)]',
+  warning:  '[border-left:3px_solid_var(--color-warning-line)]',
+  critical: '[border-left:3px_solid_var(--color-critical-line)]',
+  info:     '[border-left:3px_solid_var(--color-info-line)]',
+  neutral:  '[border-left:3px_solid_var(--color-neutral-line)]',
+};
 
 export default function DashboardPage() {
   const kpi = useApi<KpiPayload>('/dashboard/kpis', KPI_FALLBACK);
@@ -302,39 +317,39 @@ export default function DashboardPage() {
       {failure && <StaleBanner message={`Showing the last figures we have. ${failure}`} onRetry={() => { kpi.reload(); trend.reload(); today.reload(); exc.reload(); portfolio.reload(); }} />}
 
       {/* KPI row — kept as the existing read-only summary. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 14 }}>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-[14px]">
         {kpi.loading && kpis.length === 0
           ? Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} style={{ background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, padding: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div className="skeleton" style={{ height: 12, width: '50%' }} />
-                <div className="skeleton" style={{ height: 24, width: '75%' }} />
+              <div key={i} className="bg-card border border-solid border-line rounded-card p-[18px] flex flex-col gap-2.5">
+                <div className="skeleton h-3 w-1/2" />
+                <div className="skeleton h-6 w-3/4" />
               </div>
             ))
           : kpis.map(k => (
-              <div key={k.key} style={{ background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, padding: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ fontSize: text.small, color: color.textMuted }}>{KPI_LABEL[k.key] ?? k.key}</div>
-                <div style={{ fontSize: 26, lineHeight: 1.15, fontWeight: 600, letterSpacing: '-0.01em' }}>{kpiValue(k)}</div>
+              <div key={k.key} className="bg-card border border-solid border-line rounded-card p-[18px] flex flex-col gap-2">
+                <div className="text-[12px] text-muted-ink">{KPI_LABEL[k.key] ?? k.key}</div>
+                <div className="text-[26px] leading-[1.15] font-semibold tracking-[-0.01em]">{kpiValue(k)}</div>
               </div>
             ))}
       </div>
 
       {/* Trend chart + exceptions */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.5fr) minmax(0,1fr)', gap: 20, alignItems: 'start' }}>
+      <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-5 items-start">
         <Card style={{ padding: 20 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: text.cardTitle, fontWeight: 600 }}>Revenue and occupancy trend</span>
-                  <span style={{ fontSize: text.small, fontWeight: 600, color: T[tp.delta.tone].fg }}>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start justify-between gap-[14px] flex-wrap">
+              <div className="flex flex-col gap-[3px] min-w-0">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className="text-[16px] font-semibold">Revenue and occupancy trend</span>
+                  <span className={cx('text-[12px] font-semibold', TONE[tp.delta.tone].text)}>
                     {ARROW[tp.delta.direction]} {tp.delta.value.toFixed(1)}%
                   </span>
                 </div>
-                <span style={{ fontSize: text.small, color: color.textMuted }}>Accommodation revenue, RM · occupancy, % of available nights</span>
+                <span className="text-[12px] text-muted-ink">Accommodation revenue, RM · occupancy, % of available nights</span>
               </div>
 
               {/* 3M / 12M / YTD — re-reads the chart from /dashboard/trend?range= */}
-              <div role="group" aria-label="Trend range" style={{ display: 'inline-flex', border: `1px solid ${color.border}`, borderRadius: radius.control, overflow: 'hidden', flex: 'none' }}>
+              <div role="group" aria-label="Trend range" className="inline-flex border border-solid border-line rounded-control overflow-hidden flex-none">
                 {RANGES.map((r, i) => {
                   const on = r.key === range;
                   return (
@@ -342,11 +357,12 @@ export default function DashboardPage() {
                       key={r.key}
                       onClick={() => setRange(r.key)}
                       aria-pressed={on}
-                      style={{
-                        height: 30, padding: '0 12px', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', font: 'inherit',
-                        border: 'none', borderLeft: i === 0 ? 'none' : `1px solid ${color.border}`,
-                        background: on ? color.black : '#FFFFFF', color: on ? '#FFFFFF' : color.textMuted, whiteSpace: 'nowrap',
-                      }}
+                      className={cx(
+                        'h-[30px] px-3 py-0 cursor-pointer [font:inherit] whitespace-nowrap',
+                        '[border-top:0] [border-right:0] [border-bottom:0]',
+                        i === 0 ? '[border-left:0]' : '[border-left:1px_solid_var(--color-line)]',
+                        on ? 'bg-black text-white' : 'bg-card text-muted-ink',
+                      )}
                     >
                       {r.label}
                     </button>
@@ -355,20 +371,21 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: tp.points.length > 6 ? 6 : 12, height: 190 }}>
+            <div className={cx('flex items-end h-[190px]', tp.points.length > 6 ? 'gap-1.5' : 'gap-3')}>
               {tp.points.map(s => (
-                <div key={s.period} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', gap: 7, height: '100%' }}>
-                  <span style={{ fontSize: text.micro, color: color.textMuted, whiteSpace: 'nowrap' }}>{rm(s.revenue, { cents: false }).replace('RM ', '')}</span>
+                <div key={s.period} className="flex-1 min-w-0 flex flex-col justify-end items-center gap-[7px] h-full">
+                  <span className="text-[11px] text-muted-ink whitespace-nowrap">{rm(s.revenue, { cents: false }).replace('RM ', '')}</span>
                   <div title={`${monthLabel(s.period)} · ${rm(s.revenue, { cents: false })} · ${percent(s.occupancy)}`}
-                    style={{ width: '100%', borderRadius: '6px 6px 0 0', height: Math.max(4, Math.round((s.revenue / maxRev) * 132)), background: s.isCurrent ? color.gold : color.charcoal }} />
-                  <span style={{ fontSize: text.micro, color: color.textMuted }}>{monthLabel(s.period)}</span>
-                  <span style={{ fontSize: text.micro, color: color.faint }}>{s.occupancy.toFixed(0)}%</span>
+                    className={cx('w-full rounded-t-[6px]', s.isCurrent ? 'bg-gold' : 'bg-charcoal')}
+                    style={{ height: Math.max(4, Math.round((s.revenue / maxRev) * 132)) }} />
+                  <span className="text-[11px] text-muted-ink">{monthLabel(s.period)}</span>
+                  <span className="text-[11px] text-faint">{s.occupancy.toFixed(0)}%</span>
                 </div>
               ))}
             </div>
 
             {/* The three totals are distinct definitions and are never merged. */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 12, paddingTop: 14, borderTop: `1px solid ${color.borderMuted}` }}>
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3 pt-[14px] [border-top:1px_solid_var(--color-line-soft)]">
               <Total label="Gross booking value" value={rm(tp.totals.grossBookingValue, { cents: false })} />
               <Total label="Collected revenue" value={rm(tp.totals.collectedRevenue, { cents: false })} />
               <Total label="Management fees" value={rm(tp.totals.managementFees, { cents: false })} />
@@ -380,14 +397,14 @@ export default function DashboardPage() {
         <Card>
           <CardHeader title="Needs attention" right={<LinkAction onClick={() => go('#/operations/today')}>Open operations →</LinkAction>} />
           {exc.loading && exceptions.length === 0 ? (
-            <div style={{ padding: '0 0 8px' }}><TableSkeleton rows={3} cols={1} /></div>
+            <div className="pb-2"><TableSkeleton rows={3} cols={1} /></div>
           ) : exceptions.length === 0 ? (
-            <div style={{ padding: '20px', fontSize: 13, color: color.textMuted }}>Nothing needs your attention right now.</div>
+            <div className="p-5 text-[13px] text-muted-ink">Nothing needs your attention right now.</div>
           ) : exceptions.map(e => (
-            <div key={e.id} style={{ display: 'flex', flexDirection: 'column', gap: 9, padding: '13px 20px', borderTop: `1px solid ${color.borderMuted}`, borderLeft: `3px solid ${T[e.tone].line}` }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 600, textWrap: 'pretty' }}>{e.title}</span>
-                <span style={{ fontSize: 12, color: color.textMuted, lineHeight: 1.5, textWrap: 'pretty' }}>{e.detail}</span>
+            <div key={e.id} className={cx('flex flex-col gap-[9px] py-[13px] px-5 [border-top:1px_solid_var(--color-line-soft)]', LINE[e.tone])}>
+              <div className="flex flex-col gap-[3px]">
+                <span className="text-[13.5px] font-semibold text-pretty">{e.title}</span>
+                <span className="text-[12px] text-muted-ink leading-[1.5] text-pretty">{e.detail}</span>
               </div>
               <div>
                 <Button
@@ -406,14 +423,14 @@ export default function DashboardPage() {
       {/* Today */}
       <Card>
         <CardHeader title="Today" right={<LinkAction onClick={() => go('#/operations/today')}>Open operations →</LinkAction>} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 0, borderTop: `1px solid ${color.border}` }}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-0 [border-top:1px_solid_var(--color-line)]">
           {(today.data?.rows ?? []).map((r, i) => (
-            <div key={r.key} style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '15px 20px', borderLeft: i === 0 ? 'none' : `1px solid ${color.borderMuted}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: T[r.tone].line, flex: 'none' }} aria-hidden />
-                <span style={{ fontSize: text.small, color: color.textMuted }}>{TODAY_LABEL[r.key] ?? r.key}</span>
+            <div key={r.key} className={cx('flex flex-col gap-1.5 py-[15px] px-5', i === 0 ? '' : '[border-left:1px_solid_var(--color-line-soft)]')}>
+              <div className="flex items-center gap-2">
+                <span className={cx('w-[7px] h-[7px] rounded-full flex-none', TONE[r.tone].dot)} aria-hidden />
+                <span className="text-[12px] text-muted-ink">{TODAY_LABEL[r.key] ?? r.key}</span>
               </div>
-              <span style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.01em' }}>{r.count}</span>
+              <span className="text-[24px] font-semibold tracking-[-0.01em]">{r.count}</span>
             </div>
           ))}
         </div>
@@ -425,18 +442,18 @@ export default function DashboardPage() {
           title="Portfolio performance"
           right={<LinkAction onClick={() => go('#/properties/units')}>View all units →</LinkAction>}
         />
-        <div style={{ padding: '0 20px 12px', marginTop: -8, fontSize: text.small, color: color.textMuted }}>
+        <div className="pt-0 px-5 pb-3 -mt-2 text-[12px] text-muted-ink">
           {portfolio.data ? `${portfolio.data.units} units · ${portfolio.data.buildings} buildings · ${period} to date` : ''}
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: 760 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: PCOLS, gap: 14, padding: '9px 22px', background: color.muted, borderTop: `1px solid ${color.border}`, borderBottom: `1px solid ${color.border}`, fontSize: text.small, fontWeight: 600, color: color.textMuted }}>
+        <div className="overflow-x-auto">
+          <div className="min-w-[760px]">
+            <div className={cx(PCOLS, 'grid gap-[14px] py-[9px] px-[22px] bg-muted [border-top:1px_solid_var(--color-line)] [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink')}>
               <div>Unit</div>
-              <div style={{ textAlign: 'right' }}>Occupancy</div>
-              <div style={{ textAlign: 'right' }}>ADR</div>
-              <div style={{ textAlign: 'right' }}>RevPAR</div>
-              <div style={{ textAlign: 'right' }}>Revenue</div>
-              <div style={{ textAlign: 'right' }}>Exception</div>
+              <div className="text-right">Occupancy</div>
+              <div className="text-right">ADR</div>
+              <div className="text-right">RevPAR</div>
+              <div className="text-right">Revenue</div>
+              <div className="text-right">Exception</div>
             </div>
             {portfolio.loading && rows.length === 0 ? <TableSkeleton rows={4} cols={6} /> : rows.map(u => (
               <div
@@ -445,18 +462,18 @@ export default function DashboardPage() {
                 tabIndex={0}
                 onClick={() => go(`#/properties/units/${encodeURIComponent(u.unitId)}`)}
                 onKeyDown={ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(`#/properties/units/${encodeURIComponent(u.unitId)}`); } }}
-                style={{ display: 'grid', gridTemplateColumns: PCOLS, gap: 14, alignItems: 'center', minHeight: 52, padding: '7px 22px', borderBottom: `1px solid ${color.borderMuted}`, cursor: 'pointer' }}
+                className={cx(PCOLS, 'grid gap-[14px] items-center min-h-[52px] py-[7px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer')}
               >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 500 }}>{u.unitNumber}</span>
-                  <span style={{ fontSize: 11.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.propertyName}</span>
+                <div className="flex flex-col gap-px min-w-0">
+                  <span className="text-[13.5px] font-medium">{u.unitNumber}</span>
+                  <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.propertyName}</span>
                 </div>
-                <div style={{ textAlign: 'right', fontSize: 13 }}>{u.occupancy.toFixed(1)}%</div>
-                <div style={{ textAlign: 'right', fontSize: 13 }}>{rm(u.adr, { cents: false })}</div>
-                <div style={{ textAlign: 'right', fontSize: 13 }}>{rm(u.revpar, { cents: false })}</div>
-                <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 500 }}>{rm(u.revenue, { cents: false })}</div>
-                <div style={{ textAlign: 'right' }}>
-                  {u.exception ? <Badge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span style={{ fontSize: 12, color: color.faint }}>None</span>}
+                <div className="text-right text-[13px]">{u.occupancy.toFixed(1)}%</div>
+                <div className="text-right text-[13px]">{rm(u.adr, { cents: false })}</div>
+                <div className="text-right text-[13px]">{rm(u.revpar, { cents: false })}</div>
+                <div className="text-right text-[13px] font-medium">{rm(u.revenue, { cents: false })}</div>
+                <div className="text-right">
+                  {u.exception ? <Badge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-[12px] text-faint">None</span>}
                 </div>
               </div>
             ))}
@@ -477,19 +494,19 @@ export default function DashboardPage() {
             </Button>
           </>}
         >
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <span style={{ fontSize: text.small, fontWeight: 500, color: color.textMuted }}>Cleaner</span>
+          <label className="flex flex-col gap-[7px]">
+            <span className="text-[12px] font-medium text-muted-ink">Cleaner</span>
             <select className="field-input" value={assign.cleanerId} onChange={e => setAssign(a => a && { ...a, cleanerId: e.target.value })}>
               {CREW.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>
           {assign.ex.nextGuestAt && (
-            <div style={{ padding: '9px 11px', borderRadius: radius.control, background: color.page, border: `1px solid ${color.border}`, fontSize: 12 }}>
+            <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-[12px]">
               Next guest arrives {assign.ex.nextGuestAt}{assign.ex.slaLabel ? ` · ${assign.ex.slaLabel}` : ''}
             </div>
           )}
           {assignBusy > 0 && (
-            <div role="status" style={{ padding: '9px 11px', borderRadius: radius.control, background: T.warning.bg, color: T.warning.fg, fontSize: 12 }}>
+            <div role="status" className={cx('py-[9px] px-[11px] rounded-control text-[12px]', TONE.warning.bg, TONE.warning.text)}>
               {CREW.find(c => c.id === assign.cleanerId)?.name} already has {assignBusy} overlapping task{assignBusy === 1 ? '' : 's'} today. Assign anyway?
             </div>
           )}
@@ -514,9 +531,9 @@ export default function DashboardPage() {
 
 function Total({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <span style={{ fontSize: text.micro, color: color.textMuted }}>{label}</span>
-      <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em' }}>{value}</span>
+    <div className="flex flex-col gap-[3px]">
+      <span className="text-[11px] text-muted-ink">{label}</span>
+      <span className="text-[15px] font-semibold tracking-[-0.01em]">{value}</span>
     </div>
   );
 }
@@ -536,15 +553,15 @@ function Modal({ title, sub, onClose, children, footer }: {
 
   return (
     <div role="dialog" aria-modal="true" aria-label={title}
-      style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24, background: 'var(--color-surface-scrim)', animation: 'fade-in var(--motion-standard) var(--ease-out) both' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div ref={ref} style={{ position: 'relative', width: '100%', maxWidth: 460, background: 'var(--color-surface-card)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-overlay)', overflow: 'hidden', animation: 'dialog-in var(--motion-slow) var(--ease-out) both' }}>
-        <div style={{ padding: '22px 22px 4px', display: 'flex', flexDirection: 'column', gap: 9 }}>
-          <h2 style={{ margin: 0, fontSize: 18, lineHeight: 1.3, fontWeight: 600, textWrap: 'pretty' }}>{title}</h2>
-          {sub && <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--color-text-muted)', textWrap: 'pretty' }}>{sub}</p>}
+      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      <div onClick={onClose} className="absolute inset-0" />
+      <div ref={ref} className="relative w-full max-w-[460px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden animate-dialog">
+        <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[9px]">
+          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold text-pretty">{title}</h2>
+          {sub && <p className="m-0 text-[13px] leading-[1.55] text-muted-ink text-pretty">{sub}</p>}
         </div>
-        <div style={{ padding: '14px 22px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>
-        <div style={{ padding: '14px 22px', borderTop: '1px solid var(--color-border-default)', background: 'var(--color-surface-page)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 9, flexWrap: 'wrap' }}>
+        <div className="pt-[14px] px-[22px] pb-[18px] flex flex-col gap-3">{children}</div>
+        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
           {footer}
         </div>
       </div>

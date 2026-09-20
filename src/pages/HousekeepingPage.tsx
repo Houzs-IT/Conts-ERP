@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { color, radius, text, tone as T } from '../theme';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -12,6 +11,7 @@ import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
 import { rm, unitRef } from '../lib/format';
 import { READINESS, TASK } from '../lib/vocabulary';
+import { TONE } from '../lib/design-tokens';
 import type { TaskState, Tone, UnitReadiness } from '../lib/types';
 
 /* ------------------------------------------------------------------ *
@@ -103,13 +103,21 @@ function windowsOverlap(aS: string | null, aE: string | null, bS: string | null,
   return as < be && bs < ae;
 }
 
-/* ------------------------------ local modal ------------------------------ */
-const inputStyle: CSSProperties = {
-  display: 'block', width: '100%', boxSizing: 'border-box', height: 40, padding: '0 12px',
-  fontSize: text.body, color: color.ink, background: '#FFFFFF',
-  border: `1px solid ${color.border}`, borderRadius: radius.control, outline: 'none', font: 'inherit',
+/** Left accent border per SLA tone. Static strings so Tailwind can scan them;
+ *  uses the tone -line shade, per the design-tokens convention. */
+const ACCENT: Record<Tone, string> = {
+  success:  '[border-left:3px_solid_var(--color-success-line)]',
+  warning:  '[border-left:3px_solid_var(--color-warning-line)]',
+  critical: '[border-left:3px_solid_var(--color-critical-line)]',
+  info:     '[border-left:3px_solid_var(--color-info-line)]',
+  neutral:  '[border-left:3px_solid_var(--color-neutral-line)]',
 };
-const labelStyle: CSSProperties = { fontSize: text.small, fontWeight: 500, color: color.textMuted };
+
+/* ------------------------------ local modal ------------------------------ */
+/* font:inherit is the last shorthand key on the source input style, so the real
+ * render is the inherited 16px/400 — no text-size/weight class is added here. */
+const inputCls = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit]';
+const labelCls = 'text-[12px] font-medium text-muted-ink';
 
 function Modal({ title, sub, onClose, children, footer, busy }: {
   title: string; sub?: string; onClose: () => void; children: ReactNode; footer: ReactNode; busy?: boolean;
@@ -122,32 +130,23 @@ function Modal({ title, sub, onClose, children, footer, busy }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [busy, onClose]);
   return (
-    <div role="dialog" aria-modal="true" aria-label={title} style={{
-      position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24,
-      background: 'var(--color-surface-scrim)', animation: 'fade-in var(--motion-standard) var(--ease-out) both',
-    }}>
-      <div onClick={busy ? undefined : onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div ref={ref} style={{
-        position: 'relative', width: '100%', maxWidth: 460, maxHeight: '88vh', overflowY: 'auto',
-        background: 'var(--color-surface-card)', borderRadius: 'var(--radius-card)',
-        boxShadow: 'var(--shadow-overlay)', animation: 'dialog-in var(--motion-slow) var(--ease-out) both',
-      }}>
-        <div style={{ padding: '20px 22px 4px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <h2 style={{ margin: 0, fontSize: 18, lineHeight: 1.3, fontWeight: 600 }}>{title}</h2>
-            {sub && <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: color.textMuted }}>{sub}</p>}
+    <div role="dialog" aria-modal="true" aria-label={title}
+      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
+      <div ref={ref}
+        className="relative w-full max-w-[460px] max-h-[88vh] overflow-y-auto bg-card rounded-card shadow-[var(--shadow-overlay)] animate-dialog">
+        <div className="pt-5 px-[22px] pb-1 flex items-start justify-between gap-3">
+          <div className="flex flex-col gap-[5px]">
+            <h2 className="m-0 text-[18px] leading-[1.3] font-semibold">{title}</h2>
+            {sub && <p className="m-0 text-[13px] leading-[1.5] text-muted-ink">{sub}</p>}
           </div>
           <button onClick={onClose} aria-label="Close" disabled={busy}
-            style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: color.textMuted, display: 'flex' }}>
+            className="bg-transparent border-none p-1 cursor-pointer text-muted-ink flex">
             <Icon name="X" size="sm" />
           </button>
         </div>
-        <div style={{ padding: '14px 22px 4px', display: 'flex', flexDirection: 'column', gap: 14 }}>{children}</div>
-        <div style={{
-          padding: '14px 22px', marginTop: 8, borderTop: `1px solid ${color.border}`,
-          background: 'var(--color-surface-page)', display: 'flex', alignItems: 'center',
-          justifyContent: 'flex-end', gap: 9, flexWrap: 'wrap', position: 'sticky', bottom: 0,
-        }}>{footer}</div>
+        <div className="pt-[14px] px-[22px] pb-1 flex flex-col gap-[14px]">{children}</div>
+        <div className="py-[14px] px-[22px] mt-2 [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap sticky bottom-0">{footer}</div>
       </div>
     </div>
   );
@@ -327,7 +326,7 @@ export default function HousekeepingPage() {
         title="Housekeeping"
         sub={`${merged.length} cleaning tasks · ${unassigned.length} unassigned · sequenced by ${RULE_LABEL[rule].toLowerCase()}`}
         right={
-          <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+          <div className="flex gap-[9px] flex-wrap">
             <Button variant="secondary" icon={<Icon name="ListOrdered" size="sm" />} onClick={() => setEditRule(rule)}>
               Edit ordering rule
             </Button>
@@ -347,26 +346,25 @@ export default function HousekeepingPage() {
       {error && <StaleBanner message={`Showing the last roster we have. ${error}`} onRetry={reload} />}
 
       {/* Date tabs — Today / Tomorrow / This week */}
-      <div style={{ display: 'inline-flex', border: `1px solid ${color.border}`, borderRadius: radius.control, overflow: 'hidden', width: 'fit-content' }}>
+      <div className="inline-flex border border-solid border-line rounded-control overflow-hidden w-fit">
         {TABS.map(([v, label]) => (
           <button key={v} onClick={() => setTab(v)}
-            style={{ padding: '8px 15px', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', border: 'none', font: 'inherit',
-              background: v === tab ? color.black : '#FFFFFF', color: v === tab ? '#FFFFFF' : color.textMuted }}>
+            className={`px-[15px] py-2 cursor-pointer [border:none] [font:inherit] ${v === tab ? 'bg-black text-white' : 'bg-white text-muted-ink'}`}>
             {label}
           </button>
         ))}
       </div>
 
       <Card>
-        <div style={{ padding: '13px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', borderBottom: `1px solid ${color.border}` }}>
-          <span style={{ fontSize: text.cardTitle, fontWeight: 600 }}>Cleaning tasks</span>
-          <span style={{ fontSize: text.small, color: color.textMuted }}>SLA counts down to the next guest arrival</span>
+        <div className="py-[13px] px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line)]">
+          <span className="text-[16px] font-semibold">Cleaning tasks</span>
+          <span className="text-[12px] text-muted-ink">SLA counts down to the next guest arrival</span>
         </div>
 
         {loading && rows.length === 0 ? (
           <TableSkeleton rows={4} cols={4} />
         ) : ordered.length === 0 ? (
-          <div style={{ padding: '30px 22px', fontSize: 13, color: color.textMuted }}>
+          <div className="py-[30px] px-[22px] text-[13px] text-muted-ink">
             No cleaning tasks for {TABS.find(t => t[0] === tab)![1].toLowerCase()}. New checkouts create tasks automatically.
           </div>
         ) : (
@@ -379,26 +377,22 @@ export default function HousekeepingPage() {
             const windowLabel = t.scheduledFor && t.dueAt ? `${t.scheduledFor} → ${t.dueAt}` : '—';
 
             return (
-              <div key={t.id} style={{
-                display: 'flex', gap: 18, padding: '15px 20px', flexWrap: 'wrap',
-                borderBottom: `1px solid ${color.borderMuted}`, borderLeft: `3px solid ${T[sla.tone].line}`,
-                opacity: done ? 0.72 : 1,
-              }}>
+              <div key={t.id}
+                className={`flex gap-[18px] py-[15px] px-5 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)] ${ACCENT[sla.tone]} ${done ? 'opacity-[0.72]' : ''}`}>
                 {/* left: identity + fields */}
-                <div style={{ flex: 1, minWidth: 260, display: 'flex', flexDirection: 'column', gap: 9 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-                    <span style={{
-                      width: 26, height: 26, flex: 'none', borderRadius: radius.sm, background: color.muted,
-                      color: color.textMuted, display: 'grid', placeItems: 'center', fontSize: text.micro, fontWeight: 600,
-                    }} title={`Sequence position (${RULE_LABEL[rule]})`}>{idx + 1}</span>
-                    <span style={{ fontSize: 14, fontWeight: 600 }}>{unitRef(t.propertyName, t.unitNumber)}</span>
+                <div className="flex-1 min-w-[260px] flex flex-col gap-[9px]">
+                  <div className="flex items-center gap-[9px] flex-wrap">
+                    <span
+                      className="w-[26px] h-[26px] flex-none rounded-[6px] bg-muted text-muted-ink grid place-items-center text-[11px] font-semibold"
+                      title={`Sequence position (${RULE_LABEL[rule]})`}>{idx + 1}</span>
+                    <span className="text-[14px] font-semibold">{unitRef(t.propertyName, t.unitNumber)}</span>
                     <Badge tone={TASK[t.state].tone} label={TASK[t.state].label} size="sm" />
                     <Badge tone={sla.tone} label={sla.label} size="sm" />
                   </div>
 
-                  <div style={{ fontSize: 13, color: color.ink }}>{t.title} · {t.linenSet}</div>
+                  <div className="text-[13px] text-ink">{t.title} · {t.linenSet}</div>
 
-                  <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', fontSize: 12.5 }}>
+                  <div className="flex gap-[22px] flex-wrap text-[12.5px]">
                     <Field2 label="Window" value={windowLabel} />
                     <Field2 label="Next guest" value={t.nextGuestAt ?? 'No arrival'} tone={sla.tone === 'critical' ? 'critical' : undefined} />
                     <Field2 label="Assignee" value={t.assigneeName ?? 'Unassigned'} muted={!t.assigneeName} />
@@ -408,22 +402,22 @@ export default function HousekeepingPage() {
                   </div>
 
                   {t.instructions && (
-                    <div style={{ fontSize: 12.5, color: color.textMuted, display: 'flex', gap: 7, alignItems: 'flex-start' }}>
-                      <Icon name="Info" size="sm" color={color.faint} style={{ marginTop: 1 }} />
+                    <div className="text-[12.5px] text-muted-ink flex gap-[7px] items-start">
+                      <Icon name="Info" size="sm" color="var(--color-faint)" style={{ marginTop: 1 }} />
                       <span>{t.instructions}</span>
                     </div>
                   )}
 
                   {inProgress && noPhoto && (
-                    <div style={{ fontSize: 12, color: T.warning.fg, display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <Icon name="Camera" size="sm" color={T.warning.fg} />
+                    <div className={`text-[12px] ${TONE.warning.text} flex gap-1.5 items-center`}>
+                      <Icon name="Camera" size="sm" />
                       Add at least one photo before marking this unit ready.
                     </div>
                   )}
                 </div>
 
                 {/* right: state-driven actions */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'stretch', minWidth: 168 }}>
+                <div className="flex flex-col gap-[7px] items-stretch min-w-[168px]">
                   {!done && (
                     <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => openAssign(t)}>
                       {t.assigneeId ? 'Reassign cleaner' : 'Assign cleaner'}
@@ -460,8 +454,8 @@ export default function HousekeepingPage() {
                     </Button>
                   )}
                   {done && (
-                    <span style={{ fontSize: 12.5, color: T.success.fg, display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center', height: 36 }}>
-                      <Icon name="CheckCheck" size="sm" color={T.success.fg} /> Ready for guest
+                    <span className={`text-[12.5px] ${TONE.success.text} flex items-center gap-1.5 justify-center h-9`}>
+                      <Icon name="CheckCheck" size="sm" /> Ready for guest
                     </span>
                   )}
                 </div>
@@ -485,20 +479,20 @@ export default function HousekeepingPage() {
             </Button>
           </>}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <label htmlFor="assign-cleaner" style={labelStyle}>Cleaner</label>
+          <div className="flex flex-col gap-[7px]">
+            <label htmlFor="assign-cleaner" className={labelCls}>Cleaner</label>
             <select id="assign-cleaner" value={assign.cleanerId} disabled={busy}
               onChange={e => setAssign(a => a && { ...a, cleanerId: e.target.value, force: false, warning: undefined })}
-              style={inputStyle}>
+              className={inputCls}>
               {CREW.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
           {assign.task.nextGuestAt && (
-            <div style={{ fontSize: 12.5, color: color.textMuted }}>Next guest arrives {assign.task.nextGuestAt}.</div>
+            <div className="text-[12.5px] text-muted-ink">Next guest arrives {assign.task.nextGuestAt}.</div>
           )}
           {assign.warning && (
-            <div style={{ padding: '10px 12px', borderRadius: radius.control, background: T.critical.bg, color: T.critical.fg, fontSize: 12.5, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-              <Icon name="TriangleAlert" size="sm" color={T.critical.fg} style={{ marginTop: 1 }} />
+            <div className={`py-2.5 px-3 rounded-control ${TONE.critical.bg} ${TONE.critical.text} text-[12.5px] flex gap-2 items-start`}>
+              <Icon name="TriangleAlert" size="sm" style={{ marginTop: 1 }} />
               <span>{assign.warning}</span>
             </div>
           )}
@@ -521,24 +515,24 @@ export default function HousekeepingPage() {
               </Button>
             </>}
           >
-            <div style={{ display: 'flex', gap: 14 }}>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
-                <label htmlFor="rs-start" style={labelStyle}>Window start (scheduled for)</label>
+            <div className="flex gap-[14px]">
+              <div className="flex-1 flex flex-col gap-[7px]">
+                <label htmlFor="rs-start" className={labelCls}>Window start (scheduled for)</label>
                 <input id="rs-start" type="time" value={reschedule.start} disabled={busy}
-                  onChange={e => setReschedule(r => r && { ...r, start: e.target.value })} style={inputStyle} />
+                  onChange={e => setReschedule(r => r && { ...r, start: e.target.value })} className={inputCls} />
               </div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
-                <label htmlFor="rs-end" style={labelStyle}>Window end (due at)</label>
+              <div className="flex-1 flex flex-col gap-[7px]">
+                <label htmlFor="rs-end" className={labelCls}>Window end (due at)</label>
                 <input id="rs-end" type="time" value={reschedule.end} disabled={busy}
-                  onChange={e => setReschedule(r => r && { ...r, end: e.target.value })} style={inputStyle} />
+                  onChange={e => setReschedule(r => r && { ...r, end: e.target.value })} className={inputCls} />
               </div>
             </div>
-            <div style={{ fontSize: 12.5, color: color.textMuted }}>
+            <div className="text-[12.5px] text-muted-ink">
               Next guest arrives {reschedule.task.nextGuestAt ?? 'not scheduled'}.
             </div>
             {endsAfter && (
-              <div style={{ padding: '10px 12px', borderRadius: radius.control, background: T.warning.bg, color: T.warning.fg, fontSize: 12.5, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <Icon name="TriangleAlert" size="sm" color={T.warning.fg} style={{ marginTop: 1 }} />
+              <div className={`py-2.5 px-3 rounded-control ${TONE.warning.bg} ${TONE.warning.text} text-[12.5px] flex gap-2 items-start`}>
+                <Icon name="TriangleAlert" size="sm" style={{ marginTop: 1 }} />
                 <span>The window ends at {reschedule.end}, after the next guest arrives at {reschedule.task.nextGuestAt}. The unit may not be ready in time.</span>
               </div>
             )}
@@ -558,7 +552,7 @@ export default function HousekeepingPage() {
             <Button size="sm" variant="primary" loading={busy} onClick={doSaveRule}>Save rule</Button>
           </>}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="flex flex-col gap-2">
             {(Object.keys(RULE_LABEL) as OrderingRule[]).map(r => {
               const on = editRule === r;
               const desc = r === 'earliest_checkin' ? 'Clean the units whose next guest arrives soonest first.'
@@ -566,18 +560,11 @@ export default function HousekeepingPage() {
                 : 'Keep the order you set by hand.';
               return (
                 <button key={r} type="button" onClick={() => setEditRule(r)}
-                  style={{
-                    textAlign: 'left', padding: '12px 13px', borderRadius: radius.control, cursor: 'pointer', font: 'inherit',
-                    display: 'flex', gap: 11, alignItems: 'flex-start',
-                    border: `1px solid ${on ? color.gold : color.border}`, background: on ? color.goldTint : '#FFFFFF',
-                  }}>
-                  <span style={{
-                    width: 16, height: 16, flex: 'none', marginTop: 1, borderRadius: 999,
-                    border: `2px solid ${on ? color.gold : color.borderStrong}`, background: on ? color.gold : 'transparent',
-                  }} />
-                  <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 600 }}>{RULE_LABEL[r]}</span>
-                    <span style={{ fontSize: 12, color: color.textMuted }}>{desc}</span>
+                  className={`text-left py-3 px-[13px] rounded-control cursor-pointer [font:inherit] flex gap-[11px] items-start border border-solid ${on ? 'border-gold bg-gold-tint' : 'border-line bg-white'}`}>
+                  <span className={`w-4 h-4 flex-none mt-px rounded-full border-2 border-solid ${on ? 'border-gold bg-gold' : 'border-line-strong bg-transparent'}`} />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-[13.5px] font-semibold">{RULE_LABEL[r]}</span>
+                    <span className="text-[12px] text-muted-ink">{desc}</span>
                   </span>
                 </button>
               );
@@ -601,34 +588,34 @@ export default function HousekeepingPage() {
             </Button>
           </>}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <label htmlFor="dmg-title" style={labelStyle}>What is damaged or missing</label>
+          <div className="flex flex-col gap-[7px]">
+            <label htmlFor="dmg-title" className={labelCls}>What is damaged or missing</label>
             <input id="dmg-title" value={damage.title} disabled={busy} placeholder="Cracked bathroom mirror"
-              onChange={e => setDamage(d => d && { ...d, title: e.target.value })} style={inputStyle} />
+              onChange={e => setDamage(d => d && { ...d, title: e.target.value })} className={inputCls} />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <label htmlFor="dmg-detail" style={labelStyle}>Detail</label>
+          <div className="flex flex-col gap-[7px]">
+            <label htmlFor="dmg-detail" className={labelCls}>Detail</label>
             <textarea id="dmg-detail" value={damage.detail} disabled={busy} rows={2} placeholder="Where it is, how bad, any temporary fix"
               onChange={e => setDamage(d => d && { ...d, detail: e.target.value })}
-              style={{ ...inputStyle, height: 'auto', padding: '9px 12px', resize: 'vertical' }} />
+              className="block w-full box-border h-auto py-[9px] px-3 text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit] resize-y" />
           </div>
-          <div style={{ display: 'flex', gap: 14 }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
-              <label htmlFor="dmg-charge" style={labelStyle}>Charge to</label>
+          <div className="flex gap-[14px]">
+            <div className="flex-1 flex flex-col gap-[7px]">
+              <label htmlFor="dmg-charge" className={labelCls}>Charge to</label>
               <select id="dmg-charge" value={damage.chargeTo} disabled={busy}
-                onChange={e => setDamage(d => d && { ...d, chargeTo: e.target.value as 'owner' | 'company' })} style={inputStyle}>
+                onChange={e => setDamage(d => d && { ...d, chargeTo: e.target.value as 'owner' | 'company' })} className={inputCls}>
                 <option value="owner">Owner</option>
                 <option value="company">The Conts</option>
               </select>
             </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
-              <label htmlFor="dmg-amount" style={labelStyle}>Quoted amount (RM)</label>
+            <div className="flex-1 flex flex-col gap-[7px]">
+              <label htmlFor="dmg-amount" className={labelCls}>Quoted amount (RM)</label>
               <input id="dmg-amount" inputMode="decimal" value={damage.amount} disabled={busy} placeholder="0.00"
                 onChange={e => setDamage(d => d && { ...d, amount: e.target.value })}
-                style={{ ...inputStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />
+                className={`${inputCls} text-right tabular-nums`} />
             </div>
           </div>
-          <label style={{ display: 'flex', gap: 9, alignItems: 'center', cursor: busy ? 'default' : 'pointer', fontSize: 13 }}>
+          <label className={`flex gap-[9px] items-center ${busy ? 'cursor-default' : 'cursor-pointer'} text-[13px]`}>
             <input type="checkbox" checked={damage.blocksUnit} disabled={busy}
               onChange={e => setDamage(d => d && { ...d, blocksUnit: e.target.checked })} />
             Block the unit — it is not safe to let the next guest in
@@ -666,9 +653,9 @@ export default function HousekeepingPage() {
 /** A compact label/value pair used across a task's field row. */
 function Field2({ label, value, muted, tone }: { label: string; value: string; muted?: boolean; tone?: Tone }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-      <span style={{ fontSize: text.micro, color: color.faint, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em' }}>{label}</span>
-      <span style={{ fontSize: 12.5, fontWeight: 500, color: tone ? T[tone].fg : muted ? color.textMuted : color.ink, whiteSpace: 'nowrap' }}>{value}</span>
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <span className="text-[11px] text-faint font-semibold uppercase tracking-[0.03em]">{label}</span>
+      <span className={`text-[12.5px] font-medium whitespace-nowrap ${tone ? TONE[tone].text : muted ? 'text-muted-ink' : 'text-ink'}`}>{value}</span>
     </div>
   );
 }
