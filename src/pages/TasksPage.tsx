@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { color, radius, text, tone as T } from '../theme';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { color } from '../theme';
+import { TONE, cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -81,13 +82,31 @@ function evidenceOf(t: Task): { label: string; warn: boolean } {
   return { label: 'None needed', warn: false };
 }
 
-/* ------------------------------ local modal ------------------------------ */
-const inputStyle: CSSProperties = {
-  display: 'block', width: '100%', boxSizing: 'border-box', height: 40, padding: '0 12px',
-  fontSize: text.body, color: color.ink, background: '#FFFFFF',
-  border: `1px solid ${color.border}`, borderRadius: radius.control, outline: 'none', font: 'inherit',
+/* The SLA/state tone drives the 3px accent on a row's left edge. It uses the
+ * design's -line (non-text) shade, which lives only as a CSS var — TONE has no
+ * line utility — so it is applied as an arbitrary border-color per tone. */
+const LINE: Record<Tone, string> = {
+  success:  '[border-left-color:var(--color-success-line)]',
+  warning:  '[border-left-color:var(--color-warning-line)]',
+  critical: '[border-left-color:var(--color-critical-line)]',
+  info:     '[border-left-color:var(--color-info-line)]',
+  neutral:  '[border-left-color:var(--color-neutral-line)]',
 };
-const labelStyle: CSSProperties = { fontSize: text.small, fontWeight: 500, color: color.textMuted };
+
+/* Tone TEXT (fg). The generic `text-<tone>` utility resolves to the tint here
+ * (root tokens.css, unlayered, overrides the @theme value), so the accessible
+ * foreground shade is taken from its dedicated -fg var to stay 1:1. */
+const TONE_FG: Record<Tone, string> = {
+  success:  'text-[var(--color-success-fg)]',
+  warning:  'text-[var(--color-warning-fg)]',
+  critical: 'text-[var(--color-critical-fg)]',
+  info:     'text-[var(--color-info-fg)]',
+  neutral:  'text-[var(--color-neutral-fg)]',
+};
+
+/* ------------------------------ local modal ------------------------------ */
+const inputCls = 'block w-full box-border h-10 py-0 px-3 text-ink bg-white border border-line rounded-control outline-none [font:inherit]';
+const labelCls = 'text-[12px] font-medium text-muted-ink';
 
 function Modal({ title, sub, onClose, children, footer, busy }: {
   title: string; sub?: string; onClose: () => void; children: ReactNode; footer: ReactNode; busy?: boolean;
@@ -100,32 +119,23 @@ function Modal({ title, sub, onClose, children, footer, busy }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [busy, onClose]);
   return (
-    <div role="dialog" aria-modal="true" aria-label={title} style={{
-      position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24,
-      background: 'var(--color-surface-scrim)', animation: 'fade-in var(--motion-standard) var(--ease-out) both',
-    }}>
-      <div onClick={busy ? undefined : onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div ref={ref} style={{
-        position: 'relative', width: '100%', maxWidth: 460, maxHeight: '88vh', overflowY: 'auto',
-        background: 'var(--color-surface-card)', borderRadius: 'var(--radius-card)',
-        boxShadow: 'var(--shadow-overlay)', animation: 'dialog-in var(--motion-slow) var(--ease-out) both',
-      }}>
-        <div style={{ padding: '20px 22px 4px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <h2 style={{ margin: 0, fontSize: 18, lineHeight: 1.3, fontWeight: 600 }}>{title}</h2>
-            {sub && <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: color.textMuted }}>{sub}</p>}
+    <div role="dialog" aria-modal="true" aria-label={title}
+      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
+      <div ref={ref}
+        className="relative w-full max-w-[460px] max-h-[88vh] overflow-y-auto bg-card rounded-card shadow-[var(--shadow-overlay)] [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
+        <div className="pt-5 px-[22px] pb-1 flex items-start justify-between gap-3">
+          <div className="flex flex-col gap-[5px]">
+            <h2 className="m-0 text-[18px] leading-[1.3] font-semibold">{title}</h2>
+            {sub && <p className="m-0 text-[13px] leading-[1.5] text-muted-ink">{sub}</p>}
           </div>
           <button onClick={onClose} aria-label="Close" disabled={busy}
-            style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: color.textMuted, display: 'flex' }}>
+            className="bg-transparent border-none p-1 cursor-pointer text-muted-ink flex">
             <Icon name="X" size="sm" />
           </button>
         </div>
-        <div style={{ padding: '14px 22px 4px', display: 'flex', flexDirection: 'column', gap: 14 }}>{children}</div>
-        <div style={{
-          padding: '14px 22px', marginTop: 8, borderTop: `1px solid ${color.border}`,
-          background: 'var(--color-surface-page)', display: 'flex', alignItems: 'center',
-          justifyContent: 'flex-end', gap: 9, flexWrap: 'wrap', position: 'sticky', bottom: 0,
-        }}>{footer}</div>
+        <div className="pt-[14px] px-[22px] pb-1 flex flex-col gap-[14px]">{children}</div>
+        <div className="py-[14px] px-[22px] mt-2 border-t border-line bg-page flex items-center justify-end gap-[9px] flex-wrap sticky bottom-0">{footer}</div>
       </div>
     </div>
   );
@@ -253,24 +263,23 @@ export default function TasksPage() {
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       {/* Filters — state chips + kind select */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+      <div className="flex gap-3 flex-wrap items-center justify-between">
+        <div className="flex gap-[7px] flex-wrap">
           {STATE_FILTERS.map(fl => {
             const on = fl === stateFilter;
             return (
               <button key={fl} onClick={() => setStateFilter(fl)}
-                style={{ height: 32, display: 'flex', alignItems: 'center', padding: '0 13px', borderRadius: radius.pill, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', font: 'inherit',
-                  border: `1px solid ${on ? color.black : color.border}`, background: on ? color.black : '#FFFFFF', color: on ? '#FFFFFF' : color.textMuted }}>
+                className={`h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border ${on ? 'bg-black text-white border-black' : 'bg-white text-muted-ink border-line'}`}>
                 {stateFilterLabel(fl)}
               </button>
             );
           })}
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <label htmlFor="kind-filter" style={{ ...labelStyle, whiteSpace: 'nowrap' }}>Kind</label>
+        <div className="flex gap-2 items-center">
+          <label htmlFor="kind-filter" className={`${labelCls} whitespace-nowrap`}>Kind</label>
           <select id="kind-filter" value={kindFilter}
             onChange={e => setKindFilter(e.target.value as Kind | 'all')}
-            style={{ ...inputStyle, width: 'auto', height: 32, padding: '0 30px 0 12px', fontSize: 12.5, cursor: 'pointer' }}>
+            className="block w-auto box-border h-8 py-0 pr-[30px] pl-3 text-ink bg-white border border-line rounded-control outline-none cursor-pointer [font:inherit]">
             <option value="all">All kinds</option>
             {(Object.keys(KIND_LABEL) as Kind[]).map(k => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
           </select>
@@ -278,9 +287,9 @@ export default function TasksPage() {
       </div>
 
       <Card>
-        <div style={{ padding: '13px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', borderBottom: `1px solid ${color.border}` }}>
-          <span style={{ fontSize: text.cardTitle, fontWeight: 600 }}>All tasks</span>
-          <span style={{ fontSize: text.small, color: color.textMuted }}>
+        <div className="py-[13px] px-5 flex items-center justify-between gap-3 flex-wrap border-b border-b-line">
+          <span className="text-[16px] font-semibold">All tasks</span>
+          <span className="text-[12px] text-muted-ink">
             {rows.length} of {all.length} · SLA and risk are computed server-side
           </span>
         </div>
@@ -288,8 +297,8 @@ export default function TasksPage() {
         {loading && baseRows.length === 0 ? (
           <TableSkeleton rows={5} cols={4} />
         ) : rows.length === 0 ? (
-          <div style={{ padding: '30px 22px', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 13, color: color.textMuted }}>No tasks match these filters.</span>
+          <div className="py-[30px] px-[22px] flex flex-col gap-3 items-start">
+            <span className="text-[13px] text-muted-ink">No tasks match these filters.</span>
             {filtersActive && (
               <Button size="sm" variant="secondary" icon={<Icon name="FilterX" size="sm" />} onClick={clearFilters}>
                 Clear filters
@@ -307,26 +316,23 @@ export default function TasksPage() {
             const lineTone: Tone = done ? 'success' : t.sla.tone;
 
             return (
-              <div key={t.id} style={{
-                display: 'flex', gap: 18, padding: '15px 20px', flexWrap: 'wrap',
-                borderBottom: `1px solid ${color.borderMuted}`, borderLeft: `3px solid ${T[lineTone].line}`,
-                opacity: done ? 0.72 : 1,
-              }}>
+              <div key={t.id}
+                className={cx('flex gap-[18px] py-[15px] px-5 flex-wrap border-b border-b-line-soft border-l-[3px]', LINE[lineTone], done && 'opacity-[0.72]')}>
                 {/* left: identity + fields */}
-                <div style={{ flex: 1, minWidth: 260, display: 'flex', flexDirection: 'column', gap: 9 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 14, fontWeight: 600 }}>{unitRef(t.propertyName, t.unitNumber)}</span>
+                <div className="flex-1 min-w-[260px] flex flex-col gap-[9px]">
+                  <div className="flex items-center gap-[9px] flex-wrap">
+                    <span className="text-[14px] font-semibold">{unitRef(t.propertyName, t.unitNumber)}</span>
                     <Badge tone="neutral" label={KIND_LABEL[t.kind]} size="sm" />
                     <Badge tone={TASK[t.state].tone} label={TASK[t.state].label} size="sm" />
                     {!done && <Badge tone={t.sla.tone} label={t.sla.label} size="sm" />}
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13, color: color.ink }}>{t.title}</span>
-                    <span style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: text.micro, color: color.textMuted }}>{t.id}</span>
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-[13px] text-ink">{t.title}</span>
+                    <span className="font-mono text-[11px] text-muted-ink">{t.id}</span>
                   </div>
 
-                  <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', fontSize: 12.5 }}>
+                  <div className="flex gap-[22px] flex-wrap text-[12.5px]">
                     <FieldPair label="Assignee" value={t.assigneeName ?? 'Unassigned'} muted={!t.assigneeName} />
                     <FieldPair label="Window" value={windowLabel} />
                     <FieldPair label="Next guest" value={t.nextGuestAt ?? 'No arrival'} tone={t.sla.tone === 'critical' ? 'critical' : undefined} />
@@ -334,22 +340,22 @@ export default function TasksPage() {
                   </div>
 
                   {t.instructions && (
-                    <div style={{ fontSize: 12.5, color: color.textMuted, display: 'flex', gap: 7, alignItems: 'flex-start' }}>
+                    <div className="text-[12.5px] text-muted-ink flex gap-[7px] items-start">
                       <Icon name="Info" size="sm" color={color.faint} style={{ marginTop: 1 }} />
                       <span>{t.instructions}</span>
                     </div>
                   )}
 
                   {inProgress && noPhoto && (
-                    <div style={{ fontSize: 12, color: T.warning.fg, display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <Icon name="Camera" size="sm" color={T.warning.fg} />
+                    <div className="text-[12px] text-[var(--color-warning-fg)] flex gap-1.5 items-center">
+                      <Icon name="Camera" size="sm" color={TONE.warning.hex} />
                       Add at least one photo before marking this unit ready.
                     </div>
                   )}
                 </div>
 
                 {/* right: state-driven actions */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'stretch', minWidth: 168 }}>
+                <div className="flex flex-col gap-[7px] items-stretch min-w-[168px]">
                   {!done && (
                     <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => openAssign(t)}>
                       {t.assigneeId ? 'Reassign cleaner' : 'Assign cleaner'}
@@ -381,8 +387,8 @@ export default function TasksPage() {
                     </>
                   )}
                   {done && (
-                    <span style={{ fontSize: 12.5, color: T.success.fg, display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center', height: 36 }}>
-                      <Icon name="CheckCheck" size="sm" color={T.success.fg} /> Resolved
+                    <span className="text-[12.5px] text-[var(--color-success-fg)] flex items-center gap-1.5 justify-center h-9">
+                      <Icon name="CheckCheck" size="sm" color={TONE.success.hex} /> Resolved
                     </span>
                   )}
                 </div>
@@ -406,20 +412,20 @@ export default function TasksPage() {
             </Button>
           </>}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <label htmlFor="assign-who" style={labelStyle}>Cleaner</label>
+          <div className="flex flex-col gap-[7px]">
+            <label htmlFor="assign-who" className={labelCls}>Cleaner</label>
             <select id="assign-who" value={assign.assigneeId} disabled={busy}
               onChange={e => setAssign(a => a && { ...a, assigneeId: e.target.value, force: false, warning: undefined })}
-              style={inputStyle}>
+              className={inputCls}>
               {CREW.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
           {assign.task.nextGuestAt && (
-            <div style={{ fontSize: 12.5, color: color.textMuted }}>Next guest arrives {assign.task.nextGuestAt}.</div>
+            <div className="text-[12.5px] text-muted-ink">Next guest arrives {assign.task.nextGuestAt}.</div>
           )}
           {assign.warning && (
-            <div style={{ padding: '10px 12px', borderRadius: radius.control, background: T.critical.bg, color: T.critical.fg, fontSize: 12.5, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-              <Icon name="TriangleAlert" size="sm" color={T.critical.fg} style={{ marginTop: 1 }} />
+            <div className={`py-2.5 px-3 rounded-control ${TONE.critical.bg} text-[var(--color-critical-fg)] text-[12.5px] flex gap-2 items-start`}>
+              <Icon name="TriangleAlert" size="sm" color={TONE.critical.hex} style={{ marginTop: 1 }} />
               <span>{assign.warning}</span>
             </div>
           )}
@@ -442,24 +448,24 @@ export default function TasksPage() {
               </Button>
             </>}
           >
-            <div style={{ display: 'flex', gap: 14 }}>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
-                <label htmlFor="rs-start" style={labelStyle}>Window start (scheduled for)</label>
+            <div className="flex gap-[14px]">
+              <div className="flex-1 flex flex-col gap-[7px]">
+                <label htmlFor="rs-start" className={labelCls}>Window start (scheduled for)</label>
                 <input id="rs-start" type="time" value={reschedule.start} disabled={busy}
-                  onChange={e => setReschedule(r => r && { ...r, start: e.target.value })} style={inputStyle} />
+                  onChange={e => setReschedule(r => r && { ...r, start: e.target.value })} className={inputCls} />
               </div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
-                <label htmlFor="rs-end" style={labelStyle}>Window end (due at)</label>
+              <div className="flex-1 flex flex-col gap-[7px]">
+                <label htmlFor="rs-end" className={labelCls}>Window end (due at)</label>
                 <input id="rs-end" type="time" value={reschedule.end} disabled={busy}
-                  onChange={e => setReschedule(r => r && { ...r, end: e.target.value })} style={inputStyle} />
+                  onChange={e => setReschedule(r => r && { ...r, end: e.target.value })} className={inputCls} />
               </div>
             </div>
-            <div style={{ fontSize: 12.5, color: color.textMuted }}>
+            <div className="text-[12.5px] text-muted-ink">
               Next guest arrives {reschedule.task.nextGuestAt ?? 'not scheduled'}.
             </div>
             {endsAfter && (
-              <div style={{ padding: '10px 12px', borderRadius: radius.control, background: T.warning.bg, color: T.warning.fg, fontSize: 12.5, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <Icon name="TriangleAlert" size="sm" color={T.warning.fg} style={{ marginTop: 1 }} />
+              <div className={`py-2.5 px-3 rounded-control ${TONE.warning.bg} text-[var(--color-warning-fg)] text-[12.5px] flex gap-2 items-start`}>
+                <Icon name="TriangleAlert" size="sm" color={TONE.warning.hex} style={{ marginTop: 1 }} />
                 <span>The window ends at {reschedule.end}, after the next guest arrives at {reschedule.task.nextGuestAt}. The unit may not be ready in time.</span>
               </div>
             )}
@@ -492,9 +498,9 @@ export default function TasksPage() {
 /** A compact label/value pair used across a task's field row. */
 function FieldPair({ label, value, muted, tone }: { label: string; value: string; muted?: boolean; tone?: Tone }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-      <span style={{ fontSize: text.micro, color: color.faint, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em' }}>{label}</span>
-      <span style={{ fontSize: 12.5, fontWeight: 500, color: tone ? T[tone].fg : muted ? color.textMuted : color.ink, whiteSpace: 'nowrap' }}>{value}</span>
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <span className="text-[11px] text-faint font-semibold uppercase tracking-[0.03em]">{label}</span>
+      <span className={cx('text-[12.5px] font-medium whitespace-nowrap', tone ? TONE_FG[tone] : muted ? 'text-muted-ink' : 'text-ink')}>{value}</span>
     </div>
   );
 }

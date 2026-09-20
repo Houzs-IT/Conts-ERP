@@ -1,5 +1,4 @@
-import { useMemo, useState, type CSSProperties } from 'react';
-import { color, radius, text } from '../theme';
+import { useMemo, useState } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -38,7 +37,8 @@ const GROUP_ORDER: PayoutState[] = ['failed', 'pending', 'processing', 'paid'];
 const RANK: Record<PayoutState, number> = { failed: 0, pending: 1, processing: 2, paid: 3 };
 type Filter = 'all' | PayoutState;
 
-const COLS = 'minmax(150px,1.4fr) minmax(86px,0.7fr) minmax(140px,1.1fr) minmax(104px,0.9fr) minmax(104px,0.9fr) minmax(92px,0.8fr) minmax(120px,1fr)';
+// COLS as an arbitrary grid-template-columns utility (underscores == spaces).
+const gridCols = 'grid-cols-[minmax(150px,1.4fr)_minmax(86px,0.7fr)_minmax(140px,1.1fr)_minmax(104px,0.9fr)_minmax(104px,0.9fr)_minmax(92px,0.8fr)_minmax(120px,1fr)]';
 const today = () => new Date().toISOString().slice(0, 10);
 
 /** Bank never shows more than the tail — the raw number would need an audited reveal. */
@@ -120,17 +120,17 @@ export default function PayoutsPage() {
         title="Payouts"
         sub={`${rm(due)} outstanding · ${failed.length} ${failed.length === 1 ? 'payout' : 'payouts'} failed and needing attention`}
         right={
-          <label style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Filter by status</span>
+          <label className="relative flex items-center">
+            <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Filter by status</span>
             <select
               value={filter}
               onChange={e => setFilter(e.target.value as Filter)}
-              style={{ height: 36, padding: '0 30px 0 12px', borderRadius: radius.control, border: `1px solid ${color.border}`, background: color.card, color: color.ink, fontSize: 13, fontWeight: 500, font: 'inherit', cursor: 'pointer', appearance: 'none' }}
+              className="h-9 py-0 pr-[30px] pl-3 rounded-control border border-solid border-line bg-card text-ink font-sans text-[16px] font-normal cursor-pointer appearance-none"
             >
               <option value="all">{`All statuses · ${allRows.length}`}</option>
               {GROUP_ORDER.map(s => <option key={s} value={s}>{`${PAYOUT[s].label} · ${counts[s]}`}</option>)}
             </select>
-            <Icon name="ChevronDown" size="sm" style={{ position: 'absolute', right: 9, pointerEvents: 'none', color: color.textMuted }} />
+            <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" style={{ position: 'absolute', right: 9, pointerEvents: 'none' }} />
           </label>
         }
       />
@@ -140,17 +140,17 @@ export default function PayoutsPage() {
       {/* Failed payouts are surfaced first, with the reason and the one-tap fix. */}
       {(filter === 'all' || filter === 'failed') && failed.map(p => (
         <Card key={p.id} style={{ borderLeft: '3px solid var(--color-critical-line)' }}>
-          <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 220 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                <span style={{ fontSize: 14, fontWeight: 600 }}>{p.ownerName}</span>
+          <div className="px-5 py-[15px] flex items-center gap-4 flex-wrap">
+            <div className="flex flex-col gap-1 flex-1 min-w-[220px]">
+              <div className="flex items-center gap-[9px]">
+                <span className="text-[14px] font-semibold">{p.ownerName}</span>
                 <Badge tone={PAYOUT.failed.tone} label={PAYOUT.failed.label} />
               </div>
-              <span style={{ fontSize: 12.5, color: color.textMuted, textWrap: 'pretty' }}>{p.failureReason}</span>
-              <span style={{ fontSize: text.micro, color: color.faint }}>{`${destination(p)} · ${p.method}`}</span>
+              <span className="text-[12.5px] text-muted-ink text-pretty">{p.failureReason}</span>
+              <span className="text-[11px] text-faint">{`${destination(p)} · ${p.method}`}</span>
             </div>
-            <span style={{ fontSize: 16, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{rm(p.amount)}</span>
-            <button onClick={() => setConfirm({ payout: p, kind: 'retry' })} style={darkBtn}>Retry payout</button>
+            <span className="text-[16px] font-semibold tabular-nums">{rm(p.amount)}</span>
+            <button onClick={() => setConfirm({ payout: p, kind: 'retry' })} className={darkBtn}>Retry payout</button>
           </div>
         </Card>
       ))}
@@ -163,40 +163,40 @@ export default function PayoutsPage() {
         />
       ) : (
         <Card>
-          <div style={{ overflowX: 'auto' }}>
-            <div style={{ minWidth: 900 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, padding: '9px 22px', background: color.muted, borderBottom: `1px solid ${color.border}`, fontSize: text.small, fontWeight: 600, color: color.textMuted }}>
+          <div className="overflow-x-auto">
+            <div className="min-w-[900px]">
+              <div className={`grid ${gridCols} gap-[14px] px-[22px] py-[9px] bg-muted border-b border-solid border-line text-[12px] font-semibold text-muted-ink`}>
                 <div>Owner</div>
                 <div>Method</div>
                 <div>Destination</div>
                 <div>Value date</div>
-                <div style={{ textAlign: 'right' }}>Amount</div>
+                <div className="text-right">Amount</div>
                 <div>Status</div>
-                <div style={{ textAlign: 'right' }}>Action</div>
+                <div className="text-right">Action</div>
               </div>
 
               {loading && allRows.length === 0 ? <TableSkeleton rows={6} cols={7} /> : groups.map(g => (
                 <div key={g.state}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 22px', background: color.page, borderBottom: `1px solid ${color.borderMuted}` }}>
-                    <span style={{ fontSize: text.micro, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: color.textMuted }}>{PAYOUT[g.state].label}</span>
-                    <span style={{ fontSize: text.micro, color: color.faint }}>{g.items.length}</span>
+                  <div className="flex items-center gap-2 px-[22px] py-[7px] bg-page border-b border-solid border-line-soft">
+                    <span className="text-[11px] font-semibold tracking-[0.04em] uppercase text-muted-ink">{PAYOUT[g.state].label}</span>
+                    <span className="text-[11px] text-faint">{g.items.length}</span>
                   </div>
                   {g.items.map(r => (
-                    <div key={r.id} style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, alignItems: 'center', minHeight: 52, padding: '9px 22px', borderBottom: `1px solid ${color.borderMuted}` }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                        <span style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.ownerName}</span>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: text.micro, color: color.textMuted }}>{r.id}</span>
+                    <div key={r.id} className={`grid ${gridCols} gap-[14px] items-center min-h-[52px] px-[22px] py-[9px] border-b border-solid border-line-soft`}>
+                      <div className="flex flex-col gap-px min-w-0">
+                        <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{r.ownerName}</span>
+                        <span className="font-mono text-[11px] text-muted-ink">{r.id}</span>
                       </div>
-                      <div style={{ fontSize: 12.5 }}>{r.method}</div>
+                      <div className="text-[12.5px]">{r.method}</div>
                       {/* Only ever the tail of the account number is rendered. */}
-                      <div style={{ fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{destination(r)}</div>
-                      <div style={{ fontSize: 12.5, color: color.textMuted }}>{valueDate(r)}</div>
-                      <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{rm(r.amount)}</div>
+                      <div className="text-[12.5px] whitespace-nowrap overflow-hidden text-ellipsis">{destination(r)}</div>
+                      <div className="text-[12.5px] text-muted-ink">{valueDate(r)}</div>
+                      <div className="text-right text-[13px] font-semibold tabular-nums">{rm(r.amount)}</div>
                       <div><Badge tone={PAYOUT[r.state].tone} label={PAYOUT[r.state].label} /></div>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                        {r.state === 'failed' && <button onClick={() => setConfirm({ payout: r, kind: 'retry' })} style={darkBtn}>Retry payout</button>}
-                        {r.state === 'processing' && <button onClick={() => setConfirm({ payout: r, kind: 'paid' })} style={ghostBtn}>Mark paid</button>}
-                        {(r.state === 'pending' || r.state === 'paid') && <span style={{ fontSize: text.micro, color: color.faint }}>{r.state === 'paid' ? 'Settled' : 'Awaiting run'}</span>}
+                      <div className="flex justify-end">
+                        {r.state === 'failed' && <button onClick={() => setConfirm({ payout: r, kind: 'retry' })} className={darkBtn}>Retry payout</button>}
+                        {r.state === 'processing' && <button onClick={() => setConfirm({ payout: r, kind: 'paid' })} className={ghostBtn}>Mark paid</button>}
+                        {(r.state === 'pending' || r.state === 'paid') && <span className="text-[11px] text-faint">{r.state === 'paid' ? 'Settled' : 'Awaiting run'}</span>}
                       </div>
                     </div>
                   ))}
@@ -205,7 +205,7 @@ export default function PayoutsPage() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', padding: '11px 22px', borderTop: `1px solid ${color.border}`, background: color.page, fontSize: text.small, color: color.textMuted }}>
+          <div className="flex items-center justify-between gap-3 flex-wrap px-[22px] py-[11px] border-t border-solid border-line bg-page text-[12px] text-muted-ink">
             <span>{visible.length} of {allRows.length} payouts</span>
             <span>Only the last four digits of any account are ever shown.</span>
           </div>
@@ -217,11 +217,7 @@ export default function PayoutsPage() {
   );
 }
 
-const darkBtn: CSSProperties = {
-  height: 34, padding: '0 13px', borderRadius: radius.control, background: color.black,
-  color: '#FFFFFF', fontSize: 12.5, fontWeight: 500, border: 'none', cursor: 'pointer', font: 'inherit', whiteSpace: 'nowrap',
-};
-const ghostBtn: CSSProperties = {
-  height: 34, padding: '0 13px', borderRadius: radius.control, background: color.card,
-  color: color.ink, fontSize: 12.5, fontWeight: 500, border: `1px solid ${color.border}`, cursor: 'pointer', font: 'inherit', whiteSpace: 'nowrap',
-};
+// font: inherit in the originals meant these controls rendered at the inherited
+// 16px / 400, not the (overridden) 12.5 / 500 — so the classes match the pixels.
+const darkBtn = 'h-[34px] px-[13px] py-0 rounded-control bg-black text-white border-none font-sans text-[16px] font-normal cursor-pointer whitespace-nowrap';
+const ghostBtn = 'h-[34px] px-[13px] py-0 rounded-control bg-card text-ink border border-solid border-line font-sans text-[16px] font-normal cursor-pointer whitespace-nowrap';

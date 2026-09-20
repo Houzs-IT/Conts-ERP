@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { color, radius, text } from '../theme';
+import { color } from '../theme';
+import { cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import ChannelMark from '../components/ChannelMark';
@@ -39,7 +40,7 @@ type RatingFilter = 'all' | 5 | 4 | 3 | 2 | 1;
 
 function Stars({ n }: { n: number }) {
   return (
-    <span style={{ display: 'flex', gap: 2 }} role="img" aria-label={`${n} out of 5`}>
+    <span className="flex gap-0.5" role="img" aria-label={`${n} out of 5`}>
       {[1, 2, 3, 4, 5].map(i => <Icon key={i} name="Star" size="sm" color={i <= n ? color.gold : color.border} />)}
     </span>
   );
@@ -47,20 +48,24 @@ function Stars({ n }: { n: number }) {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '14px 16px' }}>
-      <span style={{ fontSize: text.small, color: color.textMuted }}>{label}</span>
-      <span style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>{value}</span>
+    <div className="flex flex-col gap-[3px] px-4 py-[14px]">
+      <span className="text-[12px] text-muted-ink">{label}</span>
+      <span className="text-[22px] font-semibold tabular-nums tracking-[-0.01em]">{value}</span>
     </div>
   );
 }
 
 /** Pill toggle, black-on-select — the house filter style (see InboxPage). Gold is
- *  reserved for the stars and never used as a status/selection fill here. */
+ *  reserved for the stars and never used as a status/selection fill here.
+ *  `[font:inherit]` (as in the original inline style) intentionally follows and
+ *  neutralises any font-size/weight, so the label inherits the page font. */
 function Pill({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <button onClick={onClick} aria-pressed={on}
-      style={{ height: 32, display: 'flex', alignItems: 'center', gap: 5, padding: '0 13px', borderRadius: radius.pill, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', font: 'inherit',
-        border: `1px solid ${on ? color.black : color.border}`, background: on ? color.black : color.card, color: on ? '#FFFFFF' : color.textMuted }}>
+      className={cx(
+        'h-8 flex items-center gap-[5px] px-[13px] py-0 rounded-full whitespace-nowrap cursor-pointer border border-solid [font:inherit]',
+        on ? 'border-black bg-black text-white' : 'border-line bg-card text-muted-ink',
+      )}>
       {children}
     </button>
   );
@@ -134,11 +139,11 @@ export default function ReviewsPage() {
 
       {/* Summary header */}
       <Card>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)' }}>
-          <div style={{ borderRight: `1px solid ${color.borderMuted}` }}>
+        <div className="grid grid-cols-3">
+          <div className="[border-right:1px_solid_var(--color-line-soft)]">
             <Stat label="Average rating" value={average != null ? fmtRating(average, true) : '—'} />
           </div>
-          <div style={{ borderRight: `1px solid ${color.borderMuted}` }}>
+          <div className="[border-right:1px_solid_var(--color-line-soft)]">
             <Stat label="Reviews" value={String(total)} />
           </div>
           <Stat label="Replied" value={`${pctReplied}%`} />
@@ -146,9 +151,9 @@ export default function ReviewsPage() {
       </Card>
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div role="group" aria-label="Filter by rating" style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: text.small, fontWeight: 600, color: color.textMuted }}>Rating</span>
+      <div className="flex gap-[18px] flex-wrap items-center">
+        <div role="group" aria-label="Filter by rating" className="flex gap-[7px] flex-wrap items-center">
+          <span className="text-[12px] font-semibold text-muted-ink">Rating</span>
           <Pill on={ratingFilter === 'all'} onClick={() => setRatingFilter('all')}>All</Pill>
           {([5, 4, 3, 2, 1] as const).map(n => (
             <Pill key={n} on={ratingFilter === n} onClick={() => setRatingFilter(n)}>
@@ -156,8 +161,8 @@ export default function ReviewsPage() {
             </Pill>
           ))}
         </div>
-        <div role="group" aria-label="Filter by reply state" style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: text.small, fontWeight: 600, color: color.textMuted }}>Status</span>
+        <div role="group" aria-label="Filter by reply state" className="flex gap-[7px] flex-wrap items-center">
+          <span className="text-[12px] font-semibold text-muted-ink">Status</span>
           <Pill on={replyFilter === 'all'} onClick={() => setReplyFilter('all')}>All</Pill>
           <Pill on={replyFilter === 'needs_reply'} onClick={() => setReplyFilter('needs_reply')}>
             Needs reply{needsReplyCount ? ` (${needsReplyCount})` : ''}
@@ -171,8 +176,8 @@ export default function ReviewsPage() {
         <Card><TableSkeleton rows={4} cols={3} /></Card>
       ) : visible.length === 0 ? (
         <Card>
-          <div style={{ padding: '28px 22px', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 13, color: color.textMuted }}>
+          <div className="flex flex-col gap-3 items-start px-[22px] py-[28px]">
+            <span className="text-[13px] text-muted-ink">
               {filtered ? 'No reviews match these filters.' : 'No reviews yet.'}
             </span>
             {filtered && <Button size="sm" variant="secondary" onClick={clearFilters}>Clear filters</Button>}
@@ -184,46 +189,46 @@ export default function ReviewsPage() {
           const composing = composingId === r.id;
           return (
             <Card key={r.id}>
-              <div style={{ padding: '15px 20px', display: 'flex', flexDirection: 'column', gap: 11 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+              <div className="flex flex-col gap-[11px] px-5 py-[15px]">
+                <div className="flex items-center justify-between gap-[14px] flex-wrap">
+                  <div className="flex items-center gap-[11px] min-w-0">
                     <ChannelMark ch={r.channel} size={22} />
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                      <span style={{ fontSize: 13.5, fontWeight: 600 }}>{r.guestName}</span>
-                      <span style={{ fontSize: 11.5, color: color.textMuted }}>{r.propertyName} {r.unitNumber} · {fmtDate(r.reviewedAt)}</span>
+                    <div className="flex flex-col gap-px min-w-0">
+                      <span className="text-[13.5px] font-semibold">{r.guestName}</span>
+                      <span className="text-[11.5px] text-muted-ink">{r.propertyName} {r.unitNumber} · {fmtDate(r.reviewedAt)}</span>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div className="flex items-center gap-3">
                     <Stars n={r.rating} />
                     <Badge tone={replied ? 'success' : 'warning'} label={replied ? 'Replied' : 'Needs reply'} size="sm" />
                   </div>
                 </div>
 
-                {r.comment && <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, textWrap: 'pretty' }}>{r.comment}</p>}
+                {r.comment && <p className="m-0 text-[13px] leading-[1.55] [text-wrap:pretty]">{r.comment}</p>}
 
                 {/* Existing / just-posted reply */}
                 {replied && r.reply && (
-                  <div style={{ padding: '11px 13px', background: color.muted, borderRadius: radius.control, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: color.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <div className="flex flex-col gap-1 bg-muted rounded-control px-[13px] py-[11px]">
+                    <span className="text-[11px] font-semibold text-muted-ink uppercase tracking-[0.04em]">
                       Your reply{r.repliedAt ? ` · ${fmtDate(r.repliedAt)}` : ''}
                     </span>
-                    <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, textWrap: 'pretty' }}>{r.reply}</p>
+                    <p className="m-0 text-[12.5px] leading-[1.55] [text-wrap:pretty]">{r.reply}</p>
                   </div>
                 )}
 
                 {/* Inline compose */}
                 {!replied && !composing && (
-                  <Button size="sm" variant="brand" onClick={() => startReply(r.id)} style={{ alignSelf: 'flex-start' }}>
+                  <Button size="sm" variant="brand" onClick={() => startReply(r.id)} className="self-start">
                     Write a reply
                   </Button>
                 )}
                 {!replied && composing && (
-                  <form onSubmit={e => postReply(e, r)} style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                  <form onSubmit={e => postReply(e, r)} className="flex flex-col gap-[9px]">
                     <textarea value={draft} onChange={e => setDraft(e.target.value)} autoFocus rows={3}
                       aria-label={`Reply to ${r.guestName}`}
                       placeholder={`Reply to ${r.guestName} on ${r.propertyName} ${r.unitNumber}`}
-                      style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 13, lineHeight: 1.5, font: 'inherit', color: color.ink, border: `1px solid ${color.border}`, borderRadius: radius.control, outline: 'none', resize: 'vertical' }} />
-                    <div style={{ display: 'flex', gap: 9, justifyContent: 'flex-end' }}>
+                      className="w-full box-border px-3 py-[10px] [font:inherit] text-ink border border-solid border-line rounded-control outline-none resize-y" />
+                    <div className="flex gap-[9px] justify-end">
                       <Button type="button" size="sm" variant="secondary" onClick={cancelReply}>Cancel</Button>
                       <Button type="submit" size="sm" variant="primary" disabled={!draft.trim()} disabledReason="Write a reply first.">
                         Post reply

@@ -1,5 +1,4 @@
-import { useMemo, useState, type CSSProperties } from 'react';
-import { color, radius, text, tone as T } from '../theme';
+import { useMemo, useState } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -10,6 +9,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
+import { TONE } from '../lib/design-tokens';
 import { TASK } from '../lib/vocabulary';
 import type { TaskState } from '../lib/types';
 
@@ -227,20 +227,19 @@ export default function InspectionsPage() {
 
       {error && <StaleBanner message={`Showing the last inspections we have. ${error}`} onRetry={reload} />}
 
-      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+      <div className="flex gap-[7px] flex-wrap">
         {FILTERS.map(fl => {
           const on = fl === filter;
           return (
             <button key={fl} onClick={() => setFilter(fl)}
-              style={{ height: 32, display: 'flex', alignItems: 'center', padding: '0 13px', borderRadius: radius.pill, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', font: 'inherit',
-                border: `1px solid ${on ? color.black : color.border}`, background: on ? color.black : '#FFFFFF', color: on ? '#FFFFFF' : color.textMuted }}>
+              className={`h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border ${on ? 'bg-black text-white border-black' : 'bg-white text-muted-ink border-line'}`}>
               {fl}
             </button>
           );
         })}
       </div>
 
-      <span style={{ fontSize: text.small, color: color.textMuted }}>
+      <span className="text-[12px] text-muted-ink">
         A unit is released for check-in only after a pass. Every failed item needs a note and a maintenance issue.
       </span>
 
@@ -248,20 +247,20 @@ export default function InspectionsPage() {
         <Card><TableSkeleton rows={4} cols={2} /></Card>
       ) : filtered.length === 0 ? (
         <Card>
-          <div style={{ padding: '28px 22px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <span style={{ fontSize: 13 }}>No inspections match these filters.</span>
-            <button onClick={() => setFilter('All')} style={{ alignSelf: 'flex-start', fontSize: text.small, fontWeight: 600, color: color.goldInk, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit' }}>Clear filters</button>
+          <div className="py-[28px] px-[22px] flex flex-col gap-2">
+            <span className="text-[13px]">No inspections match these filters.</span>
+            <button onClick={() => setFilter('All')} className="self-start text-gold-ink bg-transparent border-none cursor-pointer [font:inherit]">Clear filters</button>
           </div>
         </Card>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="flex flex-col gap-4">
           {groups.map(g => (
-            <div key={g.state} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9, paddingLeft: 2 }}>
+            <div key={g.state} className="flex flex-col gap-2">
+              <div className="flex items-center gap-[9px] pl-[2px]">
                 <Badge tone={TASK[g.state].tone} label={TASK[g.state].label} />
-                <span style={{ fontSize: text.small, color: color.textMuted }}>{g.items.length}</span>
+                <span className="text-[12px] text-muted-ink">{g.items.length}</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="flex flex-col gap-3">
                 {g.items.map(i => (
                   <InspectionRow key={i.id} inspection={i} onOpen={() => startInspection(i)} />
                 ))}
@@ -309,15 +308,15 @@ function InspectionRow({ inspection: i, onOpen }: { inspection: Inspection; onOp
   const c = counts(i.checklist);
   return (
     <Card>
-      <div style={{ padding: '15px 20px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 220, flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-            <span style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: text.micro, color: color.textMuted }}>{i.id}</span>
-            <span style={{ fontSize: 14, fontWeight: 600 }}>{unitRef(i)}</span>
+      <div className="py-[15px] px-5 border-b border-line-soft flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex flex-col gap-[3px] min-w-[220px] flex-1">
+          <div className="flex items-center gap-[9px] flex-wrap">
+            <span className="font-mono text-[11px] text-muted-ink">{i.id}</span>
+            <span className="text-[14px] font-semibold">{unitRef(i)}</span>
             <Badge tone={TASK[i.state].tone} label={TASK[i.state].label} />
             <ReleaseBadge passed={i.passed} />
           </div>
-          <span style={{ fontSize: text.small, color: color.textMuted }}>
+          <span className="text-[12px] text-muted-ink">
             {i.inspector ?? 'Unassigned'}{i.inspectedAt ? ` · ${i.inspectedAt}` : ''} · {c.passed} passed · {c.failed} failed
             {c.pending > 0 ? ` · ${c.pending} to check` : ''}
           </span>
@@ -325,17 +324,17 @@ function InspectionRow({ inspection: i, onOpen }: { inspection: Inspection; onOp
         <Button size="sm" variant={i.passed === null ? 'primary' : 'secondary'} onClick={onOpen}>{actionLabel(i)}</Button>
       </div>
       {i.checklist.map(item => (
-        <div key={item.item} style={{ display: 'flex', alignItems: 'flex-start', gap: 11, padding: '11px 20px', borderBottom: `1px solid ${color.borderMuted}` }}>
+        <div key={item.item} className="flex items-start gap-[11px] py-[11px] px-5 border-b border-line-soft">
           <StatusBox ok={item.ok} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
-            <span style={{ fontSize: 13, color: item.ok === false ? T.critical.fg : color.ink }}>
+          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+            <span className={`text-[13px] ${item.ok === false ? 'text-[var(--color-critical-fg)]' : 'text-ink'}`}>
               {item.item}
-              {item.required === false && <span style={{ color: color.textMuted, fontWeight: 400 }}> · optional</span>}
+              {item.required === false && <span className="text-muted-ink font-normal"> · optional</span>}
             </span>
-            {item.note && <span style={{ fontSize: 12, color: T.critical.fg, textWrap: 'pretty' }}>{item.note}</span>}
+            {item.note && <span className="text-[12px] text-[var(--color-critical-fg)] text-pretty">{item.note}</span>}
           </div>
           {item.linkedIssue && (
-            <span style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: text.micro, color: color.textMuted, flex: 'none', marginTop: 2 }}>{item.linkedIssue}</span>
+            <span className="font-mono text-[11px] text-muted-ink flex-none mt-0.5">{item.linkedIssue}</span>
           )}
         </div>
       ))}
@@ -344,10 +343,13 @@ function InspectionRow({ inspection: i, onOpen }: { inspection: Inspection; onOp
 }
 
 function StatusBox({ ok }: { ok: boolean | null }) {
-  const line = ok === null ? color.border : ok ? T.success.line : T.critical.line;
+  const fill = ok === null
+    ? 'border-line bg-white'
+    : ok
+      ? 'border-[#16845B] bg-[#16845B]'
+      : 'border-[#C2413B] bg-[#C2413B]';
   return (
-    <span style={{ width: 18, height: 18, flex: 'none', marginTop: 1, borderRadius: radius.xs, display: 'grid', placeItems: 'center',
-      border: `1px solid ${line}`, background: ok === null ? '#FFFFFF' : line, color: '#FFFFFF' }}>
+    <span className={`w-[18px] h-[18px] flex-none mt-px rounded-[4px] grid place-items-center border text-white ${fill}`}>
       {ok !== null && <Icon name={ok ? 'Check' : 'X'} size="sm" />}
     </span>
   );
@@ -375,62 +377,62 @@ function ChecklistPanel({
 
   return (
     <>
-      <div style={{ padding: '20px 22px 16px', borderBottom: `1px solid ${color.border}`, display: 'flex', flexDirection: 'column', gap: 9 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-              <span style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: text.micro, color: color.textMuted }}>{i.id}</span>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{unitRef(i)}</h2>
+      <div className="pt-5 px-[22px] pb-4 border-b border-line flex flex-col gap-[9px]">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-col gap-1 min-w-0">
+            <div className="flex items-center gap-[9px] flex-wrap">
+              <span className="font-mono text-[11px] text-muted-ink">{i.id}</span>
+              <h2 className="m-0 text-[18px] font-semibold">{unitRef(i)}</h2>
             </div>
-            <span style={{ fontSize: text.small, color: color.textMuted }}>
+            <span className="text-[12px] text-muted-ink">
               {i.inspector ?? 'Unassigned'}{i.inspectedAt ? ` · ${i.inspectedAt}` : ''}
             </span>
           </div>
-          <button onClick={onClose} aria-label="Close" style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: color.textMuted, display: 'flex', flex: 'none' }}>
+          <button onClick={onClose} aria-label="Close" className="bg-transparent border-none p-1 cursor-pointer text-muted-ink flex flex-none">
             <Icon name="X" size="base" />
           </button>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+        <div className="flex items-center gap-[9px] flex-wrap">
           <Badge tone={TASK[i.state].tone} label={TASK[i.state].label} />
           <ReleaseBadge passed={i.passed} />
-          <span style={{ fontSize: text.small, color: color.textMuted }}>
+          <span className="text-[12px] text-muted-ink">
             {c.passed} of {c.total} passed{c.failed > 0 ? ` · ${c.failed} failed` : ''}{c.pending > 0 ? ` · ${c.pending} to check` : ''}
           </span>
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '6px 22px 18px' }}>
+      <div className="flex-1 overflow-y-auto pt-1.5 px-[22px] pb-[18px]">
         {i.checklist.map((item, idx) => (
-          <div key={item.item} style={{ padding: '14px 0', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 500 }}>{item.item}</span>
-                <span style={{ fontSize: text.micro, color: color.textMuted }}>{item.required === false ? 'Optional' : 'Required for release'}</span>
+          <div key={item.item} className="py-[14px] border-b border-line-soft flex flex-col gap-2.5">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                <span className="text-[13.5px] font-medium">{item.item}</span>
+                <span className="text-[11px] text-muted-ink">{item.required === false ? 'Optional' : 'Required for release'}</span>
               </div>
               <PassFail value={item.ok} onPass={() => onToggle(idx, true)} onFail={() => onToggle(idx, false)} />
             </div>
             {item.ok === false && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '11px 12px', borderRadius: radius.control, background: T.critical.bg, border: `1px solid ${T.critical.line}33` }}>
+              <div className={`flex flex-col gap-2 py-[11px] px-3 rounded-control ${TONE.critical.bg} border border-[#C2413B33]`}>
                 <textarea
                   value={item.note ?? ''}
                   onChange={e => onNote(idx, e.target.value)}
                   placeholder="What is wrong, and what needs doing."
                   rows={2}
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', fontSize: 12.5, lineHeight: 1.5, color: color.ink, background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.control, outline: 'none', font: 'inherit', resize: 'vertical' }}
+                  className="w-full box-border py-[9px] px-[11px] text-ink bg-white border border-line rounded-control outline-none [font:inherit] resize-y"
                 />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <div className="flex items-center gap-2.5 flex-wrap">
                   {item.linkedIssue ? (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.critical.fg }}>
+                    <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-critical-fg)]">
                       <Icon name="Wrench" size="sm" />
                       Tracked as {item.linkedIssue}
                     </span>
                   ) : (
-                    <button onClick={() => onRaise(idx)} style={{ height: 32, padding: '0 12px', borderRadius: radius.control, border: `1px solid ${T.critical.line}`, background: '#FFFFFF', color: T.critical.fg, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', font: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <button onClick={() => onRaise(idx)} className="h-8 px-3 py-0 rounded-control border border-[#C2413B] bg-white text-[var(--color-critical-fg)] cursor-pointer [font:inherit] inline-flex items-center gap-1.5">
                       <Icon name="Wrench" size="sm" />
                       Raise maintenance issue
                     </button>
                   )}
-                  <span style={{ fontSize: text.micro, color: color.textMuted }}>A failed item holds the unit off check-in.</span>
+                  <span className="text-[11px] text-muted-ink">A failed item holds the unit off check-in.</span>
                 </div>
               </div>
             )}
@@ -438,10 +440,10 @@ function ChecklistPanel({
         ))}
       </div>
 
-      <div style={{ padding: '14px 22px', borderTop: `1px solid ${color.border}`, background: color.page, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12.5, color: canPass ? T.success.fg : g.hasRequiredFail && g.allRequiredDecided ? T.critical.fg : color.textMuted }}>
+      <div className="py-[14px] px-[22px] border-t border-line bg-page flex flex-col gap-2.5">
+        <div className={`flex items-center gap-[9px] text-[12.5px] ${canPass ? 'text-[var(--color-success-fg)]' : g.hasRequiredFail && g.allRequiredDecided ? 'text-[var(--color-critical-fg)]' : 'text-muted-ink'}`}>
           <Icon name={canPass ? 'CircleCheck' : 'Lock'} size="sm" />
-          <span style={{ flex: 1 }}>
+          <span className="flex-1">
             {canPass
               ? 'All required items pass. This unit can be released for check-in.'
               : g.hasRequiredFail && g.allRequiredDecided
@@ -449,7 +451,7 @@ function ChecklistPanel({
                 : 'Mark every required item to unlock completion.'}
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 9, flexWrap: 'wrap' }}>
+        <div className="flex items-center justify-end gap-[9px] flex-wrap">
           <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
           {g.hasRequiredFail && g.allRequiredDecided ? (
             <Button size="sm" variant="danger" onClick={onFail} disabled={!canFail} disabledReason={footerReason}>Complete as failed</Button>
@@ -463,15 +465,15 @@ function ChecklistPanel({
 }
 
 function PassFail({ value, onPass, onFail }: { value: boolean | null; onPass: () => void; onFail: () => void }) {
-  const seg: CSSProperties = { padding: '7px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', border: 'none', font: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 5 };
+  const seg = 'py-[7px] px-[14px] cursor-pointer [font:inherit] inline-flex items-center gap-[5px]';
   return (
-    <div style={{ display: 'inline-flex', flex: 'none', border: `1px solid ${color.border}`, borderRadius: radius.control, overflow: 'hidden' }}>
+    <div className="inline-flex flex-none border border-line rounded-control overflow-hidden">
       <button type="button" onClick={onPass} aria-pressed={value === true}
-        style={{ ...seg, background: value === true ? T.success.line : '#FFFFFF', color: value === true ? '#FFFFFF' : color.textMuted, borderRight: `1px solid ${color.border}` }}>
+        className={`${seg} [border-width:0_1px_0_0] [border-style:solid] [border-color:var(--color-line)] ${value === true ? 'bg-[#16845B] text-white' : 'bg-white text-muted-ink'}`}>
         <Icon name="Check" size="sm" /> Pass
       </button>
       <button type="button" onClick={onFail} aria-pressed={value === false}
-        style={{ ...seg, background: value === false ? T.critical.line : '#FFFFFF', color: value === false ? '#FFFFFF' : color.textMuted }}>
+        className={`${seg} [border:none] ${value === false ? 'bg-[#C2413B] text-white' : 'bg-white text-muted-ink'}`}>
         <Icon name="X" size="sm" /> Fail
       </button>
     </div>

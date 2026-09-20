@@ -1,5 +1,4 @@
-import { useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
-import { color, radius, text } from '../theme';
+import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -9,6 +8,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
 import { rm } from '../lib/format';
+import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
 // Category is a closed list. The monthly-expense dialog only offers the recurring
@@ -67,7 +67,9 @@ const FALLBACK: Payload = {
 // current month is still open.
 const SENT_PERIODS = new Set(['2026-07', '2026-08']);
 
-const COLS = 'minmax(168px,1.5fr) minmax(128px,1.1fr) minmax(116px,1fr) minmax(104px,0.9fr) minmax(120px,1fr) minmax(96px,0.85fr) 74px';
+// Grid template shared by the table header, each row and the total row. Mirrors
+// the former COLS inline value as a Tailwind arbitrary grid-template-columns.
+const COLS_CLASS = 'grid-cols-[minmax(168px,1.5fr)_minmax(128px,1.1fr)_minmax(116px,1fr)_minmax(104px,0.9fr)_minmax(120px,1fr)_minmax(96px,0.85fr)_74px]';
 const MYT = 'Asia/Kuala_Lumpur';
 
 const periodOf = (iso: string) => iso.slice(0, 7);
@@ -86,12 +88,13 @@ const toSen = (s: string): number | null => {
   return Number.isFinite(n) ? Math.round(n * 100) : null;
 };
 
-const inputStyle: CSSProperties = {
-  display: 'block', width: '100%', boxSizing: 'border-box', height: 40, padding: '0 12px',
-  fontSize: text.body, color: color.ink, background: '#FFFFFF',
-  border: `1px solid ${color.border}`, borderRadius: radius.control, outline: 'none', font: 'inherit',
-};
-const labelStyle: CSSProperties = { fontSize: text.small, fontWeight: 500, color: color.textMuted };
+// Standard field. The former inputStyle object relied on `font: inherit`, which
+// (applied last) resets the control to the inherited body font — 16px / 400 /
+// IBM Plex Sans — overriding the nominal size/weight. These classes reproduce that
+// exact rendering. Preflight is off in this project, so borders carry border-solid.
+const field = 'block w-full box-border h-10 px-3 py-0 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-[16px] font-normal';
+const fieldMono = 'block w-full box-border h-10 px-3 py-0 border border-solid border-line rounded-control outline-none bg-card text-ink font-mono text-[16px] font-normal';
+const labelClass = 'text-[12px] font-medium text-muted-ink';
 
 export default function ExpensesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/finance/expenses', FALLBACK);
@@ -200,7 +203,7 @@ export default function ExpensesPage() {
         title="Expenses"
         sub={`${rows.length} ${rows.length === 1 ? 'entry' : 'entries'} · ${rm(total)} in this view`}
         right={
-          <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+          <div className="flex gap-[9px] flex-wrap">
             <Button variant="secondary" onClick={() => setReporting(true)}>Generate report</Button>
             <Button variant="primary" onClick={() => setCreating(true)}>Add expense</Button>
           </div>
@@ -209,27 +212,27 @@ export default function ExpensesPage() {
 
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+      <div className="flex gap-[10px] flex-wrap items-center">
+        <div className="flex gap-[7px] flex-wrap">
           {(['all', ...cats] as (Category | 'all')[]).map(c => {
             const on = c === cat;
             return (
               <button key={c} onClick={() => setCat(c)}
-                style={{ height: 32, display: 'flex', alignItems: 'center', padding: '0 13px', borderRadius: radius.pill, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', font: 'inherit',
-                  border: `1px solid ${on ? color.black : color.border}`, background: on ? color.black : '#FFFFFF', color: on ? '#FFFFFF' : color.textMuted }}>
+                className={cx('h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer whitespace-nowrap font-sans text-[16px] font-normal border border-solid',
+                  on ? 'border-black bg-black text-white' : 'border-line bg-card text-muted-ink')}>
                 {c === 'all' ? 'All categories' : CAT_LABEL[c]}
               </button>
             );
           })}
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto' }}>
+        <div className="flex gap-2 flex-wrap ml-auto">
           <select aria-label="Filter by unit" value={unit} onChange={e => setUnit(e.target.value)}
-            style={{ ...inputStyle, width: 'auto', height: 32, padding: '0 30px 0 12px', fontSize: 12.5, color: unit === 'all' ? color.textMuted : color.ink }}>
+            className={cx('block box-border w-auto h-8 pl-3 pr-[30px] py-0 border border-solid border-line rounded-control outline-none bg-card font-sans text-[16px] font-normal', unit === 'all' ? 'text-muted-ink' : 'text-ink')}>
             <option value="all">All units</option>
             {units.map(u => <option key={u} value={u}>{u}</option>)}
           </select>
           <select aria-label="Filter by period" value={period} onChange={e => setPeriod(e.target.value)}
-            style={{ ...inputStyle, width: 'auto', height: 32, padding: '0 30px 0 12px', fontSize: 12.5, color: period === 'all' ? color.textMuted : color.ink }}>
+            className={cx('block box-border w-auto h-8 pl-3 pr-[30px] py-0 border border-solid border-line rounded-control outline-none bg-card font-sans text-[16px] font-normal', period === 'all' ? 'text-muted-ink' : 'text-ink')}>
             <option value="all">All periods</option>
             {periods.map(p => <option key={p} value={p}>{monthLabel(p)}{SENT_PERIODS.has(p) ? ' · sent' : ''}</option>)}
           </select>
@@ -237,40 +240,39 @@ export default function ExpensesPage() {
       </div>
 
       <Card>
-        <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: 1000 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, padding: '9px 22px', background: color.muted, borderBottom: `1px solid ${color.border}`, fontSize: text.small, fontWeight: 600, color: color.textMuted }}>
-              <div>Description</div><div>Unit</div><div>Category</div><div>Date</div><div>Reference</div><div style={{ textAlign: 'right' }}>Amount</div><div />
+        <div className="overflow-x-auto">
+          <div className="min-w-[1000px]">
+            <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-[12px] font-semibold text-muted-ink')}>
+              <div>Description</div><div>Unit</div><div>Category</div><div>Date</div><div>Reference</div><div className="text-right">Amount</div><div />
             </div>
 
             {loading && rows.length === 0 ? <TableSkeleton rows={6} cols={7} /> : rows.length === 0 ? (
-              <div style={{ padding: '28px 22px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <span style={{ fontSize: 13 }}>No expenses match these filters.</span>
-                {filtered && <button onClick={clearFilters} style={{ alignSelf: 'flex-start', fontSize: text.small, fontWeight: 600, color: color.goldInk, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit' }}>Clear filters</button>}
+              <div className="py-[28px] px-[22px] flex flex-col gap-2">
+                <span className="text-[13px]">No expenses match these filters.</span>
+                {filtered && <button onClick={clearFilters} className="self-start font-sans text-[16px] font-normal text-gold-ink bg-transparent border-none cursor-pointer">Clear filters</button>}
               </div>
             ) : rows.map(r => {
               const locked = isLocked(r);
               return (
-                <div key={r.id} style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, alignItems: 'center', minHeight: 52, padding: '9px 22px', borderBottom: `1px solid ${color.borderMuted}` }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13.5 }}>{r.description}</span>
-                    {r.chargeTo !== 'owner' && <span style={{ fontSize: 11.5, color: color.textMuted }}>Charged to {CHARGE_LABEL[r.chargeTo] ?? r.chargeTo}</span>}
+                <div key={r.id} className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[52px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]')}>
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[13.5px]">{r.description}</span>
+                    {r.chargeTo !== 'owner' && <span className="text-[11.5px] text-muted-ink">Charged to {CHARGE_LABEL[r.chargeTo] ?? r.chargeTo}</span>}
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13 }}>{r.unitNumber}</span>
-                    <span style={{ fontSize: 11.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.propertyName}</span>
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[13px]">{r.unitNumber}</span>
+                    <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.propertyName}</span>
                   </div>
                   <div><Badge tone={CAT_TONE[r.category]} label={CAT_LABEL[r.category]} /></div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    <span style={{ fontSize: 12.5 }}>{dateLabel(r.incurredOn)}</span>
-                    {locked && <span style={{ fontSize: 11, color: color.textMuted }}>Statement sent</span>}
+                  <div className="flex flex-col gap-px">
+                    <span className="text-[12.5px]">{dateLabel(r.incurredOn)}</span>
+                    {locked && <span className="text-[11px] text-muted-ink">Statement sent</span>}
                   </div>
-                  <div style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: text.micro, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.reference ?? '—'}</div>
-                  <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 500 }}>{rm(r.amount)}</div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <div className="font-mono text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.reference ?? '—'}</div>
+                  <div className="text-right text-[13px] font-medium">{rm(r.amount)}</div>
+                  <div className="flex justify-end">
                     <button onClick={() => setEditing(r)} title={locked ? `The ${monthLabel(periodOf(r.incurredOn))} statement has been sent, so this expense is locked.` : 'Edit this expense'}
-                      style={{ height: 30, padding: '0 11px', borderRadius: radius.control, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', font: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 5,
-                        border: `1px solid ${color.border}`, background: '#FFFFFF', color: locked ? color.textMuted : color.ink }}>
+                      className={cx('h-[30px] px-[11px] py-0 rounded-control cursor-pointer font-sans text-[16px] font-normal inline-flex items-center gap-[5px] border border-solid border-line bg-card', locked ? 'text-muted-ink' : 'text-ink')}>
                       {locked ? 'Locked' : 'Edit'}
                     </button>
                   </div>
@@ -279,9 +281,9 @@ export default function ExpensesPage() {
             })}
 
             {rows.length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, padding: '13px 22px', background: color.page, fontSize: 13, fontWeight: 600 }}>
-                <div style={{ gridColumn: '1 / 6' }}>Total</div>
-                <div style={{ textAlign: 'right' }}>{rm(total)}</div>
+              <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[13px] px-[22px] bg-page text-[13px] font-semibold')}>
+                <div className="[grid-column:1/6]">Total</div>
+                <div className="text-right">{rm(total)}</div>
                 <div />
               </div>
             )}
@@ -289,7 +291,7 @@ export default function ExpensesPage() {
         </div>
       </Card>
 
-      <span style={{ fontSize: text.small, color: color.textMuted }}>
+      <span className="text-[12px] text-muted-ink">
         Every deduction carries a category, date, amount and reference.
       </span>
 
@@ -325,15 +327,15 @@ function Modal({ title, sub, onClose, footer, children, width = 520 }: {
 }) {
   return (
     <div role="dialog" aria-modal="true" aria-label={title}
-      style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24, background: 'var(--color-surface-scrim)', animation: 'fade-in var(--motion-standard) var(--ease-out) both' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div style={{ position: 'relative', width: '100%', maxWidth: width, maxHeight: '90vh', overflowY: 'auto', background: '#FFFFFF', borderRadius: radius.card, boxShadow: 'var(--shadow-overlay)', animation: 'dialog-in var(--motion-slow) var(--ease-out) both' }}>
-        <div style={{ padding: '22px 22px 18px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <h2 style={{ margin: 0, fontSize: 18, lineHeight: 1.3, fontWeight: 600, textWrap: 'pretty' }}>{title}</h2>
-          {sub && <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: color.textMuted, textWrap: 'pretty' }}>{sub}</p>}
+      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      <div onClick={onClose} className="absolute inset-0" />
+      <div className="relative w-full max-h-[90vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)] [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]" style={{ maxWidth: width }}>
+        <div className="pt-[22px] px-[22px] pb-[18px] flex flex-col gap-1">
+          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold [text-wrap:pretty]">{title}</h2>
+          {sub && <p className="m-0 text-[13px] leading-[1.55] text-muted-ink [text-wrap:pretty]">{sub}</p>}
         </div>
-        <div style={{ padding: '0 22px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>{children}</div>
-        <div style={{ padding: '14px 22px', borderTop: `1px solid ${color.border}`, background: color.page, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 9, flexWrap: 'wrap' }}>
+        <div className="px-[22px] pb-5 flex flex-col gap-[14px]">{children}</div>
+        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
           {footer}
         </div>
       </div>
@@ -343,8 +345,8 @@ function Modal({ title, sub, onClose, footer, children, width = 520 }: {
 
 function LabeledField({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <label style={labelStyle}>{label}</label>
+    <div className="flex flex-col gap-1.5">
+      <label className={labelClass}>{label}</label>
       {children}
     </div>
   );
@@ -418,33 +420,33 @@ function ExpenseModal({ mode, expense, locked, lockReason, onClose, onSubmit, on
         )}
       </>}>
       {readOnly && (
-        <div style={{ padding: '10px 12px', borderRadius: radius.control, background: 'var(--color-warning)', color: 'var(--color-warning-fg)', fontSize: 12.5, textWrap: 'pretty' }}>
+        <div className={cx('py-[10px] px-3 rounded-control', TONE.warning.bg, 'text-[var(--color-warning-fg)] text-[12.5px] [text-wrap:pretty]')}>
           {lockReason}
         </div>
       )}
-      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
-          <LabeledField label="Unit"><input required disabled={readOnly} value={unitNumber} onChange={e => setUnitNumber(e.target.value)} placeholder="#A-12-03" style={inputStyle} /></LabeledField>
-          <LabeledField label="Property"><input disabled={readOnly} value={propertyName} onChange={e => setPropertyName(e.target.value)} placeholder="Vista Jaya One" style={inputStyle} /></LabeledField>
+      <form onSubmit={submit} className="flex flex-col gap-[14px]">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
+          <LabeledField label="Unit"><input required disabled={readOnly} value={unitNumber} onChange={e => setUnitNumber(e.target.value)} placeholder="#A-12-03" className={field} /></LabeledField>
+          <LabeledField label="Property"><input disabled={readOnly} value={propertyName} onChange={e => setPropertyName(e.target.value)} placeholder="Vista Jaya One" className={field} /></LabeledField>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
           <LabeledField label="Category">
-            <select disabled={readOnly} value={category} onChange={e => setCategory(e.target.value as Category)} style={inputStyle}>
+            <select disabled={readOnly} value={category} onChange={e => setCategory(e.target.value as Category)} className={field}>
               {catOptions.map(c => <option key={c} value={c}>{CAT_LABEL[c]}</option>)}
             </select>
           </LabeledField>
           <LabeledField label="Amount (RM)">
             <input inputMode="decimal" disabled={readOnly} value={amount} onChange={e => setAmount(e.target.value)} placeholder="185.00"
-              style={{ ...inputStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />
+              className={cx(field, 'text-right tabular-nums')} />
           </LabeledField>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
-          <LabeledField label="Date"><input type="date" required disabled={readOnly} value={incurredOn} onChange={e => setIncurredOn(e.target.value)} style={inputStyle} /></LabeledField>
-          <LabeledField label="Reference"><input required disabled={readOnly} value={reference} onChange={e => setReference(e.target.value)} placeholder="INV-2026-0912" style={{ ...inputStyle, fontFamily: '"IBM Plex Mono", monospace' }} /></LabeledField>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
+          <LabeledField label="Date"><input type="date" required disabled={readOnly} value={incurredOn} onChange={e => setIncurredOn(e.target.value)} className={field} /></LabeledField>
+          <LabeledField label="Reference"><input required disabled={readOnly} value={reference} onChange={e => setReference(e.target.value)} placeholder="INV-2026-0912" className={fieldMono} /></LabeledField>
         </div>
         <LabeledField label="Description">
           <textarea disabled={readOnly} value={description} onChange={e => setDescription(e.target.value)} placeholder="Internet, September" rows={2}
-            style={{ ...inputStyle, height: 'auto', padding: '10px 12px', resize: 'vertical', lineHeight: 1.5 }} />
+            className="block w-full box-border px-3 py-[10px] border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-[16px] font-normal h-auto resize-y leading-[1.5]" />
         </LabeledField>
       </form>
     </Modal>
@@ -468,21 +470,21 @@ function ReportModal({ units, periods, defaultUnit, defaultPeriod, onClose, onGe
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" onClick={() => onGenerate(unit, period)}>Generate report</Button>
       </>}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-[14px]">
         <LabeledField label="Unit">
-          <select value={unit} onChange={e => setUnit(e.target.value)} style={inputStyle}>
+          <select value={unit} onChange={e => setUnit(e.target.value)} className={field}>
             <option value="all">All units</option>
             {units.map(u => <option key={u} value={u}>{u}</option>)}
           </select>
         </LabeledField>
         <LabeledField label="Period">
-          <select value={period} onChange={e => setPeriod(e.target.value)} style={inputStyle}>
+          <select value={period} onChange={e => setPeriod(e.target.value)} className={field}>
             <option value="all">All periods</option>
             {periods.map(p => <option key={p} value={p}>{monthLabel(p)}</option>)}
           </select>
         </LabeledField>
       </div>
-      <div style={{ padding: '10px 12px', borderRadius: radius.control, background: color.page, border: `1px solid ${color.border}`, fontSize: 12.5, color: color.textMuted }}>
+      <div className="py-[10px] px-3 rounded-control bg-page border border-solid border-line text-[12.5px] text-muted-ink">
         Scope: {unitLabel} · {periodText}
       </div>
     </Modal>
