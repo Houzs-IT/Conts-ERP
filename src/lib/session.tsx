@@ -9,21 +9,26 @@ interface SessionCtx {
   logout: () => Promise<void>;
   requestReset: (email: string) => Promise<void>;
   changePassword: (password: string) => Promise<void>;
+  resetPassword: (token: string, password: string) => Promise<{ home: string }>;
+  checkResetToken: (token: string) => Promise<void>;
   can: (resource: string, action: string) => boolean;
   refresh: () => Promise<void>;
 }
 
 const Ctx = createContext<SessionCtx | null>(null);
 
-/** DEV-only mock so every screen is browsable without the Cloudflare/D1 backend.
- *  Guarded by import.meta.env.DEV and skipped when the address bar asks for
- *  #/login, so the real auth flow is still reachable in dev. Never ships to prod
- *  (import.meta.env.DEV is false in a production build). */
+/** DEV-only stand-in used when no backend is reachable, so the whole app (every
+ *  page on its mock fallback) is browsable for frontend work. Never used in a
+ *  production build — see refresh(). Visit #/login to still see the sign-in screen. */
 const DEV_USER: SessionUser = {
-  id: 'dev-admin', fullName: 'Dev Admin', email: 'dev@theconts.com',
-  role: 'management', mustChangePassword: false, locale: 'en-MY', permissions: [],
+  id: 'dev-admin',
+  fullName: 'Dev Admin',
+  email: 'dev@theconts.com',
+  role: 'management',
+  mustChangePassword: false,
+  locale: 'en-MY',
+  permissions: [],
 };
-const wantsLogin = () => window.location.hash.slice(1).startsWith('/login');
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -34,8 +39,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const res = await api.get<{ user: SessionUser }>('/auth/session');
       setUser(res.user);
     } catch {
-      if (import.meta.env.DEV && !wantsLogin()) setUser(DEV_USER);
-      else setUser(null);
+      // DEV-only: with no backend running, sign in as an admin so every page is
+      // reachable for frontend work. Stripped from production builds. Visit
+      // #/login to still exercise the real sign-in screen.
+      if (import.meta.env.DEV && !window.location.hash.startsWith('#/login')) {
+        setUser(DEV_USER);
+      } else {
+        setUser(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -67,6 +78,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await refresh();
   };
 
+  /** Completes the emailed reset link: verifies the token server-side and, on
+   *  success, signs the person straight in — same shape as login(). */
+  const resetPassword = async (token: string, password: string) => {
+    const res = await api.post<{ user: SessionUser; home: string }>('/auth/reset-password', { token, password });
+    setUser(res.user);
+    window.location.hash = res.home;
+    return { home: res.home };
+  };
+
+  /** Checked the moment a reset link opens, before anyone types a password —
+   *  an already-used or expired token otherwise renders an identical form and
+   *  only reveals the problem after a submit. Throws (ApiFailure) when invalid. */
+  const checkResetToken = async (token: string) => {
+    await api.get('/auth/reset-password', { token });
+  };
+
   /**
    * Permission strings arrive from the server as `resource:action` — built from
    * permissions.json. The client only uses them to decide what to render; the
@@ -78,7 +105,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <Ctx.Provider value={{ user, loading, login, logout, requestReset, changePassword, can, refresh }}>
+    <Ctx.Provider value={{ user, loading, login, logout, requestReset, changePassword, resetPassword, checkResetToken, can, refresh }}>
       {children}
     </Ctx.Provider>
   );

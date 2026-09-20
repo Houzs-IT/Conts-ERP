@@ -53,15 +53,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 }
 
-type ToastPush = (t: Omit<Toast, 'id'>) => void;
-
-/** Returns the push function, which also carries a `.push` alias so both
- *  `toast({...})` and `toast.push({...})` call sites work (the page set mixes
- *  the two conventions). */
-export function useToast(): ToastPush & { push: ToastPush } {
+export function useToast() {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error('useToast must be used inside ToastProvider');
-  const fn = ctx.push as ToastPush & { push: ToastPush };
-  fn.push = ctx.push;
-  return fn;
+  return ctx.push;
 }
