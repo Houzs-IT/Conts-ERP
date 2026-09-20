@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { color, radius, text, tone as T } from '../theme';
+import { useEffect, useRef, useState } from 'react';
+import { TONE, cx } from '../lib/design-tokens';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
 import { Dialog } from '../components/Dialog';
@@ -177,13 +177,13 @@ export default function FieldTodayPage() {
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       {/* progress — gold is a brand accent here, not a status tone */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: text.small, color: color.textMuted }}>
+      <div className="flex flex-col gap-1.5">
+        <div className="flex justify-between text-[12px] text-muted-ink">
           <span>{completed} of {rows.length} tasks done</span>
           {pending > 0 && <span>{pending} waiting to sync</span>}
         </div>
-        <div style={{ height: 4, borderRadius: radius.pill, background: color.sunken, overflow: 'hidden' }}>
-          <div style={{ width: `${rows.length ? (completed / rows.length) * 100 : 0}%`, height: '100%', background: color.gold, transition: 'width 200ms' }} />
+        <div className="h-1 rounded-[999px] bg-sunken overflow-hidden">
+          <div className="h-full bg-gold [transition:width_200ms]" style={{ width: `${rows.length ? (completed / rows.length) * 100 : 0}%` }} />
         </div>
       </div>
 
@@ -195,44 +195,46 @@ export default function FieldTodayPage() {
         const ready = READINESS[readinessOf(t)];
 
         return (
-          <div key={t.id} style={{
-            border: `1px solid ${color.border}`, borderRadius: radius.card, padding: 16,
-            display: 'flex', flexDirection: 'column', gap: 12,
-            background: complete ? color.page : color.card,
-          }}>
+          <div key={t.id} className={cx(
+            'border border-solid border-line rounded-card p-4 flex flex-col gap-3',
+            complete ? 'bg-page' : 'bg-card',
+          )}>
             {/* identity + due */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: 1 }}>
-                <span style={{ fontSize: 15, fontWeight: 600, textDecoration: complete ? 'line-through' : 'none', color: complete ? color.textMuted : color.ink }}>
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="flex flex-col gap-[3px] min-w-0 flex-1">
+                <span className={cx(
+                  'text-[15px] font-semibold',
+                  complete ? 'line-through text-muted-ink' : 'no-underline text-ink',
+                )}>
                   {unitRef(t.unit.propertyName, t.unit.unitNumber)}
                 </span>
-                <span style={{ fontSize: text.small, color: color.textMuted, textWrap: 'pretty' }}>{t.addressLine}</span>
+                <span className="text-[12px] text-muted-ink [text-wrap:pretty]">{t.addressLine}</span>
               </div>
-              <span style={{ fontSize: text.small, color: color.textMuted, whiteSpace: 'nowrap' }}>Due {whenLabel(t.dueAt)}</span>
+              <span className="text-[12px] text-muted-ink whitespace-nowrap">Due {whenLabel(t.dueAt)}</span>
             </div>
 
             {/* status row: readiness + optional server flag + job */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div className="flex items-center gap-2 flex-wrap">
               <Badge tone={ready.tone} label={ready.label} />
               {t.flag && !complete && (
-                <span style={{ fontSize: text.micro, fontWeight: 600, color: T.warning.fg, background: T.warning.bg, padding: '3px 9px', borderRadius: radius.pill }}>
+                <span className={cx('text-[11px] font-semibold py-[3px] px-[9px] rounded-[999px]', TONE.warning.text, TONE.warning.bg)}>
                   {t.flag}
                 </span>
               )}
-              <span style={{ fontSize: text.small, color: color.textMuted }}>{t.work}</span>
+              <span className="text-[12px] text-muted-ink">{t.work}</span>
             </div>
 
             {/* access instruction */}
             {t.accessInstruction && (
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '11px 12px', borderRadius: radius.control, background: color.muted }}>
-                <Icon name="KeyRound" size="sm" color={color.textMuted} style={{ marginTop: 1 }} />
-                <span style={{ fontSize: 12.5, textWrap: 'pretty' }}>{`Access · ${t.accessInstruction}`}</span>
+              <div className="flex items-start gap-[9px] py-[11px] px-3 rounded-control bg-muted">
+                <Icon name="KeyRound" size="sm" color="var(--color-muted-ink)" style={{ marginTop: 1 }} />
+                <span className="text-[12.5px] [text-wrap:pretty]">{`Access · ${t.accessInstruction}`}</span>
               </div>
             )}
 
             {/* photo requirement hint */}
             {needsPhoto && !complete && (
-              <span style={{ fontSize: 12.5, fontWeight: 500, color: T.warning.fg }}>
+              <span className={cx('text-[12.5px] font-medium', TONE.warning.text)}>
                 Add at least one photo before marking this unit ready.
               </span>
             )}
@@ -243,22 +245,20 @@ export default function FieldTodayPage() {
 
             {/* actions */}
             {complete ? (
-              <span style={{ fontSize: 12.5, color: T.success.fg, display: 'flex', alignItems: 'center', gap: 7, minHeight: 24 }}>
-                <Icon name="CheckCheck" size="sm" color={T.success.fg} /> Ready for the guest
+              <span className={cx('text-[12.5px] flex items-center gap-[7px] min-h-[24px]', TONE.success.text)}>
+                <Icon name="CheckCheck" size="sm" color="var(--color-success-fg)" /> Ready for the guest
               </span>
             ) : (
-              <div style={{ display: 'flex', gap: 9 }}>
+              <div className="flex gap-[9px]">
                 <PhotoButton count={shots} onFiles={n => addPhotos(t, n)} />
                 <button
                   onClick={() => setConfirm(t)}
                   disabled={needsPhoto}
                   title={needsPhoto ? 'Add at least one photo first.' : undefined}
-                  style={{
-                    flex: 1, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                    borderRadius: radius.control, border: 'none', font: 'inherit', fontSize: 13, fontWeight: 500,
-                    background: needsPhoto ? color.sunken : color.black, color: needsPhoto ? color.faint : '#FFFFFF',
-                    cursor: needsPhoto ? 'not-allowed' : 'pointer',
-                  }}>
+                  className={cx(
+                    'flex-1 min-h-[44px] flex items-center justify-center gap-[7px] rounded-control border-none font-sans text-[13px] font-medium',
+                    needsPhoto ? 'bg-sunken text-faint cursor-not-allowed' : 'bg-black text-white cursor-pointer',
+                  )}>
                   <Icon name="Check" size="sm" />
                   <span>Mark ready</span>
                 </button>
@@ -268,11 +268,10 @@ export default function FieldTodayPage() {
             {/* report damage — per unit, danger, no financial field for field roles */}
             <button
               onClick={() => setDamage({ task: t, title: '', detail: '', blocksUnit: false })}
-              style={{
-                minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                border: `1px solid ${T.critical.line}`, borderRadius: radius.control, color: T.critical.fg,
-                background: color.card, fontSize: 13, fontWeight: 500, cursor: 'pointer', font: 'inherit',
-              }}>
+              className={cx(
+                'min-h-[44px] flex items-center justify-center gap-[7px] border border-solid rounded-control bg-card cursor-pointer [font:inherit]',
+                TONE.critical.border, TONE.critical.text,
+              )}>
               <Icon name="TriangleAlert" size="sm" />
               <span>Report damage or missing item</span>
             </button>
@@ -281,17 +280,13 @@ export default function FieldTodayPage() {
       })}
 
       {/* page-level: call operations */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 9, paddingTop: 4 }}>
+      <div className="flex flex-col gap-[9px] pt-1">
         <a href={`tel:${OPS_TEL}`}
-          style={{
-            minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-            border: `1px solid ${color.border}`, borderRadius: radius.control, background: color.card,
-            fontSize: 13, fontWeight: 500, textDecoration: 'none', color: color.ink,
-          }}>
+          className="min-h-[44px] flex items-center justify-center gap-[7px] border border-solid border-line rounded-control bg-card text-[13px] font-medium no-underline text-ink">
           <Icon name="Phone" size="sm" />
           <span>Call operations</span>
         </a>
-        <span style={{ fontSize: text.micro, color: color.textMuted, textAlign: 'center' }}>
+        <span className="text-[11px] text-muted-ink text-center">
           Financial data is not available to field roles.
         </span>
       </div>
@@ -332,18 +327,16 @@ function SyncLine({ state, at, onRetry }: { state: SyncState; at: string | null;
 
   const inner = (
     <>
-      <Icon name={icon} size="sm" color={T[tone].fg} />
+      <Icon name={icon} size="sm" color={`var(--color-${tone}-fg)`} />
       <span>{label}</span>
     </>
   );
-  const style: CSSProperties = {
-    display: 'flex', alignItems: 'center', gap: 7, width: '100%',
-    padding: '9px 11px', borderRadius: radius.control, background: T[tone].bg,
-    color: T[tone].fg, fontSize: 12.5, fontWeight: 500, textAlign: 'left',
-  };
+  // Shared visual chrome; font size/weight only apply to the div — the button's
+  // `font: inherit` (last shorthand key in the original) resets it to 16px/400.
+  const base = 'flex items-center gap-[7px] w-full py-[9px] px-[11px] rounded-control text-left';
   return onRetry
-    ? <button onClick={onRetry} style={{ ...style, minHeight: 40, border: 'none', font: 'inherit', cursor: 'pointer' }}>{inner}</button>
-    : <div role="status" style={style}>{inner}</div>;
+    ? <button onClick={onRetry} className={cx(base, 'min-h-[40px] border-none [font:inherit] cursor-pointer', TONE[tone].bg, TONE[tone].text)}>{inner}</button>
+    : <div role="status" className={cx(base, 'text-[12.5px] font-medium', TONE[tone].bg, TONE[tone].text)}>{inner}</div>;
 }
 
 /* ------------------------------- photo button ------------------------------ */
@@ -355,16 +348,12 @@ function PhotoButton({ count, onFiles }: { count: number; onFiles: (n: number) =
     <>
       <input
         ref={ref} type="file" accept="image/*" capture="environment" multiple
-        style={{ display: 'none' }}
+        className="hidden"
         onChange={e => { const n = e.target.files?.length ?? 0; onFiles(n); if (ref.current) ref.current.value = ''; }}
       />
       <button
         onClick={() => ref.current?.click()}
-        style={{
-          flex: 1, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-          border: `1px solid ${color.border}`, borderRadius: radius.control, background: color.card,
-          fontSize: 13, fontWeight: 500, cursor: 'pointer', font: 'inherit', color: color.ink,
-        }}>
+        className="flex-1 min-h-[44px] flex items-center justify-center gap-[7px] border border-solid border-line rounded-control bg-card cursor-pointer [font:inherit] text-ink">
         <Icon name="Camera" size="sm" />
         <span>{count > 0 ? `${count} photo${count > 1 ? 's' : ''} · add` : 'Add photo'}</span>
       </button>
@@ -373,12 +362,8 @@ function PhotoButton({ count, onFiles }: { count: number; onFiles: (n: number) =
 }
 
 /* ------------------------------- report modal ------------------------------ */
-const inputStyle: CSSProperties = {
-  display: 'block', width: '100%', boxSizing: 'border-box', minHeight: 44, padding: '0 12px',
-  fontSize: text.body, color: color.ink, background: color.card,
-  border: `1px solid ${color.border}`, borderRadius: radius.control, outline: 'none', font: 'inherit',
-};
-const labelStyle: CSSProperties = { fontSize: text.small, fontWeight: 500, color: color.textMuted };
+const INPUT_BASE = 'block w-full box-border text-ink bg-card border border-solid border-line rounded-control outline-none [font:inherit]';
+const LABEL_CLS = 'text-[12px] font-medium text-muted-ink';
 
 interface DamageState { task: unknown; title: string; detail: string; blocksUnit: boolean }
 function ReportModal({ task, value, busy, onChange, onClose, onSubmit }: {
@@ -399,57 +384,45 @@ function ReportModal({ task, value, busy, onChange, onClose, onSubmit }: {
   const canSubmit = value.title.trim().length > 0 && !busy;
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Report damage or missing item" style={{
-      position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'end center',
-      background: 'var(--color-surface-scrim)', animation: 'fade-in var(--motion-standard) var(--ease-out) both',
-    }}>
-      <div onClick={busy ? undefined : onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div ref={ref} style={{
-        position: 'relative', width: '100%', maxWidth: 560, maxHeight: '92vh', overflowY: 'auto',
-        background: 'var(--color-surface-card)', borderTopLeftRadius: 'var(--radius-card)', borderTopRightRadius: 'var(--radius-card)',
-        boxShadow: 'var(--shadow-overlay)', animation: 'rise var(--motion-slow) var(--ease-out) both',
-        display: 'flex', flexDirection: 'column',
-      }}>
-        <div style={{ padding: '18px 18px 4px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <h2 style={{ margin: 0, fontSize: 18, lineHeight: 1.3, fontWeight: 600 }}>Report damage or missing item</h2>
-          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: color.textMuted }}>
+    <div role="dialog" aria-modal="true" aria-label="Report damage or missing item"
+      className="fixed inset-0 z-[60] grid [place-items:end_center] bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
+      <div ref={ref}
+        className="relative w-full max-w-[560px] max-h-[92vh] overflow-y-auto bg-card rounded-t-card shadow-[var(--shadow-overlay)] flex flex-col [animation:rise_var(--motion-slow)_var(--ease-out)_both]">
+        <div className="pt-[18px] px-[18px] pb-1 flex flex-col gap-[5px]">
+          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold">Report damage or missing item</h2>
+          <p className="m-0 text-[13px] leading-[1.5] text-muted-ink">
             Opens a maintenance issue on {unitRef(task.unit.propertyName, task.unit.unitNumber)}. The office adds any cost.
           </p>
         </div>
 
-        <div style={{ padding: '14px 18px 4px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <label htmlFor="dmg-title" style={labelStyle}>What is damaged or missing</label>
+        <div className="pt-[14px] px-[18px] pb-1 flex flex-col gap-[14px]">
+          <div className="flex flex-col gap-[7px]">
+            <label htmlFor="dmg-title" className={LABEL_CLS}>What is damaged or missing</label>
             <input id="dmg-title" value={value.title} disabled={busy} placeholder="Cracked bathroom mirror"
-              onChange={e => set({ title: e.target.value })} style={inputStyle} />
+              onChange={e => set({ title: e.target.value })} className={cx(INPUT_BASE, 'min-h-[44px] py-0 px-3')} />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <label htmlFor="dmg-detail" style={labelStyle}>Detail (optional)</label>
+          <div className="flex flex-col gap-[7px]">
+            <label htmlFor="dmg-detail" className={LABEL_CLS}>Detail (optional)</label>
             <textarea id="dmg-detail" value={value.detail} disabled={busy} rows={3} placeholder="Where it is, how bad, any temporary fix"
               onChange={e => set({ detail: e.target.value })}
-              style={{ ...inputStyle, minHeight: 88, padding: '10px 12px', resize: 'vertical' }} />
+              className={cx(INPUT_BASE, 'min-h-[88px] py-[10px] px-3 resize-y')} />
           </div>
-          <label style={{ display: 'flex', gap: 10, alignItems: 'center', cursor: busy ? 'default' : 'pointer', fontSize: 13, minHeight: 44 }}>
-            <input type="checkbox" checked={value.blocksUnit} disabled={busy} style={{ width: 20, height: 20 }}
+          <label className={cx('flex gap-2.5 items-center text-[13px] min-h-[44px]', busy ? 'cursor-default' : 'cursor-pointer')}>
+            <input type="checkbox" checked={value.blocksUnit} disabled={busy} className="w-5 h-5"
               onChange={e => set({ blocksUnit: e.target.checked })} />
             Block the unit — it is not safe to let the next guest in
           </label>
         </div>
 
-        <div style={{
-          padding: '14px 18px', marginTop: 8, borderTop: `1px solid ${color.border}`,
-          background: 'var(--color-surface-page)', display: 'flex', gap: 9, position: 'sticky', bottom: 0,
-        }}>
-          <button onClick={onClose} disabled={busy} style={{
-            flex: 1, minHeight: 44, borderRadius: radius.control, border: `1px solid ${color.border}`,
-            background: color.card, fontSize: 13, fontWeight: 500, cursor: busy ? 'default' : 'pointer', font: 'inherit', color: color.ink,
-          }}>Cancel</button>
-          <button onClick={onSubmit} disabled={!canSubmit} style={{
-            flex: 1, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-            borderRadius: radius.control, border: 'none', font: 'inherit', fontSize: 13, fontWeight: 500,
-            background: canSubmit ? T.critical.line : color.sunken, color: canSubmit ? '#FFFFFF' : color.faint,
-            cursor: canSubmit ? 'pointer' : 'not-allowed',
-          }}>
+        <div className="py-[14px] px-[18px] mt-2 [border-top:1px_solid_var(--color-line)] bg-page flex gap-[9px] sticky bottom-0">
+          <button onClick={onClose} disabled={busy}
+            className={cx('flex-1 min-h-[44px] rounded-control border border-solid border-line bg-card [font:inherit] text-ink', busy ? 'cursor-default' : 'cursor-pointer')}>Cancel</button>
+          <button onClick={onSubmit} disabled={!canSubmit}
+            className={cx(
+              'flex-1 min-h-[44px] flex items-center justify-center gap-[7px] rounded-control border-none font-sans text-[13px] font-medium',
+              canSubmit ? 'bg-[var(--color-critical-line)] text-white cursor-pointer' : 'bg-sunken text-faint cursor-not-allowed',
+            )}>
             <Icon name="TriangleAlert" size="sm" />
             <span>Report damage</span>
           </button>

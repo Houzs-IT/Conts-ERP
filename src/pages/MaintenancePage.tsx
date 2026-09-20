@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
-import { color, radius, text } from '../theme';
+import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { TONE, cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -50,12 +50,8 @@ const FILTERS = ['All', 'Needs approval', 'Blocking a unit', 'Open', 'Resolved']
 // sinks to the bottom. Every state renders its own section when it has rows.
 const GROUP_ORDER: TaskState[] = ['overdue', 'reopened', 'waiting', 'in_progress', 'assigned', 'open', 'resolved'];
 
-const inputStyle: CSSProperties = {
-  display: 'block', width: '100%', boxSizing: 'border-box', height: 40, padding: '0 12px',
-  fontSize: text.body, color: color.ink, background: '#FFFFFF',
-  border: `1px solid ${color.border}`, borderRadius: radius.control, outline: 'none', font: 'inherit',
-};
-const labelStyle: CSSProperties = { fontSize: text.small, fontWeight: 500, color: color.textMuted };
+const INPUT_CX = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-[16px] font-normal';
+const LABEL_CX = 'text-[12px] font-medium text-muted-ink';
 
 const todayShort = () => new Date().toLocaleDateString('en-MY', { day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' });
 const toSen = (s: string): number | null => {
@@ -215,13 +211,13 @@ export default function MaintenancePage() {
 
       {error && <StaleBanner message={`Showing the last issues we have. ${error}`} onRetry={reload} />}
 
-      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+      <div className="flex gap-[7px] flex-wrap">
         {FILTERS.map(fl => {
           const on = fl === filter;
           return (
             <button key={fl} onClick={() => setFilter(fl)}
-              style={{ height: 32, display: 'flex', alignItems: 'center', padding: '0 13px', borderRadius: radius.pill, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', font: 'inherit',
-                border: `1px solid ${on ? color.black : color.border}`, background: on ? color.black : '#FFFFFF', color: on ? '#FFFFFF' : color.textMuted }}>
+              className={cx('h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border border-solid',
+                on ? 'border-black bg-black text-white' : 'border-line bg-white text-muted-ink')}>
               {fl}
             </button>
           );
@@ -232,18 +228,18 @@ export default function MaintenancePage() {
         <Card><TableSkeleton rows={4} cols={3} /></Card>
       ) : rows.length === 0 ? (
         <Card>
-          <div style={{ padding: '28px 22px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <span style={{ fontSize: 13 }}>No maintenance issues match these filters.</span>
-            <button onClick={() => setFilter('All')} style={{ alignSelf: 'flex-start', fontSize: text.small, fontWeight: 600, color: color.goldInk, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit' }}>Clear filters</button>
+          <div className="px-[22px] py-[28px] flex flex-col gap-2">
+            <span className="text-[13px]">No maintenance issues match these filters.</span>
+            <button onClick={() => setFilter('All')} className="self-start text-gold-ink bg-transparent border-none cursor-pointer [font:inherit]">Clear filters</button>
           </div>
         </Card>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="flex flex-col gap-4">
           {groups.map(g => (
-            <div key={g.state} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9, paddingLeft: 2 }}>
+            <div key={g.state} className="flex flex-col gap-2">
+              <div className="flex items-center gap-[9px] pl-0.5">
                 <Badge tone={TASK[g.state].tone} label={TASK[g.state].label} />
-                <span style={{ fontSize: text.small, color: color.textMuted }}>{g.items.length}</span>
+                <span className="text-[12px] text-muted-ink">{g.items.length}</span>
               </div>
               <Card>
                 {g.items.map((i, idx) => (
@@ -303,43 +299,43 @@ function IssueRow({
   ].filter(Boolean).join(' · ');
 
   return (
-    <div style={{ padding: '15px 20px', borderBottom: last ? 'none' : `1px solid ${color.borderMuted}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 220, flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-            <span style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: text.micro, color: color.textMuted }}>{i.id}</span>
-            <span style={{ fontSize: 14, fontWeight: 600 }}>{i.title}</span>
+    <div className={cx('px-5 py-[15px] flex flex-col gap-2.5', !last && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex flex-col gap-[3px] min-w-[220px] flex-1">
+          <div className="flex items-center gap-[9px] flex-wrap">
+            <span className="font-mono text-[11px] text-muted-ink">{i.id}</span>
+            <span className="text-[14px] font-semibold">{i.title}</span>
             {i.blocksUnit && <Badge tone="critical" label="Blocks the unit" />}
           </div>
-          <span style={{ fontSize: text.small, color: color.textMuted }}>
+          <span className="text-[12px] text-muted-ink">
             {i.propertyName} {i.unitNumber} · reported {i.reportedAt}
             {i.assigneeName ? ` · ${i.assigneeName}` : i.vendorName ? ` · ${i.vendorName}` : ''}
             {evidence ? ` · ${evidence}` : ''}
           </span>
-          {i.detail && <span style={{ fontSize: 13, textWrap: 'pretty' }}>{i.detail}</span>}
+          {i.detail && <span className="text-[13px] text-pretty">{i.detail}</span>}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flex: 'none' }}>
-          <span style={{ fontSize: 16, fontWeight: 600 }}>
+        <div className="flex flex-col items-end gap-1 flex-none">
+          <span className="text-[16px] font-semibold">
             {i.finalAmount != null ? rm(i.finalAmount) : i.quotedAmount != null ? rm(i.quotedAmount) : '—'}
           </span>
-          <span style={{ fontSize: text.micro, color: color.textMuted }}>
+          <span className="text-[11px] text-muted-ink">
             {i.finalAmount != null ? 'Final' : i.quotedAmount != null ? 'Quoted' : 'Not quoted'} · {CHARGE_LABEL[i.chargeTo]}
           </span>
         </div>
       </div>
 
       {i.ownerApprovalRequired && !i.ownerApprovedAt && i.quotedAmount != null && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '10px 12px', borderRadius: radius.control, background: color.goldTint, border: `1px solid ${color.gold200}` }}>
-          <span style={{ fontSize: 12.5, color: color.goldInk, flex: 1, minWidth: 200 }}>
+        <div className="flex items-center gap-3 flex-wrap px-3 py-[10px] rounded-control bg-gold-tint border border-solid border-[var(--color-gold-200)]">
+          <span className="text-[12.5px] text-gold-ink flex-1 min-w-[200px]">
             The owner must approve {rm(i.quotedAmount)} before this is scheduled.
           </span>
-          <button onClick={onRequestApproval} style={{ height: 34, padding: '0 13px', borderRadius: radius.control, border: 'none', background: color.black, color: '#FFFFFF', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', font: 'inherit' }}>
+          <button onClick={onRequestApproval} className="h-[34px] px-[13px] py-0 rounded-control border-none bg-black text-white cursor-pointer [font:inherit]">
             Request owner approval
           </button>
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+      <div className="flex gap-[7px] flex-wrap">
         {resolved ? (
           <RowAction onClick={onReopen} danger>Reopen</RowAction>
         ) : (
@@ -360,16 +356,16 @@ function IssueRow({
 }
 
 function RowAction({ children, onClick, primary, danger }: { children: ReactNode; onClick: () => void; primary?: boolean; danger?: boolean }) {
-  const base: CSSProperties = {
-    height: 32, padding: '0 12px', borderRadius: radius.control, fontSize: 12.5, fontWeight: 500,
-    cursor: 'pointer', font: 'inherit', whiteSpace: 'nowrap',
-  };
-  const skin: CSSProperties = primary
-    ? { border: 'none', background: color.black, color: '#FFFFFF' }
+  const skin = primary
+    ? 'border-none bg-black text-white'
     : danger
-      ? { border: `1px solid ${'#E4B4B1'}`, background: '#FFFFFF', color: '#A8352F' }
-      : { border: `1px solid ${color.border}`, background: '#FFFFFF', color: color.ink };
-  return <button onClick={onClick} style={{ ...base, ...skin }}>{children}</button>;
+      ? cx('border border-solid border-[#E4B4B1] bg-white', TONE.critical.text)
+      : 'border border-solid border-line bg-white text-ink';
+  return (
+    <button onClick={onClick} className={cx('h-8 px-3 py-0 rounded-control cursor-pointer [font:inherit] whitespace-nowrap', skin)}>
+      {children}
+    </button>
+  );
 }
 
 // ---- Local modal shell -----------------------------------------------------
@@ -379,15 +375,16 @@ function Modal({ title, sub, onClose, footer, children, width = 480 }: {
 }) {
   return (
     <div role="dialog" aria-modal="true" aria-label={title}
-      style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24, background: 'var(--color-surface-scrim)', animation: 'fade-in var(--motion-standard) var(--ease-out) both' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div style={{ position: 'relative', width: '100%', maxWidth: width, maxHeight: '90vh', overflowY: 'auto', background: '#FFFFFF', borderRadius: radius.card, boxShadow: 'var(--shadow-overlay)', animation: 'dialog-in var(--motion-slow) var(--ease-out) both' }}>
-        <div style={{ padding: '22px 22px 18px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <h2 style={{ margin: 0, fontSize: 18, lineHeight: 1.3, fontWeight: 600, textWrap: 'pretty' }}>{title}</h2>
-          {sub && <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: color.textMuted, textWrap: 'pretty' }}>{sub}</p>}
+      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      <div onClick={onClose} className="absolute inset-0" />
+      <div style={{ maxWidth: width }}
+        className="relative w-full max-h-[90vh] overflow-y-auto bg-white rounded-card shadow-[var(--shadow-overlay)] animate-dialog">
+        <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-1">
+          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold text-pretty">{title}</h2>
+          {sub && <p className="m-0 text-[13px] leading-[1.55] text-muted-ink text-pretty">{sub}</p>}
         </div>
-        <div style={{ padding: '0 22px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>{children}</div>
-        <div style={{ padding: '14px 22px', borderTop: `1px solid ${color.border}`, background: color.page, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 9, flexWrap: 'wrap' }}>
+        <div className="px-[22px] pt-0 pb-5 flex flex-col gap-[14px]">{children}</div>
+        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
           {footer}
         </div>
       </div>
@@ -397,8 +394,8 @@ function Modal({ title, sub, onClose, footer, children, width = 480 }: {
 
 function LabeledField({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <label style={labelStyle}>{label}</label>
+    <div className="flex flex-col gap-1.5">
+      <label className={LABEL_CX}>{label}</label>
       {children}
     </div>
   );
@@ -434,22 +431,22 @@ function CreateJobModal({ onClose, onCreate }: { onClose: () => void; onCreate: 
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" onClick={submit} disabled={!valid} disabledReason="Add the property, unit and a title first.">Create job</Button>
       </>}>
-      <form id="create-job" onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
-          <LabeledField label="Property"><input required value={propertyName} onChange={e => setPropertyName(e.target.value)} placeholder="Vista Jaya One" style={inputStyle} /></LabeledField>
-          <LabeledField label="Unit"><input required value={unitNumber} onChange={e => setUnitNumber(e.target.value)} placeholder="#A-12-03" style={inputStyle} /></LabeledField>
+      <form id="create-job" onSubmit={submit} className="flex flex-col gap-[14px]">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
+          <LabeledField label="Property"><input required value={propertyName} onChange={e => setPropertyName(e.target.value)} placeholder="Vista Jaya One" className={INPUT_CX} /></LabeledField>
+          <LabeledField label="Unit"><input required value={unitNumber} onChange={e => setUnitNumber(e.target.value)} placeholder="#A-12-03" className={INPUT_CX} /></LabeledField>
         </div>
-        <LabeledField label="Title"><input required value={title} onChange={e => setTitle(e.target.value)} placeholder="Broken blind, living room" style={inputStyle} /></LabeledField>
+        <LabeledField label="Title"><input required value={title} onChange={e => setTitle(e.target.value)} placeholder="Broken blind, living room" className={INPUT_CX} /></LabeledField>
         <LabeledField label="Detail">
           <textarea value={detail} onChange={e => setDetail(e.target.value)} placeholder="What happened, and what needs doing." rows={3}
-            style={{ ...inputStyle, height: 'auto', padding: '10px 12px', resize: 'vertical', lineHeight: 1.5 }} />
+            className="block w-full box-border h-auto px-3 py-[10px] text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-[16px] font-normal resize-y leading-[1.5]" />
         </LabeledField>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
-          <LabeledField label="Vendor"><input value={vendorName} onChange={e => setVendorName(e.target.value)} placeholder="AquaFix" style={inputStyle} /></LabeledField>
-          <LabeledField label="Quote (RM, optional)"><input inputMode="decimal" value={quote} onChange={e => setQuote(e.target.value)} placeholder="320.00" style={{ ...inputStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} /></LabeledField>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
+          <LabeledField label="Vendor"><input value={vendorName} onChange={e => setVendorName(e.target.value)} placeholder="AquaFix" className={INPUT_CX} /></LabeledField>
+          <LabeledField label="Quote (RM, optional)"><input inputMode="decimal" value={quote} onChange={e => setQuote(e.target.value)} placeholder="320.00" className={cx(INPUT_CX, 'text-right tabular-nums')} /></LabeledField>
         </div>
         <LabeledField label="Charge to">
-          <select value={chargeTo} onChange={e => setChargeTo(e.target.value as ChargeTo)} style={inputStyle}>
+          <select value={chargeTo} onChange={e => setChargeTo(e.target.value as ChargeTo)} className={INPUT_CX}>
             {CHARGE_OPTIONS.map(c => <option key={c} value={c}>{CHARGE_LABEL[c]}</option>)}
           </select>
         </LabeledField>
@@ -470,11 +467,11 @@ function AssignModal({ issue, onClose, onAssign }: { issue: Issue; onClose: () =
         <Button size="sm" variant="primary" onClick={() => onAssign(issue, tech)}>Assign</Button>
       </>}>
       <LabeledField label="Technician or vendor">
-        <select value={tech} onChange={e => setTech(e.target.value)} style={inputStyle}>
+        <select value={tech} onChange={e => setTech(e.target.value)} className={INPUT_CX}>
           {TECHS.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
       </LabeledField>
-      <span style={{ fontSize: text.small, color: color.textMuted }}>They are notified by push and the job moves to assigned.</span>
+      <span className="text-[12px] text-muted-ink">They are notified by push and the job moves to assigned.</span>
     </Modal>
   );
 }
@@ -497,7 +494,7 @@ function PhotoModal({ issue, onClose, onAttach }: { issue: Issue; onClose: () =>
       <div>
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => setFileName(e.target.files?.[0]?.name ?? null)} />
         <button type="button" onClick={() => fileRef.current?.click()}
-          style={{ ...inputStyle, height: 'auto', minHeight: 72, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: color.textMuted, borderStyle: 'dashed' }}>
+          className="flex w-full box-border h-auto min-h-[72px] px-3 py-0 items-center justify-center text-muted-ink bg-white border border-dashed border-line rounded-control outline-none [font:inherit] cursor-pointer">
           {fileName ? fileName : 'Choose a photo'}
         </button>
       </div>
@@ -523,7 +520,7 @@ function DocumentModal({ issue, onClose, onAttach }: { issue: Issue; onClose: ()
       <div>
         <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={e => setFileName(e.target.files?.[0]?.name ?? null)} />
         <button type="button" onClick={() => fileRef.current?.click()}
-          style={{ ...inputStyle, height: 'auto', minHeight: 72, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: color.textMuted, borderStyle: 'dashed' }}>
+          className="flex w-full box-border h-auto min-h-[72px] px-3 py-0 items-center justify-center text-muted-ink bg-white border border-dashed border-line rounded-control outline-none [font:inherit] cursor-pointer">
           {fileName ? fileName : 'Choose a file'}
         </button>
       </div>
@@ -551,20 +548,20 @@ function CompleteModal({ issue, onClose, onComplete, onNeedsPhoto }: {
           Mark complete
         </Button>
       </>}>
-      <div style={{ padding: '10px 12px', borderRadius: radius.control, background: color.page, border: `1px solid ${color.border}`, fontSize: 12.5, color: color.textMuted }}>
+      <div className="px-3 py-[10px] rounded-control bg-page border border-solid border-line text-[12.5px] text-muted-ink">
         {issue.propertyName} {issue.unitNumber} · {issue.title} · charged to {CHARGE_LABEL[issue.chargeTo]}
       </div>
       <LabeledField label="Final amount (RM)">
         <input inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} placeholder="320.00" autoFocus
-          style={{ ...inputStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />
+          className={cx(INPUT_CX, 'text-right tabular-nums')} />
       </LabeledField>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 12px', borderRadius: radius.control,
-        background: hasPhoto ? 'var(--color-success)' : 'var(--color-warning)', color: hasPhoto ? 'var(--color-success-fg)' : 'var(--color-warning-fg)', fontSize: 12.5 }}>
-        <span style={{ flex: 1, minWidth: 180 }}>
+      <div className={cx('flex items-center gap-2.5 flex-wrap px-3 py-[10px] rounded-control text-[12.5px]',
+        hasPhoto ? cx(TONE.success.bg, TONE.success.text) : cx(TONE.warning.bg, TONE.warning.text))}>
+        <span className="flex-1 min-w-[180px]">
           {hasPhoto ? `${issue.photoCount} ${issue.photoCount === 1 ? 'photo' : 'photos'} attached — evidence requirement met.` : 'A photo is required before this job can be completed.'}
         </span>
         {!hasPhoto && (
-          <button onClick={onNeedsPhoto} style={{ height: 30, padding: '0 12px', borderRadius: radius.control, border: '1px solid currentColor', background: 'transparent', color: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', font: 'inherit' }}>
+          <button onClick={onNeedsPhoto} className="h-[30px] px-3 py-0 rounded-control border border-solid border-current bg-transparent text-inherit cursor-pointer [font:inherit]">
             Upload a photo
           </button>
         )}
@@ -577,13 +574,13 @@ function CompleteModal({ issue, onClose, onComplete, onNeedsPhoto }: {
 
 function Segmented({ options, value, onChange }: { options: string[]; value: string; onChange: (v: string) => void }) {
   return (
-    <div style={{ display: 'inline-flex', border: `1px solid ${color.border}`, borderRadius: radius.control, overflow: 'hidden' }}>
+    <div className="inline-flex border border-solid border-line rounded-control overflow-hidden">
       {options.map(o => {
         const on = o === value;
         return (
           <button key={o} type="button" onClick={() => onChange(o)}
-            style={{ padding: '8px 16px', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', border: 'none', font: 'inherit',
-              background: on ? color.black : '#FFFFFF', color: on ? '#FFFFFF' : color.textMuted }}>
+            className={cx('px-4 py-2 cursor-pointer border-none [font:inherit]',
+              on ? 'bg-black text-white' : 'bg-white text-muted-ink')}>
             {o}
           </button>
         );
@@ -594,15 +591,15 @@ function Segmented({ options, value, onChange }: { options: string[]; value: str
 
 function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+    <div className="flex items-start gap-3">
       <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
-        style={{ width: 40, height: 24, flex: 'none', borderRadius: radius.pill, border: 'none', cursor: 'pointer', padding: 2, marginTop: 1,
-          background: checked ? color.black : color.borderStrong, transition: 'background 160ms', display: 'flex', justifyContent: checked ? 'flex-end' : 'flex-start' }}>
-        <span style={{ width: 20, height: 20, borderRadius: radius.pill, background: '#FFFFFF' }} />
+        className={cx('w-10 h-6 flex-none rounded-full border-none cursor-pointer p-0.5 mt-px [transition:background_160ms] flex',
+          checked ? 'bg-black justify-end' : 'bg-line-strong justify-start')}>
+        <span className="w-5 h-5 rounded-full bg-white" />
       </button>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <span style={{ fontSize: 13.5, fontWeight: 500 }}>{label}</span>
-        {hint && <span style={{ fontSize: text.small, color: color.textMuted }}>{hint}</span>}
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[13.5px] font-medium">{label}</span>
+        {hint && <span className="text-[12px] text-muted-ink">{hint}</span>}
       </div>
     </div>
   );

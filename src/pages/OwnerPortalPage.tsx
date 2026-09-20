@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { color, radius, text } from '../theme';
+import { color } from '../theme';
+import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
 import { rm, rmDeduction, date, percent, rating } from '../lib/format';
@@ -105,8 +106,6 @@ const DOCS: { data: OwnerDoc[] } = {
   ],
 };
 
-const card = { background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card } as const;
-
 const monthYear = (period: string) => {
   const [y, m] = period.split('-').map(Number);
   return new Date(y, m - 1, 1).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' });
@@ -175,48 +174,48 @@ export default function OwnerPortalPage() {
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <h1 style={{ margin: 0, fontSize: text.pageTitle, fontWeight: 600, letterSpacing: '-0.015em' }}>Your property</h1>
-        <span style={{ fontSize: 13.5, color: color.textMuted }}>
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-1">
+        <h1 className="m-0 text-[28px] font-semibold tracking-[-0.015em]">Your property</h1>
+        <span className="text-[13.5px] text-muted-ink">
           {st.units.length ? st.units.map(u => u.label).join(' · ') : 'No units are on your account yet.'}
         </span>
       </div>
 
       {/* Statement summary — the gross → fees → expenses → net chain */}
-      <section style={{ background: color.black, color: '#FFFFFF', borderRadius: radius.card, padding: 28, display: 'flex', justifyContent: 'space-between', gap: 28, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 9, minWidth: 220 }}>
-          <span style={{ fontSize: 12, color: color.dim }}>Net payout · {monthYear(st.period)}</span>
-          <span style={{ fontSize: 40, lineHeight: 1.1, fontWeight: 600, letterSpacing: '-0.02em', color: color.gold }}>{rm(st.payout.amount)}</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+      <section className="bg-black text-white rounded-card p-7 flex justify-between gap-7 flex-wrap">
+        <div className="flex flex-col gap-[9px] min-w-[220px]">
+          <span className="text-[12px] text-[var(--color-text-on-dark-muted)]">Net payout · {monthYear(st.period)}</span>
+          <span className="text-[40px] leading-[1.1] font-semibold tracking-[-0.02em] text-gold">{rm(st.payout.amount)}</span>
+          <div className="flex items-center gap-[9px] flex-wrap">
             <Badge label={PAYOUT[st.payout.state].label} tone={PAYOUT[st.payout.state].tone} size="sm" />
-            {payoutLine && <span style={{ fontSize: 12, color: color.onDark }}>{payoutLine}</span>}
+            {payoutLine && <span className="text-[12px] text-[var(--color-text-on-dark)]">{payoutLine}</span>}
           </div>
-          <span style={{ marginTop: 3, fontSize: 11.5, color: st.isFinal ? color.dim : color.gold300 }}>
+          <span className={cx('mt-[3px] text-[11.5px]', st.isFinal ? 'text-[var(--color-text-on-dark-muted)]' : 'text-[var(--color-gold-300)]')}>
             {st.isFinal ? 'Finalised statement.' : 'Provisional figures. This statement is not final and may change.'}
           </span>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 11, minWidth: 260, flex: 1 }}>
-          <span style={{ fontSize: 11.5, color: color.dim, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Gross to net</span>
+        <div className="flex flex-col gap-[11px] min-w-[260px] flex-1">
+          <span className="text-[11.5px] text-[var(--color-text-on-dark-muted)] uppercase tracking-[0.06em]">Gross to net</span>
           {st.grossToNet.map(l => {
             const strong = l.type === 'net';
             return (
-              <div key={l.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, paddingBottom: 8, borderBottom: `1px solid ${color.charcoal}` }}>
-                <span style={{ fontSize: 13, color: strong ? '#FFFFFF' : color.onDark, fontWeight: strong ? 600 : 400 }}>
+              <div key={l.label} className="flex justify-between gap-[14px] pb-2 [border-bottom:1px_solid_var(--color-charcoal)]">
+                <span className={cx('text-[13px]', strong ? 'text-white font-semibold' : 'text-[var(--color-text-on-dark)] font-normal')}>
                   {l.label}
-                  {l.reference && <span style={{ color: color.dim }}> · {l.reference}</span>}
+                  {l.reference && <span className="text-[var(--color-text-on-dark-muted)]"> · {l.reference}</span>}
                 </span>
-                <span style={{ fontSize: 13, fontWeight: strong ? 600 : 500, color: strong ? color.gold : '#FFFFFF', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                <span className={cx('text-[13px] tabular-nums whitespace-nowrap', strong ? 'font-semibold text-gold' : 'font-medium text-white')}>
                   {l.amount < 0 ? rmDeduction(l.amount) : rm(l.amount)}
                 </span>
               </div>
             );
           })}
-          <span style={{ fontSize: 11.5, color: color.dim, textWrap: 'pretty' }}>Gross booking value is the total before documented fees and expenses.</span>
+          <span className="text-[11.5px] text-[var(--color-text-on-dark-muted)] text-pretty">Gross booking value is the total before documented fees and expenses.</span>
           <button
             onClick={() => downloadStatement(st.statementId)}
-            style={{ alignSelf: 'flex-start', marginTop: 3, display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 14px', border: `1px solid ${color.gold}`, borderRadius: radius.control, background: 'transparent', font: 'inherit', fontSize: 13, fontWeight: 600, color: color.gold, cursor: 'pointer' }}
+            className="self-start mt-[3px] inline-flex items-center gap-[7px] px-[14px] py-[9px] border border-solid border-gold rounded-control bg-transparent [font:inherit] text-gold cursor-pointer"
           >
             <Icon name="Download" size="sm" /> Download statement
           </button>
@@ -224,46 +223,46 @@ export default function OwnerPortalPage() {
       </section>
 
       {/* Performance stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
+      <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
         {statsCards.map(s => (
-          <div key={s.label} style={{ ...card, padding: 18, display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <span style={{ fontSize: 11.5, color: color.textMuted }}>{s.label}</span>
-            <span style={{ fontSize: 26, fontWeight: 600 }}>{s.value}</span>
-            <span style={{ fontSize: 11.5, color: color.textMuted }}>{s.note}</span>
+          <div key={s.label} className="bg-card border border-solid border-line rounded-card p-[18px] flex flex-col gap-[5px]">
+            <span className="text-[11.5px] text-muted-ink">{s.label}</span>
+            <span className="text-[26px] font-semibold">{s.value}</span>
+            <span className="text-[11.5px] text-muted-ink">{s.note}</span>
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
+      <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]">
         {/* Earnings trend — inline SVG */}
-        <section style={{ ...card, padding: 20, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <span style={{ fontSize: text.cardTitle, fontWeight: 600 }}>Earnings over time</span>
-          <span style={{ fontSize: 12, color: color.textMuted }}>
+        <section className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-[6px]">
+          <span className="text-[16px] font-semibold">Earnings over time</span>
+          <span className="text-[12px] text-muted-ink">
             Net payout, RM · last {trend.data?.months ?? points.length} months · {trend.data?.unitLabel ?? st.unitsLabel}
           </span>
           {points.length ? <TrendChart points={points} /> : (
-            <span style={{ fontSize: 13, color: color.textMuted, marginTop: 8 }}>Earnings appear after your first statement.</span>
+            <span className="text-[13px] text-muted-ink mt-2">Earnings appear after your first statement.</span>
           )}
         </section>
 
         {/* Property health */}
-        <section style={{ ...card, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '18px 20px', fontSize: text.cardTitle, fontWeight: 600, borderBottom: `1px solid ${color.borderMuted}` }}>Property health</div>
-          {rows.length === 0 && <div style={{ padding: '13px 20px', fontSize: 13, color: color.textMuted }}>No maintenance on your property.</div>}
+        <section className="bg-card border border-solid border-line rounded-card overflow-hidden flex flex-col">
+          <div className="px-5 py-[18px] text-[16px] font-semibold [border-bottom:1px_solid_var(--color-line-soft)]">Property health</div>
+          {rows.length === 0 && <div className="px-5 py-[13px] text-[13px] text-muted-ink">No maintenance on your property.</div>}
           {rows.map(i => {
             const v = TASK[i.state];
             const waiting = i.state === 'waiting' && i.quotedAmount != null;
             return (
-              <div key={i.id} style={{ padding: '13px 20px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+              <div key={i.id} className="px-5 py-[13px] [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-[5px]">
+                <div className="flex items-center gap-[9px] flex-wrap">
                   <Badge label={v.label} tone={v.tone} size="sm" />
-                  <span style={{ fontSize: 13.5, fontWeight: 500 }}>{i.title}</span>
+                  <span className="text-[13.5px] font-medium">{i.title}</span>
                 </div>
-                <span style={{ fontSize: 11.5, color: color.textMuted, textWrap: 'pretty' }}>{issueLine(i, multiUnit)}</span>
+                <span className="text-[11.5px] text-muted-ink text-pretty">{issueLine(i, multiUnit)}</span>
                 {waiting && (
                   <button
                     onClick={() => setApprove(i)}
-                    style={{ alignSelf: 'flex-start', marginTop: 2, padding: '7px 13px', border: `1px solid ${color.gold}`, borderRadius: radius.control, background: 'transparent', font: 'inherit', fontSize: 12.5, fontWeight: 600, color: color.goldInk, cursor: 'pointer' }}
+                    className="self-start mt-[2px] px-[13px] py-[7px] border border-solid border-gold rounded-control bg-transparent [font:inherit] text-gold-ink cursor-pointer"
                   >
                     Approve quote
                   </button>
@@ -275,17 +274,17 @@ export default function OwnerPortalPage() {
       </div>
 
       {/* Documents */}
-      <section style={{ ...card, overflow: 'hidden' }}>
-        <div style={{ padding: '18px 20px', fontSize: text.cardTitle, fontWeight: 600, borderBottom: `1px solid ${color.borderMuted}` }}>Documents</div>
-        {documents.length === 0 && <div style={{ padding: '13px 20px', fontSize: 13, color: color.textMuted }}>Your statements and contract will appear here.</div>}
+      <section className="bg-card border border-solid border-line rounded-card overflow-hidden">
+        <div className="px-5 py-[18px] text-[16px] font-semibold [border-bottom:1px_solid_var(--color-line-soft)]">Documents</div>
+        {documents.length === 0 && <div className="px-5 py-[13px] text-[13px] text-muted-ink">Your statements and contract will appear here.</div>}
         {documents.map(d => (
-          <div key={d.id} style={{ padding: '13px 20px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', alignItems: 'center', gap: 14 }}>
-            <span style={{ width: 34, height: 34, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.control, background: color.muted, color: color.inkSecondary }}>
+          <div key={d.id} className="px-5 py-[13px] [border-bottom:1px_solid_var(--color-line-soft)] flex items-center gap-[14px]">
+            <span className="w-[34px] h-[34px] flex-none grid place-items-center rounded-control bg-muted text-[var(--color-ink-2)]">
               <Icon name={DOC_ICON[d.type]} size="sm" />
             </span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
-              <span style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.title}</span>
-              <span style={{ fontSize: 11.5, color: color.textMuted }}>{d.meta}</span>
+            <div className="flex flex-col gap-px min-w-0 flex-1">
+              <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{d.title}</span>
+              <span className="text-[11.5px] text-muted-ink">{d.meta}</span>
             </div>
             <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => downloadDoc(d)}>Download</Button>
           </div>
@@ -339,7 +338,7 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
   const desc = points.map(p => `${monthShort(p.period)} ${rm(p.netPayout)}`).join(', ');
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block', marginTop: 6, height: 'auto' }} role="img" aria-label={`Net payout by month: ${desc}`}>
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" className="block mt-[6px] h-auto" role="img" aria-label={`Net payout by month: ${desc}`}>
       <defs>
         <linearGradient id="owner-trend-fill" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color.gold} stopOpacity="0.24" />

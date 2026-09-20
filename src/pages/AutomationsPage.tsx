@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { color, radius, text } from '../theme';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -9,6 +8,7 @@ import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
+import { cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
 /* ------------------------------------------------------------------ model */
@@ -305,48 +305,43 @@ export default function AutomationsPage() {
       {error && <StaleBanner message={`Showing the last rules we have. ${error}`} onRetry={reload} />}
 
       {qh && (
-        <div style={{
-          display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 14px', borderRadius: radius.control,
-          background: color.goldTint, border: `1px solid ${color.gold200}`, color: color.goldInk, textWrap: 'pretty',
-        }}>
-          <Icon name="MoonStar" size="sm" color={color.goldInk} style={{ marginTop: 1 }} />
-          <span style={{ fontSize: text.small }}>{qh.note}</span>
+        <div className="flex items-start gap-2.5 py-[11px] px-[14px] rounded-control bg-gold-tint border border-solid border-[var(--color-gold-200)] text-gold-ink text-pretty">
+          <Icon name="MoonStar" size="sm" style={{ marginTop: 1 }} />
+          <span className="text-[12px]">{qh.note}</span>
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div className="flex gap-2 flex-wrap">
         {FILTERS.map(f => {
           const on = filter === f.key;
           return (
             <button key={f.key} onClick={() => setFilter(f.key)}
-              style={{
-                height: 32, padding: '0 13px', borderRadius: radius.pill, cursor: 'pointer', font: 'inherit',
-                fontSize: 12.5, fontWeight: on ? 600 : 500,
-                border: `1px solid ${on ? 'transparent' : color.border}`,
-                background: on ? color.black : color.card, color: on ? '#FFFFFF' : color.textMuted,
-              }}>
+              className={cx(
+                'h-8 px-[13px] py-0 rounded-full cursor-pointer [font:inherit] border border-solid',
+                on ? 'border-transparent bg-black text-white' : 'border-line bg-card text-muted-ink',
+              )}>
               {f.label}
             </button>
           );
         })}
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div className="flex flex-col gap-[18px]">
         {visibleGroups.map(g => {
           const groupRules = rules.filter(r => r.group === g.key);
           if (groupRules.length === 0) return null;
           const groupActive = groupRules.filter(r => r.isActive).length;
           return (
             <Card key={g.key}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '15px 20px', borderBottom: `1px solid ${color.border}` }}>
-                <span style={{ width: 34, height: 34, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.control, background: color.muted, color: color.inkSecondary }}>
+              <div className="flex items-center gap-3 py-[15px] px-5 [border-bottom:1px_solid_var(--color-line)]">
+                <span className="w-[34px] h-[34px] flex-none grid place-items-center rounded-control bg-muted text-ink-2">
                   <Icon name={g.icon} size="sm" />
                 </span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: text.cardTitle, fontWeight: 600 }}>{g.label}</span>
-                  <span style={{ fontSize: 12, color: color.textMuted }}>{g.desc}</span>
+                <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                  <span className="text-[16px] font-semibold">{g.label}</span>
+                  <span className="text-[12px] text-muted-ink">{g.desc}</span>
                 </div>
-                <span style={{ fontSize: 12, fontWeight: 500, color: color.textMuted, whiteSpace: 'nowrap' }}>
+                <span className="text-[12px] font-medium text-muted-ink whitespace-nowrap">
                   {groupActive} of {groupRules.length} live
                 </span>
               </div>
@@ -360,7 +355,7 @@ export default function AutomationsPage() {
 
         {visibleGroups.every(g => rules.filter(r => r.group === g.key).length === 0) && (
           <Card>
-            <div style={{ padding: '34px 22px', textAlign: 'center', fontSize: 13.5, color: color.textMuted }}>
+            <div className="py-[34px] px-[22px] text-center text-[13.5px] text-muted-ink">
               No automations match this filter.
             </div>
           </Card>
@@ -378,10 +373,7 @@ export default function AutomationsPage() {
 
 function ChannelChip({ label }: { label: string }) {
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', height: 20, padding: '0 8px', borderRadius: radius.pill,
-      background: color.muted, color: color.inkSecondary, fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap',
-    }}>{label}</span>
+    <span className="inline-flex items-center h-5 px-2 rounded-full bg-muted text-ink-2 text-[11px] font-medium whitespace-nowrap">{label}</span>
   );
 }
 
@@ -390,12 +382,11 @@ function Switch({ on, label, onToggle }: { on: boolean; label: string; onToggle:
     <button
       role="switch" aria-checked={on} aria-label={label}
       onClick={e => { e.stopPropagation(); onToggle(); }}
-      style={{
-        width: 44, height: 26, flex: 'none', borderRadius: radius.pill, border: 'none', cursor: 'pointer', padding: 3,
-        display: 'flex', justifyContent: on ? 'flex-end' : 'flex-start',
-        background: on ? '#11694A' : color.borderStrong, transition: 'background 120ms ease-out',
-      }}>
-      <span style={{ width: 20, height: 20, borderRadius: radius.pill, background: '#FFFFFF' }} />
+      className={cx(
+        'w-11 h-[26px] flex-none rounded-full border-none cursor-pointer p-[3px] flex [transition:background_120ms_ease-out]',
+        on ? 'justify-end bg-[var(--color-success-solid)]' : 'justify-start bg-line-strong',
+      )}>
+      <span className="w-5 h-5 rounded-full bg-white" />
     </button>
   );
 }
@@ -406,26 +397,20 @@ function RuleRow({ r, onOpen, onToggle }: { r: Rule; onOpen: () => void; onToggl
       role="button" tabIndex={0}
       onClick={onOpen}
       onKeyDown={e => { if (e.key === 'Enter') onOpen(); }}
-      style={{
-        display: 'flex', alignItems: 'flex-start', gap: 16, padding: '15px 20px',
-        borderBottom: `1px solid ${color.borderMuted}`, cursor: 'pointer', flexWrap: 'wrap',
-      }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 240 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 14, fontWeight: 600 }}>{r.name}</span>
+      className="flex items-start gap-4 py-[15px] px-5 [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer flex-wrap">
+      <div className="flex flex-col gap-1.5 flex-1 min-w-[240px]">
+        <div className="flex items-center gap-[9px] flex-wrap">
+          <span className="text-[14px] font-semibold">{r.name}</span>
           <Badge tone={r.isActive ? 'success' : 'neutral'} label={r.isActive ? 'Live' : 'Draft'} size="sm" />
           {r.quietHours === 'override' && <Badge tone="warning" label="Overrides quiet hours" size="sm" />}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12.5, color: color.textMuted }}>{r.timing}</span>
-          <span style={{ color: color.faint }}>&middot;</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[12.5px] text-muted-ink">{r.timing}</span>
+          <span className="text-faint">&middot;</span>
           {r.channels.map(c => <ChannelChip key={c} label={c} />)}
         </div>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: text.micro, color: color.textMuted }}>{r.trigger}</span>
-        <span style={{
-          fontSize: 12.5, color: color.inkSecondary, textWrap: 'pretty',
-          overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-        }}>{r.preview}</span>
+        <span className="font-mono text-[11px] text-muted-ink">{r.trigger}</span>
+        <span className="text-[12.5px] text-ink-2 text-pretty line-clamp-2">{r.preview}</span>
       </div>
       <Switch on={r.isActive} label={`${r.isActive ? 'Move to draft' : 'Set live'}: ${r.name}`} onToggle={onToggle} />
     </div>
@@ -448,54 +433,54 @@ function RulePanel({ r, onClose, onToggle }: { r: Rule; onClose: () => void; onT
 
   return (
     <>
-      <div style={{ padding: '18px 20px', borderBottom: `1px solid ${color.border}`, display: 'flex', alignItems: 'flex-start', gap: 12, flex: 'none' }}>
-        <span style={{ width: 34, height: 34, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.control, background: color.muted, color: color.inkSecondary }}>
+      <div className="py-[18px] px-5 [border-bottom:1px_solid_var(--color-line)] flex items-start gap-3 flex-none">
+        <span className="w-[34px] h-[34px] flex-none grid place-items-center rounded-control bg-muted text-ink-2">
           <Icon name={groupMeta.icon} size="sm" />
         </span>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 0 }}>
-          <span style={{ fontSize: 17, fontWeight: 600, textWrap: 'pretty' }}>{r.name}</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+          <span className="text-[17px] font-semibold text-pretty">{r.name}</span>
+          <div className="flex items-center gap-2 flex-wrap">
             <Badge tone={r.isActive ? 'success' : 'neutral'} label={r.isActive ? 'Live' : 'Draft'} size="sm" />
             {r.quietHours === 'override' && <Badge tone="warning" label="Overrides quiet hours" size="sm" />}
           </div>
         </div>
-        <button onClick={onClose} aria-label="Close" style={{ width: 30, height: 30, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.pill, background: color.muted, border: 'none', color: color.textMuted, cursor: 'pointer' }}>
+        <button onClick={onClose} aria-label="Close" className="w-[30px] h-[30px] flex-none grid place-items-center rounded-full bg-muted border-none text-muted-ink cursor-pointer">
           <Icon name="X" size="sm" />
         </button>
       </div>
 
-      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 20, flex: 1 }}>
+      <div className="p-5 flex flex-col gap-5 flex-1">
         <div>
-          <div style={{ fontSize: text.small, fontWeight: 600, color: color.textMuted, marginBottom: 8 }}>Channels</div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div className="text-[12px] font-semibold text-muted-ink mb-2">Channels</div>
+          <div className="flex gap-1.5 flex-wrap">
             {r.channels.map(c => <ChannelChip key={c} label={c} />)}
           </div>
         </div>
 
-        <div style={{ border: `1px solid ${color.border}`, borderRadius: radius.card, overflow: 'hidden' }}>
+        <div className="border border-solid border-line rounded-card overflow-hidden">
           {rows.map((row, i) => (
-            <div key={row.label} style={{ display: 'flex', gap: 12, padding: '10px 14px', borderBottom: i < rows.length - 1 ? `1px solid ${color.borderMuted}` : 'none' }}>
-              <span style={{ fontSize: 12.5, color: color.textMuted, width: 116, flex: 'none' }}>{row.label}</span>
-              <span style={{ fontSize: 12.5, color: color.ink, textWrap: 'pretty', fontFamily: row.mono ? 'var(--font-mono)' : undefined }}>{row.value}</span>
+            <div key={row.label} className={cx('flex gap-3 py-2.5 px-[14px]', i < rows.length - 1 && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
+              <span className="text-[12.5px] text-muted-ink w-[116px] flex-none">{row.label}</span>
+              <span className={cx('text-[12.5px] text-ink text-pretty', row.mono && 'font-mono')}>{row.value}</span>
             </div>
           ))}
         </div>
 
         <div>
-          <div style={{ fontSize: text.small, fontWeight: 600, color: color.textMuted, marginBottom: 8 }}>Template preview</div>
-          <div style={{ padding: '13px 15px', borderRadius: radius.card, background: color.page, border: `1px solid ${color.border}`, fontSize: 13, lineHeight: 1.55, color: color.ink, textWrap: 'pretty' }}>
+          <div className="text-[12px] font-semibold text-muted-ink mb-2">Template preview</div>
+          <div className="py-[13px] px-[15px] rounded-card bg-page border border-solid border-line text-[13px] leading-[1.55] text-ink text-pretty">
             {r.preview}
           </div>
-          <span style={{ display: 'block', marginTop: 8, fontSize: 11.5, color: color.faint, textWrap: 'pretty' }}>
+          <span className="block mt-2 text-[11.5px] text-faint text-pretty">
             Braced values are filled per send from the record. Editing templates is a backend-owned step.
           </span>
         </div>
       </div>
 
-      <div style={{ padding: 16, borderTop: `1px solid ${color.border}`, background: color.page, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>{r.isActive ? 'Live' : 'Draft'}</span>
-          <span style={{ fontSize: 11.5, color: color.textMuted }}>
+      <div className="p-4 [border-top:1px_solid_var(--color-line)] bg-page flex-none flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-px min-w-0">
+          <span className="text-[13px] font-semibold">{r.isActive ? 'Live' : 'Draft'}</span>
+          <span className="text-[11.5px] text-muted-ink">
             {r.isActive ? 'Sending on matching triggers.' : 'Paused. No messages are sent.'}
           </span>
         </div>

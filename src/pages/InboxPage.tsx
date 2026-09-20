@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { color, radius, text } from '../theme';
+import { cx, TONE } from '../lib/design-tokens';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import ChannelMark, { channelLabel } from '../components/ChannelMark';
@@ -163,28 +163,28 @@ export default function InboxPage() {
 
       {error && <StaleBanner message={`Showing the last threads we have. ${error}`} onRetry={reload} />}
 
-      <div role="tablist" aria-label="Filter conversations" style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+      <div role="tablist" aria-label="Filter conversations" className="flex gap-[7px] flex-wrap">
         {(['all', 'unread'] as const).map(f => {
           const on = f === filter;
           const label = f === 'all' ? 'All' : `Unread${unreadCount ? ` (${unreadCount})` : ''}`;
           return (
             <button key={f} role="tab" aria-selected={on} onClick={() => setFilter(f)}
-              style={{ height: 34, display: 'flex', alignItems: 'center', padding: '0 15px', borderRadius: radius.pill, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', font: 'inherit',
-                border: `1px solid ${on ? color.black : color.border}`, background: on ? color.black : '#FFFFFF', color: on ? '#FFFFFF' : color.textMuted }}>
+              className={cx('h-[34px] flex items-center py-0 px-[15px] rounded-full cursor-pointer whitespace-nowrap [font:inherit] border border-solid',
+                on ? 'border-black bg-black text-white' : 'border-line bg-white text-muted-ink')}>
               {label}
             </button>
           );
         })}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px,0.8fr) minmax(0,1.6fr)', gap: 20, alignItems: 'start' }}>
+      <div className="grid [grid-template-columns:minmax(260px,0.8fr)_minmax(0,1.6fr)] gap-5 items-start">
         {/* ---- Thread list, every channel in one place ---- */}
         <Card>
           {loading && threads.length === 0 ? (
             <TableSkeleton rows={4} cols={2} />
           ) : visible.length === 0 ? (
-            <div style={{ padding: '28px 22px', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
-              <span style={{ fontSize: 13, color: color.textMuted }}>
+            <div className="py-[28px] px-[22px] flex flex-col gap-3 items-start">
+              <span className="text-[13px] text-muted-ink">
                 {filter === 'unread' ? 'No unread conversations.' : 'No conversations yet.'}
               </span>
               {filter === 'unread' && (
@@ -197,18 +197,18 @@ export default function InboxPage() {
               return (
                 <button key={t.id} onClick={() => selectThread(t.id)}
                   aria-current={on}
-                  style={{ display: 'flex', alignItems: 'flex-start', gap: 11, width: '100%', padding: '13px 16px', borderBottom: `1px solid ${color.borderMuted}`, border: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left',
-                    background: on ? color.goldTint : '#FFFFFF', boxShadow: on ? `inset 3px 0 0 ${color.gold}` : 'none' }}>
+                  className={cx('flex items-start gap-[11px] w-full py-[13px] px-4 [border-width:0_0_1px] [border-style:solid] [border-color:var(--color-line-soft)] cursor-pointer [font:inherit] text-left',
+                    on ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'bg-white')}>
                   {t.channel && <ChannelMark ch={t.channel} size={22} />}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                      <span style={{ fontSize: 13.5, fontWeight: t.isRead ? 500 : 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.guestName ?? 'Unknown guest'}</span>
-                      <span style={{ fontSize: text.micro, color: color.textMuted, flex: 'none' }}>{t.lastMessageAt}</span>
+                  <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={cx('text-[13.5px] whitespace-nowrap overflow-hidden text-ellipsis', t.isRead ? 'font-medium' : 'font-semibold')}>{t.guestName ?? 'Unknown guest'}</span>
+                      <span className="text-[11px] text-muted-ink flex-none">{t.lastMessageAt}</span>
                     </div>
-                    <span style={{ fontSize: 12, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.subject ?? t.preview}</span>
-                    <span style={{ fontSize: 11.5, color: color.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.propertyName} {t.unitNumber}</span>
+                    <span className="text-[12px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{t.subject ?? t.preview}</span>
+                    <span className="text-[11.5px] text-faint whitespace-nowrap overflow-hidden text-ellipsis">{t.propertyName} {t.unitNumber}</span>
                   </div>
-                  {!t.isRead && <span aria-label="Unread" style={{ width: 7, height: 7, flex: 'none', marginTop: 5, borderRadius: 999, background: '#C2413B' }} />}
+                  {!t.isRead && <span aria-label="Unread" className={cx('w-[7px] h-[7px] flex-none mt-[5px] rounded-full', TONE.critical.dot)} />}
                 </button>
               );
             })
@@ -218,40 +218,40 @@ export default function InboxPage() {
         {/* ---- Selected conversation ---- */}
         <Card>
           {open ? (
-            <div style={{ padding: '15px 20px', borderBottom: `1px solid ${color.border}`, display: 'flex', alignItems: 'center', gap: 11, flexWrap: 'wrap' }}>
+            <div className="py-[15px] px-5 [border-bottom:1px_solid_var(--color-line)] flex items-center gap-[11px] flex-wrap">
               {open.channel && <ChannelMark ch={open.channel} size={22} />}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 14, fontWeight: 600 }}>{open.guestName ?? 'Unknown guest'}</span>
-                <span style={{ fontSize: text.small, color: color.textMuted }}>{open.propertyName} {open.unitNumber}{open.subject ? ` · ${open.subject}` : ''}</span>
+              <div className="flex flex-col gap-px flex-1 min-w-0">
+                <span className="text-[14px] font-semibold">{open.guestName ?? 'Unknown guest'}</span>
+                <span className="text-[12px] text-muted-ink">{open.propertyName} {open.unitNumber}{open.subject ? ` · ${open.subject}` : ''}</span>
               </div>
               <Badge tone="neutral" label={threadChannelLabel(open.channel)} size="sm" />
             </div>
           ) : (
-            <div style={{ padding: '15px 20px', borderBottom: `1px solid ${color.border}`, fontSize: text.small, color: color.textMuted }}>
+            <div className="py-[15px] px-5 [border-bottom:1px_solid_var(--color-line)] text-[12px] text-muted-ink">
               No conversation selected
             </div>
           )}
 
-          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12, minHeight: 220 }}>
+          <div className="p-5 flex flex-col gap-3 min-h-[220px]">
             {loading && messages.length === 0 ? (
               <TableSkeleton rows={2} cols={1} />
             ) : !open ? (
-              <span style={{ fontSize: 13, color: color.textMuted }}>Select a conversation to read and reply.</span>
+              <span className="text-[13px] text-muted-ink">Select a conversation to read and reply.</span>
             ) : messages.length === 0 ? (
-              <span style={{ fontSize: 13, color: color.textMuted }}>No messages in this conversation yet.</span>
+              <span className="text-[13px] text-muted-ink">No messages in this conversation yet.</span>
             ) : (
               messages.map(m => {
                 const out = m.direction === 'outbound';
                 const sending = m.status === 'sending';
                 return (
-                  <div key={m.id} style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: out ? 'flex-end' : 'flex-start' }}>
-                    <div style={{ maxWidth: '78%', padding: '11px 14px', borderRadius: radius.card, fontSize: 13, lineHeight: 1.55, textWrap: 'pretty',
-                      opacity: sending ? 0.7 : 1,
-                      background: out ? color.black : color.muted, color: out ? '#FFFFFF' : color.ink }}>
+                  <div key={m.id} className={cx('flex flex-col gap-1', out ? 'items-end' : 'items-start')}>
+                    <div className={cx('max-w-[78%] py-[11px] px-[14px] rounded-card text-[13px] leading-[1.55] [text-wrap:pretty]',
+                      sending ? 'opacity-70' : 'opacity-100',
+                      out ? 'bg-black text-white' : 'bg-muted text-ink')}>
                       {m.body}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                      <span style={{ fontSize: text.micro, color: color.textMuted }}>
+                    <div className="flex items-center gap-[7px]">
+                      <span className="text-[11px] text-muted-ink">
                         {sending ? 'Sending…' : m.sentAt}
                       </span>
                       {m.isAutomated && <Badge tone="neutral" label="Automated" size="sm" />}
@@ -262,14 +262,15 @@ export default function InboxPage() {
             )}
           </div>
 
-          <form onSubmit={send} style={{ padding: '14px 20px', borderTop: `1px solid ${color.border}`, display: 'flex', gap: 10, alignItems: 'center' }}>
+          <form onSubmit={send} className="py-[14px] px-5 [border-top:1px_solid_var(--color-line)] flex gap-2.5 items-center">
             <input value={draft} onChange={e => setDraft(e.target.value)}
               placeholder={open ? `Reply to ${open.guestName ?? 'guest'} on ${threadChannelLabel(open.channel)}` : 'Select a conversation'}
               disabled={!open}
               aria-label="Reply"
-              style={{ flex: 1, minWidth: 0, height: 40, padding: '0 14px', fontSize: 13, font: 'inherit', border: `1px solid ${color.border}`, borderRadius: radius.control, outline: 'none' }} />
+              className="flex-1 min-w-0 h-10 py-0 px-[14px] [font:inherit] border border-solid border-line rounded-control outline-none" />
             <button type="submit" disabled={!draft.trim() || !open}
-              style={{ height: 40, padding: '0 16px', borderRadius: radius.control, background: (draft.trim() && open) ? color.black : color.muted, color: (draft.trim() && open) ? '#FFFFFF' : color.faint, fontSize: 13, fontWeight: 500, border: 'none', cursor: (draft.trim() && open) ? 'pointer' : 'not-allowed', font: 'inherit' }}>
+              className={cx('h-10 py-0 px-4 rounded-control border-0 [font:inherit]',
+                (draft.trim() && open) ? 'bg-black text-white cursor-pointer' : 'bg-muted text-faint cursor-not-allowed')}>
               Send
             </button>
           </form>

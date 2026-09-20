@@ -224,7 +224,7 @@ function EmptyState() {
     <div className="py-12 px-[22px] flex flex-col items-center gap-3 text-center">
       <span className="text-muted-ink"><Icon name="BarChart3" /></span>
       <div className="text-[14px] text-muted-ink max-w-[360px]">No units to show for this period.</div>
-      <a href="#/properties/units" className="text-[12px] font-semibold text-gold-ink no-underline">{'View all units →'}</a>
+      <a href="#/properties/units" className="text-[12px] font-semibold text-gold-ink! no-underline">{'View all units →'}</a>
     </div>
   );
 }
