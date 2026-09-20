@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { color, radius, text } from '../theme';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -10,6 +9,7 @@ import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { rm, date } from '../lib/format';
+import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
 type Condition = 'good' | 'fair' | 'replace_soon' | 'damaged';
@@ -44,7 +44,9 @@ const FALLBACK: Payload = {
   ],
 };
 
-const COLS = 'minmax(190px,1.9fr) minmax(140px,1.2fr) minmax(96px,0.8fr) minmax(138px,1fr) minmax(96px,0.8fr) minmax(120px,0.95fr) minmax(150px,1.3fr)';
+// Shared grid-template-columns for the table header and each row. Mirrors the
+// former COLS inline value as a Tailwind arbitrary grid-cols.
+const COLS_CLASS = 'grid-cols-[minmax(190px,1.9fr)_minmax(140px,1.2fr)_minmax(96px,0.8fr)_minmax(138px,1fr)_minmax(96px,0.8fr)_minmax(120px,0.95fr)_minmax(150px,1.3fr)]';
 const DUE_WINDOW_DAYS = 90;
 
 const isAttention = (i: Item) => i.condition === 'replace_soon' || i.condition === 'damaged';
@@ -57,6 +59,10 @@ function scheduleTone(replaceBy: string | null): Tone | null {
   return null;
 }
 const isDue = (i: Item) => scheduleTone(i.replaceBy) !== null;
+
+/** Condition pill — tint background + AA foreground, routed through TONE so the
+ *  status colours resolve to the -fg foreground, never the pale root tint. */
+const condPill = (c: Condition) => cx(TONE[COND_TONE[c]].bg, TONE[COND_TONE[c]].text);
 
 type CondFilter = 'all' | 'attention' | Condition;
 
@@ -124,7 +130,7 @@ export default function InventoryPage() {
 
       {error && <StaleBanner message={`Showing the last register we have. ${error}`} onRetry={reload} />}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3">
         <Stat label="Invested in-house" value={rm(invested, { cents: false })} hint="Total fit-out value" />
         <Stat label="Needs attention" value={String(attention)} tone={attention ? 'warning' : undefined}
           active={condFilter === 'attention'} onClick={() => setCondFilter(f => f === 'attention' ? 'all' : 'attention')} hint="Replace soon or damaged" />
@@ -133,19 +139,19 @@ export default function InventoryPage() {
         <Stat label="Units furnished" value={String(units.length)} hint="With items on the register" />
       </div>
 
-      <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label htmlFor="inv-unit" style={{ fontSize: text.small, fontWeight: 500, color: color.textMuted }}>Unit</label>
+      <div className="flex gap-[14px] items-end flex-wrap">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="inv-unit" className="text-[12px] font-medium text-muted-ink">Unit</label>
           <select id="inv-unit" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}
-            style={{ ...controlStyle, minWidth: 220, cursor: 'pointer' }}>
+            className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none min-w-[220px] cursor-pointer">
             <option value="all">All units</option>
             {units.map(u => <option key={u.unitNumber} value={u.unitNumber}>{u.label}</option>)}
           </select>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <span style={{ fontSize: text.small, fontWeight: 500, color: color.textMuted }}>Condition</span>
-          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[12px] font-medium text-muted-ink">Condition</span>
+          <div className="flex gap-[7px] flex-wrap">
             <Chip label="All" active={condFilter === 'all'} onClick={() => setCondFilter('all')} />
             <Chip label="Needs attention" active={condFilter === 'attention'} onClick={() => setCondFilter('attention')} />
             {CONDITIONS.map(c => <Chip key={c} label={COND_LABEL[c]} active={condFilter === c} onClick={() => setCondFilter(c)} />)}
@@ -154,55 +160,55 @@ export default function InventoryPage() {
 
         {filtersOn && (
           <button onClick={clearFilters}
-            style={{ height: 32, padding: '0 12px', borderRadius: radius.pill, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', font: 'inherit', border: `1px solid ${color.border}`, background: 'transparent', color: color.textMuted }}>
+            className="h-8 flex items-center px-3 py-0 rounded-full cursor-pointer font-sans text-[16px] font-normal border border-solid border-line bg-transparent text-muted-ink">
             Clear filters
           </button>
         )}
       </div>
 
       <Card>
-        <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: 1060 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, padding: '9px 22px', background: color.muted, borderBottom: `1px solid ${color.border}`, fontSize: text.small, fontWeight: 600, color: color.textMuted }}>
-              <div>Item</div><div>Unit</div><div>Category</div><div>Condition</div><div style={{ textAlign: 'right' }}>Value</div><div>Replace by</div><div>Notes</div>
+        <div className="overflow-x-auto">
+          <div className="min-w-[1060px]">
+            <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-[12px] font-semibold text-muted-ink')}>
+              <div>Item</div><div>Unit</div><div>Category</div><div>Condition</div><div className="text-right">Value</div><div>Replace by</div><div>Notes</div>
             </div>
 
             {loading && all.length === 0 ? (
               <TableSkeleton rows={6} cols={7} />
             ) : rows.length === 0 ? (
-              <div style={{ padding: '38px 22px', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
-                <span style={{ fontSize: 14, fontWeight: 600 }}>{filtersOn ? 'No items match these filters.' : 'No fit-out items recorded yet.'}</span>
-                <span style={{ fontSize: 12.5, color: color.textMuted, maxWidth: 380 }}>
+              <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
+                <span className="text-[14px] font-semibold">{filtersOn ? 'No items match these filters.' : 'No fit-out items recorded yet.'}</span>
+                <span className="text-[12.5px] text-muted-ink max-w-[380px]">
                   {filtersOn ? 'Adjust the unit or condition filter to see more of the register.' : 'Add the furniture, appliances, linen and electronics supplied for each unit to track their condition and replacement.'}
                 </span>
                 {filtersOn
-                  ? <button onClick={clearFilters} style={linkBtn}>Clear filters</button>
-                  : <div style={{ marginTop: 6 }}><Button variant="secondary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Add item</Button></div>}
+                  ? <button onClick={clearFilters} className="bg-transparent border-none cursor-pointer font-sans text-[12.5px] font-semibold text-gold-ink">Clear filters</button>
+                  : <div className="mt-1.5"><Button variant="secondary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Add item</Button></div>}
               </div>
             ) : rows.map(i => {
               const sTone = scheduleTone(i.replaceBy);
               return (
-                <div key={i.id} style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, alignItems: 'center', minHeight: 54, padding: '9px 22px', borderBottom: `1px solid ${color.borderMuted}` }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13.5 }}>{i.name}</span>
-                    <span style={{ fontSize: 11.5, color: color.textMuted }}>
+                <div key={i.id} className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[54px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]')}>
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[13.5px]">{i.name}</span>
+                    <span className="text-[11.5px] text-muted-ink">
                       {i.quantity}{i.suppliedInHouse ? ' · Supplied by The Conts' : ''}{i.installedOn ? ` · installed ${date(i.installedOn)}` : ''}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13 }}>{i.unitNumber}</span>
-                    <span style={{ fontSize: 11.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.propertyName}</span>
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[13px]">{i.unitNumber}</span>
+                    <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{i.propertyName}</span>
                   </div>
-                  <span style={{ fontSize: 12.5, color: color.inkSecondary }}>{CAT_LABEL[i.category]}</span>
+                  <span className="text-[12.5px] text-[var(--color-ink-2)]">{CAT_LABEL[i.category]}</span>
                   <div>
                     <select value={i.condition} onChange={e => setCondition(i, e.target.value as Condition)}
                       aria-label={`Condition of ${i.name}`}
-                      style={{ height: 30, padding: '0 8px', fontSize: 12, font: 'inherit', cursor: 'pointer', borderRadius: radius.pill, border: 'none', appearance: 'none', textAlign: 'center', ...condPill(i.condition) }}>
+                      className={cx('h-[30px] px-2 py-0 font-sans text-[16px] font-normal cursor-pointer rounded-full border-none appearance-none text-center', condPill(i.condition))}>
                       {CONDITIONS.map(c => <option key={c} value={c}>{COND_LABEL[c]}</option>)}
                     </select>
                   </div>
-                  <span style={{ fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span>
-                  <span style={{ fontSize: 12.5, color: sTone ? tonePair(sTone).fg : color.textMuted, fontWeight: sTone ? 600 : 400 }}>
+                  <span className="text-[13px] text-right tabular-nums">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span>
+                  <span className={cx('text-[12.5px]', sTone ? cx(TONE[sTone].text, 'font-semibold') : 'text-muted-ink font-normal')}>
                     {i.replaceBy ? date(i.replaceBy) : '—'}
                   </span>
                   <NoteCell value={i.notes} onSave={v => saveNote(i, v)} label={i.name} />
@@ -220,18 +226,12 @@ export default function InventoryPage() {
 
 /* ---------- small local primitives ---------- */
 
-const controlStyle: CSSProperties = {
-  height: 36, boxSizing: 'border-box', padding: '0 12px', fontFamily: 'inherit', fontSize: 13,
-  color: color.ink, background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.control, outline: 'none',
-};
-const linkBtn: CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', fontSize: 12.5, fontWeight: 600, color: color.goldInk };
-
 /** Selected uses brand black (selection, never a status tone). */
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} aria-pressed={active}
-      style={{ height: 32, padding: '0 13px', borderRadius: radius.pill, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', font: 'inherit',
-        border: `1px solid ${active ? color.black : color.border}`, background: active ? color.black : '#FFFFFF', color: active ? '#FFFFFF' : color.textMuted }}>
+      className={cx('h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer font-sans text-[16px] font-normal border border-solid',
+        active ? 'border-black bg-black text-white' : 'border-line bg-card text-muted-ink')}>
       {label}
     </button>
   );
@@ -246,14 +246,12 @@ function Stat({ label, value, hint, tone, active, onClick }: { label: string; va
       aria-pressed={interactive ? active : undefined}
       onClick={onClick}
       onKeyDown={interactive ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick!(); } } : undefined}
-      style={{
-        display: 'flex', flexDirection: 'column', gap: 3, padding: '13px 15px', borderRadius: radius.card,
-        background: color.card, border: `1px solid ${active ? color.black : color.border}`,
-        cursor: interactive ? 'pointer' : 'default',
-      }}>
-      <span style={{ fontSize: 19, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: tone ? tonePair(tone).fg : color.ink }}>{value}</span>
-      <span style={{ fontSize: 12, fontWeight: 500 }}>{label}</span>
-      {hint && <span style={{ fontSize: 11, color: color.textMuted }}>{hint}</span>}
+      className={cx('flex flex-col gap-[3px] py-[13px] px-[15px] rounded-card bg-card border border-solid',
+        active ? 'border-black' : 'border-line',
+        interactive ? 'cursor-pointer' : 'cursor-default')}>
+      <span className={cx('text-[19px] font-semibold tabular-nums', tone ? TONE[tone].text : 'text-ink')}>{value}</span>
+      <span className="text-[12px] font-medium">{label}</span>
+      {hint && <span className="text-[11px] text-muted-ink">{hint}</span>}
     </div>
   );
 }
@@ -273,30 +271,17 @@ function NoteCell({ value, onSave, label }: { value: string; onSave: (v: string)
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
           if (e.key === 'Escape') { setV(value); setEditing(false); }
         }}
-        style={{ ...controlStyle, height: 30, width: '100%', fontSize: 12 }} />
+        className="h-[30px] w-full box-border px-3 py-0 font-sans text-[12px] text-ink bg-card border border-solid border-line rounded-control outline-none" />
     );
   }
   return (
     <button onClick={() => setEditing(true)} title="Edit note"
-      style={{ textAlign: 'left', width: '100%', minHeight: 30, padding: '5px 8px', borderRadius: radius.sm, border: `1px solid ${value ? 'transparent' : color.borderMuted}`,
-        background: 'transparent', cursor: 'text', font: 'inherit', fontSize: 12, color: value ? color.inkSecondary : color.faint,
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      className={cx('text-left w-full min-h-[30px] py-[5px] px-2 rounded-[6px] border border-solid bg-transparent cursor-text font-sans text-[12px] font-normal whitespace-nowrap overflow-hidden text-ellipsis',
+        value ? 'border-transparent text-[var(--color-ink-2)]' : 'border-line-soft text-faint')}>
       {value || 'Add note'}
     </button>
   );
 }
-
-/* condition pill / tone helpers (mirrors theme.tone; no gold used for status) */
-function tonePair(t: Tone): { bg: string; fg: string } {
-  switch (t) {
-    case 'success': return { bg: '#E9F5EF', fg: '#11694A' };
-    case 'warning': return { bg: '#FFF4D8', fg: '#8A5A12' };
-    case 'critical': return { bg: '#FCECEB', fg: '#A8352F' };
-    case 'info': return { bg: '#EAF2FA', fg: '#2E6DA4' };
-    default: return { bg: '#F1F0ED', fg: '#706D67' };
-  }
-}
-function condPill(c: Condition): CSSProperties { const p = tonePair(COND_TONE[c]); return { background: p.bg, color: p.fg }; }
 
 /* ---------- Add item modal ---------- */
 
@@ -341,44 +326,44 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Add inventory item"
-      style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24, background: 'var(--color-surface-scrim)', animation: 'fade-in var(--motion-standard) var(--ease-out) both' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div ref={ref} style={{ position: 'relative', width: '100%', maxWidth: 500, maxHeight: '88vh', overflowY: 'auto', background: 'var(--color-surface-card)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-overlay)' }}>
+      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      <div onClick={onClose} className="absolute inset-0" />
+      <div ref={ref} className="relative w-full max-w-[500px] max-h-[88vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
         <form onSubmit={e => { e.preventDefault(); if (canSubmit) submit(); }}>
-          <div style={{ padding: '22px 22px 4px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Add inventory item</h2>
-            <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Record a piece of fit-out supplied for a unit, its condition and when it is due for replacement.</p>
+          <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[5px]">
+            <h2 className="m-0 text-[18px] font-semibold">Add inventory item</h2>
+            <p className="m-0 text-[13px] text-muted-ink">Record a piece of fit-out supplied for a unit, its condition and when it is due for replacement.</p>
           </div>
-          <div style={{ padding: '16px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="py-4 px-[22px] flex flex-col gap-[14px]">
             <Field label="Item" placeholder="e.g. Queen bed frame and mattress" value={f.name} onChange={set('name')} />
 
             <Sel label="Unit" value={f.unitNumber} onChange={set('unitNumber')}
               options={[...units.map(u => ({ value: u.unitNumber, label: u.label })), { value: '__new', label: 'Add a new unit…' }]} />
             {addingNewUnit && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="grid grid-cols-2 gap-3">
                 <Field label="Property" placeholder="e.g. Arte Mont Kiara" value={f.newProperty} onChange={set('newProperty')} />
                 <Field label="Unit number" placeholder="e.g. #MK2-09-16" value={f.newUnit} onChange={set('newUnit')} />
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="grid grid-cols-2 gap-3">
               <Sel label="Category" value={f.category} onChange={set('category')} options={CATEGORIES.map(c => ({ value: c, label: CAT_LABEL[c] }))} />
               <Field label="Quantity" placeholder="e.g. 1 set" value={f.quantity} onChange={set('quantity')} />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="grid grid-cols-2 gap-3">
               <Sel label="Condition" value={f.condition} onChange={set('condition')} options={CONDITIONS.map(c => ({ value: c, label: COND_LABEL[c] }))} />
               <Field label="Purchase value (RM)" type="number" min={0} step="0.01" numeric placeholder="e.g. 3200" value={f.value} onChange={set('value')} />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="grid grid-cols-2 gap-3">
               <Field label="Installed on" type="date" value={f.installedOn} onChange={set('installedOn')} />
               <Field label="Replace by" type="date" value={f.replaceBy} onChange={set('replaceBy')} help="Optional — sets the replacement schedule." />
             </div>
 
             <Field label="Notes" placeholder="Optional — condition detail, warranty, supplier" value={f.notes} onChange={set('notes')} />
           </div>
-          <div style={{ padding: '14px 22px', borderTop: '1px solid var(--color-border-default)', background: 'var(--color-surface-page)', display: 'flex', justifyContent: 'flex-end', gap: 9 }}>
+          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page flex justify-end gap-[9px]">
             <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
             <Button size="sm" variant="primary" type="submit" disabled={!canSubmit} disabledReason="Add an item name and pick a unit first">Add item</Button>
           </div>
@@ -390,10 +375,10 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
 
 function Sel({ label, value, onChange, options }: { label: string; value: string; onChange: (e: { target: { value: string } }) => void; options: { value: string; label: string }[] }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-      <label style={{ fontSize: 'var(--text-small)', fontWeight: 500, color: 'var(--color-text-muted)' }}>{label}</label>
+    <div className="flex flex-col gap-[7px]">
+      <label className="text-[12px] font-medium text-muted-ink">{label}</label>
       <select value={value} onChange={onChange}
-        style={{ height: 'var(--control-height)', width: '100%', boxSizing: 'border-box', padding: '0 12px', fontFamily: 'var(--font-sans)', fontSize: 14, color: 'var(--color-text-primary)', background: 'var(--color-surface-card)', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-control)', outline: 'none', cursor: 'pointer' }}>
+        className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </div>

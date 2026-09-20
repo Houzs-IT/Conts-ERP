@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { color, radius, text } from '../theme';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -7,6 +6,7 @@ import Icon from '../components/Icon';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { rm, percent, rating as fmtRating } from '../lib/format';
+import { cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
 /* GET /api/portfolio/performance?period= — rows are every unit for the period.
@@ -68,7 +68,10 @@ const NUMERIC = (r: PortfolioRow, k: SortKey): number => {
   }
 };
 
-const COLS = 'minmax(180px,1.8fr) minmax(120px,1.1fr) minmax(96px,0.9fr) minmax(90px,0.9fr) minmax(92px,0.9fr) minmax(104px,1fr) minmax(78px,0.8fr) minmax(120px,1.1fr)';
+/* Shared 8-track grid template (unit, owner, occupancy, adr, revpar, revenue,
+ * rating, exception). Kept as one arbitrary Tailwind class so header and rows
+ * stay in lockstep; the literal lives here verbatim so Tailwind can extract it. */
+const COLS = 'grid-cols-[minmax(180px,1.8fr)_minmax(120px,1.1fr)_minmax(96px,0.9fr)_minmax(90px,0.9fr)_minmax(92px,0.9fr)_minmax(104px,1fr)_minmax(78px,0.8fr)_minmax(120px,1.1fr)]';
 
 export default function PortfolioPage() {
   const [period, setPeriod] = useState('2026-09');
@@ -115,12 +118,17 @@ export default function PortfolioPage() {
         title="Portfolio performance"
         sub={`${units} units · ${buildings} buildings · ${caption} to date`}
         right={
-          <div role="group" aria-label="Period" style={{ display: 'inline-flex', border: `1px solid ${color.border}`, borderRadius: radius.control, overflow: 'hidden', flex: 'none' }}>
+          <div role="group" aria-label="Period" className="inline-flex border border-solid border-line rounded-control overflow-hidden flex-none">
             {PERIODS.map((p, i) => {
               const on = p.key === period;
               return (
                 <button key={p.key} onClick={() => setPeriod(p.key)} aria-pressed={on}
-                  style={{ height: 32, padding: '0 13px', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', font: 'inherit', border: 'none', borderLeft: i === 0 ? 'none' : `1px solid ${color.border}`, background: on ? color.black : '#FFFFFF', color: on ? '#FFFFFF' : color.textMuted, whiteSpace: 'nowrap' }}>
+                  className={cx(
+                    'h-8 px-[13px] py-0 cursor-pointer [font:inherit] whitespace-nowrap',
+                    '[border-top:0] [border-right:0] [border-bottom:0]',
+                    i === 0 ? '[border-left:0]' : '[border-left:1px_solid_var(--color-line)]',
+                    on ? 'bg-black text-white' : 'bg-card text-muted-ink',
+                  )}>
                   {p.label}
                 </button>
               );
@@ -132,23 +140,23 @@ export default function PortfolioPage() {
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
 
       {/* Summary tiles */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 14 }}>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-[14px]">
         {tiles.map(t => (
-          <div key={t.label} style={{ background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, padding: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ fontSize: text.small, color: color.textMuted }}>{t.label}</div>
-            <div style={{ fontSize: 26, lineHeight: 1.15, fontWeight: 600, letterSpacing: '-0.01em' }}>{t.value}</div>
+          <div key={t.label} className="bg-card border border-solid border-line rounded-card p-[18px] flex flex-col gap-2">
+            <div className="text-[12px] text-muted-ink">{t.label}</div>
+            <div className="text-[26px] leading-[1.15] font-semibold tracking-[-0.01em]">{t.value}</div>
           </div>
         ))}
       </div>
 
       <Card>
-        <div style={{ padding: '16px 20px 12px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: text.cardTitle, fontWeight: 600 }}>Every unit, {caption} to date</span>
-          <span style={{ fontSize: text.small, color: color.textMuted }}>Sorted by {SORT_LABEL[sort.key]}, {sort.dir === 'desc' ? 'high to low' : 'low to high'}</span>
+        <div className="pt-4 px-5 pb-3 flex items-baseline justify-between gap-3 flex-wrap">
+          <span className="text-[16px] font-semibold">Every unit, {caption} to date</span>
+          <span className="text-[12px] text-muted-ink">Sorted by {SORT_LABEL[sort.key]}, {sort.dir === 'desc' ? 'high to low' : 'low to high'}</span>
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: 1040 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, padding: '9px 22px', background: color.muted, borderTop: `1px solid ${color.border}`, borderBottom: `1px solid ${color.border}`, fontSize: text.small, fontWeight: 600, color: color.textMuted }}>
+        <div className="overflow-x-auto">
+          <div className="min-w-[1040px]">
+            <div className={cx(COLS, 'grid gap-[14px] py-[9px] px-[22px] bg-muted [border-top:1px_solid_var(--color-line)] [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink')}>
               <SortHead label="Unit" col="unit" sort={sort} onSort={toggleSort} />
               <div>Owner</div>
               <SortHead label="Occupancy" col="occupancy" align="right" sort={sort} onSort={toggleSort} />
@@ -163,18 +171,18 @@ export default function PortfolioPage() {
               <EmptyState />
             ) : sorted.map(u => (
               <a key={u.unitId} href={`#/properties/units/${encodeURIComponent(u.unitId)}`}
-                style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, alignItems: 'center', minHeight: 52, padding: '8px 22px', borderBottom: `1px solid ${color.borderMuted}`, textDecoration: 'none', color: 'inherit' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 500 }}>{u.unitNumber}</span>
-                  <span style={{ fontSize: 11.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.propertyName}</span>
+                className={cx(COLS, 'grid gap-[14px] items-center min-h-[52px] py-2 px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] no-underline text-inherit hover:text-inherit')}>
+                <div className="flex flex-col gap-px min-w-0">
+                  <span className="text-[13.5px] font-medium">{u.unitNumber}</span>
+                  <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.propertyName}</span>
                 </div>
-                <span style={{ fontSize: 12.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.ownerName}</span>
-                <span style={{ fontSize: 13, textAlign: 'right' }}>{percent(u.occupancy)}</span>
-                <span style={{ fontSize: 13, textAlign: 'right' }}>{rm(u.adr, { cents: false })}</span>
-                <span style={{ fontSize: 13, textAlign: 'right' }}>{rm(u.revpar, { cents: false })}</span>
-                <span style={{ fontSize: 13, textAlign: 'right', fontWeight: 500 }}>{rm(u.revenue, { cents: false })}</span>
-                <span style={{ fontSize: 13, textAlign: 'right' }}>{u.rating != null ? fmtRating(u.rating) : '—'}</span>
-                <div>{u.exception ? <Badge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span style={{ fontSize: 12, color: color.faint }}>None</span>}</div>
+                <span className="text-[12.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName}</span>
+                <span className="text-[13px] text-right">{percent(u.occupancy)}</span>
+                <span className="text-[13px] text-right">{rm(u.adr, { cents: false })}</span>
+                <span className="text-[13px] text-right">{rm(u.revpar, { cents: false })}</span>
+                <span className="text-[13px] text-right font-medium">{rm(u.revenue, { cents: false })}</span>
+                <span className="text-[13px] text-right">{u.rating != null ? fmtRating(u.rating) : '—'}</span>
+                <div>{u.exception ? <Badge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-[12px] text-faint">None</span>}</div>
               </a>
             ))}
           </div>
@@ -198,7 +206,12 @@ function SortHead({ label, col, align = 'left', sort, onSort }: {
   return (
     <button onClick={() => onSort(col)} aria-label={`Sort by ${label}`}
       aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-      style={{ display: 'flex', alignItems: 'center', gap: 3, justifyContent: align === 'right' ? 'flex-end' : 'flex-start', background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontSize: text.small, fontWeight: 600, color: active ? color.goldInk : color.textMuted }}>
+      className={cx(
+        'flex items-center gap-[3px]',
+        align === 'right' ? 'justify-end' : 'justify-start',
+        'bg-transparent [border:none] p-0 cursor-pointer [font:inherit] text-[12px] font-semibold',
+        active ? 'text-gold-ink' : 'text-muted-ink',
+      )}>
       <span>{label}</span>
       <Icon name={active ? (sort.dir === 'asc' ? 'ChevronUp' : 'ChevronDown') : 'ChevronsUpDown'} size="sm"
         style={{ opacity: active ? 1 : 0.4 }} />
@@ -208,10 +221,10 @@ function SortHead({ label, col, align = 'left', sort, onSort }: {
 
 function EmptyState() {
   return (
-    <div style={{ padding: '48px 22px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center' }}>
-      <span style={{ color: color.textMuted }}><Icon name="BarChart3" /></span>
-      <div style={{ fontSize: 14, color: color.textMuted, maxWidth: 360 }}>No units to show for this period.</div>
-      <a href="#/properties/units" style={{ fontSize: text.small, fontWeight: 600, color: color.goldInk, textDecoration: 'none' }}>{'View all units →'}</a>
+    <div className="py-12 px-[22px] flex flex-col items-center gap-3 text-center">
+      <span className="text-muted-ink"><Icon name="BarChart3" /></span>
+      <div className="text-[14px] text-muted-ink max-w-[360px]">No units to show for this period.</div>
+      <a href="#/properties/units" className="text-[12px] font-semibold text-gold-ink no-underline">{'View all units →'}</a>
     </div>
   );
 }

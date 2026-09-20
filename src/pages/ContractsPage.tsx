@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { color, radius, text, tone as toneToken } from '../theme';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { color } from '../theme';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -11,6 +11,7 @@ import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
 import { rm } from '../lib/format';
+import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
 type FeeModel = 'management' | 'grr';
@@ -43,7 +44,9 @@ const FALLBACK: Payload = {
 
 const RENEWAL_WINDOW_DAYS = 180; // "within ~6 months"
 const STATE_TONE: Record<ContractState, Tone> = { Active: 'success', 'Renewing soon': 'warning', Ended: 'neutral' };
-const COLS = 'minmax(150px,1.3fr) minmax(180px,1.6fr) minmax(130px,1fr) minmax(110px,0.9fr) minmax(150px,1.2fr) minmax(96px,0.8fr) 72px';
+// Shared grid template for the table header and every row. Mirrors the former
+// COLS inline value as a Tailwind arbitrary grid-template-columns (spaces -> _).
+const COLS_CLASS = 'grid-cols-[minmax(150px,1.3fr)_minmax(180px,1.6fr)_minmax(130px,1fr)_minmax(110px,0.9fr)_minmax(150px,1.2fr)_minmax(96px,0.8fr)_72px]';
 
 const DAY = 86_400_000;
 const daysUntil = (iso: string | null): number | null => {
@@ -129,7 +132,7 @@ export default function ContractsPage() {
 
       {error && <StaleBanner message={`Showing the last agreements we have. ${error}`} onRetry={reload} />}
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+      <div className="flex gap-2 flex-wrap mb-[14px]">
         {FILTERS.map(f => {
           const active = filter === f.key;
           return (
@@ -137,38 +140,33 @@ export default function ContractsPage() {
               key={f.key}
               onClick={() => setFilter(f.key)}
               aria-pressed={active}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 13px',
-                borderRadius: radius.pill, cursor: 'pointer', font: 'inherit', fontSize: 12.5, fontWeight: 500,
-                background: active ? color.black : color.card,
-                color: active ? '#FFFFFF' : color.textMuted,
-                border: `1px solid ${active ? color.black : color.border}`,
-                transition: 'background var(--motion-fast) var(--ease-out)',
-              }}
+              className={cx(
+                'inline-flex items-center gap-[7px] h-[34px] px-[13px] py-0 rounded-full cursor-pointer font-sans text-[12.5px] font-medium border border-solid [transition:background_var(--motion-fast)_var(--ease-out)]',
+                active ? 'bg-black text-white border-black' : 'bg-card text-muted-ink border-line',
+              )}
             >
               {f.label}
-              <span style={{
-                fontSize: 11, fontWeight: 600, padding: '1px 6px', borderRadius: radius.pill,
-                background: active ? 'rgba(255,255,255,0.18)' : color.muted,
-                color: active ? '#FFFFFF' : color.textMuted, fontVariantNumeric: 'tabular-nums',
-              }}>{counts[f.key]}</span>
+              <span className={cx(
+                'text-[11px] font-semibold py-px px-[6px] rounded-full tabular-nums',
+                active ? 'bg-[rgba(255,255,255,0.18)] text-white' : 'bg-muted text-muted-ink',
+              )}>{counts[f.key]}</span>
             </button>
           );
         })}
       </div>
 
       <Card>
-        <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: 940 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, padding: '9px 22px', background: color.muted, borderBottom: `1px solid ${color.border}`, fontSize: text.small, fontWeight: 600, color: color.textMuted }}>
-              <div>Owner</div><div>Units</div><div>Fee model</div><div>Started</div><div>Renews</div><div>Status</div><div style={{ textAlign: 'right' }}>Edit</div>
+        <div className="overflow-x-auto">
+          <div className="min-w-[940px]">
+            <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink')}>
+              <div>Owner</div><div>Units</div><div>Fee model</div><div>Started</div><div>Renews</div><div>Status</div><div className="text-right">Edit</div>
             </div>
 
             {loading && rows.length === 0 ? (
               <TableSkeleton rows={6} cols={7} />
             ) : visible.length === 0 ? (
-              <div style={{ padding: '48px 22px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-                <div style={{ fontSize: 13, color: color.textMuted }}>
+              <div className="py-[48px] px-[22px] text-center flex flex-col items-center gap-3">
+                <div className="text-[13px] text-muted-ink">
                   {rows.length === 0 ? 'No contracts yet. Add your first management agreement.' : 'No contracts match these filters.'}
                 </div>
                 {rows.length === 0
@@ -180,35 +178,35 @@ export default function ContractsPage() {
               const days = daysUntil(r.renewsOn);
               const soon = state === 'Renewing soon';
               return (
-                <div key={r.id} style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, alignItems: 'center', minHeight: 54, padding: '9px 22px 9px 19px', borderBottom: `1px solid ${color.borderMuted}`, borderLeft: `3px solid ${soon ? toneToken.warning.line : 'transparent'}` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                <div key={r.id} className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[54px] pt-[9px] pr-[22px] pb-[9px] pl-[19px] [border-bottom:1px_solid_var(--color-line-soft)]', soon ? '[border-left:3px_solid_var(--color-warning-line)]' : '[border-left:3px_solid_transparent]')}>
+                  <div className="flex items-center gap-[10px] min-w-0">
                     <Icon name="FileSignature" size="sm" color={color.textMuted} />
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                      <span style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.ownerName}</span>
+                    <div className="flex flex-col gap-px min-w-0">
+                      <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{r.ownerName}</span>
                       {r.offerLetter && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <span className="inline-flex items-center gap-1 text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">
                           <Icon name="Paperclip" size="sm" color={color.faint} style={{ width: 12, height: 12 }} />{r.offerLetter}
                         </span>
                       )}
                     </div>
                   </div>
-                  <span style={{ fontSize: 12.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.unitsLabel}</span>
-                  <span style={{ fontSize: 12.5, fontWeight: 500 }}>{feeLabel(r)}</span>
-                  <span style={{ fontSize: 12.5 }}>{r.startsOn}</span>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <span style={{ fontSize: 12.5 }}>{r.renewsOn ?? '—'}</span>
+                  <span className="text-[12.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.unitsLabel}</span>
+                  <span className="text-[12.5px] font-medium">{feeLabel(r)}</span>
+                  <span className="text-[12.5px]">{r.startsOn}</span>
+                  <div className="flex flex-col gap-[2px]">
+                    <span className="text-[12.5px]">{r.renewsOn ?? '—'}</span>
                     {days !== null && days >= 0 && days <= RENEWAL_WINDOW_DAYS && (
-                      <span style={{ alignSelf: 'flex-start', fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: radius.pill, background: toneToken.warning.bg, color: toneToken.warning.fg }}>
+                      <span className={cx('self-start text-[11px] font-semibold py-px px-[7px] rounded-full', TONE.warning.bg, TONE.warning.text)}>
                         {days === 0 ? 'renews today' : `in ${days} ${days === 1 ? 'day' : 'days'}`}
                       </span>
                     )}
                   </div>
                   <div><Badge tone={STATE_TONE[state]} label={state} /></div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <div className="flex justify-end">
                     <button
                       onClick={() => setModal({ mode: 'edit', id: r.id })}
                       aria-label={`Edit contract for ${r.ownerName}`}
-                      style={{ display: 'grid', placeItems: 'center', width: 30, height: 30, borderRadius: radius.control, background: color.card, border: `1px solid ${color.border}`, cursor: 'pointer', color: color.textMuted }}
+                      className="grid place-items-center w-[30px] h-[30px] rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink"
                     >
                       <Icon name="Pencil" size="sm" />
                     </button>
@@ -238,16 +236,16 @@ function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, children
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
   return (
-    <div role="dialog" aria-modal="true" aria-label={title} style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24, background: 'var(--color-surface-scrim)', animation: 'fade-in var(--motion-standard) var(--ease-out) both' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div ref={ref} style={{ position: 'relative', width: '100%', maxWidth: 480, maxHeight: '88vh', overflowY: 'auto', background: 'var(--color-surface-card)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-overlay)' }}>
+    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      <div onClick={onClose} className="absolute inset-0" />
+      <div ref={ref} className="relative w-full max-w-[480px] max-h-[88vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
         <form onSubmit={e => { e.preventDefault(); if (canSubmit) onSubmit(); }}>
-          <div style={{ padding: '22px 22px 4px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{title}</h2>
-            {sub && <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>{sub}</p>}
+          <div className="pt-[22px] px-[22px] pb-[4px] flex flex-col gap-[5px]">
+            <h2 className="m-0 text-[18px] font-semibold">{title}</h2>
+            {sub && <p className="m-0 text-[13px] text-muted-ink">{sub}</p>}
           </div>
-          <div style={{ padding: '16px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>{children}</div>
-          <div style={{ padding: '14px 22px', borderTop: '1px solid var(--color-border-default)', background: 'var(--color-surface-page)', display: 'flex', justifyContent: 'flex-end', gap: 9 }}>
+          <div className="py-4 px-[22px] flex flex-col gap-[14px]">{children}</div>
+          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
             <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
             <Button size="sm" variant="primary" type="submit" disabled={!canSubmit} disabledReason="Fill the required fields first">{submitLabel}</Button>
           </div>
@@ -257,12 +255,12 @@ function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, children
   );
 }
 
-const selectStyle: CSSProperties = { height: 'var(--control-height)', width: '100%', boxSizing: 'border-box', padding: '0 12px', fontFamily: 'var(--font-sans)', fontSize: 14, color: 'var(--color-text-primary)', background: 'var(--color-surface-card)', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-control)', outline: 'none' };
+const selectClass = 'h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none';
 function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-      <label style={{ fontSize: 'var(--text-small)', fontWeight: 500, color: 'var(--color-text-muted)' }}>{label}</label>
-      <select value={value} onChange={e => onChange(e.target.value)} style={selectStyle}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+    <div className="flex flex-col gap-[7px]">
+      <label className="text-[12px] font-medium text-muted-ink">{label}</label>
+      <select value={value} onChange={e => onChange(e.target.value)} className={selectClass}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
     </div>
   );
 }
@@ -271,18 +269,18 @@ function SelectField({ label, value, onChange, options }: { label: string; value
 function OfferLetterField({ value, onChange }: { value: string | null; onChange: (name: string | null) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-      <label style={{ fontSize: 'var(--text-small)', fontWeight: 500, color: 'var(--color-text-muted)' }}>Offer letter</label>
-      <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} onChange={e => onChange(e.target.files?.[0]?.name ?? null)} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <div className="flex flex-col gap-[7px]">
+      <label className="text-[12px] font-medium text-muted-ink">Offer letter</label>
+      <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={e => onChange(e.target.files?.[0]?.name ?? null)} />
+      <div className="flex items-center gap-[10px]">
         <Button size="sm" variant="secondary" type="button" icon={<Icon name="Upload" size="sm" />} onClick={() => inputRef.current?.click()}>
           {value ? 'Replace file' : 'Upload offer letter'}
         </Button>
-        <span style={{ fontSize: 12, color: value ? color.ink : color.faint, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <span className={cx('text-[12px] min-w-0 whitespace-nowrap overflow-hidden text-ellipsis', value ? 'text-ink' : 'text-faint')}>
           {value ?? 'No file selected'}
         </span>
         {value && (
-          <button type="button" onClick={() => onChange(null)} aria-label="Remove offer letter" style={{ display: 'grid', placeItems: 'center', background: 'none', border: 'none', cursor: 'pointer', color: color.textMuted, padding: 2 }}>
+          <button type="button" onClick={() => onChange(null)} aria-label="Remove offer letter" className="grid place-items-center bg-transparent border-none cursor-pointer text-muted-ink p-[2px]">
             <Icon name="X" size="sm" />
           </button>
         )}
@@ -332,7 +330,7 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
       {model === 'management'
         ? <Field label="Management fee %" type="number" min={0} max={100} numeric value={feePct} onChange={e => setFeePct(e.target.value)} help="The Conts keeps this share; the owner receives the rest." />
         : <Field label="Guaranteed rent (RM / month)" type="number" min={0} numeric placeholder="e.g. 3500" value={grr} onChange={e => setGrr(e.target.value)} help="The owner is paid this fixed amount regardless of occupancy." />}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="grid grid-cols-2 gap-3">
         <Field label="Start date" type="date" value={startsOn} onChange={e => setStartsOn(e.target.value)} />
         <Field label="Renews on" type="date" value={renewsOn} onChange={e => setRenewsOn(e.target.value)} help="Highlighted when within 6 months." />
       </div>

@@ -1,5 +1,4 @@
-import { useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
-import { color, radius, text, tone as palette } from '../theme';
+import { useId, useMemo, useState, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -8,6 +7,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
+import { cx, TONE } from '../lib/design-tokens';
 
 /* ------------------------------------------------------------------ *
  * Settings — organisation-wide defaults (routes.json → SYSTEM →
@@ -85,13 +85,12 @@ const ABSOLUTE = [
 ];
 
 /* -------------------------------- styles -------------------------------- */
-const labelStyle: CSSProperties = { fontSize: text.small, fontWeight: 500, color: color.textMuted };
-const controlStyle: CSSProperties = {
-  height: 40, width: '100%', boxSizing: 'border-box', padding: '0 12px',
-  fontSize: text.body, color: color.ink, background: '#FFFFFF',
-  border: `1px solid ${color.border}`, borderRadius: radius.control, outline: 'none', font: 'inherit',
-};
-const helpStyle: CSSProperties = { fontSize: text.small, color: color.textMuted };
+const labelCls = 'text-[12px] font-medium text-muted-ink';
+// height 40, full-width, border-box, 0/12 padding, 1px line border, 8px radius.
+// `font:inherit` in the source resets size/weight/family -> renders at the
+// inherited 16 / 400 / IBM Plex Sans, so no text-size/weight class is added.
+const controlCls = 'h-10 w-full box-border px-3 py-0 text-ink bg-card border border-solid border-line rounded-control outline-none [font:inherit]';
+const helpCls = 'text-[12px] text-muted-ink';
 
 /** Native select styled to match the Field input. */
 function SelectField({ label, value, onChange, help, children }: {
@@ -99,12 +98,12 @@ function SelectField({ label, value, onChange, help, children }: {
 }) {
   const id = useId();
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-      <label htmlFor={id} style={labelStyle}>{label}</label>
-      <select id={id} value={value} onChange={e => onChange(e.target.value)} style={controlStyle}>
+    <div className="flex flex-col gap-[7px]">
+      <label htmlFor={id} className={labelCls}>{label}</label>
+      <select id={id} value={value} onChange={e => onChange(e.target.value)} className={controlCls}>
         {children}
       </select>
-      {help && <span style={helpStyle}>{help}</span>}
+      {help && <span className={helpCls}>{help}</span>}
     </div>
   );
 }
@@ -114,10 +113,10 @@ function ToggleField({ label, description, checked, onChange }: {
   label: string; description?: string; checked: boolean; onChange: (v: boolean) => void;
 }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, cursor: 'pointer' }}>
-      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-        <span style={{ fontSize: 13.5, fontWeight: 500 }}>{label}</span>
-        {description && <span style={{ fontSize: text.small, color: color.textMuted, lineHeight: 1.45 }}>{description}</span>}
+    <label className="flex items-center justify-between gap-5 cursor-pointer">
+      <span className="flex flex-col gap-0.5 min-w-0">
+        <span className="text-[13.5px] font-medium">{label}</span>
+        {description && <span className="text-[12px] text-muted-ink leading-[1.45]">{description}</span>}
       </span>
       <button
         type="button"
@@ -125,14 +124,13 @@ function ToggleField({ label, description, checked, onChange }: {
         aria-checked={checked}
         aria-label={label}
         onClick={() => onChange(!checked)}
-        style={{
-          flex: 'none', width: 42, height: 24, borderRadius: radius.pill, border: 'none', padding: 2, cursor: 'pointer',
-          background: checked ? color.ink : color.borderStrong,
-          transition: 'background var(--motion-fast) var(--ease-out)',
-          display: 'flex', justifyContent: checked ? 'flex-end' : 'flex-start', alignItems: 'center',
-        }}
+        className={cx(
+          'flex-none w-[42px] h-6 rounded-full border-none p-0.5 cursor-pointer flex items-center',
+          '[transition:background_var(--motion-fast)_var(--ease-out)]',
+          checked ? 'bg-ink justify-end' : 'bg-line-strong justify-start',
+        )}
       >
-        <span style={{ width: 20, height: 20, borderRadius: radius.pill, background: '#FFFFFF', boxShadow: '0 1px 2px rgba(21,21,21,0.25)' }} />
+        <span className="w-5 h-5 rounded-full bg-white [box-shadow:0_1px_2px_rgba(21,21,21,0.25)]" />
       </button>
     </label>
   );
@@ -145,21 +143,15 @@ function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveL
 }) {
   return (
     <Card>
-      <div style={{
-        padding: '16px 20px', borderBottom: `1px solid ${color.border}`,
-        display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
-      }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-          <span style={{ fontSize: text.cardTitle, fontWeight: 600 }}>{title}</span>
-          <span style={{ fontSize: text.small, color: color.textMuted, lineHeight: 1.45 }}>{description}</span>
+      <div className="px-5 py-4 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex flex-col gap-[3px] min-w-0">
+          <span className="text-[16px] font-semibold">{title}</span>
+          <span className="text-[12px] text-muted-ink leading-[1.45]">{description}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div className="flex items-center gap-2.5 flex-wrap">
           {dirty && (
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: text.micro, fontWeight: 500,
-              color: palette.warning.fg, background: palette.warning.bg, padding: '3px 9px', borderRadius: radius.pill,
-            }}>
-              <span style={{ width: 6, height: 6, borderRadius: radius.pill, background: palette.warning.line }} />
+            <span className={cx('inline-flex items-center gap-1.5 text-[11px] font-medium px-[9px] py-[3px] rounded-full', TONE.warning.text, TONE.warning.bg)}>
+              <span className={cx('w-1.5 h-1.5 rounded-full', TONE.warning.dot)} />
               Unsaved changes
             </span>
           )}
@@ -176,7 +168,7 @@ function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveL
           </Button>
         </div>
       </div>
-      <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="px-5 py-[18px] flex flex-col gap-4">
         {children}
       </div>
     </Card>
@@ -185,7 +177,7 @@ function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveL
 
 /** Two-up responsive grid for the fields inside a section. */
 function Grid({ children }: { children: ReactNode }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>{children}</div>;
+  return <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">{children}</div>;
 }
 
 const eq = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -279,7 +271,7 @@ export default function SettingsPage() {
       {loading && !data ? (
         <Card><TableSkeleton rows={5} cols={2} /></Card>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div className="flex flex-col gap-[18px]">
 
           {/* --------------------------- Company --------------------------- */}
           <SectionCard
@@ -350,7 +342,7 @@ export default function SettingsPage() {
                 min={0}
                 max={100}
                 step={0.5}
-                trailing={<span style={{ fontSize: text.small, color: color.textMuted }}>%</span>}
+                trailing={<span className="text-[12px] text-muted-ink">%</span>}
                 value={draft.locale.managementFeePct}
                 error={errors['locale.managementFeePct']}
                 help="Applied to new management agreements unless the owner's contract overrides it."
@@ -385,7 +377,7 @@ export default function SettingsPage() {
                 numeric
                 min={1}
                 max={24}
-                trailing={<span style={{ fontSize: text.small, color: color.textMuted }}>h</span>}
+                trailing={<span className="text-[12px] text-muted-ink">h</span>}
                 value={draft.operations.cleaningWindowHours}
                 help="Hours a turnover needs before the next check-in. The SLA counts down to it."
                 onChange={e => patch('operations', { cleaningWindowHours: clampInt(e.target.value, 1, 24, draft.operations.cleaningWindowHours) })}
@@ -401,7 +393,7 @@ export default function SettingsPage() {
                 onChange={e => patch('operations', { linenSets: clampInt(e.target.value, 1, 10, draft.operations.linenSets) })}
               />
             </Grid>
-            <div style={{ borderTop: `1px solid ${color.borderMuted}`, paddingTop: 16 }}>
+            <div className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)] pt-4">
               <ToggleField
                 label="Require a photo to mark a unit ready"
                 description="A cleaning task cannot be completed without at least one photo. Enforced in the field app."
@@ -433,7 +425,7 @@ export default function SettingsPage() {
                 {PAYOUT_METHODS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </SelectField>
             </Grid>
-            <div style={{ borderTop: `1px solid ${color.borderMuted}`, paddingTop: 16 }}>
+            <div className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)] pt-4">
               <ToggleField
                 label="Generate statements automatically"
                 description="On the cycle day, statements are generated as provisional for review. Turn off to generate them by hand each period."

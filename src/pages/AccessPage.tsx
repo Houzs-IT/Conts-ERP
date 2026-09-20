@@ -1,5 +1,5 @@
-import { useState, type CSSProperties } from 'react';
-import { color, radius, text } from '../theme';
+import { useState } from 'react';
+import { color } from '../theme';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -10,6 +10,7 @@ import { api, ApiFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { date } from '../lib/format';
+import { cx } from '../lib/design-tokens';
 
 interface Credential {
   id: string; unitNumber: string; propertyName: string; kind: string; label: string;
@@ -48,18 +49,13 @@ const FALLBACK: Payload = {
   ],
 };
 
-const COLS = 'minmax(150px,1.3fr) minmax(150px,1.2fr) minmax(170px,1.3fr) minmax(190px,1.8fr) minmax(150px,1.2fr)';
-const MONO = '"IBM Plex Mono", monospace';
+const COLS_CLASS = 'grid-cols-[minmax(150px,1.3fr)_minmax(150px,1.2fr)_minmax(170px,1.3fr)_minmax(190px,1.8fr)_minmax(150px,1.2fr)]';
 
 /** A small square control used for the per-code re-mask and copy actions. */
 function IconAction({ name, label, onClick }: { name: string; label: string; onClick: () => void }) {
-  const s: CSSProperties = {
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    width: 30, height: 30, flex: 'none', borderRadius: radius.control,
-    border: `1px solid ${color.border}`, background: color.card, cursor: 'pointer', padding: 0,
-  };
   return (
-    <button type="button" onClick={onClick} aria-label={label} title={label} style={s}>
+    <button type="button" onClick={onClick} aria-label={label} title={label}
+      className="inline-flex items-center justify-center w-[30px] h-[30px] flex-none rounded-control border border-solid border-line bg-card cursor-pointer p-0">
       <Icon name={name} size="sm" color={color.textMuted} />
     </button>
   );
@@ -135,9 +131,9 @@ export default function AccessPage() {
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <Card>
-        <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: 940 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, padding: '9px 22px', background: color.muted, borderBottom: `1px solid ${color.border}`, fontSize: text.small, fontWeight: 600, color: color.textMuted }}>
+        <div className="overflow-x-auto">
+          <div className="min-w-[940px]">
+            <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-[12px] font-semibold text-muted-ink')}>
               <div>Unit</div><div>Type</div><div>Code</div><div>Instruction given to guests</div><div>Updated</div>
             </div>
 
@@ -148,43 +144,43 @@ export default function AccessPage() {
                 : r.lastRevealedBy ? { by: r.lastRevealedBy, at: r.lastRevealedAt ?? '' } : null;
 
               return (
-                <div key={r.id} style={{ display: 'grid', gridTemplateColumns: COLS, gap: 14, alignItems: 'center', minHeight: 60, padding: '10px 22px', borderBottom: `1px solid ${color.borderMuted}` }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 500 }}>{r.unitNumber}</span>
-                    <span style={{ fontSize: 11.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.propertyName}</span>
+                <div key={r.id} className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[60px] py-[10px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]')}>
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[13.5px] font-medium">{r.unitNumber}</span>
+                    <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.propertyName}</span>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-                    <span style={{ fontSize: 13 }}>{KIND_LABEL[r.kind] ?? r.kind}</span>
-                    <span style={{ fontSize: 11.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.label}</span>
+                  <div className="flex flex-col gap-[3px] min-w-0">
+                    <span className="text-[13px]">{KIND_LABEL[r.kind] ?? r.kind}</span>
+                    <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.label}</span>
                     {r.rotatesAfterStay && <Badge tone="info" label="Rotates after each stay" />}
                   </div>
 
                   <div>
                     {!r.secret ? (
-                      <span style={{ fontSize: 13, color: color.textMuted }}>Not applicable</span>
+                      <span className="text-[13px] text-muted-ink">Not applicable</span>
                     ) : isRevealed ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{ fontFamily: MONO, fontSize: 13.5, fontWeight: 500 }}>{revealed[r.id]}</span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-[13.5px] font-medium">{revealed[r.id]}</span>
                         <IconAction name="EyeOff" label={`Re-mask the code for ${r.propertyName} ${r.unitNumber}`} onClick={() => remask(r)} />
                         <IconAction name="Copy" label={`Copy the code for ${r.propertyName} ${r.unitNumber}`} onClick={() => copy(r)} />
                       </div>
                     ) : (
                       <button type="button" onClick={() => reveal(r)}
                         aria-label={`Reveal the access code for ${r.propertyName} ${r.unitNumber}`}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 32, padding: '0 11px', borderRadius: radius.control, border: `1px solid ${color.border}`, background: color.card, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', font: 'inherit' }}>
+                        className="inline-flex items-center gap-[7px] h-[32px] px-[11px] py-0 rounded-control border border-solid border-line bg-card cursor-pointer [font:inherit]">
                         <Icon name="Eye" size="sm" color={color.textMuted} />
-                        <span style={{ fontFamily: MONO }}>{r.secret}</span>
-                        <span style={{ color: color.textMuted, fontWeight: 500 }}>Reveal</span>
+                        <span className="font-mono">{r.secret}</span>
+                        <span className="text-muted-ink font-medium">Reveal</span>
                       </button>
                     )}
                   </div>
 
-                  <span style={{ fontSize: 12.5, color: color.textMuted, textWrap: 'pretty' }}>{r.instruction}</span>
+                  <span className="text-[12.5px] text-muted-ink text-pretty">{r.instruction}</span>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                    <span style={{ fontSize: 12.5, color: color.textMuted }}>Changed {safeDate(r.updatedAt)}</span>
-                    <span style={{ fontSize: 11, color: color.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    <span className="text-[12.5px] text-muted-ink">Changed {safeDate(r.updatedAt)}</span>
+                    <span className="text-[11px] text-faint whitespace-nowrap overflow-hidden text-ellipsis">
                       {last ? `Last shown to ${last.by}${last.at ? ` · ${safeDate(last.at)}` : ''}` : 'Never revealed'}
                     </span>
                   </div>

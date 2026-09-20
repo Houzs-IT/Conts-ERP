@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { color, radius, text, tone as T, channel as channelTheme } from '../theme';
+import { color } from '../theme';
+import { TONE, CHANNEL_META, cx } from '../lib/design-tokens';
 import { Card, CardHeader } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -220,21 +221,21 @@ export default function AnalyticsPage() {
 
       {/* Metric switch + trend chart --------------------------------------- */}
       <Card style={{ padding: 20 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 30, fontWeight: 600, letterSpacing: '-0.01em', lineHeight: 1.05 }}>{m.full(headline)}</span>
-                <span style={{ fontSize: text.body, fontWeight: 600, color: T[delta.tone].fg }}>{deltaText(delta)}</span>
+        <div className="flex flex-col gap-[18px]">
+          <div className="flex items-start justify-between gap-[14px] flex-wrap">
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <div className="flex items-baseline gap-3 flex-wrap">
+                <span className="text-[30px] font-semibold tracking-[-0.01em] leading-[1.05]">{m.full(headline)}</span>
+                <span className={cx('text-[14px] font-semibold', TONE[delta.tone].text)}>{deltaText(delta)}</span>
               </div>
-              <span style={{ fontSize: text.small, color: color.textMuted, textWrap: 'pretty' }}>
+              <span className="text-[12px] text-muted-ink [text-wrap:pretty]">
                 {m.label} this period vs {range === 'ytd' ? 'the same period last year' : 'the prior window'}
                 {delta.note ? ` · ${delta.note}` : ''}
               </span>
             </div>
 
             {/* Range toggle — re-reads /api/analytics?range= */}
-            <div role="group" aria-label="Range" style={{ display: 'inline-flex', border: `1px solid ${color.border}`, borderRadius: radius.control, overflow: 'hidden', flex: 'none' }}>
+            <div role="group" aria-label="Range" className="inline-flex border border-solid border-line rounded-control overflow-hidden flex-none">
               {RANGES.map((r, i) => {
                 const on = r.key === range;
                 return (
@@ -242,11 +243,11 @@ export default function AnalyticsPage() {
                     key={r.key}
                     onClick={() => setRange(r.key)}
                     aria-pressed={on}
-                    style={{
-                      height: 30, padding: '0 12px', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', font: 'inherit',
-                      border: 'none', borderLeft: i === 0 ? 'none' : `1px solid ${color.border}`,
-                      background: on ? color.black : '#FFFFFF', color: on ? '#FFFFFF' : color.textMuted, whiteSpace: 'nowrap',
-                    }}
+                    className={cx(
+                      'h-[30px] px-3 py-0 cursor-pointer [font:inherit] border-none whitespace-nowrap',
+                      i === 0 ? '' : '[border-left:1px_solid_var(--color-line)]',
+                      on ? 'bg-black text-white' : 'bg-card text-muted-ink',
+                    )}
                   >
                     {r.label}
                   </button>
@@ -256,7 +257,7 @@ export default function AnalyticsPage() {
           </div>
 
           {/* Metric segmented control */}
-          <div role="group" aria-label="Metric" style={{ display: 'inline-flex', alignSelf: 'flex-start', border: `1px solid ${color.border}`, borderRadius: radius.control, overflow: 'hidden' }}>
+          <div role="group" aria-label="Metric" className="inline-flex self-start border border-solid border-line rounded-control overflow-hidden">
             {METRIC_ORDER.map((k, i) => {
               const on = k === metric;
               return (
@@ -264,11 +265,11 @@ export default function AnalyticsPage() {
                   key={k}
                   onClick={() => setMetric(k)}
                   aria-pressed={on}
-                  style={{
-                    height: 32, padding: '0 14px', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', font: 'inherit',
-                    border: 'none', borderLeft: i === 0 ? 'none' : `1px solid ${color.border}`,
-                    background: on ? color.charcoal : '#FFFFFF', color: on ? '#FFFFFF' : color.textMuted, whiteSpace: 'nowrap',
-                  }}
+                  className={cx(
+                    'h-8 px-[14px] py-0 cursor-pointer [font:inherit] border-none whitespace-nowrap',
+                    i === 0 ? '' : '[border-left:1px_solid_var(--color-line)]',
+                    on ? 'bg-charcoal text-white' : 'bg-card text-muted-ink',
+                  )}
                 >
                   {METRICS[k].label}
                 </button>
@@ -276,12 +277,12 @@ export default function AnalyticsPage() {
             })}
           </div>
 
-          {loading ? <div className="skeleton" style={{ height: 210, borderRadius: radius.control }} /> : (
+          {loading ? <div className="skeleton h-[210px] rounded-control" /> : (
             <TrendChart points={points} metric={metric} />
           )}
 
           {/* The four totals are distinct definitions and are never merged. */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 12, paddingTop: 14, borderTop: `1px solid ${color.borderMuted}` }}>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3 pt-[14px] [border-top:1px_solid_var(--color-line-soft)]">
             <Total label="Gross booking value" value={rm(d.totals.grossBookingValue, { cents: false })} />
             <Total label="Collected revenue" value={rm(d.totals.collectedRevenue, { cents: false })} />
             <Total label="Management fees" value={rm(d.totals.managementFees, { cents: false })} />
@@ -291,22 +292,22 @@ export default function AnalyticsPage() {
       </Card>
 
       {/* Best / weakest, ranked by the active metric ----------------------- */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 20 }}>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-5">
         {[{ key: 'best', title: 'Best performing', rows: best }, { key: 'weak', title: 'Weakest performing', rows: weakest }].map(g => (
           <Card key={g.key}>
-            <CardHeader title={g.title} right={<span style={{ fontSize: text.small, color: color.textMuted }}>by {m.label.toLowerCase()}</span>} />
+            <CardHeader title={g.title} right={<span className="text-[12px] text-muted-ink">by {m.label.toLowerCase()}</span>} />
             {loading ? <TableSkeleton rows={4} cols={2} /> : g.rows.length === 0 ? (
-              <div style={{ padding: 20, fontSize: 13, color: color.textMuted }}>Not enough data for this period.</div>
+              <div className="p-5 text-[13px] text-muted-ink">Not enough data for this period.</div>
             ) : g.rows.map((u, i) => (
-              <div key={u.unitId} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 20px', borderTop: `1px solid ${color.borderMuted}` }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: color.faint, width: 16, flex: 'none' }}>{i + 1}</span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 500 }}>{u.unitNumber}</span>
-                  <span style={{ fontSize: 11.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.propertyName}</span>
+              <div key={u.unitId} className="flex items-center gap-[14px] px-5 py-3 [border-top:1px_solid_var(--color-line-soft)]">
+                <span className="text-[12px] font-semibold text-faint w-4 flex-none">{i + 1}</span>
+                <div className="flex flex-col gap-px min-w-0 flex-1">
+                  <span className="text-[13.5px] font-medium">{u.unitNumber}</span>
+                  <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.propertyName}</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, flex: 'none' }}>
-                  <span style={{ fontSize: 14, fontWeight: 600 }}>{m.full(m.pick(u))}</span>
-                  <span style={{ fontSize: 11.5, color: color.textMuted }}>{u.occupancy.toFixed(1)}% occupancy</span>
+                <div className="flex flex-col items-end gap-px flex-none">
+                  <span className="text-[14px] font-semibold">{m.full(m.pick(u))}</span>
+                  <span className="text-[11.5px] text-muted-ink">{u.occupancy.toFixed(1)}% occupancy</span>
                 </div>
               </div>
             ))}
@@ -316,22 +317,22 @@ export default function AnalyticsPage() {
 
       {/* Channel mix ------------------------------------------------------- */}
       <Card>
-        <CardHeader title="Where revenue came from" right={<span style={{ fontSize: text.small, color: color.textMuted }}>share of collected revenue</span>} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        <CardHeader title="Where revenue came from" right={<span className="text-[12px] text-muted-ink">share of collected revenue</span>} />
+        <div className="flex flex-col gap-0">
           {loading ? <TableSkeleton rows={4} cols={2} /> : d.channelMix.map(c => (
-            <div key={c.channel} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 20px', borderTop: `1px solid ${color.borderMuted}` }}>
+            <div key={c.channel} className="flex items-center gap-[14px] px-5 py-[13px] [border-top:1px_solid_var(--color-line-soft)]">
               <ChannelMark ch={c.channel} size={22} />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 500 }}>{channelLabel(c.channel)}</span>
-                  <span style={{ fontSize: 13, color: color.textMuted }}>
-                    <span style={{ fontWeight: 600, color: color.ink }}>{c.share}%</span>
+              <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-[13.5px] font-medium">{channelLabel(c.channel)}</span>
+                  <span className="text-[13px] text-muted-ink">
+                    <span className="font-semibold text-ink">{c.share}%</span>
                     {'  ·  '}{rm(c.revenue, { cents: false })}
                   </span>
                 </div>
                 {/* Channel colour is identity, not status — every row is also labelled. */}
-                <div aria-hidden style={{ height: 8, borderRadius: radius.pill, background: channelTheme[c.channel].tint, overflow: 'hidden' }}>
-                  <div style={{ width: `${c.share}%`, height: '100%', borderRadius: radius.pill, background: channelTheme[c.channel].fill }} />
+                <div aria-hidden className="h-2 rounded-full overflow-hidden" style={{ background: CHANNEL_META[c.channel].tint }}>
+                  <div className="h-full rounded-full" style={{ width: `${c.share}%`, background: CHANNEL_META[c.channel].hex }} />
                 </div>
               </div>
             </div>
@@ -346,9 +347,9 @@ export default function AnalyticsPage() {
 
 function Total({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <span style={{ fontSize: text.micro, color: color.textMuted }}>{label}</span>
-      <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em' }}>{value}</span>
+    <div className="flex flex-col gap-[3px]">
+      <span className="text-[11px] text-muted-ink">{label}</span>
+      <span className="text-[15px] font-semibold tracking-[-0.01em]">{value}</span>
     </div>
   );
 }
