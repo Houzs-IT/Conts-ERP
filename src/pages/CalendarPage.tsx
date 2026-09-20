@@ -1,5 +1,5 @@
-import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
-import { color, radius, text, tone as toneMap } from '../theme';
+import { useMemo, useState, type ReactNode } from 'react';
+import { color, tone as toneMap } from '../theme';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -140,13 +140,13 @@ export default function CalendarPage() {
 
       <Card>
         {/* Filters */}
-        <div style={{ padding: '13px 20px', borderBottom: `1px solid ${color.border}`, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div className="px-5 py-[13px] [border-bottom:1px_solid_var(--color-line)] flex flex-col gap-3">
+          <div className="flex items-center gap-4 flex-wrap">
             <FilterLabel label="Host">
-              <span style={{ fontSize: 13, fontWeight: 500, color: color.textMuted, background: color.muted, border: `1px solid ${color.border}`, borderRadius: radius.control, padding: '7px 12px' }}>The Conts Sdn Bhd</span>
+              <span className="text-[13px] font-medium text-muted-ink bg-muted border border-solid border-line rounded-control px-3 py-[7px]">The Conts Sdn Bhd</span>
             </FilterLabel>
             <FilterLabel label="Property">
-              <select value={property} onChange={e => setProperty(e.target.value)} style={selectStyle}>
+              <select value={property} onChange={e => setProperty(e.target.value)} className={`${selectCls} h-[34px]`}>
                 <option value="all">All properties</option>
                 {properties.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
@@ -154,71 +154,73 @@ export default function CalendarPage() {
           </div>
 
           {/* Channel checkboxes */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+          <div className="flex items-center gap-[18px] flex-wrap">
             {ALL.map(k => {
               const on = !off[k]; const c = CHANNEL[k];
               return (
                 <button key={k} type="button" onClick={() => setOff(o => ({ ...o, [k]: on }))}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}>
-                  <span style={{ width: 18, height: 18, flex: 'none', borderRadius: 4, display: 'grid', placeItems: 'center', background: on ? c.color : color.card, border: `1.5px solid ${on ? c.color : color.borderStrong}`, transition: 'background var(--motion-fast)' }}>
+                  className="flex items-center gap-2 [background:none] border-none p-0 cursor-pointer [font:inherit]">
+                  <span className="w-[18px] h-[18px] flex-none rounded-[4px] grid place-items-center"
+                    style={{ background: on ? c.color : color.card, border: `1.5px solid ${on ? c.color : color.borderStrong}`, transition: 'background var(--motion-fast)' }}>
                     {on && <Icon name="Check" size="sm" color="#FFFFFF" style={{ width: 13, height: 13 }} />}
                   </span>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: on ? color.ink : color.textMuted }}>{c.label}</span>
+                  <span className="text-[13px] font-medium" style={{ color: on ? color.ink : color.textMuted }}>{c.label}</span>
                 </button>
               );
             })}
-            <span style={{ marginLeft: 'auto', display: 'flex', gap: 14 }}>
-              <button type="button" onClick={() => setOff({})} style={linkBtn}>Select all</button>
-              <button type="button" onClick={() => setOff(Object.fromEntries(ALL.map(k => [k, true])))} style={linkBtn}>Deselect all</button>
+            <span className="ml-auto flex gap-[14px]">
+              <button type="button" onClick={() => setOff({})} className={linkCls}>Select all</button>
+              <button type="button" onClick={() => setOff(Object.fromEntries(ALL.map(k => [k, true])))} className={linkCls}>Deselect all</button>
             </span>
           </div>
 
           {/* Booking status chips */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', color: color.textMuted, marginRight: 4 }}>BOOKING STATUS</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-semibold tracking-[0.06em] text-muted-ink mr-1">BOOKING STATUS</span>
             {STATUS_FILTERS.filter(s => !statusOff[s.key]).map(s => {
               const t = toneMap[s.tone];
               return (
-                <span key={s.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 28, padding: '0 8px 0 10px', borderRadius: radius.pill, fontSize: 12, fontWeight: 500, color: color.ink, background: color.card, border: `1px solid ${color.border}` }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: t.line, flex: 'none' }} />
+                <span key={s.key} className="inline-flex items-center gap-[7px] h-[28px] pt-0 pr-2 pb-0 pl-[10px] rounded-full text-[12px] font-medium text-ink bg-card border border-solid border-line">
+                  <span className="w-2 h-2 rounded-full flex-none" style={{ background: t.line }} />
                   {s.label}
                   <button type="button" aria-label={`Remove ${s.label}`} onClick={() => setStatusOff(o => ({ ...o, [s.key]: true }))}
-                    style={{ display: 'grid', placeItems: 'center', width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'none', cursor: 'pointer', color: color.faint, padding: 0 }}>
+                    className="grid place-items-center w-4 h-4 rounded-full border-none [background:none] cursor-pointer text-faint p-0">
                     <Icon name="X" size="sm" style={{ width: 13, height: 13 }} />
                   </button>
                 </span>
               );
             })}
-            <button type="button" onClick={() => { setOff({}); setStatusOff({}); setProperty('all'); }} style={{ ...linkBtn, marginLeft: 'auto' }}>Reset</button>
+            <button type="button" onClick={() => { setOff({}); setStatusOff({}); setProperty('all'); }} className={`${linkCls} ml-auto`}>Reset</button>
           </div>
         </div>
 
         {/* Toolbar */}
-        <div style={{ padding: '11px 20px', borderBottom: `1px solid ${color.border}`, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+        <div className="px-5 py-[11px] [border-bottom:1px_solid_var(--color-line)] flex items-center gap-[9px] flex-wrap">
           <Button size="sm" variant={expanded ? 'primary' : 'secondary'} icon={<Icon name={expanded ? 'ChevronsLeft' : 'ChevronsRight'} size="sm" />} onClick={() => setExpanded(v => !v)}>{expanded ? 'Collapse rates' : 'Expand rates'}</Button>
           <Button size="sm" variant="secondary" onClick={() => setRateUpdate(true)}>Rate update</Button>
           <Button size="sm" variant="secondary" style={{ color: toneMap.critical.fg, borderColor: toneMap.critical.line }} onClick={() => setBlockWizard(true)}>Block wizard</Button>
           <Button size="sm" variant="secondary" icon={<Icon name="RefreshCw" size="sm" />} onClick={() => toast({ tone: 'success', title: 'Sync started.', body: 'Airbnb, Booking.com and Agoda · Agoda skipped (expired).' })}>Refresh</Button>
-          <span style={{ fontSize: 12, color: color.textMuted }}>Airbnb, Booking.com and Agoda synced 14:06 MYT</span>
-          <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button type="button" onClick={() => setWeekOffset(w => w - 1)} style={navBtn} aria-label="Previous"><Icon name="ChevronsLeft" size="sm" /></button>
-            <span style={{ fontSize: 12.5, fontWeight: 500, minWidth: 150, textAlign: 'center' }}>{new Date(from).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })} – {new Date(to).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-            <button type="button" onClick={() => setWeekOffset(w => w + 1)} style={navBtn} aria-label="Next"><Icon name="ChevronsRight" size="sm" /></button>
+          <span className="text-[12px] text-muted-ink">Airbnb, Booking.com and Agoda synced 14:06 MYT</span>
+          <span className="ml-auto flex items-center gap-1.5">
+            <button type="button" onClick={() => setWeekOffset(w => w - 1)} className={navCls} aria-label="Previous"><Icon name="ChevronsLeft" size="sm" /></button>
+            <span className="text-[12.5px] font-medium min-w-[150px] text-center">{new Date(from).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })} – {new Date(to).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+            <button type="button" onClick={() => setWeekOffset(w => w + 1)} className={navCls} aria-label="Next"><Icon name="ChevronsRight" size="sm" /></button>
             <Button size="sm" variant="secondary" onClick={() => setWeekOffset(0)}>Today</Button>
           </span>
         </div>
 
         {/* Grid */}
-        <div style={{ overflowX: 'auto' }}>
+        <div className="overflow-x-auto">
           <div style={{ minWidth: UNIT_COL + span * COL }}>
-            <div style={{ display: 'flex', background: color.muted, borderBottom: `1px solid ${color.border}` }}>
-              <div style={{ width: UNIT_COL, boxSizing: 'border-box', flex: 'none', position: 'sticky', left: 0, zIndex: 3, background: color.muted, padding: '10px 16px', borderRight: `1px solid ${color.border}`, fontSize: text.small, fontWeight: 600, color: color.textMuted }}>Unit</div>
+            <div className="flex bg-muted [border-bottom:1px_solid_var(--color-line)]">
+              <div className="w-60 box-border flex-none sticky left-0 z-[3] bg-muted px-4 py-2.5 [border-right:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink">Unit</div>
               {Array.from({ length: span }, (_, i) => {
                 const d = addDays(gridStart, i); const wk = [5, 6].includes(d.getDay());
                 return (
-                  <div key={i} style={{ flex: 1, boxSizing: 'border-box', minWidth: 58, padding: '8px 4px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, borderLeft: `1px solid ${color.border}`, background: i === todayIdx ? color.goldTint : wk ? color.page : 'transparent' }}>
-                    <span style={{ fontSize: text.micro, color: color.textMuted }}>{d.toLocaleDateString('en-MY', { weekday: 'short' })}</span>
-                    <span style={{ fontSize: 12.5, fontWeight: 600 }}>{d.getDate()}</span>
+                  <div key={i} className="flex-1 box-border min-w-[58px] px-1 py-2 flex flex-col items-center gap-px [border-left:1px_solid_var(--color-line)]"
+                    style={{ background: i === todayIdx ? color.goldTint : wk ? color.page : 'transparent' }}>
+                    <span className="text-[11px] text-muted-ink">{d.toLocaleDateString('en-MY', { weekday: 'short' })}</span>
+                    <span className="text-[12.5px] font-semibold">{d.getDate()}</span>
                   </div>
                 );
               })}
@@ -238,32 +240,32 @@ export default function CalendarPage() {
                 : { label: 'Occupied', dot: toneMap.success.line };
               return (
                 <div key={u.id}>
-                  <div style={{ display: 'flex', minHeight: 64, borderBottom: `1px solid ${color.border}` }}>
-                    <div style={{ width: UNIT_COL, boxSizing: 'border-box', flex: 'none', position: 'sticky', left: 0, zIndex: 3, background: '#FFFFFF', padding: '10px 14px', borderRight: `1px solid ${color.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div className="flex min-h-16 [border-bottom:1px_solid_var(--color-line)]">
+                    <div className="w-60 box-border flex-none sticky left-0 z-[3] bg-white px-[14px] py-2.5 [border-right:1px_solid_var(--color-line)] flex items-center gap-2.5">
                       <button type="button" aria-label={rowOpen ? 'Collapse unit' : 'Expand unit'} onClick={() => setUnitOpen(o => ({ ...o, [u.id]: !rowOpen }))}
-                        style={{ width: 22, height: 22, flex: 'none', display: 'grid', placeItems: 'center', border: 'none', background: 'none', cursor: 'pointer', color: color.textMuted, padding: 0 }}>
+                        className="w-[22px] h-[22px] flex-none grid place-items-center border-none [background:none] cursor-pointer text-muted-ink p-0">
                         <Icon name={rowOpen ? 'ChevronDown' : 'ChevronRight'} size="sm" />
                       </button>
-                      <span style={{ width: 40, height: 40, flex: 'none', borderRadius: 8, background: color.muted, border: `1px solid ${color.borderMuted}`, display: 'grid', placeItems: 'center', color: color.faint }}><Icon name="Image" size="sm" /></span>
-                      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{u.unitNumber}</div>
-                        <div style={{ fontSize: 11, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.propertyName}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: color.textMuted }}>
-                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: readiness.dot, flex: 'none' }} />{readiness.label}
+                      <span className="w-10 h-10 flex-none rounded-control bg-muted border border-solid border-line-soft grid place-items-center text-faint"><Icon name="Image" size="sm" /></span>
+                      <div className="min-w-0 flex flex-col gap-0.5">
+                        <div className="text-[12.5px] font-semibold whitespace-nowrap">{u.unitNumber}</div>
+                        <div className="text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.propertyName}</div>
+                        <div className="flex items-center gap-[5px] text-[11px] text-muted-ink">
+                          <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: readiness.dot }} />{readiness.label}
                         </div>
                       </div>
                     </div>
                     {cells.map((c, i) => {
-                      const base: CSSProperties = { position: 'relative', boxSizing: 'border-box', flex: 1, minWidth: 58, borderLeft: `1px solid ${color.borderMuted}`, display: 'flex', alignItems: 'center', padding: '7px 5px', background: i === todayIdx ? color.goldTint : undefined };
-                      if (!c) return <div key={i} onClick={() => emptyNight(u, i)} style={{ ...base, cursor: 'pointer' }} title={`${u.unitNumber} · available`} />;
+                      if (!c) return <div key={i} onClick={() => emptyNight(u, i)} className="relative box-border flex-1 min-w-[58px] [border-left:1px_solid_var(--color-line-soft)] flex items-center px-[5px] py-[7px] cursor-pointer" style={{ background: i === todayIdx ? color.goldTint : undefined }} title={`${u.unitNumber} · available`} />;
                       const ch = CHANNEL[c.b.channel]; const hold = ch.border !== 'solid';
                       const nights = dayIndex(c.b.checkOut) - dayIndex(c.b.checkIn);
                       const lineColor = hold ? ch.color : 'rgba(21,21,21,0.06)';
                       return (
                         <div key={i} onClick={() => setOpenBlock(c.b)} title={`${c.b.guestName} · ${ch.label}${c.b.ref ? ' · ' + c.b.ref : ''}`}
-                          style={{ ...base, margin: '11px 0', cursor: 'pointer', background: hold ? 'transparent' : ch.tint, borderTop: `1px ${hold ? ch.border : 'solid'} ${lineColor}`, borderBottom: `1px ${hold ? ch.border : 'solid'} ${lineColor}`, boxShadow: c.first && !hold ? `inset 3px 0 0 ${ch.color}` : undefined, borderRadius: c.first && c.last ? 6 : c.first ? '6px 0 0 6px' : c.last ? '0 6px 6px 0' : undefined, borderLeft: c.first && hold ? `1px ${ch.border} ${ch.color}` : undefined, borderRight: c.last ? `1px ${hold ? ch.border : 'solid'} ${lineColor}` : undefined }}>
+                          className="relative box-border flex-1 min-w-[58px] flex items-center px-[5px] py-[7px] my-[11px] cursor-pointer"
+                          style={{ background: hold ? 'transparent' : ch.tint, borderTop: `1px ${hold ? ch.border : 'solid'} ${lineColor}`, borderBottom: `1px ${hold ? ch.border : 'solid'} ${lineColor}`, boxShadow: c.first && !hold ? `inset 3px 0 0 ${ch.color}` : undefined, borderRadius: c.first && c.last ? 6 : c.first ? '6px 0 0 6px' : c.last ? '0 6px 6px 0' : undefined, borderLeft: c.first && hold ? `1px ${ch.border} ${ch.color}` : undefined, borderRight: c.last ? `1px ${hold ? ch.border : 'solid'} ${lineColor}` : undefined }}>
                           {c.first && (
-                            <span style={{ position: 'absolute', left: 12, maxWidth: nights * COL - 22, fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', pointerEvents: 'none', zIndex: 2, color: ch.ink }}>{c.b.guestName}{c.b.grossBookingValue > 0 ? ` · ${rm(c.b.grossBookingValue, { cents: false })}` : ''}</span>
+                            <span className="absolute left-3 text-[11.5px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis pointer-events-none z-[2]" style={{ maxWidth: nights * COL - 22, color: ch.ink }}>{c.b.guestName}{c.b.grossBookingValue > 0 ? ` · ${rm(c.b.grossBookingValue, { cents: false })}` : ''}</span>
                           )}
                         </div>
                       );
@@ -272,28 +274,29 @@ export default function CalendarPage() {
 
                   {rowOpen && (
                     <>
-                      <div style={{ display: 'flex', borderBottom: `1px solid ${color.borderMuted}`, background: color.page }}>
-                        <div style={{ width: UNIT_COL, boxSizing: 'border-box', flex: 'none', position: 'sticky', left: 0, zIndex: 2, background: color.page, padding: '6px 16px', borderRight: `1px solid ${color.border}`, fontSize: 11.5, fontWeight: 500, color: color.textMuted }}>Inventory</div>
+                      <div className="flex [border-bottom:1px_solid_var(--color-line-soft)] bg-page">
+                        <div className="w-60 box-border flex-none sticky left-0 z-[2] bg-page px-4 py-1.5 [border-right:1px_solid_var(--color-line)] text-[11.5px] font-medium text-muted-ink">Inventory</div>
                         {Array.from({ length: span }, (_, i) => {
                           const booked = cells[i] != null;
-                          return <div key={i} style={{ flex: 1, minWidth: 58, boxSizing: 'border-box', borderLeft: `1px solid ${color.borderMuted}`, display: 'grid', placeItems: 'center', fontSize: 11, fontVariantNumeric: 'tabular-nums', color: booked ? color.textMuted : color.ink, background: i === todayIdx ? color.goldTint : undefined }}>{booked ? '0 | 1' : '1 | 1'}</div>;
+                          return <div key={i} className="flex-1 min-w-[58px] box-border [border-left:1px_solid_var(--color-line-soft)] grid place-items-center text-[11px] [font-variant-numeric:tabular-nums]" style={{ color: booked ? color.textMuted : color.ink, background: i === todayIdx ? color.goldTint : undefined }}>{booked ? '0 | 1' : '1 | 1'}</div>;
                         })}
                       </div>
                       {RATE_ROWS.map(r => {
                         const t = toneMap[r.syncTone];
                         return (
-                          <div key={r.key} style={{ display: 'flex', borderBottom: `1px solid ${color.borderMuted}` }}>
-                            <div style={{ width: UNIT_COL, boxSizing: 'border-box', flex: 'none', position: 'sticky', left: 0, zIndex: 2, background: '#FFFFFF', padding: '7px 16px', borderRight: `1px solid ${color.border}`, display: 'flex', alignItems: 'center', gap: 9 }}>
-                              <span style={{ width: 9, height: 9, flex: 'none', borderRadius: '50%', background: r.dot }} />
-                              <span style={{ fontSize: 12, fontWeight: 500 }}>{r.label}</span>
-                              <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 600, padding: '1px 8px', borderRadius: radius.pill, background: t.bg, color: t.fg }}>{r.sync}</span>
+                          <div key={r.key} className="flex [border-bottom:1px_solid_var(--color-line-soft)]">
+                            <div className="w-60 box-border flex-none sticky left-0 z-[2] bg-white px-4 py-[7px] [border-right:1px_solid_var(--color-line)] flex items-center gap-[9px]">
+                              <span className="w-[9px] h-[9px] flex-none rounded-full" style={{ background: r.dot }} />
+                              <span className="text-[12px] font-medium">{r.label}</span>
+                              <span className="ml-auto text-[10.5px] font-semibold px-2 py-px rounded-full" style={{ background: t.bg, color: t.fg }}>{r.sync}</span>
                             </div>
                             {Array.from({ length: span }, (_, i) => {
                               const price = rateFor(u.id, r.key, i);
                               const edited = rateEdits[`${u.id}:${r.key}:${i}`] != null;
                               return (
                                 <button key={i} type="button" onClick={() => setPriceModal({ unit: u, channel: r.key, dayIso: dayIso(i), current: price })}
-                                  style={{ flex: 1, minWidth: 58, boxSizing: 'border-box', background: edited ? color.goldTint : i === todayIdx ? color.goldTint : '#FFFFFF', border: 'none', borderLeft: `1px solid ${color.borderMuted}`, cursor: 'pointer', font: 'inherit', fontSize: 11.5, color: color.ink, padding: '7px 2px', fontVariantNumeric: 'tabular-nums' }}
+                                  className="flex-1 min-w-[58px] box-border border-none [border-left:1px_solid_var(--color-line-soft)]! cursor-pointer font-sans text-[11.5px] text-ink px-[2px] py-[7px] [font-variant-numeric:tabular-nums]"
+                                  style={{ background: edited ? color.goldTint : i === todayIdx ? color.goldTint : '#FFFFFF' }}
                                   title="Set price">
                                   {rm(price, { cents: false }).replace('RM', 'RM ')}
                                 </button>
@@ -313,21 +316,21 @@ export default function CalendarPage() {
 
       {/* Block detail drawer */}
       <Drawer open={!!openBlock} onClose={() => setOpenBlock(null)} width={380}>
-        {openBlock && <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ width: 12, height: 12, flex: 'none', borderRadius: 3, background: CHANNEL[openBlock.channel].color }} />
-              <span style={{ fontSize: 15, fontWeight: 600 }}>{openBlock.guestName}</span>
+        {openBlock && <div className="p-5 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <span className="w-3 h-3 flex-none rounded-[3px]" style={{ background: CHANNEL[openBlock.channel].color }} />
+              <span className="text-[15px] font-semibold">{openBlock.guestName}</span>
             </div>
-            <button type="button" onClick={() => setOpenBlock(null)} aria-label="Close" style={navBtn}><Icon name="X" size="sm" /></button>
+            <button type="button" onClick={() => setOpenBlock(null)} aria-label="Close" className={navCls}><Icon name="X" size="sm" /></button>
           </div>
-          <div style={{ fontSize: 12.5, color: color.textMuted, lineHeight: 1.8 }}>
+          <div className="text-[12.5px] text-muted-ink leading-[1.8]">
             <div>{CHANNEL[openBlock.channel].label} · {openBlock.ref ?? '—'}</div>
             <div>{openBlock.checkIn} → {openBlock.checkOut}</div>
             {openBlock.grossBookingValue > 0 && <div>Gross {rm(openBlock.grossBookingValue)}</div>}
             {openBlock.reason && <div>{openBlock.reason}</div>}
           </div>
-          <a href="#/reservations/bookings" onClick={() => setOpenBlock(null)} style={{ textDecoration: 'none' }}>
+          <a href="#/reservations/bookings" onClick={() => setOpenBlock(null)} className="no-underline">
             <Button variant="primary" style={{ width: '100%' }}>View booking</Button>
           </a>
         </div>}
@@ -347,12 +350,13 @@ export default function CalendarPage() {
 function Segmented({ value, onChange }: { value: '2weeks' | 'month'; onChange: (v: '2weeks' | 'month') => void }) {
   const opts: { key: '2weeks' | 'month'; label: string }[] = [{ key: '2weeks', label: '2 weeks' }, { key: 'month', label: 'Month' }];
   return (
-    <div style={{ display: 'inline-flex', padding: 3, gap: 2, background: color.muted, borderRadius: radius.control, border: `1px solid ${color.border}` }}>
+    <div className="inline-flex p-[3px] gap-0.5 bg-muted rounded-control border border-solid border-line">
       {opts.map(o => {
         const active = value === o.key;
         return (
           <button key={o.key} type="button" onClick={() => onChange(o.key)}
-            style={{ height: 28, padding: '0 14px', border: 'none', borderRadius: radius.sm, cursor: 'pointer', font: 'inherit', fontSize: 13, fontWeight: active ? 600 : 500, background: active ? color.black : 'transparent', color: active ? '#FFFFFF' : color.ink }}>
+            className={`h-[28px] px-[14px] py-0 border-none rounded-[6px] cursor-pointer font-sans text-[13px] ${active ? 'font-semibold' : 'font-medium'}`}
+            style={{ background: active ? color.black : 'transparent', color: active ? '#FFFFFF' : color.ink }}>
             {o.label}
           </button>
         );
@@ -361,22 +365,22 @@ function Segmented({ value, onChange }: { value: '2weeks' | 'month'; onChange: (
   );
 }
 
-const linkBtn: CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', fontSize: 12, fontWeight: 500, color: 'var(--color-text-accent)' };
-const navBtn: CSSProperties = { width: 30, height: 30, display: 'grid', placeItems: 'center', borderRadius: radius.control, background: color.page, border: `1px solid ${color.border}`, cursor: 'pointer', color: color.textMuted };
-const selectStyle: CSSProperties = { height: 34, padding: '0 10px', fontFamily: 'var(--font-sans)', fontSize: 13, color: color.ink, background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.control, outline: 'none' };
+const linkCls = '[background:none] border-none cursor-pointer font-sans text-[12px] font-medium text-[var(--color-text-accent)]';
+const navCls = 'w-[30px] h-[30px] grid place-items-center rounded-control bg-page border border-solid border-line cursor-pointer text-muted-ink';
+const selectCls = 'px-[10px] py-0 font-sans text-[13px] text-ink bg-white border border-solid border-line rounded-control [outline:none]';
 function FilterLabel({ label, children }: { label: string; children: ReactNode }) {
-  return <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', color: color.textMuted }}>{label.toUpperCase()}</span>{children}</div>;
+  return <div className="flex items-center gap-2"><span className="text-[11px] font-semibold tracking-[0.06em] text-muted-ink">{label.toUpperCase()}</span>{children}</div>;
 }
 
 function CentreModal({ title, sub, onClose, onSave, saveLabel, canSave, children }: { title: string; sub?: string; onClose: () => void; onSave: () => void; saveLabel: string; canSave: boolean; children: ReactNode }) {
   return (
-    <div role="dialog" aria-modal="true" aria-label={title} style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24, background: 'var(--color-surface-scrim)' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div style={{ position: 'relative', width: '100%', maxWidth: 440, background: 'var(--color-surface-card)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-overlay)' }}>
+    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)]">
+      <div onClick={onClose} className="absolute inset-0" />
+      <div className="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)]">
         <form onSubmit={e => { e.preventDefault(); if (canSave) onSave(); }}>
-          <div style={{ padding: '22px 22px 4px' }}><h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{title}</h2>{sub && <p style={{ margin: '5px 0 0', fontSize: 13, color: 'var(--color-text-muted)' }}>{sub}</p>}</div>
-          <div style={{ padding: '16px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>{children}</div>
-          <div style={{ padding: '14px 22px', borderTop: '1px solid var(--color-border-default)', background: 'var(--color-surface-page)', display: 'flex', justifyContent: 'flex-end', gap: 9 }}>
+          <div className="pt-[22px] px-[22px] pb-1"><h2 className="m-0 text-[18px] font-semibold">{title}</h2>{sub && <p className="mt-[5px] mx-0 mb-0 text-[13px] text-muted-ink">{sub}</p>}</div>
+          <div className="px-[22px] py-4 flex flex-col gap-[14px]">{children}</div>
+          <div className="px-[22px] py-[14px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
             <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
             <Button size="sm" variant="primary" type="submit" disabled={!canSave} disabledReason="Fill the fields first">{saveLabel}</Button>
           </div>
@@ -400,11 +404,11 @@ function BlockWizard({ units, onClose, onSave }: { units: Unit[]; onClose: () =>
   const [fromD, setFromD] = useState(''); const [toD, setToD] = useState(''); const [reason, setReason] = useState('');
   return (
     <CentreModal title="Block wizard" sub="Hold nights so no channel can sell them." onClose={onClose} saveLabel="Block dates" canSave={!!unit && fromD !== '' && toD !== '' && reason.trim() !== ''} onSave={onSave}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-        <label style={{ fontSize: 'var(--text-small)', fontWeight: 500, color: 'var(--color-text-muted)' }}>Unit</label>
-        <select value={unit} onChange={e => setUnit(e.target.value)} style={{ ...selectStyle, height: 44 }}>{units.map(u => <option key={u.id} value={u.id}>{u.unitNumber} — {u.propertyName}</option>)}</select>
+      <div className="flex flex-col gap-[7px]">
+        <label className="text-[12px] font-medium text-muted-ink">Unit</label>
+        <select value={unit} onChange={e => setUnit(e.target.value)} className={`${selectCls} h-[44px]`}>{units.map(u => <option key={u.id} value={u.id}>{u.unitNumber} — {u.propertyName}</option>)}</select>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="grid grid-cols-2 gap-3">
         <Field label="From" type="date" value={fromD} onChange={e => setFromD(e.target.value)} />
         <Field label="To" type="date" value={toD} onChange={e => setToD(e.target.value)} />
       </div>
@@ -416,7 +420,7 @@ function RateUpdate({ onClose, onSave }: { onClose: () => void; onSave: () => vo
   const [fromD, setFromD] = useState(''); const [toD, setToD] = useState(''); const [price, setPrice] = useState('');
   return (
     <CentreModal title="Rate update" sub="Apply a rate across a date range, units and channels in one push." onClose={onClose} saveLabel="Push rates" canSave={fromD !== '' && toD !== '' && price !== ''} onSave={onSave}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="grid grid-cols-2 gap-3">
         <Field label="From" type="date" value={fromD} onChange={e => setFromD(e.target.value)} />
         <Field label="To" type="date" value={toD} onChange={e => setToD(e.target.value)} />
       </div>

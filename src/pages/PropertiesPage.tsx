@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { color, radius, text } from '../theme';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import Icon from '../components/Icon';
@@ -10,6 +9,7 @@ import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
 import { rm } from '../lib/format';
+import { cx } from '../lib/design-tokens';
 
 const STATES = ['Kuala Lumpur', 'Selangor', 'Penang', 'Johor', 'Melaka', 'Perak', 'Negeri Sembilan'];
 const BANKS = ['MBBE', 'PBBB', 'CIBB', 'RHBB', 'HLBB', 'AMBB', 'BIMB', 'UOVB', 'OCBC'];
@@ -62,8 +62,6 @@ const FALLBACK: Payload = {
   ],
 };
 
-const FT: CSSProperties = { fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: color.faint };
-
 export default function PropertiesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/properties', FALLBACK);
   const toast = useToast();
@@ -107,13 +105,13 @@ export default function PropertiesPage() {
 
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: text.small, color: color.textMuted, marginBottom: 4 }}>
-        <span>Properties</span><Icon name="ChevronRight" size="sm" /><span style={{ color: color.ink, fontWeight: 500 }}>Buildings and units</span>
+      <div className="flex items-center gap-[7px] text-[12px] text-muted-ink mb-1">
+        <span>Properties</span><Icon name="ChevronRight" size="sm" /><span className="text-ink font-medium">Buildings and units</span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap', marginBottom: 16 }}>
+      <div className="flex items-end justify-between gap-5 flex-wrap mb-4">
         <div>
-          <h1 style={{ margin: 0, fontSize: text.pageTitle, fontWeight: 600, letterSpacing: '-0.01em' }}>Properties</h1>
-          <div style={{ fontSize: text.small, color: color.textMuted, marginTop: 4 }}>{totalUnits} units · add a building, then add units to it</div>
+          <h1 className="m-0 text-[28px] font-semibold tracking-[-0.01em]">Properties</h1>
+          <div className="text-[12px] text-muted-ink mt-1">{totalUnits} units · add a building, then add units to it</div>
         </div>
         <Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button>
       </div>
@@ -121,44 +119,44 @@ export default function PropertiesPage() {
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       {loading && units.length === 0 ? <Card><TableSkeleton rows={6} cols={3} /></Card> : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px,340px) 1fr', gap: 20, alignItems: 'start' }}>
+        <div className="grid grid-cols-[minmax(280px,340px)_1fr] gap-5 items-start">
           {/* LEFT: building / unit tree */}
           <Card>
-            <div style={{ padding: '13px 16px', borderBottom: `1px solid ${color.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 12.5, fontWeight: 600, color: color.textMuted }}>{totalUnits} units · {buildings.length} buildings</span>
+            <div className="py-[13px] px-4 [border-bottom:1px_solid_var(--color-line)] flex items-center justify-between">
+              <span className="text-[12.5px] font-semibold text-muted-ink">{totalUnits} units · {buildings.length} buildings</span>
               <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button>
             </div>
-            <div style={{ maxHeight: '68vh', overflowY: 'auto' }}>
+            <div className="max-h-[68vh] overflow-y-auto">
               {Object.entries(byState).map(([state, list]) => (
                 <div key={state}>
-                  <div style={{ padding: '9px 16px', background: color.page, borderBottom: `1px solid ${color.borderMuted}`, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', color: color.textMuted, display: 'flex', justifyContent: 'space-between' }}>
+                  <div className="py-[9px] px-4 bg-page [border-bottom:1px_solid_var(--color-line-soft)] text-[10.5px] font-bold tracking-[0.08em] text-muted-ink flex justify-between">
                     <span>{state.toUpperCase()}</span><span>{list.reduce((s, b) => s + unitsOf(b.id).length, 0)} units</span>
                   </div>
                   {list.map(b => {
                     const us = unitsOf(b.id); const open = !collapsed[b.id];
                     return (
                       <div key={b.id}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px 10px 14px', borderBottom: `1px solid ${color.borderMuted}` }}>
-                          <button onClick={() => setCollapsed(c => ({ ...c, [b.id]: open }))} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left', minWidth: 0, padding: 0 }}>
-                            <span style={{ transition: 'transform 160ms', transform: `rotate(${open ? 90 : 0}deg)`, color: color.textMuted, display: 'flex' }}><Icon name="ChevronRight" size="sm" /></span>
-                            <span style={{ minWidth: 0 }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.name}</div>
-                              <div style={{ fontSize: 11, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.city}</div>
+                        <div className="flex items-center gap-2 py-[10px] pr-3 pl-[14px] [border-bottom:1px_solid_var(--color-line-soft)]">
+                          <button onClick={() => setCollapsed(c => ({ ...c, [b.id]: open }))} className="flex items-center gap-2 flex-1 bg-transparent [border:none] cursor-pointer [font:inherit] text-left min-w-0 p-0">
+                            <span className="[transition:transform_160ms] text-muted-ink flex" style={{ transform: `rotate(${open ? 90 : 0}deg)` }}><Icon name="ChevronRight" size="sm" /></span>
+                            <span className="min-w-0">
+                              <div className="text-[13px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{b.name}</div>
+                              <div className="text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.city}</div>
                             </span>
-                            <span style={{ fontSize: 11.5, color: color.textMuted, flex: 'none' }}>{us.length}</span>
+                            <span className="text-[11.5px] text-muted-ink flex-none">{us.length}</span>
                           </button>
-                          <button onClick={() => setModal({ kind: 'unit', buildingId: b.id })} aria-label="Add unit" style={{ width: 26, height: 26, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.control, border: `1px solid ${color.border}`, background: '#FFF', cursor: 'pointer', color: color.textMuted }}><Icon name="Plus" size="sm" /></button>
+                          <button onClick={() => setModal({ kind: 'unit', buildingId: b.id })} aria-label="Add unit" className="w-[26px] h-[26px] flex-none grid place-items-center rounded-control border border-solid border-line bg-card cursor-pointer text-muted-ink"><Icon name="Plus" size="sm" /></button>
                         </div>
                         {open && us.map(u => {
                           const on = u.id === selected?.id;
                           return (
                             <button key={u.id} onClick={() => { setSelectedId(u.id); setTab('details'); }}
-                              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 16px 9px 34px', border: 'none', borderBottom: `1px solid ${color.borderMuted}`, cursor: 'pointer', font: 'inherit', textAlign: 'left', background: on ? color.goldTint : '#FFF', boxShadow: on ? `inset 3px 0 0 ${color.gold}` : undefined }}>
-                              <span style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 12.5, fontWeight: on ? 600 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.unitCode || 'New unit'}</div>
-                                <div style={{ fontSize: 11, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.ownerName || 'No owner yet'}</div>
+                              className={cx('flex items-center gap-[10px] w-full py-[9px] pr-4 pl-[34px] [border:none] [border-bottom:1px_solid_var(--color-line-soft)]! cursor-pointer [font:inherit] text-left', on ? 'bg-gold-tint shadow-[inset_3px_0_0_var(--color-gold)]' : 'bg-card')}>
+                              <span className="flex-1 min-w-0">
+                                <div className={cx('text-[12.5px] whitespace-nowrap overflow-hidden text-ellipsis', on ? 'font-semibold' : 'font-medium')}>{u.unitCode || 'New unit'}</div>
+                                <div className="text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName || 'No owner yet'}</div>
                               </span>
-                              <span style={{ fontSize: 9.5, fontWeight: 700, color: color.goldInk, flex: 'none' }}>{u.pkg.replace('Package ', 'Pkg ')}</span>
+                              <span className="text-[9.5px] font-bold text-gold-ink flex-none">{u.pkg.replace('Package ', 'Pkg ')}</span>
                             </button>
                           );
                         })}
@@ -173,7 +171,7 @@ export default function PropertiesPage() {
           {/* RIGHT: unit edit form */}
           {selected ? <UnitForm key={selected.id} u={selected} buildings={buildings}
             onChange={p => patch(selected.id, p)} onSave={() => save(selected)} tab={tab} setTab={setTab} /> : (
-            <Card><div style={{ padding: 40, textAlign: 'center', color: color.textMuted, fontSize: 13.5 }}>Select a unit on the left, or add one.</div></Card>
+            <Card><div className="p-10 text-center text-muted-ink text-[13.5px]">Select a unit on the left, or add one.</div></Card>
           )}
         </div>
       )}
@@ -191,12 +189,12 @@ function UnitForm({ u, buildings, onChange, onSave, tab, setTab }: {
   const buildingName = buildings.find(b => b.id === u.buildingId)?.name ?? '';
   return (
     <Card>
-      <div style={{ padding: '18px 22px 0' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: color.textMuted }}>{buildingName.toUpperCase()} · {u.state}</div>
-            <h2 style={{ margin: '4px 0 0', fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em' }}>{u.listingName || 'New unit'}</h2>
-            <div style={{ display: 'flex', gap: 7, marginTop: 9, flexWrap: 'wrap' }}>
+      <div className="pt-[18px] px-[22px] pb-0">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <div className="text-[11px] font-bold tracking-[0.06em] text-muted-ink">{buildingName.toUpperCase()} · {u.state}</div>
+            <h2 className="mt-1 mb-0 text-[20px] font-semibold tracking-[-0.01em]">{u.listingName || 'New unit'}</h2>
+            <div className="flex gap-[7px] mt-[9px] flex-wrap">
               <Badge tone="neutral" label={u.pkg} />
               <Badge tone="info" label={u.term} />
               <Badge tone={u.split === 'Not set' ? 'neutral' : 'success'} label={u.split === 'Not set' ? 'Split not set' : u.split.split(' ')[0]} />
@@ -204,14 +202,14 @@ function UnitForm({ u, buildings, onChange, onSave, tab, setTab }: {
           </div>
           <Button variant="primary" size="sm" onClick={onSave}>Save changes</Button>
         </div>
-        <div style={{ display: 'flex', gap: 2, marginTop: 16, borderBottom: `1px solid ${color.border}` }}>
+        <div className="flex gap-0.5 mt-4 [border-bottom:1px_solid_var(--color-line)]">
           {([['details', 'Details'], ['expenses', 'Monthly expenses'], ['contract', 'Contract and documents']] as const).map(([k, label]) => (
-            <button key={k} onClick={() => setTab(k)} style={{ padding: '11px 4px', marginRight: 20, border: 'none', background: 'none', cursor: 'pointer', font: 'inherit', fontSize: 13, fontWeight: tab === k ? 600 : 400, color: tab === k ? color.ink : color.textMuted, boxShadow: tab === k ? `inset 0 -2px 0 ${color.gold}` : 'none' }}>{label}</button>
+            <button key={k} onClick={() => setTab(k)} className={cx('py-[11px] px-1 mr-5 [border:none] bg-transparent cursor-pointer font-sans text-[13px]', tab === k ? 'font-semibold text-ink shadow-[inset_0_-2px_0_var(--color-gold)]' : 'font-normal text-muted-ink shadow-none')}>{label}</button>
           ))}
         </div>
       </div>
 
-      <div style={{ padding: 22 }}>
+      <div className="p-[22px]">
         {tab === 'details' && <>
           <SectionHead>Listing</SectionHead>
           <Grid3>
@@ -265,26 +263,26 @@ function MonthlyExpenses({ u, onChange }: { u: Unit; onChange: (p: Partial<Unit>
   const add = () => onChange({ expenses: [...u.expenses, ex(crypto.randomUUID(), 'Other', 0)] });
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+      <div className="flex justify-between items-center mb-3">
         <SectionHead noMargin>Monthly expenses</SectionHead>
         <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={add}>Add expense</Button>
       </div>
-      <div style={{ border: `1px solid ${color.border}`, borderRadius: radius.card, overflow: 'hidden' }}>
+      <div className="border border-solid border-line rounded-card overflow-hidden">
         {u.expenses.map(e => (
-          <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '1fr 160px', gap: 12, alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${color.borderMuted}` }}>
-            <input value={e.category} onChange={ev => onChange({ expenses: u.expenses.map(x => x.id === e.id ? { ...x, category: ev.target.value } : x) })} className="field-input" style={{ height: 38 }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 12, color: color.textMuted }}>RM</span>
-              <input type="number" value={String(Math.round(e.amount / 100))} onChange={ev => setAmt(e.id, ev.target.value)} className="field-input" style={{ height: 38, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />
+          <div key={e.id} className="grid grid-cols-[1fr_160px] gap-3 items-center py-[10px] px-[14px] [border-bottom:1px_solid_var(--color-line-soft)]">
+            <input value={e.category} onChange={ev => onChange({ expenses: u.expenses.map(x => x.id === e.id ? { ...x, category: ev.target.value } : x) })} className="field-input h-[38px]!" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-[12px] text-muted-ink">RM</span>
+              <input type="number" value={String(Math.round(e.amount / 100))} onChange={ev => setAmt(e.id, ev.target.value)} className="field-input h-[38px]! text-right tabular-nums" />
             </div>
           </div>
         ))}
-        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: color.muted }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>Total monthly</span>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>{rm(total)}</span>
+        <div className="flex justify-between py-3 px-[14px] bg-muted">
+          <span className="text-[13px] font-semibold">Total monthly</span>
+          <span className="text-[13px] font-semibold">{rm(total)}</span>
         </div>
       </div>
-      <p style={{ fontSize: 12, color: color.textMuted, marginTop: 10 }}>Deducted from the owner statement each month. Manual now; utilities API later.</p>
+      <p className="text-[12px] text-muted-ink mt-[10px]">Deducted from the owner statement each month. Manual now; utilities API later.</p>
     </div>
   );
 }
@@ -300,14 +298,14 @@ function ContractTab({ u, onChange }: { u: Unit; onChange: (p: Partial<Unit>) =>
         <Labeled label="Renews on" hint="DATE"><Field label="" type="date" value={c.renewsOn} onChange={e => onChange({ contract: { ...c, renewsOn: e.target.value } })} /></Labeled>
       </Grid3>
       <SectionHead>Documents</SectionHead>
-      <div style={{ border: `1px solid ${color.border}`, borderRadius: radius.card, overflow: 'hidden' }}>
+      <div className="border border-solid border-line rounded-card overflow-hidden">
         {c.documents.map(d => (
-          <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: `1px solid ${color.borderMuted}` }}>
-            <Icon name="FileText" size="sm" /><span style={{ fontSize: 13, flex: 1 }}>{d.name}</span>
-            <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-accent)', fontSize: 12.5, fontWeight: 500, font: 'inherit' }}>Download</button>
+          <div key={d.id} className="flex items-center gap-[10px] py-[11px] px-[14px] [border-bottom:1px_solid_var(--color-line-soft)]">
+            <Icon name="FileText" size="sm" /><span className="text-[13px] flex-1">{d.name}</span>
+            <button className="bg-transparent [border:none] cursor-pointer text-gold-ink [font:inherit]">Download</button>
           </div>
         ))}
-        <button style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '11px 14px', background: color.page, border: 'none', cursor: 'pointer', font: 'inherit', fontSize: 12.5, fontWeight: 500, color: color.textMuted }}>
+        <button className="flex items-center gap-2 w-full py-[11px] px-[14px] bg-page [border:none] cursor-pointer font-sans text-[12.5px] font-medium text-muted-ink">
           <Icon name="Upload" size="sm" /> Upload a document
         </button>
       </div>
@@ -317,38 +315,37 @@ function ContractTab({ u, onChange }: { u: Unit; onChange: (p: Partial<Unit>) =>
 
 /* ---- small building blocks ---- */
 function SectionHead({ children, noMargin }: { children: ReactNode; noMargin?: boolean }) {
-  return <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: color.textMuted, margin: noMargin ? 0 : '4px 0 14px' }}>{String(children).toUpperCase()}</div>;
+  return <div className={cx('text-[11px] font-bold tracking-[0.08em] text-muted-ink', noMargin ? 'm-0' : 'mt-1 mb-[14px]')}>{String(children).toUpperCase()}</div>;
 }
 function Grid3({ children }: { children: ReactNode }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 16, marginBottom: 22 }}>{children}</div>;
+  return <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4 mb-[22px]">{children}</div>;
 }
 function Labeled({ label, hint, help, span2, children }: { label: string; hint: string; help?: string; span2?: boolean; children: ReactNode }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, gridColumn: span2 ? 'span 2' : undefined }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ fontSize: 'var(--text-small)', fontWeight: 500, color: 'var(--color-text-muted)' }}>{label}</span>
-        <span style={FT}>{hint}</span>
+    <div className={cx('flex flex-col gap-1.5', span2 && '[grid-column:span_2]')}>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[12px] font-medium text-muted-ink">{label}</span>
+        <span className="text-[9px] font-bold tracking-[0.08em] text-faint">{hint}</span>
       </div>
       {children}
-      {help && <span style={{ fontSize: 11, color: color.textMuted }}>{help}</span>}
+      {help && <span className="text-[11px] text-muted-ink">{help}</span>}
     </div>
   );
 }
-const selectStyle: CSSProperties = { height: 'var(--control-height)', width: '100%', boxSizing: 'border-box', padding: '0 12px', fontFamily: 'var(--font-sans)', fontSize: 14, color: 'var(--color-text-primary)', background: 'var(--color-surface-card)', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-control)', outline: 'none' };
 function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
-  return <select value={value} onChange={e => onChange(e.target.value)} style={selectStyle}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>;
+  return <select value={value} onChange={e => onChange(e.target.value)} className="h-[var(--control-height)] w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none">{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>;
 }
 
 function CentreModal({ title, sub, onClose, footer, children }: { title: string; sub?: string; onClose: () => void; footer: ReactNode; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => { ref.current?.querySelector<HTMLInputElement>('input,select')?.focus(); const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, [onClose]);
   return (
-    <div role="dialog" aria-modal="true" aria-label={title} style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 24, background: 'var(--color-surface-scrim)' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0 }} />
-      <div ref={ref} style={{ position: 'relative', width: '100%', maxWidth: 440, background: 'var(--color-surface-card)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-overlay)' }}>
-        <div style={{ padding: '22px 22px 4px' }}><h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{title}</h2>{sub && <p style={{ margin: '5px 0 0', fontSize: 13, color: 'var(--color-text-muted)' }}>{sub}</p>}</div>
-        <div style={{ padding: '16px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>{children}</div>
-        <div style={{ padding: '14px 22px', borderTop: '1px solid var(--color-border-default)', background: 'var(--color-surface-page)', display: 'flex', justifyContent: 'flex-end', gap: 9 }}>{footer}</div>
+    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)]">
+      <div onClick={onClose} className="absolute inset-0" />
+      <div ref={ref} className="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)]">
+        <div className="pt-[22px] px-[22px] pb-1"><h2 className="m-0 text-[18px] font-semibold">{title}</h2>{sub && <p className="mt-[5px] mb-0 text-[13px] text-muted-ink">{sub}</p>}</div>
+        <div className="py-4 px-[22px] flex flex-col gap-[14px]">{children}</div>
+        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">{footer}</div>
       </div>
     </div>
   );
@@ -369,7 +366,7 @@ function ConfirmAddUnit({ building, onClose, onConfirm }: { building: string; on
   return (
     <CentreModal title={`Add a unit to ${building}`} sub="A blank unit will open on the right for you to fill in." onClose={onClose}
       footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" onClick={onConfirm}>Add unit</Button></>}>
-      <p style={{ margin: 0, fontSize: 13, color: color.textMuted }}>You will set the listing name, code, owner, package and GRR on the unit form.</p>
+      <p className="m-0 text-[13px] text-muted-ink">You will set the listing name, code, owner, package and GRR on the unit form.</p>
     </CentreModal>
   );
 }

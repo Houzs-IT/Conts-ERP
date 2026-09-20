@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { color, radius, text, tone as T, channel as CH } from '../theme';
+import { color, tone as T, channel as CH } from '../theme';
+import { cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import Icon from '../components/Icon';
@@ -35,6 +36,10 @@ const pnlMonth = (period: string) => {
   dt.setMonth(dt.getMonth() - 1);
   return MONTHS[dt.getMonth()];
 };
+
+/** Reservations table template — one arbitrary class so header and rows stay
+ *  in lockstep; the literal lives here verbatim so Tailwind can extract it. */
+const RES_COLS = 'grid-cols-[minmax(150px,1.3fr)_minmax(160px,1.4fr)_minmax(150px,1.3fr)_minmax(110px,0.9fr)_minmax(110px,1fr)]';
 
 interface Payload {
   unit: {
@@ -161,15 +166,17 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
     const on = un.id === selectedId;
     return (
       <a key={un.id} href={`#/properties/units/${encodeURIComponent(un.id)}`} onClick={() => setView('list')}
-        style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 13px', textDecoration: 'none', color: color.ink,
-          background: on ? color.goldTint : '#FFFFFF', borderLeft: `3px solid ${on ? color.gold : 'transparent'}`,
-          borderBottom: `1px solid ${color.borderMuted}` }}>
-        <span style={{ width: 40, height: 40, flex: 'none', borderRadius: radius.sm, background: color.muted, display: 'grid', placeItems: 'center' }}>
+        className={cx(
+          'flex items-center gap-[11px] py-[11px] px-[13px] no-underline text-ink!',
+          '[border-bottom:1px_solid_var(--color-line-soft)]',
+          on ? 'bg-gold-tint [border-left:3px_solid_var(--color-gold)]' : 'bg-card [border-left:3px_solid_transparent]',
+        )}>
+        <span className="w-10 h-10 flex-none rounded-[6px] bg-muted grid place-items-center">
           <Icon name="Image" size="sm" color={color.faint} />
         </span>
-        <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-          <span style={{ fontSize: 13.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{un.unitNumber}</span>
-          <span style={{ fontSize: 11.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{un.propertyName} · {un.area}</span>
+        <span className="flex flex-col gap-0.5 flex-1 min-w-0">
+          <span className="text-[13.5px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{un.unitNumber}</span>
+          <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{un.propertyName} · {un.area}</span>
         </span>
         <Badge tone={READY_TONE[un.readiness]} label={cap(un.readiness)} size="sm" />
       </a>
@@ -178,17 +185,19 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
 
   const gridItem = (un: UnitRow) => (
     <a key={un.id} href={`#/properties/units/${encodeURIComponent(un.id)}`} onClick={() => setView('list')}
-      style={{ display: 'flex', flexDirection: 'column', textDecoration: 'none', color: color.ink, background: '#FFFFFF',
-        border: `1px solid ${un.id === selectedId ? color.gold : color.border}`, borderRadius: radius.card, overflow: 'hidden' }}>
-      <span style={{ height: 116, background: color.muted, display: 'grid', placeItems: 'center' }}>
+      className={cx(
+        'flex flex-col no-underline text-ink! bg-card border border-solid rounded-card overflow-hidden',
+        un.id === selectedId ? 'border-gold' : 'border-line',
+      )}>
+      <span className="h-[116px] bg-muted grid place-items-center">
         <Icon name="Image" size="lg" color={color.faint} />
       </span>
-      <span style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '12px 14px' }}>
-        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <span style={{ fontSize: 13.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{un.unitNumber}</span>
+      <span className="flex flex-col gap-[5px] py-3 px-[14px]">
+        <span className="flex items-center justify-between gap-2">
+          <span className="text-[13.5px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{un.unitNumber}</span>
           <Badge tone={READY_TONE[un.readiness]} label={cap(un.readiness)} size="sm" />
         </span>
-        <span style={{ fontSize: 11.5, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{un.propertyName} · {un.area}</span>
+        <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{un.propertyName} · {un.area}</span>
       </span>
     </a>
   );
@@ -197,67 +206,70 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
     <>
       {/* Identity card: photo, who and how it is performing, and the tab bar. */}
       <Card>
-        <div style={{ padding: '14px 14px 0' }}>
+        <div className="pt-[14px] px-[14px] pb-0">
           <div
             onDragOver={e => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files.item(0); if (f) takeFile(f); }}
-            style={{ height: 208, borderRadius: radius.control, display: 'grid', placeItems: 'center', overflow: 'hidden',
-              border: dragOver ? `1px dashed ${color.gold}` : `1px solid ${color.borderMuted}`,
-              background: photo ? `center / cover no-repeat url(${photo})` : color.muted }}>
+            className={cx(
+              'h-[208px] rounded-control grid place-items-center overflow-hidden bg-muted',
+              dragOver ? '[border:1px_dashed_var(--color-gold)]' : '[border:1px_solid_var(--color-line-soft)]',
+            )}
+            style={photo ? { background: `center / cover no-repeat url(${photo})` } : undefined}>
             {!photo && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
+              <div className="flex flex-col items-center gap-[7px]">
                 <Icon name="Image" size="lg" color={color.faint} />
-                <span style={{ fontSize: 13.5, fontWeight: 500, color: color.ink }}>Drop a photo of this unit</span>
-                <span style={{ fontSize: 12, color: color.textMuted }}>
-                  or <button onClick={() => fileRef.current?.click()} style={{ font: 'inherit', fontSize: 12, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: color.goldInk, textDecoration: 'underline' }}>browse files</button>
+                <span className="text-[13.5px] font-medium text-ink">Drop a photo of this unit</span>
+                <span className="text-[12px] text-muted-ink">
+                  or <button onClick={() => fileRef.current?.click()} className="[font:inherit] text-[12px]! bg-transparent [border:none] p-0 cursor-pointer text-gold-ink underline">browse files</button>
                 </span>
               </div>
             )}
           </div>
-          <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
+          <input ref={fileRef} type="file" accept="image/*" className="hidden"
             onChange={e => { const f = e.currentTarget.files?.item(0); if (f) takeFile(f); }} />
         </div>
 
-        <div style={{ padding: '18px 24px 16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 9, minWidth: 0 }}>
-            <h1 style={{ margin: 0, fontSize: 24, lineHeight: 1.2, fontWeight: 600, letterSpacing: '-0.01em' }}>
+        <div className="pt-[18px] px-6 pb-4 flex items-start justify-between gap-6 flex-wrap">
+          <div className="flex flex-col gap-[9px] min-w-0">
+            <h1 className="m-0 text-[24px] leading-[1.2] font-semibold tracking-[-0.01em]">
               {u.propertyName} {u.unitNumber}
             </h1>
-            <span style={{ fontSize: 13, color: color.textMuted }}>{u.addressLine}, {u.city}</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span className="text-[13px] text-muted-ink">{u.addressLine}, {u.city}</span>
+            <div className="flex items-center gap-3 flex-wrap">
               <Badge tone={READY_TONE[u.readiness]} label={cap(u.readiness)} />
-              <span style={{ fontSize: 13, color: color.textMuted }}>{u.channels.map(c => CH[c].label).join(' · ')}</span>
+              <span className="text-[13px] text-muted-ink">{u.channels.map(c => CH[c].label).join(' · ')}</span>
               {!u.isListed && <Badge tone="neutral" label="Not listed" />}
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 'none', alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 12, color: color.textMuted }}>Owner</span>
-            <a href="#/owners" style={{ fontSize: 14.5, fontWeight: 600, textDecoration: 'none', color: color.ink }}>{u.owner.name}</a>
+          <div className="flex flex-col gap-1 flex-none items-start">
+            <span className="text-[12px] text-muted-ink">Owner</span>
+            <a href="#/owners" className="text-[14.5px] font-semibold no-underline text-ink!">{u.owner.name}</a>
             {u.contract && (
-              <span style={{ fontSize: 12, color: color.textMuted }}>
+              <span className="text-[12px] text-muted-ink">
                 {u.contract.managementFeePct}% · renews {u.contract.renewsOn ? date(u.contract.renewsOn) : '—'}
               </span>
             )}
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 2, padding: '0 24px', borderTop: `1px solid ${color.border}`, overflowX: 'auto' }}>
+        <div className="flex gap-0.5 px-6 [border-top:1px_solid_var(--color-line)] overflow-x-auto">
           {tabs.map(t => {
             const on = t === tab;
             return (
               <button key={t} onClick={() => setTab(t)}
-                style={{ padding: '13px 4px', marginRight: 20, border: 'none', background: 'none', cursor: 'pointer', font: 'inherit', whiteSpace: 'nowrap',
-                  fontSize: 13, fontWeight: on ? 600 : 400, color: on ? color.ink : color.textMuted,
-                  boxShadow: on ? `inset 0 -2px 0 ${color.gold}` : 'none' }}>
+                className={cx(
+                  'py-[13px] px-1 mr-5 [border:none] bg-transparent cursor-pointer [font:inherit] whitespace-nowrap text-[13px]!',
+                  on ? 'font-semibold! text-ink [box-shadow:inset_0_-2px_0_var(--color-gold)]' : 'text-muted-ink',
+                )}>
                 {t}
               </button>
             );
           })}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(108px,1fr))', gap: 20, padding: '18px 24px 20px', borderTop: `1px solid ${color.borderMuted}` }}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(108px,1fr))] gap-5 pt-[18px] px-6 pb-5 [border-top:1px_solid_var(--color-line-soft)]">
           {[
             ['Occupancy', `${p.occupancy}%`],
             ['ADR', rm(p.adr, { cents: false })],
@@ -265,25 +277,25 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
             ['Rating', p.rating != null ? p.rating.toFixed(2) : '—'],
             ['Open issues', String(openIssues)],
           ].map(([label, value]) => (
-            <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 500, color: color.textMuted }}>{label}</span>
-              <span style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.01em' }}>{value}</span>
+            <div key={label} className="flex flex-col gap-1.5 min-w-0">
+              <span className="text-[12.5px] font-medium text-muted-ink">{label}</span>
+              <span className="text-[24px] font-semibold tracking-[-0.01em]">{value}</span>
             </div>
           ))}
         </div>
       </Card>
 
       {tab === 'Overview' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 20, alignItems: 'start' }}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-5 [align-items:start]">
           <Card>
-            <div style={{ padding: '18px 22px 14px' }}>
-              <span style={{ fontSize: 18, fontWeight: 600 }}>Stays</span>
+            <div className="pt-[18px] px-[22px] pb-[14px]">
+              <span className="text-[18px] font-semibold">Stays</span>
             </div>
             {d.stays.slice(0, 3).map(s => (
-              <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 22px', borderTop: `1px solid ${color.borderMuted}` }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: 14, fontWeight: 600 }}>{s.guestName ?? 'No guest'}</span>
-                  <span style={{ fontSize: 12, color: color.textMuted }}>{CH[s.channel].label} · {dateRange(s.checkIn, s.checkOut)}</span>
+              <div key={s.id} className="flex items-center gap-[14px] py-[13px] px-[22px] [border-top:1px_solid_var(--color-line-soft)]">
+                <div className="flex flex-col gap-[3px] flex-1 min-w-0">
+                  <span className="text-[14px] font-semibold">{s.guestName ?? 'No guest'}</span>
+                  <span className="text-[12px] text-muted-ink">{CH[s.channel].label} · {dateRange(s.checkIn, s.checkOut)}</span>
                 </div>
                 <Badge tone={RES_TONE[s.state]} label={cap(s.state)} />
               </div>
@@ -292,15 +304,15 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
 
           {d.pnl && (
             <Card>
-              <div style={{ padding: '18px 22px 14px' }}>
-                <span style={{ fontSize: 18, fontWeight: 600 }}>{pnlMonth(p.period)} P and L</span>
+              <div className="pt-[18px] px-[22px] pb-[14px]">
+                <span className="text-[18px] font-semibold">{pnlMonth(p.period)} P and L</span>
               </div>
               {d.pnl.map((l, i) => {
                 const net = l.type === 'net';
                 return (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, padding: '12px 22px', borderTop: `1px solid ${color.borderMuted}`, background: net ? color.page : undefined }}>
-                    <span style={{ fontSize: 13.5, fontWeight: net ? 600 : 400, color: net ? color.ink : color.textMuted }}>{l.label}</span>
-                    <span style={{ fontSize: net ? 15 : 13.5, fontWeight: net ? 700 : 500, color: color.ink }}>
+                  <div key={i} className={cx('flex items-center justify-between gap-5 py-3 px-[22px] [border-top:1px_solid_var(--color-line-soft)]', net && 'bg-page')}>
+                    <span className={cx('text-[13.5px]', net ? 'font-semibold text-ink' : 'font-normal text-muted-ink')}>{l.label}</span>
+                    <span className={cx('text-ink', net ? 'text-[15px] font-bold' : 'text-[13.5px] font-medium')}>
                       {l.amount < 0 ? `− ${rm(Math.abs(l.amount), { cents: false })}` : rm(l.amount, { cents: false })}
                     </span>
                   </div>
@@ -313,23 +325,23 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
 
       {tab === 'Reservations' && (
         <Card>
-          <div style={{ overflowX: 'auto' }}>
-            <div style={{ minWidth: 760 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(150px,1.3fr) minmax(160px,1.4fr) minmax(150px,1.3fr) minmax(110px,0.9fr) minmax(110px,1fr)', gap: 14, padding: '9px 22px', background: color.muted, borderBottom: `1px solid ${color.border}`, fontSize: text.small, fontWeight: 600, color: color.textMuted }}>
-                <div>Reference</div><div>Guest</div><div>Dates</div><div style={{ textAlign: 'right' }}>Gross</div><div>Status</div>
+          <div className="overflow-x-auto">
+            <div className="min-w-[760px]">
+              <div className={cx(RES_COLS, 'grid gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink')}>
+                <div>Reference</div><div>Guest</div><div>Dates</div><div className="text-right">Gross</div><div>Status</div>
               </div>
               {d.stays.map(s => (
-                <div key={s.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(150px,1.3fr) minmax(160px,1.4fr) minmax(150px,1.3fr) minmax(110px,0.9fr) minmax(110px,1fr)', gap: 14, alignItems: 'center', minHeight: 52, padding: '9px 22px', borderBottom: `1px solid ${color.borderMuted}` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                <div key={s.id} className={cx(RES_COLS, 'grid gap-[14px] items-center min-h-[52px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)]')}>
+                  <div className="flex items-center gap-[9px] min-w-0">
                     <ChannelMark ch={s.channel} size={20} />
-                    <span style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.externalRef ?? '—'}</span>
+                    <span className="font-mono text-[12px] whitespace-nowrap overflow-hidden text-ellipsis">{s.externalRef ?? '—'}</span>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13.5 }}>{s.guestName ?? 'No guest'}</span>
-                    <span style={{ fontSize: 11.5, color: color.textMuted }}>{s.guestsCount} guests</span>
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[13.5px]">{s.guestName ?? 'No guest'}</span>
+                    <span className="text-[11.5px] text-muted-ink">{s.guestsCount} guests</span>
                   </div>
-                  <span style={{ fontSize: 12.5 }}>{dateRange(s.checkIn, s.checkOut)}</span>
-                  <span style={{ fontSize: 13, textAlign: 'right', fontWeight: 500 }}>
+                  <span className="text-[12.5px]">{dateRange(s.checkIn, s.checkOut)}</span>
+                  <span className="text-[13px] text-right font-medium">
                     {s.grossBookingValue != null && s.grossBookingValue > 0 ? rm(s.grossBookingValue, { cents: false }) : '—'}
                   </span>
                   <div><Badge tone={RES_TONE[s.state]} label={cap(s.state)} /></div>
@@ -343,10 +355,11 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
       {tab === 'Operations' && (
         <Card>
           {d.tasks.map(t => (
-            <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 20px', borderBottom: `1px solid ${color.borderMuted}`, borderLeft: `3px solid ${T[TASK_TONE[t.state]].line}`, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 200 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 500 }}>{t.title}</span>
-                <span style={{ fontSize: 11.5, color: color.textMuted }}>
+            <div key={t.id} className="flex items-center gap-[14px] py-[14px] px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex-wrap"
+              style={{ borderLeft: `3px solid ${T[TASK_TONE[t.state]].line}` }}>
+              <div className="flex flex-col gap-0.5 flex-1 min-w-[200px]">
+                <span className="text-[13.5px] font-medium">{t.title}</span>
+                <span className="text-[11.5px] text-muted-ink">
                   {cap(t.kind)} · {t.assigneeName ?? 'Unassigned'}
                   {t.completedAt ? ` · done ${t.completedAt}` : t.dueAt ? ` · due ${t.dueAt}` : ''}
                 </span>
@@ -359,48 +372,48 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
 
       {tab === 'Financials' && d.pnl && (
         <Card>
-          <div style={{ padding: '16px 20px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: text.cardTitle, fontWeight: 600 }}>Gross to net</span>
-            <span style={{ fontSize: text.small, color: color.textMuted }}>{pnlMonth(p.period)}</span>
+          <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
+            <span className="text-[16px] font-semibold">Gross to net</span>
+            <span className="text-[12px] text-muted-ink">{pnlMonth(p.period)}</span>
           </div>
           {d.pnl.map((l, i) => {
             const net = l.type === 'net';
             return (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, padding: net ? '15px 20px' : '12px 20px', borderBottom: `1px solid ${color.borderMuted}`, background: net ? color.page : '#FFFFFF' }}>
-                <span style={{ fontSize: net ? 14 : 13, fontWeight: net ? 600 : 400, color: net ? color.ink : color.textMuted }}>{l.label}</span>
-                <span style={{ fontSize: net ? 16 : 13, fontWeight: net ? 600 : 500 }}>
+              <div key={i} className={cx('flex items-center justify-between gap-5 [border-bottom:1px_solid_var(--color-line-soft)]', net ? 'py-[15px] px-5 bg-page' : 'py-3 px-5 bg-card')}>
+                <span className={cx(net ? 'text-[14px] font-semibold text-ink' : 'text-[13px] font-normal text-muted-ink')}>{l.label}</span>
+                <span className={cx(net ? 'text-[16px] font-semibold' : 'text-[13px] font-medium')}>
                   {l.amount < 0 ? `− ${rm(Math.abs(l.amount))}` : rm(l.amount)}
                 </span>
               </div>
             );
           })}
-          <div style={{ padding: '13px 20px', fontSize: 11.5, color: color.textMuted, textWrap: 'pretty' }}>
+          <div className="py-[13px] px-5 text-[11.5px] text-muted-ink [text-wrap:pretty]">
             Every deduction carries a category, a date and a reference. The owner sees this same chain on their statement.
           </div>
         </Card>
       )}
 
       {tab === 'Maintenance' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div className="flex flex-col gap-5">
           <Card>
-            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${color.borderMuted}`, fontSize: text.cardTitle, fontWeight: 600 }}>Maintenance and inventory</div>
+            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-[16px] font-semibold">Maintenance and inventory</div>
             {d.maintenance.map(m => (
-              <div key={m.id} style={{ padding: '14px 20px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 220 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 600 }}>{m.title}</span>
+              <div key={m.id} className="py-[14px] px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-start gap-4 flex-wrap">
+                <div className="flex flex-col gap-[3px] flex-1 min-w-[220px]">
+                  <div className="flex items-center gap-[9px] flex-wrap">
+                    <span className="text-[13.5px] font-semibold">{m.title}</span>
                     <Badge tone={TASK_TONE[m.state]} label={cap(m.state)} />
                     {m.blocksUnit && <Badge tone="critical" label="Blocks the unit" />}
                   </div>
-                  <span style={{ fontSize: 11.5, color: color.textMuted }}>
+                  <span className="text-[11.5px] text-muted-ink">
                     {m.reportedAt}{m.vendorName ? ` · ${m.vendorName}` : ''} · charged to {cap(m.chargeTo)}
                   </span>
-                  {m.detail && <span style={{ fontSize: 12.5, textWrap: 'pretty' }}>{m.detail}</span>}
+                  {m.detail && <span className="text-[12.5px] [text-wrap:pretty]">{m.detail}</span>}
                 </div>
                 {(m.finalAmount != null || m.quotedAmount != null) && (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, flex: 'none' }}>
-                    <span style={{ fontSize: 14, fontWeight: 600 }}>{rm(m.finalAmount ?? m.quotedAmount!)}</span>
-                    <span style={{ fontSize: 11, color: color.textMuted }}>{m.finalAmount != null ? 'Final' : 'Quoted'}</span>
+                  <div className="flex flex-col items-end gap-0.5 flex-none">
+                    <span className="text-[14px] font-semibold">{rm(m.finalAmount ?? m.quotedAmount!)}</span>
+                    <span className="text-[11px] text-muted-ink">{m.finalAmount != null ? 'Final' : 'Quoted'}</span>
                   </div>
                 )}
               </div>
@@ -408,16 +421,16 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
           </Card>
 
           <Card>
-            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${color.borderMuted}`, fontSize: text.cardTitle, fontWeight: 600 }}>Fit-out register</div>
+            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-[16px] font-semibold">Fit-out register</div>
             {d.inventory.map(i => (
-              <div key={i.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(200px,2fr) minmax(90px,0.8fr) minmax(130px,1fr) minmax(100px,0.9fr)', gap: 14, alignItems: 'center', minHeight: 50, padding: '9px 20px', borderBottom: `1px solid ${color.borderMuted}` }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: 13.5 }}>{i.name}</span>
-                  {i.suppliedInHouse && <span style={{ fontSize: 11, color: color.textMuted }}>Supplied by The Conts</span>}
+              <div key={i.id} className="grid grid-cols-[minmax(200px,2fr)_minmax(90px,0.8fr)_minmax(130px,1fr)_minmax(100px,0.9fr)] gap-[14px] items-center min-h-[50px] py-[9px] px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
+                <div className="flex flex-col gap-px min-w-0">
+                  <span className="text-[13.5px]">{i.name}</span>
+                  {i.suppliedInHouse && <span className="text-[11px] text-muted-ink">Supplied by The Conts</span>}
                 </div>
-                <span style={{ fontSize: 12.5 }}>{i.quantity}</span>
+                <span className="text-[12.5px]">{i.quantity}</span>
                 <div><Badge tone={COND_TONE[i.condition] ?? 'neutral'} label={cap(i.condition)} /></div>
-                <span style={{ fontSize: 12.5, textAlign: 'right' }}>
+                <span className="text-[12.5px] text-right">
                   {i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}
                 </span>
               </div>
@@ -428,19 +441,19 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
 
       {tab === 'Documents' && (
         <Card>
-          <div style={{ padding: '16px 20px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: text.cardTitle, fontWeight: 600 }}>Documents</span>
-            <span style={{ fontSize: text.small, color: color.textMuted }}>Statements, agreements and inspection reports for this unit. Every file is versioned and audit-logged.</span>
+          <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
+            <span className="text-[16px] font-semibold">Documents</span>
+            <span className="text-[12px] text-muted-ink">Statements, agreements and inspection reports for this unit. Every file is versioned and audit-logged.</span>
           </div>
           {d.documents.map(doc => (
-            <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 20px', borderBottom: `1px solid ${color.borderMuted}` }}>
+            <div key={doc.id} className="flex items-center gap-[14px] py-[13px] px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
               <Icon name="FileText" size="nav" color={color.textMuted} />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 500 }}>{doc.name}</span>
-                <span style={{ fontSize: 11.5, color: color.textMuted }}>{cap(doc.kind)} · {doc.sizeLabel} · updated {date(doc.updatedAt)}</span>
+              <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                <span className="text-[13.5px] font-medium">{doc.name}</span>
+                <span className="text-[11.5px] text-muted-ink">{cap(doc.kind)} · {doc.sizeLabel} · updated {date(doc.updatedAt)}</span>
               </div>
               <button onClick={() => toast({ tone: 'success', title: `Preparing ${doc.name}.`, body: 'Your download will start shortly.' })}
-                style={{ fontSize: text.small, fontWeight: 600, color: color.goldInk, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit' }}>
+                className="text-gold-ink bg-transparent [border:none] cursor-pointer [font:inherit]">
                 Download
               </button>
             </div>
@@ -450,22 +463,22 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
 
       {tab === 'Activity' && (
         <Card>
-          <div style={{ padding: '16px 20px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: text.cardTitle, fontWeight: 600 }}>Activity</span>
-            <span style={{ fontSize: text.small, color: color.textMuted }}>Who did what, when, and from where. Read straight from the audit trail.</span>
+          <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
+            <span className="text-[16px] font-semibold">Activity</span>
+            <span className="text-[12px] text-muted-ink">Who did what, when, and from where. Read straight from the audit trail.</span>
           </div>
           {d.activity.map((a, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 20px', borderBottom: `1px solid ${color.borderMuted}`, flexWrap: 'wrap' }}>
-              <span style={{ width: 30, height: 30, flex: 'none', borderRadius: 999, background: color.muted, color: color.textMuted, display: 'grid', placeItems: 'center', fontSize: text.micro, fontWeight: 600 }}>
+            <div key={i} className="flex items-center gap-[14px] py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex-wrap">
+              <span className="w-[30px] h-[30px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-[11px] font-semibold">
                 {a.actorLabel.split(' ').map(n => n[0]).slice(0, 2).join('')}
               </span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 180 }}>
-                <span style={{ fontSize: 13 }}>
-                  <strong style={{ fontWeight: 600 }}>{a.actorLabel}</strong> · {a.action.replace(/[._]/g, ' ')}
+              <div className="flex flex-col gap-px flex-1 min-w-[180px]">
+                <span className="text-[13px]">
+                  <strong className="font-semibold">{a.actorLabel}</strong> · {a.action.replace(/[._]/g, ' ')}
                 </span>
-                <span style={{ fontSize: 11.5, color: color.textMuted }}>{a.source.replace(/_/g, ' ')}</span>
+                <span className="text-[11.5px] text-muted-ink">{a.source.replace(/_/g, ' ')}</span>
               </div>
-              <span style={{ fontSize: 11.5, color: color.textMuted }}>{a.occurredAt}</span>
+              <span className="text-[11.5px] text-muted-ink">{a.occurredAt}</span>
             </div>
           ))}
         </Card>
@@ -475,19 +488,21 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
 
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div style={{ minWidth: 0 }}>
-          <h1 style={{ margin: 0, fontSize: text.pageTitle, lineHeight: 1.2, fontWeight: 600, letterSpacing: '-0.01em' }}>Units</h1>
-          <div style={{ fontSize: text.small, color: color.textMuted, marginTop: 4 }}>24 units · 6 buildings</div>
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div className="min-w-0">
+          <h1 className="m-0 text-[28px] leading-[1.2] font-semibold tracking-[-0.01em]">Units</h1>
+          <div className="text-[12px] text-muted-ink mt-1">24 units · 6 buildings</div>
         </div>
-        <div style={{ display: 'inline-flex', gap: 3, padding: 3, background: color.muted, borderRadius: radius.control, border: `1px solid ${color.border}` }}>
+        <div className="inline-flex gap-[3px] p-[3px] bg-muted rounded-control border border-solid border-line">
           {(['List', 'Grid'] as const).map(v => {
             const key = v.toLowerCase() as 'list' | 'grid';
             const on = view === key;
             return (
               <button key={v} onClick={() => setView(key)}
-                style={{ padding: '7px 16px', border: 'none', cursor: 'pointer', font: 'inherit', fontSize: 13, fontWeight: 500,
-                  borderRadius: radius.sm, background: on ? color.black : 'transparent', color: on ? '#FFFFFF' : color.textMuted }}>
+                className={cx(
+                  'px-4 py-[7px] [border:none] cursor-pointer [font:inherit] text-[13px]! font-medium! rounded-[6px]',
+                  on ? 'bg-black text-white' : 'bg-transparent text-muted-ink',
+                )}>
                 {v}
               </button>
             );
@@ -498,15 +513,15 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
       {error && <StaleBanner message={`Showing the last record we have. ${error}`} onRetry={reload} />}
 
       {view === 'grid' ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16 }}>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
           {units.map(gridItem)}
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 280px', minWidth: 0, maxWidth: 340 }}>
+        <div className="flex gap-5 items-start flex-wrap">
+          <div className="[flex:1_1_280px] min-w-0 max-w-[340px]">
             <Card>{units.map(railItem)}</Card>
           </div>
-          <div style={{ flex: '999 1 460px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div className="[flex:999_1_460px] min-w-0 flex flex-col gap-5">
             {detail}
           </div>
         </div>

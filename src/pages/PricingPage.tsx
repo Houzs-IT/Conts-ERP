@@ -1,5 +1,5 @@
-import { useMemo, useState, type CSSProperties } from 'react';
-import { color, radius, text } from '../theme';
+import { useMemo, useState } from 'react';
+import { color } from '../theme';
 import { channel as CH } from '../theme';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -14,6 +14,7 @@ import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
 import { rm, dateRange } from '../lib/format';
 import { SYNC } from '../lib/vocabulary';
+import { TONE, cx } from '../lib/design-tokens';
 import type { BookingChannel, SyncState } from '../lib/types';
 
 // The channels that carry an uplift over the web rate. Direct is the web rate
@@ -69,14 +70,13 @@ const FALLBACK: Payload = {
 const TODAY = '2026-09-20';
 const DEFAULT_TO = '2026-10-03';
 
-const COLS = 'minmax(140px,1.5fr) minmax(120px,1fr) minmax(112px,1fr) minmax(104px,0.9fr) minmax(120px,1fr) minmax(118px,1fr)';
+// Grid track template shared by the uplift table header and its rows.
+const COLS = 'grid-cols-[minmax(140px,1.5fr)_minmax(120px,1fr)_minmax(112px,1fr)_minmax(104px,0.9fr)_minmax(120px,1fr)_minmax(118px,1fr)]';
 
-const inputStyle: CSSProperties = {
-  boxSizing: 'border-box', width: '100%', height: 34, padding: '0 10px',
-  fontSize: 13, color: color.ink, background: '#FFFFFF', textAlign: 'right',
-  border: `1px solid ${color.borderStrong}`, borderRadius: radius.control, outline: 'none',
-  font: 'inherit', fontVariantNumeric: 'tabular-nums',
-};
+// Money input. The original object's `font:inherit` made font-family AND font-size
+// inherit from context (12px in the date label, 16px in a rate cell). Reproduced
+// as independent longhand inherits so tabular-nums is not reset by a font shorthand.
+const INPUT_CLASS = 'box-border h-[34px] px-[10px] py-0 text-ink bg-card border border-solid rounded-control outline-none [font-family:inherit] [font-size:inherit] [font-variant-numeric:tabular-nums]';
 
 /** Read `?unitId=` from the hash first (hash router) then the querystring. */
 function readUnitId(): string | null {
@@ -119,20 +119,17 @@ function EditableMoney({ sen, onCommit, ariaLabel, tone }: {
           if (e.key === 'Enter') { e.preventDefault(); commit(); }
           if (e.key === 'Escape') { e.preventDefault(); setEditing(false); }
         }}
-        style={{ ...inputStyle, maxWidth: 120, marginLeft: 'auto' }}
+        className={cx(INPUT_CLASS, 'w-full max-w-[120px] ml-auto text-right border-line-strong')}
       />
     );
   }
-  const fg = tone === 'warn' ? '#8A5A12' : tone === 'floor' ? color.textMuted : color.ink;
   return (
     <button
       onClick={begin} aria-label={`Edit ${ariaLabel}`}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 'auto',
-        padding: '3px 6px', borderRadius: radius.sm, border: '1px solid transparent',
-        background: 'transparent', cursor: 'pointer', font: 'inherit',
-        fontSize: 13, fontWeight: 500, color: fg, fontVariantNumeric: 'tabular-nums',
-      }}
+      className={cx(
+        'inline-flex items-center gap-1.5 ml-auto py-[3px] px-1.5 rounded-[6px] border border-solid border-transparent bg-transparent cursor-pointer [font-family:inherit] text-[13px] font-medium [font-variant-numeric:tabular-nums]',
+        tone === 'warn' ? TONE.warning.text : tone === 'floor' ? 'text-muted-ink' : 'text-ink',
+      )}
       onMouseEnter={e => { e.currentTarget.style.borderColor = color.border; e.currentTarget.style.background = color.muted; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent'; }}
     >
@@ -145,13 +142,10 @@ function EditableMoney({ sen, onCommit, ariaLabel, tone }: {
 function Tag({ label, kind }: { label: string; kind: 'internal' | 'external' }) {
   const external = kind === 'external';
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', height: 18, padding: '0 7px',
-      borderRadius: radius.pill, fontSize: text.micro, fontWeight: 600, letterSpacing: '0.03em',
-      background: external ? color.goldTint : color.muted,
-      color: external ? color.goldInk : color.textMuted,
-      border: `1px solid ${external ? color.gold200 : color.border}`,
-    }}>{label}</span>
+    <span className={cx(
+      'inline-flex items-center h-[18px] px-[7px] py-0 rounded-pill text-[11px] font-semibold tracking-[0.03em] border border-solid',
+      external ? 'bg-gold-tint text-gold-ink border-[#EADCBD]' : 'bg-muted text-muted-ink border-line',
+    )}>{label}</span>
   );
 }
 
@@ -243,15 +237,15 @@ export default function PricingPage() {
         <Card><TableSkeleton rows={5} cols={4} /></Card>
       ) : rows.length === 0 ? (
         <Card>
-          <div style={{ padding: '40px 22px', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
-            <span style={{ fontSize: 14, color: color.textMuted }}>No units to price yet. Add a unit to set its rates.</span>
+          <div className="py-10 px-[22px] text-center flex flex-col gap-3 items-center">
+            <span className="text-[14px] text-muted-ink">No units to price yet. Add a unit to set its rates.</span>
           </div>
         </Card>
       ) : (
-        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div className="flex gap-4 items-start flex-wrap">
           {/* Unit selector */}
           <Card style={{ flex: '1 1 240px', minWidth: 240 }}>
-            <div style={{ padding: '13px 16px', borderBottom: `1px solid ${color.border}`, fontSize: text.micro, fontWeight: 600, letterSpacing: '0.05em', color: color.textMuted }}>
+            <div className="py-[13px] px-4 [border-bottom:1px_solid_var(--color-line)] text-[11px] font-semibold tracking-[0.05em] text-muted-ink">
               UNITS · {rows.length}
             </div>
             {rows.map(u => {
@@ -262,16 +256,15 @@ export default function PricingPage() {
               return (
                 <button
                   key={u.unitId} onClick={() => setSelectedId(u.unitId)}
-                  style={{
-                    display: 'flex', flexDirection: 'column', gap: 3, width: '100%', textAlign: 'left',
-                    padding: '12px 16px', borderBottom: `1px solid ${color.borderMuted}`, cursor: 'pointer', font: 'inherit',
-                    borderLeft: `3px solid ${on ? color.gold : 'transparent'}`,
-                    background: on ? color.goldTint : 'transparent',
-                  }}
+                  className={cx(
+                    'flex flex-col gap-[3px] w-full text-left py-3 px-4 cursor-pointer [font:inherit]',
+                    '[border-bottom:1px_solid_var(--color-line-soft)]',
+                    on ? '[border-left:3px_solid_var(--color-gold)] bg-gold-tint' : '[border-left:3px_solid_transparent] bg-transparent',
+                  )}
                 >
-                  <span style={{ fontSize: 13.5, fontWeight: 600 }}>{u.propertyName}</span>
-                  <span style={{ fontSize: text.small, color: color.textMuted }}>{u.unitNumber} · {rm(u.baseRate, { cents: false })}</span>
-                  <span style={{ fontSize: text.micro, color: failed ? '#A8352F' : color.faint }}>{syncNote}</span>
+                  <span className="text-[13.5px] font-semibold">{u.propertyName}</span>
+                  <span className="text-[12px] text-muted-ink">{u.unitNumber} · {rm(u.baseRate, { cents: false })}</span>
+                  <span className={cx('text-[11px]', failed ? TONE.critical.text : 'text-faint')}>{syncNote}</span>
                 </button>
               );
             })}
@@ -280,46 +273,46 @@ export default function PricingPage() {
           {/* Selected unit detail */}
           {selected && (
             <Card style={{ flex: '3 1 460px', minWidth: 300 }}>
-              <div style={{ padding: '16px 20px', borderBottom: `1px solid ${color.border}`, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                  <span style={{ fontSize: 15, fontWeight: 600 }}>{selected.propertyName} {selected.unitNumber}</span>
-                  <span style={{ fontSize: text.small, color: color.textMuted }}>Tap any rate to edit. Changes stay local until you push.</span>
+              <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line)] flex items-baseline justify-between gap-4 flex-wrap">
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  <span className="text-[15px] font-semibold">{selected.propertyName} {selected.unitNumber}</span>
+                  <span className="text-[12px] text-muted-ink">Tap any rate to edit. Changes stay local until you push.</span>
                 </div>
               </div>
 
               {/* Base web rate (external) vs cost floor (internal) */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 1, background: color.border, borderBottom: `1px solid ${color.border}` }}>
-                <div style={{ background: '#FFFFFF', padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: text.small, color: color.textMuted }}>Base web rate</span>
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-px bg-line [border-bottom:1px_solid_var(--color-line)]">
+                <div className="bg-card py-[14px] px-5 flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] text-muted-ink">Base web rate</span>
                     <Tag label="SELL" kind="external" />
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <span style={{ fontSize: text.micro, color: color.faint }}>Direct · per night</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-faint">Direct · per night</span>
                     <EditableMoney sen={selected.baseRate} ariaLabel="base web rate" onCommit={s => setBase(selected.unitId, s)} />
                   </div>
                 </div>
-                <div style={{ background: '#FFFFFF', padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: text.small, color: color.textMuted }}>Cost floor</span>
+                <div className="bg-card py-[14px] px-5 flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] text-muted-ink">Cost floor</span>
                     <Tag label="INTERNAL" kind="internal" />
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <span style={{ fontSize: text.micro, color: color.faint }}>Never sent to a channel</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-faint">Never sent to a channel</span>
                     <EditableMoney sen={selected.costFloor} ariaLabel="cost floor" tone="floor" onCommit={s => setFloor(selected.unitId, s)} />
                   </div>
                 </div>
               </div>
 
               {/* Uplift table */}
-              <div style={{ overflowX: 'auto' }}>
-                <div style={{ minWidth: 640 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '9px 20px', background: color.muted, borderBottom: `1px solid ${color.border}`, fontSize: text.micro, fontWeight: 600, letterSpacing: '0.05em', color: color.textMuted }}>
+              <div className="overflow-x-auto">
+                <div className="min-w-[640px]">
+                  <div className={cx(COLS, 'grid gap-3 py-[9px] px-5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-[11px] font-semibold tracking-[0.05em] text-muted-ink')}>
                     <div>CHANNEL</div>
-                    <div style={{ textAlign: 'right' }}>UPLIFT</div>
-                    <div style={{ textAlign: 'right' }}>GUEST PAYS</div>
-                    <div style={{ textAlign: 'right' }}>WEEKEND</div>
-                    <div style={{ textAlign: 'right' }}>YOU KEEP</div>
+                    <div className="text-right">UPLIFT</div>
+                    <div className="text-right">GUEST PAYS</div>
+                    <div className="text-right">WEEKEND</div>
+                    <div className="text-right">YOU KEEP</div>
                     <div>SYNC</div>
                   </div>
 
@@ -331,22 +324,22 @@ export default function PricingPage() {
                     const belowFloor = youKeep < selected.costFloor;
                     const s = SYNC[r.sync];
                     return (
-                      <div key={r.channel} style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, alignItems: 'center', minHeight: 52, padding: '8px 20px', borderBottom: `1px solid ${color.borderMuted}` }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                      <div key={r.channel} className={cx(COLS, 'grid gap-3 items-center min-h-[52px] py-2 px-5 [border-bottom:1px_solid_var(--color-line-soft)]')}>
+                        <div className="flex items-center gap-2.5 min-w-0">
                           <ChannelMark ch={r.channel} size={20} />
-                          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                            <span style={{ fontSize: 13 }}>{CH[r.channel].label}</span>
-                            <span style={{ fontSize: text.micro, color: color.faint }}>{commission}% fee</span>
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-[13px]">{CH[r.channel].label}</span>
+                            <span className="text-[11px] text-faint">{commission}% fee</span>
                           </div>
                         </div>
-                        <div style={{ textAlign: 'right' }}>
+                        <div className="text-right">
                           <EditableMoney sen={r.upliftSen} ariaLabel={`${CH[r.channel].label} uplift`} onCommit={s2 => setUplift(selected.unitId, r.channel, s2)} />
                         </div>
-                        <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{rm(guestPays, { cents: false })}</span>
-                        <span style={{ fontSize: 13, textAlign: 'right', color: color.textMuted, fontVariantNumeric: 'tabular-nums' }}>{rm(weekend, { cents: false })}</span>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                          <span style={{ fontSize: 13, textAlign: 'right', color: belowFloor ? '#A8352F' : color.ink, fontVariantNumeric: 'tabular-nums' }}>{rm(youKeep, { cents: false })}</span>
-                          {belowFloor && <span style={{ fontSize: text.micro, color: '#A8352F' }}>Below floor</span>}
+                        <span className="text-[13px] font-semibold text-right [font-variant-numeric:tabular-nums]">{rm(guestPays, { cents: false })}</span>
+                        <span className="text-[13px] text-right text-muted-ink [font-variant-numeric:tabular-nums]">{rm(weekend, { cents: false })}</span>
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className={cx('text-[13px] text-right [font-variant-numeric:tabular-nums]', belowFloor ? TONE.critical.text : 'text-ink')}>{rm(youKeep, { cents: false })}</span>
+                          {belowFloor && <span className={cx('text-[11px]', TONE.critical.text)}>Below floor</span>}
                         </div>
                         <div><Badge tone={s.tone} label={s.label} size="sm" /></div>
                       </div>
@@ -355,27 +348,25 @@ export default function PricingPage() {
                 </div>
               </div>
 
-              <div style={{ padding: '10px 20px', borderBottom: `1px solid ${color.border}`, display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: text.micro, color: color.textMuted }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Tag label="SELL" kind="external" /> what the guest pays on the channel</span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Tag label="INTERNAL" kind="internal" /> what you keep after the platform fee</span>
+              <div className="py-[10px] px-5 [border-bottom:1px_solid_var(--color-line)] flex gap-4 flex-wrap text-[11px] text-muted-ink">
+                <span className="inline-flex items-center gap-1.5"><Tag label="SELL" kind="external" /> what the guest pays on the channel</span>
+                <span className="inline-flex items-center gap-1.5"><Tag label="INTERNAL" kind="internal" /> what you keep after the platform fee</span>
               </div>
 
               {/* Push rates */}
-              <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14, background: color.page }}>
-                <span style={{ fontSize: text.small, fontWeight: 600 }}>Push rates</span>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div className="py-4 px-5 flex flex-col gap-[14px] bg-page">
+                <span className="text-[12px] font-semibold">Push rates</span>
+                <div className="flex gap-2 flex-wrap">
                   {PUSHABLE.map(c => {
                     const on = !!pushSel[c];
                     return (
                       <button
                         key={c} onClick={() => setPushSel(p => ({ ...p, [c]: !p[c] }))}
                         aria-pressed={on}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 12px 0 10px',
-                          borderRadius: radius.pill, cursor: 'pointer', font: 'inherit', fontSize: 12.5, fontWeight: on ? 600 : 500,
-                          border: `1px solid ${on ? color.gold : color.border}`,
-                          background: on ? color.goldTint : '#FFFFFF', color: on ? color.ink : color.textMuted,
-                        }}
+                        className={cx(
+                          'inline-flex items-center gap-[7px] h-[34px] pl-[10px] pr-3 py-0 rounded-pill cursor-pointer [font-family:inherit] text-[12.5px] border border-solid',
+                          on ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink',
+                        )}
                       >
                         <ChannelMark ch={c} size={18} muted={!on} />
                         {CH[c].label}
@@ -384,18 +375,18 @@ export default function PricingPage() {
                     );
                   })}
                 </div>
-                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: text.small, color: color.textMuted }}>
+                <div className="flex gap-[14px] flex-wrap items-end">
+                  <label className="flex flex-col gap-[5px] text-[12px] text-muted-ink">
                     From
                     <input type="date" value={from} min={TODAY} onChange={e => setFrom(e.target.value)}
-                      style={{ ...inputStyle, textAlign: 'left', width: 160, borderColor: color.border }} />
+                      className={cx(INPUT_CLASS, 'w-[160px] text-left border-line')} />
                   </label>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: text.small, color: color.textMuted }}>
+                  <label className="flex flex-col gap-[5px] text-[12px] text-muted-ink">
                     To
                     <input type="date" value={to} min={from} onChange={e => setTo(e.target.value)}
-                      style={{ ...inputStyle, textAlign: 'left', width: 160, borderColor: color.border }} />
+                      className={cx(INPUT_CLASS, 'w-[160px] text-left border-line')} />
                   </label>
-                  <div style={{ marginLeft: 'auto' }}>
+                  <div className="ml-auto">
                     <Button
                       variant="primary" icon={<Icon name="Send" size="sm" />}
                       onClick={pushRates}
