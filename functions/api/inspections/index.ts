@@ -1,80 +1,61 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession } from '../../_lib/auth';
+import { requireSession, isFieldRole } from '../../_lib/auth';
+import { resolveUnit, refOf, stampMyt } from '../../_lib/ops';
 
+const TEMPLATE = [
+  { item: 'Linen set complete and pressed', ok: null, required: true },
+  { item: 'Bathroom sealed and dry', ok: null, required: true },
+  { item: 'Consumables restocked', ok: null, required: true },
+  { item: 'Aircon cooling within 10 minutes', ok: null, required: true },
+  { item: 'Wifi reachable at 20 Mbps', ok: null, required: false },
+];
+
+/** GET /api/inspections — every inspection with its checklist. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
 
-  const rows = await all(env, `
-    SELECT i.*, u.unit_number, p.name AS property_name, COALESCE(x.full_name,'') AS inspector
+  const rows = await all<any>(env, `
+    SELECT i.*, u.unit_number, p.name AS property_name, COALESCE(x.full_name, '') AS inspector
     FROM inspections i
     JOIN units u ON u.id = i.unit_id
     JOIN properties p ON p.id = u.property_id
     LEFT JOIN users x ON x.id = i.inspector_id
-    ORDER BY i.inspected_at DESC NULLS FIRST`);
+    ${isFieldRole(session.role) ? 'WHERE i.inspector_id = ?' : ''}
+    ORDER BY i.inspected_at DESC NULLS FIRST, i.created_at DESC`, ...(isFieldRole(session.role) ? [session.userId] : []));
 
   return json({
-    generatedAt: new Date().toISOString(),
-    data: rows.map((r: any) => ({
-      id: r.id, unitNumber: r.unit_number, propertyName: r.property_name,
+    generatedAt: nowIso(),
+    data: rows.map(r => ({
+      id: r.id, ref: refOf('INS', r.id), unitId: r.unit_id, unitNumber: r.unit_number, propertyName: r.property_name,
       inspector: r.inspector || null, state: r.state,
       passed: r.passed === null ? null : !!r.passed,
-      checklist: JSON.parse(r.checklist || '[]'),
-      notes: r.notes, inspectedAt: r.inspected_at,
+      checklist: (JSON.parse(r.checklist || '[]') as any[]).map(c => ({
+        ...c, required: c.required !== false, ...(c.linkedIssue ? { linkedIssue: refOf('MNT', c.linkedIssue) } : {}),
+      })),
+      notes: r.notes, inspectedAt: stampMyt(r.inspected_at),
     })),
   });
 };
 
-/** POST /api/inspections { unitId, taskId? } — starts one from the template. */
+/** POST /api/inspections { unitId | unitNumber, propertyName?, taskId? } — starts one from the template.
+ *  If the unit already has an inspection in progress, that one is returned instead of a second. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
 
-  const { unitId, taskId } = await request.json<{ unitId: string; taskId?: string }>();
-  if (!unitId) return fail('VALIDATION', 'A unit is required.', 422);
+  const b = await request.json<any>().catch(() => null);
+  const unit = await resolveUnit(env, b?.unitId ?? b?.unitNumber, b?.propertyName);
+  if (unit === 'ambiguous') return fail('VALIDATION', 'More than one unit has that number. Say which building.', 422);
+  if (!unit) return fail('NOT_FOUND', 'That unit does not exist.', 404);
 
-  const TEMPLATE = [
-    { item: 'Linen set complete and pressed', ok: null },
-    { item: 'Bathroom sealed and dry', ok: null },
-    { item: 'Consumables restocked', ok: null },
-    { item: 'Aircon cooling within 10 minutes', ok: null },
-    { item: 'Wifi reachable at 20 Mbps', ok: null },
-  ];
+  const open = await one<{ id: string }>(env, `SELECT id FROM inspections WHERE unit_id = ? AND state IN ('open','assigned','in_progress') ORDER BY created_at DESC LIMIT 1`, unit.id);
+  if (open) return json({ id: open.id, existing: true });
 
   const id = crypto.randomUUID();
   await run(env, `
     INSERT INTO inspections (id, unit_id, task_id, inspector_id, state, checklist, created_at)
-    VALUES (?, ?, ?, ?, 'assigned', ?, ?)`,
-    id, unitId, taskId ?? null, session.userId, JSON.stringify(TEMPLATE), nowIso());
-
-  await audit(env, {
-    actorId: session.userId, actorLabel: session.fullName, action: 'inspection.start',
-    entityTable: 'inspections', entityId: id, after: { unitId },
-  });
-  return json({ id, checklist: TEMPLATE }, 201);
-};
-
-/** PATCH — submit the completed checklist. A fail keeps the unit out of service. */
-export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
-  const { session, response } = await requireSession(request, env);
-  if (!session) return response!;
-
-  const { id, checklist, notes } = await request.json<{ id: string; checklist: { item: string; ok: boolean; note?: string }[]; notes?: string }>();
-  const insp = await one<any>(env, 'SELECT id, state, unit_id FROM inspections WHERE id = ?', id);
-  if (!insp) return fail('NOT_FOUND', 'That inspection no longer exists.', 404);
-
-  const passed = checklist.every(c => c.ok);
-  await run(env, "UPDATE inspections SET state = ?, passed = ?, checklist = ?, notes = ?, inspected_at = ? WHERE id = ?",
-    passed ? 'resolved' : 'reopened', passed ? 1 : 0, JSON.stringify(checklist), notes ?? null, nowIso(), id);
-
-  // A unit is released for check-in only on a pass.
-  await run(env, 'UPDATE units SET readiness = ?, updated_at = ? WHERE id = ?',
-    passed ? 'ready' : 'inspection', nowIso(), insp.unit_id);
-
-  await audit(env, {
-    actorId: session.userId, actorLabel: session.fullName, action: 'inspection.submit',
-    entityTable: 'inspections', entityId: id,
-    before: { state: insp.state }, after: { passed, failedItems: checklist.filter(c => !c.ok).map(c => c.item) },
-  });
-  return json({ ok: true, passed });
+    VALUES (?, ?, ?, ?, 'assigned', ?, ?)`, id, unit.id, b.taskId ?? null, session.userId, JSON.stringify(TEMPLATE), nowIso());
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'inspection.create', entityTable: 'inspections', entityId: id, after: { unitId: unit.id } });
+  return json({ id }, 201);
 };

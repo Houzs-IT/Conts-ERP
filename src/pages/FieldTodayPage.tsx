@@ -30,6 +30,7 @@ import type { SyncState, Tone, UnitReadiness } from '../lib/types';
 
 interface FieldTask {
   id: string;
+  unitId?: string;
   unit: { unitNumber: string; propertyName: string };
   addressLine: string;
   accessInstruction: string | null;
@@ -161,7 +162,7 @@ export default function FieldTodayPage() {
     setDamage(null);
     try {
       await api.post('/maintenance/issues', {
-        unitId: d.task.id, title: d.title.trim(), detail: d.detail.trim() || null,
+        unitId: (d.task as FieldTask).unitId ?? (d.task as FieldTask).unit.unitNumber, propertyName: (d.task as FieldTask).unit.propertyName, title: d.title.trim(), detail: d.detail.trim() || null,
         blocksUnit: d.blocksUnit, photoIds: [], source: 'field_app',
       });
       toast({ tone: 'success', title: 'Damage reported.', body: `Issue opened on ${unitRef(d.task.unit.propertyName, d.task.unit.unitNumber)}.` });

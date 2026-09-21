@@ -19,7 +19,7 @@ import type { TaskState } from '../lib/types';
 // to the maintenance issue that tracks it.
 interface Check { item: string; ok: boolean | null; note?: string; required?: boolean; linkedIssue?: string }
 interface Inspection {
-  id: string; unitNumber: string; propertyName: string; inspector: string | null;
+  id: string; ref?: string; unitId?: string; unitNumber: string; propertyName: string; inspector: string | null;
   state: TaskState; passed: boolean | null; checklist: Check[]; notes: string | null; inspectedAt: string | null;
 }
 interface Payload { data: Inspection[]; generatedAt: string }
@@ -72,7 +72,6 @@ const nowStamp = () => {
   const t = d.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: MYT });
   return `${day} ${t}`;
 };
-const newIssueId = () => `MNT-${Math.floor(1000 + Math.random() * 9000)}`;
 const unitRef = (i: Inspection) => `${i.propertyName} ${i.unitNumber}`;
 
 function counts(cl: Check[]) {
@@ -128,7 +127,7 @@ export default function InspectionsPage() {
     if (i.state === 'assigned' || i.state === 'open') {
       patch(i.id, { state: 'in_progress' });
       toast({ tone: 'info', title: 'Inspection started.', body: `Checklist opened for ${unitRef(i)}.` });
-      fire(api.post('/inspections', { unitId: i.unitNumber }));
+      fire(api.post(`/inspections/${i.id}/start`, {}));
     }
     setOpenId(i.id);
   }
@@ -144,17 +143,22 @@ export default function InspectionsPage() {
     fire(api.post(`/inspections/${i.id}/items`, { item: current.item, result: next }));
   }
 
-  function raiseIssue(i: Inspection, idx: number) {
-    const id = newIssueId();
+  async function raiseIssue(i: Inspection, idx: number) {
     const item = i.checklist[idx];
-    const checklist = i.checklist.map((c, n) =>
-      n === idx ? { ...c, linkedIssue: id, note: c.note?.trim() ? c.note : `Raised as ${id}.` } : c);
-    patch(i.id, { checklist });
-    toast({ tone: 'success', title: 'Maintenance issue raised.', body: `${id} raised for "${item.item}".` });
-    fire(api.post('/maintenance/issues', {
-      unitId: i.unitNumber, title: item.item, detail: `Failed on inspection ${i.id}.`,
-      photoIds: [], blocksUnit: false, quotedAmount: null, chargeTo: 'owner',
-    }));
+    try {
+      const made = await api.post<{ id: string }>('/maintenance/issues', {
+        unitId: i.unitId ?? i.unitNumber, propertyName: i.propertyName, title: item.item, detail: `Failed on inspection ${i.ref ?? i.id}.`,
+        photoIds: [], blocksUnit: false, quotedAmount: null, chargeTo: 'owner',
+      });
+      const ref = `MNT-${made.id.replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase()}`;
+      const note = item.note?.trim() ? item.note : `Raised as ${ref}.`;
+      const checklist = i.checklist.map((c, n) => n === idx ? { ...c, linkedIssue: ref, note } : c);
+      patch(i.id, { checklist });
+      toast({ tone: 'success', title: 'Maintenance issue raised.', body: `${ref} raised for "${item.item}".` });
+      fire(api.post(`/inspections/${i.id}/items`, { item: item.item, result: false, note, linkedIssue: made.id }));
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Could not raise the issue.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    }
   }
 
   function setNote(i: Inspection, idx: number, note: string) {
@@ -170,7 +174,7 @@ export default function InspectionsPage() {
       tone: 'success', title: 'Inspection passed.',
       body: `${unitRef(i)} is released for check-in. The unit now shows ready.`,
     });
-    fire(api.post(`/inspections/${i.id}/complete`, { result: 'pass' }));
+    fire(api.post(`/inspections/${i.id}/complete`, { result: 'pass', checklist: i.checklist }));
   }
 
   function completeFail(i: Inspection) {
@@ -182,7 +186,7 @@ export default function InspectionsPage() {
       tone: 'warning', title: 'Inspection failed.',
       body: `${unitRef(i)} stays off check-in. ${failedCount} ${failedCount === 1 ? 'item is' : 'items are'} tracked as maintenance.`,
     });
-    fire(api.post(`/inspections/${i.id}/complete`, { result: 'fail' }));
+    fire(api.post(`/inspections/${i.id}/complete`, { result: 'fail', checklist: i.checklist }));
   }
 
   // ---- Derived -------------------------------------------------------------
@@ -205,14 +209,14 @@ export default function InspectionsPage() {
     : confirm!.kind === 'pass' ? {
         title: `Pass ${unitRef(confirmInspection)}?`,
         body: 'The unit is released for check-in and shows ready. Housekeeping is cleared for the next stay.',
-        meta: `${confirmInspection.id} · ${confirmInspection.inspector ?? 'Unassigned'} · all required checks passed`,
+        meta: `${confirmInspection.ref ?? confirmInspection.id} · ${confirmInspection.inspector ?? 'Unassigned'} · all required checks passed`,
         confirmLabel: 'Pass and release',
         onConfirm: () => completePass(confirmInspection),
       }
     : {
         title: `Complete ${unitRef(confirmInspection)} as failed?`,
         body: 'The unit stays off check-in until a follow-up inspection passes. Each failed item is tracked as a maintenance issue.',
-        meta: `${confirmInspection.id} · ${gate(confirmInspection.checklist).failed.length} failed · release stays blocked`,
+        meta: `${confirmInspection.ref ?? confirmInspection.id} · ${gate(confirmInspection.checklist).failed.length} failed · release stays blocked`,
         danger: true,
         confirmLabel: 'Complete as failed',
         onConfirm: () => completeFail(confirmInspection),
@@ -311,7 +315,7 @@ function InspectionRow({ inspection: i, onOpen }: { inspection: Inspection; onOp
       <div className="py-[15px] px-5 border-b border-line-soft flex items-center justify-between gap-4 flex-wrap">
         <div className="flex flex-col gap-[3px] min-w-[220px] flex-1">
           <div className="flex items-center gap-[9px] flex-wrap">
-            <span className="font-mono text-[11px] text-muted-ink">{i.id}</span>
+            <span className="font-mono text-[11px] text-muted-ink">{i.ref ?? i.id}</span>
             <span className="text-[14px] font-semibold">{unitRef(i)}</span>
             <Badge tone={TASK[i.state].tone} label={TASK[i.state].label} />
             <ReleaseBadge passed={i.passed} />
@@ -381,7 +385,7 @@ function ChecklistPanel({
         <div className="flex items-start justify-between gap-3">
           <div className="flex flex-col gap-1 min-w-0">
             <div className="flex items-center gap-[9px] flex-wrap">
-              <span className="font-mono text-[11px] text-muted-ink">{i.id}</span>
+              <span className="font-mono text-[11px] text-muted-ink">{i.ref ?? i.id}</span>
               <h2 className="m-0 text-[18px] font-semibold">{unitRef(i)}</h2>
             </div>
             <span className="text-[12px] text-muted-ink">

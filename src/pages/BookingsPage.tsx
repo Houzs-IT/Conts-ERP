@@ -10,6 +10,7 @@ import { Drawer, Dialog, type DialogSpec } from '../components/Dialog';
 import { Field } from '../components/Field';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
+import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
 import { todayMyt, rm, dateRange, date as fmtDate, time as fmtTime, nights as fmtNights } from '../lib/format';
@@ -57,16 +58,6 @@ const FILTERS = [
 type FilterKey = typeof FILTERS[number]['key'];
 const TODAY = todayMyt();
 
-/** The unit roster a manual or imported booking is placed against. Ids mirror the
- *  calendar's unit ids so the optimistic POST carries a real `unitId`. */
-const UNITS: { id: string; unitNumber: string; propertyName: string }[] = [
-  { id: 'u1', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One' },
-  { id: 'u2', unitNumber: '#MK2-09-16', propertyName: 'Arte Mont Kiara' },
-  { id: 'u3', unitNumber: '#MK2-09-15', propertyName: 'Arte Mont Kiara' },
-  { id: 'u4', unitNumber: '#C-31-14', propertyName: 'Sentral Suites' },
-  { id: 'u5', unitNumber: '#B-08-11', propertyName: 'Arcoris Mont Kiara' },
-  { id: 'u6', unitNumber: '#15-06', propertyName: 'Scarletz KLCC' },
-];
 /** Channels a manual entry may use — revenue channels only; blocks/owner stays are set on the calendar. */
 const CREATE_CHANNELS: BookingChannel[] = ['direct', 'airbnb', 'booking_com', 'agoda'];
 
@@ -98,6 +89,7 @@ function feeLines(r: Row) {
 }
 
 export default function BookingsPage() {
+  const UNITS = useUnitRoster();
   const { data, loading, error, reload } = useApi<Payload>('/reservations', FALLBACK);
   const toast = useToast();
 
@@ -215,6 +207,7 @@ export default function BookingsPage() {
     checkIn: string; checkOut: string; guestsCount: number; grossSen: number;
   }) {
     const unit = UNITS.find(u => u.id === input.unitId) ?? UNITS[0];
+    if (!unit) return;
     const id = crypto.randomUUID();
     const row: Row = {
       id, externalRef: `MAN-${id.slice(0, 6).toUpperCase()}`, guestName: input.guestName, guestsCount: input.guestsCount,
@@ -240,7 +233,7 @@ export default function BookingsPage() {
     e.target.value = ''; // allow re-selecting the same file
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => setImportRows(buildImport(String(reader.result ?? '')));
+    reader.onload = () => setImportRows(buildImport(String(reader.result ?? ''), UNITS));
     reader.readAsText(file);
   }
   function commitImport() {
@@ -431,7 +424,7 @@ export default function BookingsPage() {
       </Drawer>
       <Dialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
 
-      {creating && <CreateReservationModal onClose={() => setCreating(false)} onCreate={createReservation} />}
+      {creating && <CreateReservationModal units={UNITS} onClose={() => setCreating(false)} onCreate={createReservation} />}
       {importRows && <ImportPreviewModal rows={importRows} onClose={() => setImportRows(null)} onConfirm={commitImport} />}
       {messageRow && <MessageModal r={messageRow} onClose={() => setMessageRow(null)} onSend={sendGuestMessage} />}
       {open && datesOpen && <ChangeDatesModal r={open} onClose={() => setDatesOpen(false)} onConfirm={submitChangeDates} />}
@@ -624,7 +617,7 @@ function parseCsv(text: string): string[][] {
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-function buildImport(text: string): ParsedRow[] {
+function buildImport(text: string, UNITS: RosterUnit[]): ParsedRow[] {
   const grid = parseCsv(text);
   if (grid.length < 2) return [{ line: 0, label: 'File', error: 'No data rows found. Expected a header row plus at least one reservation.' }];
   const header = grid[0].map(h => h.trim().toLowerCase());
@@ -689,11 +682,12 @@ function Modal({ title, sub, onClose, children, maxWidth = 460 }: { title: strin
   );
 }
 
-function CreateReservationModal({ onClose, onCreate }: {
+function CreateReservationModal({ units: UNITS, onClose, onCreate }: {
+  units: RosterUnit[];
   onClose: () => void;
   onCreate: (input: { unitId: string; channel: BookingChannel; guestName: string; phone: string; email: string; checkIn: string; checkOut: string; guestsCount: number; grossSen: number }) => void;
 }) {
-  const [unitId, setUnitId] = useState(UNITS[0].id);
+  const [unitId, setUnitId] = useState(UNITS[0]?.id ?? '');
   const [channel, setChannel] = useState<BookingChannel>('direct');
   const [guestName, setGuestName] = useState('');
   const [phone, setPhone] = useState('');

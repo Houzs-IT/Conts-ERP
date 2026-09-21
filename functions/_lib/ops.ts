@@ -76,3 +76,33 @@ export async function assignTask(env: Env, session: Session, taskId: string, ass
   });
   return json({ ok: true, assigneeName: assignee.full_name, notified: delivery.state });
 }
+
+/** A unit given as an id or as its display number (the screens send either). Property name narrows a number shared by two buildings. */
+export async function resolveUnit(env: Env, ref: unknown, propertyName?: unknown): Promise<{ id: string } | 'ambiguous' | null> {
+  const r = String(ref ?? '').trim();
+  if (!r) return null;
+  const byId = await one<{ id: string }>(env, 'SELECT id FROM units WHERE id = ?', r);
+  if (byId) return byId;
+  const prop = String(propertyName ?? '').trim().replace(/[%_]/g, m => '\\' + m);
+  const rows = await all<{ id: string }>(env, `
+    SELECT u.id FROM units u JOIN properties p ON p.id = u.property_id
+    WHERE lower(u.unit_number) = lower(?) AND (? = '' OR lower(p.name) LIKE lower(?))`, r, prop, `${prop}%`);
+  return rows.length === 1 ? rows[0] : rows.length > 1 ? 'ambiguous' : null;
+}
+
+/** Short display date, e.g. "14 Sep", in Malaysia time. */
+export function shortDate(iso: string | null): string | null {
+  if (!iso) return null;
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' });
+}
+
+/** A short human reference for a record id, e.g. INS-3F9A21. Ids themselves stay opaque. */
+export const refOf = (prefix: string, id: string) => `${prefix}-${id.replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase()}`;
+
+/** "15 Sep 16:10" in Malaysia time. */
+export function stampMyt(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  const date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' });
+  return `${date} ${hhmm(iso)}`;
+}
