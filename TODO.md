@@ -18,3 +18,11 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Calendar rate model (multipliers) and Pricing screen (base + uplift) should be aligned.
 - Automatic staging preview deploy from the `staging` branch; keep `staging` level with `main`.
 - Remove leftovers from the old Cloudflare database (scripts/d1-source.toml, D1 setup scripts) once the old D1 is retired.
+
+## Future (planning only, not started): guests pay online for direct bookings
+- Only direct bookings need it. Airbnb, Booking.com and Agoda collect the guest's money themselves.
+- Flow: reservation -> "Send payment link" (WhatsApp/email) -> guest pays on the gateway's own page -> gateway calls our webhook -> reservation marked paid -> amount feeds the owner statement. Refunds and failures show on the reservation. Card numbers never touch our system.
+- Gateway candidates for Malaysia (compare fees and sign-up rules at the time): Billplz or Toyyibpay (FPX, simple), HitPay (FPX, DuitNow QR, cards), Stripe (best tooling and foreign cards, more setup for local banks). Leaning Billplz or HitPay for mostly local guests.
+- Decisions needed first: deposit vs full payment vs damage deposit; local vs foreign guests; which company account and documents the gateway needs.
+- Build order when the time comes: payment link + webhook + paid status -> refunds -> deposits -> optional guest booking page.
+- Owner payouts stay separate (bank transfers from the Payouts screen); the gateway only collects.
