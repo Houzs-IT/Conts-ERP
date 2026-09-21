@@ -23,6 +23,19 @@ interface SearchResult { id: string; label: string; sub: string; kind: SearchKin
 
 interface Notif { id: string; title: string; body: string; target: string; at: string; readAt: string | null }
 
+/** GET /api/notifications answers { data: notification_log rows }, not a bare list. */
+interface NotifPayload { data?: { id: string; template: string; queued_at: string; sent_at: string | null }[] }
+
+function toNotifs(raw: Notif[] | NotifPayload | null): Notif[] | null {
+  if (Array.isArray(raw)) return raw;
+  if (!raw || !Array.isArray(raw.data)) return null;
+  return raw.data.map(r => ({
+    id: String(r.id),
+    title: r.template.replace(/[._]/g, ' ').replace(/^./, c => c.toUpperCase()),
+    body: '', target: '/', at: (r.queued_at ?? '').slice(11, 16), readAt: r.sent_at,
+  }));
+}
+
 /** Dev fallback so the palette renders without a backend; a live API returns
  *  the same shape already scoped to the signed-in role. */
 const SEARCH_FALLBACK: SearchResult[] = [
@@ -98,7 +111,8 @@ export default function TopBar({
   const [bellOpen, setBellOpen] = useState(false);
   const [readIds, setReadIds] = useState<Record<string, boolean>>({});
 
-  const { data: notifData } = useApi<Notif[]>('/notifications', NOTIF_FALLBACK);
+  const { data: notifRaw } = useApi<Notif[] | NotifPayload>('/notifications', NOTIF_FALLBACK);
+  const notifData = useMemo(() => toNotifs(notifRaw), [notifRaw]);
   const notifs = useMemo(() => (notifData ?? NOTIF_FALLBACK).map(n => ({
     ...n, read: readIds[n.id] ?? !!n.readAt,
   })), [notifData, readIds]);

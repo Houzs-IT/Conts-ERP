@@ -19,6 +19,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       AND channel NOT IN ('maintenance_block','owner_stay')
       AND check_in BETWEEN ? AND ?`, start, end);
 
+  const payout = await one<{ net: number }>(env, `SELECT COALESCE(SUM(net_payout), 0) AS net FROM owner_statements WHERE substr(period_start, 1, 7) = ?`, period);
   const units = await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM units WHERE is_listed = 1');
   const available = (units?.n ?? 0) * 30;
   const nights = rev?.nights ?? 0;
@@ -31,6 +32,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       { key: 'accommodation_revenue', value: collected, currency: 'MYR' },
       { key: 'adr', value: nights ? Math.round(collected / nights) : 0, currency: 'MYR' },
       { key: 'revpar', value: available ? Math.round(collected / available) : 0, currency: 'MYR' },
+      { key: 'net_owner_payout', value: Number(payout?.net ?? 0), currency: 'MYR' },
     ] : []),
   ];
 
