@@ -70,9 +70,26 @@ QUIET_HOURS_END = "8"
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Staging: Pages does not support custom named environments like this project
-# template assumed (only "production" and "preview" are valid for Pages). Every
-# deploy from a non-production branch already gets its own *.pages.dev preview
-# automatically; if a separate staging D1 is wanted later, bind it under
-# `[env.preview]` instead, following Cloudflare's Pages environments docs.
+# Staging: Pages only has "production" and "preview". Preview deploys (any non-production
+# branch) use the STAGING Supabase project through this Hyperdrive config, so a preview can
+# never touch production data. Bindings are not inherited, so [vars] are repeated.
 # ---------------------------------------------------------------------------
+[env.preview]
+[[env.preview.hyperdrive]]
+binding = "HYPERDRIVE"
+id = "9c21c4f2b5f9470cb7df0afeb9ad633f"
+
+[env.preview.vars]
+APP_NAME = "The Conts Property OS (staging)"
+DEFAULT_LOCALE = "en-MY"
+TIMEZONE = "Asia/Kuala_Lumpur"
+CURRENCY = "MYR"
+CURRENCY_PREFIX = "RM "
+MONEY_MINOR_UNITS = "100"
+SESSION_TTL_HOURS = "8"
+SESSION_ABSOLUTE_DAYS = "30"
+LOGIN_MAX_ATTEMPTS = "5"
+LOGIN_LOCKOUT_MINUTES = "15"
+RESET_TOKEN_MINUTES = "60"
+QUIET_HOURS_START = "22"
+QUIET_HOURS_END = "8"

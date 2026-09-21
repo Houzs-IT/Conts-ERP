@@ -17,7 +17,12 @@ const APPLY = process.argv.includes('--apply');
 const LOCAL = process.argv.includes('--local');
 const persist = process.argv.includes('--persist-to') ? process.argv[process.argv.indexOf('--persist-to') + 1] : null;
 const vars = (() => { try { return readFileSync('.dev.vars', 'utf8'); } catch { return ''; } })();
-const url = process.env.DATABASE_URL ?? vars.match(/^DATABASE_URL="([^"]+)"/m)?.[1];
+const read = (k) => process.env[k] ?? vars.match(new RegExp(`^${k}="([^"]+)"`, 'm'))?.[1];
+let url = read('DATABASE_URL');
+// .dev.vars holds the admin (postgres) URL; the copy runs as pos_app so rows are owned by it.
+if (url && /\/\/postgres[.:]/.test(url) && read('POS_APP_PASSWORD')) {
+  const u = new URL(url); u.username = u.username.replace(/^postgres/, 'pos_app'); u.password = encodeURIComponent(read('POS_APP_PASSWORD')); url = u.toString();
+}
 if (!url) { console.error('DATABASE_URL not set (environment or .dev.vars). Nothing was done.'); process.exit(1); }
 console.log(`Source: D1 ${LOCAL ? '(local copy)' : '(REMOTE, theconts-prod)'}`);
 console.log(`Target: ${url.match(/pos_app\.([a-z0-9]{20})/)?.[1] ?? url.replace(/\/\/[^@]*@/, '//***@')}${APPLY ? '' : '  (plan only)'}`);
