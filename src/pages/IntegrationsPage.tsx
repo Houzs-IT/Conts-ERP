@@ -115,24 +115,34 @@ export default function IntegrationsPage() {
   async function retrySync(row: Row) {
     const label = PROVIDER_LABEL[row.provider] ?? row.provider;
     setSyncing(s => ({ ...s, [row.id]: true }));
-    try { await api.post(`/integrations/${row.provider}/sync`, {}); } catch { /* dev: no backend, keep optimistic */ }
-    setEdits(e => ({ ...e, [row.id]: { ...e[row.id], lastSyncedAt: new Date().toISOString() } }));
-    setSyncing(s => ({ ...s, [row.id]: false }));
-    toast({ tone: 'success', title: `${label} sync started.`, body: 'Pulling new and changed reservations. Any expired channels are skipped and named.' });
+    try {
+      await api.post(`/integrations/${row.provider}/sync`, {});
+      setEdits(e => ({ ...e, [row.id]: { ...e[row.id], lastSyncedAt: new Date().toISOString() } }));
+      toast({ tone: 'success', title: `${label} sync started.`, body: 'Pulling new and changed reservations. Any expired channels are skipped and named.' });
+    } catch (e) {
+      toast({ tone: 'critical', title: `${label} did not sync.`, body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    } finally {
+      setSyncing(s => ({ ...s, [row.id]: false }));
+    }
   }
 
   /** POST /api/integrations/:provider/connect — new key, resumes from last pull. */
   async function reconnect(row: Row) {
     const label = PROVIDER_LABEL[row.provider] ?? row.provider;
     setReconnectBusy(true);
-    try { await api.post(`/integrations/${row.provider}/connect`, {}); } catch { /* dev: no backend, keep optimistic */ }
-    setEdits(e => ({
-      ...e,
-      [row.id]: { ...e[row.id], state: 'connected', lastError: null, lastSyncedAt: new Date().toISOString(), credentialMasked: masked(hex4()) },
-    }));
-    setReconnectBusy(false);
-    setReconnectId(null);
-    toast({ tone: 'success', title: `${label} reconnected.`, body: 'A new key was issued and syncing resumed from the last successful pull.' });
+    try {
+      await api.post(`/integrations/${row.provider}/connect`, {});
+      setEdits(e => ({
+        ...e,
+        [row.id]: { ...e[row.id], state: 'connected', lastError: null, lastSyncedAt: new Date().toISOString(), credentialMasked: masked(hex4()) },
+      }));
+      setReconnectId(null);
+      toast({ tone: 'success', title: `${label} reconnected.`, body: 'A new key was issued and syncing resumed from the last successful pull.' });
+    } catch (e) {
+      toast({ tone: 'critical', title: `${label} was not reconnected.`, body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    } finally {
+      setReconnectBusy(false);
+    }
   }
 
   return (

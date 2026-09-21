@@ -48,7 +48,7 @@ interface Block {
   id: string; unitId: string; channel: BookingChannel; state: ReservationState;
   guestName: string; checkIn: string; checkOut: string; grossBookingValue: number; ref: string | null; reason: string | null;
 }
-interface Payload { from: string; to: string; units: Unit[]; blocks: Block[]; baseRate: Record<string, number>; generatedAt: string }
+interface Payload { from: string; to: string; units: Unit[]; blocks: Block[]; baseRate: Record<string, number>; rates?: Record<string, number>; generatedAt: string }
 
 const today = new Date('2026-09-16');
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -132,6 +132,8 @@ export default function CalendarPage() {
   function rateFor(unitId: string, channel: string, i: number) {
     const key = `${unitId}:${channel}:${i}`;
     if (rateEdits[key] != null) return rateEdits[key];
+    const saved = data?.rates?.[`${unitId}:${channel}:${dayIso(i)}`];
+    if (saved != null) return saved;
     const base = data?.baseRate[unitId] ?? 28800;
     const weekend = [5, 6].includes(addDays(gridStart, i).getDay());
     return Math.round(base * UPLIFT[channel] * (weekend ? 1.22 : 1));
@@ -139,7 +141,7 @@ export default function CalendarPage() {
   function setPrice(unitId: string, channel: string, i: number, rmValue: number) {
     setRateEdits(e => ({ ...e, [`${unitId}:${channel}:${i}`]: Math.round(rmValue * 100) }));
     toast({ tone: 'success', title: 'Rate set.', body: 'Pushed to the connected channel for that night.' });
-    api.put('/rates', { unitId, channel, date: dayIso(i) }).catch(() => {});
+    api.put('/rates', { unitId, channel, date: dayIso(i), rate: Math.round(rmValue * 100) }).catch(() => {});
   }
 
   function emptyNight(unit: Unit, i: number) {
@@ -205,9 +207,14 @@ export default function CalendarPage() {
   async function refresh() {
     if (syncing) return;
     setSyncing(true);
-    try { await api.post('/integrations/sync'); } catch { /* dev: no backend */ }
-    setSyncing(false);
-    toast({ tone: 'success', title: 'Channels synced.', body: 'Airbnb and Booking.com pulled · Agoda skipped (expired).' });
+    try {
+      await api.post('/integrations/sync');
+      toast({ tone: 'success', title: 'Channels synced.', body: 'Airbnb and Booking.com pulled · Agoda skipped (expired).' });
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Channels were not synced.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    } finally {
+      setSyncing(false);
+    }
   }
 
   // ---- Reservation drawer: chat with guest (POST /messages) ----
