@@ -75,13 +75,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ORDER BY occurred_at DESC LIMIT 20`, unitId, unitId);
 
   const perf = await one<any>(env, `
-    SELECT COALESCE(SUM(julianday(check_out) - julianday(check_in)),0) AS nights,
+    SELECT COALESCE(SUM(check_out::date - check_in::date),0) AS nights,
            COALESCE(SUM(collected_revenue),0) AS revenue,
            COALESCE(SUM(gross_booking_value),0) AS gross
     FROM reservations
     WHERE unit_id = ? AND state IN ('confirmed','checked_in','checked_out')
       AND channel NOT IN ('maintenance_block','owner_stay')
-      AND strftime('%Y-%m', check_in) = ?`, unitId, month);
+      AND substr(check_in, 1, 7) = ?`, unitId, month);
 
   const rating = await one<{ avg: number | null; n: number }>(env,
     'SELECT AVG(rating) AS avg, COUNT(*) AS n FROM reviews WHERE unit_id = ?', unitId);
@@ -95,7 +95,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (money) {
     const expenses = await all<{ category: string; total: number }>(env, `
       SELECT category, SUM(amount) AS total FROM expenses
-      WHERE unit_id = ? AND strftime('%Y-%m', incurred_on) = ?
+      WHERE unit_id = ? AND substr(incurred_on, 1, 7) = ?
       GROUP BY category`, unitId, month);
     const feePct = unit.management_fee_pct ?? 25;
     const fee = Math.round(revenue * (feePct / 100));

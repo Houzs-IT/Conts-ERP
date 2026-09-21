@@ -13,7 +13,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const rev = await one<{ collected: number; gross: number; nights: number }>(env, `
     SELECT COALESCE(SUM(collected_revenue),0) AS collected,
            COALESCE(SUM(gross_booking_value),0) AS gross,
-           COALESCE(SUM(julianday(check_out) - julianday(check_in)),0) AS nights
+           COALESCE(SUM(check_out::date - check_in::date),0) AS nights
     FROM reservations
     WHERE state IN ('confirmed','checked_in','checked_out')
       AND channel NOT IN ('maintenance_block','owner_stay')

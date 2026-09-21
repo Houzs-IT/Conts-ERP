@@ -70,9 +70,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const periodEnd = latest?.period_end ?? await monthEnd(env, periodStart);
   const perf = await one<any>(env, `
     SELECT COUNT(*) AS bookings, COUNT(DISTINCT r.channel) AS channels,
-           COALESCE(SUM(julianday(r.check_out) - julianday(r.check_in)), 0) AS nights,
+           COALESCE(SUM(r.check_out::date - r.check_in::date), 0) AS nights,
            COALESCE(SUM(r.collected_revenue), 0) AS revenue,
-           CAST(julianday(?) - julianday(?) + 1 AS INTEGER) AS days
+           (?::date - ?::date + 1) AS days
     FROM reservations r JOIN units u ON u.id = r.unit_id
     WHERE u.owner_id = ? AND ${BOOKED} AND r.check_in BETWEEN ? AND ?`,
     periodEnd, periodStart, ownerId, periodStart, periodEnd);
@@ -80,9 +80,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const nights = Math.round(perf?.nights ?? 0);
 
   const reviews = await one<any>(env, `
-    SELECT ROUND(AVG(v.rating), 2) AS rating, COUNT(*) AS n
+    SELECT ROUND(AVG(v.rating)::numeric, 2) AS rating, COUNT(*) AS n
     FROM reviews v JOIN units u ON u.id = v.unit_id
-    WHERE u.owner_id = ? AND v.reviewed_at >= date('now', '-12 months')`, ownerId);
+    WHERE u.owner_id = ? AND v.reviewed_at >= to_char(now() - interval '12 months', 'YYYY-MM-DD')`, ownerId);
 
   const issues = await all<any>(env, `
     SELECT m.id, m.title, m.detail, m.state, m.vendor_name, m.quoted_amount, m.final_amount,

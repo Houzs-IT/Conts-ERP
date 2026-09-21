@@ -23,7 +23,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const clash = await all<{ id: string; due_at: string }>(env, `
       SELECT id, due_at FROM tasks
       WHERE assignee_id = ? AND id != ? AND state NOT IN ('resolved')
-        AND abs(julianday(due_at) - julianday(?)) < 0.0625`,
+        AND abs(extract(epoch from (due_at::timestamptz - ?::timestamptz))) < 5400`,
       assigneeId, taskId, task.due_at);
     if (clash.length) {
       return json({

@@ -14,14 +14,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            COUNT(DISTINCT u.id) AS unit_count,
            COALESCE(MAX(c.management_fee_pct), 25) AS fee_pct,
            MAX(c.renews_on) AS renews_on,
-           GROUP_CONCAT(DISTINCT p.name || ' ' || u.unit_number) AS units_label,
+           string_agg(DISTINCT p.name || ' ' || u.unit_number, ',') AS units_label,
            COALESCE((
              SELECT SUM(r.collected_revenue) FROM reservations r
              JOIN units u2 ON u2.id = r.unit_id
              WHERE u2.owner_id = o.id
                AND r.state IN ('confirmed','checked_in','checked_out')
                AND r.channel NOT IN ('maintenance_block','owner_stay')
-               AND strftime('%Y-%m', r.check_in) = ?
+               AND substr(r.check_in, 1, 7) = ?
            ), 0) AS month_revenue
     FROM owners o
     LEFT JOIN units u ON u.owner_id = o.id

@@ -16,13 +16,12 @@ pages_build_output_dir = "dist"
 # Production
 # ---------------------------------------------------------------------------
 
-# `npm run setup` creates this and writes the id in for you. Doing it by hand:
-#   npx wrangler d1 create theconts-prod
-[[d1_databases]]
-binding = "DB"
-database_name = "theconts-prod"
-database_id = "499007e9-ea9f-4582-8170-28d90345f5f4"
-migrations_dir = "migrations"
+# The database is Supabase Postgres (schema `pos`), reached through Hyperdrive as the
+# `pos_app` role. Create the Hyperdrive config once and paste its id here:
+#   npx wrangler hyperdrive create conts-erp-pos --connection-string="postgresql://pos_app.<project-ref>:<password>@<pooler-host>:5432/postgres"
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "REPLACE_WITH_HYPERDRIVE_ID"
 
 # Media storage — not yet used. Photo upload writes to `documents.storage_key`
 # but the upload endpoint is not built. Uncomment together with that endpoint:

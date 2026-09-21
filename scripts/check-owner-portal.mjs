@@ -1,8 +1,8 @@
 // Owner portal safety checks against the LOCAL dev server (npm run dev, then
 // load scripts/seed-owner-demo.sql locally). Run: node scripts/check-owner-portal.mjs
-// Reads the local demo password from login.local. Never point this at a live site.
-import { readFileSync } from 'node:fs';
-const PW = readFileSync('login.local', 'utf8').match(/^Password: (.+)$/m)[1].trim();
+// Password: DEMO_PASSWORD (default LocalTest1, what scripts/local-demo-setup.mjs sets).
+// Never point this at a live site.
+const PW = process.env.DEMO_PASSWORD ?? 'LocalTest1';
 const base = (door) => `http://${door ? door + '.' : ''}localhost:8788`;
 let pass = 0, failN = 0;
 const check = (name, cond, extra = '') => { cond ? pass++ : failN++; console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${extra ? '  (' + extra + ')' : ''}`); };
@@ -12,11 +12,11 @@ async function login(door, email) {
   return { status: r.status, body, call: async (m, p, b) => { const x = await fetch(base(door) + p, { method: m, headers: { cookie, 'content-type': 'application/json' }, body: b && JSON.stringify(b) }); let j = null; try { j = await x.json(); } catch {} return { status: x.status, body: j }; } };
 }
 // Doors
-let r = await login('owner', 'zaimzane@gmail.com'); check('owner door refuses staff (management)', r.status === 403 && r.body.error?.code === 'WRONG_DOOR', r.body.error?.message);
+let r = await login('owner', 'management@theconts.com'); check('owner door refuses staff (management)', r.status === 403 && r.body.error?.code === 'WRONG_DOOR', r.body.error?.message);
 r = await login('owner', 'nurul@theconts.com'); check('owner door refuses housekeeper', r.status === 403);
 const lim = await login('owner', 'limck@example.com'); check('owner door accepts owner', lim.status === 200 && lim.body.home === '/owner');
 r = await login('ops', 'limck@example.com'); check('ops door refuses owner', r.status === 403 && r.body.error?.code === 'WRONG_DOOR', r.body.error?.message);
-r = await login('ops', 'zaimzane@gmail.com'); check('ops door accepts staff', r.status === 200);
+r = await login('ops', 'management@theconts.com'); check('ops door accepts staff', r.status === 200);
 r = await login(null, 'limck@example.com'); check('plain localhost accepts owner (portal not decided)', r.status === 200);
 r = await login('owner', 'nobody@example.com'); check('unknown email gets the normal error, not the door message', r.status === 401);
 // Lim's portal figures

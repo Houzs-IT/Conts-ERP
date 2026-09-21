@@ -2,17 +2,16 @@
 #   npx wrangler deploy --config wrangler.cron.toml
 #
 # Pages Functions route by file path; a cron handler cannot live in functions/.
-# This Worker shares the same D1 database as the Pages app.
+# This Worker shares the same Supabase database (via Hyperdrive) as the Pages app.
 
 name = "theconts-cron"
 main = "worker/scheduled.ts"
 compatibility_date = "2026-09-17"
 compatibility_flags = ["nodejs_compat"]
 
-[[d1_databases]]
-binding = "DB"
-database_name = "theconts-prod"
-database_id = "499007e9-ea9f-4582-8170-28d90345f5f4"
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "REPLACE_WITH_HYPERDRIVE_ID"
 
 [triggers]
 crons = [

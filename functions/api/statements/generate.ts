@@ -24,7 +24,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const owners = await all<any>(env, `
-    SELECT o.id, o.display_name, COALESCE(c.management_fee_pct, 25) AS fee_pct
+    SELECT o.id, o.display_name, COALESCE(MAX(c.management_fee_pct), 25) AS fee_pct
     FROM owners o
     LEFT JOIN owner_contracts c ON c.owner_id = o.id
     GROUP BY o.id`);

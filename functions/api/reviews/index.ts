@@ -17,7 +17,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     WHERE 1 = 1 ${ownerScoped ? 'AND o.user_id = ?' : ''}
     ORDER BY v.reviewed_at DESC`, ...(ownerScoped ? [session.userId] : []));
 
-  const avg = await one<{ a: number }>(env, 'SELECT ROUND(AVG(rating), 2) AS a FROM reviews');
+  const avg = await one<{ a: number }>(env, 'SELECT ROUND(AVG(rating)::numeric, 2) AS a FROM reviews');
 
   return json({
     generatedAt: new Date().toISOString(),

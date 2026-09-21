@@ -8,7 +8,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const ownerScoped = session.role === 'owner';
   const rows = await all<any>(env, `
     SELECT c.*, o.display_name,
-           (SELECT GROUP_CONCAT(p.name || ' ' || u.unit_number, ', ')
+           (SELECT string_agg(p.name || ' ' || u.unit_number, ', ')
             FROM units u JOIN properties p ON p.id = u.property_id
             WHERE u.contract_id = c.id OR u.owner_id = c.owner_id) AS units_label
     FROM owner_contracts c

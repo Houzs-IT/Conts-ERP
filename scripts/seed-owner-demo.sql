@@ -1,20 +1,22 @@
 -- LOCAL DEMO ONLY. Owner portal demo data on top of seed-d1.sql. Never run with --remote.
 -- Two owner logins, so the portal can be checked for one owner never seeing another's figures.
--- REPLACE_WITH_HASH is substituted by the loader with the local demo password hash.
+-- REPLACE_WITH_HASH is substituted by scripts/local-demo-setup.mjs with the local demo password hash.
 
-INSERT OR REPLACE INTO users (id, email, full_name, phone, password_hash, role, must_change_password, created_at, updated_at) VALUES
+INSERT INTO users (id, email, full_name, phone, password_hash, role, must_change_password, created_at, updated_at) VALUES
  ('11111111-1111-4111-8111-000000000101','limck@example.com','Lim Chee Keong','+60123456711','REPLACE_WITH_HASH','owner',0,'2026-09-01T00:00:00Z','2026-09-01T00:00:00Z'),
- ('11111111-1111-4111-8111-000000000102','wongml@example.com','Wong Mei Ling','+60123456712','REPLACE_WITH_HASH','owner',0,'2026-09-01T00:00:00Z','2026-09-01T00:00:00Z');
+ ('11111111-1111-4111-8111-000000000102','wongml@example.com','Wong Mei Ling','+60123456712','REPLACE_WITH_HASH','owner',0,'2026-09-01T00:00:00Z','2026-09-01T00:00:00Z')
+ ON CONFLICT (id) DO UPDATE SET email = excluded.email, full_name = excluded.full_name, phone = excluded.phone, password_hash = excluded.password_hash, role = excluded.role, must_change_password = excluded.must_change_password, created_at = excluded.created_at, updated_at = excluded.updated_at;
 
 UPDATE owners SET user_id = '11111111-1111-4111-8111-000000000101', bank_name = 'Maybank', bank_account_last4 = '4417' WHERE id = '22222222-2222-4222-8222-000000000001';
 UPDATE owners SET user_id = '11111111-1111-4111-8111-000000000102', bank_name = 'CIMB', bank_account_last4 = '9021' WHERE id = '22222222-2222-4222-8222-000000000002';
 
-INSERT OR REPLACE INTO owner_contracts (id, owner_id, management_fee_pct, starts_on, renews_on, created_at) VALUES
+INSERT INTO owner_contracts (id, owner_id, management_fee_pct, starts_on, renews_on, created_at) VALUES
  ('cc000000-0000-4000-8000-000000000001','22222222-2222-4222-8222-000000000001',25,'2025-01-01','2027-01-01','2025-01-01T00:00:00Z'),
- ('cc000000-0000-4000-8000-000000000002','22222222-2222-4222-8222-000000000002',22,'2025-06-01','2026-12-01','2025-06-01T00:00:00Z');
+ ('cc000000-0000-4000-8000-000000000002','22222222-2222-4222-8222-000000000002',22,'2025-06-01','2026-12-01','2025-06-01T00:00:00Z')
+ ON CONFLICT (id) DO UPDATE SET owner_id = excluded.owner_id, management_fee_pct = excluded.management_fee_pct, starts_on = excluded.starts_on, renews_on = excluded.renews_on, created_at = excluded.created_at;
 
 -- Lim Chee Keong: eight months of statements, August in full detail.
-INSERT OR REPLACE INTO owner_statements (id, owner_id, period_start, period_end, state, gross_booking_value, management_fee, expenses_total, adjustments_total, net_payout, generated_at, finalised_at, sent_at, created_at) VALUES
+INSERT INTO owner_statements (id, owner_id, period_start, period_end, state, gross_booking_value, management_fee, expenses_total, adjustments_total, net_payout, generated_at, finalised_at, sent_at, created_at) VALUES
  ('5a000000-0000-4000-8000-000000000101','22222222-2222-4222-8222-000000000001','2026-01-01','2026-01-31','paid', 690000,172500, 35500,0,482000,'2026-02-01T00:00:00Z','2026-02-01T00:00:00Z','2026-02-02T00:00:00Z','2026-02-01T00:00:00Z'),
  ('5a000000-0000-4000-8000-000000000102','22222222-2222-4222-8222-000000000001','2026-02-01','2026-02-28','paid', 735000,183750, 37250,0,514000,'2026-03-01T00:00:00Z','2026-03-01T00:00:00Z','2026-03-02T00:00:00Z','2026-03-01T00:00:00Z'),
  ('5a000000-0000-4000-8000-000000000103','22222222-2222-4222-8222-000000000001','2026-03-01','2026-03-31','paid', 780000,195000, 39000,0,546000,'2026-04-01T00:00:00Z','2026-04-01T00:00:00Z','2026-04-02T00:00:00Z','2026-04-01T00:00:00Z'),
@@ -24,38 +26,47 @@ INSERT OR REPLACE INTO owner_statements (id, owner_id, period_start, period_end,
  ('5a000000-0000-4000-8000-000000000107','22222222-2222-4222-8222-000000000001','2026-07-01','2026-07-31','paid', 900000,225000, 44000,0,631000,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z','2026-08-02T00:00:00Z','2026-08-01T00:00:00Z'),
  ('5a000000-0000-4000-8000-000000000108','22222222-2222-4222-8222-000000000001','2026-08-01','2026-08-31','paid', 926000,231500, 46300,0,648200,'2026-09-01T00:00:00Z','2026-09-01T00:00:00Z','2026-09-02T00:00:00Z','2026-09-01T00:00:00Z'),
  -- Provisional September must never reach the owner.
- ('5a000000-0000-4000-8000-000000000109','22222222-2222-4222-8222-000000000001','2026-09-01','2026-09-30','provisional', 300000,75000, 0,0,225000,'2026-09-15T00:00:00Z',NULL,NULL,'2026-09-15T00:00:00Z');
+ ('5a000000-0000-4000-8000-000000000109','22222222-2222-4222-8222-000000000001','2026-09-01','2026-09-30','provisional', 300000,75000, 0,0,225000,'2026-09-15T00:00:00Z',NULL,NULL,'2026-09-15T00:00:00Z')
+ ON CONFLICT (id) DO UPDATE SET owner_id = excluded.owner_id, period_start = excluded.period_start, period_end = excluded.period_end, state = excluded.state, gross_booking_value = excluded.gross_booking_value, management_fee = excluded.management_fee, expenses_total = excluded.expenses_total, adjustments_total = excluded.adjustments_total, net_payout = excluded.net_payout, generated_at = excluded.generated_at, finalised_at = excluded.finalised_at, sent_at = excluded.sent_at, created_at = excluded.created_at;
 
-INSERT OR REPLACE INTO statement_lines (id, statement_id, unit_id, line_type, category, description, occurred_on, amount, reference, sort_order) VALUES
+INSERT INTO statement_lines (id, statement_id, unit_id, line_type, category, description, occurred_on, amount, reference, sort_order) VALUES
  ('51000000-0000-4000-8000-000000000001','5a000000-0000-4000-8000-000000000108','55555555-5555-4555-8555-000000000001','gross',NULL,'Bookings, August','2026-08-31',926000,NULL,1),
  ('51000000-0000-4000-8000-000000000002','5a000000-0000-4000-8000-000000000108','55555555-5555-4555-8555-000000000001','management_fee','management_fee','Management fee 25%','2026-08-31',-231500,NULL,2),
  ('51000000-0000-4000-8000-000000000003','5a000000-0000-4000-8000-000000000108','55555555-5555-4555-8555-000000000001','expense','housekeeping','Turnover cleans x5','2026-08-31',-38500,'HK-0831',3),
- ('51000000-0000-4000-8000-000000000004','5a000000-0000-4000-8000-000000000108','55555555-5555-4555-8555-000000000001','expense','maintenance','Aircon filter replacement','2026-08-20',-7800,'MNT-0820',4);
+ ('51000000-0000-4000-8000-000000000004','5a000000-0000-4000-8000-000000000108','55555555-5555-4555-8555-000000000001','expense','maintenance','Aircon filter replacement','2026-08-20',-7800,'MNT-0820',4)
+ ON CONFLICT (id) DO UPDATE SET statement_id = excluded.statement_id, unit_id = excluded.unit_id, line_type = excluded.line_type, category = excluded.category, description = excluded.description, occurred_on = excluded.occurred_on, amount = excluded.amount, reference = excluded.reference, sort_order = excluded.sort_order;
 
-INSERT OR REPLACE INTO payouts (id, statement_id, owner_id, amount, state, method, bank_last4, paid_at, created_at) VALUES
- ('9a000000-0000-4000-8000-000000000108','5a000000-0000-4000-8000-000000000108','22222222-2222-4222-8222-000000000001',648200,'paid','bank_transfer','4417','2026-09-03T10:00:00Z','2026-09-02T00:00:00Z');
+INSERT INTO payouts (id, statement_id, owner_id, amount, state, method, bank_last4, paid_at, created_at) VALUES
+ ('9a000000-0000-4000-8000-000000000108','5a000000-0000-4000-8000-000000000108','22222222-2222-4222-8222-000000000001',648200,'paid','bank_transfer','4417','2026-09-03T10:00:00Z','2026-09-02T00:00:00Z')
+ ON CONFLICT (id) DO UPDATE SET statement_id = excluded.statement_id, owner_id = excluded.owner_id, amount = excluded.amount, state = excluded.state, method = excluded.method, bank_last4 = excluded.bank_last4, paid_at = excluded.paid_at, created_at = excluded.created_at;
 
-INSERT OR REPLACE INTO reservations (id, unit_id, channel, state, check_in, check_out, guests_count, gross_booking_value, channel_fee, collected_revenue, created_at, updated_at) VALUES
+INSERT INTO reservations (id, unit_id, channel, state, check_in, check_out, guests_count, gross_booking_value, channel_fee, collected_revenue, created_at, updated_at) VALUES
  ('77777777-0000-4000-8000-000000000101','55555555-5555-4555-8555-000000000001','airbnb','checked_out','2026-08-01','2026-08-07',2,198000,26000,172000,'2026-07-01T00:00:00Z','2026-08-07T00:00:00Z'),
  ('77777777-0000-4000-8000-000000000102','55555555-5555-4555-8555-000000000001','booking_com','checked_out','2026-08-07','2026-08-12',3,160000,24000,136000,'2026-07-05T00:00:00Z','2026-08-12T00:00:00Z'),
  ('77777777-0000-4000-8000-000000000103','55555555-5555-4555-8555-000000000001','direct','checked_out','2026-08-13','2026-08-20',2,224000,0,224000,'2026-07-10T00:00:00Z','2026-08-20T00:00:00Z'),
  ('77777777-0000-4000-8000-000000000104','55555555-5555-4555-8555-000000000001','airbnb','checked_out','2026-08-21','2026-08-25',2,138000,18000,120000,'2026-07-20T00:00:00Z','2026-08-25T00:00:00Z'),
- ('77777777-0000-4000-8000-000000000105','55555555-5555-4555-8555-000000000001','airbnb','checked_out','2026-08-25','2026-08-31',4,206000,27000,179000,'2026-07-25T00:00:00Z','2026-08-31T00:00:00Z');
+ ('77777777-0000-4000-8000-000000000105','55555555-5555-4555-8555-000000000001','airbnb','checked_out','2026-08-25','2026-08-31',4,206000,27000,179000,'2026-07-25T00:00:00Z','2026-08-31T00:00:00Z')
+ ON CONFLICT (id) DO UPDATE SET unit_id = excluded.unit_id, channel = excluded.channel, state = excluded.state, check_in = excluded.check_in, check_out = excluded.check_out, guests_count = excluded.guests_count, gross_booking_value = excluded.gross_booking_value, channel_fee = excluded.channel_fee, collected_revenue = excluded.collected_revenue, created_at = excluded.created_at, updated_at = excluded.updated_at;
 
-INSERT OR REPLACE INTO reviews (id, unit_id, reservation_id, channel, rating, comment, reviewed_at) VALUES
+INSERT INTO reviews (id, unit_id, reservation_id, channel, rating, comment, reviewed_at) VALUES
  ('7e000000-0000-4000-8000-000000000101','55555555-5555-4555-8555-000000000001','77777777-0000-4000-8000-000000000101','airbnb',5,'Spotless and quiet.','2026-08-08T00:00:00Z'),
  ('7e000000-0000-4000-8000-000000000102','55555555-5555-4555-8555-000000000001','77777777-0000-4000-8000-000000000102','booking_com',4.8,'Great view.','2026-08-13T00:00:00Z'),
- ('7e000000-0000-4000-8000-000000000103','55555555-5555-4555-8555-000000000001','77777777-0000-4000-8000-000000000103','direct',5,'Will return.','2026-08-21T00:00:00Z');
+ ('7e000000-0000-4000-8000-000000000103','55555555-5555-4555-8555-000000000001','77777777-0000-4000-8000-000000000103','direct',5,'Will return.','2026-08-21T00:00:00Z')
+ ON CONFLICT (id) DO UPDATE SET unit_id = excluded.unit_id, reservation_id = excluded.reservation_id, channel = excluded.channel, rating = excluded.rating, comment = excluded.comment, reviewed_at = excluded.reviewed_at;
 
-INSERT OR REPLACE INTO maintenance_issues (id, unit_id, state, title, detail, vendor_name, quoted_amount, final_amount, owner_approval_required, owner_approved_at, charge_to, reported_at, resolved_at, created_at, updated_at) VALUES
+INSERT INTO maintenance_issues (id, unit_id, state, title, detail, vendor_name, quoted_amount, final_amount, owner_approval_required, owner_approved_at, charge_to, reported_at, resolved_at, created_at, updated_at) VALUES
  ('3a000000-0000-4000-8000-000000000101','55555555-5555-4555-8555-000000000001','waiting','Blackout curtains','Three windows, bedroom and living room.','Kiara Interiors',89000,NULL,1,NULL,'owner','2026-09-12T09:00:00Z',NULL,'2026-09-12T09:00:00Z','2026-09-12T09:00:00Z'),
  ('3a000000-0000-4000-8000-000000000102','55555555-5555-4555-8555-000000000001','resolved','Aircon quarterly service','Gas top-up not required.','CoolCare',NULL,18000,0,NULL,'owner','2026-09-10T09:00:00Z','2026-09-12T15:00:00Z','2026-09-10T09:00:00Z','2026-09-12T15:00:00Z'),
- ('3a000000-0000-4000-8000-000000000103','55555555-5555-4555-8555-000000000001','resolved','Water heater replaced','Guest reported no hot water.','In-house crew',NULL,64000,0,NULL,'warranty','2026-08-28T09:00:00Z','2026-08-28T17:00:00Z','2026-08-28T09:00:00Z','2026-08-28T17:00:00Z');
+ ('3a000000-0000-4000-8000-000000000103','55555555-5555-4555-8555-000000000001','resolved','Water heater replaced','Guest reported no hot water.','In-house crew',NULL,64000,0,NULL,'warranty','2026-08-28T09:00:00Z','2026-08-28T17:00:00Z','2026-08-28T09:00:00Z','2026-08-28T17:00:00Z')
+ ON CONFLICT (id) DO UPDATE SET unit_id = excluded.unit_id, state = excluded.state, title = excluded.title, detail = excluded.detail, vendor_name = excluded.vendor_name, quoted_amount = excluded.quoted_amount, final_amount = excluded.final_amount, owner_approval_required = excluded.owner_approval_required, owner_approved_at = excluded.owner_approved_at, charge_to = excluded.charge_to, reported_at = excluded.reported_at, resolved_at = excluded.resolved_at, created_at = excluded.created_at, updated_at = excluded.updated_at;
 
 -- Wong Mei Ling: a different owner with her own figures and her own pending quote.
-INSERT OR REPLACE INTO owner_statements (id, owner_id, period_start, period_end, state, gross_booking_value, management_fee, expenses_total, adjustments_total, net_payout, generated_at, finalised_at, sent_at, created_at) VALUES
- ('5a000000-0000-4000-8000-000000000208','22222222-2222-4222-8222-000000000002','2026-08-01','2026-08-31','paid', 560000,123200, 24800,0,412000,'2026-09-01T00:00:00Z','2026-09-01T00:00:00Z','2026-09-02T00:00:00Z','2026-09-01T00:00:00Z');
-INSERT OR REPLACE INTO payouts (id, statement_id, owner_id, amount, state, method, bank_last4, paid_at, created_at) VALUES
- ('9a000000-0000-4000-8000-000000000208','5a000000-0000-4000-8000-000000000208','22222222-2222-4222-8222-000000000002',412000,'paid','bank_transfer','9021','2026-09-03T10:00:00Z','2026-09-02T00:00:00Z');
-INSERT OR REPLACE INTO maintenance_issues (id, unit_id, state, title, detail, vendor_name, quoted_amount, final_amount, owner_approval_required, owner_approved_at, charge_to, reported_at, resolved_at, created_at, updated_at) VALUES
- ('3a000000-0000-4000-8000-000000000201','55555555-5555-4555-8555-000000000002','waiting','Sofa reupholstery','Living room three-seater.','Kiara Interiors',120000,NULL,1,NULL,'owner','2026-09-14T09:00:00Z',NULL,'2026-09-14T09:00:00Z','2026-09-14T09:00:00Z');
+INSERT INTO owner_statements (id, owner_id, period_start, period_end, state, gross_booking_value, management_fee, expenses_total, adjustments_total, net_payout, generated_at, finalised_at, sent_at, created_at) VALUES
+ ('5a000000-0000-4000-8000-000000000208','22222222-2222-4222-8222-000000000002','2026-08-01','2026-08-31','paid', 560000,123200, 24800,0,412000,'2026-09-01T00:00:00Z','2026-09-01T00:00:00Z','2026-09-02T00:00:00Z','2026-09-01T00:00:00Z')
+ ON CONFLICT (id) DO UPDATE SET owner_id = excluded.owner_id, period_start = excluded.period_start, period_end = excluded.period_end, state = excluded.state, gross_booking_value = excluded.gross_booking_value, management_fee = excluded.management_fee, expenses_total = excluded.expenses_total, adjustments_total = excluded.adjustments_total, net_payout = excluded.net_payout, generated_at = excluded.generated_at, finalised_at = excluded.finalised_at, sent_at = excluded.sent_at, created_at = excluded.created_at;
+INSERT INTO payouts (id, statement_id, owner_id, amount, state, method, bank_last4, paid_at, created_at) VALUES
+ ('9a000000-0000-4000-8000-000000000208','5a000000-0000-4000-8000-000000000208','22222222-2222-4222-8222-000000000002',412000,'paid','bank_transfer','9021','2026-09-03T10:00:00Z','2026-09-02T00:00:00Z')
+ ON CONFLICT (id) DO UPDATE SET statement_id = excluded.statement_id, owner_id = excluded.owner_id, amount = excluded.amount, state = excluded.state, method = excluded.method, bank_last4 = excluded.bank_last4, paid_at = excluded.paid_at, created_at = excluded.created_at;
+INSERT INTO maintenance_issues (id, unit_id, state, title, detail, vendor_name, quoted_amount, final_amount, owner_approval_required, owner_approved_at, charge_to, reported_at, resolved_at, created_at, updated_at) VALUES
+ ('3a000000-0000-4000-8000-000000000201','55555555-5555-4555-8555-000000000002','waiting','Sofa reupholstery','Living room three-seater.','Kiara Interiors',120000,NULL,1,NULL,'owner','2026-09-14T09:00:00Z',NULL,'2026-09-14T09:00:00Z','2026-09-14T09:00:00Z')
+ ON CONFLICT (id) DO UPDATE SET unit_id = excluded.unit_id, state = excluded.state, title = excluded.title, detail = excluded.detail, vendor_name = excluded.vendor_name, quoted_amount = excluded.quoted_amount, final_amount = excluded.final_amount, owner_approval_required = excluded.owner_approval_required, owner_approved_at = excluded.owner_approved_at, charge_to = excluded.charge_to, reported_at = excluded.reported_at, resolved_at = excluded.resolved_at, created_at = excluded.created_at, updated_at = excluded.updated_at;
