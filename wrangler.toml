@@ -21,7 +21,7 @@ pages_build_output_dir = "dist"
 #   npx wrangler hyperdrive create conts-erp-pos --connection-string="postgresql://pos_app.<project-ref>:<password>@<pooler-host>:5432/postgres"
 [[hyperdrive]]
 binding = "HYPERDRIVE"
-id = "REPLACE_WITH_HYPERDRIVE_ID"
+id = "e0781ccdee9046919161c28cb95694c0"
 
 # Media storage — not yet used. Photo upload writes to `documents.storage_key`
 # but the upload endpoint is not built. Uncomment together with that endpoint:

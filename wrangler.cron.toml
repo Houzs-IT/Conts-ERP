@@ -11,7 +11,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [[hyperdrive]]
 binding = "HYPERDRIVE"
-id = "REPLACE_WITH_HYPERDRIVE_ID"
+id = "e0781ccdee9046919161c28cb95694c0"
 
 [triggers]
 crons = [
