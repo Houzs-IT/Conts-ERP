@@ -12,7 +12,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
-import { rm, dateRange, date as fmtDate, time as fmtTime, nights as fmtNights } from '../lib/format';
+import { todayMyt, rm, dateRange, date as fmtDate, time as fmtTime, nights as fmtNights } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { Tone, BookingChannel, ReservationState } from '../lib/types';
 
@@ -55,7 +55,7 @@ const FILTERS = [
   { key: 'cancelled', label: 'Cancelled' },
 ] as const;
 type FilterKey = typeof FILTERS[number]['key'];
-const TODAY = '2026-09-16';
+const TODAY = todayMyt();
 
 /** The unit roster a manual or imported booking is placed against. Ids mirror the
  *  calendar's unit ids so the optimistic POST carries a real `unitId`. */

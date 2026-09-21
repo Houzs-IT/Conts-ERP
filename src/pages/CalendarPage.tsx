@@ -10,7 +10,7 @@ import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
-import { rm, dateRange } from '../lib/format';
+import { todayMyt, rm, dateRange } from '../lib/format';
 import { CHANNEL, RESERVATION } from '../lib/vocabulary';
 import type { BookingChannel, ReservationState, Tone } from '../lib/types';
 
@@ -50,7 +50,7 @@ interface Block {
 }
 interface Payload { from: string; to: string; units: Unit[]; blocks: Block[]; baseRate: Record<string, number>; rates?: Record<string, number>; generatedAt: string }
 
-const today = new Date('2026-09-16');
+const today = new Date(todayMyt());
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const addDays = (d: Date, n: number) => new Date(d.getTime() + n * 864e5);
 

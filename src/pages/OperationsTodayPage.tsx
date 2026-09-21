@@ -8,6 +8,7 @@ import { Dialog } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
+import { useCrew } from '../lib/useCrew';
 import { api } from '../lib/api';
 import { READINESS, CHANNEL } from '../lib/vocabulary';
 import { rm, date as fmtDate, time, unitRef } from '../lib/format';
@@ -91,12 +92,6 @@ const FALLBACK: Payload = {
   ],
 };
 
-const CREW = [
-  { id: 'u5', name: 'Nurul Huda' },
-  { id: 'u6', name: 'Faridah Ismail' },
-  { id: 'u9', name: 'Siti Rahmah' },
-  { id: 'u12', name: 'Azman Yusof' },
-];
 
 const FILTERS = [
   { key: 'all', label: 'All work' },
@@ -133,6 +128,7 @@ const matchesFilter = (r: Row, f: FilterKey) =>
   : /* unassigned */ !r.assigneeId;
 
 export default function OperationsTodayPage() {
+  const CREW = useCrew('housekeeping');
   const [filter, setFilter] = useState<FilterKey>('all');
   const { data, loading, error, reload } = useApi<Payload>('/operations/today', FALLBACK);
 
@@ -207,7 +203,7 @@ export default function OperationsTodayPage() {
   function actionsFor(r: Row): RowAction[] {
     const list: RowAction[] = [];
     if (isHousekeeping(r.kind)) {
-      list.push({ key: 'assign', label: r.assigneeId ? 'Reassign cleaner' : 'Assign cleaner', primary: !r.assigneeId, run: () => setAssign({ row: r, cleanerId: r.assigneeId ?? CREW[0].id }) });
+      list.push({ key: 'assign', label: r.assigneeId ? 'Reassign cleaner' : 'Assign cleaner', primary: !r.assigneeId, run: () => setAssign({ row: r, cleanerId: r.assigneeId ?? CREW[0]?.id ?? '' }) });
     }
     if (r.kind === 'inspection') {
       list.push({ key: 'inspect', label: 'Start inspection', primary: true, run: () => setInspect(r) });
@@ -235,7 +231,7 @@ export default function OperationsTodayPage() {
             size="sm"
             disabled={!firstUnassigned}
             disabledReason="Every housekeeping task already has a cleaner."
-            onClick={() => firstUnassigned && setAssign({ row: firstUnassigned, cleanerId: CREW[0].id })}
+            onClick={() => firstUnassigned && setAssign({ row: firstUnassigned, cleanerId: CREW[0]?.id ?? '' })}
           >
             Assign cleaner
           </Button>

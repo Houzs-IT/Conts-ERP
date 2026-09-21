@@ -6,6 +6,8 @@ import postgres from 'postgres';
 export interface Env {
   HYPERDRIVE: { connectionString: string };
   SESSION_SECRET: string;
+  /** R2 bucket for photos and documents. Not bound yet: uploads answer 501 until it is. */
+  MEDIA?: R2Bucket;
 }
 
 // count(*) and sum() come back from Postgres as strings (int8 / numeric). The API
