@@ -32,3 +32,13 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - AI inside the system: suggested replies to guest messages (start here, so the value can be judged first), draft replies to reviews, plain-language summary of each owner statement, daily "what needs attention" summary. The server calls Claude with the key stored as a Cloudflare secret (`wrangler pages secret put ANTHROPIC_API_KEY`), never in the browser. Pay per use.
 - Optional: automatic Claude review of every pull request on GitHub (key stored as a GitHub Actions secret).
 - Do after Channex, when there are real bookings and messages to work with. Key never pasted in chat.
+
+## Future (planning only, not started): security hardening
+Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
+1. Two-step login (2FA) with an authenticator app. Required for management and finance, optional for others. Backup codes, and an admin reset that is logged.
+2. Login protection through Cloudflare: Turnstile on the login page, rate limiting on login, password reset and other sensitive endpoints. Check which Cloudflare plan includes each feature.
+3. Make the Settings screen's sign-in timeouts and lockout attempts actually apply at login (saved today, not enforced).
+4. Alerts and visibility: email management on a login from a new device, repeated failed logins, or a bank-detail change; a screen for the activity log (already recorded).
+5. Restrict the staff sign-in to office addresses or put it behind Cloudflare Access (needs office network details).
+6. Data safety: turn on Supabase point-in-time backups and test one restore; limit bulk data exports.
+- To discuss later: what "bandwidth" should mean here (blocking floods of requests = item 2, or limiting how much data one user can download = item 6).
