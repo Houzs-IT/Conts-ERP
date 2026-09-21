@@ -28,7 +28,7 @@ const applied = new Map((await sql`select filename, checksum from public.pos_mig
 let pending = 0;
 for (const filename of readdirSync('migrations-pg').filter((f) => f.endsWith('.sql')).sort()) {
   const body = readFileSync(`migrations-pg/${filename}`, 'utf8');
-  const checksum = createHash('sha256').update(body).digest('hex').slice(0, 16);
+  const checksum = createHash('sha256').update(body.replace(/\r\n/g, '\n')).digest('hex').slice(0, 16);
   const seen = applied.get(filename);
   if (seen && seen !== checksum) { console.error(`${filename} was edited after it ran. Add a new migration instead.`); await sql.end(); process.exit(1); }
   if (seen) continue;

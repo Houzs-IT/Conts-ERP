@@ -1,4 +1,4 @@
-# The Conts Property OS — API contracts
+# Conts ERP — API contracts
 
 Companion to `schema.sql`, `routes.json`, `tokens.css`, `copy.md`.
 Conventions for every endpoint:

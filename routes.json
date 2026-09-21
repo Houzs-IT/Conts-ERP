@@ -1,6 +1,6 @@
 {
   "$meta": {
-    "product": "The Conts Property OS",
+    "product": "Conts ERP",
     "source": "The Conts Digital Brand Guide v1.0 — sections 13, 14, 15, 16",
     "note": "Route map shared by frontend router, backend permission middleware and QA. Navigation is organised by job, never by database table (13.1).",
     "apps": {
@@ -687,7 +687,7 @@
           ],
           "onSuccess": {
             "render": "success block",
-            "copy": "If that email belongs to a Property OS account, a reset link is on its way. The link expires in 60 minutes.",
+            "copy": "If that email belongs to a Conts ERP account, a reset link is on its way. The link expires in 60 minutes.",
             "note": "Always the same response — never disclose whether an account exists."
           }
         },

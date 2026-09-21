@@ -86,7 +86,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     recipient: user.email,
     channel: 'email',
     subject: 'Your password was changed',
-    body: 'Your Property OS password was just reset. If this was not you, contact your administrator immediately.',
+    body: 'Your Conts ERP password was just reset. If this was not you, contact your administrator immediately.',
     // Keyed by the token (see forgot-password.ts): keeps this from colliding
     // with change-password.ts's own same-template notify() if both fire for the
     // same user within the same clock hour.

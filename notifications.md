@@ -1,4 +1,4 @@
-# The Conts Property OS — notifications and automations
+# Conts ERP — notifications and automations
 
 Every message the system sends, who receives it, what triggers it and which
 data it needs. The frontend surfaces these as Automations (`/communication/automations`);

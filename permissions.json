@@ -1,6 +1,6 @@
 {
   "$meta": {
-    "product": "The Conts Property OS",
+    "product": "Conts ERP",
     "purpose": "Machine-readable permission matrix. Consumed by backend middleware, the frontend navigation builder and QA.",
     "model": "role → resource → actions. Deny by default: an action absent from the list is forbidden.",
     "scopes": {

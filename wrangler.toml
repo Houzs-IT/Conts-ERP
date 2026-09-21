@@ -1,4 +1,4 @@
-# The Conts Property OS — Cloudflare Pages configuration
+# Conts ERP — Cloudflare Pages configuration
 #
 # Only bindings the code actually uses are active. Unused bindings with
 # placeholder ids fail `wrangler deploy` immediately, so anything not yet wired
@@ -38,7 +38,7 @@ id = "REPLACE_WITH_HYPERDRIVE_ID"
 # id = "REPLACE_ME_KV_ID"
 
 [vars]
-APP_NAME = "The Conts Property OS"
+APP_NAME = "Conts ERP"
 DEFAULT_LOCALE = "en-MY"
 TIMEZONE = "Asia/Kuala_Lumpur"
 CURRENCY = "MYR"
@@ -80,7 +80,7 @@ binding = "HYPERDRIVE"
 id = "9c21c4f2b5f9470cb7df0afeb9ad633f"
 
 [env.preview.vars]
-APP_NAME = "The Conts Property OS (staging)"
+APP_NAME = "Conts ERP (staging)"
 DEFAULT_LOCALE = "en-MY"
 TIMEZONE = "Asia/Kuala_Lumpur"
 CURRENCY = "MYR"

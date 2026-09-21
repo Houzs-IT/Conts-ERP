@@ -26,7 +26,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     recipient: session.email,
     channel: 'email',
     subject: 'Your password was changed',
-    body: `Your Property OS password was changed just now. If this was not you, contact your administrator immediately.`,
+    body: `Your Conts ERP password was changed just now. If this was not you, contact your administrator immediately.`,
     entityTable: 'users', entityId: session.userId,
     urgent: true,
   });

@@ -1,4 +1,4 @@
-# The Conts Property OS — what is built, what is not
+# Conts ERP — what is built, what is not
 
 Read this first. Two other files matter: `README-react.md` (how to run and deploy)
 and `BUTTONS.md` (every button, its request, and the tables it touches).

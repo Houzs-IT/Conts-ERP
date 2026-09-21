@@ -74,7 +74,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     template: 'account.invited',
     recipient: b.email,
     channel: 'email',
-    subject: 'Your Property OS account',
+    subject: 'Your Conts ERP account',
     body: `${session.fullName} created an account for you.\n\nEmail: ${b.email}\nTemporary password: ${temp}\n\nYou will be asked to choose a new password when you first sign in.`,
     entityTable: 'users', entityId: id,
   });

@@ -1,4 +1,4 @@
-# Deploy The Conts Property OS
+# Deploy Conts ERP
 
 From an empty GitHub repository to a working system on Cloudflare. Every command
 here is meant to be run as written. Target stack matches `houzs-erp`: Cloudflare

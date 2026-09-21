@@ -1,4 +1,4 @@
-# The Conts Property OS — component inventory
+# Conts ERP — component inventory
 
 Maps every UI element in the designs to a component, states it needs, and the
 props the domain modules pass in. Shared primitives come from the Houzs and

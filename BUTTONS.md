@@ -1,4 +1,4 @@
-# The Conts Property OS — control map
+# Conts ERP — control map
 
 Every button, link, filter and row action in the product: what it does, which
 endpoint it calls, which tables it touches, and what the user sees afterwards.
