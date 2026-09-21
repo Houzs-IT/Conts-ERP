@@ -14,7 +14,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const period = url.searchParams.get('period');
   const state = url.searchParams.get('state');
   const page = Number(url.searchParams.get('page') ?? 1);
-  const pageSize = Math.min(Number(url.searchParams.get('pageSize') ?? 25), 100);
+  const pageSize = Math.min(Number(url.searchParams.get('pageSize') ?? 25), 500);
 
   const args: unknown[] = [];
   if (period) args.push(`${period}-01`);
@@ -47,7 +47,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     page, pageSize, total: total?.n ?? 0,
     summary: { notSent: notSent?.n ?? 0 },
     data: rows.map(r => ({
-      id: r.id, ownerName: r.display_name, unitsLabel: r.units_label,
+      id: r.id, period: String(r.period_start).slice(0, 7), ownerName: r.display_name, unitsLabel: r.units_label,
       periodStart: r.period_start, periodEnd: r.period_end, state: r.state,
       grossBookingValue: r.gross_booking_value, managementFee: r.management_fee,
       expensesTotal: r.expenses_total, netPayout: r.net_payout, currency: r.currency,

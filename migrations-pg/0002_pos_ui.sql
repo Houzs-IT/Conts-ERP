@@ -1,5 +1,5 @@
 -- Tables the Conts ERP screens need that the original schema did not have.
--- REVERSAL: DROP TABLE unit_expenses; DROP TABLE channel_rates; ALTER TABLE units DROP COLUMN listing_name, DROP COLUMN unit_code, DROP COLUMN address, DROP COLUMN package, DROP COLUMN term, DROP COLUMN split_kind, DROP COLUMN split_value; ALTER TABLE owners DROP COLUMN ic_number, DROP COLUMN bank_account_holder, DROP COLUMN bank_account_number; ALTER TABLE inventory_items DROP COLUMN category, DROP COLUMN replace_by, DROP COLUMN notes;
+-- REVERSAL: DROP TABLE unit_expenses; DROP TABLE channel_rates; ALTER TABLE units DROP COLUMN listing_name, DROP COLUMN unit_code, DROP COLUMN address, DROP COLUMN package, DROP COLUMN term, DROP COLUMN split_kind, DROP COLUMN split_value; ALTER TABLE owners DROP COLUMN ic_number, DROP COLUMN bank_account_holder, DROP COLUMN bank_account_number; ALTER TABLE inventory_items DROP COLUMN category, DROP COLUMN replace_by, DROP COLUMN notes; (and restore expenses_category_check to the eight original categories)
 set local search_path = pos;
 
 -- One row per unit, sales channel and night whose price was set by hand.
@@ -31,6 +31,11 @@ ALTER TABLE owners ADD COLUMN bank_account_number TEXT;
 ALTER TABLE inventory_items ADD COLUMN category   TEXT NOT NULL DEFAULT 'furniture' CHECK (category IN ('furniture','appliance','electronics','linen','kitchenware','fittings'));
 ALTER TABLE inventory_items ADD COLUMN replace_by TEXT;
 ALTER TABLE inventory_items ADD COLUMN notes      TEXT NOT NULL DEFAULT '';
+
+-- The Expenses screen also records internet, electricity, water and cleaning.
+ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_category_check;
+ALTER TABLE expenses ADD CONSTRAINT expenses_category_check CHECK (category IN
+  ('internet','electricity','water','cleaning','housekeeping','maintenance','utilities','consumables','furniture','management_fee','channel_fee','other'));
 
 -- The recurring monthly costs set on a unit (internet, electricity, water, cleaning ...), deducted on the owner statement.
 CREATE TABLE unit_expenses (

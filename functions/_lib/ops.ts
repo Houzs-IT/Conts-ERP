@@ -106,3 +106,18 @@ export function stampMyt(iso: string | null): string | null {
   const date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' });
   return `${date} ${hhmm(iso)}`;
 }
+
+/** The last `count` calendar months ending with the month of `today` (YYYY-MM-DD), oldest first, as YYYY-MM. */
+export function monthsBack(today: string, count: number): string[] {
+  const [y, m] = today.split('-').map(Number);
+  const out: string[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(y, m - 1 - i, 1));
+    out.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`);
+  }
+  return out;
+}
+
+export const daysIn = (period: string) => { const [y, m] = period.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate(); };
+
+export const todayMyt = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' });

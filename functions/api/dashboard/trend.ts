@@ -1,19 +1,8 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { monthsBack, daysIn } from '../../_lib/ops';
 
 const KL_TODAY = `to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')`;
-
-function monthsBack(today: string, count: number): string[] {
-  const [y, m] = today.split('-').map(Number);
-  const out: string[] = [];
-  for (let i = count - 1; i >= 0; i--) {
-    const d = new Date(Date.UTC(y, m - 1 - i, 1));
-    out.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`);
-  }
-  return out;
-}
-
-const daysIn = (period: string) => { const [y, m] = period.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate(); };
 
 /** GET /api/dashboard/trend?range=3m|12m|ytd — revenue and occupancy per month. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {

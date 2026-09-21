@@ -10,7 +10,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api, ApiFailure } from '../lib/api';
-import { rm, date as fmtDate, time as fmtTime } from '../lib/format';
+import { rm, date as fmtDate, time as fmtTime, todayMyt } from '../lib/format';
 import { STATEMENT } from '../lib/vocabulary';
 import { TONE } from '../lib/design-tokens';
 import type { StatementState } from '../lib/types';
@@ -39,11 +39,12 @@ const FALLBACK: Payload = {
   ],
 };
 
-/** The owner roster a fresh period is drawn against — clone into provisional rows. */
-const ROSTER = FALLBACK.data.map(({ ownerName, unitsLabel, grossBookingValue, managementFee, expensesTotal, netPayout }) =>
-  ({ ownerName, unitsLabel, grossBookingValue, managementFee, expensesTotal, netPayout }));
-
-const PERIODS = ['2026-06', '2026-07', '2026-08', '2026-09', '2026-10'];
+/** YYYY-MM, moved by whole months. */
+const shiftMonth = (p: string, by: number) => {
+  const [y, m] = p.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + by, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+};
 
 function periodLabel(p: string) {
   const [y, m] = p.split('-').map(Number);
@@ -61,23 +62,31 @@ const SELECT_REASON: Record<StatementState, string> = {
 const gridCols = 'grid-cols-[32px_minmax(160px,1.6fr)_minmax(118px,1fr)_minmax(96px,0.9fr)_minmax(96px,0.9fr)_minmax(110px,1fr)_minmax(92px,0.9fr)_40px]';
 
 export default function StatementsPage() {
-  const { data, loading, error, reload } = useApi<Payload>(`/statements?period=${BASE_PERIOD}`, FALLBACK);
+  const { data, loading, error, reload } = useApi<Payload>('/statements?pageSize=500', FALLBACK);
   const toast = useToast();
 
-  const [viewPeriod, setViewPeriod] = useState(BASE_PERIOD);
-  const [added, setAdded] = useState<Statement[]>([]);
+  const [pickedPeriod, setViewPeriod] = useState<string | null>(null);
+  const thisMonth = todayMyt().slice(0, 7);
   const [edits, setEdits] = useState<Record<string, Partial<Statement>>>({});
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const [sendConfirm, setSendConfirm] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
-  const [genInitial, setGenInitial] = useState('2026-09');
+  const [genInitial, setGenInitial] = useState(shiftMonth(thisMonth, -1));
   const [busy, setBusy] = useState(false);
 
   const baseRows = data?.data ?? [];
   const allRows = useMemo(
-    () => [...added, ...baseRows].map(r => ({ ...r, ...edits[r.id], period: r.period ?? BASE_PERIOD })),
-    [added, baseRows, edits],
+    () => baseRows.map(r => ({ ...r, ...edits[r.id], period: r.period ?? BASE_PERIOD })),
+    [baseRows, edits],
   );
+  // Every month that has statements, plus the last three and the current one.
+  const PERIODS = useMemo(() => {
+    const set = new Set<string>(allRows.map(r => r.period ?? BASE_PERIOD));
+    for (let i = -3; i <= 0; i++) set.add(shiftMonth(thisMonth, i));
+    return [...set].sort();
+  }, [allRows, thisMonth]);
+  const latestWithData = useMemo(() => [...new Set(allRows.map(r => r.period ?? BASE_PERIOD))].sort().pop(), [allRows]);
+  const viewPeriod = pickedPeriod ?? latestWithData ?? shiftMonth(thisMonth, -1);
   const rows = allRows.filter(r => r.period === viewPeriod);
   const lockedPeriods = useMemo(() => {
     const s = new Set<string>();
@@ -86,16 +95,9 @@ export default function StatementsPage() {
   }, [allRows]);
 
   const selected = rows.filter(r => sel[r.id] && r.state === 'finalised');
+  const selectedProvisional = rows.filter(r => sel[r.id] && r.state === 'provisional');
   const sendable = rows.filter(r => r.state === 'finalised');
   const notSent = sendable.length;
-
-  function setState(ids: string[], state: StatementState) {
-    setEdits(e => {
-      const n = { ...e };
-      ids.forEach(id => { n[id] = { ...n[id], state }; });
-      return n;
-    });
-  }
 
   function openGenerate(initial: string) {
     setGenInitial(initial);
@@ -103,22 +105,38 @@ export default function StatementsPage() {
   }
 
   async function runGenerate(period: string) {
-    const stamp = Date.now();
-    const fresh: Statement[] = ROSTER.map((o, i) => ({
-      ...o, id: `gen-${period}-${stamp}-${i}`, period, state: 'provisional',
-    }));
-    setAdded(a => [...fresh, ...a.filter(r => r.period !== period)]);
-    setViewPeriod(period);
-    setSel({});
-    setGenOpen(false);
-    toast({ tone: 'success', title: `Statements generated for ${fresh.length} owners. Review before sending.` });
+    setBusy(true);
     try {
-      await api.post('/statements/generate', { period, ownerIds: [] });
+      const res = await api.post<{ count: number; skipped: number }>('/statements/generate', { period, ownerIds: [] });
+      setEdits({});
+      setViewPeriod(period);
+      setSel({});
+      setGenOpen(false);
+      reload();
+      toast({
+        tone: res.count ? 'success' : 'info',
+        title: res.count ? `Statements generated for ${res.count} ${res.count === 1 ? 'owner' : 'owners'}. Review before sending.` : 'Nothing to generate for that month.',
+        body: res.skipped ? `${res.skipped} already finalised and left as they are.` : undefined,
+      });
     } catch (e) {
-      if (e instanceof ApiFailure && e.status === 409) {
-        toast({ tone: 'warning', title: 'That period is locked.', body: 'A period that has already been sent cannot be regenerated.' });
-      } // dev: no backend — keep the optimistic rows
-    }
+      const locked = e instanceof ApiFailure && e.status === 409;
+      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'That period is locked.' : 'Statements were not generated.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    } finally { setBusy(false); }
+  }
+
+  async function runFinalise() {
+    const ids = selectedProvisional.map(t => t.id);
+    if (!ids.length) return;
+    setBusy(true);
+    try {
+      const res = await api.post<{ finalised: number; failed: { id: string; reason: string }[] }>('/statements/finalise', { statementIds: ids });
+      setEdits({}); setSel({}); reload();
+      toast(res.failed.length
+        ? { tone: 'warning', title: `${res.finalised} finalised, ${res.failed.length} not.`, body: res.failed[0].reason }
+        : { tone: 'success', title: `${res.finalised} ${res.finalised === 1 ? 'statement' : 'statements'} finalised.`, body: 'The figures are now frozen and ready to send.' });
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Not finalised.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    } finally { setBusy(false); }
   }
 
   async function runSend() {
@@ -126,27 +144,19 @@ export default function StatementsPage() {
     const ids = targets.map(t => t.id);
     if (!ids.length) { setSendConfirm(false); return; }
     setBusy(true);
-    setState(ids, 'sent'); // optimistic
     try {
-      const res = await api.post<{ sent: number; failed: { id: string; reason: string }[] }>(
-        '/statements/send', { statementIds: ids });
+      const res = await api.post<{ sent: number; failed: { id: string; reason: string }[] }>('/statements/send', { statementIds: ids });
       const failed = res.failed ?? [];
+      setEdits({}); reload();
       if (failed.length) {
         const failedIds = new Set(failed.map(f => f.id));
-        setState(targets.filter(t => failedIds.has(t.id)).map(t => t.id), 'finalised'); // keep the sent ones, revert only failures
         const names = targets.filter(t => failedIds.has(t.id)).map(t => t.ownerName);
         toast({ tone: 'warning', title: `${res.sent} sent, ${failed.length} not.`, body: `Not sent: ${names.join(', ')}.` });
       } else {
-        toast({ tone: 'success', title: `${res.sent || ids.length} statements sent.`, body: 'Owners were emailed and the statements are live on their portals.' });
+        toast({ tone: 'success', title: `${res.sent} ${res.sent === 1 ? 'statement' : 'statements'} sent.`, body: 'Owners were emailed and the statements are live on their portals.' });
       }
     } catch (e) {
-      if (e instanceof ApiFailure && e.status === 422) {
-        setState(ids, 'finalised'); // revert — provisional numbers must never reach owners
-        toast({ tone: 'critical', title: `${ids.length} statements are still provisional and were not sent. Finalise them first.` });
-      } else {
-        // dev: no backend — keep the optimistic send
-        toast({ tone: 'success', title: `${ids.length} statements sent.`, body: 'Owners were emailed and the statements are live on their portals.' });
-      }
+      toast({ tone: 'critical', title: 'Statements were not sent.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
     } finally {
       setBusy(false);
       setSel({});
@@ -176,8 +186,7 @@ export default function StatementsPage() {
 
   function downloadPdf(r: Statement, e: MouseEvent) {
     e.stopPropagation();
-    toast({ tone: 'info', title: 'Statement PDF', body: `${r.ownerName} — generated into R2 and served as a signed link.` });
-    api.get(`/statements/${r.id}/pdf`).catch(() => { /* dev: no backend / binary body */ });
+    window.open(`/api/statements/${encodeURIComponent(r.id)}/pdf`, '_blank', 'noopener');
   }
 
   return (
@@ -199,7 +208,7 @@ export default function StatementsPage() {
               <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" style={{ position: 'absolute', right: 9, pointerEvents: 'none' }} />
             </label>
             <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportCsv} disabled={rows.length === 0} disabledReason="Nothing to export for this period yet.">Export</Button>
-            <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => openGenerate(lockedPeriods.has('2026-09') ? '2026-10' : '2026-09')}>Generate statements</Button>
+            <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => openGenerate(lockedPeriods.has(shiftMonth(thisMonth, -1)) ? thisMonth : shiftMonth(thisMonth, -1))}>Generate statements</Button>
           </div>
         }
       />
@@ -214,14 +223,21 @@ export default function StatementsPage() {
         />
       ) : (
         <Card>
-          {selected.length > 0 && (
+          {(selected.length > 0 || selectedProvisional.length > 0) && (
             <div className="flex items-center justify-between gap-[14px] flex-wrap px-[22px] py-[11px] bg-black text-white">
-              <span className="text-[13px] font-medium">{selected.length} of {sendable.length} selected · {periodLabel(viewPeriod)}</span>
+              <span className="text-[13px] font-medium">{selected.length + selectedProvisional.length} selected · {periodLabel(viewPeriod)}</span>
               <div className="flex items-center gap-[10px]">
                 <button onClick={() => setSel({})} className="[font:inherit] text-[var(--color-text-on-dark)] bg-transparent border-none cursor-pointer">Clear</button>
-                <button onClick={() => setSendConfirm(true)} className="py-[7px] px-[13px] rounded-control bg-gold text-black text-[12.5px] font-semibold border-none cursor-pointer">
-                  Send {selected.length} {selected.length === 1 ? 'statement' : 'statements'}
-                </button>
+                {selectedProvisional.length > 0 && (
+                  <button onClick={runFinalise} disabled={busy} className="py-[7px] px-[13px] rounded-control bg-white text-black text-[12.5px] font-semibold border-none cursor-pointer">
+                    Finalise {selectedProvisional.length}
+                  </button>
+                )}
+                {selected.length > 0 && (
+                  <button onClick={() => setSendConfirm(true)} className="py-[7px] px-[13px] rounded-control bg-gold text-black text-[12.5px] font-semibold border-none cursor-pointer">
+                    Send {selected.length} {selected.length === 1 ? 'statement' : 'statements'}
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -240,7 +256,7 @@ export default function StatementsPage() {
               </div>
 
               {loading && rows.length === 0 ? <TableSkeleton rows={6} cols={8} /> : rows.map(s => {
-                const can = s.state === 'finalised';
+                const can = s.state === 'finalised' || s.state === 'provisional';
                 const on = !!sel[s.id];
                 return (
                   <div
@@ -286,7 +302,7 @@ export default function StatementsPage() {
           </div>
 
           <div className="flex items-center justify-between gap-3 flex-wrap px-[22px] py-[11px] [border-top:1px_solid_var(--color-line)] bg-page text-[12px] text-muted-ink">
-            <span>{rows.length} of {viewPeriod === BASE_PERIOD ? (data?.total ?? rows.length) : rows.length} owners · page size {data?.pageSize ?? 25}</span>
+            <span>{rows.length} {rows.length === 1 ? 'owner' : 'owners'} · {periodLabel(viewPeriod)}</span>
             <span>Every deduction carries a category, date, amount and reference</span>
           </div>
         </Card>
