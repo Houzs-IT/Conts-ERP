@@ -117,13 +117,16 @@ export default function ReviewsPage() {
     if (!body) return;
     const repliedAt = new Date().toISOString();
 
-    setReplies(m => ({ ...m, [review.id]: { reply: body, repliedAt } }));  // show at once
-    setComposingId(null);
-    setDraft('');
-    toast({ tone: 'success', title: 'Reply posted.', body: `Sent to ${review.guestName}.` });
-
-    try { await api.post(`/reviews/${review.id}/reply`, { body }); }
-    catch { /* dev: no backend, keep the optimistic reply */ }
+    try {
+      await api.post(`/reviews/${review.id}/reply`, { body });
+      setReplies(m => ({ ...m, [review.id]: { reply: body, repliedAt } }));
+      setComposingId(null);
+      setDraft('');
+      toast({ tone: 'success', title: 'Reply saved.', body: 'Kept on the review. Posting it to the channel is not connected yet.' });
+      reload();
+    } catch (err) {
+      toast({ tone: 'critical', title: 'Reply was not saved.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+    }
   }
 
   return (

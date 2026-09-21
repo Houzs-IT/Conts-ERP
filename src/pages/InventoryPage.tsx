@@ -7,7 +7,7 @@ import { Field } from '../components/Field';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useUnitRoster } from '../lib/useUnitRoster';
-import { api } from '../lib/api';
+import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { rm, date } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
@@ -103,7 +103,7 @@ export default function InventoryPage() {
   function patchItem(id: string, p: Partial<Item>) {
     setEdits(e => ({ ...e, [id]: { ...e[id], ...p } }));
     // Dev has no backend; keep the optimistic edit and let the banner explain staleness.
-    api.patch('/inventory', { id, ...p }).catch(() => {});
+    api.patch('/inventory', { id, ...p }).catch(notifyFailure);
   }
   function setCondition(item: Item, condition: Condition) {
     patchItem(item.id, { condition });
@@ -116,7 +116,7 @@ export default function InventoryPage() {
   function addItem(input: Item) {
     setAdded(a => [input, ...a]);
     toast({ tone: 'success', title: 'Item added.', body: `${input.name} recorded for ${input.propertyName} ${input.unitNumber}.` });
-    api.post('/inventory', input).catch(() => {});
+    api.post('/inventory', input).catch(notifyFailure);
     setAdding(false);
   }
   function clearFilters() { setUnitFilter('all'); setCondFilter('all'); setDueOnly(false); }

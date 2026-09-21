@@ -9,7 +9,7 @@ import { Field } from '../components/Field';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
-import { api } from '../lib/api';
+import { api, notifyFailure } from '../lib/api';
 import { todayMyt, rm, dateRange } from '../lib/format';
 import { CHANNEL, RESERVATION } from '../lib/vocabulary';
 import type { BookingChannel, ReservationState, Tone } from '../lib/types';
@@ -140,8 +140,8 @@ export default function CalendarPage() {
   }
   function setPrice(unitId: string, channel: string, i: number, rmValue: number) {
     setRateEdits(e => ({ ...e, [`${unitId}:${channel}:${i}`]: Math.round(rmValue * 100) }));
-    toast({ tone: 'success', title: 'Rate set.', body: 'Pushed to the connected channel for that night.' });
-    api.put('/rates', { unitId, channel, date: dayIso(i), rate: Math.round(rmValue * 100) }).catch(() => {});
+    toast({ tone: 'success', title: 'Rate set.', body: 'Saved for that night. Channel sync is not connected yet.' });
+    api.put('/rates', { unitId, channel, date: dayIso(i), rate: Math.round(rmValue * 100) }).catch(notifyFailure);
   }
 
   function emptyNight(unit: Unit, i: number) {
@@ -182,7 +182,7 @@ export default function CalendarPage() {
       onConfirm: async () => {
         setBusy(true);
         setDateEdits(e => ({ ...e, [b.id]: { checkIn: newCheckIn, checkOut: newCheckOut } }));
-        try { await api.patch(`/reservations/${b.id}/dates`, { checkIn: newCheckIn, checkOut: newCheckOut, confirm: true }); } catch { /* dev: no backend, keep optimistic */ }
+        try { await api.patch(`/reservations/${b.id}/dates`, { checkIn: newCheckIn, checkOut: newCheckOut, confirm: true }); } catch (e) { notifyFailure(e); }
         setBusy(false); setDialog(null); setOpenBlock(null);
         toast({ tone: 'success', title: 'Booking moved.', body: `${b.guestName} is now ${dateRange(newCheckIn, newCheckOut)}. Guest notified and channels updated.` });
       },
@@ -221,7 +221,7 @@ export default function CalendarPage() {
   function sendGuestMessage(b: Block, body: string) {
     const thread = b.channel === 'direct' ? 'WhatsApp' : CHANNEL[b.channel].label;
     toast({ tone: 'success', title: `Message sent to ${b.guestName}.`, body: `Thread opened on ${thread}.` });
-    api.post('/messages', { reservationId: b.id, body }).catch(() => { /* dev: no backend */ });
+    api.post('/messages', { reservationId: b.id, body }).catch(notifyFailure);
     setChatBlock(null);
   }
 
@@ -229,7 +229,7 @@ export default function CalendarPage() {
   function quickStatus(b: Block, state: ReservationState) {
     if (state === (stateEdits[b.id] ?? b.state)) return;
     setStateEdits(e => ({ ...e, [b.id]: state }));
-    api.patch(`/reservations/${b.id}`, { state }).catch(() => { /* dev: no backend */ });
+    api.patch(`/reservations/${b.id}`, { state }).catch(notifyFailure);
     toast({ tone: 'success', title: 'Status updated.', body: `${b.guestName} is now ${RESERVATION[state].label}.` });
   }
 
@@ -244,7 +244,7 @@ export default function CalendarPage() {
     };
     setAddedBlocks(a => [...a, nb]);
     setOpenBlock(null);
-    api.post(`/reservations/${b.id}/duplicate`).catch(() => { /* dev: no backend */ });
+    api.post(`/reservations/${b.id}/duplicate`).catch(notifyFailure);
     toast({ tone: 'success', title: 'Booking duplicated.', body: `A pending copy for ${b.guestName} was placed after the original — drag it to the dates you want.` });
   }
 
@@ -258,7 +258,7 @@ export default function CalendarPage() {
       onConfirm: async () => {
         setBusy(true);
         setStateEdits(e => ({ ...e, [b.id]: 'cancelled' }));
-        try { await api.post(`/reservations/${b.id}/cancel`, { reason: 'operator_cancelled' }); } catch { /* dev: no backend */ }
+        try { await api.post(`/reservations/${b.id}/cancel`, { reason: 'operator_cancelled' }); } catch (e) { notifyFailure(e); }
         setBusy(false); setDialog(null); setOpenBlock(null);
         toast({ tone: 'neutral', title: 'Reservation cancelled.', body: `${b.guestName} has been notified and the dates released.` });
       },
@@ -525,7 +525,7 @@ export default function CalendarPage() {
           const nb: Block = { id: `blk-${Date.now()}`, unitId: v.unitId, channel: 'maintenance_block', state: 'confirmed', guestName: v.reason, checkIn: v.from, checkOut: v.to, grossBookingValue: 0, ref: null, reason: v.reason };
           setAddedBlocks(a => [...a, nb]);
           setBlockWizard(false);
-          api.post('/blocks', { unitId: v.unitId, from: v.from, to: v.to, reason: v.reason }).catch(() => { /* dev: no backend */ });
+          api.post('/blocks', { unitId: v.unitId, from: v.from, to: v.to, reason: v.reason }).catch(notifyFailure);
           toast({ tone: 'success', title: 'Dates blocked.', body: `Held on every channel · ${dateRange(v.from, v.to)}.` });
         }} />}
       {rateUpdate && <RateUpdate units={units} onClose={() => setRateUpdate(false)}
@@ -542,8 +542,8 @@ export default function CalendarPage() {
             return next;
           });
           setRateUpdate(false);
-          api.post('/rates/bulk', { unitIds: v.unitIds, channels: v.channels, from: v.from, to: v.to, baseRate: v.priceSen }).catch(() => { /* dev: no backend */ });
-          toast({ tone: 'success', title: 'Rates pushed.', body: `${v.channels.length} ${v.channels.length === 1 ? 'channel' : 'channels'} · ${v.unitIds.length} ${v.unitIds.length === 1 ? 'unit' : 'units'} · ${dateRange(v.from, v.to)}.` });
+          api.post('/rates/bulk', { unitIds: v.unitIds, channels: v.channels, from: v.from, to: v.to, baseRate: v.priceSen }).catch(notifyFailure);
+          toast({ tone: 'success', title: 'Rates saved.', body: `${v.channels.length} ${v.channels.length === 1 ? 'channel' : 'channels'} · ${v.unitIds.length} ${v.unitIds.length === 1 ? 'unit' : 'units'} · ${dateRange(v.from, v.to)}.` });
         }} />}
     </>
   );

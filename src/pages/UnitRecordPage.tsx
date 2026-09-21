@@ -7,7 +7,7 @@ import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, notifyFailure, downloadFile } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { rm, dateRange, date } from '../lib/format';
 import type { Tone, UnitReadiness, TaskState, BookingChannel, ReservationState } from '../lib/types';
@@ -172,12 +172,12 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
     toast({ tone: 'success', title: 'Photo added to this unit.', body: 'It will appear on the owner statement and channel listings.' });
     const fd = new FormData();
     fd.append('file', file); fd.append('unitId', u.id); fd.append('kind', 'photo');
-    api.post('/documents', fd).catch(() => { /* dev: no backend */ });
+    api.post('/documents', fd).catch(notifyFailure);
   }
 
   function downloadDoc(doc: { id: string; name: string }) {
     toast({ tone: 'info', title: 'Preparing download', body: `${doc.name} — served as a signed link.` });
-    api.get(`/documents/${doc.id}/download`).catch(() => { /* dev: no backend / binary body */ });
+    downloadFile(`/documents/${doc.id}/download`).catch(notifyFailure);
   }
 
   const railItem = (un: UnitRow) => {

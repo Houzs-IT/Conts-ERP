@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { color } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, downloadFile } from '../lib/api';
 import { rm, rmDeduction, date, percent, rating } from '../lib/format';
 import { TASK, PAYOUT } from '../lib/vocabulary';
 import type { TaskState, PayoutState } from '../lib/types';
@@ -165,7 +165,7 @@ export default function OwnerPortalPage() {
   async function downloadDoc(d: OwnerDoc) {
     if (d.type === 'statement') { downloadStatement(d.refId ?? d.id); return; }
     try {
-      await api.get(`/documents/${d.id}/download`);
+      await downloadFile(`/documents/${d.id}/download`);
     } catch (e) {
       toast({ tone: 'critical', title: 'Could not download.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
     }

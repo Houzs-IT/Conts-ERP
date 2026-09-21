@@ -11,7 +11,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useCrew } from '../lib/useCrew';
-import { api } from '../lib/api';
+import { api, notifyFailure } from '../lib/api';
 import { unitRef } from '../lib/format';
 import { TASK } from '../lib/vocabulary';
 import type { Task, TaskState, Tone } from '../lib/types';
@@ -198,7 +198,7 @@ export default function TasksPage() {
     toast({ tone: 'success', title: 'Cleaner assigned.', body: `${firstName(who.name)} has been notified.` });
     setAssign(null);
     try { await api.post(`/housekeeping/tasks/${task.id}/assign`, { assigneeId: who.id, force }); }
-    catch { /* dev: no backend, keep optimistic */ }
+    catch (e) { notifyFailure(e); }
     setBusy(false);
   }
 

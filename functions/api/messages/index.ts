@@ -1,80 +1,69 @@
-import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession } from '../../_lib/auth';
+import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { requireSession, isFieldRole } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 
-/** GET /api/messages/threads — one list across every channel. */
-export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
-  const { session, response } = await requireSession(request, env);
-  if (!session) return response!;
-
-  const threads = await all<any>(env, `
-    SELECT t.*, COALESCE(g.full_name,'') AS guest_name,
-           u.unit_number, p.name AS property_name,
-           (SELECT body FROM messages m WHERE m.thread_id = t.id ORDER BY m.sent_at DESC LIMIT 1) AS last_body
-    FROM message_threads t
-    LEFT JOIN guests g ON g.id = t.guest_id
-    LEFT JOIN reservations r ON r.id = t.reservation_id
-    LEFT JOIN units u ON u.id = r.unit_id
-    LEFT JOIN properties p ON p.id = u.property_id
-    ORDER BY t.last_message_at DESC`);
-
-  const threadId = new URL(request.url).searchParams.get('threadId');
-  const messages = threadId
-    ? await all<any>(env, 'SELECT * FROM messages WHERE thread_id = ? ORDER BY sent_at', threadId)
-    : [];
-
-  return json({
-    generatedAt: new Date().toISOString(),
-    unread: threads.filter((t: any) => !t.is_read).length,
-    threads: threads.map((t: any) => ({
-      id: t.id, guestName: t.guest_name || null, subject: t.subject,
-      unitNumber: t.unit_number, propertyName: t.property_name,
-      channel: t.channel, isRead: !!t.is_read, lastMessageAt: t.last_message_at,
-      preview: t.last_body,
-    })),
-    messages: messages.map((m: any) => ({
-      id: m.id, direction: m.direction, body: m.body, sentAt: m.sent_at,
-      isAutomated: !!m.is_automated,
-    })),
-  });
-};
-
-/** POST /api/messages { threadId, body } — outbound reply on the guest's channel. */
+/** POST /api/messages — send a message to a guest. Name the conversation one of four ways:
+ *    { threadId, body }              an existing thread
+ *    { reservationId, body }         the thread for that stay (created if there is none)
+ *    { guestId, body }               the thread for that guest's latest stay
+ *    { taskId, channel?, body }      the guest arriving next at the task's unit
+ *  { reservationId, kind: 'access_details' } sends the unit's access instruction instead of typed text.
+ *  Direct-booking guests are reached on WhatsApp; other channels keep the conversation in their own inbox. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
+  if (isFieldRole(session.role) || session.role === 'owner') return fail('FORBIDDEN', 'Only operations and management can message guests.', 403);
 
-  const { threadId, body } = await request.json<{ threadId: string; body: string }>();
-  if (!body?.trim()) return fail('VALIDATION', 'Write a message before sending.', 422);
+  const b = await request.json<any>().catch(() => null);
+  if (!b) return fail('VALIDATION', 'Write a message before sending.', 422);
 
-  const thread = await one<any>(env, 'SELECT id, channel FROM message_threads WHERE id = ?', threadId);
-  if (!thread) return fail('NOT_FOUND', 'That conversation no longer exists.', 404);
-
-  const id = crypto.randomUUID();
-  const now = nowIso();
-  await run(env, `
-    INSERT INTO messages (id, thread_id, direction, sender_id, body, sent_at, is_automated)
-    VALUES (?, ?, 'outbound', ?, ?, ?, 0)`, id, threadId, session.userId, body.trim(), now);
-  await run(env, 'UPDATE message_threads SET last_message_at = ?, is_read = 1 WHERE id = ?', now, threadId);
-
-  await audit(env, {
-    actorId: session.userId, actorLabel: session.fullName, action: 'message.send',
-    entityTable: 'message_threads', entityId: threadId, after: { channel: thread.channel },
-  });
-  // Direct bookings reach the guest on WhatsApp. OTA threads stay inside the
-  // channel's own inbox, so there is nothing to push — the record is the message.
-  let delivery: { state: string; reason?: string } = { state: 'sent' };
-  if (thread.channel === 'direct') {
-    const guest = await one<{ phone: string | null }>(env, `
-      SELECT g.phone FROM message_threads t
-      LEFT JOIN guests g ON g.id = t.guest_id WHERE t.id = ?`, threadId);
-    if (guest?.phone) {
-      delivery = await notify(env, {
-        template: 'guest.reply', recipient: guest.phone, channel: 'whatsapp',
-        body: body.trim(), entityTable: 'message_threads', entityId: threadId, urgent: true,
-      });
-    }
+  let reservationId: string | null = b.reservationId ?? null;
+  if (!b.threadId && !reservationId && b.taskId) {
+    const t = await one<{ id: string }>(env, `
+      SELECT r.id FROM tasks k JOIN reservations r ON r.unit_id = k.unit_id
+      WHERE k.id = ? AND r.state IN ('confirmed','pending','checked_in') AND r.channel NOT IN ('maintenance_block','owner_stay') AND r.check_out >= to_char(now(), 'YYYY-MM-DD')
+      ORDER BY r.check_in LIMIT 1`, String(b.taskId));
+    reservationId = t?.id ?? null;
+  }
+  if (!b.threadId && !reservationId && b.guestId) {
+    const r = await one<{ id: string }>(env, `SELECT id FROM reservations WHERE guest_id = ? AND state != 'cancelled' ORDER BY check_in DESC LIMIT 1`, String(b.guestId));
+    reservationId = r?.id ?? null;
   }
 
-  return json({ id, sentAt: now, delivery: delivery.state, reason: delivery.reason }, 201);
+  let thread = b.threadId ? await one<any>(env, 'SELECT id, channel, guest_id FROM message_threads WHERE id = ?', String(b.threadId)) : null;
+  if (!thread && reservationId) {
+    thread = await one<any>(env, 'SELECT id, channel, guest_id FROM message_threads WHERE reservation_id = ? ORDER BY last_message_at DESC LIMIT 1', reservationId);
+    if (!thread) {
+      const r = await one<any>(env, 'SELECT id, channel, guest_id FROM reservations WHERE id = ?', reservationId);
+      if (!r) return fail('NOT_FOUND', 'That reservation no longer exists.', 404);
+      const id = crypto.randomUUID();
+      await run(env, `INSERT INTO message_threads (id, reservation_id, guest_id, channel, subject, is_read, last_message_at) VALUES (?, ?, ?, ?, 'Stay', 1, ?)`, id, r.id, r.guest_id, r.channel, nowIso());
+      thread = { id, channel: r.channel, guest_id: r.guest_id };
+    }
+  }
+  if (!thread) return fail('NOT_FOUND', 'There is no conversation to send this to.', 404);
+
+  let body = String(b.body ?? '').trim();
+  if (b.kind === 'access_details' && reservationId) {
+    const a = await one<{ instruction: string }>(env, `
+      SELECT c.instruction FROM access_credentials c JOIN reservations r ON r.unit_id = c.unit_id WHERE r.id = ? ORDER BY c.updated_at DESC LIMIT 1`, reservationId);
+    if (!a) return fail('NOT_FOUND', 'There are no access details on file for this unit.', 404);
+    body = `Your access details: ${a.instruction}`;
+  }
+  if (!body) return fail('VALIDATION', 'Write a message before sending.', 422, { body: 'Write a message.' });
+  if (body.length > 2000) return fail('VALIDATION', 'That message is too long.', 422);
+
+  const id = crypto.randomUUID(), now = nowIso();
+  await run(env, `INSERT INTO messages (id, thread_id, direction, sender_id, body, sent_at, is_automated) VALUES (?, ?, 'outbound', ?, ?, ?, ?)`, id, thread.id, session.userId, body, now, b.kind ? 1 : 0);
+  await run(env, 'UPDATE message_threads SET last_message_at = ?, is_read = 1 WHERE id = ?', now, thread.id);
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'message.send', entityTable: 'message_threads', entityId: thread.id, after: { channel: thread.channel, kind: b.kind ?? 'text' } });
+
+  let delivery: { state: string; reason?: string } = { state: 'sent' };
+  if (thread.channel === 'direct') {
+    const guest = thread.guest_id ? await one<{ phone: string | null }>(env, 'SELECT phone FROM guests WHERE id = ?', thread.guest_id) : null;
+    delivery = guest?.phone
+      ? await notify(env, { template: b.kind === 'access_details' ? 'access_details' : 'guest.reply', recipient: guest.phone, channel: 'whatsapp', body, entityTable: b.kind ? 'reservations' : 'message_threads', entityId: b.kind ? (reservationId ?? thread.id) : thread.id, urgent: true })
+      : { state: 'failed', reason: 'This guest has no phone number on file.' };
+  }
+  return json({ id, threadId: thread.id, sentAt: now, delivery: delivery.state, reason: delivery.reason }, 201);
 };

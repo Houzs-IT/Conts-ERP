@@ -7,7 +7,7 @@ import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import type { BookingChannel } from '../lib/types';
 
@@ -126,7 +126,7 @@ export default function InboxPage() {
     // Opening a thread reads it — reflected in the badge immediately.
     if (!readIds[id]) {
       setReadIds(r => ({ ...r, [id]: true }));
-      api.patch(`/messages/threads/${id}`, { isRead: true }).catch(() => { /* dev: no backend */ });
+      api.patch(`/messages/threads/${id}`, { isRead: true }).catch(notifyFailure);
     }
   }
 
@@ -143,15 +143,20 @@ export default function InboxPage() {
     setDraft('');
 
     try {
-      await api.post('/messages', { threadId: activeId, body });
-    } catch { /* dev: no backend, keep the optimistic message */ }
-
-    // Only now, after the round-trip resolves, does it read as sent.
-    setSentByThread(s => ({
-      ...s,
-      [activeId]: (s[activeId] ?? []).map(m => (m.id === id ? { ...m, status: 'sent' } : m)),
-    }));
-    toast({ tone: 'success', title: 'Message sent.' });
+      const res = await api.post<{ delivery: string; reason?: string }>('/messages', { threadId: activeId, body });
+      // Only now, after the round-trip resolves, does it read as sent.
+      setSentByThread(s => ({
+        ...s,
+        [activeId]: (s[activeId] ?? []).map(m => (m.id === id ? { ...m, status: 'sent' } : m)),
+      }));
+      toast(res.delivery === 'sent'
+        ? { tone: 'success', title: 'Message sent.' }
+        : { tone: 'warning', title: 'Message saved, not delivered yet.', body: res.reason ?? 'WhatsApp is not connected yet, so it is queued.' });
+    } catch (e) {
+      setSentByThread(s => ({ ...s, [activeId]: (s[activeId] ?? []).filter(m => m.id !== id) }));
+      setDraft(body);
+      toast({ tone: 'critical', title: 'Message was not sent.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    }
   }
 
   return (

@@ -7,7 +7,7 @@ import { Field } from '../components/Field';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
-import { api } from '../lib/api';
+import { api, notifyFailure, downloadFile } from '../lib/api';
 import { rm } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 
@@ -86,19 +86,19 @@ export default function PropertiesPage() {
   function patch(id: string, p: Partial<Unit>) { setEdits(e => ({ ...e, [id]: { ...e[id], ...p } })); }
   function save(u: Unit) {
     toast({ tone: 'success', title: 'Changes saved.', body: `${u.listingName || u.unitCode} updated.` });
-    api.patch(`/units/${u.id}`, u).catch(() => {});
+    api.patch(`/units/${u.id}`, u).catch(notifyFailure);
   }
   function addBuilding(b: Omit<Building, 'id'>) {
     const nb = { id: crypto.randomUUID(), ...b };
     setAddedB(l => [nb, ...l]); setCollapsed(c => ({ ...c, [nb.id]: false }));
     toast({ tone: 'success', title: 'Building added.', body: `${b.name} — add units to it.` });
-    api.post('/properties', b).catch(() => {}); setModal(null);
+    api.post('/properties', b).catch(notifyFailure); setModal(null);
   }
   function addUnit(buildingId: string) {
     const nu = mkUnit(crypto.randomUUID(), buildingId, '', '', buildings.find(b => b.id === buildingId)?.state ?? STATES[0], '', { ownerName: '' });
     setAddedU(l => [nu, ...l]); setSelectedId(nu.id); setTab('details');
     toast({ tone: 'success', title: 'Unit added.', body: 'Fill in its details on the right.' });
-    api.post('/units', nu).catch(() => {}); setModal(null);
+    api.post('/units', nu).catch(notifyFailure); setModal(null);
   }
 
   const totalUnits = units.length;
@@ -265,7 +265,7 @@ function MonthlyExpenses({ u, onChange }: { u: Unit; onChange: (p: Partial<Unit>
   function generateReport() {
     const period = new Date().toISOString().slice(0, 7);
     toast({ tone: 'info', title: 'Preparing report', body: `Expenses for ${u.unitCode || 'this unit'} — served as a download.` });
-    api.get('/expenses/report', { unitId: u.id, period }).catch(() => { /* dev: no backend / binary body */ });
+    downloadFile('/expenses/report', { unitId: u.id, period }).catch(notifyFailure);
   }
   return (
     <div>
@@ -302,7 +302,7 @@ function ContractTab({ u, onChange }: { u: Unit; onChange: (p: Partial<Unit>) =>
   const fileRef = useRef<HTMLInputElement>(null);
   function download(d: { id: string; name: string }) {
     toast({ tone: 'info', title: 'Preparing download', body: `${d.name} — served as a signed link.` });
-    api.get(`/documents/${d.id}/download`).catch(() => { /* dev: no backend / binary body */ });
+    downloadFile(`/documents/${d.id}/download`).catch(notifyFailure);
   }
   function upload(file: File) {
     const doc = { id: crypto.randomUUID(), name: file.name };
@@ -310,7 +310,7 @@ function ContractTab({ u, onChange }: { u: Unit; onChange: (p: Partial<Unit>) =>
     toast({ tone: 'success', title: 'Document uploaded.', body: `${file.name} added to this unit.` });
     const fd = new FormData();
     fd.append('file', file); fd.append('unitId', u.id); fd.append('kind', 'contract');
-    api.post('/documents', fd).catch(() => { /* dev: no backend */ });
+    api.post('/documents', fd).catch(notifyFailure);
   }
   return (
     <div>

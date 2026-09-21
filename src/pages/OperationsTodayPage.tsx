@@ -9,7 +9,7 @@ import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useCrew } from '../lib/useCrew';
-import { api } from '../lib/api';
+import { api, notifyFailure } from '../lib/api';
 import { READINESS, CHANNEL } from '../lib/vocabulary';
 import { rm, date as fmtDate, time, unitRef } from '../lib/format';
 import type { Tone, UnitReadiness, BookingChannel } from '../lib/types';
@@ -164,7 +164,7 @@ export default function OperationsTodayPage() {
     const row = assign.row;
     setAssign(null);
     // Dev has no backend; keep the optimistic assignment either way.
-    api.post(`/housekeeping/tasks/${row.id}/assign`, { assigneeId: cleaner.id }).then(reload).catch(() => {});
+    api.post(`/housekeeping/tasks/${row.id}/assign`, { assigneeId: cleaner.id }).then(reload).catch(notifyFailure);
   }
 
   function doMessage() {
@@ -176,7 +176,7 @@ export default function OperationsTodayPage() {
     setEdits(e => ({ ...e, [row.id]: { ...e[row.id], guest: null } }));
     toast({ tone: 'success', title: 'Message sent.', body: `Sent to ${guest.name} on ${CHANNEL[guest.channel].label}.` });
     setMessage(null);
-    api.post('/messages', { taskId: row.id, channel: guest.channel, body }).catch(() => {});
+    api.post('/messages', { taskId: row.id, channel: guest.channel, body }).catch(notifyFailure);
   }
 
   function doInspect() {
@@ -185,7 +185,7 @@ export default function OperationsTodayPage() {
     const id = crypto.randomUUID();
     toast({ tone: 'success', title: 'Inspection started.', body: `Checklist opened for ${unitRef(row.propertyName, row.unitNumber)}.` });
     setInspect(null);
-    api.post<{ id: string }>('/inspections', { taskId: row.id, unitNumber: row.unitNumber }).catch(() => {});
+    api.post<{ id: string }>('/inspections', { taskId: row.id, unitNumber: row.unitNumber }).catch(notifyFailure);
     window.location.hash = `#/operations/inspections/${id}`;
   }
 
@@ -196,7 +196,7 @@ export default function OperationsTodayPage() {
     if (!owner) return;
     toast({ tone: 'success', title: 'Owner notified.', body: `${owner.name} was sent the blocked-unit notice.` });
     setOwnerNotice(null);
-    api.post(`/owners/${owner.id}/notify`, { unitNumber: row.unitNumber, reason: row.work }).catch(() => {});
+    api.post(`/owners/${owner.id}/notify`, { unitNumber: row.unitNumber, reason: row.work }).catch(notifyFailure);
   }
 
   interface RowAction { key: string; label: string; primary?: boolean; run: () => void }

@@ -15,7 +15,7 @@ r = await call('GET', '/api/units'); check('unit now maintenance', r.json.data.f
 r = await call('POST', `/api/maintenance/issues/${id}/complete`, { finalAmount: 48000 }); check('complete', r.status === 200, r.text);
 r = await call('GET', '/api/units'); check('unit back on sale (ready)', r.json.data.find(u => u.unitNumber === '#A-12-03').readiness === 'ready', '');
 r = await call('POST', '/api/maintenance/issues', { unitId: '#2207', title: 'Second job', blocksUnit: true }); const sid = r.json.id; await call('POST', `/api/maintenance/issues/${sid}/complete`, { finalAmount: 0 }); r = await call('GET', '/api/units'); check('unit with another open blocker stays off sale', r.json.data.find(u => u.unitNumber === '#2207').readiness === 'maintenance', '');
-r = await call('GET', '/api/expenses'); check('expense raised', JSON.stringify(r.json).includes('Test leak'), r.text.slice(0, 200));
+r = await call('GET', '/api/finance/expenses'); check('expense raised', JSON.stringify(r.json).includes('Test leak'), r.text.slice(0, 200));
 r = await call('PATCH', `/api/maintenance/issues/${id}`, { state: 'reopened' }); check('reopen', r.status === 200, r.text);
 r = await call('POST', `/api/maintenance/issues/${id}/photos`, {}); check('photos honest 501', r.status === 501, r.text);
 r = await call('POST', '/api/maintenance/issues', { unitId: '#2207', title: 'Field damage', blocksUnit: true, source: 'field_app' }, 'housekeeper'); check('field damage report', r.status === 201, r.text);

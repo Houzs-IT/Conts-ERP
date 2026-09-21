@@ -1,4 +1,3 @@
-// Runs against a local server (npm run dev on :8788, local Postgres). Needs SESSION_SECRET=smoke-test-secret-not-real-0123456789.
 import { call, check, done } from './harness.mjs';
 const U2 = '55555555-5555-4555-8555-000000000002';
 let r = await call('GET', '/api/reservations'); check('list', r.status === 200 && r.json.data.length > 0 && r.json.data[0].nights > 0 && 'checkInTime' in r.json.data[0], r.text.slice(0, 200));

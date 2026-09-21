@@ -66,4 +66,27 @@ export const api = {
  * See BUTTONS.md — calendar drag, reservation date change.
  */
 export const CONFIRMATION_REQUIRED = 428;
+
+/** Shows a red "Not saved" message for a change the server refused. Used where a screen updates itself first and sends the change after. */
+export function notifyFailure(e: unknown) {
+  const message = e instanceof Error ? e.message : 'Try again in a moment.';
+  window.dispatchEvent(new CustomEvent('conts:save-failed', { detail: message }));
+}
+
+/** GET a file (CSV, PDF) and hand it to the browser as a download. Throws with the server's message if it refuses. */
+export async function downloadFile(path: string, params?: Record<string, string | number | undefined | null>) {
+  const p = new URLSearchParams();
+  Object.entries(params ?? {}).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') p.set(k, String(v)); });
+  const res = await fetch(`/api${path}${p.toString() ? `?${p}` : ''}`, { credentials: 'include' });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as ApiError | null;
+    throw new ApiFailure(res.status, body?.error?.code ?? 'UNKNOWN', body?.error?.message ?? 'The download failed. Try again.');
+  }
+  const blob = await res.blob();
+  const name = /filename="?([^";]+)"?/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'download';
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.click();
+  URL.revokeObjectURL(url);
+}
 export const CONFLICT = 409;

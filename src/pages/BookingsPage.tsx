@@ -12,7 +12,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
-import { api } from '../lib/api';
+import { api, notifyFailure } from '../lib/api';
 import { todayMyt, rm, dateRange, date as fmtDate, time as fmtTime, nights as fmtNights } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { Tone, BookingChannel, ReservationState } from '../lib/types';
@@ -223,7 +223,7 @@ export default function BookingsPage() {
       unitId: input.unitId, channel: input.channel,
       guest: { fullName: input.guestName, email: input.email || null, phone: input.phone || null },
       checkIn: input.checkIn, checkOut: input.checkOut, guestsCount: input.guestsCount, grossBookingValue: input.grossSen,
-    }).catch(() => { /* dev: no backend */ });
+    }).catch(notifyFailure);
   }
 
   // ---- Import reservations (CSV) ----
@@ -246,7 +246,7 @@ export default function BookingsPage() {
           unitNumber: r.unitNumber, channel: r.channel, guest: { fullName: r.guestName, phone: r.guestPhone },
           checkIn: r.checkIn, checkOut: r.checkOut, guestsCount: r.guestsCount, grossBookingValue: r.grossBookingValue,
         })),
-      }).catch(() => { /* dev: no backend */ });
+      }).catch(notifyFailure);
     }
     const rejected = importRows.length - valid.length;
     toast({
@@ -287,7 +287,7 @@ export default function BookingsPage() {
     if (!r) return;
     const ch = r.channel === 'direct' ? 'WhatsApp' : CHANNEL_META[r.channel].label;
     toast({ tone: 'success', title: `Message sent to ${r.guestName}.`, body: `Thread opened on ${ch}.` });
-    api.post('/messages', { reservationId: r.id, body }).catch(() => { /* dev: no backend */ });
+    api.post('/messages', { reservationId: r.id, body }).catch(notifyFailure);
     setMessageRow(null);
   }
 
@@ -301,14 +301,14 @@ export default function BookingsPage() {
     setAdded(a => [clone, ...a]);
     setOpenId(clone.id);
     toast({ tone: 'success', title: 'Reservation duplicated.', body: `${r.guestName} · ${clone.propertyName} ${clone.unitNumber} · ${dateRange(clone.checkIn, clone.checkOut)}. Adjust the dates as needed.` });
-    api.post(`/reservations/${r.id}/duplicate`, {}).catch(() => { /* dev: no backend */ });
+    api.post(`/reservations/${r.id}/duplicate`, {}).catch(notifyFailure);
   }
 
   // ---- Drawer → Quick status update (PATCH /reservations/:id) — optimistic ----
   function updateStatus(r: Row, status: ReservationState) {
     if (status === r.state) return;
     patch(r.id, { state: status });
-    api.patch(`/reservations/${r.id}`, { status }).catch(() => { /* dev: no backend */ });
+    api.patch(`/reservations/${r.id}`, { status }).catch(notifyFailure);
     toast({ tone: 'neutral', title: 'Status updated.', body: `${r.externalRef ?? 'Reservation'} is now ${STATE_LABEL[status]}.` });
   }
 
@@ -318,7 +318,7 @@ export default function BookingsPage() {
     const r = open;
     patch(r.id, { checkIn: vals.checkIn, checkOut: vals.checkOut, nights: nightsBetween(vals.checkIn, vals.checkOut) });
     try { await api.patch(`/reservations/${r.id}/dates`, { checkIn: vals.checkIn, checkOut: vals.checkOut, confirm: true }); }
-    catch { /* dev: no backend */ }
+    catch (e) { notifyFailure(e); }
     setDatesOpen(false);
     toast({ tone: 'success', title: 'Dates changed.', body: `${r.guestName} moved to ${dateRange(vals.checkIn, vals.checkOut)} and notified.` });
   }
@@ -571,8 +571,8 @@ const ACTIVITY_FALLBACK: ActivityItem[] = [
 ];
 
 function ActivityLog({ r }: { r: Row }) {
-  const { data } = useApi<ActivityItem[]>(`/audit?entityTable=reservations&entityId=${r.id}`, ACTIVITY_FALLBACK);
-  const items = data ?? [];
+  const { data } = useApi<{ data: ActivityItem[] }>(`/audit?entityTable=reservations&entityId=${r.id}`, { data: ACTIVITY_FALLBACK });
+  const items = data?.data ?? [];
   if (items.length === 0) return <div className="text-[12px] text-muted-ink py-2">No activity recorded yet.</div>;
   return (
     <div className="border border-solid border-line rounded-card overflow-hidden">

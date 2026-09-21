@@ -8,7 +8,7 @@ import { Dialog, type DialogSpec } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, notifyFailure } from '../lib/api';
 import { rm } from '../lib/format';
 import { TASK } from '../lib/vocabulary';
 import type { TaskState } from '../lib/types';
@@ -82,7 +82,7 @@ export default function MaintenancePage() {
       const cur = (e[issue.id]?.[field] ?? issue[field] ?? 0) as number;
       return { ...e, [issue.id]: { ...e[issue.id], [field]: cur + 1 } };
     });
-  const fire = (p: Promise<unknown>) => { void p.catch(() => { /* dev: no backend, keep optimistic */ }); };
+  const fire = (p: Promise<unknown>) => { void p.catch(notifyFailure); };
 
   // Modal state
   const [creating, setCreating] = useState(false);

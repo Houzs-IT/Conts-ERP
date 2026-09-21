@@ -1,39 +1,36 @@
-import { type Env, all, run, json, fail, audit } from '../../_lib/db';
-import { requireSession } from '../../_lib/auth';
+import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { requireSession, isFieldRole } from '../../_lib/auth';
+import { CATALOG, QUIET_HOURS } from '../../_lib/automationCatalog';
 
 const MANAGE = ['management', 'operations_manager'];
 
+/** GET /api/automations — the fixed rule catalog, with each rule's on/off state from the database. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
+  if (isFieldRole(session.role) || session.role === 'owner') return fail('FORBIDDEN', 'Automations are visible to operations, finance and management.', 403);
 
-  const rows = await all<any>(env, 'SELECT * FROM automations ORDER BY name');
+  const saved = await all<{ id: string; is_active: number }>(env, 'SELECT id, is_active FROM automations');
+  const state = new Map(saved.map(r => [r.id, !!r.is_active]));
   return json({
-    generatedAt: new Date().toISOString(),
-    // Quiet hours are a delivery rule, not a per-rule setting — stated once here
-    // so the UI can show it without inventing its own copy.
-    quietHours: { from: '22:00', to: '08:00', timezone: 'Asia/Kuala_Lumpur',
-      note: 'Non-urgent guest and owner messages queue until 08:00. Check-in risk and payout failure override.' },
-    data: rows.map(r => ({
-      id: r.id, name: r.name, trigger: r.trigger,
-      offsetHours: r.offset_hours, template: r.template, isActive: !!r.is_active,
-    })),
+    generatedAt: nowIso(), quietHours: QUIET_HOURS,
+    data: CATALOG.map(r => ({ ...r, isActive: state.get(r.id) ?? r.isActive })),
   });
 };
 
+/** PATCH /api/automations { id, isActive } — turns one rule on or off. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MANAGE.includes(session.role)) {
-    return fail('FORBIDDEN', 'You can view automations but cannot change them. Ask an operations manager.', 403);
-  }
+  if (!MANAGE.includes(session.role)) return fail('FORBIDDEN', 'You can view automations but cannot change them. Ask an operations manager.', 403);
 
-  const { id, isActive } = await request.json<{ id: string; isActive: boolean }>();
-  await run(env, 'UPDATE automations SET is_active = ? WHERE id = ?', isActive ? 1 : 0, id);
-  await audit(env, {
-    actorId: session.userId, actorLabel: session.fullName,
-    action: isActive ? 'automation.activate' : 'automation.pause',
-    entityTable: 'automations', entityId: id, after: { isActive },
-  });
+  const b = await request.json<{ id: string; isActive: boolean }>().catch(() => null);
+  const rule = CATALOG.find(r => r.id === b?.id);
+  if (!rule || typeof b?.isActive !== 'boolean') return fail('VALIDATION', 'Pick an automation and say whether it is on.', 422);
+
+  await run(env, `
+    INSERT INTO automations (id, name, trigger, offset_hours, template, is_active) VALUES (?, ?, ?, NULL, ?, ?)
+    ON CONFLICT (id) DO UPDATE SET is_active = excluded.is_active`, rule.id, rule.name, rule.trigger, rule.template, b.isActive ? 1 : 0);
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: b.isActive ? 'automation.activate' : 'automation.pause', entityTable: 'automations', entityId: rule.id, after: { isActive: b.isActive } });
   return json({ ok: true });
 };

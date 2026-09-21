@@ -9,7 +9,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useCrew } from '../lib/useCrew';
-import { api } from '../lib/api';
+import { api, notifyFailure } from '../lib/api';
 import { todayMyt, rm, unitRef } from '../lib/format';
 import { READINESS, TASK } from '../lib/vocabulary';
 import { TONE } from '../lib/design-tokens';
@@ -222,7 +222,7 @@ export default function HousekeepingPage() {
     toast({ tone: 'success', title: 'Cleaner assigned.', body: `${firstName(cleaner.name)} has been notified.` });
     setAssign(null);
     try { await api.post(`/housekeeping/tasks/${task.id}/assign`, { assigneeId: cleaner.id, force }); }
-    catch { /* dev: no backend, keep optimistic */ }
+    catch (e) { notifyFailure(e); }
     setBusy(false);
   }
 

@@ -1,3 +1,4 @@
+// Each check file expects a freshly reset database and a local server (npm run dev on :8788, SESSION_SECRET=smoke-test-secret-not-real-0123456789).
 import { createHmac } from 'node:crypto';
 const b64 = (b) => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const USERS = { management: ['11111111-1111-4111-8111-000000000002','management@theconts.com','Lee Wei Siang'], housekeeper: ['11111111-1111-4111-8111-000000000005','nurul@theconts.com','Nurul Huda'], finance_admin: ['11111111-1111-4111-8111-000000000003','finance@theconts.com','Priya Devi'], operations_manager: ['11111111-1111-4111-8111-000000000001','aina@theconts.com','Aina Zulkifli'] };

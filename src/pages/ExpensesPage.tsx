@@ -6,7 +6,7 @@ import { Button } from '../components/Button';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, notifyFailure } from '../lib/api';
 import { rm } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
@@ -106,7 +106,7 @@ export default function ExpensesPage() {
   // failure swallowed — the interaction still lands.
   const [added, setAdded] = useState<Expense[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Expense>>>({});
-  const fire = (p: Promise<unknown>) => { void p.catch(() => { /* dev: no backend, keep optimistic */ }); };
+  const fire = (p: Promise<unknown>) => { void p.catch(notifyFailure); };
 
   const merged = useMemo(
     () => [...added, ...(data?.data ?? [])].map(e => ({ ...e, ...edits[e.id] })),
@@ -502,5 +502,5 @@ function downloadCsv(name: string, text: string) {
     a.href = url; a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 0);
-  } catch { /* dev: download unavailable, the toast still confirms the action */ }
+  } catch (e) { notifyFailure(e); }
 }

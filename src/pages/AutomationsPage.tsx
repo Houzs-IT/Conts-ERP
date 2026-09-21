@@ -282,14 +282,14 @@ export default function AutomationsPage() {
 
   async function toggle(r: Rule) {
     const next = !r.isActive;
-    setOverrides(o => ({ ...o, [r.id]: next }));
-    toast(next
-      ? { tone: 'success', title: `${r.name} is live.`, body: 'It will send on the next matching trigger.' }
-      : { tone: 'warning', title: `${r.name} moved to draft.`, body: 'No further messages will be sent from this rule.' });
     try {
       await api.patch('/automations', { id: r.id, isActive: next });
-    } catch {
-      // Dev: no backend. Keep the optimistic state so a missing endpoint never breaks the toggle.
+      setOverrides(o => ({ ...o, [r.id]: next }));
+      toast(next
+        ? { tone: 'success', title: `${r.name} is live.`, body: 'It will send on the next matching trigger.' }
+        : { tone: 'warning', title: `${r.name} moved to draft.`, body: 'No further messages will be sent from this rule.' });
+    } catch (e) {
+      toast({ tone: 'critical', title: `${r.name} was not changed.`, body: e instanceof Error ? e.message : 'Try again in a moment.' });
     }
   }
 

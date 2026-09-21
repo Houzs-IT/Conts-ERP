@@ -8,7 +8,7 @@ import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useCrew } from '../lib/useCrew';
-import { api } from '../lib/api';
+import { api, notifyFailure } from '../lib/api';
 import { rm, time, percent } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
@@ -287,7 +287,7 @@ export default function DashboardPage() {
     resolve(ex.id);
     toast({ tone: 'success', title: 'Cleaner assigned.', body: `${cleaner.name} has been notified.` });
     setAssign(null);
-    if (ex.action.taskId) api.post(`/housekeeping/tasks/${ex.action.taskId}/assign`, { assigneeId: cleaner.id }).catch(() => {});
+    if (ex.action.taskId) api.post(`/housekeeping/tasks/${ex.action.taskId}/assign`, { assigneeId: cleaner.id }).catch(notifyFailure);
   }
 
   function doNotify() {
@@ -300,7 +300,7 @@ export default function DashboardPage() {
     api.post(`/owners/${owner.id}/notify`, {
       unitLabel: ex.unitLabel, reason: ex.reason, datesBlocked: ex.datesBlocked,
       revenueAtRisk: ex.revenueAtRisk, expectedReturn: ex.expectedReturn,
-    }).catch(() => {});
+    }).catch(notifyFailure);
   }
 
   const assignBusy = assign ? (CREW.find(c => c.id === assign.cleanerId)?.busy ?? 0) : 0;

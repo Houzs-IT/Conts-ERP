@@ -1,5 +1,5 @@
 -- Tables the Conts ERP screens need that the original schema did not have.
--- REVERSAL: DROP TABLE unit_expenses; DROP TABLE channel_rates; ALTER TABLE units DROP COLUMN listing_name, DROP COLUMN unit_code, DROP COLUMN address, DROP COLUMN package, DROP COLUMN term, DROP COLUMN split_kind, DROP COLUMN split_value; ALTER TABLE owners DROP COLUMN ic_number, DROP COLUMN bank_account_holder, DROP COLUMN bank_account_number; ALTER TABLE inventory_items DROP COLUMN category, DROP COLUMN replace_by, DROP COLUMN notes; ALTER TABLE owner_contracts DROP COLUMN model, DROP COLUMN grr_amount, DROP COLUMN offer_letter; (and restore expenses_category_check to the eight original categories)
+-- REVERSAL: DROP TABLE unit_expenses; DROP TABLE channel_rates; ALTER TABLE units DROP COLUMN listing_name, DROP COLUMN unit_code, DROP COLUMN address, DROP COLUMN package, DROP COLUMN term, DROP COLUMN split_kind, DROP COLUMN split_value; ALTER TABLE owners DROP COLUMN ic_number, DROP COLUMN bank_account_holder, DROP COLUMN bank_account_number; ALTER TABLE inventory_items DROP COLUMN category, DROP COLUMN replace_by, DROP COLUMN notes; ALTER TABLE users DROP COLUMN manager_id; DROP TABLE channel_uplifts; ALTER TABLE units DROP COLUMN cost_floor; ALTER TABLE reviews DROP COLUMN reply; ALTER TABLE owner_contracts DROP COLUMN model, DROP COLUMN grr_amount, DROP COLUMN offer_letter; (and restore expenses_category_check to the eight original categories)
 set local search_path = pos;
 
 -- One row per unit, sales channel and night whose price was set by hand.
@@ -41,6 +41,22 @@ ALTER TABLE expenses ADD CONSTRAINT expenses_category_check CHECK (category IN
 ALTER TABLE owner_contracts ADD COLUMN model        TEXT NOT NULL DEFAULT 'management' CHECK (model IN ('management','grr'));
 ALTER TABLE owner_contracts ADD COLUMN grr_amount   INTEGER NOT NULL DEFAULT 0;   -- sen per month, for model 'grr'
 ALTER TABLE owner_contracts ADD COLUMN offer_letter TEXT;
+
+-- Pricing: the nightly cost floor per unit, and how much each sales channel adds on top of the web rate.
+ALTER TABLE units ADD COLUMN cost_floor INTEGER NOT NULL DEFAULT 0 CHECK (cost_floor >= 0);   -- sen per night
+CREATE TABLE channel_uplifts (
+  unit_id    TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+  channel    TEXT NOT NULL CHECK (channel IN ('airbnb','booking_com','agoda')),
+  uplift     INTEGER NOT NULL CHECK (uplift >= 0),   -- sen added to the base web rate
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (unit_id, channel)
+);
+
+-- The host's written reply to a guest review.
+ALTER TABLE reviews ADD COLUMN reply TEXT;
+
+-- Who each staff member reports to (the organisation chart). Changes escalation and rosters, never permissions.
+ALTER TABLE users ADD COLUMN manager_id TEXT REFERENCES users(id) ON DELETE SET NULL;
 
 -- The recurring monthly costs set on a unit (internet, electricity, water, cleaning ...), deducted on the owner statement.
 CREATE TABLE unit_expenses (

@@ -8,7 +8,7 @@ import Icon from '../components/Icon';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, notifyFailure } from '../lib/api';
 import { TONE } from '../lib/design-tokens';
 import { TASK } from '../lib/vocabulary';
 import type { TaskState } from '../lib/types';
@@ -117,7 +117,7 @@ export default function InspectionsPage() {
 
   const patch = (id: string, delta: Partial<Inspection>) =>
     setEdits(e => ({ ...e, [id]: { ...e[id], ...delta } }));
-  const fire = (p: Promise<unknown>) => { void p.catch(() => { /* dev: no backend, keep optimistic */ }); };
+  const fire = (p: Promise<unknown>) => { void p.catch(notifyFailure); };
 
   const active = openId ? rows.find(r => r.id === openId) ?? null : null;
 
