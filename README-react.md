@@ -1,4 +1,4 @@
-# The Conts Property OS — React application
+# Conts ERP — React application
 
 Production source. The `.dc.html` files in the project root are the design
 reference; this folder is what ships.

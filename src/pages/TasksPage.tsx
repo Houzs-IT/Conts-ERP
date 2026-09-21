@@ -10,7 +10,8 @@ import Icon from '../components/Icon';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { useCrew } from '../lib/useCrew';
+import { api, notifyFailure } from '../lib/api';
 import { unitRef } from '../lib/format';
 import { TASK } from '../lib/vocabulary';
 import type { Task, TaskState, Tone } from '../lib/types';
@@ -34,13 +35,6 @@ const KIND_LABEL: Record<Kind, string> = {
   inspection: 'Inspection', maintenance: 'Maintenance', delivery: 'Delivery', other: 'Other',
 };
 
-interface Assignee { id: string; name: string }
-const CREW: Assignee[] = [
-  { id: 'u5', name: 'Nurul Huda' },
-  { id: 'u6', name: 'Faridah Ismail' },
-  { id: 'u7', name: 'Chan Wei Wen' },
-  { id: 'u9', name: 'Siti Rahmah' },
-];
 const firstName = (name: string) => name.split(' ')[0];
 
 interface Payload { data: Task[]; total: number }
@@ -147,6 +141,7 @@ const stateFilterLabel = (s: TaskState | 'all') => (s === 'all' ? 'All tasks' : 
 
 /* ------------------------------- the page -------------------------------- */
 export default function TasksPage() {
+  const CREW = useCrew('all');
   const [stateFilter, setStateFilter] = useState<TaskState | 'all'>('all');
   const [kindFilter, setKindFilter] = useState<Kind | 'all'>('all');
   const { data, loading, error, reload } = useApi<Payload>('/tasks', FALLBACK);
@@ -172,13 +167,14 @@ export default function TasksPage() {
 
   /* -------------------------------- actions ------------------------------- */
   function openAssign(task: Task) {
-    setAssign({ task, assigneeId: task.assigneeId ?? CREW[0].id, force: false });
+    setAssign({ task, assigneeId: task.assigneeId ?? CREW[0]?.id ?? '', force: false });
   }
 
   async function doAssign() {
     if (!assign) return;
     const { task, assigneeId, force } = assign;
-    const who = CREW.find(c => c.id === assigneeId)!;
+    const who = CREW.find(c => c.id === assigneeId);
+    if (!who) return;
 
     // Simulate the 409 ASSIGNEE_BUSY overlap check the backend would run.
     if (!force) {
@@ -202,7 +198,7 @@ export default function TasksPage() {
     toast({ tone: 'success', title: 'Cleaner assigned.', body: `${firstName(who.name)} has been notified.` });
     setAssign(null);
     try { await api.post(`/housekeeping/tasks/${task.id}/assign`, { assigneeId: who.id, force }); }
-    catch { /* dev: no backend, keep optimistic */ }
+    catch (e) { notifyFailure(e); }
     setBusy(false);
   }
 

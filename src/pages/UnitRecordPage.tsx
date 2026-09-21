@@ -7,7 +7,7 @@ import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, notifyFailure, downloadFile } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { rm, dateRange, date } from '../lib/format';
 import type { Tone, UnitReadiness, TaskState, BookingChannel, ReservationState } from '../lib/types';
@@ -144,15 +144,23 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
 
-  const { data, error, reload } = useApi<Payload>(`/units/detail?unitId=${unitId}`, FALLBACK);
-  const { data: unitsData } = useApi<UnitRow[]>('/units', UNITS_FALLBACK);
+  const { data: unitsData } = useApi<{ data: UnitRow[] }>('/units', { data: UNITS_FALLBACK });
+  const units = unitsData?.data ?? [];
+  const openId = unitId || units[0]?.id || '';
+  const { data, error, reload } = useApi<Payload>(`/units/detail?unitId=${encodeURIComponent(openId)}`, FALLBACK);
 
-  const d = data ?? FALLBACK;
+  const d = data ?? (import.meta.env.DEV ? FALLBACK : null);
+  if (!d) {
+    return (
+      <div className="p-6 text-[13px] text-muted-ink">
+        {error ?? (units.length === 0 && unitsData ? 'There are no units yet. Add a building and a unit under Properties.' : 'Loading unit…')}
+      </div>
+    );
+  }
   const u = d.unit;
   const p = d.performance;
-  const units = unitsData ?? UNITS_FALLBACK;
   const buildingCount = new Set(units.map(x => x.propertyName)).size;
-  const selectedId = units.length ? (units.some(x => x.id === unitId) ? unitId : units[0].id) : '';
+  const selectedId = units.length ? (units.some(x => x.id === openId) ? openId : units[0].id) : '';
   const openIssues = d.maintenance.filter(m => m.state !== 'resolved').length;
 
   // Financial sections are absent from the payload for roles without access,
@@ -164,12 +172,12 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
     toast({ tone: 'success', title: 'Photo added to this unit.', body: 'It will appear on the owner statement and channel listings.' });
     const fd = new FormData();
     fd.append('file', file); fd.append('unitId', u.id); fd.append('kind', 'photo');
-    api.post('/documents', fd).catch(() => { /* dev: no backend */ });
+    api.post('/documents', fd).catch(notifyFailure);
   }
 
   function downloadDoc(doc: { id: string; name: string }) {
     toast({ tone: 'info', title: 'Preparing download', body: `${doc.name} — served as a signed link.` });
-    api.get(`/documents/${doc.id}/download`).catch(() => { /* dev: no backend / binary body */ });
+    downloadFile(`/documents/${doc.id}/download`).catch(notifyFailure);
   }
 
   const railItem = (un: UnitRow) => {

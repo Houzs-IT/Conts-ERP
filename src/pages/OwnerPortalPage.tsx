@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { color } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, downloadFile } from '../lib/api';
 import { rm, rmDeduction, date, percent, rating } from '../lib/format';
 import { TASK, PAYOUT } from '../lib/vocabulary';
 import type { TaskState, PayoutState } from '../lib/types';
@@ -120,7 +120,7 @@ const DOC_ICON: Record<OwnerDoc['type'], string> = {
 };
 
 export default function OwnerPortalPage() {
-  const summary = useApi<Summary>('/owner/summary?period=2026-08', SUMMARY);
+  const summary = useApi<Summary>('/owner/summary', SUMMARY);
   const trend = useApi<Trend>('/owner/trend?months=8', TREND);
   const health = useApi<{ issues: HealthIssue[] }>('/owner/property-health', HEALTH);
   const docs = useApi<{ data: OwnerDoc[] }>('/owner/documents', DOCS);
@@ -129,11 +129,10 @@ export default function OwnerPortalPage() {
   const [approved, setApproved] = useState<Record<string, true>>({});
   const [approve, setApprove] = useState<HealthIssue | null>(null);
 
-  const st = summary.data ?? SUMMARY;
+  const st = summary.data ?? (import.meta.env.DEV ? SUMMARY : null);
   const points = trend.data?.points ?? [];
   const issues = health.data?.issues ?? [];
   const documents = docs.data?.data ?? [];
-  const multiUnit = st.units.length > 1;
 
   // Optimistic overlay: an approved quote moves waiting → assigned locally.
   const rows = useMemo(
@@ -141,25 +140,35 @@ export default function OwnerPortalPage() {
     [issues, approved],
   );
 
-  function doApprove() {
+  if (!st) {
+    return <div className="p-6 text-[13px] text-muted-ink">{summary.error ?? 'Loading your account…'}</div>;
+  }
+  const multiUnit = st.units.length > 1;
+
+  async function doApprove() {
     const issue = approve;
     if (!issue) return;
-    setApproved(a => ({ ...a, [issue.id]: true }));
     setApprove(null);
-    toast({ tone: 'success', title: 'Quote approved.', body: 'The Conts will schedule the work and confirm the date.' });
     try {
-      void api.post(`/maintenance/issues/${issue.id}/approve`, { approved: true }).catch(() => { /* dev: no backend, keep optimistic */ });
-    } catch { /* never let a missing backend break the interaction */ }
+      await api.post(`/maintenance/issues/${issue.id}/approve`, { approved: true, quotedAmount: issue.quotedAmount });
+      setApproved(a => ({ ...a, [issue.id]: true }));
+      health.reload();
+      toast({ tone: 'success', title: 'Quote approved.', body: 'The Conts will schedule the work and confirm the date.' });
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Quote was not approved.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    }
   }
 
   function downloadStatement(id: string) {
-    toast({ tone: 'info', title: 'Preparing your statement', body: 'The finalised PDF is served as a signed download.' });
-    api.get(`/owner/statements/${id}/pdf`).catch(() => { /* dev: no backend / binary body */ });
+    window.open(`/api/owner/statements/${encodeURIComponent(id)}/pdf`, '_blank', 'noopener');
   }
-  function downloadDoc(d: OwnerDoc) {
-    toast({ tone: 'info', title: 'Preparing download', body: `${d.title} — served as a signed link.` });
-    const path = d.type === 'statement' ? `/owner/statements/${d.refId ?? d.id}/pdf` : `/documents/${d.id}/download`;
-    api.get(path).catch(() => { /* dev: no backend / binary body */ });
+  async function downloadDoc(d: OwnerDoc) {
+    if (d.type === 'statement') { downloadStatement(d.refId ?? d.id); return; }
+    try {
+      await downloadFile(`/documents/${d.id}/download`);
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Could not download.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    }
   }
 
   const payoutLine = st.payout.state === 'paid' && st.payout.paidAt

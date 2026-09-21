@@ -2,75 +2,73 @@ import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/d
 import { requireSession, canSeeFinance } from '../../_lib/auth';
 
 /** POST /api/statements/generate { period: "2026-08" }
- *  Builds a provisional statement per owner from settled bookings and documented
- *  expenses. Provisional figures never reach an owner — sending is a separate step. */
+ *  Builds a provisional statement per owner from settled bookings and owner-charged expenses, with every line kept.
+ *  Only provisional statements are rebuilt: one that is finalised is left exactly as it is. A period already sent is refused. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) {
-    return fail('FORBIDDEN', 'You can view statements but cannot generate them. Ask a Finance Admin for access.', 403);
-  }
+  if (!canSeeFinance(session.role)) return fail('FORBIDDEN', 'You can view statements but cannot generate them. Ask a Finance Admin for access.', 403);
 
-  const { period } = await request.json<{ period: string }>();
-  if (!/^\d{4}-\d{2}$/.test(period ?? '')) return fail('VALIDATION', 'Period must look like 2026-08.', 422);
+  const b = await request.json<{ period: string }>().catch(() => null);
+  const period = b?.period ?? '';
+  if (!/^\d{4}-\d{2}$/.test(period)) return fail('VALIDATION', 'Period must look like 2026-08.', 422);
 
   const start = `${period}-01`;
-  const end = new Date(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0).toISOString().slice(0, 10);
+  const end = new Date(Date.UTC(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0)).toISOString().slice(0, 10);
 
-  const locked = await one<{ n: number }>(env,
-    "SELECT COUNT(*) AS n FROM owner_statements WHERE period_start = ? AND state IN ('sent','paid')", start);
-  if (locked && locked.n > 0) {
-    return fail('PERIOD_LOCKED', 'Statements for this period have already been sent and cannot be regenerated.', 409);
-  }
+  const sent = await one<{ n: number }>(env, "SELECT COUNT(*) AS n FROM owner_statements WHERE period_start = ? AND state IN ('sent','paid')", start);
+  if (sent && Number(sent.n) > 0) return fail('PERIOD_LOCKED', 'Statements for this period have already been sent and cannot be regenerated.', 409);
 
   const owners = await all<any>(env, `
-    SELECT o.id, o.display_name, COALESCE(c.management_fee_pct, 25) AS fee_pct
-    FROM owners o
-    LEFT JOIN owner_contracts c ON c.owner_id = o.id
-    GROUP BY o.id`);
+    SELECT o.id, COALESCE(MAX(c.management_fee_pct), 25) AS fee_pct
+    FROM owners o LEFT JOIN owner_contracts c ON c.owner_id = o.id GROUP BY o.id`);
 
-  let count = 0;
+  let count = 0, skipped = 0;
   for (const o of owners) {
-    const rev = await one<{ gross: number }>(env, `
-      SELECT COALESCE(SUM(r.collected_revenue), 0) AS gross
-      FROM reservations r JOIN units u ON u.id = r.unit_id
-      WHERE u.owner_id = ? AND r.state IN ('confirmed','checked_in','checked_out')
-        AND r.channel NOT IN ('maintenance_block','owner_stay')
-        AND r.check_in BETWEEN ? AND ?`, o.id, start, end);
+    const existing = await one<{ id: string; state: string }>(env, 'SELECT id, state FROM owner_statements WHERE owner_id = ? AND period_start = ? AND period_end = ?', o.id, start, end);
+    if (existing && existing.state !== 'provisional') { skipped++; continue; }
 
-    const exp = await one<{ total: number }>(env, `
-      SELECT COALESCE(SUM(e.amount), 0) AS total
+    const stays = await all<any>(env, `
+      SELECT r.id, r.check_in, r.check_out, r.collected_revenue, u.unit_number, p.name AS property_name, COALESCE(g.full_name, 'Guest') AS guest_name
+      FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id
+      WHERE u.owner_id = ? AND r.state IN ('confirmed','checked_in','checked_out') AND r.channel NOT IN ('maintenance_block','owner_stay')
+        AND r.check_in BETWEEN ? AND ? AND r.collected_revenue > 0 ORDER BY r.check_in`, o.id, start, end);
+    const costs = await all<any>(env, `
+      SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.reference, u.unit_number
       FROM expenses e JOIN units u ON u.id = e.unit_id
-      WHERE u.owner_id = ? AND e.charge_to = 'owner' AND e.incurred_on BETWEEN ? AND ?`,
-      o.id, start, end);
+      WHERE u.owner_id = ? AND e.charge_to = 'owner' AND e.incurred_on BETWEEN ? AND ? ORDER BY e.incurred_on`, o.id, start, end);
 
-    const gross = rev?.gross ?? 0;
-    if (gross === 0 && (exp?.total ?? 0) === 0) continue;
+    const gross = stays.reduce((n, r) => n + Number(r.collected_revenue), 0);
+    const expenses = costs.reduce((n, e) => n + Number(e.amount), 0);
+    if (gross === 0 && expenses === 0) continue;
 
-    // Integer sen throughout. Round the fee once, at the end.
-    const fee = Math.round(gross * (o.fee_pct / 100));
-    const expenses = exp?.total ?? 0;
+    // Integer sen throughout. The fee is rounded once, at the end.
+    const fee = Math.round(gross * (Number(o.fee_pct) / 100));
     const net = gross - fee - expenses;
+    const now = nowIso();
 
-    const id = crypto.randomUUID();
+    const id = existing?.id ?? crypto.randomUUID();
     await run(env, `
-      INSERT INTO owner_statements
-        (id, owner_id, period_start, period_end, state, gross_booking_value, management_fee, expenses_total, net_payout, currency, generated_at, created_at)
+      INSERT INTO owner_statements (id, owner_id, period_start, period_end, state, gross_booking_value, management_fee, expenses_total, net_payout, currency, generated_at, created_at)
       VALUES (?, ?, ?, ?, 'provisional', ?, ?, ?, ?, 'MYR', ?, ?)
       ON CONFLICT (owner_id, period_start, period_end) DO UPDATE SET
-        gross_booking_value = excluded.gross_booking_value,
-        management_fee = excluded.management_fee,
-        expenses_total = excluded.expenses_total,
-        net_payout = excluded.net_payout,
-        generated_at = excluded.generated_at`,
-      id, o.id, start, end, gross, fee, expenses, net, nowIso(), nowIso());
+        gross_booking_value = excluded.gross_booking_value, management_fee = excluded.management_fee,
+        expenses_total = excluded.expenses_total, net_payout = excluded.net_payout, generated_at = excluded.generated_at
+      WHERE owner_statements.state = 'provisional'`, id, o.id, start, end, gross, fee, expenses, net, now, now);
+
+    await run(env, 'DELETE FROM statement_lines WHERE statement_id = ?', id);
+    let order = 0;
+    const line = (type: string, category: string | null, description: string, on: string, amount: number, extra: { unit?: string; reservation?: string; expense?: string; ref?: string | null } = {}) =>
+      run(env, `
+        INSERT INTO statement_lines (id, statement_id, unit_id, reservation_id, expense_id, line_type, category, description, occurred_on, amount, reference, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        crypto.randomUUID(), id, extra.unit ?? null, extra.reservation ?? null, extra.expense ?? null, type, category, description, on, amount, extra.ref ?? null, order++);
+    for (const r of stays) await line('gross', null, `${r.property_name} ${r.unit_number} · ${r.guest_name} · ${r.check_in} to ${r.check_out}`, r.check_in, Number(r.collected_revenue), { reservation: r.id });
+    await line('management_fee', null, `Management fee ${Number(o.fee_pct)}%`, end, -fee);
+    for (const e of costs) await line('expense', e.category, e.description || e.category, e.incurred_on, -Number(e.amount), { unit: e.unit_id, expense: e.id, ref: e.reference });
     count++;
   }
 
-  await audit(env, {
-    actorId: session.userId, actorLabel: session.fullName, action: 'statement.generate',
-    entityTable: 'owner_statements', entityId: period, after: { period, count },
-  });
-
-  return json({ period, count }, 202);
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'statement.generate', entityTable: 'owner_statements', entityId: period, after: { period, count, skipped } });
+  return json({ period, count, skipped }, 202);
 };

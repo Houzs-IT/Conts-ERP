@@ -1,0 +1,9 @@
+# Read-only pointer at the Cloudflare D1 database, used only by scripts/copy-d1-to-pg.mjs
+# (the app itself no longer uses D1). Delete this file once the move to Supabase is done.
+name = "d1-source"
+compatibility_date = "2026-09-17"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "theconts-prod"
+database_id = "499007e9-ea9f-4582-8170-28d90345f5f4"

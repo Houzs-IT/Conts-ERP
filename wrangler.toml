@@ -1,4 +1,4 @@
-# The Conts Property OS — Cloudflare Pages configuration
+# Conts ERP — Cloudflare Pages configuration
 #
 # Only bindings the code actually uses are active. Unused bindings with
 # placeholder ids fail `wrangler deploy` immediately, so anything not yet wired
@@ -16,13 +16,12 @@ pages_build_output_dir = "dist"
 # Production
 # ---------------------------------------------------------------------------
 
-# `npm run setup` creates this and writes the id in for you. Doing it by hand:
-#   npx wrangler d1 create theconts-prod
-[[d1_databases]]
-binding = "DB"
-database_name = "theconts-prod"
-database_id = "499007e9-ea9f-4582-8170-28d90345f5f4"
-migrations_dir = "migrations"
+# The database is Supabase Postgres (schema `pos`), reached through Hyperdrive as the
+# `pos_app` role. Create the Hyperdrive config once and paste its id here:
+#   npx wrangler hyperdrive create conts-erp-pos --connection-string="postgresql://pos_app.<project-ref>:<password>@<pooler-host>:5432/postgres"
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "e0781ccdee9046919161c28cb95694c0"
 
 # Media storage — not yet used. Photo upload writes to `documents.storage_key`
 # but the upload endpoint is not built. Uncomment together with that endpoint:
@@ -39,7 +38,7 @@ migrations_dir = "migrations"
 # id = "REPLACE_ME_KV_ID"
 
 [vars]
-APP_NAME = "The Conts Property OS"
+APP_NAME = "Conts ERP"
 DEFAULT_LOCALE = "en-MY"
 TIMEZONE = "Asia/Kuala_Lumpur"
 CURRENCY = "MYR"
@@ -71,9 +70,26 @@ QUIET_HOURS_END = "8"
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Staging: Pages does not support custom named environments like this project
-# template assumed (only "production" and "preview" are valid for Pages). Every
-# deploy from a non-production branch already gets its own *.pages.dev preview
-# automatically; if a separate staging D1 is wanted later, bind it under
-# `[env.preview]` instead, following Cloudflare's Pages environments docs.
+# Staging: Pages only has "production" and "preview". Preview deploys (any non-production
+# branch) use the STAGING Supabase project through this Hyperdrive config, so a preview can
+# never touch production data. Bindings are not inherited, so [vars] are repeated.
 # ---------------------------------------------------------------------------
+[env.preview]
+[[env.preview.hyperdrive]]
+binding = "HYPERDRIVE"
+id = "9c21c4f2b5f9470cb7df0afeb9ad633f"
+
+[env.preview.vars]
+APP_NAME = "Conts ERP (staging)"
+DEFAULT_LOCALE = "en-MY"
+TIMEZONE = "Asia/Kuala_Lumpur"
+CURRENCY = "MYR"
+CURRENCY_PREFIX = "RM "
+MONEY_MINOR_UNITS = "100"
+SESSION_TTL_HOURS = "8"
+SESSION_ABSOLUTE_DAYS = "30"
+LOGIN_MAX_ATTEMPTS = "5"
+LOGIN_LOCKOUT_MINUTES = "15"
+RESET_TOKEN_MINUTES = "60"
+QUIET_HOURS_START = "22"
+QUIET_HOURS_END = "8"

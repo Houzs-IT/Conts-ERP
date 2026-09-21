@@ -53,3 +53,9 @@ export const masked = (tail: string) => `\u2022\u2022\u2022\u2022${tail}`;
 
 export const nights = (n: number) => `${n} ${n === 1 ? 'night' : 'nights'}`;
 export const guests = (n: number) => `${n} ${n === 1 ? 'guest' : 'guests'}`;
+
+/** Today's date in Malaysia as YYYY-MM-DD, plus or minus whole days. */
+export const todayMyt = (offsetDays = 0) => {
+  const d = new Date(Date.now() + offsetDays * 864e5);
+  return d.toLocaleDateString('en-CA', { timeZone: MYT });
+};

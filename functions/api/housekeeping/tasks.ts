@@ -1,56 +1,45 @@
-import { type Env, all, json } from '../../_lib/db';
+import { type Env, all, one, json, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
+import { MYT_DATE, hhmm, linenSet } from '../../_lib/ops';
 
-const fmtMin = (min: number) => min < 60 ? `${min} min` : `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} m` : ''}`;
-
-/** Operations Today shows this per row; Housekeeping (same endpoint) ignores it.
- *  Computed here, not stored, so "on time" naturally becomes "overdue" as the
- *  clock passes due_at without anyone having to update a row. */
-function sla(state: string, dueAt: string | null): { label: string; tone: 'success' | 'warning' | 'critical' | 'neutral' } {
-  if (state === 'resolved') return { label: 'Done', tone: 'success' };
-  if (!dueAt) return { label: 'No due time', tone: 'neutral' };
-  const minutes = Math.round((new Date(dueAt).getTime() - Date.now()) / 60000);
-  if (minutes < 0) return { label: `Overdue ${fmtMin(-minutes)}`, tone: 'critical' };
-  if (minutes < 120) return { label: `Due in ${fmtMin(minutes)}`, tone: 'warning' };
-  return { label: 'On track', tone: 'success' };
-}
-
-/** GET /api/housekeeping/tasks?date=&assignee= — the roster for one day. */
+/** GET /api/housekeeping/tasks?date=YYYY-MM-DD | from..to — the cleaning roster.
+ *  When the range starts today, cleaning left over from earlier days is included until it is done. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
 
-  const url = new URL(request.url);
-  const date = url.searchParams.get('date') ?? new Date().toISOString().slice(0, 10);
+  const today = (await one<{ d: string }>(env, `SELECT to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS d`))!.d;
+  const raw = new URL(request.url).searchParams.get('date') ?? today;
+  const [from, to = from] = raw.split('..');
 
-  // Field roles only ever see their own work.
   const mine = isFieldRole(session.role);
-  const rows = await all(env, `
-    SELECT t.id, t.kind, t.state, t.title, t.instructions, t.scheduled_for, t.due_at,
-           t.next_guest_at, t.requires_photo, t.assignee_id,
-           u.unit_number, u.readiness, p.name AS property_name, p.address_line,
-           COALESCE(a.full_name, '') AS assignee_name
+  const when = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
+  const rows = await all<any>(env, `
+    SELECT t.id, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.next_guest_at, t.requires_photo, t.assignee_id,
+           u.unit_number, u.readiness, u.bedrooms, p.name AS property_name,
+           COALESCE(a.full_name, '') AS assignee_name,
+           COALESCE(r.external_ref, 'Manual') AS source_ref,
+           (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind = 'photo') AS photo_count
     FROM tasks t
     JOIN units u ON u.id = t.unit_id
     JOIN properties p ON p.id = u.property_id
     LEFT JOIN users a ON a.id = t.assignee_id
+    LEFT JOIN reservations r ON r.id = t.reservation_id
     WHERE t.kind IN ('turnover','deep_clean','light_clean')
-      AND date(COALESCE(t.scheduled_for, t.due_at)) = ?
+      AND ((${when} BETWEEN ? AND ?) OR (? = ? AND ${when} < ? AND t.state != 'resolved'))
       ${mine ? 'AND t.assignee_id = ?' : ''}
-    ORDER BY t.due_at`,
-    ...(mine ? [date, session.userId] : [date]));
+    ORDER BY COALESCE(t.scheduled_for, t.due_at, t.created_at)`,
+    ...[from, to, from, today, from, ...(mine ? [session.userId] : [])]);
 
   return json({
-    generatedAt: new Date().toISOString(),
-    date,
-    rows: rows.map((r: any) => ({
-      id: r.id, kind: r.kind, state: r.state, title: r.title, instructions: r.instructions,
-      unitNumber: r.unit_number, propertyName: r.property_name, readiness: r.readiness,
-      addressLine: r.address_line,
-      scheduledFor: r.scheduled_for, dueAt: r.due_at, nextGuestAt: r.next_guest_at,
-      requiresPhoto: !!r.requires_photo,
+    generatedAt: nowIso(), date: from,
+    rows: rows.map((r, i) => ({
+      id: r.id, unitNumber: r.unit_number, propertyName: r.property_name, sourceRef: r.source_ref,
+      title: r.title, linenSet: linenSet(Number(r.bedrooms)), instructions: r.instructions,
+      scheduledFor: hhmm(r.scheduled_for), dueAt: hhmm(r.due_at), nextGuestAt: hhmm(r.next_guest_at),
       assigneeId: r.assignee_id, assigneeName: r.assignee_name || null,
-      sla: sla(r.state, r.due_at),
+      sequence: i + 1, state: r.state, readiness: r.readiness,
+      requiresPhoto: !!r.requires_photo, photoCount: Number(r.photo_count),
     })),
   });
 };

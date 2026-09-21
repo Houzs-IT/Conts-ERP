@@ -11,7 +11,7 @@ import { Dialog, type DialogSpec } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
-import { api } from '../lib/api';
+import { api, notifyFailure } from '../lib/api';
 import { rm, dateRange } from '../lib/format';
 import { SYNC } from '../lib/vocabulary';
 import { TONE, cx } from '../lib/design-tokens';
@@ -186,16 +186,17 @@ export default function PricingPage() {
   function setBase(unitId: string, baseRate: number) {
     setUnitEdits(e => ({ ...e, [unitId]: { ...e[unitId], baseRate } }));
     toast({ tone: 'success', title: 'Base web rate updated.', body: 'Push to send the new rate to each connected channel.' });
-    void api.put('/rates', { unitId, baseRate }).catch(() => { /* dev: no backend */ });
+    void api.put('/rates', { unitId, baseRate }).catch(notifyFailure);
   }
   function setFloor(unitId: string, costFloor: number) {
     setUnitEdits(e => ({ ...e, [unitId]: { ...e[unitId], costFloor } }));
     toast({ tone: 'neutral', title: 'Cost floor updated.', body: 'Internal only. The floor is never sent to a channel.' });
+    void api.put('/rates', { unitId, costFloor }).catch(notifyFailure);
   }
   function setUplift(unitId: string, ch: OtaChannel, upliftSen: number) {
     setUpliftEdits(e => ({ ...e, [`${unitId}:${ch}`]: upliftSen }));
     toast({ tone: 'success', title: `${CH[ch].label} uplift updated.`, body: 'Push to apply it over your chosen dates.' });
-    void api.put('/rates', { unitId, channel: ch, uplift: upliftSen }).catch(() => { /* dev: no backend */ });
+    void api.put('/rates', { unitId, channel: ch, uplift: upliftSen }).catch(notifyFailure);
   }
 
   function pushRates() {
@@ -217,9 +218,11 @@ export default function PricingPage() {
             baseRate: selected.baseRate,
             uplifts: Object.fromEntries(selected.rates.map(r => [r.channel, r.upliftSen])),
           });
-        } catch { /* dev: no backend, keep optimistic */ }
+          toast({ tone: 'success', title: 'Rates saved.', body: `${names} prices held for ${range}. Channel sync is not connected yet, so nothing was sent to the channels.` });
+        } catch (e) {
+          toast({ tone: 'critical', title: 'Rates were not saved.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+        }
         setBusy(false); setDialog(null);
-        toast({ tone: 'success', title: 'Rates pushed.', body: `${names} updated for ${range}.` });
       },
     });
   }

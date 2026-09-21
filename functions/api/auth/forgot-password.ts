@@ -20,7 +20,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       template: 'account.password_reset',
       recipient: email.toLowerCase().trim(),
       channel: 'email',
-      subject: 'Reset your Property OS password',
+      subject: 'Reset your Conts ERP password',
       body: `Use this link to choose a new password:\n\n${origin}/#/reset-password?token=${token}\n\nThe link expires in 60 minutes. If you did not ask for this, you can ignore this email.`,
       // Keyed by the token, not the user: notify()'s dedup collapses same-hour
       // calls sharing a template+entity, and a fresh "resend" makes a genuinely

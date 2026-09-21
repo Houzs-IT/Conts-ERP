@@ -1,5 +1,6 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { stampMyt, shortDate } from '../../_lib/ops';
 
 /**
  * The whole unit record in one request. Seven tabs of a detail page firing seven
@@ -75,13 +76,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ORDER BY occurred_at DESC LIMIT 20`, unitId, unitId);
 
   const perf = await one<any>(env, `
-    SELECT COALESCE(SUM(julianday(check_out) - julianday(check_in)),0) AS nights,
+    SELECT COALESCE(SUM(check_out::date - check_in::date),0) AS nights,
            COALESCE(SUM(collected_revenue),0) AS revenue,
            COALESCE(SUM(gross_booking_value),0) AS gross
     FROM reservations
     WHERE unit_id = ? AND state IN ('confirmed','checked_in','checked_out')
       AND channel NOT IN ('maintenance_block','owner_stay')
-      AND strftime('%Y-%m', check_in) = ?`, unitId, month);
+      AND substr(check_in, 1, 7) = ?`, unitId, month);
 
   const rating = await one<{ avg: number | null; n: number }>(env,
     'SELECT AVG(rating) AS avg, COUNT(*) AS n FROM reviews WHERE unit_id = ?', unitId);
@@ -95,7 +96,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (money) {
     const expenses = await all<{ category: string; total: number }>(env, `
       SELECT category, SUM(amount) AS total FROM expenses
-      WHERE unit_id = ? AND strftime('%Y-%m', incurred_on) = ?
+      WHERE unit_id = ? AND substr(incurred_on, 1, 7) = ?
       GROUP BY category`, unitId, month);
     const feePct = unit.management_fee_pct ?? 25;
     const fee = Math.round(revenue * (feePct / 100));
@@ -160,13 +161,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     })),
     tasks: tasks.map(t => ({
       id: t.id, title: t.title, kind: t.kind, state: t.state,
-      dueAt: t.due_at, completedAt: t.completed_at, assigneeName: t.assignee_name || null,
+      dueAt: stampMyt(t.due_at), completedAt: stampMyt(t.completed_at), assigneeName: t.assignee_name || null,
     })),
     maintenance: maintenance.map(m => ({
       id: m.id, title: m.title, detail: m.detail, state: m.state,
       vendorName: m.vendor_name, ownerApprovalRequired: !!m.owner_approval_required,
       blocksUnit: !!m.blocks_unit, chargeTo: m.charge_to,
-      reportedAt: m.reported_at, resolvedAt: m.resolved_at,
+      reportedAt: shortDate(m.reported_at), resolvedAt: shortDate(m.resolved_at),
       ...(money ? { quotedAmount: m.quoted_amount, finalAmount: m.final_amount } : {}),
     })),
     inventory: inventory.map(i => ({
@@ -181,7 +182,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     })),
     activity: activity.map(a => ({
       actorLabel: a.actor_label, action: a.action, source: a.source,
-      occurredAt: a.occurred_at,
+      occurredAt: stampMyt(a.occurred_at) ?? a.occurred_at,
       before: a.before_state ? JSON.parse(a.before_state) : null,
       after: a.after_state ? JSON.parse(a.after_state) : null,
     })),

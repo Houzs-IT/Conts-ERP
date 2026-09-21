@@ -38,11 +38,12 @@ export default {
     // 3. Finalised but unsent for 3 days is an operational failure worth surfacing.
     const stale = await all<{ id: string; owner_id: string }>(env, `
       SELECT id, owner_id FROM owner_statements
-      WHERE state = 'finalised' AND finalised_at < datetime('now', '-3 days')`);
+      WHERE state = 'finalised' AND finalised_at < to_char((now() at time zone 'utc') - interval '3 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`);
     for (const s of stale) {
       await run(env, `
-        INSERT OR IGNORE INTO notification_log (id, template, recipient, channel, entity_table, entity_id, idempotency_key, state, queued_at)
-        VALUES (?, 'finance.statements_unsent', 'finance@theconts.com', 'in_app', 'owner_statements', ?, ?, 'queued', ?)`,
+        INSERT INTO notification_log (id, template, recipient, channel, entity_table, entity_id, idempotency_key, state, queued_at)
+        VALUES (?, 'finance.statements_unsent', 'finance@theconts.com', 'in_app', 'owner_statements', ?, ?, 'queued', ?)
+        ON CONFLICT (idempotency_key) DO NOTHING`,
         crypto.randomUUID(), s.id, `unsent-${s.id}`, nowIso());
     }
   },

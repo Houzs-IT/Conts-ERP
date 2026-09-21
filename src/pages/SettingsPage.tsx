@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -206,6 +206,8 @@ export default function SettingsPage() {
 
   // Working draft the fields edit against.
   const [draft, setDraft] = useState<Settings>(committed);
+  // The form starts from the loaded values, not the built-in defaults, so nothing invented can be saved over the real settings.
+  useEffect(() => { if (data) setDraft(committed); }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<SectionKey | null>(null);
 
@@ -244,7 +246,7 @@ export default function SettingsPage() {
         ? `Statements generate automatically on day ${draft.statements.cycleDay} of each month.`
         : 'Automatic generation is off. Generate statements manually each period.',
     },
-    security: { title: 'Security settings saved.', body: 'New sessions use the updated timeouts and lockout threshold.' },
+    security: { title: 'Security settings saved.', body: 'Sign-in timeouts and lockout still follow the server defaults until these are connected.' },
   };
 
   async function save(k: SectionKey) {
@@ -254,11 +256,13 @@ export default function SettingsPage() {
 
     setBusy(k);
     const value = draft[k];
-    setSaved(s => ({ ...s, [k]: value }) as Partial<Settings>);  // commit locally, immediately
-    toast({ tone: 'success', ...MESSAGES[k] });
     try {
       await api.put('/settings', { [k]: value }); // audited server-side; see BUTTONS §14
-    } catch { /* dev: no backend, keep the optimistic save */ }
+      setSaved(s => ({ ...s, [k]: value }) as Partial<Settings>);
+      toast({ tone: 'success', ...MESSAGES[k] });
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Settings were not saved.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    }
     setBusy(null);
   }
 
@@ -268,7 +272,7 @@ export default function SettingsPage() {
 
       {error && <StaleBanner message={`Showing the last settings we have. ${error}`} onRetry={reload} />}
 
-      {loading && !data ? (
+      {(loading || !data) && !(import.meta.env.DEV && data) ? (
         <Card><TableSkeleton rows={5} cols={2} /></Card>
       ) : (
         <div className="flex flex-col gap-[18px]">

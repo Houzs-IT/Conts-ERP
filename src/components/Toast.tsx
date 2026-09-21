@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { TONE } from '../lib/vocabulary';
 import type { Tone } from '../lib/types';
@@ -16,6 +16,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setItems(xs => [...xs, { ...t, id }]);
     setTimeout(() => setItems(xs => xs.filter(x => x.id !== id)), 5200);
   }, []);
+
+  useEffect(() => {
+    const onFail = (e: Event) => push({ tone: 'critical', title: 'That change was not saved.', body: String((e as CustomEvent).detail ?? 'Try again in a moment.') });
+    window.addEventListener('conts:save-failed', onFail);
+    return () => window.removeEventListener('conts:save-failed', onFail);
+  }, [push]);
 
   return (
     <Ctx.Provider value={{ push }}>

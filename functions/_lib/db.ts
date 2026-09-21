@@ -1,21 +1,45 @@
-/** D1 helpers. Money is integer sen everywhere — never a float, never a REAL column. */
+/** Postgres helpers (Supabase, schema `pos`, reached through Hyperdrive). Money is
+ *  integer sen everywhere — never a float. Call sites still write `?` placeholders;
+ *  they are numbered ($1, $2, …) here so the rest of the API needed no rewrite. */
+import postgres from 'postgres';
 
 export interface Env {
-  DB: D1Database;
+  HYPERDRIVE: { connectionString: string };
   SESSION_SECRET: string;
+  /** R2 bucket for photos and documents. Not bound yet: uploads answer 501 until it is. */
+  MEDIA?: R2Bucket;
+}
+
+// count(*) and sum() come back from Postgres as strings (int8 / numeric). The API
+// and the UI treat them as numbers, so parse them here once.
+const types = {
+  number: { to: 20, from: [20, 1700], serialize: (x: unknown) => String(x), parse: (x: string) => Number(x) },
+};
+
+const numbered = (sql: string) => { let i = 0; return sql.replace(/\?/g, () => `$${++i}`); };
+
+/** One short-lived connection per statement. Workers cannot share a connection across
+ *  requests, and Hyperdrive keeps the real pool warm, so this is cheap. The role
+ *  `pos_app` has search_path = pos, so table names stay unqualified. */
+async function query<T>(env: Env, sql: string, args: unknown[]): Promise<T[]> {
+  const db = postgres(env.HYPERDRIVE.connectionString, { max: 1, prepare: false, fetch_types: false, types });
+  try {
+    return (await db.unsafe(numbered(sql), args as never[])) as unknown as T[];
+  } finally {
+    await db.end({ timeout: 0 });
+  }
 }
 
 export async function all<T = Record<string, unknown>>(env: Env, sql: string, ...args: unknown[]) {
-  const r = await env.DB.prepare(sql).bind(...args).all<T>();
-  return r.results ?? [];
+  return query<T>(env, sql, args);
 }
 
 export async function one<T = Record<string, unknown>>(env: Env, sql: string, ...args: unknown[]) {
-  return (await env.DB.prepare(sql).bind(...args).first<T>()) ?? null;
+  return (await query<T>(env, sql, args))[0] ?? null;
 }
 
 export async function run(env: Env, sql: string, ...args: unknown[]) {
-  return env.DB.prepare(sql).bind(...args).run();
+  await query(env, sql, args);
 }
 
 export function json(data: unknown, status = 200, headers: Record<string, string> = {}) {

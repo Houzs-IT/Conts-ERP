@@ -13,12 +13,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const rev = await one<{ collected: number; gross: number; nights: number }>(env, `
     SELECT COALESCE(SUM(collected_revenue),0) AS collected,
            COALESCE(SUM(gross_booking_value),0) AS gross,
-           COALESCE(SUM(julianday(check_out) - julianday(check_in)),0) AS nights
+           COALESCE(SUM(check_out::date - check_in::date),0) AS nights
     FROM reservations
     WHERE state IN ('confirmed','checked_in','checked_out')
       AND channel NOT IN ('maintenance_block','owner_stay')
       AND check_in BETWEEN ? AND ?`, start, end);
 
+  const payout = await one<{ net: number }>(env, `SELECT COALESCE(SUM(net_payout), 0) AS net FROM owner_statements WHERE substr(period_start, 1, 7) = ?`, period);
   const units = await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM units WHERE is_listed = 1');
   const available = (units?.n ?? 0) * 30;
   const nights = rev?.nights ?? 0;
@@ -31,6 +32,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       { key: 'accommodation_revenue', value: collected, currency: 'MYR' },
       { key: 'adr', value: nights ? Math.round(collected / nights) : 0, currency: 'MYR' },
       { key: 'revpar', value: available ? Math.round(collected / available) : 0, currency: 'MYR' },
+      { key: 'net_owner_payout', value: Number(payout?.net ?? 0), currency: 'MYR' },
     ] : []),
   ];
 

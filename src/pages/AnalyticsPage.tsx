@@ -69,6 +69,14 @@ const UNITS: UnitRow[] = [
   { unitId: 'u8', unitNumber: '#D-04-08', propertyName: 'Ceylonz Suites',     occupancy: 68.4, adr: 21400, revpar: 14600, revenue: 388000, rating: 4.66 },
 ];
 
+const FLAT: Delta = { value: 0, unit: 'percent', direction: 'flat', tone: 'neutral' };
+const EMPTY: AnalyticsPayload = {
+  generatedAt: '', currency: 'MYR', range: '12m', points: [],
+  deltas: { revenue: FLAT, occupancy: FLAT, adr: FLAT, revpar: FLAT },
+  totals: { grossBookingValue: 0, collectedRevenue: 0, managementFees: 0, netOwnerPayout: 0 },
+  units: [], channelMix: [],
+};
+
 const DATA: Record<Range, AnalyticsPayload> = {
   '3m': {
     generatedAt: '2026-09-16T06:06:00Z', currency: 'MYR', range: '3m',
@@ -194,7 +202,7 @@ export default function AnalyticsPage() {
   const q = useApi<AnalyticsPayload>(`/analytics?range=${range}`, DATA[range]);
   // No backend in dev: a range change fails to refetch, so fall back to the local
   // dataset for the active range and keep the toggle visibly live.
-  const d = (q.error ? null : q.data) ?? DATA[range];
+  const d = (q.error ? null : q.data) ?? (import.meta.env.DEV ? DATA[range] : EMPTY);
 
   const m = METRICS[metric];
   const delta = d.deltas[metric];

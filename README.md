@@ -1,4 +1,4 @@
-# The Conts Property OS — frontend handoff package
+# Conts ERP — frontend handoff package
 
 Design and frontend specification for The Conts Property Management. Built from
 The Conts Digital Brand Guide v1.0 (16 September 2026) and the existing Houzs

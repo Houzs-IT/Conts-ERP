@@ -8,8 +8,9 @@ import Icon from '../components/Icon';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
-import { rm, unitRef } from '../lib/format';
+import { useCrew } from '../lib/useCrew';
+import { api, notifyFailure } from '../lib/api';
+import { todayMyt, rm, unitRef } from '../lib/format';
 import { READINESS, TASK } from '../lib/vocabulary';
 import { TONE } from '../lib/design-tokens';
 import type { TaskState, Tone, UnitReadiness } from '../lib/types';
@@ -30,12 +31,6 @@ const RULE_LABEL: Record<OrderingRule, string> = {
   manual: 'Manual',
 };
 
-interface Cleaner { id: string; name: string }
-const CREW: Cleaner[] = [
-  { id: 'u5', name: 'Nurul Huda' },
-  { id: 'u6', name: 'Faridah Ismail' },
-  { id: 'u9', name: 'Siti Rahmah' },
-];
 const firstName = (name: string) => name.split(' ')[0];
 
 interface Task {
@@ -155,9 +150,10 @@ function Modal({ title, sub, onClose, children, footer, busy }: {
 /* ------------------------------- the page -------------------------------- */
 type Tab = 'today' | 'tomorrow' | 'week';
 const TABS: [Tab, string][] = [['today', 'Today'], ['tomorrow', 'Tomorrow'], ['week', 'This week']];
-const TAB_DATE: Record<Tab, string> = { today: '2026-09-16', tomorrow: '2026-09-17', week: '2026-09-16..2026-09-22' };
+const TAB_DATE: Record<Tab, string> = { today: todayMyt(), tomorrow: todayMyt(1), week: `${todayMyt()}..${todayMyt(6)}` };
 
 export default function HousekeepingPage() {
+  const CREW = useCrew('housekeeping');
   const [tab, setTab] = useState<Tab>('today');
   const { data, loading, error, reload } = useApi<Payload>(`/housekeeping/tasks?date=${TAB_DATE[tab]}`, FALLBACK);
   const toast = useToast();
@@ -197,13 +193,14 @@ export default function HousekeepingPage() {
 
   /* -------------------------------- actions ------------------------------- */
   function openAssign(task: Task) {
-    setAssign({ task, cleanerId: task.assigneeId ?? CREW[0].id, force: false });
+    setAssign({ task, cleanerId: task.assigneeId ?? CREW[0]?.id ?? '', force: false });
   }
 
   async function doAssign() {
     if (!assign) return;
     const { task, cleanerId, force } = assign;
-    const cleaner = CREW.find(c => c.id === cleanerId)!;
+    const cleaner = CREW.find(c => c.id === cleanerId);
+    if (!cleaner) return;
 
     // Simulate the 409 ASSIGNEE_BUSY overlap check the backend would run.
     if (!force) {
@@ -225,17 +222,18 @@ export default function HousekeepingPage() {
     toast({ tone: 'success', title: 'Cleaner assigned.', body: `${firstName(cleaner.name)} has been notified.` });
     setAssign(null);
     try { await api.post(`/housekeeping/tasks/${task.id}/assign`, { assigneeId: cleaner.id, force }); }
-    catch { /* dev: no backend, keep optimistic */ }
+    catch (e) { notifyFailure(e); }
     setBusy(false);
   }
 
   async function doAutoAssign() {
     const targets = unassigned;
+    if (!CREW.length) { toast({ tone: 'critical', title: 'No cleaners to assign to.', body: 'Add an active housekeeper under Users and roles first.' }); setConfirm(null); return; }
     // Apply the preset ordering rule, then spread across the crew evenly.
     const byRule = [...targets].sort((a, b) => (toMin(a.nextGuestAt) ?? 1e9) - (toMin(b.nextGuestAt) ?? 1e9));
     setBusy(true);
     byRule.forEach((t, i) => {
-      const c = CREW[i % CREW.length];
+      const c = CREW[i % Math.max(CREW.length, 1)];
       patch(t.id, { assigneeId: c.id, assigneeName: c.name, state: 'assigned', sequence: t.sequence });
     });
     toast({ tone: 'success', title: `${targets.length} task${targets.length === 1 ? '' : 's'} auto-assigned.`, body: `Ordered by ${RULE_LABEL[rule].toLowerCase()}. Cleaners notified.` });

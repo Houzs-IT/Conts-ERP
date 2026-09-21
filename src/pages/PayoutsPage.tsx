@@ -14,7 +14,7 @@ import { PAYOUT } from '../lib/vocabulary';
 import type { PayoutState } from '../lib/types';
 
 interface Payout {
-  id: string; ownerName: string; amount: number; state: PayoutState; method: string;
+  id: string; ref?: string; ownerName: string; amount: number; state: PayoutState; method: string;
   bankName: string | null; bankLast4: string | null; paidAt: string | null; failureReason: string | null;
 }
 interface Payload { data: Payout[]; generatedAt: string }
@@ -82,19 +82,24 @@ export default function PayoutsPage() {
 
   // Optimistic-local-state: apply the transition immediately, then attempt the
   // real call in a swallowed catch so the missing dev backend never blocks it.
-  function transition(p: Payout, kind: 'retry' | 'paid') {
+  async function transition(p: Payout, kind: 'retry' | 'paid') {
     const next: PayoutState = kind === 'retry' ? 'processing' : 'paid';
     const patch: Partial<Payout> = kind === 'retry'
       ? { state: 'processing', failureReason: null }
       : { state: 'paid', paidAt: today() };
-    setEdits(e => ({ ...e, [p.id]: { ...e[p.id], ...patch } }));
-    if (kind === 'retry') {
-      toast({ tone: 'success', title: 'Payout resubmitted.', body: `${p.ownerName}'s transfer is processing again.` });
-    } else {
-      toast({ tone: 'success', title: 'Marked as paid.', body: `${p.ownerName} — ${rm(p.amount)} recorded as transferred.` });
-    }
-    api.patch('/payouts', { id: p.id, state: next }).catch(() => { /* dev: no backend, keep optimistic */ });
     setConfirm(null);
+    try {
+      await api.patch('/payouts', { id: p.id, state: next });
+      setEdits(e => ({ ...e, [p.id]: { ...e[p.id], ...patch } }));
+      reload();
+      if (kind === 'retry') {
+        toast({ tone: 'success', title: 'Payout resubmitted.', body: `${p.ownerName}'s transfer is processing again.` });
+      } else {
+        toast({ tone: 'success', title: 'Marked as paid.', body: `${p.ownerName} — ${rm(p.amount)} recorded as transferred.` });
+      }
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Payout was not updated.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    }
   }
 
   const spec: DialogSpec | null = !confirm ? null
@@ -185,7 +190,7 @@ export default function PayoutsPage() {
                     <div key={r.id} className={`grid ${gridCols} gap-[14px] items-center min-h-[52px] px-[22px] py-[9px] border-b border-solid border-line-soft`}>
                       <div className="flex flex-col gap-px min-w-0">
                         <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{r.ownerName}</span>
-                        <span className="font-mono text-[11px] text-muted-ink">{r.id}</span>
+                        <span className="font-mono text-[11px] text-muted-ink">{r.ref ?? r.id}</span>
                       </div>
                       <div className="text-[12.5px]">{r.method}</div>
                       {/* Only ever the tail of the account number is rendered. */}

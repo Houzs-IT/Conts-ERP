@@ -8,6 +8,8 @@ import { Field } from '../components/Field';
 import { Drawer, Dialog, type DialogSpec } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
+import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
+import { todayMyt } from '../lib/format';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
 import { rm } from '../lib/format';
@@ -74,13 +76,13 @@ function statementsFallback(o: Owner): StatementsPayload {
 export default function OwnersPage() {
   const { data, loading, error, reload } = useApi<Payload>('/owners', FALLBACK);
   const toast = useToast();
-  const [added, setAdded] = useState<Owner[]>([]);
+  const rosterUnits = useUnitRoster();
   const [edits, setEdits] = useState<Record<string, Partial<Owner>>>({});
   const [openId, setOpenId] = useState<string | null>(null);
   const [modal, setModal] = useState<null | 'owner' | 'link' | 'contract'>(null);
   const [dialog, setDialog] = useState<DialogSpec | null>(null);
 
-  const rows = useMemo(() => [...added, ...(data?.data ?? [])].map(o => ({ ...o, ...edits[o.id] })), [added, data, edits]);
+  const rows = useMemo(() => (data?.data ?? []).map(o => ({ ...o, ...edits[o.id] })), [data, edits]);
   const open = rows.find(o => o.id === openId) ?? null;
   const unitCount = rows.reduce((s, o) => s + o.units.length, 0);
   // Portfolio net-payout rollup — pure client compute over loaded owners (no
@@ -90,26 +92,36 @@ export default function OwnersPage() {
 
   const patch = (id: string, p: Partial<Owner>) => setEdits(e => ({ ...e, [id]: { ...e[id], ...p } }));
 
-  function addOwner(o: Omit<Owner, 'id' | 'units' | 'portalInvited' | 'contract'>) {
-    const owner: Owner = { id: crypto.randomUUID(), units: [], portalInvited: false, contract: null, ...o };
-    setAdded(a => [owner, ...a]);
-    toast({ tone: 'success', title: 'Owner added.', body: `${o.displayName} — link a unit next.` });
-    api.post('/owners', o).catch(() => {});
-    setModal(null); setOpenId(owner.id);
+  async function addOwner(o: Omit<Owner, 'id' | 'units' | 'portalInvited' | 'contract'>) {
+    try {
+      const made = await api.post<{ id: string }>('/owners', o);
+      toast({ tone: 'success', title: 'Owner added.', body: `${o.displayName} — link a unit next.` });
+      setModal(null); setOpenId(made.id); reload();
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Owner was not added.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    }
   }
-  function linkUnit(u: UnitLine) {
+  async function linkUnit(u: UnitLine) {
     if (!open) return;
-    patch(open.id, { units: [...open.units, u] });
-    toast({ tone: 'success', title: 'Unit linked.', body: `${u.unitLabel} assigned to ${open.displayName}.` });
-    api.patch(`/units/${u.unitId}`, { ownerId: open.id }).catch(() => {});
-    setModal(null);
+    try {
+      await api.patch(`/units/${u.unitId}`, { ownerId: open.id });
+      // The payout terms chosen in the dialog become this owner's agreement for the unit.
+      await api.post('/contracts', { ownerId: open.id, model: u.model, managementFeePct: u.feePct ?? 0, grrAmount: u.grrAmount ?? 0, startsOn: todayMyt() });
+      toast({ tone: 'success', title: 'Unit linked.', body: `${u.unitLabel} assigned to ${open.displayName}.` });
+      setModal(null); reload();
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Unit was not linked.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    }
   }
-  function addContract(c: { feePct: number; startedOn: string; renewsOn: string | null }) {
+  async function addContract(c: { feePct: number; startedOn: string; renewsOn: string | null }) {
     if (!open) return;
-    patch(open.id, { contract: c });
-    toast({ tone: 'success', title: 'Contract saved.', body: `Management agreement recorded for ${open.displayName}.` });
-    api.post('/contracts', { ownerId: open.id, ...c }).catch(() => {});
-    setModal(null);
+    try {
+      await api.post('/contracts', { ownerId: open.id, managementFeePct: c.feePct, startsOn: c.startedOn, renewsOn: c.renewsOn });
+      toast({ tone: 'success', title: 'Contract saved.', body: `Management agreement recorded for ${open.displayName}.` });
+      setModal(null); reload();
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Contract was not saved.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    }
   }
   function invite(o: Owner) {
     setDialog({
@@ -118,10 +130,13 @@ export default function OwnersPage() {
       meta: o.email,
       confirmLabel: 'Send invite',
       onConfirm: async () => {
-        patch(o.id, { portalInvited: true });
-        try { await api.post(`/owners/${o.id}/invite`); } catch { /* dev */ }
-        setDialog(null);
-        toast({ tone: 'success', title: 'Invite sent.', body: `${o.displayName} can now sign in to the owner portal.` });
+        try {
+          await api.post(`/owners/${o.id}/invite`);
+          patch(o.id, { portalInvited: true });
+          toast({ tone: 'success', title: 'Invite sent.', body: `${o.displayName} can now sign in to the owner portal.` });
+        } catch (e) {
+          toast({ tone: 'critical', title: 'Invite was not sent.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+        } finally { setDialog(null); }
       },
     });
   }
@@ -176,7 +191,7 @@ export default function OwnersPage() {
       </Drawer>
 
       {modal === 'owner' && <AddOwnerModal onClose={() => setModal(null)} onSubmit={addOwner} />}
-      {modal === 'link' && open && <LinkUnitModal owner={open.displayName} onClose={() => setModal(null)} onSubmit={linkUnit} />}
+      {modal === 'link' && open && <LinkUnitModal owner={open.displayName} units={rosterUnits} onClose={() => setModal(null)} onSubmit={linkUnit} />}
       {modal === 'contract' && open && <ContractModal owner={open.displayName} onClose={() => setModal(null)} onSubmit={addContract} />}
       <Dialog spec={dialog} busy={false} onClose={() => setDialog(null)} />
     </>
@@ -370,16 +385,20 @@ function AddOwnerModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (
   );
 }
 
-function LinkUnitModal({ owner, onClose, onSubmit }: { owner: string; onClose: () => void; onSubmit: (u: UnitLine) => void }) {
-  const [unitLabel, setUnitLabel] = useState('');
+function LinkUnitModal({ owner, units, onClose, onSubmit }: { owner: string; units: RosterUnit[]; onClose: () => void; onSubmit: (u: UnitLine) => void }) {
+  const choices = units.filter(u => u.ownerName !== owner);
+  const [unitId, setUnitId] = useState('');
+  const chosen = choices.find(u => u.id === unitId);
+  const unitLabel = chosen ? `${chosen.propertyName} ${chosen.unitNumber}` : '';
   const [model, setModel] = useState<FeeModel>('management');
   const [feePct, setFeePct] = useState('25');
   const [grr, setGrr] = useState('');
-  const canSubmit = unitLabel.trim() !== '' && (model === 'management' ? feePct !== '' : grr !== '');
+  const canSubmit = unitId !== '' && (model === 'management' ? feePct !== '' : grr !== '');
   return (
     <Modal title="Link a unit" sub={`Assign a unit to ${owner} and preset how the owner is paid.`} onClose={onClose} submitLabel="Link unit" canSubmit={canSubmit}
-      onSubmit={() => onSubmit(line(crypto.randomUUID(), unitLabel.trim(), model, model === 'management' ? Number(feePct) : undefined, model === 'grr' ? Math.round(Number(grr) * 100) : undefined, 0, 0, 0, 0))}>
-      <Field label="Unit" placeholder="e.g. Arte Mont Kiara #MK2-09-16" value={unitLabel} onChange={e => setUnitLabel(e.target.value)} />
+      onSubmit={() => onSubmit(line(unitId, unitLabel, model, model === 'management' ? Number(feePct) : undefined, model === 'grr' ? Math.round(Number(grr) * 100) : undefined, 0, 0, 0, 0))}>
+      <SelectField label="Unit" value={unitId} onChange={v => setUnitId(v)}
+        options={[{ value: '', label: 'Choose a unit' }, ...choices.map(u => ({ value: u.id, label: `${u.propertyName} ${u.unitNumber}${u.ownerName ? ` (now ${u.ownerName})` : ''}` }))]} />
       <SelectField label="Payout model" value={model} onChange={v => setModel(v as FeeModel)}
         options={[{ value: 'management', label: 'Management fee (% of revenue)' }, { value: 'grr', label: 'GRR — guaranteed monthly rent' }]} />
       {model === 'management'

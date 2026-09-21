@@ -1,5 +1,6 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { stampMyt } from '../../_lib/ops';
 
 const AUDIT_ROLES = ['management', 'operations_manager', 'finance_admin'];
 
@@ -8,12 +9,13 @@ const AUDIT_ROLES = ['management', 'operations_manager', 'finance_admin'];
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!AUDIT_ROLES.includes(session.role)) {
-    return fail('FORBIDDEN', 'The audit trail is available to management and finance roles.', 403);
-  }
-
   const url = new URL(request.url);
   const entityTable = url.searchParams.get('entityTable');
+  // Operations staff may read the activity on a reservation (the drawer shows it); everything else is management and finance.
+  const allowed = AUDIT_ROLES.includes(session.role) || (session.role === 'operations_staff' && entityTable === 'reservations');
+  if (!allowed) {
+    return fail('FORBIDDEN', 'The audit trail is available to management and finance roles.', 403);
+  }
   const entityId = url.searchParams.get('entityId');
   const actorId = url.searchParams.get('actorId');
   const page = Number(url.searchParams.get('page') ?? 1);
@@ -40,11 +42,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     generatedAt: new Date().toISOString(),
     page, pageSize, total: total?.n ?? 0,
     data: rows.map(r => ({
-      id: r.id, actorLabel: r.actor_label, action: r.action,
+      id: Number(r.id), actorLabel: r.actor_label, action: r.action,
       entityTable: r.entity_table, entityId: r.entity_id,
       before: r.before_state ? JSON.parse(r.before_state) : null,
       after: r.after_state ? JSON.parse(r.after_state) : null,
-      source: r.source, occurredAt: r.occurred_at,
+      source: r.source, occurredAt: stampMyt(r.occurred_at) ?? r.occurred_at,
     })),
   });
 };

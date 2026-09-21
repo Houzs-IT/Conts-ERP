@@ -1,6 +1,9 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, canSeeFinance } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
+import { refOf } from '../../_lib/ops';
+
+const METHOD_LABEL: Record<string, string> = { bank_transfer: 'Bank transfer', ibg: 'IBG', duitnow: 'DuitNow' };
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -21,9 +24,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return json({
     generatedAt: new Date().toISOString(),
     data: (rows as any[]).map(r => ({
-      id: r.id, statementId: r.statement_id,
-      ownerName: r.display_name, amount: r.amount, currency: r.currency,
-      state: r.state, method: r.method,
+      id: r.id, ref: refOf('PAY', r.id), statementId: r.statement_id,
+      ownerName: r.display_name, amount: Number(r.amount), currency: r.currency,
+      state: r.state, method: METHOD_LABEL[r.method] ?? r.method,
       // Never the full account number, only the tail.
       bankName: r.bank_name, bankLast4: r.bank_account_last4,
       paidAt: r.paid_at, failureReason: r.failure_reason,
@@ -81,11 +84,14 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   if (!canSeeFinance(session.role)) return fail('FORBIDDEN', 'Finance access is required.', 403);
 
-  const { id, state, failureReason } = await request.json<{ id: string; state: string; failureReason?: string }>();
+  const b = await request.json<{ id: string; state: string; failureReason?: string }>().catch(() => null);
+  const { id, state, failureReason } = b ?? ({} as { id: string; state: string; failureReason?: string });
   if (!['processing', 'paid', 'failed'].includes(state)) return fail('VALIDATION', 'Unknown payout state.', 422);
 
   const before = await one<any>(env, 'SELECT state, statement_id FROM payouts WHERE id = ?', id);
   if (!before) return fail('NOT_FOUND', 'That payout no longer exists.', 404);
+  if (before.state === 'paid') return fail('CONFLICT', 'That payout is already paid.', 409);
+  if (state === 'failed' && !failureReason?.trim()) return fail('VALIDATION', 'Say why it failed.', 422, { failureReason: 'Give the reason the bank gave.' });
 
   await run(env, 'UPDATE payouts SET state = ?, paid_at = ?, failure_reason = ? WHERE id = ?',
     state, state === 'paid' ? nowIso() : null, state === 'failed' ? (failureReason ?? null) : null, id);

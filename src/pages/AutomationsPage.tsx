@@ -225,17 +225,17 @@ const FALLBACK: Payload = {
     { id: 'account.invited', name: 'User invited', template: 'account.invited', group: 'account',
       trigger: 'user created', timing: 'Immediate', channels: ['Email'],
       needs: 'Temporary password, sign-in link, must_change_password is true',
-      preview: 'Welcome to The Conts Property OS. Sign in at {signInLink} with temporary password {tempPassword} and set your own.',
+      preview: 'Welcome to Conts ERP. Sign in at {signInLink} with temporary password {tempPassword} and set your own.',
       delivery: 'transactional', quietHours: 'always', isActive: true },
     { id: 'account.password_reset', name: 'Password reset', template: 'account.password_reset', group: 'account',
       trigger: 'forgot-password request', timing: 'Immediate', channels: ['Email'],
       needs: 'Reset link, 60-minute expiry stated',
-      preview: 'Reset your Property OS password using this link: {resetLink}. It expires in 60 minutes.',
+      preview: 'Reset your Conts ERP password using this link: {resetLink}. It expires in 60 minutes.',
       delivery: 'transactional', quietHours: 'always', isActive: true },
     { id: 'account.password_changed', name: 'Password changed', template: 'account.password_changed', group: 'account',
       trigger: 'password change succeeds', timing: 'Immediate', channels: ['Email'],
       needs: 'Time and device, plus a route if it was not them',
-      preview: 'Your Property OS password was changed {time} on {device}. If this was not you, secure your account: {securityLink}.',
+      preview: 'Your Conts ERP password was changed {time} on {device}. If this was not you, secure your account: {securityLink}.',
       delivery: 'transactional', quietHours: 'always', isActive: true },
     { id: 'account.locked', name: 'Account locked', template: 'account.locked', group: 'account',
       trigger: '5 failed sign-in attempts', timing: 'Immediate', channels: ['Email'],
@@ -245,7 +245,7 @@ const FALLBACK: Payload = {
     { id: 'account.new_device', name: 'New device sign-in', template: 'account.new_device', group: 'account',
       trigger: 'sign-in from an unrecognised device', timing: 'Immediate', channels: ['Email'],
       needs: 'Time, approximate location, device',
-      preview: 'New sign-in to Property OS from {device} near {location} at {time}. If this was not you, {securityLink}.',
+      preview: 'New sign-in to Conts ERP from {device} near {location} at {time}. If this was not you, {securityLink}.',
       delivery: 'transactional', quietHours: 'always', isActive: true },
   ],
 };
@@ -282,14 +282,14 @@ export default function AutomationsPage() {
 
   async function toggle(r: Rule) {
     const next = !r.isActive;
-    setOverrides(o => ({ ...o, [r.id]: next }));
-    toast(next
-      ? { tone: 'success', title: `${r.name} is live.`, body: 'It will send on the next matching trigger.' }
-      : { tone: 'warning', title: `${r.name} moved to draft.`, body: 'No further messages will be sent from this rule.' });
     try {
       await api.patch('/automations', { id: r.id, isActive: next });
-    } catch {
-      // Dev: no backend. Keep the optimistic state so a missing endpoint never breaks the toggle.
+      setOverrides(o => ({ ...o, [r.id]: next }));
+      toast(next
+        ? { tone: 'success', title: `${r.name} is live.`, body: 'It will send on the next matching trigger.' }
+        : { tone: 'warning', title: `${r.name} moved to draft.`, body: 'No further messages will be sent from this rule.' });
+    } catch (e) {
+      toast({ tone: 'critical', title: `${r.name} was not changed.`, body: e instanceof Error ? e.message : 'Try again in a moment.' });
     }
   }
 

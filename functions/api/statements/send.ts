@@ -2,6 +2,7 @@ import { type Env, all, run, json, fail, audit } from '../../_lib/db';
 import { requireSession, canSeeFinance } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { one } from '../../_lib/db';
+import { nowIso } from '../../_lib/db';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -28,6 +29,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       entityTable: 'owner_statements', entityId: r.id,
       before: { state: 'finalised' }, after: { state: 'sent' },
     });
+    // A sent statement gets its payout row straight away. With no bank details on file it starts as failed, so finance sees it.
+    const pay = await one<{ id: string; net_payout: number; owner_id: string; bank_account_last4: string | null }>(env, `
+      SELECT s.id, s.net_payout, s.owner_id, o.bank_account_last4 FROM owner_statements s JOIN owners o ON o.id = s.owner_id WHERE s.id = ?`, r.id);
+    if (pay && !(await one(env, 'SELECT 1 AS x FROM payouts WHERE statement_id = ?', r.id))) {
+      const pid = crypto.randomUUID();
+      await run(env, `
+        INSERT INTO payouts (id, statement_id, owner_id, amount, currency, state, method, bank_last4, failure_reason, created_at)
+        VALUES (?, ?, ?, ?, 'MYR', ?, 'bank_transfer', ?, ?, ?)`,
+        pid, r.id, pay.owner_id, pay.net_payout, pay.bank_account_last4 ? 'pending' : 'failed', pay.bank_account_last4,
+        pay.bank_account_last4 ? null : 'No bank details on file for this owner.', nowIso());
+      await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'payout.create', entityTable: 'payouts', entityId: pid, after: { statementId: r.id, amount: pay.net_payout } });
+    }
     const owner = await one<{ display_name: string; email: string; net_payout: number }>(env, `
       SELECT o.display_name, o.email, s.net_payout
       FROM owners o JOIN owner_statements s ON s.owner_id = o.id

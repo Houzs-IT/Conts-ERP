@@ -7,14 +7,23 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
 
-  const rows = await all(env, 'SELECT id, provider, state, last_synced_at, last_error FROM integrations ORDER BY provider');
+  const rows = await all<any>(env, `
+    SELECT i.id, i.provider, i.state, i.last_synced_at, i.last_error, i.credentials,
+           (SELECT COUNT(*) FROM unit_channels c WHERE c.channel = i.provider AND c.is_active = 1) AS units_linked
+    FROM integrations i ORDER BY i.provider`);
 
-  // Credentials are never serialised, at any role.
+  const INTERVAL: Record<string, string | null> = { airbnb: 'Every 15 min', booking_com: 'Every 15 min', agoda: 'Every 15 min', whatsapp: 'Real time', maybank: 'Daily', utilities: null };
+
+  // Credentials are never serialised, at any role: only a masked tail.
   return json({
     generatedAt: new Date().toISOString(),
-    data: (rows as any[]).map(r => ({
-      id: r.id, provider: r.provider, state: r.state,
+    data: rows.map(r => ({
+      id: r.id, provider: r.provider,
+      state: r.provider === 'utilities' ? 'manual' : r.state,
       lastSyncedAt: r.last_synced_at, lastError: r.last_error,
+      unitsLinked: Number(r.units_linked),
+      syncInterval: INTERVAL[r.provider] ?? 'Every 15 min',
+      credentialMasked: r.credentials ? `••••${String(r.credentials).slice(-4)}` : null,
     })),
   });
 };

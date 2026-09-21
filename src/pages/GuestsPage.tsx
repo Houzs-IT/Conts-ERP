@@ -9,7 +9,7 @@ import { StaleBanner } from '../components/DataState';
 import Icon from '../components/Icon';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, notifyFailure } from '../lib/api';
 import { useSession } from '../lib/session';
 import { RESERVATION, READINESS } from '../lib/vocabulary';
 import { rm, dateRange, time, nights as fmtNights, guests as fmtGuests } from '../lib/format';
@@ -214,26 +214,26 @@ export default function GuestsPage() {
     const m = g.movement; if (!m) return;
     mPatch(m.reservationId, { preparedAt: new Date().toISOString(), accessSentAt: new Date().toISOString(), readiness: 'ready' });
     toast({ tone: 'success', title: `${m.propertyName} ${m.unitNumber} prepared.`, body: 'Access sent and the unit is confirmed ready.' });
-    api.post(`/reservations/${m.reservationId}/prepare`, {}).catch(() => { /* dev: no backend */ });
+    api.post(`/reservations/${m.reservationId}/prepare`, {}).catch(notifyFailure);
   }
   function sendAccess(g: Guest) {
     const m = g.movement; if (!m) return;
     mPatch(m.reservationId, { accessSentAt: new Date().toISOString() });
     toast({ tone: 'success', title: `Access details sent to ${g.fullName}.`, body: `Delivered on ${threadName(m.channel)}.` });
-    api.post('/messages', { reservationId: m.reservationId, kind: 'access_details' }).catch(() => {});
+    api.post('/messages', { reservationId: m.reservationId, kind: 'access_details' }).catch(notifyFailure);
   }
   function markCheckedIn(g: Guest) {
     const m = g.movement; if (!m) return;
     mPatch(m.reservationId, { state: 'checked_in', readiness: 'occupied' });
     toast({ tone: 'success', title: `${g.fullName} checked in.`, body: `${m.propertyName} ${m.unitNumber} is now occupied.` });
-    api.patch(`/reservations/${m.reservationId}`, { state: 'checked_in' }).catch(() => {});
+    api.patch(`/reservations/${m.reservationId}`, { state: 'checked_in' }).catch(notifyFailure);
   }
   async function confirmCheckout() {
     if (!checkout?.movement) return;
     const g = checkout, m = checkout.movement;
     setBusy(true);
     mPatch(m.reservationId, { state: 'checked_out', readiness: 'dirty' });
-    try { await api.patch(`/reservations/${m.reservationId}`, { state: 'checked_out' }); } catch { /* dev: no backend */ }
+    try { await api.patch(`/reservations/${m.reservationId}`, { state: 'checked_out' }); } catch (e) { notifyFailure(e); }
     toast({ tone: 'success', title: `${g.fullName} checked out.`, body: `A cleaning task was created for ${m.propertyName} ${m.unitNumber}.` });
     setBusy(false);
     setCheckout(null);
@@ -242,12 +242,12 @@ export default function GuestsPage() {
     if (!message) return;
     const g = message;
     toast({ tone: 'success', title: `Message sent to ${g.fullName}.`, body: `Thread opened on ${threadName(g.channel)}.` });
-    api.post('/messages', { guestId: g.id, body }).catch(() => {});
+    api.post('/messages', { guestId: g.id, body }).catch(notifyFailure);
     setMessage(null);
   }
   function bookAgain(g: Guest) {
     toast({ tone: 'success', title: `New booking started for ${g.fullName}.`, body: 'Pick a unit and dates to confirm.' });
-    api.post('/reservations', { guestId: g.id }).catch(() => {});
+    api.post('/reservations', { guestId: g.id }).catch(notifyFailure);
   }
   function addWalkIn(input: { fullName: string; phone: string; email: string; unitNumber: string; propertyName: string; guestsCount: number }) {
     const id = crypto.randomUUID();
@@ -265,7 +265,7 @@ export default function GuestsPage() {
     setFilter('all');
     setSelectedId(id);
     toast({ tone: 'success', title: `${input.fullName} added.`, body: 'Walk-in placed in today’s arrivals.' });
-    api.post('/guests', input).catch(() => {});
+    api.post('/guests', input).catch(notifyFailure);
     setAdding(false);
   }
 

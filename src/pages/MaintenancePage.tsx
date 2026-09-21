@@ -8,7 +8,7 @@ import { Dialog, type DialogSpec } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, notifyFailure } from '../lib/api';
 import { rm } from '../lib/format';
 import { TASK } from '../lib/vocabulary';
 import type { TaskState } from '../lib/types';
@@ -26,7 +26,7 @@ const CHARGE_OPTIONS: ChargeTo[] = ['owner', 'guest_deposit', 'the_conts', 'warr
 const TECHS = ['Hafiz Omar', 'In-house crew', 'AquaFix', 'CoolCare', 'Kiara Interiors'];
 
 interface Issue {
-  id: string; unitNumber: string; propertyName: string; title: string; detail: string | null;
+  id: string; unitId?: string; unitNumber: string; propertyName: string; title: string; detail: string | null;
   state: TaskState; vendorName: string | null; quotedAmount: number | null; finalAmount: number | null;
   ownerApprovalRequired: boolean; blocksUnit: boolean; reportedAt: string; chargeTo: ChargeTo;
   assigneeName?: string | null; photoCount?: number; documentCount?: number; ownerApprovedAt?: string | null;
@@ -82,7 +82,7 @@ export default function MaintenancePage() {
       const cur = (e[issue.id]?.[field] ?? issue[field] ?? 0) as number;
       return { ...e, [issue.id]: { ...e[issue.id], [field]: cur + 1 } };
     });
-  const fire = (p: Promise<unknown>) => { void p.catch(() => { /* dev: no backend, keep optimistic */ }); };
+  const fire = (p: Promise<unknown>) => { void p.catch(notifyFailure); };
 
   // Modal state
   const [creating, setCreating] = useState(false);
@@ -118,7 +118,7 @@ export default function MaintenancePage() {
       body: `${optimistic.propertyName} ${optimistic.unitNumber} now has an open maintenance issue${optimistic.blocksUnit ? ' and is off sale' : ''}.`,
     });
     fire(api.post('/maintenance/issues', {
-      unitId: optimistic.unitNumber, title: optimistic.title, detail: optimistic.detail,
+      unitId: optimistic.unitNumber, propertyName: optimistic.propertyName, title: optimistic.title, detail: optimistic.detail,
       photoIds: [], blocksUnit: optimistic.blocksUnit, quotedAmount: optimistic.quotedAmount, chargeTo: optimistic.chargeTo,
     }));
   }
@@ -141,7 +141,7 @@ export default function MaintenancePage() {
     patch(issue.id, { blocksUnit: true });
     setConfirm(null);
     toast({ tone: 'success', title: 'Unit blocked.', body: `${issue.propertyName} ${issue.unitNumber} is off sale and the dates are held.` });
-    fire(api.post('/blocks', { unitId: issue.unitNumber, reason: 'maintenance', issueId: issue.id }));
+    fire(api.post('/blocks', { unitId: issue.unitId ?? issue.unitNumber, propertyName: issue.propertyName, reason: 'maintenance', issueId: issue.id }));
   }
 
   function attachPhoto(issue: Issue, kind: 'Before' | 'After') {

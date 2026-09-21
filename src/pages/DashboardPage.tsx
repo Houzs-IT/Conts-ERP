@@ -7,7 +7,8 @@ import { Dialog } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { useCrew } from '../lib/useCrew';
+import { api, notifyFailure } from '../lib/api';
 import { rm, time, percent } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
@@ -65,6 +66,12 @@ const RANGES: { key: Range; label: string }[] = [
 
 const p = (period: string, revenue: number, occupancy: number, isCurrent?: boolean): TrendPoint =>
   ({ period, revenue, occupancy, isCurrent });
+
+const EMPTY_TREND: TrendPayload = {
+  generatedAt: '', currency: 'MYR', points: [],
+  totals: { grossBookingValue: 0, collectedRevenue: 0, managementFees: 0, netOwnerPayout: 0 },
+  delta: { value: 0, direction: 'flat', tone: 'neutral' },
+};
 
 const TREND: Record<Range, TrendPayload> = {
   '3m': {
@@ -208,14 +215,6 @@ const PORTFOLIO_FALLBACK: PortfolioPayload = {
   ],
 };
 
-/* Housekeeping crew for the assign dialog. `busy` drives the 409 override path
- * (api.md ASSIGNEE_BUSY) without a live roster in dev. */
-const CREW = [
-  { id: 'u5', name: 'Nurul Huda', busy: 2 },
-  { id: 'u6', name: 'Faridah Ismail', busy: 0 },
-  { id: 'u9', name: 'Siti Rahmah', busy: 0 },
-  { id: 'u12', name: 'Azman Yusof', busy: 1 },
-];
 
 const go = (hash: string) => { window.location.hash = hash; };
 
@@ -237,6 +236,7 @@ const LINE: Record<Tone, string> = {
 };
 
 export default function DashboardPage() {
+  const CREW = useCrew('housekeeping');
   const kpi = useApi<KpiPayload>('/dashboard/kpis', KPI_FALLBACK);
 
   const [range, setRange] = useState<Range>('12m');
@@ -244,7 +244,7 @@ export default function DashboardPage() {
   // In dev there is no backend, so a range change fails to refetch and useApi
   // keeps the previous payload. Fall back to the local dataset for the active
   // range whenever the live read is not available, so the toggle visibly moves.
-  const tp = (trend.error ? null : trend.data) ?? TREND[range];
+  const tp = (trend.error ? null : trend.data) ?? (import.meta.env.DEV ? TREND[range] : EMPTY_TREND);
 
   const today = useApi<TodayPayload>('/dashboard/today', TODAY_FALLBACK);
   const exc = useApi<ExceptionPayload>('/dashboard/exceptions', EXCEPTION_FALLBACK);
@@ -272,7 +272,7 @@ export default function DashboardPage() {
 
   function runException(e: Exception) {
     switch (e.action.label) {
-      case 'Assign cleaner': setAssign({ ex: e, cleanerId: CREW[0].id }); break;
+      case 'Assign cleaner': setAssign({ ex: e, cleanerId: CREW[0]?.id ?? '' }); break;
       case 'Notify owner': setNotify(e); break;
       case 'Review and send': go('#/finance/statements'); break;
       case 'Open pricing': go(`#/performance/pricing?unitId=${encodeURIComponent(e.unitId ?? '')}`); break;
@@ -287,7 +287,7 @@ export default function DashboardPage() {
     resolve(ex.id);
     toast({ tone: 'success', title: 'Cleaner assigned.', body: `${cleaner.name} has been notified.` });
     setAssign(null);
-    if (ex.action.taskId) api.post(`/housekeeping/tasks/${ex.action.taskId}/assign`, { assigneeId: cleaner.id }).catch(() => {});
+    if (ex.action.taskId) api.post(`/housekeeping/tasks/${ex.action.taskId}/assign`, { assigneeId: cleaner.id }).catch(notifyFailure);
   }
 
   function doNotify() {
@@ -300,7 +300,7 @@ export default function DashboardPage() {
     api.post(`/owners/${owner.id}/notify`, {
       unitLabel: ex.unitLabel, reason: ex.reason, datesBlocked: ex.datesBlocked,
       revenueAtRisk: ex.revenueAtRisk, expectedReturn: ex.expectedReturn,
-    }).catch(() => {});
+    }).catch(notifyFailure);
   }
 
   const assignBusy = assign ? (CREW.find(c => c.id === assign.cleanerId)?.busy ?? 0) : 0;

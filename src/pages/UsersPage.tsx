@@ -283,7 +283,7 @@ export default function UsersPage() {
   const [tab, setTab] = useState<'users' | 'permissions' | 'org'>('users');
 
   // Optimistic overlay: invited users prepend, per-id edits merge on top.
-  const [added, setAdded] = useState<Row[]>([]);
+  const [added] = useState<Row[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Row>>>({});
   const rows = useMemo(
     () => [...added, ...(data?.data ?? [])].map(r => ({ ...r, ...edits[r.id] })),
@@ -309,16 +309,6 @@ export default function UsersPage() {
     setManagerId('u1'); setFieldErrors({}); setBusy(false);
   }
 
-  // A demo temporary password so the "temporary password" behaviour is visible;
-  // the real backend generates and emails its own.
-  const makeTempPassword = () => {
-    const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-    const digits = '23456789';
-    const lower = 'abcdefghijkmnpqrstuvwxyz';
-    const pick = (s: string) => s[Math.floor(Math.random() * s.length)];
-    return 'TC-' + pick(letters) + Array.from({ length: 4 }, () => pick(lower)).join('') + pick(digits) + pick(digits);
-  };
-
   async function submitInvite(e: FormEvent) {
     e.preventDefault();
     if (busy) return;
@@ -329,34 +319,18 @@ export default function UsersPage() {
     if (Object.keys(errs).length) { setFieldErrors(errs); return; }
 
     setBusy(true); setFieldErrors({});
-    const tempPassword = makeTempPassword();
-    const optimistic: Row = {
-      id: crypto.randomUUID(), fullName: fullName.trim(), email: email.trim(), phone: '—',
-      role, managerId: role === 'owner' ? null : managerId,
-      isActive: true, mustChangePassword: true, lastLoginAt: null,
-    };
-    setAdded(a => [optimistic, ...a]);
-    setLastTempPassword({ name: optimistic.fullName, password: tempPassword });
-    toast({
-      tone: 'success',
-      title: `Invitation sent to ${optimistic.fullName}.`,
-      body: `Temporary password ${tempPassword}. They must change it on first sign-in.`,
-    });
     try {
-      await api.post('/users', { fullName: optimistic.fullName, email: optimistic.email, role, managerId: optimistic.managerId });
+      const res = await api.post<{ id: string; delivery: string; reason?: string }>('/users', { fullName: fullName.trim(), email: email.trim(), role, managerId: role === 'owner' ? null : managerId || null });
+      toast(res.delivery === 'sent'
+        ? { tone: 'success', title: `Invitation sent to ${fullName.trim()}.`, body: 'A temporary password was emailed. They must change it on first sign-in.' }
+        : { tone: 'warning', title: `${fullName.trim()}'s account was created, but the email was not delivered.`, body: res.reason ?? 'The email service is not connected, so the invitation is queued. Ask them to use Forgot password once email works.' });
+      reload();
+      resetInvite();
     } catch (err) {
-      // Dev: no backend. Keep the optimistic row. Only a real validation
-      // failure (fields) is surfaced back onto the form.
-      if (err instanceof ApiFailure && err.fields) {
-        setAdded(a => a.filter(x => x.id !== optimistic.id));
-        setLastTempPassword(null);
-        setFieldErrors(err.fields);
-        setBusy(false);
-        return;
-      }
+      if (err instanceof ApiFailure && err.fields) setFieldErrors(err.fields);
+      toast({ tone: 'critical', title: 'The invitation was not sent.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      setBusy(false);
     }
-    reload();
-    resetInvite();
   }
 
   /* ----------------------------- edit user ---------------------------- */
@@ -374,18 +348,22 @@ export default function UsersPage() {
     setBusy(true);
     const roleChanged = editRole !== editing.role;
     const patch: Partial<Row> = { role: editRole, managerId: editManager || null, isActive: editActive };
-    setEdits(m => ({ ...m, [editing.id]: { ...m[editing.id], ...patch } }));
-    toast({
-      tone: 'success',
-      title: `${editing.fullName} updated.`,
-      body: roleChanged
-        ? `Role changed to ${roleLabel(editRole)}. Their navigation rebuilds on next sign-in.`
-        : 'Reporting line and status saved.',
-    });
     try {
       await api.patch(`/users/${editing.id}`, patch);
-    } catch { /* dev: no backend, keep optimistic edit */ }
-    setBusy(false); setEditing(null);
+      setEdits(m => ({ ...m, [editing.id]: { ...m[editing.id], ...patch } }));
+      toast({
+        tone: 'success',
+        title: `${editing.fullName} updated.`,
+        body: roleChanged
+          ? `Role changed to ${roleLabel(editRole)}. Their navigation rebuilds on next sign-in.`
+          : 'Reporting line and status saved.',
+      });
+      reload();
+      setEditing(null);
+    } catch (err) {
+      toast({ tone: 'critical', title: `${editing.fullName} was not updated.`, body: err instanceof Error ? err.message : 'Try again in a moment.' });
+    }
+    setBusy(false);
   }
 
   /* -------------------------- edit org chart -------------------------- */
@@ -404,21 +382,25 @@ export default function UsersPage() {
       const next = orgDraft[s.id] ?? '';
       if ((s.managerId ?? '') !== next) patch[s.id] = { managerId: next || null };
     }
-    setEdits(m => {
-      const merged = { ...m };
-      for (const [id, p] of Object.entries(patch)) merged[id] = { ...merged[id], ...p };
-      return merged;
-    });
     const changed = Object.keys(patch).length;
-    toast({
-      tone: 'success',
-      title: changed ? 'Reporting line updated.' : 'No changes to the reporting line.',
-      body: changed ? 'This changes escalation and rosters. It does not change anyone’s permissions.' : undefined,
-    });
     try {
-      await api.put('/users/org-chart', { managers: staff.map(s => ({ id: s.id, managerId: orgDraft[s.id] || null })) });
-    } catch { /* dev: no backend, keep optimistic edit */ }
-    setBusy(false); setOrgOpen(false);
+      if (changed) await api.put('/users/org-chart', { managers: staff.map(s => ({ id: s.id, managerId: orgDraft[s.id] || null })) });
+      setEdits(m => {
+        const merged = { ...m };
+        for (const [id, p] of Object.entries(patch)) merged[id] = { ...merged[id], ...p };
+        return merged;
+      });
+      toast({
+        tone: 'success',
+        title: changed ? 'Reporting line updated.' : 'No changes to the reporting line.',
+        body: changed ? 'This changes escalation and rosters. It does not change anyone’s permissions.' : undefined,
+      });
+      if (changed) reload();
+      setOrgOpen(false);
+    } catch (err) {
+      toast({ tone: 'critical', title: 'Reporting line was not saved.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+    }
+    setBusy(false);
   }
 
   /* ------------------------------- tabs ------------------------------- */

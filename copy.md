@@ -1,4 +1,4 @@
-# The Conts Property OS — UI copy and status vocabulary
+# Conts ERP — UI copy and status vocabulary
 
 Single source for every visible string. Voice rules: sentence case, direct, specific, calm,
 accountable, human, consistent (guide 5.4, 18). Verb-first for actions, concise nouns for navigation.
@@ -100,7 +100,7 @@ SYSTEM          Users and roles · Integrations · Settings
 | `auth.forgot.heading` | Reset your password |
 | `auth.forgot.sub` | Enter your work email and we will send a reset link. |
 | `auth.forgot.submit` | Send reset link |
-| `auth.forgot.sent` | If that email belongs to a Property OS account, a reset link is on its way. The link expires in 60 minutes. |
+| `auth.forgot.sent` | If that email belongs to a Conts ERP account, a reset link is on its way. The link expires in 60 minutes. |
 | `auth.forgot.back` | Back to sign in |
 | `auth.reset.expired` | This reset link has expired. Request a new one. |
 | `auth.change.heading` | Set a new password |

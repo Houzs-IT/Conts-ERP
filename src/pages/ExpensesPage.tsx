@@ -6,7 +6,7 @@ import { Button } from '../components/Button';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, notifyFailure } from '../lib/api';
 import { rm } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
@@ -45,8 +45,9 @@ const CHARGE_LABEL: Record<string, string> = {
 interface Expense {
   id: string; unitNumber: string; propertyName: string; category: Category;
   description: string; amount: number; incurredOn: string; reference: string | null; chargeTo: ChargeTo;
+  unitId?: string; locked?: boolean;
 }
-interface Payload { data: Expense[]; total: number; generatedAt: string }
+interface Payload { data: Expense[]; total: number; generatedAt: string; sentPeriods?: string[] }
 
 /** Renders until /api/finance/expenses is seeded. Delete once the endpoint returns rows. */
 const FALLBACK: Payload = {
@@ -105,7 +106,7 @@ export default function ExpensesPage() {
   // failure swallowed — the interaction still lands.
   const [added, setAdded] = useState<Expense[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Expense>>>({});
-  const fire = (p: Promise<unknown>) => { void p.catch(() => { /* dev: no backend, keep optimistic */ }); };
+  const fire = (p: Promise<unknown>) => { void p.catch(notifyFailure); };
 
   const merged = useMemo(
     () => [...added, ...(data?.data ?? [])].map(e => ({ ...e, ...edits[e.id] })),
@@ -130,7 +131,8 @@ export default function ExpensesPage() {
   const total = rows.reduce((s, r) => s + r.amount, 0);
   const filtered = cat !== 'all' || unit !== 'all' || period !== 'all';
   const clearFilters = () => { setCat('all'); setUnit('all'); setPeriod('all'); };
-  const isLocked = (e: Expense) => SENT_PERIODS.has(periodOf(e.incurredOn));
+  const sentPeriods = useMemo(() => new Set(data?.sentPeriods ?? (import.meta.env.DEV ? [...SENT_PERIODS] : [])), [data]);
+  const isLocked = (e: Expense) => e.locked ?? sentPeriods.has(periodOf(e.incurredOn));
 
   // Modal state
   const [creating, setCreating] = useState(false);
@@ -148,7 +150,7 @@ export default function ExpensesPage() {
       body: `${CAT_LABEL[optimistic.category]} · ${rm(optimistic.amount)} on ${optimistic.propertyName || 'unit'} ${optimistic.unitNumber}.`,
     });
     fire(api.post('/expenses', {
-      unitId: optimistic.unitNumber, category: optimistic.category, amount: optimistic.amount,
+      unitId: optimistic.unitNumber, propertyName: optimistic.propertyName, category: optimistic.category, amount: optimistic.amount,
       incurredOn: optimistic.incurredOn, reference: optimistic.reference, description: optimistic.description,
     }));
   }
@@ -194,7 +196,6 @@ export default function ExpensesPage() {
       tone: 'success', title: 'Report generated.',
       body: `${reportRows.length} ${reportRows.length === 1 ? 'expense' : 'expenses'} · ${rm(sum)} · ${unitLabel} · ${periodText}.`,
     });
-    fire(api.get('/expenses/report', { unitId: scopeUnit === 'all' ? '' : scopeUnit, period: scopePeriod === 'all' ? '' : scopePeriod }));
   }
 
   return (
@@ -234,7 +235,7 @@ export default function ExpensesPage() {
           <select aria-label="Filter by period" value={period} onChange={e => setPeriod(e.target.value)}
             className={cx('block box-border w-auto h-8 pl-3 pr-[30px] py-0 border border-solid border-line rounded-control outline-none bg-card font-sans text-[16px] font-normal', period === 'all' ? 'text-muted-ink' : 'text-ink')}>
             <option value="all">All periods</option>
-            {periods.map(p => <option key={p} value={p}>{monthLabel(p)}{SENT_PERIODS.has(p) ? ' · sent' : ''}</option>)}
+            {periods.map(p => <option key={p} value={p}>{monthLabel(p)}{sentPeriods.has(p) ? ' · sent' : ''}</option>)}
           </select>
         </div>
       </div>
@@ -501,5 +502,5 @@ function downloadCsv(name: string, text: string) {
     a.href = url; a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 0);
-  } catch { /* dev: download unavailable, the toast still confirms the action */ }
+  } catch (e) { notifyFailure(e); }
 }

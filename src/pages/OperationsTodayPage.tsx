@@ -8,7 +8,8 @@ import { Dialog } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { useCrew } from '../lib/useCrew';
+import { api, notifyFailure } from '../lib/api';
 import { READINESS, CHANNEL } from '../lib/vocabulary';
 import { rm, date as fmtDate, time, unitRef } from '../lib/format';
 import type { Tone, UnitReadiness, BookingChannel } from '../lib/types';
@@ -91,12 +92,6 @@ const FALLBACK: Payload = {
   ],
 };
 
-const CREW = [
-  { id: 'u5', name: 'Nurul Huda' },
-  { id: 'u6', name: 'Faridah Ismail' },
-  { id: 'u9', name: 'Siti Rahmah' },
-  { id: 'u12', name: 'Azman Yusof' },
-];
 
 const FILTERS = [
   { key: 'all', label: 'All work' },
@@ -133,6 +128,7 @@ const matchesFilter = (r: Row, f: FilterKey) =>
   : /* unassigned */ !r.assigneeId;
 
 export default function OperationsTodayPage() {
+  const CREW = useCrew('housekeeping');
   const [filter, setFilter] = useState<FilterKey>('all');
   const { data, loading, error, reload } = useApi<Payload>('/operations/today', FALLBACK);
 
@@ -168,7 +164,7 @@ export default function OperationsTodayPage() {
     const row = assign.row;
     setAssign(null);
     // Dev has no backend; keep the optimistic assignment either way.
-    api.post(`/housekeeping/tasks/${row.id}/assign`, { assigneeId: cleaner.id }).then(reload).catch(() => {});
+    api.post(`/housekeeping/tasks/${row.id}/assign`, { assigneeId: cleaner.id }).then(reload).catch(notifyFailure);
   }
 
   function doMessage() {
@@ -180,7 +176,7 @@ export default function OperationsTodayPage() {
     setEdits(e => ({ ...e, [row.id]: { ...e[row.id], guest: null } }));
     toast({ tone: 'success', title: 'Message sent.', body: `Sent to ${guest.name} on ${CHANNEL[guest.channel].label}.` });
     setMessage(null);
-    api.post('/messages', { taskId: row.id, channel: guest.channel, body }).catch(() => {});
+    api.post('/messages', { taskId: row.id, channel: guest.channel, body }).catch(notifyFailure);
   }
 
   function doInspect() {
@@ -189,7 +185,7 @@ export default function OperationsTodayPage() {
     const id = crypto.randomUUID();
     toast({ tone: 'success', title: 'Inspection started.', body: `Checklist opened for ${unitRef(row.propertyName, row.unitNumber)}.` });
     setInspect(null);
-    api.post<{ id: string }>('/inspections', { taskId: row.id, unitNumber: row.unitNumber }).catch(() => {});
+    api.post<{ id: string }>('/inspections', { taskId: row.id, unitNumber: row.unitNumber }).catch(notifyFailure);
     window.location.hash = `#/operations/inspections/${id}`;
   }
 
@@ -200,14 +196,14 @@ export default function OperationsTodayPage() {
     if (!owner) return;
     toast({ tone: 'success', title: 'Owner notified.', body: `${owner.name} was sent the blocked-unit notice.` });
     setOwnerNotice(null);
-    api.post(`/owners/${owner.id}/notify`, { unitNumber: row.unitNumber, reason: row.work }).catch(() => {});
+    api.post(`/owners/${owner.id}/notify`, { unitNumber: row.unitNumber, reason: row.work }).catch(notifyFailure);
   }
 
   interface RowAction { key: string; label: string; primary?: boolean; run: () => void }
   function actionsFor(r: Row): RowAction[] {
     const list: RowAction[] = [];
     if (isHousekeeping(r.kind)) {
-      list.push({ key: 'assign', label: r.assigneeId ? 'Reassign cleaner' : 'Assign cleaner', primary: !r.assigneeId, run: () => setAssign({ row: r, cleanerId: r.assigneeId ?? CREW[0].id }) });
+      list.push({ key: 'assign', label: r.assigneeId ? 'Reassign cleaner' : 'Assign cleaner', primary: !r.assigneeId, run: () => setAssign({ row: r, cleanerId: r.assigneeId ?? CREW[0]?.id ?? '' }) });
     }
     if (r.kind === 'inspection') {
       list.push({ key: 'inspect', label: 'Start inspection', primary: true, run: () => setInspect(r) });
@@ -235,7 +231,7 @@ export default function OperationsTodayPage() {
             size="sm"
             disabled={!firstUnassigned}
             disabledReason="Every housekeeping task already has a cleaner."
-            onClick={() => firstUnassigned && setAssign({ row: firstUnassigned, cleanerId: CREW[0].id })}
+            onClick={() => firstUnassigned && setAssign({ row: firstUnassigned, cleanerId: CREW[0]?.id ?? '' })}
           >
             Assign cleaner
           </Button>

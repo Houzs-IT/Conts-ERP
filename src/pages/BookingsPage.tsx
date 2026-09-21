@@ -10,9 +10,10 @@ import { Drawer, Dialog, type DialogSpec } from '../components/Dialog';
 import { Field } from '../components/Field';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
+import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
-import { api } from '../lib/api';
-import { rm, dateRange, date as fmtDate, time as fmtTime, nights as fmtNights } from '../lib/format';
+import { api, notifyFailure } from '../lib/api';
+import { todayMyt, rm, dateRange, date as fmtDate, time as fmtTime, nights as fmtNights } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { Tone, BookingChannel, ReservationState } from '../lib/types';
 
@@ -55,18 +56,8 @@ const FILTERS = [
   { key: 'cancelled', label: 'Cancelled' },
 ] as const;
 type FilterKey = typeof FILTERS[number]['key'];
-const TODAY = '2026-09-16';
+const TODAY = todayMyt();
 
-/** The unit roster a manual or imported booking is placed against. Ids mirror the
- *  calendar's unit ids so the optimistic POST carries a real `unitId`. */
-const UNITS: { id: string; unitNumber: string; propertyName: string }[] = [
-  { id: 'u1', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One' },
-  { id: 'u2', unitNumber: '#MK2-09-16', propertyName: 'Arte Mont Kiara' },
-  { id: 'u3', unitNumber: '#MK2-09-15', propertyName: 'Arte Mont Kiara' },
-  { id: 'u4', unitNumber: '#C-31-14', propertyName: 'Sentral Suites' },
-  { id: 'u5', unitNumber: '#B-08-11', propertyName: 'Arcoris Mont Kiara' },
-  { id: 'u6', unitNumber: '#15-06', propertyName: 'Scarletz KLCC' },
-];
 /** Channels a manual entry may use — revenue channels only; blocks/owner stays are set on the calendar. */
 const CREATE_CHANNELS: BookingChannel[] = ['direct', 'airbnb', 'booking_com', 'agoda'];
 
@@ -98,6 +89,7 @@ function feeLines(r: Row) {
 }
 
 export default function BookingsPage() {
+  const UNITS = useUnitRoster();
   const { data, loading, error, reload } = useApi<Payload>('/reservations', FALLBACK);
   const toast = useToast();
 
@@ -215,6 +207,7 @@ export default function BookingsPage() {
     checkIn: string; checkOut: string; guestsCount: number; grossSen: number;
   }) {
     const unit = UNITS.find(u => u.id === input.unitId) ?? UNITS[0];
+    if (!unit) return;
     const id = crypto.randomUUID();
     const row: Row = {
       id, externalRef: `MAN-${id.slice(0, 6).toUpperCase()}`, guestName: input.guestName, guestsCount: input.guestsCount,
@@ -230,7 +223,7 @@ export default function BookingsPage() {
       unitId: input.unitId, channel: input.channel,
       guest: { fullName: input.guestName, email: input.email || null, phone: input.phone || null },
       checkIn: input.checkIn, checkOut: input.checkOut, guestsCount: input.guestsCount, grossBookingValue: input.grossSen,
-    }).catch(() => { /* dev: no backend */ });
+    }).catch(notifyFailure);
   }
 
   // ---- Import reservations (CSV) ----
@@ -240,7 +233,7 @@ export default function BookingsPage() {
     e.target.value = ''; // allow re-selecting the same file
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => setImportRows(buildImport(String(reader.result ?? '')));
+    reader.onload = () => setImportRows(buildImport(String(reader.result ?? ''), UNITS));
     reader.readAsText(file);
   }
   function commitImport() {
@@ -253,7 +246,7 @@ export default function BookingsPage() {
           unitNumber: r.unitNumber, channel: r.channel, guest: { fullName: r.guestName, phone: r.guestPhone },
           checkIn: r.checkIn, checkOut: r.checkOut, guestsCount: r.guestsCount, grossBookingValue: r.grossBookingValue,
         })),
-      }).catch(() => { /* dev: no backend */ });
+      }).catch(notifyFailure);
     }
     const rejected = importRows.length - valid.length;
     toast({
@@ -294,7 +287,7 @@ export default function BookingsPage() {
     if (!r) return;
     const ch = r.channel === 'direct' ? 'WhatsApp' : CHANNEL_META[r.channel].label;
     toast({ tone: 'success', title: `Message sent to ${r.guestName}.`, body: `Thread opened on ${ch}.` });
-    api.post('/messages', { reservationId: r.id, body }).catch(() => { /* dev: no backend */ });
+    api.post('/messages', { reservationId: r.id, body }).catch(notifyFailure);
     setMessageRow(null);
   }
 
@@ -308,14 +301,14 @@ export default function BookingsPage() {
     setAdded(a => [clone, ...a]);
     setOpenId(clone.id);
     toast({ tone: 'success', title: 'Reservation duplicated.', body: `${r.guestName} · ${clone.propertyName} ${clone.unitNumber} · ${dateRange(clone.checkIn, clone.checkOut)}. Adjust the dates as needed.` });
-    api.post(`/reservations/${r.id}/duplicate`, {}).catch(() => { /* dev: no backend */ });
+    api.post(`/reservations/${r.id}/duplicate`, {}).catch(notifyFailure);
   }
 
   // ---- Drawer → Quick status update (PATCH /reservations/:id) — optimistic ----
   function updateStatus(r: Row, status: ReservationState) {
     if (status === r.state) return;
     patch(r.id, { state: status });
-    api.patch(`/reservations/${r.id}`, { status }).catch(() => { /* dev: no backend */ });
+    api.patch(`/reservations/${r.id}`, { status }).catch(notifyFailure);
     toast({ tone: 'neutral', title: 'Status updated.', body: `${r.externalRef ?? 'Reservation'} is now ${STATE_LABEL[status]}.` });
   }
 
@@ -325,7 +318,7 @@ export default function BookingsPage() {
     const r = open;
     patch(r.id, { checkIn: vals.checkIn, checkOut: vals.checkOut, nights: nightsBetween(vals.checkIn, vals.checkOut) });
     try { await api.patch(`/reservations/${r.id}/dates`, { checkIn: vals.checkIn, checkOut: vals.checkOut, confirm: true }); }
-    catch { /* dev: no backend */ }
+    catch (e) { notifyFailure(e); }
     setDatesOpen(false);
     toast({ tone: 'success', title: 'Dates changed.', body: `${r.guestName} moved to ${dateRange(vals.checkIn, vals.checkOut)} and notified.` });
   }
@@ -431,7 +424,7 @@ export default function BookingsPage() {
       </Drawer>
       <Dialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
 
-      {creating && <CreateReservationModal onClose={() => setCreating(false)} onCreate={createReservation} />}
+      {creating && <CreateReservationModal units={UNITS} onClose={() => setCreating(false)} onCreate={createReservation} />}
       {importRows && <ImportPreviewModal rows={importRows} onClose={() => setImportRows(null)} onConfirm={commitImport} />}
       {messageRow && <MessageModal r={messageRow} onClose={() => setMessageRow(null)} onSend={sendGuestMessage} />}
       {open && datesOpen && <ChangeDatesModal r={open} onClose={() => setDatesOpen(false)} onConfirm={submitChangeDates} />}
@@ -578,8 +571,8 @@ const ACTIVITY_FALLBACK: ActivityItem[] = [
 ];
 
 function ActivityLog({ r }: { r: Row }) {
-  const { data } = useApi<ActivityItem[]>(`/audit?entityTable=reservations&entityId=${r.id}`, ACTIVITY_FALLBACK);
-  const items = data ?? [];
+  const { data } = useApi<{ data: ActivityItem[] }>(`/audit?entityTable=reservations&entityId=${r.id}`, { data: ACTIVITY_FALLBACK });
+  const items = data?.data ?? [];
   if (items.length === 0) return <div className="text-[12px] text-muted-ink py-2">No activity recorded yet.</div>;
   return (
     <div className="border border-solid border-line rounded-card overflow-hidden">
@@ -624,7 +617,7 @@ function parseCsv(text: string): string[][] {
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-function buildImport(text: string): ParsedRow[] {
+function buildImport(text: string, UNITS: RosterUnit[]): ParsedRow[] {
   const grid = parseCsv(text);
   if (grid.length < 2) return [{ line: 0, label: 'File', error: 'No data rows found. Expected a header row plus at least one reservation.' }];
   const header = grid[0].map(h => h.trim().toLowerCase());
@@ -689,11 +682,12 @@ function Modal({ title, sub, onClose, children, maxWidth = 460 }: { title: strin
   );
 }
 
-function CreateReservationModal({ onClose, onCreate }: {
+function CreateReservationModal({ units: UNITS, onClose, onCreate }: {
+  units: RosterUnit[];
   onClose: () => void;
   onCreate: (input: { unitId: string; channel: BookingChannel; guestName: string; phone: string; email: string; checkIn: string; checkOut: string; guestsCount: number; grossSen: number }) => void;
 }) {
-  const [unitId, setUnitId] = useState(UNITS[0].id);
+  const [unitId, setUnitId] = useState(UNITS[0]?.id ?? '');
   const [channel, setChannel] = useState<BookingChannel>('direct');
   const [guestName, setGuestName] = useState('');
   const [phone, setPhone] = useState('');

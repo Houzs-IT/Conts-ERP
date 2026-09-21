@@ -32,7 +32,7 @@ async function hash(password) {
 const randomSecret = () =>
   [...crypto.getRandomValues(new Uint8Array(32))].map(b => b.toString(16).padStart(2, '0')).join('');
 
-say('\n\u001b[1mThe Conts Property OS \u2014 local setup\u001b[0m');
+say('\n\u001b[1mConts ERP \u2014 local setup\u001b[0m');
 
 // 1. Database
 step(1, 'Database');
