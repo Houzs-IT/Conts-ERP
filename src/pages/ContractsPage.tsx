@@ -77,14 +77,13 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 export default function ContractsPage() {
   const { data, loading, error, reload } = useApi<Payload>('/contracts', FALLBACK);
   const toast = useToast();
-  const [added, setAdded] = useState<Contract[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Contract>>>({});
   const [filter, setFilter] = useState<FilterKey>('all');
   const [modal, setModal] = useState<null | { mode: 'add' } | { mode: 'edit'; id: string }>(null);
 
   const rows = useMemo(
-    () => [...added, ...(data?.data ?? [])].map(c => ({ ...c, ...edits[c.id] })),
-    [added, data, edits],
+    () => (data?.data ?? []).map(c => ({ ...c, ...edits[c.id] })),
+    [data, edits],
   );
 
   const counts = useMemo(() => {
@@ -108,18 +107,24 @@ export default function ContractsPage() {
 
   const editing = modal?.mode === 'edit' ? rows.find(r => r.id === modal.id) ?? null : null;
 
-  function addContract(input: Omit<Contract, 'id'>) {
-    const created: Contract = { id: crypto.randomUUID(), ...input };
-    setAdded(a => [created, ...a]);
-    toast({ tone: 'success', title: 'Contract added.', body: `Management agreement recorded for ${input.ownerName}.` });
-    api.post('/contracts', input).catch(() => { /* dev: no backend, keep optimistic */ });
-    setModal(null);
+  async function addContract(input: Omit<Contract, 'id'>) {
+    try {
+      await api.post('/contracts', input);
+      toast({ tone: 'success', title: 'Contract added.', body: `Management agreement recorded for ${input.ownerName}.` });
+      setModal(null); reload();
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Contract was not added.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    }
   }
-  function saveEdit(id: string, input: Omit<Contract, 'id'>) {
-    setEdits(e => ({ ...e, [id]: { ...e[id], ...input } }));
-    toast({ tone: 'success', title: 'Contract updated.', body: `Terms saved for ${input.ownerName}.` });
-    api.patch(`/contracts/${id}`, input).catch(() => { /* dev: no backend, keep optimistic */ });
-    setModal(null);
+  async function saveEdit(id: string, input: Omit<Contract, 'id'>) {
+    try {
+      await api.patch(`/contracts/${id}`, input);
+      setEdits(e => ({ ...e, [id]: { ...e[id], ...input } }));
+      toast({ tone: 'success', title: 'Contract updated.', body: `Terms saved for ${input.ownerName}.` });
+      setModal(null); reload();
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Contract was not updated.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    }
   }
 
   return (

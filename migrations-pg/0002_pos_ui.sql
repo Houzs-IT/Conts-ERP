@@ -1,5 +1,5 @@
 -- Tables the Conts ERP screens need that the original schema did not have.
--- REVERSAL: DROP TABLE unit_expenses; DROP TABLE channel_rates; ALTER TABLE units DROP COLUMN listing_name, DROP COLUMN unit_code, DROP COLUMN address, DROP COLUMN package, DROP COLUMN term, DROP COLUMN split_kind, DROP COLUMN split_value; ALTER TABLE owners DROP COLUMN ic_number, DROP COLUMN bank_account_holder, DROP COLUMN bank_account_number; ALTER TABLE inventory_items DROP COLUMN category, DROP COLUMN replace_by, DROP COLUMN notes; (and restore expenses_category_check to the eight original categories)
+-- REVERSAL: DROP TABLE unit_expenses; DROP TABLE channel_rates; ALTER TABLE units DROP COLUMN listing_name, DROP COLUMN unit_code, DROP COLUMN address, DROP COLUMN package, DROP COLUMN term, DROP COLUMN split_kind, DROP COLUMN split_value; ALTER TABLE owners DROP COLUMN ic_number, DROP COLUMN bank_account_holder, DROP COLUMN bank_account_number; ALTER TABLE inventory_items DROP COLUMN category, DROP COLUMN replace_by, DROP COLUMN notes; ALTER TABLE owner_contracts DROP COLUMN model, DROP COLUMN grr_amount, DROP COLUMN offer_letter; (and restore expenses_category_check to the eight original categories)
 set local search_path = pos;
 
 -- One row per unit, sales channel and night whose price was set by hand.
@@ -36,6 +36,11 @@ ALTER TABLE inventory_items ADD COLUMN notes      TEXT NOT NULL DEFAULT '';
 ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_category_check;
 ALTER TABLE expenses ADD CONSTRAINT expenses_category_check CHECK (category IN
   ('internet','electricity','water','cleaning','housekeeping','maintenance','utilities','consumables','furniture','management_fee','channel_fee','other'));
+
+-- How an owner is paid: a management fee on revenue, or a guaranteed monthly rent (GRR).
+ALTER TABLE owner_contracts ADD COLUMN model        TEXT NOT NULL DEFAULT 'management' CHECK (model IN ('management','grr'));
+ALTER TABLE owner_contracts ADD COLUMN grr_amount   INTEGER NOT NULL DEFAULT 0;   -- sen per month, for model 'grr'
+ALTER TABLE owner_contracts ADD COLUMN offer_letter TEXT;
 
 -- The recurring monthly costs set on a unit (internet, electricity, water, cleaning ...), deducted on the owner statement.
 CREATE TABLE unit_expenses (

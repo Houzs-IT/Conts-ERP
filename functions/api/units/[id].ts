@@ -19,6 +19,15 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (!cur) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
 
   const now = nowIso();
+  if (typeof (b as { ownerId?: string }).ownerId === 'string') {
+    const to = (b as { ownerId: string }).ownerId;
+    if (!(await one(env, 'SELECT 1 AS x FROM owners WHERE id = ?', to))) return fail('NOT_FOUND', 'That owner does not exist.', 404, { ownerId: 'Pick an owner.' });
+    // A contract belongs to one owner, so it does not follow the unit to the next.
+    if (to !== cur.owner_id) {
+      await run(env, 'UPDATE units SET owner_id = ?, contract_id = NULL, updated_at = ? WHERE id = ?', to, now, id);
+      cur.owner_id = to;
+    }
+  }
   let number = cur.unit_number as string;
   const code = typeof b.unitCode === 'string' ? b.unitCode.trim() : undefined;
   // A unit still carrying a placeholder number takes its code as its number; an established number is never renamed here.

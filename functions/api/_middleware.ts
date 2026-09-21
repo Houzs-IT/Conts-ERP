@@ -7,14 +7,14 @@ import { doorFor, doorRefusal } from '../_lib/door';
  * in, so the owner role is deny-by-default here: an owner may call only the routes
  * below, each of which scopes its data to that owner's own records.
  */
-const OWNER_ALLOWED = new Set([
-  'GET /api/auth/session',
-  'POST /api/auth/logout',
-  'POST /api/auth/change-password',
-  'GET /api/owner/portal',
-  'GET /api/statements/pdf',
-  'POST /api/maintenance/approve',
-]);
+const OWNER_ALLOWED: [string, RegExp][] = [
+  ['GET', /^\/api\/auth\/session$/],
+  ['POST', /^\/api\/auth\/logout$/],
+  ['POST', /^\/api\/auth\/change-password$/],
+  ['GET', /^\/api\/owner\/(summary|trend|property-health|documents)$/],
+  ['GET', /^\/api\/owner\/statements\/[^/]+\/pdf$/],
+  ['POST', /^\/api\/maintenance\/issues\/[^/]+\/approve$/],
+];
 
 const PUBLIC = new Set([
   'POST /api/auth/login', 'POST /api/auth/forgot-password',
@@ -31,7 +31,8 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, next }) => {
   const refusal = doorRefusal(doorFor(request), session.role);
   if (refusal) return fail('WRONG_DOOR', refusal, 403);
 
-  if (session.role === 'owner' && !OWNER_ALLOWED.has(route)) {
+  const path = new URL(request.url).pathname.replace(/\/+$/, '');
+  if (session.role === 'owner' && !OWNER_ALLOWED.some(([m, re]) => m === request.method && re.test(path))) {
     return fail('FORBIDDEN', 'This is not available on the owner portal.', 403);
   }
   return next();

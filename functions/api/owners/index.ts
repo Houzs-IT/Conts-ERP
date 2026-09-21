@@ -1,42 +1,79 @@
-import { type Env, all, json, fail } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { requireSession } from '../../_lib/auth';
+import { MASTER_ROLES } from '../../_lib/properties';
+import { daysIn, todayMyt } from '../../_lib/ops';
 
+const READ_ROLES = [...MASTER_ROLES, 'operations_staff'];
+
+/** GET /api/owners — every owner with their units, contract and this month's figures.
+ *  Identity and bank numbers are shown only to roles that manage them. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role) && session.role !== 'operations_staff') {
-    return fail('FORBIDDEN', 'Owner records are visible to operations and finance roles.', 403);
-  }
+  if (!READ_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Owner records are visible to operations and finance roles.', 403);
+  const banking = MASTER_ROLES.includes(session.role);
 
-  const month = new Date().toISOString().slice(0, 7);
-  const rows = await all<any>(env, `
-    SELECT o.id, o.display_name, o.email,
-           COUNT(DISTINCT u.id) AS unit_count,
-           COALESCE(MAX(c.management_fee_pct), 25) AS fee_pct,
-           MAX(c.renews_on) AS renews_on,
-           string_agg(DISTINCT p.name || ' ' || u.unit_number, ',') AS units_label,
-           COALESCE((
-             SELECT SUM(r.collected_revenue) FROM reservations r
-             JOIN units u2 ON u2.id = r.unit_id
-             WHERE u2.owner_id = o.id
-               AND r.state IN ('confirmed','checked_in','checked_out')
-               AND r.channel NOT IN ('maintenance_block','owner_stay')
-               AND substr(r.check_in, 1, 7) = ?
-           ), 0) AS month_revenue
-    FROM owners o
-    LEFT JOIN units u ON u.owner_id = o.id
-    LEFT JOIN properties p ON p.id = u.property_id
-    LEFT JOIN owner_contracts c ON c.owner_id = o.id
-    GROUP BY o.id
-    ORDER BY o.display_name`, month);
+  const month = todayMyt().slice(0, 7), days = daysIn(month);
+  const owners = await all<any>(env, 'SELECT * FROM owners ORDER BY display_name');
+  const units = await all<any>(env, `
+    SELECT u.id, u.owner_id, u.unit_number, u.split_kind, u.split_value, p.name AS property_name,
+           c.model, c.management_fee_pct, c.grr_amount,
+           COALESCE(SUM(r.collected_revenue), 0) AS revenue, COALESCE(SUM(r.check_out::date - r.check_in::date), 0) AS nights,
+           (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.unit_id = u.id AND e.charge_to = 'owner' AND substr(e.incurred_on, 1, 7) = ?) AS costs
+    FROM units u JOIN properties p ON p.id = u.property_id
+    LEFT JOIN owner_contracts c ON c.id = u.contract_id
+    LEFT JOIN reservations r ON r.unit_id = u.id AND r.state IN ('confirmed','checked_in','checked_out')
+      AND r.channel NOT IN ('maintenance_block','owner_stay') AND substr(r.check_in, 1, 7) = ?
+    GROUP BY u.id, p.name, c.model, c.management_fee_pct, c.grr_amount
+    ORDER BY p.name, u.unit_number`, month, month);
+  const contracts = await all<any>(env, 'SELECT * FROM owner_contracts ORDER BY starts_on DESC');
 
   return json({
-    generatedAt: new Date().toISOString(),
-    data: rows.map(r => ({
-      id: r.id, displayName: r.display_name, email: r.email,
-      unitsLabel: r.units_label ?? '\u2014', unitCount: r.unit_count,
-      managementFeePct: r.fee_pct, monthRevenue: r.month_revenue, renewsOn: r.renews_on,
-      // Bank details are never in a list response.
-    })),
+    generatedAt: nowIso(),
+    data: owners.map(o => {
+      const mine = contracts.find(c => c.owner_id === o.id) ?? null;
+      return {
+        id: o.id, displayName: o.display_name, email: o.email, phone: o.phone,
+        ic: banking ? o.ic_number : null, bankName: banking ? o.bank_name : null,
+        bankAccount: banking ? o.bank_account_number : null, accountHolder: banking ? (o.bank_account_holder ?? o.display_name) : null,
+        portalInvited: !!o.user_id,
+        contract: mine ? { feePct: Number(mine.management_fee_pct), startedOn: mine.starts_on, renewsOn: mine.renews_on } : null,
+        units: units.filter(u => u.owner_id === o.id).map(u => {
+          const grr = (u.model ?? (mine?.model ?? 'management')) === 'grr';
+          const feePct = u.management_fee_pct != null ? Number(u.management_fee_pct) : Number(mine?.management_fee_pct ?? 25);
+          const revenue = Number(u.revenue), nights = Number(u.nights);
+          const grrAmount = Number(u.grr_amount ?? mine?.grr_amount ?? 0);
+          return {
+            unitId: u.id, unitLabel: `${u.property_name} ${u.unit_number}`, model: grr ? 'grr' : 'management',
+            ...(grr ? { grrAmount } : { feePct }),
+            occupancy: Math.min(100, Math.round((nights / days) * 100)), adr: nights ? Math.round(revenue / nights) : 0,
+            gross: revenue, net: grr ? grrAmount : revenue - Math.round(revenue * (feePct / 100)) - Number(u.costs),
+          };
+        }),
+      };
+    }),
   });
+};
+
+/** POST /api/owners { displayName, email, phone, ic, bankName, bankAccount, accountHolder } */
+export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return response!;
+  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can add owners.', 403);
+
+  const b = await request.json<any>().catch(() => null);
+  const fields: Record<string, string> = {};
+  if (!b?.displayName?.trim()) fields.displayName = 'Enter the owner name.';
+  if (b?.email && !String(b.email).includes('@')) fields.email = 'Enter a valid email address.';
+  if (Object.keys(fields).length) return fail('VALIDATION', 'Check the owner details.', 422, fields);
+  if (b.email && await one(env, 'SELECT 1 AS x FROM owners WHERE lower(email) = lower(?)', b.email.trim())) return fail('DUPLICATE', 'An owner already uses that email address.', 409, { email: 'Already in use.' });
+
+  const id = crypto.randomUUID(), now = nowIso();
+  await run(env, `
+    INSERT INTO owners (id, display_name, email, phone, ic_number, bank_name, bank_account_holder, bank_account_number, bank_account_last4, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    id, b.displayName.trim(), String(b.email ?? '').trim(), b.phone ?? null, b.ic ?? null, b.bankName ?? null, b.accountHolder ?? null,
+    b.bankAccount ?? null, b.bankAccount ? String(b.bankAccount).slice(-4) : null, now, now);
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'owner.create', entityTable: 'owners', entityId: id, after: { displayName: b.displayName } });
+  return json({ id }, 201);
 };
