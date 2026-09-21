@@ -14,7 +14,8 @@ export interface Query<T> {
  * API is still stubbed — delete the fallback once the endpoint is live.
  */
 export function useApi<T>(path: string, fallback?: T): Query<T> {
-  const [data, setData] = useState<T | null>(fallback ?? null);
+  // The fallback is design sample data. It exists only in dev; a real build shows nothing rather than invented figures.
+  const [data, setData] = useState<T | null>(import.meta.env.DEV ? (fallback ?? null) : null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);

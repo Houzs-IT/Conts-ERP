@@ -144,15 +144,23 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
 
-  const { data, error, reload } = useApi<Payload>(`/units/detail?unitId=${unitId}`, FALLBACK);
-  const { data: unitsData } = useApi<UnitRow[]>('/units', UNITS_FALLBACK);
+  const { data: unitsData } = useApi<{ data: UnitRow[] }>('/units', { data: UNITS_FALLBACK });
+  const units = unitsData?.data ?? [];
+  const openId = unitId || units[0]?.id || '';
+  const { data, error, reload } = useApi<Payload>(`/units/detail?unitId=${encodeURIComponent(openId)}`, FALLBACK);
 
-  const d = data ?? FALLBACK;
+  const d = data ?? (import.meta.env.DEV ? FALLBACK : null);
+  if (!d) {
+    return (
+      <div className="p-6 text-[13px] text-muted-ink">
+        {error ?? (units.length === 0 && unitsData ? 'There are no units yet. Add a building and a unit under Properties.' : 'Loading unit…')}
+      </div>
+    );
+  }
   const u = d.unit;
   const p = d.performance;
-  const units = unitsData ?? UNITS_FALLBACK;
   const buildingCount = new Set(units.map(x => x.propertyName)).size;
-  const selectedId = units.length ? (units.some(x => x.id === unitId) ? unitId : units[0].id) : '';
+  const selectedId = units.length ? (units.some(x => x.id === openId) ? openId : units[0].id) : '';
   const openIssues = d.maintenance.filter(m => m.state !== 'resolved').length;
 
   // Financial sections are absent from the payload for roles without access,

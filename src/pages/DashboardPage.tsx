@@ -67,6 +67,12 @@ const RANGES: { key: Range; label: string }[] = [
 const p = (period: string, revenue: number, occupancy: number, isCurrent?: boolean): TrendPoint =>
   ({ period, revenue, occupancy, isCurrent });
 
+const EMPTY_TREND: TrendPayload = {
+  generatedAt: '', currency: 'MYR', points: [],
+  totals: { grossBookingValue: 0, collectedRevenue: 0, managementFees: 0, netOwnerPayout: 0 },
+  delta: { value: 0, direction: 'flat', tone: 'neutral' },
+};
+
 const TREND: Record<Range, TrendPayload> = {
   '3m': {
     generatedAt: '2026-09-16T06:06:00Z', currency: 'MYR',
@@ -238,7 +244,7 @@ export default function DashboardPage() {
   // In dev there is no backend, so a range change fails to refetch and useApi
   // keeps the previous payload. Fall back to the local dataset for the active
   // range whenever the live read is not available, so the toggle visibly moves.
-  const tp = (trend.error ? null : trend.data) ?? TREND[range];
+  const tp = (trend.error ? null : trend.data) ?? (import.meta.env.DEV ? TREND[range] : EMPTY_TREND);
 
   const today = useApi<TodayPayload>('/dashboard/today', TODAY_FALLBACK);
   const exc = useApi<ExceptionPayload>('/dashboard/exceptions', EXCEPTION_FALLBACK);

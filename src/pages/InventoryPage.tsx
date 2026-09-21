@@ -6,6 +6,7 @@ import Icon from '../components/Icon';
 import { Field } from '../components/Field';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
+import { useUnitRoster } from '../lib/useUnitRoster';
 import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { rm, date } from '../lib/format';
@@ -82,11 +83,11 @@ export default function InventoryPage() {
     [added, data, edits],
   );
 
-  const units = useMemo(() => {
-    const seen = new Map<string, string>();
-    all.forEach(i => { if (!seen.has(i.unitNumber)) seen.set(i.unitNumber, `${i.propertyName} ${i.unitNumber}`); });
-    return [...seen.entries()].map(([unitNumber, label]) => ({ unitNumber, label, propertyName: all.find(i => i.unitNumber === unitNumber)!.propertyName }));
-  }, [all]);
+  const roster = useUnitRoster();
+  const units = useMemo(
+    () => roster.map(u => ({ unitNumber: u.unitNumber, propertyName: u.propertyName, label: `${u.propertyName} ${u.unitNumber}` })),
+    [roster],
+  );
 
   const rows = all.filter(i =>
     (unitFilter === 'all' || i.unitNumber === unitFilter) &&

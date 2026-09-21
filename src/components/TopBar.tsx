@@ -73,7 +73,7 @@ export default function TopBar({
   const { data: searchData } = useApi<SearchResult[]>(`/search?q=${encodeURIComponent(query.trim())}`, SEARCH_FALLBACK);
 
   const results = useMemo(() => {
-    const source = searchData ?? SEARCH_FALLBACK;
+    const source = searchData ?? (import.meta.env.DEV ? SEARCH_FALLBACK : []);
     const q = query.trim().toLowerCase();
     if (!q) return source;
     return source.filter(r => `${r.label} ${r.sub}`.toLowerCase().includes(q));
@@ -113,7 +113,7 @@ export default function TopBar({
 
   const { data: notifRaw } = useApi<Notif[] | NotifPayload>('/notifications', NOTIF_FALLBACK);
   const notifData = useMemo(() => toNotifs(notifRaw), [notifRaw]);
-  const notifs = useMemo(() => (notifData ?? NOTIF_FALLBACK).map(n => ({
+  const notifs = useMemo(() => (notifData ?? (import.meta.env.DEV ? NOTIF_FALLBACK : [])).map(n => ({
     ...n, read: readIds[n.id] ?? !!n.readAt,
   })), [notifData, readIds]);
   const unread = notifs.filter(n => !n.read).length;

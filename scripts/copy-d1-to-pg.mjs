@@ -59,11 +59,13 @@ const d1Tables = new Set(d1("select name from sqlite_master where type = 'table'
 
 let mismatches = 0;
 for (const t of order) {
-  const cols = (await sql`select column_name from information_schema.columns where table_schema = 'pos' and table_name = ${t} order by ordinal_position`).map((r) => r.column_name);
+  const allCols = (await sql`select column_name from information_schema.columns where table_schema = 'pos' and table_name = ${t} order by ordinal_position`).map((r) => r.column_name);
   const pk = (await sql`
     select a.attname from pg_index i join pg_attribute a on a.attrelid = i.indrelid and a.attnum = any(i.indkey)
     where i.indrelid = ${'pos.' + t}::regclass and i.indisprimary order by array_position(i.indkey, a.attnum)`).map((r) => r.attname);
   const rows = d1Tables.has(t) ? d1(`select * from "${t}"`) : [];
+  // Only columns D1 has are copied; a column added to Postgres later keeps its default.
+  const cols = rows.length ? allCols.filter((c) => c in rows[0]) : allCols;
   const nulls = rows.reduce((n, r) => n + cols.filter((c) => r[c] === 'null').length, 0);
   console.log(`${t.padEnd(24)} D1 rows: ${String(rows.length).padStart(5)}${nulls ? `   (${nulls} "null" text values read as NULL)` : ''}`);
   if (!APPLY || !rows.length) continue;

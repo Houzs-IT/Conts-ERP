@@ -8,5 +8,5 @@ export async function call(method, path, body, role = 'management') {
   return { status: r.status, json: j, text: t };
 }
 let fails = 0;
-export function check(name, cond, extra = '') { if (!cond) fails++; console.log(`${cond ? 'ok  ' : 'FAIL'} ${name}${cond ? '' : ' :: ' + extra}`); }
+export function check(name, cond, extra = '') { if (!cond) fails++; console.log(`${cond ? 'ok  ' : 'FAIL'} ${name}${cond ? '' : ' :: ' + String(extra).slice(0, 400)}`); }
 export const done = () => { console.log(fails ? `\n${fails} FAILED` : '\nall ok'); process.exit(fails ? 1 : 0); };
