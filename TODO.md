@@ -26,3 +26,9 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Decisions needed first: deposit vs full payment vs damage deposit; local vs foreign guests; which company account and documents the gateway needs.
 - Build order when the time comes: payment link + webhook + paid status -> refunds -> deposits -> optional guest booking page.
 - Owner payouts stay separate (bank transfers from the Payouts screen); the gateway only collects.
+
+## Future (planning only, not started): Anthropic API key
+- Not needed for development help. Only needed for the two items below.
+- AI inside the system: suggested replies to guest messages (start here, so the value can be judged first), draft replies to reviews, plain-language summary of each owner statement, daily "what needs attention" summary. The server calls Claude with the key stored as a Cloudflare secret (`wrangler pages secret put ANTHROPIC_API_KEY`), never in the browser. Pay per use.
+- Optional: automatic Claude review of every pull request on GitHub (key stored as a GitHub Actions secret).
+- Do after Channex, when there are real bookings and messages to work with. Key never pasted in chat.
