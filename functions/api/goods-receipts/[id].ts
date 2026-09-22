@@ -19,7 +19,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const header = await one<GrnHeaderRow>(env, HEADER_SQL, id);
   if (!header) return fail('NOT_FOUND', 'That goods receipt does not exist.', 404);
   const lines = await all<GrnLineRow>(env, `SELECT id, purchase_order_line_id, line_no, item_code, description, uom, qty_received, qty_accepted,
-    qty_rejected, rejection_reason, unit_price_sen, line_total_sen, notes FROM goods_receipt_lines WHERE grn_id = ? ORDER BY line_no`, id);
+    qty_rejected, rejection_reason, unit_price_sen, line_total_sen, invoiced_qty, notes FROM goods_receipt_lines WHERE grn_id = ? ORDER BY line_no`, id);
   return json({ data: { ...toGrnHeaderPayload(header), lines: lines.map(toGrnLinePayload) } });
 };
 

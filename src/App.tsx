@@ -32,6 +32,7 @@ const CategoriesPage = lazy(() => import('./pages/CategoriesPage'));
 const WarehousesPage = lazy(() => import('./pages/WarehousesPage'));
 const PurchaseOrdersPage = lazy(() => import('./pages/PurchaseOrdersPage'));
 const GoodsReceiptsPage = lazy(() => import('./pages/GoodsReceiptsPage'));
+const PurchaseInvoicesPage = lazy(() => import('./pages/PurchaseInvoicesPage'));
 const AccessPage = lazy(() => import('./pages/AccessPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
@@ -117,6 +118,7 @@ function Routed() {
         <Route path="/procurement/warehouses" element={<WarehousesPage />} />
         <Route path="/procurement/purchase-orders" element={<PurchaseOrdersPage />} />
         <Route path="/procurement/goods-received" element={<GoodsReceiptsPage />} />
+        <Route path="/procurement/purchase-invoices" element={<PurchaseInvoicesPage />} />
         <Route path="/finance/revenue" element={<AnalyticsPage />} />
         <Route path="/finance/expenses" element={<ExpensesPage />} />
         <Route path="/finance/statements" element={<StatementsPage />} />
