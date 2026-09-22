@@ -1,0 +1,34 @@
+import { type Env, one, run, json, fail, audit } from '../../_lib/db';
+import { requireSession } from '../../_lib/auth';
+import { MASTER_ROLES } from '../../_lib/properties';
+
+/** DELETE /api/owners/:id — only when the owner has no units, contract, statements or payouts.
+ *  An owner with any real history is never deleted here; reassign their units first. */
+export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return response!;
+  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete owners.', 403);
+
+  const id = String(params.id);
+  const owner = await one<{ id: string; display_name: string; email: string; user_id: string | null }>(env, 'SELECT id, display_name, email, user_id FROM owners WHERE id = ?', id);
+  if (!owner) return fail('NOT_FOUND', 'That owner no longer exists.', 404);
+
+  const units = await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM units WHERE owner_id = ?', id);
+  if (Number(units?.n) > 0) return fail('HAS_UNITS', `${owner.display_name} still has ${units!.n} unit${Number(units!.n) === 1 ? '' : 's'} linked. Move them to another owner first.`, 409);
+
+  const contracts = await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM owner_contracts WHERE owner_id = ?', id);
+  if (Number(contracts?.n) > 0) return fail('HAS_CONTRACT', `${owner.display_name} has a contract on file, so this record cannot be deleted.`, 409);
+
+  const statements = await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM owner_statements WHERE owner_id = ?', id);
+  if (Number(statements?.n) > 0) return fail('HAS_STATEMENTS', `${owner.display_name} has statement history and cannot be deleted.`, 409);
+
+  const payouts = await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM payouts WHERE owner_id = ?', id);
+  if (Number(payouts?.n) > 0) return fail('HAS_PAYOUTS', `${owner.display_name} has payout history and cannot be deleted.`, 409);
+
+  // The login exists only for this owner's portal access, so it goes with the record.
+  if (owner.user_id) await run(env, "DELETE FROM users WHERE id = ? AND role = 'owner'", owner.user_id);
+  await run(env, 'DELETE FROM owners WHERE id = ?', id);
+
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'owner.delete', entityTable: 'owners', entityId: id, before: { displayName: owner.display_name, email: owner.email } });
+  return json({ ok: true });
+};
