@@ -1,14 +1,6 @@
 import { type Env, one, run, audit, nowIso } from './db';
-import { channexConfigured, channexBookingFeed, channexAckBookingRevision } from './channex';
+import { channexConfigured, channexBookingFeed, channexAckBookingRevision, channexChannelFor } from './channex';
 import { findClash, upsertGuest } from './reservations';
-
-/** Only OTAs the owner has actually connected map to a channel. An OTA name Channex sends that
- *  isn't listed here is left un-acked (see below) rather than guessed at. */
-const CHANNEL_BY_OTA: Record<string, string> = {
-  airbnb: 'airbnb',
-  'booking.com': 'booking_com',
-  agoda: 'agoda',
-};
 
 interface FeedEntry { id: string; attributes: Record<string, any> }
 
@@ -63,7 +55,7 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
     'SELECT id FROM units WHERE channex_property_id = ? AND channex_room_type_id = ?', a.property_id, room.room_type_id);
   if (!unit) return auditSkip(env, entry.id, 'unit_unmapped', { propertyId: a.property_id, roomTypeId: room.room_type_id });
 
-  const channel = CHANNEL_BY_OTA[String(a.ota_name ?? '').trim().toLowerCase()];
+  const channel = channexChannelFor(a.ota_name);
   if (!channel) return auditSkip(env, entry.id, 'ota_unrecognised', { otaName: a.ota_name });
 
   const checkIn: string | undefined = room.checkin_date ?? a.arrival_date;
