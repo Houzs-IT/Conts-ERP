@@ -5,6 +5,7 @@ import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { Dialog } from '../components/Dialog';
+import { Field } from '../components/Field';
 import { EmptyState } from '../components/States';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -56,7 +57,7 @@ const SELECT_REASON: Record<StatementState, string> = {
 };
 
 // COLS as an arbitrary grid-template-columns utility (underscores == spaces).
-const gridCols = 'grid-cols-[32px_minmax(160px,1.6fr)_minmax(118px,1fr)_minmax(96px,0.9fr)_minmax(96px,0.9fr)_minmax(110px,1fr)_minmax(92px,0.9fr)_40px]';
+const gridCols = 'grid-cols-[32px_minmax(160px,1.6fr)_minmax(118px,1fr)_minmax(96px,0.9fr)_minmax(96px,0.9fr)_minmax(110px,1fr)_minmax(92px,0.9fr)_76px]';
 
 export default function StatementsPage() {
   const { data, loading, error, reload } = useApi<Payload>('/statements?pageSize=500', FALLBACK);
@@ -69,6 +70,7 @@ export default function StatementsPage() {
   const [sendConfirm, setSendConfirm] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
   const [genInitial, setGenInitial] = useState(shiftMonth(thisMonth, -1));
+  const [adjustTarget, setAdjustTarget] = useState<Statement | null>(null);
   const [busy, setBusy] = useState(false);
 
   const baseRows = data?.data ?? [];
@@ -159,6 +161,22 @@ export default function StatementsPage() {
       setSel({});
       setSendConfirm(false);
     }
+  }
+
+  // Manual adjustment — a labelled +/- line on a still-editable statement. The net
+  // moves by exactly the amount; gross, fee and expenses are untouched (server rebalances).
+  async function runAdjust(target: Statement, label: string, amountSen: number) {
+    setBusy(true);
+    try {
+      const res = await api.post<{ netPayout: number; adjustmentsTotal: number }>(`/statements/${encodeURIComponent(target.id)}/adjust`, { label, amount: amountSen });
+      setEdits(e => ({ ...e, [target.id]: { ...e[target.id], netPayout: res.netPayout } }));
+      setAdjustTarget(null);
+      reload();
+      toast({ tone: 'success', title: 'Adjustment recorded.', body: `${target.ownerName} — net payout is now ${rm(res.netPayout)}.` });
+    } catch (e) {
+      const locked = e instanceof ApiFailure && e.status === 409;
+      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'This statement is locked.' : 'Adjustment was not recorded.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    } finally { setBusy(false); }
   }
 
   function exportCsv() {
@@ -284,14 +302,26 @@ export default function StatementsPage() {
                     <div className="text-right text-[13px] text-muted-ink tabular-nums">&minus; {rm(s.expensesTotal, { cents: false })}</div>
                     <div className="text-right text-[13px] font-semibold tabular-nums">{rm(s.netPayout)}</div>
                     <div><Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} /></div>
-                    <button
-                      onClick={e => downloadPdf(s, e)}
-                      aria-label={`Download PDF for ${s.ownerName}`}
-                      title="Download PDF"
-                      className="grid place-items-center w-[30px] h-[30px] rounded-control bg-transparent border border-solid border-line text-muted-ink cursor-pointer"
-                    >
-                      <Icon name="FileText" size="sm" />
-                    </button>
+                    <div className="flex justify-end gap-[6px]" onClick={e => e.stopPropagation()}>
+                      {(s.state === 'provisional' || s.state === 'finalised') && (
+                        <button
+                          onClick={() => setAdjustTarget(s)}
+                          aria-label={`Adjust statement for ${s.ownerName}`}
+                          title="Add an adjustment"
+                          className="grid place-items-center w-[30px] h-[30px] rounded-control bg-transparent border border-solid border-line text-muted-ink cursor-pointer"
+                        >
+                          <Icon name="Pencil" size="sm" />
+                        </button>
+                      )}
+                      <button
+                        onClick={e => downloadPdf(s, e)}
+                        aria-label={`Download PDF for ${s.ownerName}`}
+                        title="Download PDF"
+                        className="grid place-items-center w-[30px] h-[30px] rounded-control bg-transparent border border-solid border-line text-muted-ink cursor-pointer"
+                      >
+                        <Icon name="FileText" size="sm" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -312,6 +342,15 @@ export default function StatementsPage() {
           lockedPeriods={lockedPeriods}
           onClose={() => setGenOpen(false)}
           onGenerate={runGenerate}
+        />
+      )}
+
+      {adjustTarget && (
+        <AdjustDialog
+          target={adjustTarget}
+          busy={busy}
+          onClose={() => { if (!busy) setAdjustTarget(null); }}
+          onSubmit={(label, sen) => runAdjust(adjustTarget, label, sen)}
         />
       )}
 
@@ -387,6 +426,68 @@ function GenerateDialog({ initialPeriod, periods, lockedPeriods, onClose, onGene
             {busy ? 'Generating…' : 'Generate'}
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Records a manual +/- line on one statement. The net moves by exactly the amount;
+ *  gross, fee and expenses stay as generated. Local to this page. */
+function AdjustDialog({ target, busy, onClose, onSubmit }: {
+  target: Statement; busy: boolean; onClose: () => void; onSubmit: (label: string, amountSen: number) => void;
+}) {
+  const [label, setLabel] = useState('');
+  const [amount, setAmount] = useState('');
+  const [direction, setDirection] = useState<'deduct' | 'add'>('deduct');
+  const ref = useRef<HTMLDivElement>(null);
+
+  const sen = Math.round(Number(amount) * 100) * (direction === 'deduct' ? -1 : 1);
+  const valid = label.trim() !== '' && Number.isFinite(sen) && sen !== 0;
+  const preview = valid ? target.netPayout + sen : target.netPayout;
+
+  useEffect(() => {
+    ref.current?.querySelector<HTMLInputElement>('input')?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [busy, onClose]);
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label="Adjust statement"
+      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
+      <div ref={ref} className="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
+        <form onSubmit={e => { e.preventDefault(); if (valid && !busy) onSubmit(label.trim(), sen); }}>
+          <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-3">
+            <h2 className="m-0 text-[18px] leading-[1.3] font-semibold">Adjust statement</h2>
+            <p className="m-0 text-[13px] leading-[1.55] text-muted-ink">
+              {target.ownerName} · {target.unitsLabel}. Adds a labelled line to the statement and rebalances the net payout. The gross, fee and expenses are unchanged.
+            </p>
+            <Field label="What is this adjustment for?" placeholder="e.g. Goodwill credit, prior-month correction" value={label} onChange={e => setLabel(e.target.value)} />
+            <div className="flex flex-col gap-[7px]">
+              <span className="text-[12px] font-medium text-muted-ink">Direction</span>
+              <div className="grid grid-cols-2 gap-[7px]">
+                {(['deduct', 'add'] as const).map(d => (
+                  <button key={d} type="button" onClick={() => setDirection(d)}
+                    className={`h-[var(--control-height)] rounded-control border border-solid text-[13px] font-medium cursor-pointer ${direction === d ? 'border-transparent bg-black text-white' : 'border-line bg-card text-ink'}`}>
+                    {d === 'deduct' ? 'Deduct from payout' : 'Add to payout'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Field label="Amount (RM)" type="number" min={0} numeric placeholder="e.g. 150.00" value={amount} onChange={e => setAmount(e.target.value)} />
+            <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-[12px] flex items-center justify-between">
+              <span className="text-muted-ink">Net payout after adjustment</span>
+              <span className="font-semibold tabular-nums">{rm(preview)}</span>
+            </div>
+          </div>
+          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
+            <Button size="sm" variant="secondary" type="button" onClick={onClose} disabled={busy}>Cancel</Button>
+            <Button size="sm" variant="primary" type="submit" loading={busy} disabled={!valid} disabledReason="Add a description and a non-zero amount.">
+              {busy ? 'Saving…' : 'Record adjustment'}
+            </Button>
+          </div>
+        </form>
       </div>
     </div>
   );

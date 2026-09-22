@@ -56,6 +56,13 @@ interface OwnerDoc {
   id: string; type: 'statement' | 'contract' | 'invoice' | 'report';
   refId?: string; title: string; meta: string; issuedAt: string;
 }
+interface DetailLine { label: string; amount: number; type: 'gross' | 'fee' | 'expense' | 'adjustment'; reference?: string }
+interface DetailUnit { id: string; label: string; gross: number; fee: number; expenses: number; adjustments: number; net: number; lines: DetailLine[] }
+interface StatementDetail {
+  id: string; period: string; isFinal: boolean; unitsLabel: string;
+  grossBookingValue: number; managementFee: number; expensesTotal: number; adjustmentsTotal: number; netPayout: number;
+  units: DetailUnit[];
+}
 
 /** No placeholder money is ever presented as the owner's — these figures tie out:
  *  9,260.00 − 2,315.00 − 385.00 − 78.00 = 6,482.00. */
@@ -103,6 +110,26 @@ const DOCS: { data: OwnerDoc[] } = {
     { id: 'd2', type: 'contract', title: 'Management agreement', meta: 'Signed 12 Jan 2026 · 25% fee', issuedAt: '2026-01-12' },
     { id: 'd3', type: 'invoice', title: 'CoolTech Services — INV-2026-0912', meta: 'Aircon service · RM 78.00', issuedAt: '2026-09-12' },
     { id: 'd4', type: 'report', title: 'Annual earnings report 2025', meta: 'PDF', issuedAt: '2026-01-05' },
+  ],
+};
+
+/** Layered detail for the drill-down. Kept consistent with SUMMARY (one unit, same
+ *  gross-to-net): 9,260.00 − 2,315.00 − 385.00 − 78.00 = 6,482.00. A multi-unit owner
+ *  simply returns more entries in `units`, each with its own gross-to-net lines. */
+const BREAKDOWN: StatementDetail = {
+  id: 's1', period: '2026-08', isFinal: true, unitsLabel: 'Vista Jaya One #A-12-03',
+  grossBookingValue: 926000, managementFee: 231500, expensesTotal: 46300, adjustmentsTotal: 0, netPayout: 648200,
+  units: [
+    {
+      id: 'u1', label: 'Vista Jaya One #A-12-03',
+      gross: 926000, fee: 231500, expenses: 46300, adjustments: 0, net: 648200,
+      lines: [
+        { label: 'Gross booking value', amount: 926000, type: 'gross' },
+        { label: 'Management fee · 25%', amount: -231500, type: 'fee' },
+        { label: 'Housekeeping · 11 turnovers', amount: -38500, type: 'expense' },
+        { label: 'Maintenance · aircon service', amount: -7800, type: 'expense', reference: 'INV-2026-0912' },
+      ],
+    },
   ],
 };
 
@@ -229,6 +256,9 @@ export default function OwnerPortalPage() {
         </div>
       </section>
 
+      {/* Report drill-down — combined statement → per-unit → per-line */}
+      {st.statementId && <StatementBreakdown statementId={st.statementId} />}
+
       {/* Performance stats */}
       <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
         {statsCards.map(s => (
@@ -309,6 +339,75 @@ export default function OwnerPortalPage() {
         }}
       />
     </div>
+  );
+}
+
+/**
+ * Report drill-down. The owner sees the combined net at the top (the hero), then can
+ * drill into each unit and, within a unit, into every gross / fee / expense / adjustment
+ * line. Single-unit owners see their one unit expanded; multi-unit owners tap a unit to
+ * open it. A vertical stack, so it reads the same on a phone as on the desktop.
+ */
+function StatementBreakdown({ statementId }: { statementId: string }) {
+  const { data } = useApi<StatementDetail>(`/owner/statements/${encodeURIComponent(statementId)}`, BREAKDOWN);
+  const [openUnit, setOpenUnit] = useState<string | null>(null);
+  if (!data || data.units.length === 0) return null;
+  const multi = data.units.length > 1;
+
+  return (
+    <section className="bg-card border border-solid border-line rounded-card overflow-hidden">
+      <div className="px-5 py-[18px] flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
+        <span className="text-[16px] font-semibold">Statement breakdown</span>
+        <span className="text-[12px] text-muted-ink">
+          {monthLabel(data.period)} · {multi ? `${data.units.length} units · tap a unit to open` : data.unitsLabel}
+        </span>
+      </div>
+
+      {data.units.map(u => {
+        const open = multi ? openUnit === u.id : true;
+        const shortLabel = u.label.split(' ').pop() ?? u.label;
+        return (
+          <div key={u.id} className="[border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
+            {multi && (
+              <button
+                onClick={() => setOpenUnit(o => (o === u.id ? null : u.id))}
+                aria-expanded={open}
+                className="w-full flex items-center justify-between gap-3 px-5 py-[14px] bg-transparent border-none cursor-pointer text-left"
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size="sm" color="var(--color-muted-ink)" />
+                  <span className="text-[14px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{u.label}</span>
+                </span>
+                <span className="text-[13.5px] font-semibold tabular-nums whitespace-nowrap">{rm(u.net)}</span>
+              </button>
+            )}
+
+            {open && (
+              <div className={multi ? 'px-5 pb-[16px] pt-0' : 'px-5 py-[16px]'}>
+                {!multi && <div className="text-[13.5px] font-medium mb-[10px]">{u.label}</div>}
+                <div className="flex flex-col">
+                  {u.lines.map((l, i) => (
+                    <div key={i} className="flex items-center justify-between gap-3 py-[8px] [border-bottom:1px_solid_var(--color-line-soft)]">
+                      <span className="text-[12.5px] text-muted-ink text-pretty">
+                        {l.label}
+                        {l.reference && <span className="text-faint"> · {l.reference}</span>}
+                      </span>
+                      <span className={cx('text-[12.5px] tabular-nums whitespace-nowrap', l.type === 'gross' ? 'text-ink font-medium' : 'text-muted-ink')}>
+                        {l.amount < 0 ? rmDeduction(l.amount) : rm(l.amount)}
+                      </span>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between gap-3 pt-[11px]">
+                    <span className="text-[13px] font-semibold">Net payout · {shortLabel}</span>
+                    <span className="text-[13.5px] font-semibold text-gold-ink tabular-nums">{rm(u.net)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </section>
   );
 }
 

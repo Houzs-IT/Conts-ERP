@@ -40,6 +40,12 @@ const FALLBACK: Payload = {
     { id: 'o2', displayName: 'Wong Mei Ling', email: 'wongml@example.com', phone: '+60 12-333 0002', ic: '710214-14-5220', bankName: 'MBBE', bankAccount: '1512988771', accountHolder: 'Wong Mei Ling', portalInvited: true, contract: { feePct: 25, startedOn: '2025-06-01', renewsOn: '2027-06-01' }, units: [line('u2', 'Arcoris #B-08-11', 'management', 25, undefined, 79, 23100, 634000, 475500)] },
     { id: 'o3', displayName: 'Rajesh Kumar', email: 'rajesh@example.com', phone: '+60 12-333 0003', ic: '650930-10-5333', bankName: 'CIBB', bankAccount: '7024551200', accountHolder: 'Rajesh A/L Kumar', portalInvited: false, contract: { feePct: 0, startedOn: '2025-11-01', renewsOn: '2026-11-01' }, units: [line('u3', 'Tribeca #2207', 'grr', undefined, 350000, 88, 31800, 901000, 350000)] },
     { id: 'o4', displayName: 'Chong Wei Han', email: 'chongwh@example.com', phone: '+60 12-333 0004', ic: '730118-08-5019', bankName: 'PBBB', bankAccount: '3388120945', accountHolder: 'Chong Wei Han', portalInvited: false, contract: { feePct: 25, startedOn: '2025-08-01', renewsOn: '2027-08-01' }, units: [line('u4', 'Scarletz #15-06', 'management', 25, undefined, 74, 26500, 588000, 441000)] },
+    // A multi-unit owner: the record rolls all three units into one combined net payout and one combined statement history.
+    { id: 'o5', displayName: 'Goh Family Trust', email: 'gohtrust@example.com', phone: '+60 12-333 0005', ic: null, bankName: 'HLBB', bankAccount: '2299013848', accountHolder: 'Goh Family Trust', portalInvited: true, contract: { feePct: 25, startedOn: '2025-02-01', renewsOn: '2027-02-01' }, units: [
+      line('u5', 'Sunway Velocity #V-18-07', 'management', 25, undefined, 91, 30200, 742000, 556500),
+      line('u6', 'Sunway Velocity #V-22-03', 'management', 25, undefined, 84, 27800, 681000, 510750),
+      line('u7', 'Sunway Velocity #V-09-11', 'management', 25, undefined, 88, 26100, 711000, 533250),
+    ] },
   ],
 };
 
