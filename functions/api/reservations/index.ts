@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { findClash, clashResponseBody, upsertGuest } from '../../_lib/reservations';
+import { syncAvailabilityIfLinked } from '../../_lib/channexSync';
 
 const stamp = (iso: string | null) => (iso ? iso.replace('T', ' ').slice(0, 16) : null);
 const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 864e5));
@@ -59,5 +60,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     b.guestsCount ?? 1, b.grossBookingValue ?? 0, now, now);
 
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.create', entityTable: 'reservations', entityId: id, after: { unitId: b.unitId, checkIn: b.checkIn, checkOut: b.checkOut, channel } });
+  await syncAvailabilityIfLinked(env, b.unitId, b.checkIn, b.checkOut, false);
   return json({ id }, 201);
 };

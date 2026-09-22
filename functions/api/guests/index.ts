@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { findClash, clashResponseBody, upsertGuest } from '../../_lib/reservations';
+import { syncAvailabilityIfLinked } from '../../_lib/channexSync';
 
 const OPS = ['management', 'operations_manager', 'operations_staff'];
 const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 864e5));
@@ -109,5 +110,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     VALUES (?, ?, ?, 'direct', ?, 'confirmed', ?, ?, ?, 0, 'MYR', ?, ?)`,
     id, unit.id, guestId, `WALK-${id.slice(0, 6).toUpperCase()}`, d.d, d.t, b.guestsCount ?? 1, now, now);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'guest.walk_in', entityTable: 'reservations', entityId: id, after: { guestId, unitId: unit.id } });
+  await syncAvailabilityIfLinked(env, unit.id, d.d, d.t, false);
   return json({ id: guestId, reservationId: id }, 201);
 };
