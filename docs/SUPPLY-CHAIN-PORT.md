@@ -80,10 +80,10 @@ Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 - [x] **Stock ledger + on-hand** — PR #42 `feat/scm-stock` (stacked on #41; HELD: migration 0017). Movements ledger + on-hand + manual adjustment. FIFO cost + GRN/DO→stock auto-wiring deferred.
 - [ ] Stock Takes / Transfers (`StockTake*`, `StockTransfer*`) — dedicated docs; StockCard = the movements view (done)
 
-### Tier 3 — Sales (sell-side documents)
-- [ ] Sales Orders (`SalesOrder*`, `MfgSalesOrdersList`, `SoFromProducts`, guided/new)
-- [ ] Delivery Orders (`DeliveryOrder*`, `DeliveryOrderFromSo`) + Returns
-- [ ] Sales Invoices (`SalesInvoice*`, `SalesInvoiceFromDo`) + `UnbilledDeliveries`
+### Tier 3 — Sales (sell-side documents)  — **SPINE DONE (SO→DO→SI)**
+- [x] **Sales Orders** — PR #43 `feat/scm-sales-orders` (stacked on #42; HELD: migration 0018). 9-state flow + deposit/payment; customer inline (customers master = follow-up); guided/from-products/margins/MRP-gate deferred.
+- [x] **Delivery Orders** — PR #44 `feat/scm-delivery-orders` (stacked on #43; HELD: migration 0019). Delivers a SO, drives delivered_qty + SO→DELIVERED; POD/signature deferred. Delivery Returns = follow-up.
+- [x] **Sales Invoices** — PR #45 `feat/scm-sales-invoices` (stacked on #44; HELD: migration 0020). Bills a DO, marks DO/SO INVOICED, receipts drive paid status. UnbilledDeliveries = follow-up.
 
 ### Tier 4 — Consignment (sell-side)
 - [ ] Consignment Notes / Orders / Returns (`Consignment*`)
