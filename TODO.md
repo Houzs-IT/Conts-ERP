@@ -4,9 +4,9 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 
 ## Next: connect Airbnb, Booking.com, Agoda through Channex
 - Decision made: Channex (WhiteLabel plan, $130/month + $0.50 per unit per month, free staging at staging.channex.io; check current price at signup).
-- Stage 1 (test connection, fake property) and stage 2 (rates and availability out for a real, linked unit) are done, tested on staging and merged to main; migration `0003_channex_mapping.sql` is applied on production too. Still inert in production — no `CHANNEX_API_KEY` set there yet.
-- Next: stage 3 (bookings in) -> 4 (messages and reviews) -> 5 (one real listing, real OTA connections, wire the Integrations screen's Reconnect/Retry-sync buttons). Stage 5 needs a paid Channex account first.
-- Screens still waiting on it: Integrations (sync/connect return 501 today), Inbox (no messages/reviews yet).
+- Stages 1-3 are done, tested on staging and merged to main; migrations `0003_channex_mapping.sql` and `0004_channex_bookings_in.sql` are applied on production too. Still inert in production — no `CHANNEX_API_KEY` set there yet.
+- Next: stage 4 (messages and reviews) -> 5 (one real listing, real OTA connections, wire the Integrations screen's Reconnect/Retry-sync buttons). Stage 5 needs a paid Channex account first.
+- Screens still waiting on it: Integrations (Reconnect still 501 — Retry-sync now works for airbnb/booking_com/agoda once Channex is configured), Inbox (no messages/reviews yet).
 - Watch: one listing must never be controlled by both the old connection and Channex; plan the import of existing bookings.
 
 ## Later
