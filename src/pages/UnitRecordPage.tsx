@@ -464,6 +464,8 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
 
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-[16px] font-semibold">Fit-out register</div>
+            <div className="overflow-x-auto">
+            <div className="min-w-[600px]">
             {(d.inventory ?? []).map(i => (
               <div key={i.id} className="grid grid-cols-[minmax(200px,2fr)_minmax(90px,0.8fr)_minmax(130px,1fr)_minmax(100px,0.9fr)] gap-[14px] items-center min-h-[50px] py-[9px] px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
                 <div className="flex flex-col gap-px min-w-0">
@@ -477,6 +479,8 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
                 </span>
               </div>
             ))}
+            </div>
+            </div>
           </Card>
         </div>
       )}
