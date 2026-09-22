@@ -4,12 +4,13 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 
 ## Next: connect Airbnb, Booking.com, Agoda through Channex
 - Decision made: Channex (WhiteLabel plan, $130/month + $0.50 per unit per month, free staging at staging.channex.io; check current price at signup).
-- Owner to do first: create a staging.channex.io account, create an API key, save it in a gitignored file (`.dev.vars.channex`), never in chat. Say how many units and which platform first.
-- Stage 1 test connection (fake property) -> 2 rates and availability out -> 3 bookings in -> 4 messages and reviews -> 5 one real listing, then the rest.
-- Screens waiting for it: Integrations (sync/connect return 501 today), Calendar and Pricing (rates are saved here, not sent), Inbox.
+- Stage 1 (test connection, fake property) and stage 2 (rates and availability out for a real, linked unit) are done, tested on staging and merged to main; migration `0003_channex_mapping.sql` is applied on production too. Still inert in production — no `CHANNEX_API_KEY` set there yet.
+- Next: stage 3 (bookings in) -> 4 (messages and reviews) -> 5 (one real listing, real OTA connections, wire the Integrations screen's Reconnect/Retry-sync buttons). Stage 5 needs a paid Channex account first.
+- Screens still waiting on it: Integrations (sync/connect return 501 today), Inbox (no messages/reviews yet).
 - Watch: one listing must never be controlled by both the old connection and Channex; plan the import of existing bookings.
 
 ## Later
+- Update Wrangler CLI (3.114 -> 4.x, `npm install --save-dev wrangler@4`). Not urgent, do once current work settles.
 - Update vulnerable packages (GitHub reports 1 critical, 7 high, 14 moderate, 2 low). Do in its own PR and test.
 - Photo and document upload: needs Cloudflare R2 bucket bound as MEDIA (uploads return 501 until then).
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.
