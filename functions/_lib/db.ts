@@ -8,6 +8,8 @@ export interface Env {
   SESSION_SECRET: string;
   /** R2 bucket for photos and documents. Not bound yet: uploads answer 501 until it is. */
   MEDIA?: R2Bucket;
+  /** Channex channel-manager API key. Set on the preview environment only while we test against their staging demo property — see TODO.md. */
+  CHANNEX_API_KEY?: string;
 }
 
 // count(*) and sum() come back from Postgres as strings (int8 / numeric). The API
