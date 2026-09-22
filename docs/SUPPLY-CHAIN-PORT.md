@@ -12,6 +12,22 @@ as its own verified PR**, in dependency order.
   backend; Conts is Cloudflare Pages Functions (`functions/api/**`) over Postgres
   (`pos` schema via Hyperdrive). Each route is re-implemented in the Conts idiom.
 
+## Two hard rules (owner, 2026-09-22)
+
+1. **Follow 2990's (Co2) rules, not Houzs's (Co1).** Houzs's `scm-v2` + `vendor/scm`
+   is **2990's SCM vendored into Houzs** (see the `Scm2990Shell` header — it wraps a
+   vendored 2990 page tree). Port the **vendored 2990 business logic** — document
+   flows, statuses, validations, numbering. Do NOT carry over Houzs host-side
+   overrides (its shell wiring, auth, branding). Where a page branches on company,
+   take the **2990** path. Cross-reference the standalone 2990s repo
+   (`2990s-Portal/2990s`, `wenwei4046/2990s`) only when a vendored rule is ambiguous.
+2. **Skin to Conts's own design system — never Houzs's or 2990's colours.** Colours
+   come only from `src/styles/tokens.css` / `src/lib/design-tokens.ts`; status via
+   `TONE`; **gold = identity, black = selection, never a status**; no hardcoded hex in
+   a page. **Do NOT port `vendor/scm` components 1:1** (DataGrid, dialogs, line cards,
+   grids) — re-implement the behaviour with Conts `Card`/`Button`/`Field`/`Drawer`/
+   `Badge`/`Icon`. Port the *logic*, draw the *UI* in Conts.
+
 ## Porting conventions (every module follows these)
 
 - **DB:** `pos` schema, `TEXT`+`CHECK` enums, money integer **sen**, dates ISO
