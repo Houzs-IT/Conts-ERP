@@ -55,9 +55,9 @@ consignment → transportation → furniture cross-cutting.
 
 ### Tier 0 — Masters (mostly independent; parallelizable)
 - [x] **Products / SKU master** — PR #25 `feat/products-maintenance` (HELD: migration 0006)
+- [x] **Suppliers** — PR #28 `feat/scm-suppliers` (stacked on #25; HELD: migration 0007). Bindings + scorecard deferred to materials/PO tiers.
 - [ ] Product Models (`ProductModels`, `ProductModelDetail`) + allowed-options
 - [ ] Categories (`Categories`)
-- [ ] Suppliers / creditors (`Suppliers`, `SupplierDetail`)
 - [ ] Warehouses + racks (`Warehouses`, `WarehouseRacks`)
 - [ ] Currencies (`Currencies`) — only if multi-currency is kept
 
