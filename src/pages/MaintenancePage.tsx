@@ -450,6 +450,12 @@ function CreateJobModal({ onClose, onCreate }: { onClose: () => void; onCreate: 
           </select>
         </LabeledField>
         <Toggle checked={blocksUnit} onChange={setBlocksUnit} label="This blocks the unit" hint="Takes the unit off sale and holds the dates while the work is open." />
+        <div className="px-3 py-[10px] rounded-control bg-page border border-solid border-line text-[12.5px] text-muted-ink leading-[1.55]">
+          <span className="font-medium text-ink">Where this cost goes.</span>{' '}
+          {quote.trim()
+            ? <>When you mark the job complete, its final amount posts as a <b>maintenance expense</b> on {unitNumber.trim() || 'the unit'} and rolls up to the <b>{CHARGE_LABEL[chargeTo]}</b> statement.</>
+            : <>Add a quote now or after the vendor visits. Whatever the final amount is, it posts as a <b>maintenance expense</b> on the unit and rolls up to the <b>{CHARGE_LABEL[chargeTo]}</b> statement when you mark the job complete.</>}
+        </div>
       </form>
     </Modal>
   );
