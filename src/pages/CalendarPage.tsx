@@ -43,7 +43,14 @@ const RATE_ROWS: { key: 'web' | BookingChannel; label: string; sync: string; syn
 ];
 const UPLIFT: Record<string, number> = { web: 1, airbnb: 1.12, booking_com: 1.18, agoda: 1.16 };
 
-interface Unit { id: string; unitNumber: string; propertyName: string }
+// The web rate is always shown; the OTA rows shown for a unit are only the
+// channels it is actually linked to (unit_channels / Channex). If the payload
+// omits `channels` (older backend), fall back to all three so nothing is hidden.
+const RATE_ROW_BY_KEY = Object.fromEntries(RATE_ROWS.map(r => [r.key, r])) as Record<string, typeof RATE_ROWS[number]>;
+const OTA_CHANNELS: BookingChannel[] = ['airbnb', 'booking_com', 'agoda'];
+const rateRowsFor = (u: Unit) => ['web', ...(u.channels ?? OTA_CHANNELS)].map(k => RATE_ROW_BY_KEY[k]).filter(Boolean);
+
+interface Unit { id: string; unitNumber: string; propertyName: string; channels?: BookingChannel[] }
 interface Block {
   id: string; unitId: string; channel: BookingChannel; state: ReservationState;
   guestName: string; checkIn: string; checkOut: string; grossBookingValue: number; ref: string | null; reason: string | null;
@@ -58,12 +65,12 @@ const FALLBACK: Payload = {
   from: '2026-09-16', to: '2026-09-29', generatedAt: '',
   baseRate: { u1: 28800, u2: 23100, u3: 31800, u4: 26500, u5: 24200, u6: 22800 },
   units: [
-    { id: 'u1', unitNumber: '#C-13-13A', propertyName: 'Agile Bukit Bintang, Imbi' },
-    { id: 'u2', unitNumber: '#B-08-11', propertyName: 'Arcoris Mont Kiara' },
-    { id: 'u3', unitNumber: '#MK2-09-16', propertyName: 'Arte Mont Kiara' },
-    { id: 'u4', unitNumber: '#15-06', propertyName: 'Scarletz' },
-    { id: 'u5', unitNumber: '#A-21-02', propertyName: 'The Establishment' },
-    { id: 'u6', unitNumber: '#C-31-14', propertyName: 'Sentral Suites' },
+    { id: 'u1', unitNumber: '#C-13-13A', propertyName: 'Agile Bukit Bintang, Imbi', channels: ['airbnb', 'booking_com', 'agoda'] },
+    { id: 'u2', unitNumber: '#B-08-11', propertyName: 'Arcoris Mont Kiara', channels: ['booking_com'] },
+    { id: 'u3', unitNumber: '#MK2-09-16', propertyName: 'Arte Mont Kiara', channels: ['airbnb', 'agoda'] },
+    { id: 'u4', unitNumber: '#15-06', propertyName: 'Scarletz', channels: ['airbnb'] },
+    { id: 'u5', unitNumber: '#A-21-02', propertyName: 'The Establishment', channels: ['booking_com', 'agoda'] },
+    { id: 'u6', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', channels: ['airbnb', 'booking_com', 'agoda'] },
   ],
   blocks: [
     { id: 'b1', unitId: 'u1', channel: 'airbnb', state: 'checked_in', guestName: 'Nadia Abdullah', checkIn: '2026-09-16', checkOut: '2026-09-17', grossBookingValue: 85200, ref: 'ABNB-7741QK', reason: null },
@@ -78,8 +85,9 @@ const FALLBACK: Payload = {
 };
 
 export default function CalendarPage() {
-  const [view, setView] = useState<'2weeks' | 'month'>('2weeks');
-  const span = view === 'month' ? 28 : 14;
+  // Fixed 30-day window; navigate by scrolling the grid left/right, or jump a
+  // window with the ‹ › buttons. (The old 2-weeks/Month toggle is gone.)
+  const span = 30;
   const [weekOffset, setWeekOffset] = useState(0);
   const start = addDays(today, weekOffset * span);
   const from = iso(start), to = iso(addDays(start, span - 1));
@@ -267,8 +275,7 @@ export default function CalendarPage() {
 
   return (
     <>
-      <PageHeader title="Calendar" sub="24 units · 6 buildings · Asia/Kuala Lumpur"
-        right={<Segmented value={view} onChange={v => { setView(v); setWeekOffset(0); }} />} />
+      <PageHeader title="Calendar" sub="24 units · 6 buildings · Asia/Kuala Lumpur" />
 
       {error && <StaleBanner message={`Showing the last board we have. ${error}`} onRetry={reload} />}
 
@@ -344,14 +351,14 @@ export default function CalendarPage() {
         </div>
 
         {/* Grid */}
-        <div className="overflow-x-auto">
+        <div className="max-h-[68vh] overflow-auto">
           <div style={{ minWidth: UNIT_COL + span * COL }}>
-            <div className="flex bg-muted [border-bottom:1px_solid_var(--color-line)]">
-              <div className="w-60 box-border flex-none sticky left-0 z-[3] bg-muted px-4 py-2.5 [border-right:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink">Unit</div>
+            <div className="flex bg-muted [border-bottom:1px_solid_var(--color-line)] sticky top-0 z-[4]">
+              <div className="w-60 box-border flex-none sticky left-0 z-[5] bg-muted px-4 py-2.5 [border-right:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink">Unit</div>
               {Array.from({ length: span }, (_, i) => {
                 const d = addDays(gridStart, i); const wk = [5, 6].includes(d.getDay());
                 return (
-                  <div key={i} className="flex-1 box-border min-w-[58px] px-1 py-2 flex flex-col items-center gap-px [border-left:1px_solid_var(--color-line)]"
+                  <div key={i} className="flex-none w-[62px] box-border px-1 py-2 flex flex-col items-center gap-px [border-left:1px_solid_var(--color-line)]"
                     style={{ background: i === todayIdx ? color.goldTint : wk ? color.page : 'transparent' }}>
                     <span className="text-[11px] text-muted-ink">{d.toLocaleDateString('en-MY', { weekday: 'short' })}</span>
                     <span className="text-[12.5px] font-semibold">{d.getDate()}</span>
@@ -393,7 +400,7 @@ export default function CalendarPage() {
                       if (!c) return <div key={i} onClick={() => emptyNight(u, i)}
                         onDragOver={e => { if (dragRef.current) e.preventDefault(); }}
                         onDrop={e => { e.preventDefault(); dropOnDay(u.id, i); }}
-                        className="relative box-border flex-1 min-w-[58px] [border-left:1px_solid_var(--color-line-soft)] flex items-center px-[5px] py-[7px] cursor-pointer" style={{ background: i === todayIdx ? color.goldTint : undefined }} title={`${u.unitNumber} · available`} />;
+                        className="relative box-border flex-none w-[62px] [border-left:1px_solid_var(--color-line-soft)] flex items-center px-[5px] py-[7px] cursor-pointer" style={{ background: i === todayIdx ? color.goldTint : undefined }} title={`${u.unitNumber} · available`} />;
                       const ch = CHANNEL[c.b.channel]; const hold = ch.border !== 'solid';
                       const nights = dayIndex(c.b.checkOut) - dayIndex(c.b.checkIn);
                       const lineColor = hold ? ch.color : 'rgba(21,21,21,0.06)';
@@ -404,7 +411,7 @@ export default function CalendarPage() {
                           onDragEnd={() => { dragRef.current = null; }}
                           onDragOver={e => { if (dragRef.current) e.preventDefault(); }}
                           onDrop={e => { e.preventDefault(); dropOnDay(u.id, i); }}
-                          className="relative box-border flex-1 min-w-[58px] flex items-center px-[5px] py-[7px] my-[11px] cursor-grab active:cursor-grabbing"
+                          className="relative box-border flex-none w-[62px] flex items-center px-[5px] py-[7px] my-[11px] cursor-grab active:cursor-grabbing"
                           style={{ background: hold ? 'transparent' : ch.tint, borderTop: `1px ${hold ? ch.border : 'solid'} ${lineColor}`, borderBottom: `1px ${hold ? ch.border : 'solid'} ${lineColor}`, boxShadow: c.first && !hold ? `inset 3px 0 0 ${ch.color}` : undefined, borderRadius: c.first && c.last ? 6 : c.first ? '6px 0 0 6px' : c.last ? '0 6px 6px 0' : undefined, borderLeft: c.first && hold ? `1px ${ch.border} ${ch.color}` : undefined, borderRight: c.last ? `1px ${hold ? ch.border : 'solid'} ${lineColor}` : undefined }}>
                           {c.first && (
                             <span className="absolute left-3 text-[11.5px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis pointer-events-none z-[2]" style={{ maxWidth: nights * COL - 22, color: ch.ink }}>{c.b.guestName}{c.b.grossBookingValue > 0 ? ` · ${rm(c.b.grossBookingValue, { cents: false })}` : ''}</span>
@@ -420,10 +427,10 @@ export default function CalendarPage() {
                         <div className="w-60 box-border flex-none sticky left-0 z-[2] bg-page px-4 py-1.5 [border-right:1px_solid_var(--color-line)] text-[11.5px] font-medium text-muted-ink">Inventory</div>
                         {Array.from({ length: span }, (_, i) => {
                           const booked = cells[i] != null;
-                          return <div key={i} className="flex-1 min-w-[58px] box-border [border-left:1px_solid_var(--color-line-soft)] grid place-items-center text-[11px] [font-variant-numeric:tabular-nums]" style={{ color: booked ? color.textMuted : color.ink, background: i === todayIdx ? color.goldTint : undefined }}>{booked ? '0 | 1' : '1 | 1'}</div>;
+                          return <div key={i} className="flex-none w-[62px] box-border [border-left:1px_solid_var(--color-line-soft)] grid place-items-center text-[11px] [font-variant-numeric:tabular-nums]" style={{ color: booked ? color.textMuted : color.ink, background: i === todayIdx ? color.goldTint : undefined }}>{booked ? '0 | 1' : '1 | 1'}</div>;
                         })}
                       </div>
-                      {RATE_ROWS.map(r => {
+                      {rateRowsFor(u).map(r => {
                         const t = toneMap[r.syncTone];
                         return (
                           <div key={r.key} className="flex [border-bottom:1px_solid_var(--color-line-soft)]">
@@ -437,7 +444,7 @@ export default function CalendarPage() {
                               const edited = rateEdits[`${u.id}:${r.key}:${i}`] != null;
                               return (
                                 <button key={i} type="button" onClick={() => setPriceModal({ unit: u, channel: r.key, dayIso: dayIso(i), current: price })}
-                                  className="flex-1 min-w-[58px] box-border border-none [border-left:1px_solid_var(--color-line-soft)]! cursor-pointer font-sans text-[11.5px] text-ink px-[2px] py-[7px] [font-variant-numeric:tabular-nums]"
+                                  className="flex-none w-[62px] box-border border-none [border-left:1px_solid_var(--color-line-soft)]! cursor-pointer font-sans text-[11.5px] text-ink px-[2px] py-[7px] [font-variant-numeric:tabular-nums]"
                                   style={{ background: edited ? color.goldTint : i === todayIdx ? color.goldTint : '#FFFFFF' }}
                                   title="Set price">
                                   {rm(price, { cents: false }).replace('RM', 'RM ')}
@@ -549,23 +556,6 @@ export default function CalendarPage() {
   );
 }
 
-function Segmented({ value, onChange }: { value: '2weeks' | 'month'; onChange: (v: '2weeks' | 'month') => void }) {
-  const opts: { key: '2weeks' | 'month'; label: string }[] = [{ key: '2weeks', label: '2 weeks' }, { key: 'month', label: 'Month' }];
-  return (
-    <div className="inline-flex p-[3px] gap-0.5 bg-muted rounded-control border border-solid border-line">
-      {opts.map(o => {
-        const active = value === o.key;
-        return (
-          <button key={o.key} type="button" onClick={() => onChange(o.key)}
-            className={`h-[28px] px-[14px] py-0 border-none rounded-[6px] cursor-pointer font-sans text-[13px] ${active ? 'font-semibold' : 'font-medium'}`}
-            style={{ background: active ? color.black : 'transparent', color: active ? '#FFFFFF' : color.ink }}>
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 const linkCls = '[background:none] border-none cursor-pointer font-sans text-[12px] font-medium text-[var(--color-text-accent)]';
 const navCls = 'w-[30px] h-[30px] grid place-items-center rounded-control bg-page border border-solid border-line cursor-pointer text-muted-ink';
