@@ -11,7 +11,7 @@ import { useApi } from '../lib/useApi';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
-import { rm, monthLabel, todayMyt } from '../lib/format';
+import { rm, date, monthLabel, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import {
   type Owner, type UnitLine, type Payload, type FeeSource,
@@ -263,7 +263,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
               <Section title="Contract" action={<button onClick={() => setModal('contract')} className={linkBtn}><Icon name="Plus" size="sm" /> {o.contract ? 'Update' : 'Add contract'}</button>}>
                 {o.contract ? (
                   <div className="text-[12.5px] text-muted-ink">
-                    {o.contract.feePct > 0 ? `${o.contract.feePct}% management fee` : 'GRR agreement'} · started {o.contract.startedOn}{o.contract.renewsOn ? ` · renews ${o.contract.renewsOn}` : ''}
+                    {o.contract.feePct > 0 ? `${o.contract.feePct}% management fee` : 'GRR agreement'} · started {date(o.contract.startedOn)}{o.contract.renewsOn ? ` · renews ${date(o.contract.renewsOn)}` : ''}
                   </div>
                 ) : <div className="text-[12.5px] text-muted-ink">No contract on file.</div>}
               </Section>
@@ -334,7 +334,7 @@ function UnitPanel({ ownerId, unit, owner }: { ownerId: string; unit: UnitLine; 
         </div>
         <div className="flex flex-col items-end gap-0.5 flex-none">
           <span className="text-[13px] font-semibold tabular-nums">{rm(unit.net, { cents: false })}</span>
-          {feeSource && <span className="text-[10.5px] text-muted-ink">{FEE_SOURCE_LABEL[feeSource]}</span>}
+          {unit.model === 'management' && feeSource && <span className="text-[10.5px] text-muted-ink">{FEE_SOURCE_LABEL[feeSource]}</span>}
         </div>
       </button>
 
