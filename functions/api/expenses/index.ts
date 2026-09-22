@@ -25,10 +25,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (await isPeriodLocked(env, unit.id, b.incurredOn)) return fail('PERIOD_LOCKED', 'That month\'s owner statement is already final, so nothing can be added to it.', 409, { incurredOn: 'This period is locked.' });
 
   const id = crypto.randomUUID();
+  // parent_expense_id is optional: a line item (e.g. labour or parts under a
+  // maintenance rollup) points at its parent so the L2→L3 drill-down can nest it.
+  // Manually added monthly expenses leave it null and stay top-level.
   await run(env, `
-    INSERT INTO expenses (id, unit_id, maintenance_id, task_id, category, description, amount, currency, incurred_on, reference, charge_to, created_by, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?)`,
-    id, unit.id, b.maintenanceId ?? null, b.taskId ?? null, b.category, String(b.description ?? '').slice(0, 300), b.amount,
+    INSERT INTO expenses (id, unit_id, maintenance_id, task_id, parent_expense_id, category, description, amount, currency, incurred_on, reference, charge_to, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?)`,
+    id, unit.id, b.maintenanceId ?? null, b.taskId ?? null, b.parentExpenseId ?? null, b.category, String(b.description ?? '').slice(0, 300), b.amount,
     b.incurredOn, b.reference ?? null, b.chargeTo ?? 'owner', session.userId, nowIso());
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.create', entityTable: 'expenses', entityId: id, after: { unitId: unit.id, category: b.category, amount: b.amount, incurredOn: b.incurredOn } });
   return json({ id }, 201);
