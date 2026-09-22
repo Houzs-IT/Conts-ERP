@@ -31,6 +31,14 @@ const RULE_LABEL: Record<OrderingRule, string> = {
   manual: 'Manual',
 };
 
+// The three cleaning kinds a manual task may be. Inspection/maintenance are
+// their own screens, so this list never grows past cleaning.
+type CleanKind = 'turnover' | 'deep_clean' | 'light_clean';
+const KIND_LABEL: Record<CleanKind, string> = {
+  turnover: 'Turnover clean', deep_clean: 'Deep clean', light_clean: 'Light clean',
+};
+const CLEAN_KINDS: CleanKind[] = ['turnover', 'deep_clean', 'light_clean'];
+
 const firstName = (name: string) => name.split(' ')[0];
 
 interface Task {
@@ -51,6 +59,7 @@ interface Task {
   readiness: UnitReadiness;
   requiresPhoto: boolean;
   photoCount: number;
+  kind?: CleanKind;            // carried on manual tasks for the edit form
 }
 interface Payload { rows: Task[]; date: string; generatedAt: string }
 
@@ -158,7 +167,9 @@ export default function HousekeepingPage() {
   const { data, loading, error, reload } = useApi<Payload>(`/housekeeping/tasks?date=${TAB_DATE[tab]}`, FALLBACK);
   const toast = useToast();
 
-  // Optimistic overlay: patches merged onto each task by id.
+  // Optimistic overlay: manually created tasks live in `added`; per-task patches
+  // (assign, reschedule, edit, state) land in `edits` keyed by id.
+  const [added, setAdded] = useState<Task[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Task>>>({});
   const patch = (id: string, p: Partial<Task>) => setEdits(e => ({ ...e, [id]: { ...e[id], ...p } }));
 
@@ -173,10 +184,12 @@ export default function HousekeepingPage() {
   const [reschedule, setReschedule] = useState<{ task: Task; start: string; end: string } | null>(null);
   const [damage, setDamage] = useState<{ task: Task; title: string; detail: string; chargeTo: 'owner' | 'company'; amount: string; blocksUnit: boolean } | null>(null);
   const [editRule, setEditRule] = useState<OrderingRule | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [editTask, setEditTask] = useState<Task | null>(null);
   const [confirm, setConfirm] = useState<null | { kind: 'start' | 'complete' | 'autoassign'; task?: Task }>(null);
   const [busy, setBusy] = useState(false);
 
-  const merged = (data?.rows ?? []).map(t => ({ ...t, ...edits[t.id] }));
+  const merged = [...added, ...(data?.rows ?? [])].map(t => ({ ...t, ...edits[t.id] }));
   const unassigned = merged.filter(t => !t.assigneeId);
 
   // Ordering rule drives the displayed order; the sequence number shown is the
@@ -194,6 +207,44 @@ export default function HousekeepingPage() {
   /* -------------------------------- actions ------------------------------- */
   function openAssign(task: Task) {
     setAssign({ task, cleanerId: task.assigneeId ?? CREW[0]?.id ?? '', force: false });
+  }
+
+  async function doCreate(draft: CreateDraft) {
+    const cleaner = CREW.find(c => c.id === draft.assigneeId);
+    const optimistic: Task = {
+      id: `local-${crypto.randomUUID()}`,
+      unitNumber: draft.unitNumber.trim(), propertyName: draft.propertyName.trim(),
+      sourceRef: 'Manual', title: KIND_LABEL[draft.kind], linenSet: draft.linenSet,
+      instructions: draft.instructions.trim() || null,
+      scheduledFor: draft.scheduledFor || null, dueAt: draft.dueAt || null,
+      nextGuestAt: draft.nextGuestAt || null,
+      assigneeId: cleaner?.id ?? null, assigneeName: cleaner?.name ?? null,
+      sequence: 999, state: cleaner ? 'assigned' : 'open', readiness: 'dirty',
+      requiresPhoto: draft.requiresPhoto, photoCount: 0, kind: draft.kind,
+    };
+    setBusy(true);
+    setAdded(a => [optimistic, ...a]);
+    setCreating(false);
+    toast({ tone: 'success', title: 'Cleaning task created.', body: `${KIND_LABEL[draft.kind]} on ${unitRef(optimistic.propertyName, optimistic.unitNumber)}${cleaner ? ` · ${firstName(cleaner.name)} notified` : ' · unassigned'}.` });
+    try {
+      await api.post('/housekeeping/tasks', {
+        unitNumber: optimistic.unitNumber, propertyName: optimistic.propertyName, kind: draft.kind,
+        title: KIND_LABEL[draft.kind], instructions: optimistic.instructions,
+        scheduledFor: draft.scheduledFor || null, dueAt: draft.dueAt || null, nextGuestAt: draft.nextGuestAt || null,
+        assigneeId: cleaner?.id ?? null, requiresPhoto: draft.requiresPhoto,
+      });
+    } catch (e) { notifyFailure(e); }
+    setBusy(false);
+  }
+
+  async function doEditDetails(task: Task, next: { kind: CleanKind; instructions: string }) {
+    setBusy(true);
+    patch(task.id, { kind: next.kind, title: KIND_LABEL[next.kind], instructions: next.instructions.trim() || null });
+    toast({ tone: 'success', title: 'Cleaning task updated.', body: `${unitRef(task.propertyName, task.unitNumber)} · ${KIND_LABEL[next.kind]}.` });
+    setEditTask(null);
+    try { await api.patch(`/housekeeping/tasks/${task.id}`, { kind: next.kind, title: KIND_LABEL[next.kind], instructions: next.instructions.trim() }); }
+    catch (e) { notifyFailure(e); }
+    setBusy(false);
   }
 
   async function doAssign() {
@@ -329,13 +380,16 @@ export default function HousekeepingPage() {
               Edit ordering rule
             </Button>
             <Button
-              variant="primary"
+              variant="secondary"
               icon={<Icon name="Wand2" size="sm" />}
               disabled={unassigned.length === 0}
               disabledReason="Every task already has a cleaner."
               onClick={() => setConfirm({ kind: 'autoassign' })}
             >
               Auto-assign by rule
+            </Button>
+            <Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>
+              New cleaning task
             </Button>
           </div>
         }
@@ -424,6 +478,11 @@ export default function HousekeepingPage() {
                   {!done && (
                     <Button size="sm" variant="tertiary" icon={<Icon name="CalendarClock" size="sm" />} onClick={() => setReschedule({ task: t, start: t.scheduledFor ?? '08:00', end: t.dueAt ?? '12:00' })}>
                       Reschedule
+                    </Button>
+                  )}
+                  {!done && (
+                    <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setEditTask(t)}>
+                      Edit details
                     </Button>
                   )}
                   {canStart && (
@@ -621,6 +680,27 @@ export default function HousekeepingPage() {
         </Modal>
       )}
 
+      {/* ------------------------- New cleaning task ------------------------- */}
+      {creating && (
+        <CreateCleaningModal
+          crew={CREW}
+          defaultDate={tab === 'tomorrow' ? todayMyt(1) : todayMyt()}
+          busy={busy}
+          onClose={() => setCreating(false)}
+          onCreate={doCreate}
+        />
+      )}
+
+      {/* ------------------------- Edit cleaning details ------------------------- */}
+      {editTask && (
+        <EditDetailsModal
+          task={editTask}
+          busy={busy}
+          onClose={() => setEditTask(null)}
+          onSave={doEditDetails}
+        />
+      )}
+
       {/* --------------------------- confirms --------------------------- */}
       <Dialog
         busy={busy}
@@ -655,5 +735,159 @@ function Field2({ label, value, muted, tone }: { label: string; value: string; m
       <span className="text-[11px] text-faint font-semibold uppercase tracking-[0.03em]">{label}</span>
       <span className={`text-[12.5px] font-medium whitespace-nowrap ${tone ? TONE[tone].text : muted ? 'text-muted-ink' : 'text-ink'}`}>{value}</span>
     </div>
+  );
+}
+
+/* ------------------------- Manual create + edit ------------------------- */
+
+interface Crewmate { id: string; name: string; busy?: number }
+interface CreateDraft {
+  propertyName: string; unitNumber: string; kind: CleanKind; linenSet: string;
+  scheduledFor: string; dueAt: string; nextGuestAt: string; assigneeId: string;
+  instructions: string; requiresPhoto: boolean;
+}
+
+/** New cleaning task by hand — the manual equivalent of the one-clean-per-checkout
+ *  auto path. Every field the roster shows can be set here; assigning is optional. */
+function CreateCleaningModal({ crew, defaultDate, busy, onClose, onCreate }: {
+  crew: Crewmate[]; defaultDate: string; busy?: boolean; onClose: () => void; onCreate: (d: CreateDraft) => void;
+}) {
+  const [d, setD] = useState<CreateDraft>({
+    propertyName: '', unitNumber: '', kind: 'turnover', linenSet: 'Set A',
+    scheduledFor: '08:00', dueAt: '14:00', nextGuestAt: '', assigneeId: '',
+    instructions: '', requiresPhoto: true,
+  });
+  const set = (p: Partial<CreateDraft>) => setD(v => ({ ...v, ...p }));
+  const valid = d.propertyName.trim() && d.unitNumber.trim() &&
+    (!d.scheduledFor || !d.dueAt || d.dueAt > d.scheduledFor);
+  const endsAfter = !!d.nextGuestAt && !!d.dueAt && d.dueAt > d.nextGuestAt;
+
+  return (
+    <Modal
+      title="New cleaning task"
+      sub="Creates an ad-hoc clean on a unit. Checkouts create their own turnover automatically — this is for everything else."
+      onClose={onClose}
+      busy={busy}
+      footer={<>
+        <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button size="sm" variant="primary" loading={busy} disabled={!valid}
+          disabledReason="Add the property, unit and a valid window first." onClick={() => valid && onCreate(d)}>
+          Create task
+        </Button>
+      </>}
+    >
+      <div className="flex gap-[14px]">
+        <div className="flex-1 flex flex-col gap-[7px]">
+          <label htmlFor="ck-prop" className={labelCls}>Property</label>
+          <input id="ck-prop" value={d.propertyName} disabled={busy} placeholder="Vista Jaya One"
+            onChange={e => set({ propertyName: e.target.value })} className={inputCls} />
+        </div>
+        <div className="flex-1 flex flex-col gap-[7px]">
+          <label htmlFor="ck-unit" className={labelCls}>Unit</label>
+          <input id="ck-unit" value={d.unitNumber} disabled={busy} placeholder="#A-12-03"
+            onChange={e => set({ unitNumber: e.target.value })} className={inputCls} />
+        </div>
+      </div>
+
+      <div className="flex gap-[14px]">
+        <div className="flex-1 flex flex-col gap-[7px]">
+          <label htmlFor="ck-kind" className={labelCls}>Kind of clean</label>
+          <select id="ck-kind" value={d.kind} disabled={busy}
+            onChange={e => set({ kind: e.target.value as CleanKind })} className={inputCls}>
+            {CLEAN_KINDS.map(k => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+          </select>
+        </div>
+        <div className="flex-1 flex flex-col gap-[7px]">
+          <label htmlFor="ck-linen" className={labelCls}>Linen set</label>
+          <select id="ck-linen" value={d.linenSet} disabled={busy}
+            onChange={e => set({ linenSet: e.target.value })} className={inputCls}>
+            <option value="Set A">Set A</option>
+            <option value="Set B">Set B</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="flex gap-[14px]">
+        <div className="flex-1 flex flex-col gap-[7px]">
+          <label htmlFor="ck-start" className={labelCls}>Window start</label>
+          <input id="ck-start" type="time" value={d.scheduledFor} disabled={busy}
+            onChange={e => set({ scheduledFor: e.target.value })} className={inputCls} />
+        </div>
+        <div className="flex-1 flex flex-col gap-[7px]">
+          <label htmlFor="ck-end" className={labelCls}>Window end</label>
+          <input id="ck-end" type="time" value={d.dueAt} disabled={busy}
+            onChange={e => set({ dueAt: e.target.value })} className={inputCls} />
+        </div>
+        <div className="flex-1 flex flex-col gap-[7px]">
+          <label htmlFor="ck-next" className={labelCls}>Next guest (optional)</label>
+          <input id="ck-next" type="time" value={d.nextGuestAt} disabled={busy}
+            onChange={e => set({ nextGuestAt: e.target.value })} className={inputCls} />
+        </div>
+      </div>
+      {endsAfter && (
+        <div className={`py-2.5 px-3 rounded-control ${TONE.warning.bg} ${TONE.warning.text} text-[12.5px] flex gap-2 items-start`}>
+          <Icon name="TriangleAlert" size="sm" style={{ marginTop: 1 }} />
+          <span>The window ends at {d.dueAt}, after the next guest arrives at {d.nextGuestAt}. The unit may not be ready in time.</span>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-[7px]">
+        <label htmlFor="ck-cleaner" className={labelCls}>Assign a cleaner (optional)</label>
+        <select id="ck-cleaner" value={d.assigneeId} disabled={busy}
+          onChange={e => set({ assigneeId: e.target.value })} className={inputCls}>
+          <option value="">Leave unassigned</option>
+          {crew.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
+
+      <div className="flex flex-col gap-[7px]">
+        <label htmlFor="ck-notes" className={labelCls}>Instructions (optional)</label>
+        <textarea id="ck-notes" value={d.instructions} disabled={busy} rows={2} placeholder="Restock coffee pods, descale the kettle…"
+          onChange={e => set({ instructions: e.target.value })}
+          className="block w-full box-border h-auto py-[9px] px-3 text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit] resize-y" />
+      </div>
+
+      <label className={`flex gap-[9px] items-center ${busy ? 'cursor-default' : 'cursor-pointer'} text-[13px]`}>
+        <input type="checkbox" checked={d.requiresPhoto} disabled={busy}
+          onChange={e => set({ requiresPhoto: e.target.checked })} />
+        Require a photo before the unit can be marked ready
+      </label>
+      <div className="text-[12px] text-muted-ink">Scheduled for {defaultDate}. New checkouts still create their own turnover automatically.</div>
+    </Modal>
+  );
+}
+
+/** Edit a task's kind and instructions in place. Times are changed through
+ *  Reschedule; this covers the descriptive fields the roster shows. */
+function EditDetailsModal({ task, busy, onClose, onSave }: {
+  task: Task; busy?: boolean; onClose: () => void; onSave: (t: Task, next: { kind: CleanKind; instructions: string }) => void;
+}) {
+  const [kind, setKind] = useState<CleanKind>(task.kind ?? 'turnover');
+  const [instructions, setInstructions] = useState(task.instructions ?? '');
+  return (
+    <Modal
+      title={`Edit ${unitRef(task.propertyName, task.unitNumber)}`}
+      sub="Change the kind of clean or its instructions. Use Reschedule to move the window."
+      onClose={onClose}
+      busy={busy}
+      footer={<>
+        <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button size="sm" variant="primary" loading={busy} onClick={() => onSave(task, { kind, instructions })}>Save changes</Button>
+      </>}
+    >
+      <div className="flex flex-col gap-[7px]">
+        <label htmlFor="ed-kind" className={labelCls}>Kind of clean</label>
+        <select id="ed-kind" value={kind} disabled={busy}
+          onChange={e => setKind(e.target.value as CleanKind)} className={inputCls}>
+          {CLEAN_KINDS.map(k => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+        </select>
+      </div>
+      <div className="flex flex-col gap-[7px]">
+        <label htmlFor="ed-notes" className={labelCls}>Instructions</label>
+        <textarea id="ed-notes" value={instructions} disabled={busy} rows={3} placeholder="Anything the cleaner needs to know"
+          onChange={e => setInstructions(e.target.value)}
+          className="block w-full box-border h-auto py-[9px] px-3 text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit] resize-y" />
+      </div>
+    </Modal>
   );
 }
