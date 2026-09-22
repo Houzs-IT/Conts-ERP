@@ -42,11 +42,12 @@ as its own verified PR**, in dependency order.
   mobile via the DEV fallback. **Migrations HOLD merge** until the prod DB batch is
   applied (Conts merge = instant prod deploy, no PR CI).
 
-## Nav shape (target)
+## Nav shape — DONE (PR #47)
 
-New top-level **SUPPLY CHAIN** group (replaces the interim PROCUREMENT group once
-Tier 1 lands), children: Sales Order · Consignment · Procurement · Transportation ·
-Warehouse — mirroring Houzs.
+**SUPPLY CHAIN** group (L1) with collapsible L2 sections → L3 pages, mirroring Houzs
+(owner ask "module buttons must match, L1/2/3"). L2: **Procurement · Warehouse · Sales ·
+Consignment · Transportation · Furniture · Accounting**, each holding its pages. Uses
+Conts's collapsible-nav idiom (same as Reservations/Operations/Properties). Verified rendering.
 
 ## Sequence & status
 
@@ -86,7 +87,7 @@ Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 - [x] **Sales Invoices** — PR #45 `feat/scm-sales-invoices` (stacked on #44; HELD: migration 0020). Bills a DO, marks DO/SO INVOICED, receipts drive paid status. UnbilledDeliveries = follow-up.
 
 ### Tier 4 — Consignment (sell-side)
-- [ ] Consignment Notes / Orders / Returns (`Consignment*`)
+- [x] **Consignment Notes** — PR #51 `feat/scm-consignment-notes` (stacked on #49; HELD: migration 0023). Consign out; track consigned/sold/returned + settle. Orders/Returns variants = follow-up.
 
 ### Tier 5 — Transportation / TMS
 - [x] **Drivers + Vehicles masters** — PR #46 `feat/scm-transport` (stacked on #45; HELD: migration 0021). New TRANSPORT nav group. DriverLeave / Fleet run-sheets / Lorry capacity = follow-up.
@@ -95,10 +96,26 @@ Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 - [ ] 3PL (`ThreePLCompanies`), `DeliveryMaintenance`
 
 ### Tier 6 — Furniture-specific & cross-cutting
-- [ ] MRP (`Mrp`) · Fabric tracking (`FabricTracking`)
-- [ ] HR commission/settings (`HrCommission`, `HrSettings`)
-- [ ] Accounting (`Accounting`), Fair report (`FairReport`)
-- [ ] Shared: `DataGrid`, `DocumentFlowModal`, `EntityHistoryPanel`, doc-relationship map
+- [x] **MRP** — PR #48 `feat/scm-mrp` (no migration). Demand − on-hand − on-order = net to buy.
+- [x] **Fabric library** — PR #47 `feat/scm-furniture-modules` (migration 0022).
+- [x] **Accounting** — PR #49 `feat/scm-accounting` (no migration). AP + AR outstanding, finance-gated.
+- [ ] HR commission/settings (`HrCommission`, `HrSettings`) — furniture sales-rep specific
+- [ ] Fair report (`FairReport`) · shared `DataGrid`/`DocumentFlowModal`/`EntityHistoryPanel`
+
+---
+
+## STATUS: entire Supply Chain surface ported (20 modules, PRs #25–#51)
+
+All five Houzs SC sections (Sales · Consignment · Procurement · Transportation · Warehouse)
++ MRP + Fabric + Accounting, in the L1/L2/L3 nav. Migrations 0006–0023. **Merge order:**
+#25 #28 #29 #30 #32 #33 #35 #39 #40 #41 #42 #43 #44 #45 #46 #47 #48(no-mig) #49(no-mig) #51
+(+ #26 docs). All stacked, all HELD for their migrations (except no-mig #48/#49).
+
+**Deferred sub-slices** (bounded cores shipped; depth follows as needed): customers master,
+GRN/DO→stock auto-wiring, FIFO cost layers, stock takes/transfers, delivery returns,
+unbilled-deliveries, consignment receives/returns, delivery planning/zones/rate-cards,
+driver leave, 3PL, run sheets, fair report, currencies, amendments, HR commission, furniture
+line specials (divan/leg/gap/custom/variants), model variant/allowed-options editor.
 
 ## Notes
 
