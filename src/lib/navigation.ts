@@ -33,6 +33,9 @@ export const NAV: NavGroup[] = [
       { key: 'access', label: 'Access and keys', path: '/properties/access', designed: true },
     ] },
   ] },
+  { label: 'PROCUREMENT', items: [
+    { key: 'procurement', label: 'Products and maintenance', icon: 'package', path: '/procurement/products', designed: true },
+  ] },
   { label: 'FINANCE', items: [
     { key: 'finance', label: 'Finance', icon: 'wallet', badge: '2', children: [
       { key: 'revenue', label: 'Revenue', path: '/finance/revenue', designed: true },
