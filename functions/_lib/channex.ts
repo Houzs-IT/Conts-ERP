@@ -23,6 +23,31 @@ export const channexRoomTypes = (env: Env, propertyId: string) => channexFetch<{
 export const channexRatePlans = (env: Env, propertyId: string) => channexFetch<{ data: any[] }>(env, `/rate_plans?filter[property_id]=${propertyId}`);
 export const channexBookings = (env: Env, propertyId: string) => channexFetch<{ data: any[] }>(env, `/bookings?filter[property_id]=${propertyId}`);
 
+/** Bookings we have not yet acknowledged — the recommended way to pull bookings in, since a
+ *  webhook payload only carries an id and delivery order is not guaranteed. */
+export const channexBookingFeed = (env: Env) => channexFetch<{ data: any[] }>(env, '/booking_revisions/feed?order[inserted_at]=asc');
+
+/** Marks a booking revision as processed so it drops out of the feed for good. Only call this
+ *  once it has actually been turned into (or applied to) a reservation — never before. */
+export const channexAckBookingRevision = (env: Env, revisionId: string) => channexFetch(env, `/booking_revisions/${revisionId}/ack`, { method: 'POST' });
+
+export const channexListWebhooks = (env: Env) => channexFetch<{ data: any[] }>(env, '/webhooks');
+
+/** Registers one account-wide webhook for booking events. Channex sends the secret back as
+ *  X-Channex-Webhook-Secret on every call, which is how the receiving endpoint tells a real
+ *  Channex call apart from anyone else who finds the URL. */
+export function channexCreateWebhook(env: Env, p: { callbackUrl: string; secret: string }) {
+  return channexFetch<{ data: { id: string } }>(env, '/webhooks', {
+    method: 'POST',
+    body: JSON.stringify({
+      webhook: {
+        callback_url: p.callbackUrl, event_mask: 'booking', property_id: null, is_global: true,
+        is_active: true, send_data: true, headers: { 'X-Channex-Webhook-Secret': p.secret },
+      },
+    }),
+  });
+}
+
 /** Whole-currency-unit rate (e.g. 150.00), not sen — confirmed against the demo property. */
 export function channexPushRate(env: Env, p: { propertyId: string; ratePlanId: string; dateFrom: string; dateTo: string; rate: number }) {
   return channexFetch<{ data: { id: string }[] }>(env, '/restrictions', {

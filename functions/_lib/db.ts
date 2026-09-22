@@ -10,6 +10,8 @@ export interface Env {
   MEDIA?: R2Bucket;
   /** Channex channel-manager API key. Set on the preview environment only while we test against their staging demo property — see TODO.md. */
   CHANNEX_API_KEY?: string;
+  /** Shared secret Channex sends back as X-Channex-Webhook-Secret on every webhook call, so we can tell a real Channex call from anyone else who finds the URL. */
+  CHANNEX_WEBHOOK_SECRET?: string;
 }
 
 // count(*) and sum() come back from Postgres as strings (int8 / numeric). The API
