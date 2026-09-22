@@ -70,15 +70,15 @@ Shared helper `functions/_lib/scm-util.ts` now exists for the remaining modules.
 - [x] **Purchase Invoices** — PR #35 `feat/scm-purchase-invoices` (stacked on #33; HELD: migration 0013). Bills a GRN; payments via Payment Vouchers. **PO→GRN→PI spine complete.**
 - [x] **Payment Vouchers** — PR #39 `feat/scm-payment-vouchers` (stacked on #35; HELD: migration 0014). Pays PIs, drives paid status. **PO→GRN→PI→Payment loop complete.**
 - [x] **Purchase Returns** — PR #40 `feat/scm-purchase-returns` (stacked on #39; HELD: migration 0015). Returns GRN goods, reverses received_qty + PO status.
-- [ ] Purchase Consignment (`PurchaseConsignmentOrders/Receives/Returns`)
+- [x] **Purchase Consignment** — PR #41 `feat/scm-purchase-consignment` (stacked on #40; HELD: migration 0016). Consignment **order** ported; receives/returns = follow-up sub-slice. **TIER 1 DONE.**
 
 **Buy-side procurement DONE:** masters + PO → GRN → PI → Payment + Returns (only
 Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 #25→#28→#29→#30→#32→#33→#35→#39→#40.
 
 ### Tier 2 — Warehouse / Stock
-- [ ] Inventory / Stock Card (`Inventory`, `StockCard`)
-- [ ] Stock Adjustments / Takes / Transfers (`Stock*`)
+- [x] **Stock ledger + on-hand** — PR #42 `feat/scm-stock` (stacked on #41; HELD: migration 0017). Movements ledger + on-hand + manual adjustment. FIFO cost + GRN/DO→stock auto-wiring deferred.
+- [ ] Stock Takes / Transfers (`StockTake*`, `StockTransfer*`) — dedicated docs; StockCard = the movements view (done)
 
 ### Tier 3 — Sales (sell-side documents)
 - [ ] Sales Orders (`SalesOrder*`, `MfgSalesOrdersList`, `SoFromProducts`, guided/new)
