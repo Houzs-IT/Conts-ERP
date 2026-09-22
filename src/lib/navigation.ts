@@ -52,6 +52,10 @@ export const NAV: NavGroup[] = [
     { key: 'deliveryOrders', label: 'Delivery orders', icon: 'truck', path: '/sales/delivery-orders', designed: true },
     { key: 'salesInvoices', label: 'Sales invoices', icon: 'receipt', path: '/sales/invoices', designed: true },
   ] },
+  { label: 'TRANSPORT', items: [
+    { key: 'drivers', label: 'Drivers', icon: 'user-round', path: '/transport/drivers', designed: true },
+    { key: 'vehicles', label: 'Vehicles', icon: 'truck', path: '/transport/vehicles', designed: true },
+  ] },
   { label: 'FINANCE', items: [
     { key: 'finance', label: 'Finance', icon: 'wallet', badge: '2', children: [
       { key: 'revenue', label: 'Revenue', path: '/finance/revenue', designed: true },
