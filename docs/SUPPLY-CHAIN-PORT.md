@@ -67,7 +67,7 @@ Shared helper `functions/_lib/scm-util.ts` now exists for the remaining modules.
 ### Tier 1 — Procurement (buy-side documents)
 - [x] **Purchase Orders** — PR #32 `feat/scm-purchase-orders` (stacked on #30; HELD: migration 0011). Core priced PO + status flow; sofa-specials/MRP/SO-linkage deferred. `PoAmendments` = a later slice.
 - [x] **Goods Received / GRN** — PR #33 `feat/scm-goods-receipts` (stacked on #32; HELD: migration 0012). Receives against a PO, drives PO status; cancel reverses.
-- [ ] Purchase Invoices (`PurchaseInvoices*`, `PurchaseInvoiceFromGrn`)
+- [x] **Purchase Invoices** — PR #35 `feat/scm-purchase-invoices` (stacked on #33; HELD: migration 0013). Bills a GRN; payments via Payment Vouchers. **PO→GRN→PI spine complete.**
 - [ ] Purchase Returns (`PurchaseReturns*`)
 - [ ] Purchase Consignment (`PurchaseConsignmentOrders/Receives/Returns`)
 - [ ] Payment Vouchers (`PaymentVouchers*`) + Outstanding
