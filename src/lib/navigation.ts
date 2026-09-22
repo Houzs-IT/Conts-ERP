@@ -44,6 +44,7 @@ export const NAV: NavGroup[] = [
     { key: 'purchaseInvoices', label: 'Purchase invoices', icon: 'receipt', path: '/procurement/purchase-invoices', designed: true },
     { key: 'paymentVouchers', label: 'Payment vouchers', icon: 'banknote', path: '/procurement/payment-vouchers', designed: true },
     { key: 'purchaseReturns', label: 'Purchase returns', icon: 'undo-2', path: '/procurement/purchase-returns', designed: true },
+    { key: 'purchaseConsignment', label: 'Consignment orders', icon: 'package-plus', path: '/procurement/consignment', designed: true },
   ] },
   { label: 'FINANCE', items: [
     { key: 'finance', label: 'Finance', icon: 'wallet', badge: '2', children: [
