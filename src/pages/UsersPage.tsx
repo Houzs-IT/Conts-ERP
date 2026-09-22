@@ -343,6 +343,23 @@ export default function UsersPage() {
   function openEdit(u: Row) {
     setEditing(u); setEditRole(u.role); setEditManager(u.managerId ?? ''); setEditActive(u.isActive);
   }
+  // Re-send the invitation to someone who was invited but never signed in — a fresh
+  // temporary password, emailed immediately. See functions/api/users/[id]/resend-invite.ts.
+  async function resendInvite() {
+    if (!editing || busy) return;
+    setBusy(true);
+    try {
+      const res = await api.post<{ delivery: string; reason?: string }>(`/users/${editing.id}/resend-invite`, {});
+      if (res.delivery === 'sent') toast({ tone: 'success', title: `Invitation re-sent to ${editing.email}.`, body: 'A fresh temporary password is on its way.' });
+      else if (res.delivery === 'failed') toast({ tone: 'critical', title: 'Invitation could not be sent.', body: res.reason ?? 'The email provider is not configured — see IT.' });
+      else toast({ tone: 'warning', title: 'Invitation queued, not yet delivered.', body: res.reason ?? 'It will send shortly.' });
+      setEditing(null);
+    } catch (err) {
+      toast({ tone: 'critical', title: 'Could not re-send the invitation.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+    } finally {
+      setBusy(false);
+    }
+  }
   async function submitEdit(e: FormEvent) {
     e.preventDefault();
     if (!editing || busy) return;
@@ -601,6 +618,9 @@ export default function UsersPage() {
           onClose={() => setEditing(null)}
           footer={
             <>
+              {status(editing).label === 'Invited' && (
+                <Button variant="secondary" size="sm" onClick={resendInvite} disabled={busy}>Resend invitation</Button>
+              )}
               <Button variant="secondary" size="sm" onClick={() => setEditing(null)} disabled={busy}>Cancel</Button>
               <Button variant="primary" size="sm" type="submit" form="edit-form" loading={busy}>{busy ? 'Saving…' : 'Save changes'}</Button>
             </>

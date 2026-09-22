@@ -55,6 +55,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     template: 'account.invited', recipient: email, channel: 'email', subject: 'Your Conts ERP account',
     body: `${session.fullName} created an account for you.\n\nEmail: ${email}\nTemporary password: ${temp}\n\nYou will be asked to choose a new password when you first sign in.`,
     entityTable: 'users', entityId: id,
+    urgent: true, // an account invite is transactional — it must not wait for quiet hours to end at 08:00
   });
   return json({ id, delivery: delivery.state, reason: delivery.reason }, 201);
 };
