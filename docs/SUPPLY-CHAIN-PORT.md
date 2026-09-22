@@ -68,9 +68,13 @@ Shared helper `functions/_lib/scm-util.ts` now exists for the remaining modules.
 - [x] **Purchase Orders** — PR #32 `feat/scm-purchase-orders` (stacked on #30; HELD: migration 0011). Core priced PO + status flow; sofa-specials/MRP/SO-linkage deferred. `PoAmendments` = a later slice.
 - [x] **Goods Received / GRN** — PR #33 `feat/scm-goods-receipts` (stacked on #32; HELD: migration 0012). Receives against a PO, drives PO status; cancel reverses.
 - [x] **Purchase Invoices** — PR #35 `feat/scm-purchase-invoices` (stacked on #33; HELD: migration 0013). Bills a GRN; payments via Payment Vouchers. **PO→GRN→PI spine complete.**
-- [ ] Purchase Returns (`PurchaseReturns*`)
+- [x] **Payment Vouchers** — PR #39 `feat/scm-payment-vouchers` (stacked on #35; HELD: migration 0014). Pays PIs, drives paid status. **PO→GRN→PI→Payment loop complete.**
+- [x] **Purchase Returns** — PR #40 `feat/scm-purchase-returns` (stacked on #39; HELD: migration 0015). Returns GRN goods, reverses received_qty + PO status.
 - [ ] Purchase Consignment (`PurchaseConsignmentOrders/Receives/Returns`)
-- [ ] Payment Vouchers (`PaymentVouchers*`) + Outstanding
+
+**Buy-side procurement DONE:** masters + PO → GRN → PI → Payment + Returns (only
+Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
+#25→#28→#29→#30→#32→#33→#35→#39→#40.
 
 ### Tier 2 — Warehouse / Stock
 - [ ] Inventory / Stock Card (`Inventory`, `StockCard`)
