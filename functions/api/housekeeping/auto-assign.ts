@@ -1,6 +1,6 @@
 import { type Env, all, one, json, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { assignTask, crew, MYT_DATE } from '../../_lib/ops';
+import { assignCleaner, activeCleaners, MYT_DATE } from '../../_lib/ops';
 
 const ORDER: Record<string, string> = {
   earliest_checkin: 'COALESCE(t.next_guest_at, t.due_at, t.created_at)',
@@ -8,32 +8,44 @@ const ORDER: Record<string, string> = {
   manual: 't.created_at',
 };
 
-/** POST /api/housekeeping/auto-assign { rule } — every unassigned cleaning task from today on goes to the least-loaded cleaner. */
+const setting = async (env: Env, key: string, fallback: string) =>
+  (await one<{ value: string }>(env, 'SELECT value FROM settings WHERE key = ?', key))?.value ?? fallback;
+
+/** POST /api/housekeeping/auto-assign { rule?, prefer?, strategy? } — every
+ *  unassigned clean from today on is given to a roster cleaner. The ordering rule,
+ *  the employment preference (internal / outsourced / any) and the spread strategy
+ *  (least-loaded or round-robin) default to the saved auto-assign rules. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (!['management', 'operations_manager', 'operations_staff'].includes(session.role)) return fail('FORBIDDEN', 'Only operations can auto-assign.', 403);
 
   const b = await request.json<any>().catch(() => ({}));
-  const rule = b?.rule in ORDER ? b.rule : 'earliest_checkin';
+  const rule = b?.rule in ORDER ? b.rule : await setting(env, 'housekeeping.ordering_rule', 'earliest_checkin');
+  const orderBy = ORDER[rule] ?? ORDER.earliest_checkin;
+  const prefer = ['internal', 'outsourced', 'any'].includes(b?.prefer) ? b.prefer : await setting(env, 'housekeeping.assign_prefer', 'any');
+  const strategy = ['least_loaded', 'round_robin'].includes(b?.strategy) ? b.strategy : await setting(env, 'housekeeping.assign_strategy', 'least_loaded');
 
-  const people = await crew(env, 'housekeeping');
-  if (!people.length) return fail('NO_CREW', 'There are no active cleaners to assign to.', 409);
+  const people = await activeCleaners(env, prefer as 'internal' | 'outsourced' | 'any');
+  if (!people.length) return fail('NO_CREW', 'There are no active cleaners on the roster to assign to.', 409);
   const load = new Map(people.map(p => [p.id, Number(p.busy)]));
 
   const today = (await one<{ d: string }>(env, `SELECT to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS d`))!.d;
   const tasks = await all<{ id: string }>(env, `
     SELECT t.id FROM tasks t JOIN units u ON u.id = t.unit_id JOIN properties p ON p.id = u.property_id
-    WHERE t.assignee_id IS NULL AND t.state IN ('open','reopened') AND t.kind IN ('turnover','deep_clean','light_clean')
+    WHERE t.cleaner_id IS NULL AND t.assignee_id IS NULL AND t.state IN ('open','reopened') AND t.kind IN ('turnover','deep_clean','light_clean')
       AND ${MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)')} >= ?
-    ORDER BY ${ORDER[rule]}`, today);
+    ORDER BY ${orderBy}`, today);
 
-  let assigned = 0;
+  let assigned = 0, rr = 0;
   for (const t of tasks) {
-    const [id] = [...load.entries()].sort((a, c) => a[1] - c[1])[0];
-    const res = await assignTask(env, session, t.id, id, true);
-    if (res.ok) { assigned++; load.set(id, (load.get(id) ?? 0) + 1); }
+    // least_loaded picks the cleaner with the fewest open jobs; round_robin cycles.
+    const cleaner = strategy === 'round_robin'
+      ? people[rr++ % people.length]
+      : people.reduce((a, c) => (load.get(c.id)! <= load.get(a.id)! ? c : a));
+    const res = await assignCleaner(env, session, t.id, { ...cleaner, busy: 0 }, true);
+    if (res.ok) { assigned++; load.set(cleaner.id, (load.get(cleaner.id) ?? 0) + 1); }
   }
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.auto_assign', entityTable: 'tasks', entityId: 'auto', after: { rule, assigned } });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.auto_assign', entityTable: 'tasks', entityId: 'auto', after: { rule, prefer, strategy, assigned } });
   return json({ ok: true, assigned });
 };

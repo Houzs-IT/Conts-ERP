@@ -77,6 +77,64 @@ export async function assignTask(env: Env, session: Session, taskId: string, ass
   return json({ ok: true, assigneeName: assignee.full_name, notified: delivery.state });
 }
 
+export interface RosterCleaner { id: string; full_name: string; employment_type: 'internal' | 'outsourced'; user_id: string | null; phone: string | null; busy: number }
+
+/** The active cleaner roster with today's open-job load, for the assign pickers and
+ *  auto-assign. `prefer` narrows to one employment dimension when the rule asks for it. */
+export async function activeCleaners(env: Env, prefer: 'internal' | 'outsourced' | 'any' = 'any'): Promise<RosterCleaner[]> {
+  return all<RosterCleaner>(env, `
+    SELECT c.id, c.full_name, c.employment_type, c.user_id, c.phone,
+           (SELECT COUNT(*) FROM tasks t
+              WHERE (t.cleaner_id = c.id OR (c.user_id IS NOT NULL AND t.assignee_id = c.user_id))
+                AND t.state NOT IN ('resolved')
+                AND ${MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)')} = to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')) AS busy
+    FROM cleaners c
+    WHERE c.is_active = 1 ${prefer === 'any' ? '' : 'AND c.employment_type = ?'}
+    ORDER BY c.full_name`, ...(prefer === 'any' ? [] : [prefer]));
+}
+
+/** Assign one clean to a roster cleaner. Sets cleaner_id always, and assignee_id to
+ *  the cleaner's login when it is internal staff (outsourced crews have no login, so
+ *  assignee_id is cleared). Overlapping work is a 409 ASSIGNEE_BUSY unless force. */
+export async function assignCleaner(env: Env, session: Session, taskId: string, cleaner: RosterCleaner, force: boolean): Promise<Response> {
+  const task = await one<any>(env, 'SELECT id, state, cleaner_id, assignee_id, due_at, unit_id FROM tasks WHERE id = ?', taskId);
+  if (!task) return fail('NOT_FOUND', 'That task no longer exists. Refresh the list.', 404);
+  if (task.state === 'resolved') return fail('CONFLICT', 'That task is already finished.', 409);
+
+  if (!force && task.due_at) {
+    const clash = await all<{ id: string }>(env, `
+      SELECT t.id FROM tasks t
+      WHERE t.id != ? AND t.state NOT IN ('resolved') AND t.due_at IS NOT NULL
+        AND (t.cleaner_id = ? OR (? IS NOT NULL AND t.assignee_id = ?))
+        AND abs(extract(epoch from (t.due_at::timestamptz - ?::timestamptz))) < 5400`,
+      taskId, cleaner.id, cleaner.user_id, cleaner.user_id, task.due_at);
+    if (clash.length) {
+      return json({
+        error: { code: 'ASSIGNEE_BUSY', message: `${cleaner.full_name} has ${clash.length} overlapping ${clash.length === 1 ? 'task' : 'tasks'} around that time. Assign anyway?` },
+        conflicts: clash,
+      }, 409);
+    }
+  }
+
+  await run(env, "UPDATE tasks SET cleaner_id = ?, assignee_id = ?, state = 'assigned', updated_at = ? WHERE id = ?",
+    cleaner.id, cleaner.user_id, nowIso(), taskId);
+  await audit(env, {
+    actorId: session.userId, actorLabel: session.fullName, action: 'task.assign_cleaner', entityTable: 'tasks', entityId: taskId,
+    before: { cleanerId: task.cleaner_id, assigneeId: task.assignee_id, state: task.state },
+    after: { cleanerId: cleaner.id, assigneeId: cleaner.user_id, employment: cleaner.employment_type, state: 'assigned' },
+  });
+  if (cleaner.employment_type === 'internal' && cleaner.phone) {
+    const unit = await one<{ unit_number: string; property_name: string }>(env, `
+      SELECT u.unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, task.unit_id);
+    await notify(env, {
+      template: 'field.task_assigned', recipient: cleaner.phone, channel: 'push',
+      body: `New clean: ${unit?.property_name} ${unit?.unit_number}${task.due_at ? `, due ${hhmm(task.due_at)}` : ''}.`,
+      entityTable: 'tasks', entityId: taskId, urgent: true,
+    });
+  }
+  return json({ ok: true, assigneeName: cleaner.full_name });
+}
+
 /** A unit given as an id or as its display number (the screens send either). Property name narrows a number shared by two buildings. */
 export async function resolveUnit(env: Env, ref: unknown, propertyName?: unknown): Promise<{ id: string } | 'ambiguous' | null> {
   const r = String(ref ?? '').trim();
