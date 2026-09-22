@@ -561,8 +561,11 @@ export default function HousekeepingPage() {
 
       {error && <StaleBanner message={`Showing the last roster we have. ${error}`} onRetry={reload} />}
 
-      {/* Date tabs — Today / Tomorrow / This week */}
-      <div className="inline-flex border border-solid border-line rounded-control overflow-hidden w-fit">
+      {/* Date tabs — Today / Tomorrow / This week.
+          flex-none/self-start keep the control at its intrinsic height: without it
+          the toggle is a flex item in the page column and gets shrunk to a sliver,
+          clipping the pills' padding under overflow-hidden (matches Inspections). */}
+      <div className="inline-flex flex-none self-start border border-solid border-line rounded-control overflow-hidden w-fit">
         {TABS.map(([v, label]) => (
           <button key={v} onClick={() => setTab(v)}
             className={`px-[15px] py-2 cursor-pointer [border:none] [font:inherit] ${v === tab ? 'bg-black text-white' : 'bg-white text-muted-ink'}`}>
