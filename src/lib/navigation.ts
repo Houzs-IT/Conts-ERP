@@ -65,6 +65,9 @@ export const NAV: NavGroup[] = [
     { key: 'scFurniture', label: 'Furniture', icon: 'sofa', children: [
       { key: 'fabrics', label: 'Fabric library', path: '/furniture/fabrics', designed: true },
     ] },
+    { key: 'scAccounting', label: 'Accounting', icon: 'calculator', children: [
+      { key: 'accounting', label: 'Payables & receivables', path: '/accounting', designed: true },
+    ] },
   ] },
   { label: 'FINANCE', items: [
     { key: 'finance', label: 'Finance', icon: 'wallet', badge: '2', children: [
