@@ -1,4 +1,4 @@
-import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, canSeeFinance, isFieldRole } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { resolveUnit, shortDate } from '../../_lib/ops';
@@ -13,12 +13,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const state = new URL(request.url).searchParams.get('state');
   const rows = await all<any>(env, `
     SELECT m.*, u.unit_number, p.name AS property_name, COALESCE(r.full_name, '') AS reporter,
+           s.code AS sku_code, s.name AS sku_name,
            (SELECT COUNT(*) FROM documents d WHERE d.maintenance_id = m.id AND d.kind = 'photo') AS photo_count,
            (SELECT COUNT(*) FROM documents d WHERE d.maintenance_id = m.id AND d.kind != 'photo') AS document_count
     FROM maintenance_issues m
     JOIN units u ON u.id = m.unit_id
     JOIN properties p ON p.id = u.property_id
     LEFT JOIN users r ON r.id = m.reported_by
+    LEFT JOIN maintenance_skus s ON s.id = m.sku_id
     WHERE 1 = 1 ${state ? 'AND m.state = ?' : ''}
     ORDER BY m.reported_at DESC`, ...(state ? [state] : []));
 
@@ -33,6 +35,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       blocksUnit: !!r.blocks_unit, blockedFrom: r.blocked_from, blockedTo: r.blocked_to,
       ownerApprovalRequired: !!r.owner_approval_required, ownerApprovedAt: r.owner_approved_at,
       chargeTo: r.charge_to, reporter: r.reporter || null,
+      skuId: r.sku_id, skuCode: r.sku_code ?? null, skuName: r.sku_name ?? null,
+      startedAt: r.started_at, endedAt: r.ended_at,
       photoCount: Number(r.photo_count), documentCount: Number(r.document_count),
       // Amounts are omitted entirely for roles without finance access.
       quotedAmount: money ? r.quoted_amount : null, finalAmount: money ? r.final_amount : null,
@@ -56,14 +60,25 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (isFieldRole(session.role) && b.quotedAmount != null) return fail('FORBIDDEN', 'Field roles cannot set amounts.', 403);
   if (b.quotedAmount != null && (!Number.isInteger(b.quotedAmount) || b.quotedAmount < 0)) return fail('VALIDATION', 'The amount must be a whole number of sen.', 422);
 
+  // Optional catalog item. When one is picked and no quote is supplied, its preset selling
+  // price seeds the quote — the operator can still override it before completing the job.
+  let skuId: string | null = null;
+  let quoted: number | null = b.quotedAmount ?? null;
+  if (b.skuId) {
+    const sku = await one<any>(env, 'SELECT id, default_price FROM maintenance_skus WHERE id = ?', String(b.skuId));
+    if (!sku) return fail('NOT_FOUND', 'That catalog item does not exist.', 404, { skuId: 'Pick a catalog item that exists.' });
+    skuId = sku.id;
+    if (quoted == null && !isFieldRole(session.role)) quoted = sku.default_price;
+  }
+
   const id = crypto.randomUUID(), now = nowIso();
   await run(env, `
     INSERT INTO maintenance_issues
-      (id, unit_id, reported_by, state, title, detail, quoted_amount, owner_approval_required,
+      (id, unit_id, reported_by, state, title, detail, sku_id, quoted_amount, owner_approval_required,
        blocks_unit, blocked_from, blocked_to, charge_to, reported_at, created_at, updated_at)
-    VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    id, unit.id, session.userId, b.title.trim(), b.detail ?? null,
-    b.quotedAmount ?? null, b.ownerApprovalRequired ? 1 : 0,
+    VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    id, unit.id, session.userId, b.title.trim(), b.detail ?? null, skuId,
+    quoted, b.ownerApprovalRequired ? 1 : 0,
     b.blocksUnit ? 1 : 0, b.blocksUnit ? (b.blockedFrom ?? now.slice(0, 10)) : null, b.blockedTo ?? null,
     chargeTo, now, now, now);
 
