@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -10,7 +10,7 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useCrew } from '../lib/useCrew';
 import { api, notifyFailure } from '../lib/api';
-import { todayMyt, rm, unitRef } from '../lib/format';
+import { todayMyt, rm, unitRef, dateTime } from '../lib/format';
 import { READINESS, TASK } from '../lib/vocabulary';
 import { TONE } from '../lib/design-tokens';
 import type { TaskState, Tone, UnitReadiness } from '../lib/types';
@@ -44,14 +44,19 @@ const firstName = (name: string) => name.split(' ')[0];
 interface Task {
   id: string;
   unitNumber: string;
-  propertyName: string;
+  propertyName: string;        // the building
+  buildingId?: string | null;  // property id — groups a whole-building clean
   sourceRef: string;           // source reservation
   title: string;               // kind of clean, human title
   linenSet: string;
   instructions: string | null;
   scheduledFor: string | null; // HH:MM (window start)
   dueAt: string | null;        // HH:MM (window end)
-  nextGuestAt: string | null;  // HH:MM
+  nextGuestAt: string | null;  // HH:MM — incoming guest check-in
+  checkoutTime: string | null; // HH:MM — this stay's checkout
+  checkoutDate: string | null; // YYYY-MM-DD — this stay's checkout day
+  startedAt: string | null;    // ISO — when the cleaner started
+  completedAt: string | null;  // ISO — when the clean finished (the "end")
   assigneeId: string | null;
   assigneeName: string | null;
   sequence: number;
@@ -63,15 +68,19 @@ interface Task {
 }
 interface Payload { rows: Task[]; date: string; generatedAt: string }
 
+/** Dev-only sample timestamps, anchored to load time so duration/elapsed read live. */
+const isoAgo = (mins: number) => new Date(Date.now() - mins * 60000).toISOString();
+const CO_DATE = todayMyt();
+
 const FALLBACK: Payload = {
   date: '2026-09-16', generatedAt: '',
   rows: [
-    { id: 'h1', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', sourceRef: 'RES-40821', title: 'Turnover, 2BR', linenSet: 'Set A', instructions: 'Late check-out to 13:00. Restock coffee pods.', scheduledFor: '08:00', dueAt: '14:00', nextGuestAt: '15:00', assigneeId: 'u5', assigneeName: 'Nurul Huda', sequence: 1, state: 'in_progress', readiness: 'cleaning', requiresPhoto: true, photoCount: 0 },
-    { id: 'h2', unitNumber: '#B-08-11', propertyName: 'Arcoris', sourceRef: 'RES-40833', title: 'Turnover, studio', linenSet: 'Set B', instructions: 'Early check-in requested by next guest.', scheduledFor: '12:00', dueAt: '15:30', nextGuestAt: '16:00', assigneeId: 'u5', assigneeName: 'Nurul Huda', sequence: 2, state: 'assigned', readiness: 'dirty', requiresPhoto: true, photoCount: 0 },
-    { id: 'h3', unitNumber: '#15-06', propertyName: 'Scarletz', sourceRef: 'RES-40790', title: 'Deep clean', linenSet: 'Set A', instructions: 'Vacant 4 nights. Descale kettle and shower.', scheduledFor: '10:00', dueAt: '16:30', nextGuestAt: '18:00', assigneeId: 'u6', assigneeName: 'Faridah Ismail', sequence: 3, state: 'assigned', readiness: 'dirty', requiresPhoto: true, photoCount: 1 },
-    { id: 'h4', unitNumber: '#2207', propertyName: 'Tribeca', sourceRef: 'RES-40765', title: 'Light clean', linenSet: 'Set B', instructions: 'Owner stay ended. Standard refresh.', scheduledFor: '08:00', dueAt: '11:00', nextGuestAt: null, assigneeId: 'u9', assigneeName: 'Siti Rahmah', sequence: 4, state: 'resolved', readiness: 'ready', requiresPhoto: true, photoCount: 2 },
-    { id: 'h5', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', sourceRef: 'RES-40711', title: 'Post-works clean', linenSet: 'Set A', instructions: 'Plumbing repair completed. Clear dust sheets.', scheduledFor: '16:00', dueAt: '18:00', nextGuestAt: null, assigneeId: 'u9', assigneeName: 'Siti Rahmah', sequence: 5, state: 'assigned', readiness: 'maintenance', requiresPhoto: true, photoCount: 0 },
-    { id: 'h6', unitNumber: '#A-21-02', propertyName: 'The Establishment', sourceRef: 'RES-40852', title: 'Turnover, 2BR', linenSet: 'Set A', instructions: 'No cleaner assigned yet.', scheduledFor: '14:00', dueAt: '14:54', nextGuestAt: '15:00', assigneeId: null, assigneeName: null, sequence: 6, state: 'open', readiness: 'dirty', requiresPhoto: true, photoCount: 0 },
+    { id: 'h1', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', buildingId: 'p-vista', sourceRef: 'RES-40821', title: 'Turnover, 2BR', linenSet: 'Set A', instructions: 'Late check-out to 13:00. Restock coffee pods.', scheduledFor: '08:00', dueAt: '14:00', nextGuestAt: '15:00', checkoutTime: '13:00', checkoutDate: CO_DATE, startedAt: isoAgo(38), completedAt: null, assigneeId: 'u5', assigneeName: 'Nurul Huda', sequence: 1, state: 'in_progress', readiness: 'cleaning', requiresPhoto: true, photoCount: 0 },
+    { id: 'h2', unitNumber: '#A-19-02', propertyName: 'Vista Jaya One', buildingId: 'p-vista', sourceRef: 'RES-40833', title: 'Turnover, studio', linenSet: 'Set B', instructions: 'Early check-in requested by next guest.', scheduledFor: '12:00', dueAt: '15:30', nextGuestAt: '16:00', checkoutTime: '11:00', checkoutDate: CO_DATE, startedAt: null, completedAt: null, assigneeId: 'u5', assigneeName: 'Nurul Huda', sequence: 2, state: 'assigned', readiness: 'dirty', requiresPhoto: true, photoCount: 0 },
+    { id: 'h3', unitNumber: '#15-06', propertyName: 'Scarletz', buildingId: 'p-scar', sourceRef: 'RES-40790', title: 'Deep clean', linenSet: 'Set A', instructions: 'Vacant 4 nights. Descale kettle and shower.', scheduledFor: '10:00', dueAt: '16:30', nextGuestAt: '18:00', checkoutTime: '11:00', checkoutDate: CO_DATE, startedAt: null, completedAt: null, assigneeId: 'u6', assigneeName: 'Faridah Ismail', sequence: 3, state: 'assigned', readiness: 'dirty', requiresPhoto: true, photoCount: 1 },
+    { id: 'h4', unitNumber: '#2207', propertyName: 'Tribeca', buildingId: 'p-trib', sourceRef: 'RES-40765', title: 'Light clean', linenSet: 'Set B', instructions: 'Owner stay ended. Standard refresh.', scheduledFor: '08:00', dueAt: '11:00', nextGuestAt: null, checkoutTime: '10:00', checkoutDate: CO_DATE, startedAt: isoAgo(205), completedAt: isoAgo(118), assigneeId: 'u9', assigneeName: 'Siti Rahmah', sequence: 4, state: 'resolved', readiness: 'ready', requiresPhoto: true, photoCount: 2 },
+    { id: 'h5', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', buildingId: 'p-sent', sourceRef: 'RES-40711', title: 'Post-works clean', linenSet: 'Set A', instructions: 'Plumbing repair completed. Clear dust sheets.', scheduledFor: '16:00', dueAt: '18:00', nextGuestAt: null, checkoutTime: null, checkoutDate: null, startedAt: null, completedAt: null, assigneeId: 'u9', assigneeName: 'Siti Rahmah', sequence: 5, state: 'assigned', readiness: 'maintenance', requiresPhoto: true, photoCount: 0 },
+    { id: 'h6', unitNumber: '#A-21-02', propertyName: 'Vista Jaya One', buildingId: 'p-vista', sourceRef: 'RES-40852', title: 'Turnover, 2BR', linenSet: 'Set A', instructions: 'No cleaner assigned yet.', scheduledFor: '14:00', dueAt: '14:54', nextGuestAt: '15:00', checkoutTime: '12:00', checkoutDate: CO_DATE, startedAt: null, completedAt: null, assigneeId: null, assigneeName: null, sequence: 6, state: 'open', readiness: 'dirty', requiresPhoto: true, photoCount: 0 },
   ],
 };
 
@@ -84,6 +93,15 @@ const toMin = (hhmm: string | null): number | null => {
 const fmtDur = (mins: number): string => {
   const a = Math.abs(mins), h = Math.floor(a / 60), m = a % 60;
   return h ? (m ? `${h} h ${m} m` : `${h} h`) : `${m} m`;
+};
+/** Minutes between two ISO instants, or from a start to `now` while still running. */
+const elapsedMin = (startIso: string | null, endIso: string | null, now: Date): number | null => {
+  if (!startIso) return null;
+  const start = Date.parse(startIso);
+  if (Number.isNaN(start)) return null;
+  const end = endIso ? Date.parse(endIso) : now.getTime();
+  if (Number.isNaN(end)) return null;
+  return Math.max(0, Math.round((end - start) / 60000));
 };
 /** Anchor the roster times to the real current date so the pill is genuinely
  *  live in dev — it counts down to next_guest_at and flips critical on breach. */
@@ -187,7 +205,29 @@ export default function HousekeepingPage() {
   const [creating, setCreating] = useState(false);
   const [editTask, setEditTask] = useState<Task | null>(null);
   const [confirm, setConfirm] = useState<null | { kind: 'start' | 'complete' | 'autoassign'; task?: Task }>(null);
+  const [gallery, setGallery] = useState<Task | null>(null);
+  const [groupByBuilding, setGroupByBuilding] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // Real POD photo upload: one hidden file input, driven per task. The chosen files
+  // are sent as multipart to the existing POST /api/tasks/:id/photos (R2, binding
+  // MEDIA); the count updates optimistically so the completion gate can be exercised.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadTaskRef = useRef<Task | null>(null);
+  function pickPhoto(task: Task) { uploadTaskRef.current = task; fileInputRef.current?.click(); }
+  async function onPhotoPicked(e: ChangeEvent<HTMLInputElement>) {
+    const task = uploadTaskRef.current;
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ''; // allow re-picking the same file
+    if (!task || !files.length) return;
+    patch(task.id, { photoCount: task.photoCount + files.length });
+    toast({ tone: 'success', title: files.length === 1 ? 'Photo added.' : `${files.length} photos added.`, body: `Attached to ${unitRef(task.propertyName, task.unitNumber)}.` });
+    for (const file of files) {
+      const fd = new FormData();
+      fd.append('file', file);
+      try { await api.post(`/tasks/${task.id}/photos`, fd); } catch (err) { notifyFailure(err); }
+    }
+  }
 
   const merged = [...added, ...(data?.rows ?? [])].map(t => ({ ...t, ...edits[t.id] }));
   const unassigned = merged.filter(t => !t.assigneeId);
@@ -215,9 +255,11 @@ export default function HousekeepingPage() {
       id: `local-${crypto.randomUUID()}`,
       unitNumber: draft.unitNumber.trim(), propertyName: draft.propertyName.trim(),
       sourceRef: 'Manual', title: KIND_LABEL[draft.kind], linenSet: draft.linenSet,
+      buildingId: null,
       instructions: draft.instructions.trim() || null,
       scheduledFor: draft.scheduledFor || null, dueAt: draft.dueAt || null,
       nextGuestAt: draft.nextGuestAt || null,
+      checkoutTime: null, checkoutDate: null, startedAt: null, completedAt: null,
       assigneeId: cleaner?.id ?? null, assigneeName: cleaner?.name ?? null,
       sequence: 999, state: cleaner ? 'assigned' : 'open', readiness: 'dirty',
       requiresPhoto: draft.requiresPhoto, photoCount: 0, kind: draft.kind,
@@ -325,12 +367,6 @@ export default function HousekeepingPage() {
     setBusy(false);
   }
 
-  async function addPhoto(task: Task) {
-    patch(task.id, { photoCount: task.photoCount + 1 });
-    toast({ tone: 'success', title: 'Photo added.', body: `${task.photoCount + 1} on ${unitRef(task.propertyName, task.unitNumber)}.` });
-    try { await api.post(`/tasks/${task.id}/photos`, {}); } catch { /* dev */ }
-  }
-
   async function doComplete() {
     const task = confirm?.task;
     if (!task) return;
@@ -369,8 +405,136 @@ export default function HousekeepingPage() {
 
   const rows = data?.rows ?? [];
 
+  // Group the ordered list by building (property), preserving the ordering-rule
+  // sequence so a whole-building clean can be worked and photographed together.
+  const groups: { id: string; name: string; tasks: Task[] }[] = [];
+  for (const t of ordered) {
+    const key = t.buildingId ?? t.propertyName;
+    let g = groups.find(x => x.id === key);
+    if (!g) { g = { id: key, name: t.propertyName, tasks: [] }; groups.push(g); }
+    g.tasks.push(t);
+  }
+
+  /** One cleaning task card. `idx` is its position in the current sequence. */
+  const renderRow = (t: Task, idx: number) => {
+    const sla = slaOf(t, now);
+    const canStart = t.state === 'assigned';
+    const inProgress = t.state === 'in_progress';
+    const done = t.state === 'resolved';
+    const noPhoto = t.requiresPhoto && t.photoCount < 1;
+    const windowLabel = t.scheduledFor && t.dueAt ? `${t.scheduledFor} → ${t.dueAt}` : '—';
+    const mins = elapsedMin(t.startedAt, t.completedAt, now);
+    const durLabel = mins === null ? null : done ? `Cleaned in ${fmtDur(mins)}` : `Running ${fmtDur(mins)}`;
+
+    return (
+      <div key={t.id}
+        className={`flex gap-[18px] py-[15px] px-5 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)] ${ACCENT[sla.tone]} ${done ? 'opacity-[0.72]' : ''}`}>
+        {/* left: identity + fields */}
+        <div className="flex-1 min-w-[260px] flex flex-col gap-[9px]">
+          <div className="flex items-center gap-[9px] flex-wrap">
+            <span
+              className="w-[26px] h-[26px] flex-none rounded-[6px] bg-muted text-muted-ink grid place-items-center text-[11px] font-semibold"
+              title={`Sequence position (${RULE_LABEL[rule]})`}>{idx + 1}</span>
+            <span className="text-[14px] font-semibold">{unitRef(t.propertyName, t.unitNumber)}</span>
+            <Badge tone={TASK[t.state].tone} label={TASK[t.state].label} size="sm" />
+            <Badge tone={sla.tone} label={sla.label} size="sm" />
+          </div>
+
+          <div className="text-[13px] text-ink">{t.title} · {t.linenSet}</div>
+
+          <div className="flex gap-[22px] flex-wrap text-[12.5px]">
+            <Field2 label="Window" value={windowLabel} />
+            <Field2 label="Checkout" value={t.checkoutTime ?? '—'} />
+            <Field2 label="Next check-in" value={t.nextGuestAt ?? 'No arrival'} tone={sla.tone === 'critical' ? 'critical' : undefined} />
+            <Field2 label="Assignee" value={t.assigneeName ?? 'Unassigned'} muted={!t.assigneeName} />
+            {durLabel && <Field2 label="Duration" value={durLabel} tone={inProgress ? 'info' : 'success'} />}
+            <Field2 label="Source" value={t.sourceRef} />
+            <Field2 label="Unit" value={READINESS[t.readiness].label} />
+            <Field2 label="Photos" value={`${t.photoCount}${t.requiresPhoto ? ' / 1 required' : ''}`} tone={noPhoto ? 'warning' : undefined} />
+          </div>
+
+          {t.nextGuestAt && (
+            <div className="text-[12px] text-muted-ink flex gap-[7px] items-center">
+              <Icon name="Clock" size="sm" color="var(--color-faint)" />
+              <span>Must be clean by {t.nextGuestAt} — next guest check-in.</span>
+            </div>
+          )}
+
+          {t.instructions && (
+            <div className="text-[12.5px] text-muted-ink flex gap-[7px] items-start">
+              <Icon name="Info" size="sm" color="var(--color-faint)" style={{ marginTop: 1 }} />
+              <span>{t.instructions}</span>
+            </div>
+          )}
+
+          {inProgress && noPhoto && (
+            <div className={`text-[12px] ${TONE.warning.text} flex gap-1.5 items-center`}>
+              <Icon name="Camera" size="sm" />
+              Add at least one photo before marking this unit ready.
+            </div>
+          )}
+        </div>
+
+        {/* right: state-driven actions */}
+        <div className="flex flex-col gap-[7px] items-stretch min-w-[168px]">
+          {!done && (
+            <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => openAssign(t)}>
+              {t.assigneeId ? 'Reassign cleaner' : 'Assign cleaner'}
+            </Button>
+          )}
+          {!done && (
+            <Button size="sm" variant="tertiary" icon={<Icon name="CalendarClock" size="sm" />} onClick={() => setReschedule({ task: t, start: t.scheduledFor ?? '08:00', end: t.dueAt ?? '12:00' })}>
+              Reschedule
+            </Button>
+          )}
+          {!done && (
+            <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setEditTask(t)}>
+              Edit details
+            </Button>
+          )}
+          {canStart && (
+            <Button size="sm" variant="primary" icon={<Icon name="Play" size="sm" />} onClick={() => setConfirm({ kind: 'start', task: t })}>
+              Start
+            </Button>
+          )}
+          {inProgress && (
+            <>
+              <Button size="sm" variant="secondary" icon={<Icon name="Camera" size="sm" />} onClick={() => pickPhoto(t)}>
+                Add photo
+              </Button>
+              <Button
+                size="sm" variant="primary" icon={<Icon name="Check" size="sm" />}
+                disabled={noPhoto}
+                disabledReason="Add at least one photo before marking this unit ready."
+                onClick={() => setConfirm({ kind: 'complete', task: t })}
+              >
+                Mark complete
+              </Button>
+            </>
+          )}
+          {t.photoCount > 0 && (
+            <Button size="sm" variant="tertiary" icon={<Icon name="Images" size="sm" />} onClick={() => setGallery(t)}>
+              View photos ({t.photoCount})
+            </Button>
+          )}
+          {!done && t.assigneeId && (
+            <Button size="sm" variant="tertiary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage({ task: t, title: '', detail: '', chargeTo: 'owner', amount: '', blocksUnit: false })}>
+              Report damage
+            </Button>
+          )}
+          {done && (
+            <span className={`text-[12.5px] ${TONE.success.text} flex items-center gap-1.5 justify-center h-9`}>
+              <Icon name="CheckCheck" size="sm" /> Ready for guest
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
+      <input ref={fileInputRef} type="file" accept="image/*" multiple hidden onChange={onPhotoPicked} />
       <PageHeader
         title="Housekeeping"
         sub={`${merged.length} cleaning tasks · ${unassigned.length} unassigned · sequenced by ${RULE_LABEL[rule].toLowerCase()}`}
@@ -410,7 +574,13 @@ export default function HousekeepingPage() {
       <Card>
         <div className="py-[13px] px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line)]">
           <span className="text-[16px] font-semibold">Cleaning tasks</span>
-          <span className="text-[12px] text-muted-ink">SLA counts down to the next guest arrival</span>
+          <div className="flex items-center gap-[14px] flex-wrap">
+            <label className="flex gap-[7px] items-center cursor-pointer text-[12.5px] text-muted-ink select-none">
+              <input type="checkbox" checked={groupByBuilding} onChange={e => setGroupByBuilding(e.target.checked)} />
+              Group by building
+            </label>
+            <span className="text-[12px] text-muted-ink">SLA counts down to the next guest check-in</span>
+          </div>
         </div>
 
         {loading && rows.length === 0 ? (
@@ -419,106 +589,19 @@ export default function HousekeepingPage() {
           <div className="py-[30px] px-[22px] text-[13px] text-muted-ink">
             No cleaning tasks for {TABS.find(t => t[0] === tab)![1].toLowerCase()}. New checkouts create tasks automatically.
           </div>
-        ) : (
-          ordered.map((t, idx) => {
-            const sla = slaOf(t, now);
-            const canStart = t.state === 'assigned';
-            const inProgress = t.state === 'in_progress';
-            const done = t.state === 'resolved';
-            const noPhoto = t.requiresPhoto && t.photoCount < 1;
-            const windowLabel = t.scheduledFor && t.dueAt ? `${t.scheduledFor} → ${t.dueAt}` : '—';
-
-            return (
-              <div key={t.id}
-                className={`flex gap-[18px] py-[15px] px-5 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)] ${ACCENT[sla.tone]} ${done ? 'opacity-[0.72]' : ''}`}>
-                {/* left: identity + fields */}
-                <div className="flex-1 min-w-[260px] flex flex-col gap-[9px]">
-                  <div className="flex items-center gap-[9px] flex-wrap">
-                    <span
-                      className="w-[26px] h-[26px] flex-none rounded-[6px] bg-muted text-muted-ink grid place-items-center text-[11px] font-semibold"
-                      title={`Sequence position (${RULE_LABEL[rule]})`}>{idx + 1}</span>
-                    <span className="text-[14px] font-semibold">{unitRef(t.propertyName, t.unitNumber)}</span>
-                    <Badge tone={TASK[t.state].tone} label={TASK[t.state].label} size="sm" />
-                    <Badge tone={sla.tone} label={sla.label} size="sm" />
-                  </div>
-
-                  <div className="text-[13px] text-ink">{t.title} · {t.linenSet}</div>
-
-                  <div className="flex gap-[22px] flex-wrap text-[12.5px]">
-                    <Field2 label="Window" value={windowLabel} />
-                    <Field2 label="Next guest" value={t.nextGuestAt ?? 'No arrival'} tone={sla.tone === 'critical' ? 'critical' : undefined} />
-                    <Field2 label="Assignee" value={t.assigneeName ?? 'Unassigned'} muted={!t.assigneeName} />
-                    <Field2 label="Source" value={t.sourceRef} />
-                    <Field2 label="Unit" value={READINESS[t.readiness].label} />
-                    <Field2 label="Photos" value={`${t.photoCount}${t.requiresPhoto ? ' / 1 required' : ''}`} tone={noPhoto ? 'warning' : undefined} />
-                  </div>
-
-                  {t.instructions && (
-                    <div className="text-[12.5px] text-muted-ink flex gap-[7px] items-start">
-                      <Icon name="Info" size="sm" color="var(--color-faint)" style={{ marginTop: 1 }} />
-                      <span>{t.instructions}</span>
-                    </div>
-                  )}
-
-                  {inProgress && noPhoto && (
-                    <div className={`text-[12px] ${TONE.warning.text} flex gap-1.5 items-center`}>
-                      <Icon name="Camera" size="sm" />
-                      Add at least one photo before marking this unit ready.
-                    </div>
-                  )}
-                </div>
-
-                {/* right: state-driven actions */}
-                <div className="flex flex-col gap-[7px] items-stretch min-w-[168px]">
-                  {!done && (
-                    <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => openAssign(t)}>
-                      {t.assigneeId ? 'Reassign cleaner' : 'Assign cleaner'}
-                    </Button>
-                  )}
-                  {!done && (
-                    <Button size="sm" variant="tertiary" icon={<Icon name="CalendarClock" size="sm" />} onClick={() => setReschedule({ task: t, start: t.scheduledFor ?? '08:00', end: t.dueAt ?? '12:00' })}>
-                      Reschedule
-                    </Button>
-                  )}
-                  {!done && (
-                    <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setEditTask(t)}>
-                      Edit details
-                    </Button>
-                  )}
-                  {canStart && (
-                    <Button size="sm" variant="primary" icon={<Icon name="Play" size="sm" />} onClick={() => setConfirm({ kind: 'start', task: t })}>
-                      Start
-                    </Button>
-                  )}
-                  {inProgress && (
-                    <>
-                      <Button size="sm" variant="secondary" icon={<Icon name="Camera" size="sm" />} onClick={() => addPhoto(t)}>
-                        Add photo
-                      </Button>
-                      <Button
-                        size="sm" variant="primary" icon={<Icon name="Check" size="sm" />}
-                        disabled={noPhoto}
-                        disabledReason="Add at least one photo before marking this unit ready."
-                        onClick={() => setConfirm({ kind: 'complete', task: t })}
-                      >
-                        Mark complete
-                      </Button>
-                    </>
-                  )}
-                  {!done && t.assigneeId && (
-                    <Button size="sm" variant="tertiary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage({ task: t, title: '', detail: '', chargeTo: 'owner', amount: '', blocksUnit: false })}>
-                      Report damage
-                    </Button>
-                  )}
-                  {done && (
-                    <span className={`text-[12.5px] ${TONE.success.text} flex items-center gap-1.5 justify-center h-9`}>
-                      <Icon name="CheckCheck" size="sm" /> Ready for guest
-                    </span>
-                  )}
-                </div>
+        ) : groupByBuilding ? (
+          (() => { let seq = -1; return groups.map(g => (
+            <div key={g.id}>
+              <div className="py-[9px] px-5 bg-page flex items-center gap-[9px] [border-bottom:1px_solid_var(--color-line-soft)]">
+                <Icon name="Building2" size="sm" color="var(--color-faint)" />
+                <span className="text-[13px] font-semibold">{g.name}</span>
+                <span className="text-[12px] text-muted-ink">{g.tasks.length} clean{g.tasks.length === 1 ? '' : 's'} — do the building together</span>
               </div>
-            );
-          })
+              {g.tasks.map(t => renderRow(t, ++seq))}
+            </div>
+          )); })()
+        ) : (
+          ordered.map((t, idx) => renderRow(t, idx))
         )}
       </Card>
 
@@ -680,6 +763,11 @@ export default function HousekeepingPage() {
         </Modal>
       )}
 
+      {/* ------------------------- POD photo gallery ------------------------- */}
+      {gallery && (
+        <PhotoGalleryModal task={gallery} onClose={() => setGallery(null)} />
+      )}
+
       {/* ------------------------- New cleaning task ------------------------- */}
       {creating && (
         <CreateCleaningModal
@@ -735,6 +823,60 @@ function Field2({ label, value, muted, tone }: { label: string; value: string; m
       <span className="text-[11px] text-faint font-semibold uppercase tracking-[0.03em]">{label}</span>
       <span className={`text-[12.5px] font-medium whitespace-nowrap ${tone ? TONE[tone].text : muted ? 'text-muted-ink' : 'text-ink'}`}>{value}</span>
     </div>
+  );
+}
+
+/* ------------------------- POD photo gallery ------------------------- */
+
+interface PodPhoto { id: string; url: string; fileName: string; uploader: string | null; capturedAt: string; byteSize: number }
+
+/** Proof-of-delivery: every cleaning photo attached to one task. Photos are read
+ *  from GET /api/housekeeping/tasks/:id/photos and served from R2 via
+ *  /api/documents/:id/download. In dev there is no backend, so a placeholder tile
+ *  is shown per known photo and the real image loads only against the live API. */
+function PhotoGalleryModal({ task, onClose }: { task: Task; onClose: () => void }) {
+  const fallback: { data: PodPhoto[] } = {
+    data: Array.from({ length: task.photoCount }, (_, i) => ({
+      id: `local-${i}`, url: '', fileName: `clean-${i + 1}.jpg`, uploader: task.assigneeName, capturedAt: task.completedAt ?? task.startedAt ?? '', byteSize: 0,
+    })),
+  };
+  const { data, loading } = useApi<{ data: PodPhoto[] }>(`/housekeeping/tasks/${task.id}/photos`, fallback);
+  const photos = data?.data ?? [];
+
+  return (
+    <Modal
+      title={`Cleaning photos · ${unitRef(task.propertyName, task.unitNumber)}`}
+      sub="Proof of delivery — the photos the cleaner attached for this clean."
+      onClose={onClose}
+      footer={<Button size="sm" variant="secondary" onClick={onClose}>Close</Button>}
+    >
+      {loading && photos.length === 0 ? (
+        <div className="text-[13px] text-muted-ink">Loading photos…</div>
+      ) : photos.length === 0 ? (
+        <div className="text-[13px] text-muted-ink">No photos yet. The cleaner adds them from the task before marking it ready.</div>
+      ) : (
+        <div className="grid grid-cols-2 gap-[11px]">
+          {photos.map(p => (
+            <a key={p.id} href={p.url || undefined} target="_blank" rel="noreferrer"
+              className="flex flex-col gap-[5px] no-underline text-ink">
+              <div className="aspect-square rounded-control overflow-hidden bg-muted border border-solid border-line grid place-items-center">
+                {p.url ? (
+                  <img src={p.url} alt={p.fileName} className="w-full h-full object-cover"
+                    onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; (e.currentTarget.parentElement!.querySelector('[data-ph]') as HTMLElement).style.display = 'flex'; }} />
+                ) : null}
+                <span data-ph className="w-full h-full flex-col items-center justify-center gap-1.5 text-muted-ink" style={{ display: p.url ? 'none' : 'flex' }}>
+                  <Icon name="Image" size="lg" color="var(--color-faint)" />
+                  <span className="text-[11px]">Photo</span>
+                </span>
+              </div>
+              <span className="text-[11.5px] text-muted-ink truncate">
+                {p.uploader ? `${p.uploader} · ` : ''}{p.capturedAt ? dateTime(p.capturedAt) : p.fileName}
+              </span>
+            </a>
+          ))}
+        </div>
+      )}
+    </Modal>
   );
 }
 
