@@ -133,12 +133,11 @@ export default function PropertiesPage() {
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       {loading && units.length === 0 ? <Card><TableSkeleton rows={6} cols={3} /></Card> : (
-        <div className="grid grid-cols-[minmax(280px,340px)_1fr] gap-5 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,340px)_1fr] gap-5 items-start">
           {/* LEFT: building / unit tree */}
           <Card>
             <div className="py-[13px] px-4 [border-bottom:1px_solid_var(--color-line)] flex items-center justify-between">
               <span className="text-[12.5px] font-semibold text-muted-ink">{totalUnits} units · {buildings.length} buildings</span>
-              <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button>
             </div>
             <div className="max-h-[68vh] overflow-y-auto">
               {Object.entries(byState).map(([state, list]) => (
@@ -346,16 +345,16 @@ function MonthlyExpenses({ u, onChange }: { u: Unit; onChange: (p: Partial<Unit>
   }
   return (
     <div>
-      <div className="flex justify-between items-center mb-3">
+      <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
         <SectionHead noMargin>Monthly expenses</SectionHead>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={generateReport}>Generate report</Button>
           <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={add}>Add expense</Button>
         </div>
       </div>
       <div className="border border-solid border-line rounded-card overflow-hidden">
         {u.expenses.map(e => (
-          <div key={e.id} className="grid grid-cols-[1fr_160px] gap-3 items-center py-[10px] px-[14px] [border-bottom:1px_solid_var(--color-line-soft)]">
+          <div key={e.id} className="grid grid-cols-[1fr_120px] sm:grid-cols-[1fr_160px] gap-3 items-center py-[10px] px-[14px] [border-bottom:1px_solid_var(--color-line-soft)]">
             <input value={e.category} onChange={ev => onChange({ expenses: u.expenses.map(x => x.id === e.id ? { ...x, category: ev.target.value } : x) })} className="field-input h-[38px]!" />
             <div className="flex items-center gap-1.5">
               <span className="text-[12px] text-muted-ink">RM</span>
@@ -419,11 +418,11 @@ function SectionHead({ children, noMargin }: { children: ReactNode; noMargin?: b
   return <div className={cx('text-[11px] font-bold tracking-[0.08em] text-muted-ink', noMargin ? 'm-0' : 'mt-1 mb-[14px]')}>{String(children).toUpperCase()}</div>;
 }
 function Grid3({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4 mb-[22px]">{children}</div>;
+  return <div className="grid grid-cols-1 sm:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4 mb-[22px]">{children}</div>;
 }
 function Labeled({ label, hint, help, span2, children }: { label: string; hint: string; help?: string; span2?: boolean; children: ReactNode }) {
   return (
-    <div className={cx('flex flex-col gap-1.5', span2 && '[grid-column:span_2]')}>
+    <div className={cx('flex flex-col gap-1.5', span2 && 'sm:[grid-column:span_2]')}>
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-[12px] font-medium text-muted-ink">{label}</span>
         <span className="text-[9px] font-bold tracking-[0.08em] text-faint">{hint}</span>
