@@ -36,6 +36,7 @@ export const NAV: NavGroup[] = [
   { label: 'PROCUREMENT', items: [
     { key: 'procurement', label: 'Products and maintenance', icon: 'package', path: '/procurement/products', designed: true },
     { key: 'suppliers', label: 'Suppliers', icon: 'truck', path: '/procurement/suppliers', designed: true },
+    { key: 'productModels', label: 'Product models', icon: 'boxes', path: '/procurement/product-models', designed: true },
   ] },
   { label: 'FINANCE', items: [
     { key: 'finance', label: 'Finance', icon: 'wallet', badge: '2', children: [
