@@ -10,7 +10,7 @@ import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
-import { date, time, masked } from '../lib/format';
+import { date, timeWithZone, masked } from '../lib/format';
 import { INTEGRATION } from '../lib/vocabulary';
 import type { IntegrationState, Tone } from '../lib/types';
 
@@ -71,17 +71,17 @@ const FALLBACK: Payload = {
 function noteFor(row: Row): string {
   const label = PROVIDER_LABEL[row.provider] ?? row.provider;
   switch (row.state) {
-    case 'connected': return row.lastSyncedAt ? `Synced with ${label} · ${time(row.lastSyncedAt)} MYT` : `Synced with ${label}.`;
+    case 'connected': return row.lastSyncedAt ? `Synced with ${label} · ${timeWithZone(row.lastSyncedAt)}` : `Synced with ${label}.`;
     case 'expired':   return `${label} connection expired. Reconnect to resume syncing.`;
     case 'degraded':  return `${label} is syncing slowly. Some bookings may be delayed.`;
-    case 'failed':    return row.lastSyncedAt ? `${label} sync failed at ${time(row.lastSyncedAt)} MYT.` : `${label} sync failed.`;
+    case 'failed':    return row.lastSyncedAt ? `${label} sync failed at ${timeWithZone(row.lastSyncedAt)}.` : `${label} sync failed.`;
     case 'manual':    return 'Readings are entered by hand each month. No automatic sync.';
   }
 }
 
 function syncedLine(row: Row): string {
   if (row.state === 'manual') return row.lastSyncedAt ? `Last reading ${date(row.lastSyncedAt)}` : 'No readings yet';
-  return row.lastSyncedAt ? `Last synced ${date(row.lastSyncedAt)} · ${time(row.lastSyncedAt)} MYT` : 'Never synced';
+  return row.lastSyncedAt ? `Last synced ${date(row.lastSyncedAt)} · ${timeWithZone(row.lastSyncedAt)}` : 'Never synced';
 }
 
 /** Which recovery actions a state offers. Never tease one that cannot work (13.1). */
@@ -212,7 +212,7 @@ export default function IntegrationsPage() {
           title: `Reconnect ${PROVIDER_LABEL[reconnectRow.provider] ?? reconnectRow.provider}?`,
           body: 'This starts a fresh authorisation and issues a new API key. Syncing resumes from the last successful pull, so no bookings are missed.',
           meta: reconnectRow.lastSyncedAt
-            ? `Last successful pull ${date(reconnectRow.lastSyncedAt)} · ${time(reconnectRow.lastSyncedAt)} MYT`
+            ? `Last successful pull ${date(reconnectRow.lastSyncedAt)} · ${timeWithZone(reconnectRow.lastSyncedAt)}`
             : 'This channel has no earlier successful pull.',
           confirmLabel: 'Reconnect',
           busyLabel: 'Reconnecting…',

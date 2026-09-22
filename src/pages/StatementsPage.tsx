@@ -10,7 +10,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api, ApiFailure } from '../lib/api';
-import { rm, date as fmtDate, time as fmtTime, todayMyt } from '../lib/format';
+import { rm, date as fmtDate, time as fmtTime, todayMyt, monthLabel } from '../lib/format';
 import { STATEMENT } from '../lib/vocabulary';
 import { TONE } from '../lib/design-tokens';
 import type { StatementState } from '../lib/types';
@@ -46,10 +46,7 @@ const shiftMonth = (p: string, by: number) => {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 };
 
-function periodLabel(p: string) {
-  const [y, m] = p.split('-').map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' });
-}
+const periodLabel = (p: string) => monthLabel(p);
 
 const SELECT_REASON: Record<StatementState, string> = {
   provisional: 'Cannot send. This statement is still provisional.',

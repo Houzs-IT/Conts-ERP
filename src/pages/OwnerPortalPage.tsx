@@ -3,7 +3,7 @@ import { color } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
 import { api, downloadFile } from '../lib/api';
-import { rm, rmDeduction, date, percent, rating } from '../lib/format';
+import { rm, rmDeduction, date, percent, rating, monthLabel } from '../lib/format';
 import { TASK, PAYOUT } from '../lib/vocabulary';
 import type { TaskState, PayoutState } from '../lib/types';
 import { Badge } from '../components/Badge';
@@ -106,15 +106,6 @@ const DOCS: { data: OwnerDoc[] } = {
   ],
 };
 
-const monthYear = (period: string) => {
-  const [y, m] = period.split('-').map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' });
-};
-const monthShort = (period: string) => {
-  const [y, m] = period.split('-').map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString('en-MY', { month: 'short' });
-};
-
 const DOC_ICON: Record<OwnerDoc['type'], string> = {
   statement: 'FileText', contract: 'FileSignature', invoice: 'ReceiptText', report: 'FileBarChart',
 };
@@ -176,9 +167,9 @@ export default function OwnerPortalPage() {
     : st.payout.scheduledFor ? `Scheduled for ${date(st.payout.scheduledFor)}` : null;
 
   const statsCards = [
-    { label: 'Occupancy', value: percent(st.stats.occupancy), note: monthYear(st.period) },
-    { label: 'Average nightly rate', value: st.stats.adr ? rm(st.stats.adr, { cents: false }) : '—', note: monthYear(st.period) },
-    { label: 'Bookings', value: String(st.stats.bookings), note: monthYear(st.period) },
+    { label: 'Occupancy', value: percent(st.stats.occupancy), note: monthLabel(st.period) },
+    { label: 'Average nightly rate', value: st.stats.adr ? rm(st.stats.adr, { cents: false }) : '—', note: monthLabel(st.period) },
+    { label: 'Bookings', value: String(st.stats.bookings), note: monthLabel(st.period) },
     { label: 'Guest rating', value: st.stats.rating != null ? rating(st.stats.rating) : '—', note: `${st.stats.reviews} reviews, last 12 months` },
   ];
 
@@ -201,7 +192,7 @@ export default function OwnerPortalPage() {
       {/* Statement summary — the gross → fees → expenses → net chain */}
       <section className="bg-black text-white rounded-card p-7 flex justify-between gap-7 flex-wrap">
         <div className="flex flex-col gap-[9px] min-w-[220px]">
-          <span className="text-[12px] text-[var(--color-text-on-dark-muted)]">Net payout · {monthYear(st.period)}</span>
+          <span className="text-[12px] text-[var(--color-text-on-dark-muted)]">Net payout · {monthLabel(st.period)}</span>
           <span className="text-[40px] leading-[1.1] font-semibold tracking-[-0.02em] text-gold">{rm(st.payout.amount)}</span>
           <div className="flex items-center gap-[9px] flex-wrap">
             <Badge label={PAYOUT[st.payout.state].label} tone={PAYOUT[st.payout.state].tone} size="sm" />
@@ -351,7 +342,7 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
   const area = `${line} L${x(points.length - 1).toFixed(1)},${baseY} L${x(0).toFixed(1)},${baseY} Z`;
   const last = points[points.length - 1];
   const lastX = x(points.length - 1), lastY = y(last.netPayout);
-  const desc = points.map(p => `${monthShort(p.period)} ${rm(p.netPayout)}`).join(', ');
+  const desc = points.map(p => `${monthLabel(p.period)} ${rm(p.netPayout)}`).join(', ');
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" className="block mt-[6px] h-auto" role="img" aria-label={`Net payout by month: ${desc}`}>
@@ -367,7 +358,7 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
       <circle cx={lastX} cy={lastY} r="4.5" fill={color.gold} stroke="#FFFFFF" strokeWidth="2" />
       <text x={lastX} y={Math.max(14, lastY - 12)} textAnchor="end" fontSize="12" fontWeight="600" fill={color.goldInk}>{rm(last.netPayout, { cents: false })}</text>
       {points.map((p, i) => (
-        <text key={p.period} x={x(i)} y={H - 12} textAnchor="middle" fontSize="11" fill={color.textMuted}>{monthShort(p.period)}</text>
+        <text key={p.period} x={x(i)} y={H - 12} textAnchor="middle" fontSize="11" fill={color.textMuted}>{monthLabel(p.period)}</text>
       ))}
     </svg>
   );

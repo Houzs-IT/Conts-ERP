@@ -6,7 +6,7 @@ import PageHeader from '../components/PageHeader';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import ChannelMark, { channelLabel } from '../components/ChannelMark';
 import { useApi } from '../lib/useApi';
-import { rm } from '../lib/format';
+import { rm, monthLabel } from '../lib/format';
 import type { BookingChannel, Tone } from '../lib/types';
 
 /* -----------------------------------------------------------------------------
@@ -186,7 +186,6 @@ const RANGE_SUB: Record<Range, string> = {
 };
 
 const ARROW: Record<'up' | 'down' | 'flat', string> = { up: '↑', down: '↓', flat: '→' };
-const monthLabel = (period: string) => new Date(period + '-01').toLocaleDateString('en-MY', { month: 'short' });
 const deltaText = (d: Delta) => `${ARROW[d.direction]} ${d.value.toFixed(1)}${d.unit === 'points' ? ' pts' : '%'}`;
 
 /* ------------------------------------------------------------------- page -- */

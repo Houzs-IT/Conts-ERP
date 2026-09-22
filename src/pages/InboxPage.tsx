@@ -9,6 +9,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
+import { relative, time } from '../lib/format';
 import type { BookingChannel } from '../lib/types';
 
 /** A single message in a thread. `status` only ever exists on an outbound message
@@ -47,37 +48,37 @@ const FALLBACK: Payload = {
     {
       id: 't1', guestName: 'Priya Sundaram', subject: 'Early check-in request',
       unitNumber: '#15-06', propertyName: 'Scarletz KLCC', channel: 'booking_com',
-      isRead: false, lastMessageAt: '13:45', preview: 'Hi, our flight lands at noon…',
+      isRead: false, lastMessageAt: '2026-09-22T13:45', preview: 'Hi, our flight lands at noon…',
       messages: [
-        { id: 'm1a', direction: 'inbound', body: 'Hi, our flight lands at noon. Would a 14:00 check-in be possible?', sentAt: '13:45', isAutomated: false },
+        { id: 'm1a', direction: 'inbound', body: 'Hi, our flight lands at noon. Would a 14:00 check-in be possible?', sentAt: '2026-09-22T13:45', isAutomated: false },
       ],
     },
     {
       id: 't2', guestName: 'Aaron Lee', subject: 'Parking access',
       unitNumber: '#B-08-11', propertyName: 'Arcoris Mont Kiara', channel: 'direct',
-      isRead: false, lastMessageAt: '11:20', preview: 'Is there a parking bay included?',
+      isRead: false, lastMessageAt: '2026-09-22T11:20', preview: 'Is there a parking bay included?',
       messages: [
-        { id: 'm2a', direction: 'inbound', body: 'Hi there, is there a parking bay included with the unit?', sentAt: '11:18', isAutomated: false },
-        { id: 'm2b', direction: 'outbound', body: 'Good morning Aaron. Yes, bay B2-114 is reserved for your stay. I will send the access card details on arrival.', sentAt: '11:19', isAutomated: false, status: 'sent' },
-        { id: 'm2c', direction: 'inbound', body: 'Perfect, thank you.', sentAt: '11:20', isAutomated: false },
+        { id: 'm2a', direction: 'inbound', body: 'Hi there, is there a parking bay included with the unit?', sentAt: '2026-09-22T11:18', isAutomated: false },
+        { id: 'm2b', direction: 'outbound', body: 'Good morning Aaron. Yes, bay B2-114 is reserved for your stay. I will send the access card details on arrival.', sentAt: '2026-09-22T11:19', isAutomated: false, status: 'sent' },
+        { id: 'm2c', direction: 'inbound', body: 'Perfect, thank you.', sentAt: '2026-09-22T11:20', isAutomated: false },
       ],
     },
     {
       id: 't3', guestName: 'Nadia Abdullah', subject: 'Check-in details',
       unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', channel: 'airbnb',
-      isRead: true, lastMessageAt: 'Yesterday', preview: 'Received, thank you.',
+      isRead: true, lastMessageAt: '2026-09-21T09:00', preview: 'Received, thank you.',
       messages: [
-        { id: 'm3a', direction: 'outbound', body: 'Hi Nadia, your check-in details and door code are ready. Let me know if you need anything before arrival.', sentAt: 'Yesterday', isAutomated: true, status: 'sent' },
-        { id: 'm3b', direction: 'inbound', body: 'Received, thank you.', sentAt: 'Yesterday', isAutomated: false },
+        { id: 'm3a', direction: 'outbound', body: 'Hi Nadia, your check-in details and door code are ready. Let me know if you need anything before arrival.', sentAt: '2026-09-21T08:58', isAutomated: true, status: 'sent' },
+        { id: 'm3b', direction: 'inbound', body: 'Received, thank you.', sentAt: '2026-09-21T09:00', isAutomated: false },
       ],
     },
     {
       id: 't4', guestName: 'Chen Yu', subject: 'Late checkout',
       unitNumber: '#2207', propertyName: 'The Establishment', channel: 'agoda',
-      isRead: true, lastMessageAt: 'Mon', preview: 'Noted, 13:00 works. Enjoy your stay.',
+      isRead: true, lastMessageAt: '2026-09-15T09:32', preview: 'Noted, 13:00 works. Enjoy your stay.',
       messages: [
-        { id: 'm4a', direction: 'inbound', body: 'Could we check out at 13:00 instead of 11:00?', sentAt: 'Mon', isAutomated: false },
-        { id: 'm4b', direction: 'outbound', body: 'Noted, 13:00 works. Enjoy your stay.', sentAt: 'Mon', isAutomated: false, status: 'sent' },
+        { id: 'm4a', direction: 'inbound', body: 'Could we check out at 13:00 instead of 11:00?', sentAt: '2026-09-15T09:30', isAutomated: false },
+        { id: 'm4b', direction: 'outbound', body: 'Noted, 13:00 works. Enjoy your stay.', sentAt: '2026-09-15T09:32', isAutomated: false, status: 'sent' },
       ],
     },
   ],
@@ -136,7 +137,7 @@ export default function InboxPage() {
     if (!body || !activeId) return;
 
     const id = crypto.randomUUID();
-    const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const now = new Date().toISOString();
     // Show it at once, but explicitly as "sending" — never a sent state yet.
     const optimistic: Message = { id, direction: 'outbound', body, sentAt: now, isAutomated: false, status: 'sending' };
     setSentByThread(s => ({ ...s, [activeId]: [...(s[activeId] ?? []), optimistic] }));
@@ -208,7 +209,7 @@ export default function InboxPage() {
                   <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <span className={cx('text-[13.5px] whitespace-nowrap overflow-hidden text-ellipsis', t.isRead ? 'font-medium' : 'font-semibold')}>{t.guestName ?? 'Unknown guest'}</span>
-                      <span className="text-[11px] text-muted-ink flex-none">{t.lastMessageAt}</span>
+                      <span className="text-[11px] text-muted-ink flex-none">{relative(t.lastMessageAt)}</span>
                     </div>
                     <span className="text-[12px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{t.subject ?? t.preview}</span>
                     <span className="text-[11.5px] text-faint whitespace-nowrap overflow-hidden text-ellipsis">{t.propertyName} {t.unitNumber}</span>
@@ -257,7 +258,7 @@ export default function InboxPage() {
                     </div>
                     <div className="flex items-center gap-[7px]">
                       <span className="text-[11px] text-muted-ink">
-                        {sending ? 'Sending…' : m.sentAt}
+                        {sending ? 'Sending…' : time(m.sentAt)}
                       </span>
                       {m.isAutomated && <Badge tone="neutral" label="Automated" size="sm" />}
                     </div>

@@ -9,7 +9,7 @@ import { useApi } from '../lib/useApi';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
@@ -319,7 +319,7 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
       condition: f.condition, suppliedInHouse: true,
       purchaseCost: f.value.trim() !== '' && !Number.isNaN(valNum) ? Math.round(valNum * 100) : null,
       installedOn: f.installedOn || null,
-      lastChecked: new Date().toISOString().slice(0, 10),
+      lastChecked: todayMyt(),
       replaceBy: f.replaceBy || null,
       notes: f.notes.trim(),
     });

@@ -9,7 +9,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useCrew } from '../lib/useCrew';
 import { api, notifyFailure } from '../lib/api';
-import { rm, time, percent } from '../lib/format';
+import { rm, time, percent, monthLabel } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
@@ -108,9 +108,6 @@ const TREND: Record<Range, TrendPayload> = {
     delta: { value: 12.6, direction: 'up', tone: 'success' },
   },
 };
-
-const monthLabel = (period: string) =>
-  new Date(period + '-01').toLocaleDateString('en-MY', { month: 'short' });
 
 const ARROW: Record<'up' | 'down' | 'flat', string> = { up: '↑', down: '↓', flat: '→' };
 

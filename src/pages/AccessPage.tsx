@@ -9,7 +9,7 @@ import { useApi } from '../lib/useApi';
 import { api, ApiFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { date } from '../lib/format';
+import { date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 
 interface Credential {
@@ -95,7 +95,7 @@ export default function AccessPage() {
     setRevealed(r => ({ ...r, [c.id]: clear }));
     setLocalReveal(m => ({
       ...m,
-      [c.id]: { by: user?.fullName ?? 'You', at: new Date().toISOString().slice(0, 10) },
+      [c.id]: { by: user?.fullName ?? 'You', at: todayMyt() },
     }));
     toast({
       tone: 'neutral',
