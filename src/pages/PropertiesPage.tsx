@@ -8,7 +8,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api, notifyFailure, downloadFile } from '../lib/api';
-import { rm } from '../lib/format';
+import { rm, monthLabel, year, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 
 const STATES = ['Kuala Lumpur', 'Selangor', 'Penang', 'Johor', 'Melaka', 'Perak', 'Negeri Sembilan'];
@@ -18,11 +18,12 @@ const TERMS = ['Long term', 'Short term'];
 const SPLITS = ['Not set', 'Profit share', 'GRR — guaranteed rent'];
 
 interface Expense { id: string; category: string; amount: number; note: string }
+type GuaranteePeriod = 'month' | 'year';
 interface Unit {
-  id: string; buildingId: string;
+  id: string; buildingId: string; parentUnitId: string | null;
   listingName: string; unitCode: string; state: string; address: string;
   ownerName: string; ic: string; bankName: string; bankAccount: string; accountHolder: string;
-  pkg: string; term: string; split: string; splitValue: number | null;
+  pkg: string; term: string; split: string; splitValue: number | null; guaranteePeriod: GuaranteePeriod;
   expenses: Expense[];
   contract: { feePct: number; startedOn: string; renewsOn: string; documents: { id: string; name: string }[] };
 }
@@ -31,9 +32,9 @@ interface Payload { buildings: Building[]; units: Unit[]; generatedAt: string }
 
 const ex = (id: string, category: string, amount: number, note = ''): Expense => ({ id, category, amount, note });
 const mkUnit = (id: string, buildingId: string, listingName: string, unitCode: string, state: string, address: string, owner: Partial<Unit>): Unit => ({
-  id, buildingId, listingName, unitCode, state, address,
+  id, buildingId, parentUnitId: owner.parentUnitId ?? null, listingName, unitCode, state, address,
   ownerName: owner.ownerName ?? '', ic: owner.ic ?? '', bankName: owner.bankName ?? BANKS[1], bankAccount: owner.bankAccount ?? '', accountHolder: owner.accountHolder ?? owner.ownerName ?? '',
-  pkg: owner.pkg ?? 'Package C', term: owner.term ?? 'Long term', split: owner.split ?? 'Not set', splitValue: owner.splitValue ?? null,
+  pkg: owner.pkg ?? 'Package C', term: owner.term ?? 'Long term', split: owner.split ?? 'Not set', splitValue: owner.splitValue ?? null, guaranteePeriod: owner.guaranteePeriod ?? 'month',
   expenses: owner.expenses ?? [ex('e1', 'Internet', 12900), ex('e2', 'Electricity', 18000), ex('e3', 'Water', 4500), ex('e4', 'Cleaning', 35000)],
   contract: owner.contract ?? { feePct: 25, startedOn: '2025-06-01', renewsOn: '2027-06-01', documents: [{ id: 'd1', name: 'Management agreement.pdf' }, { id: 'd2', name: 'Offer letter.pdf' }] },
 });
@@ -49,7 +50,9 @@ const FALLBACK: Payload = {
     { id: 'b6', name: 'Continew', city: 'Cheras, 56000 KL', state: 'Selangor' },
   ],
   units: [
-    mkUnit('u1', 'b1', 'Hikari Grove #400M>TRX #500M>Pavilion #105', 'AGILE-C1313A', 'Kuala Lumpur', 'C-13-13A, Lot 1160, Jalan Bukit Bintang', { ownerName: 'LIANG WOOI KEE', ic: '680606-08-5101', bankName: 'PBBB', bankAccount: '4605371109', accountHolder: 'LIANG WOOI KEE & TAN KA CHENG', pkg: 'Package C' }),
+    mkUnit('u1', 'b1', 'Hikari Grove #400M>TRX #500M>Pavilion #105', 'AGILE-C1313A', 'Kuala Lumpur', 'C-13-13A, Lot 1160, Jalan Bukit Bintang', { ownerName: 'LIANG WOOI KEE', ic: '680606-08-5101', bankName: 'PBBB', bankAccount: '4605371109', accountHolder: 'LIANG WOOI KEE & TAN KA CHENG', pkg: 'Package C', split: 'GRR — guaranteed rent', splitValue: 320000, guaranteePeriod: 'month' }),
+    mkUnit('u1a', 'b1', 'Agile Room A · en-suite', 'AGILE-C1313A-A', 'Kuala Lumpur', 'C-13-13A, Room A', { parentUnitId: 'u1', ownerName: 'LIANG WOOI KEE', ic: '680606-08-5101', bankName: 'PBBB', bankAccount: '4605371109', pkg: 'Package C', split: 'Profit share', splitValue: 70 }),
+    mkUnit('u1b', 'b1', 'Agile Room B', 'AGILE-C1313A-B', 'Kuala Lumpur', 'C-13-13A, Room B', { parentUnitId: 'u1', ownerName: 'LIANG WOOI KEE', ic: '680606-08-5101', bankName: 'PBBB', bankAccount: '4605371109', pkg: 'Package C', split: 'Profit share', splitValue: 70 }),
     mkUnit('u2', 'b1', 'Agile Skyline Suite', 'AGILE-C3713A', 'Kuala Lumpur', 'C-37-13A, Lot 1160, Jalan Bukit Bintang', { ownerName: 'WONG SIEW MING', ic: '710214-14-5220', bankName: 'MBBE', bankAccount: '1512988771', pkg: 'Package A' }),
     mkUnit('u3', 'b2', 'Arte KLCC View 2BR', 'ARTE-MK2-0916', 'Kuala Lumpur', 'MK2-09-16, Jalan Dutamas, Mont Kiara', { ownerName: 'Rajesh Kumar', ic: '650930-10-5333', bankName: 'CIBB', bankAccount: '7024551200', pkg: 'Package B', split: 'GRR — guaranteed rent', splitValue: 350000 }),
     mkUnit('u4', 'b2', 'Arte Garden Studio', 'ARTE-MK2-0915', 'Kuala Lumpur', 'MK2-09-15, Jalan Dutamas, Mont Kiara', { ownerName: 'Chong Wei Han', ic: '730118-08-5019', bankName: 'PBBB', bankAccount: '3388120945' }),
@@ -71,7 +74,7 @@ export default function PropertiesPage() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<'details' | 'expenses' | 'contract'>('details');
-  const [modal, setModal] = useState<null | { kind: 'building' } | { kind: 'unit'; buildingId: string }>(null);
+  const [modal, setModal] = useState<null | { kind: 'building' } | { kind: 'unit'; buildingId: string } | { kind: 'subunit'; buildingId: string; parentUnitId: string; parentLabel: string }>(null);
 
   const buildings = [...addedB, ...(data?.buildings ?? [])];
   const units = useMemo(() => [...addedU, ...(data?.units ?? [])].map(u => ({ ...u, ...edits[u.id] })), [addedU, data, edits]);
@@ -81,7 +84,9 @@ export default function PropertiesPage() {
 
   const byState: Record<string, Building[]> = {};
   buildings.forEach(b => (byState[b.state] ??= []).push(b));
-  const unitsOf = (bid: string) => units.filter(u => u.buildingId === bid);
+  // Top-level units of a building; sub-units hang off their parent and are drawn nested beneath it.
+  const topUnitsOf = (bid: string) => units.filter(u => u.buildingId === bid && !u.parentUnitId);
+  const childrenOf = (uid: string) => units.filter(u => u.parentUnitId === uid);
 
   function patch(id: string, p: Partial<Unit>) { setEdits(e => ({ ...e, [id]: { ...e[id], ...p } })); }
   function save(u: Unit) {
@@ -98,6 +103,15 @@ export default function PropertiesPage() {
     const nu = mkUnit(crypto.randomUUID(), buildingId, '', '', buildings.find(b => b.id === buildingId)?.state ?? STATES[0], '', { ownerName: '' });
     setAddedU(l => [nu, ...l]); setSelectedId(nu.id); setTab('details');
     toast({ tone: 'success', title: 'Unit added.', body: 'Fill in its details on the right.' });
+    api.post('/units', nu).catch(notifyFailure); setModal(null);
+  }
+  function addSubUnit(buildingId: string, parentUnitId: string) {
+    const parent = units.find(u => u.id === parentUnitId);
+    const nu = mkUnit(crypto.randomUUID(), buildingId, '', '', parent?.state ?? buildings.find(b => b.id === buildingId)?.state ?? STATES[0], '', {
+      parentUnitId, ownerName: parent?.ownerName ?? '', ic: parent?.ic, bankName: parent?.bankName, bankAccount: parent?.bankAccount, accountHolder: parent?.accountHolder, split: 'Profit share',
+    });
+    setAddedU(l => [nu, ...l]); setCollapsed(c => ({ ...c, [parentUnitId]: false })); setSelectedId(nu.id); setTab('details');
+    toast({ tone: 'success', title: 'Sub-unit added.', body: 'A room or floor under the unit — fill in its details on the right.' });
     api.post('/units', nu).catch(notifyFailure); setModal(null);
   }
 
@@ -130,10 +144,10 @@ export default function PropertiesPage() {
               {Object.entries(byState).map(([state, list]) => (
                 <div key={state}>
                   <div className="py-[9px] px-4 bg-page [border-bottom:1px_solid_var(--color-line-soft)] text-[10.5px] font-bold tracking-[0.08em] text-muted-ink flex justify-between">
-                    <span>{state.toUpperCase()}</span><span>{list.reduce((s, b) => s + unitsOf(b.id).length, 0)} units</span>
+                    <span>{state.toUpperCase()}</span><span>{list.reduce((s, b) => s + topUnitsOf(b.id).length, 0)} units</span>
                   </div>
                   {list.map(b => {
-                    const us = unitsOf(b.id); const open = !collapsed[b.id];
+                    const us = topUnitsOf(b.id); const open = !collapsed[b.id];
                     return (
                       <div key={b.id}>
                         <div className="flex items-center gap-2 py-[10px] pr-3 pl-[14px] [border-bottom:1px_solid_var(--color-line-soft)]">
@@ -149,15 +163,38 @@ export default function PropertiesPage() {
                         </div>
                         {open && us.map(u => {
                           const on = u.id === selected?.id;
+                          const kids = childrenOf(u.id);
                           return (
-                            <button key={u.id} onClick={() => { setSelectedId(u.id); setTab('details'); }}
-                              className={cx('flex items-center gap-[10px] w-full py-[9px] pr-4 pl-[34px] [border:none] [border-bottom:1px_solid_var(--color-line-soft)]! cursor-pointer [font:inherit] text-left', on ? 'bg-gold-tint shadow-[inset_3px_0_0_var(--color-gold)]' : 'bg-card')}>
-                              <span className="flex-1 min-w-0">
-                                <div className={cx('text-[12.5px] whitespace-nowrap overflow-hidden text-ellipsis', on ? 'font-semibold' : 'font-medium')}>{u.unitCode || 'New unit'}</div>
-                                <div className="text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName || 'No owner yet'}</div>
-                              </span>
-                              <span className="text-[9.5px] font-bold text-gold-ink flex-none">{u.pkg.replace('Package ', 'Pkg ')}</span>
-                            </button>
+                            <div key={u.id}>
+                              <div className={cx('flex items-center gap-1 pr-2 [border-bottom:1px_solid_var(--color-line-soft)]', on ? 'bg-gold-tint shadow-[inset_3px_0_0_var(--color-gold)]' : 'bg-card')}>
+                                <button onClick={() => { setSelectedId(u.id); setTab('details'); }}
+                                  className="flex items-center gap-[10px] flex-1 min-w-0 py-[9px] pr-1 pl-[34px] [border:none] bg-transparent cursor-pointer [font:inherit] text-left">
+                                  <span className="flex-1 min-w-0">
+                                    <div className={cx('text-[12.5px] whitespace-nowrap overflow-hidden text-ellipsis', on ? 'font-semibold' : 'font-medium')}>{u.unitCode || 'New unit'}</div>
+                                    <div className="text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName || 'No owner yet'}{kids.length ? ` · ${kids.length} sub-unit${kids.length > 1 ? 's' : ''}` : ''}</div>
+                                  </span>
+                                  <span className="text-[9.5px] font-bold text-gold-ink flex-none">{u.pkg.replace('Package ', 'Pkg ')}</span>
+                                </button>
+                                <button onClick={() => setModal({ kind: 'subunit', buildingId: b.id, parentUnitId: u.id, parentLabel: u.unitCode || 'this unit' })} aria-label="Add sub-unit"
+                                  className="w-[24px] h-[24px] flex-none grid place-items-center rounded-control border border-solid border-line bg-card cursor-pointer text-muted-ink"><Icon name="Plus" size="sm" /></button>
+                              </div>
+                              {kids.map(su => {
+                                const son = su.id === selected?.id;
+                                return (
+                                  <button key={su.id} onClick={() => { setSelectedId(su.id); setTab('details'); }}
+                                    className={cx('flex items-center gap-[10px] w-full py-[8px] pr-4 pl-[54px] [border:none] [border-bottom:1px_solid_var(--color-line-soft)]! cursor-pointer [font:inherit] text-left', son ? 'bg-gold-tint shadow-[inset_3px_0_0_var(--color-gold)]' : 'bg-card')}>
+                                    <span className="flex-1 min-w-0">
+                                      <div className={cx('flex items-center gap-1.5 text-[12px] whitespace-nowrap overflow-hidden text-ellipsis', son ? 'font-semibold' : 'font-medium')}>
+                                        <span className="overflow-hidden text-ellipsis">{su.unitCode || 'New sub-unit'}</span>
+                                        <span className="text-[8.5px] font-bold tracking-[0.06em] text-gold-ink flex-none">SUB</span>
+                                      </div>
+                                      <div className="text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{su.listingName || 'Room / floor'}</div>
+                                    </span>
+                                    <span className="text-[9.5px] font-bold text-muted-ink flex-none">{su.split === 'Not set' ? '' : su.split.split(' ')[0]}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           );
                         })}
                       </div>
@@ -178,6 +215,7 @@ export default function PropertiesPage() {
 
       {modal?.kind === 'building' && <AddBuildingModal onClose={() => setModal(null)} onSubmit={addBuilding} />}
       {modal?.kind === 'unit' && <ConfirmAddUnit building={buildings.find(b => b.id === modal.buildingId)?.name ?? ''} onClose={() => setModal(null)} onConfirm={() => addUnit(modal.buildingId)} />}
+      {modal?.kind === 'subunit' && <ConfirmAddSubUnit parentLabel={modal.parentLabel} onClose={() => setModal(null)} onConfirm={() => addSubUnit(modal.buildingId, modal.parentUnitId)} />}
     </>
   );
 }
@@ -195,6 +233,7 @@ function UnitForm({ u, buildings, onChange, onSave, tab, setTab }: {
             <div className="text-[11px] font-bold tracking-[0.06em] text-muted-ink">{buildingName.toUpperCase()} · {u.state}</div>
             <h2 className="mt-1 mb-0 text-[20px] font-semibold tracking-[-0.01em]">{u.listingName || 'New unit'}</h2>
             <div className="flex gap-[7px] mt-[9px] flex-wrap">
+              {u.parentUnitId && <Badge tone="warning" label="Sub-unit" />}
               <Badge tone="neutral" label={u.pkg} />
               <Badge tone="info" label={u.term} />
               <Badge tone={u.split === 'Not set' ? 'neutral' : 'success'} label={u.split === 'Not set' ? 'Split not set' : u.split.split(' ')[0]} />
@@ -244,16 +283,54 @@ function UnitForm({ u, buildings, onChange, onSave, tab, setTab }: {
             <Labeled label="Package" hint="DROPDOWN"><Select value={u.pkg} onChange={v => onChange({ pkg: v })} options={PACKAGES.map(p => ({ value: p, label: p }))} /></Labeled>
             <Labeled label="Rental term" hint="DROPDOWN"><Select value={u.term} onChange={v => onChange({ term: v })} options={TERMS.map(t => ({ value: t, label: t }))} /></Labeled>
             <Labeled label="Split / GRR" hint="DROPDOWN"><Select value={u.split} onChange={v => onChange({ split: v })} options={SPLITS.map(s => ({ value: s, label: s }))} /></Labeled>
-            {u.split.startsWith('GRR') && (
-              <Labeled label="Guaranteed rent (RM / month)" hint="AMOUNT"><Field label="" type="number" numeric value={u.splitValue != null ? String(Math.round(u.splitValue / 100)) : ''} onChange={e => onChange({ splitValue: e.target.value ? Math.round(Number(e.target.value) * 100) : null })} /></Labeled>
-            )}
           </Grid3>
+          {u.split.startsWith('GRR') && <GuaranteedRent u={u} onChange={onChange} />}
         </>}
 
         {tab === 'expenses' && <MonthlyExpenses u={u} onChange={onChange} />}
         {tab === 'contract' && <ContractTab u={u} onChange={onChange} />}
       </div>
     </Card>
+  );
+}
+
+/** Guaranteed rent shown per month AND per year — the two always reconcile (annual = monthly × 12).
+ *  split_value is stored canonically as sen-per-month; guaranteePeriod only records which figure the operator typed,
+ *  so an annual contract re-opens in annual and its statement still folds back to a monthly deduction. */
+function GuaranteedRent({ u, onChange }: { u: Unit; onChange: (p: Partial<Unit>) => void }) {
+  const monthlySen = u.splitValue; // canonical: sen per month, or null when unset
+  const period = u.guaranteePeriod;
+  const today = todayMyt();
+  const shown = monthlySen == null ? '' : String(Math.round((period === 'year' ? monthlySen * 12 : monthlySen) / 100));
+  const setAmount = (v: string) => {
+    if (!v) return onChange({ splitValue: null });
+    const rmv = Number(v);
+    if (!Number.isFinite(rmv)) return onChange({ splitValue: null });
+    onChange({ splitValue: period === 'year' ? Math.round((rmv * 100) / 12) : Math.round(rmv * 100) });
+  };
+  const annualSen = monthlySen == null ? null : monthlySen * 12;
+  return (
+    <div className="max-w-[440px] mt-1 mb-[22px]">
+      <div className="flex items-baseline justify-between gap-2 mb-1.5">
+        <span className="text-[12px] font-medium text-muted-ink">Guaranteed rent</span>
+        <span className="text-[9px] font-bold tracking-[0.08em] text-faint">AMOUNT + PERIOD</span>
+      </div>
+      <div className="flex gap-2">
+        <div className="flex-1"><Field label="" type="number" numeric value={shown} onChange={e => setAmount(e.target.value)} /></div>
+        <div className="w-[132px]"><Select value={period} onChange={v => onChange({ guaranteePeriod: v as GuaranteePeriod })} options={[{ value: 'month', label: 'per month' }, { value: 'year', label: 'per year' }]} /></div>
+      </div>
+      {monthlySen != null ? (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2 text-[12px]">
+          <span className="tabular-nums font-semibold text-ink">{rm(monthlySen, { cents: false })}</span>
+          <span className="text-muted-ink">· {monthLabel(today)} per month</span>
+          <span className="text-faint">—</span>
+          <span className="tabular-nums font-semibold text-gold-ink">{rm(annualSen!, { cents: false })}</span>
+          <span className="text-muted-ink">· {year(today)} per year</span>
+        </div>
+      ) : (
+        <p className="text-[12px] text-muted-ink mt-2">Enter the guarantee; the statement folds an annual figure back to a monthly deduction.</p>
+      )}
+    </div>
   );
 }
 
@@ -391,6 +468,14 @@ function ConfirmAddUnit({ building, onClose, onConfirm }: { building: string; on
     <CentreModal title={`Add a unit to ${building}`} sub="A blank unit will open on the right for you to fill in." onClose={onClose}
       footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" onClick={onConfirm}>Add unit</Button></>}>
       <p className="m-0 text-[13px] text-muted-ink">You will set the listing name, code, owner, package and GRR on the unit form.</p>
+    </CentreModal>
+  );
+}
+function ConfirmAddSubUnit({ parentLabel, onClose, onConfirm }: { parentLabel: string; onClose: () => void; onConfirm: () => void }) {
+  return (
+    <CentreModal title={`Add a sub-unit under ${parentLabel}`} sub="A room or floor let separately inside this unit." onClose={onClose}
+      footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" onClick={onConfirm}>Add sub-unit</Button></>}>
+      <p className="m-0 text-[13px] text-muted-ink">The sub-unit inherits the owner and bank details of its parent. You can give it its own code, revenue split and expenses.</p>
     </CentreModal>
   );
 }

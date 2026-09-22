@@ -25,10 +25,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const mine = isFieldRole(session.role);
   const when = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const rows = await all<any>(env, `
-    SELECT t.id, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.next_guest_at, t.requires_photo, t.assignee_id,
+    SELECT t.id, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.next_guest_at, t.requires_photo, t.assignee_id, t.cleaner_id,
            t.started_at, t.completed_at,
            u.unit_number, u.readiness, u.bedrooms, p.id AS property_id, p.name AS property_name,
-           COALESCE(a.full_name, '') AS assignee_name,
+           COALESCE(cl.full_name, a.full_name, '') AS assignee_name,
+           cl.employment_type AS employment_type,
            COALESCE(r.external_ref, 'Manual') AS source_ref,
            r.check_out AS checkout_date, r.check_out_time AS checkout_time,
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind = 'photo') AS photo_count
@@ -36,6 +37,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     JOIN units u ON u.id = t.unit_id
     JOIN properties p ON p.id = u.property_id
     LEFT JOIN users a ON a.id = t.assignee_id
+    LEFT JOIN cleaners cl ON cl.id = t.cleaner_id
     LEFT JOIN reservations r ON r.id = t.reservation_id
     WHERE t.kind IN ('turnover','deep_clean','light_clean')
       AND ((${when} BETWEEN ? AND ?) OR (? = ? AND ${when} < ? AND t.state != 'resolved'))
@@ -53,7 +55,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       checkoutTime: r.checkout_time ?? null, checkoutDate: r.checkout_date ?? null,
       // Full ISO start/end so the client can show how long the clean took.
       startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,
-      assigneeId: r.assignee_id, assigneeName: r.assignee_name || null,
+      assigneeId: r.assignee_id, cleanerId: r.cleaner_id ?? null, assigneeName: r.assignee_name || null,
+      employmentType: r.employment_type ?? null,
       sequence: i + 1, state: r.state, readiness: r.readiness,
       requiresPhoto: !!r.requires_photo, photoCount: Number(r.photo_count),
     })),
@@ -86,8 +89,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (isHhmm(b?.scheduledFor) && isHhmm(b?.dueAt) && b.dueAt <= b.scheduledFor) return fail('VALIDATION', 'The end must be after the start.', 422, { dueAt: 'Pick a later end time.' });
   if (b?.nextGuestAt != null && !isHhmm(b.nextGuestAt)) return fail('VALIDATION', 'Enter the next-guest time as HH:MM.', 422, { nextGuestAt: 'Use HH:MM.' });
 
+  // Assignment: prefer a roster cleanerId; assignee_id is set to the cleaner's login
+  // (internal staff) and left null for an outsourced crew. assigneeId stays accepted
+  // as the legacy users-based path.
   let assigneeId: string | null = null;
-  if (typeof b?.assigneeId === 'string' && b.assigneeId.trim()) {
+  let cleanerId: string | null = null;
+  if (typeof b?.cleanerId === 'string' && b.cleanerId.trim()) {
+    const c = await one<{ id: string; user_id: string | null }>(env, 'SELECT id, user_id FROM cleaners WHERE id = ? AND is_active = 1', b.cleanerId.trim());
+    if (!c) return fail('NOT_FOUND', 'That cleaner is not on the active roster.', 404, { cleanerId: 'Pick a cleaner from the roster.' });
+    cleanerId = c.id; assigneeId = c.user_id;
+  } else if (typeof b?.assigneeId === 'string' && b.assigneeId.trim()) {
     const person = await one<{ id: string }>(env, 'SELECT id FROM users WHERE id = ? AND is_active = 1', b.assigneeId.trim());
     if (!person) return fail('NOT_FOUND', 'That person is no longer active.', 404, { assigneeId: 'Pick an active cleaner.' });
     assigneeId = person.id;
@@ -100,10 +111,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   await run(env, `
     INSERT INTO tasks
-      (id, unit_id, reservation_id, kind, state, title, instructions, assignee_id,
+      (id, unit_id, reservation_id, kind, state, title, instructions, assignee_id, cleaner_id,
        scheduled_for, due_at, next_guest_at, requires_photo, created_at, updated_at)
-    VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    id, unit.id, kind, assigneeId ? 'assigned' : 'open', title, instructions, assigneeId,
+    VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    id, unit.id, kind, cleanerId ? 'assigned' : 'open', title, instructions, assigneeId, cleanerId,
     isHhmm(b?.scheduledFor) ? at(b.scheduledFor) : null,
     isHhmm(b?.dueAt) ? at(b.dueAt) : null,
     isHhmm(b?.nextGuestAt) ? at(b.nextGuestAt) : null,
@@ -111,7 +122,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.create',
-    entityTable: 'tasks', entityId: id, after: { unitId: unit.id, kind, title, assigneeId }, source: b?.source ?? 'web',
+    entityTable: 'tasks', entityId: id, after: { unitId: unit.id, kind, title, assigneeId, cleanerId }, source: b?.source ?? 'web',
   });
   return json({ id }, 201);
 };

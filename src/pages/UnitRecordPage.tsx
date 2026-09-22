@@ -29,6 +29,9 @@ const COND_TONE: Record<string, Tone> = {
 };
 const cap = (s: string) => s.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 
+/** The unit lifecycle states an operator can set by hand, in the order they read on the record. */
+const READINESS_OPTIONS: UnitReadiness[] = ['ready', 'occupied', 'cleaning', 'dirty', 'inspection', 'maintenance', 'blocked'];
+
 /** The P&L on the record is the last CLOSED month; performance stats are the current month to date. */
 const pnlMonth = (period: string) => {
   const [y, m] = period.split('-').map(Number);
@@ -139,6 +142,8 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
   const [view, setView] = useState<'list' | 'grid'>('list');
   const [photo, setPhoto] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  // Manual unit-state moves, applied optimistically and kept per unit so switching units never leaks a state.
+  const [readinessEdits, setReadinessEdits] = useState<Record<string, UnitReadiness>>({});
   const fileRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
 
@@ -160,6 +165,15 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
   const buildingCount = new Set(units.map(x => x.propertyName)).size;
   const selectedId = units.length ? (units.some(x => x.id === openId) ? openId : units[0].id) : '';
   const openIssues = d.maintenance.filter(m => m.state !== 'resolved').length;
+
+  // The unit's current state, with any unsaved manual move applied over the server value.
+  const curReadiness = readinessEdits[u.id] ?? u.readiness;
+  function changeReadiness(next: UnitReadiness) {
+    if (next === curReadiness) return;
+    setReadinessEdits(m => ({ ...m, [u.id]: next }));
+    toast({ tone: 'success', title: 'Unit state updated.', body: `${u.propertyName} ${u.unitNumber} is now ${cap(next)}.` });
+    api.patch(`/units/${u.id}/readiness`, { readiness: next }).catch(notifyFailure);
+  }
 
   // Financial sections are absent from the payload for roles without access,
   // so the tab and the P&L card disappear rather than showing an empty shell.
@@ -194,7 +208,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
           <span className="text-[13.5px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{un.unitNumber}</span>
           <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{un.propertyName} · {un.area}</span>
         </span>
-        <Badge tone={READY_TONE[un.readiness]} label={cap(un.readiness)} size="sm" />
+        <Badge tone={READY_TONE[readinessEdits[un.id] ?? un.readiness]} label={cap(readinessEdits[un.id] ?? un.readiness)} size="sm" />
       </a>
     );
   };
@@ -211,7 +225,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
       <span className="flex flex-col gap-[5px] py-3 px-[14px]">
         <span className="flex items-center justify-between gap-2">
           <span className="text-[13.5px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{un.unitNumber}</span>
-          <Badge tone={READY_TONE[un.readiness]} label={cap(un.readiness)} size="sm" />
+          <Badge tone={READY_TONE[readinessEdits[un.id] ?? un.readiness]} label={cap(readinessEdits[un.id] ?? un.readiness)} size="sm" />
         </span>
         <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{un.propertyName} · {un.area}</span>
       </span>
@@ -253,7 +267,19 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
             </h1>
             <span className="text-[13px] text-muted-ink">{u.addressLine}, {u.city}</span>
             <div className="flex items-center gap-3 flex-wrap">
-              <Badge tone={READY_TONE[u.readiness]} label={cap(u.readiness)} />
+              <label className="inline-flex items-center gap-2" title="Change the unit state">
+                <Badge tone={READY_TONE[curReadiness]} label={cap(curReadiness)} />
+                <span className="relative inline-flex items-center">
+                  <select
+                    aria-label="Change unit state"
+                    value={curReadiness}
+                    onChange={e => changeReadiness(e.target.value as UnitReadiness)}
+                    className="h-[30px] appearance-none pl-[10px] pr-[26px] text-[12px] font-medium text-ink bg-card border border-solid border-line rounded-control cursor-pointer outline-none">
+                    {READINESS_OPTIONS.map(r => <option key={r} value={r}>{cap(r)}</option>)}
+                  </select>
+                  <span className="pointer-events-none absolute right-[8px] text-muted-ink flex"><Icon name="ChevronDown" size="sm" /></span>
+                </span>
+              </label>
               <span className="text-[13px] text-muted-ink">{u.channels.map(c => CH[c].label).join(' · ')}</span>
               {!u.isListed && <Badge tone="neutral" label="Not listed" />}
             </div>

@@ -9,9 +9,16 @@ import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
-import { rm, dateShort, todayMyt } from '../lib/format';
+import { rm, dateShort, time, todayMyt } from '../lib/format';
 import { TASK } from '../lib/vocabulary';
 import type { TaskState } from '../lib/types';
+import { useSession } from '../lib/session';
+import {
+  CatalogPanel, ExchangeModal, SKU_FALLBACK, durationLabel,
+  type Sku, type SkuPayload, type CatalogInput,
+} from './MaintenanceCatalog';
+
+const SKU_WRITE_ROLES = ['management', 'operations_manager', 'operations_staff'];
 
 // Charge-to is a closed set — the owner statement, a guest's deposit, our own
 // pocket, or a warranty claim. Never invent a fifth.
@@ -30,6 +37,8 @@ interface Issue {
   state: TaskState; vendorName: string | null; quotedAmount: number | null; finalAmount: number | null;
   ownerApprovalRequired: boolean; blocksUnit: boolean; reportedAt: string; chargeTo: ChargeTo;
   assigneeName?: string | null; photoCount?: number; documentCount?: number; ownerApprovedAt?: string | null;
+  skuId?: string | null; skuCode?: string | null; skuName?: string | null;
+  startedAt?: string | null; endedAt?: string | null;
 }
 interface Payload { data: Issue[]; generatedAt: string }
 
@@ -59,9 +68,22 @@ const toSen = (s: string): number | null => {
 };
 
 export default function MaintenancePage() {
+  const [tab, setTab] = useState<'jobs' | 'catalog'>('jobs');
   const [filter, setFilter] = useState('All');
   const { data, loading, error, reload } = useApi<Payload>('/maintenance/issues', FALLBACK);
   const toast = useToast();
+  const { user } = useSession();
+  const canWriteSku = SKU_WRITE_ROLES.includes(user?.role ?? '');
+
+  // ---- SKU catalog (master data) with the same optimistic overlay as jobs ----
+  const skuQuery = useApi<SkuPayload>('/maintenance/skus', SKU_FALLBACK);
+  const [skuAdded, setSkuAdded] = useState<Sku[]>([]);
+  const [skuEdits, setSkuEdits] = useState<Record<string, Partial<Sku>>>({});
+  const skus = useMemo(
+    () => [...skuAdded, ...(skuQuery.data?.data ?? [])].map(s => ({ ...s, ...skuEdits[s.id] })),
+    [skuAdded, skuQuery.data, skuEdits],
+  );
+  const activeSkus = useMemo(() => skus.filter(s => s.active), [skus]);
 
   // Optimistic overlay: created jobs live in `added`, every edit lands in
   // `edits` keyed by id. There is no backend in dev, so the real call is
@@ -89,7 +111,9 @@ export default function MaintenancePage() {
   const [completeFor, setCompleteFor] = useState<Issue | null>(null);
   const [photoFor, setPhotoFor] = useState<Issue | null>(null);
   const [docFor, setDocFor] = useState<Issue | null>(null);
+  const [exchangeFor, setExchangeFor] = useState<Issue | null>(null);
   const [confirm, setConfirm] = useState<{ kind: 'approval' | 'block' | 'reopen'; issue: Issue } | null>(null);
+  const canExchange = activeSkus.some(s => s.trackStock && s.stockOnHand > 0);
 
   const rows = merged.filter(i =>
     filter === 'All' ? true
@@ -119,6 +143,7 @@ export default function MaintenancePage() {
     fire(api.post('/maintenance/issues', {
       unitId: optimistic.unitNumber, propertyName: optimistic.propertyName, title: optimistic.title, detail: optimistic.detail,
       photoIds: [], blocksUnit: optimistic.blocksUnit, quotedAmount: optimistic.quotedAmount, chargeTo: optimistic.chargeTo,
+      skuId: optimistic.skuId ?? null,
     }));
   }
 
@@ -174,6 +199,61 @@ export default function MaintenancePage() {
     fire(api.patch(`/maintenance/issues/${issue.id}`, { state: 'reopened' }));
   }
 
+  function startWork(issue: Issue) {
+    const startedAt = new Date().toISOString();
+    patch(issue.id, { state: 'in_progress', startedAt, endedAt: null });
+    toast({ tone: 'success', title: 'Work started.', body: `The clock is running on ${issue.title}.` });
+    fire(api.post(`/maintenance/issues/${issue.id}/start`, {}));
+  }
+
+  function endWork(issue: Issue) {
+    const endedAt = new Date().toISOString();
+    const started = edits[issue.id]?.startedAt ?? issue.startedAt;
+    patch(issue.id, { endedAt });
+    const dur = durationLabel(started, endedAt);
+    toast({ tone: 'success', title: 'Work ended.', body: dur ? `Took ${dur}. Mark it complete to raise the expense.` : 'Mark it complete to raise the expense.' });
+    fire(api.post(`/maintenance/issues/${issue.id}/end`, {}));
+  }
+
+  // ---- SKU catalog actions -------------------------------------------------
+
+  function createSku(input: CatalogInput) {
+    const optimistic: Sku = {
+      id: `SKU-${Math.floor(1000 + Math.random() * 9000)}`, code: input.code, name: input.name,
+      category: input.category, unitLabel: input.unitLabel, defaultPrice: input.defaultPrice,
+      trackStock: input.trackStock, stockOnHand: input.stockOnHand, active: true, notes: input.notes,
+    };
+    setSkuAdded(a => [optimistic, ...a]);
+    toast({ tone: 'success', title: 'Item added.', body: `${input.name} is in the catalog at ${rm(input.defaultPrice)}.` });
+    fire(api.post('/maintenance/skus', input));
+  }
+
+  function updateSku(id: string, delta: Partial<Sku>) {
+    setSkuEdits(e => ({ ...e, [id]: { ...e[id], ...delta } }));
+    toast({ tone: 'success', title: 'Catalog updated.', body: delta.active === false ? 'Item retired.' : delta.active === true ? 'Item restored.' : 'Changes saved.' });
+    const body: Record<string, unknown> = {};
+    if (delta.name !== undefined) body.name = delta.name;
+    if (delta.category !== undefined) body.category = delta.category;
+    if (delta.unitLabel !== undefined) body.unitLabel = delta.unitLabel;
+    if (delta.defaultPrice !== undefined) body.defaultPrice = delta.defaultPrice;
+    if (delta.trackStock !== undefined) body.trackStock = delta.trackStock;
+    if (delta.stockOnHand !== undefined) body.stockOnHand = delta.stockOnHand;
+    if (delta.notes !== undefined) body.notes = delta.notes;
+    if (delta.active !== undefined) body.active = delta.active;
+    fire(api.patch(`/maintenance/skus/${id}`, body));
+  }
+
+  function requestExchange(issue: Issue, sku: Sku, qty: number) {
+    // Optimistically decrement the SKU's stock; the ledger row is the server's job.
+    setSkuEdits(e => {
+      const cur = (e[sku.id]?.stockOnHand ?? sku.stockOnHand) as number;
+      return { ...e, [sku.id]: { ...e[sku.id], stockOnHand: Math.max(0, cur - qty) } };
+    });
+    setExchangeFor(null);
+    toast({ tone: 'success', title: 'Drawn from stock.', body: `${qty} × ${sku.name} taken for ${issue.title}.` });
+    fire(api.post(`/maintenance/issues/${issue.id}/exchange`, { skuId: sku.id, qty }));
+  }
+
   // ---- Confirmation dialog spec -------------------------------------------
 
   const dialogSpec: DialogSpec | null = !confirm ? null
@@ -204,10 +284,32 @@ export default function MaintenancePage() {
     <>
       <PageHeader
         title="Maintenance"
-        sub={`${openCount} open · ${approvalCount} awaiting owner approval · ${blockingCount} blocking a unit`}
-        right={<Button variant="primary" onClick={() => setCreating(true)}>Create job</Button>}
+        sub={tab === 'catalog'
+          ? 'Repair-item catalog and preset selling prices'
+          : `${openCount} open · ${approvalCount} awaiting owner approval · ${blockingCount} blocking a unit`}
+        right={tab === 'jobs' ? <Button variant="primary" onClick={() => setCreating(true)}>Create job</Button> : undefined}
       />
 
+      <div className="flex gap-[7px] flex-wrap">
+        {(['jobs', 'catalog'] as const).map(t => {
+          const on = t === tab;
+          return (
+            <button key={t} onClick={() => setTab(t)}
+              className={cx('h-9 flex items-center px-4 py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border border-solid text-[13px] font-medium',
+                on ? 'border-black bg-black text-white' : 'border-line bg-white text-muted-ink')}>
+              {t === 'jobs' ? 'Jobs' : 'SKU catalog'}
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === 'catalog' ? (
+        <>
+          {skuQuery.error && <StaleBanner message={`Showing the last catalog we have. ${skuQuery.error}`} onRetry={skuQuery.reload} />}
+          <CatalogPanel skus={skus} loading={skuQuery.loading} canWrite={canWriteSku} onCreate={createSku} onUpdate={updateSku} />
+        </>
+      ) : (
+      <>
       {error && <StaleBanner message={`Showing the last issues we have. ${error}`} onRetry={reload} />}
 
       <div className="flex gap-[7px] flex-wrap">
@@ -253,6 +355,10 @@ export default function MaintenancePage() {
                     onDoc={() => setDocFor(i)}
                     onComplete={() => setCompleteFor(i)}
                     onReopen={() => setConfirm({ kind: 'reopen', issue: i })}
+                    onStart={() => startWork(i)}
+                    onEnd={() => endWork(i)}
+                    onExchange={() => setExchangeFor(i)}
+                    canExchange={canExchange}
                   />
                 ))}
               </Card>
@@ -260,14 +366,24 @@ export default function MaintenancePage() {
           ))}
         </div>
       )}
+      </>
+      )}
 
       {/* Confirmations: request approval, block unit, reopen */}
       <Dialog busy={false} onClose={() => setConfirm(null)} spec={dialogSpec} />
 
-      {creating && <CreateJobModal onClose={() => setCreating(false)} onCreate={createJob} />}
+      {creating && <CreateJobModal skus={activeSkus} onClose={() => setCreating(false)} onCreate={createJob} />}
       {assignFor && <AssignModal issue={assignFor} onClose={() => setAssignFor(null)} onAssign={assignTechnician} />}
       {photoFor && <PhotoModal issue={photoFor} onClose={() => setPhotoFor(null)} onAttach={attachPhoto} />}
       {docFor && <DocumentModal issue={docFor} onClose={() => setDocFor(null)} onAttach={attachDocument} />}
+      {exchangeFor && (
+        <ExchangeModal
+          jobLabel={`${exchangeFor.propertyName} ${exchangeFor.unitNumber} · ${exchangeFor.title}`}
+          skus={activeSkus}
+          onClose={() => setExchangeFor(null)}
+          onExchange={(sku, qty) => requestExchange(exchangeFor, sku, qty)}
+        />
+      )}
       {completeFor && (
         <CompleteModal
           issue={{ ...completeFor, photoCount: edits[completeFor.id]?.photoCount ?? completeFor.photoCount ?? 0 }}
@@ -283,11 +399,12 @@ export default function MaintenancePage() {
 // ---- Row -------------------------------------------------------------------
 
 function IssueRow({
-  issue: i, last, onAssign, onRequestApproval, onBlock, onPhoto, onDoc, onComplete, onReopen,
+  issue: i, last, onAssign, onRequestApproval, onBlock, onPhoto, onDoc, onComplete, onReopen, onStart, onEnd, onExchange, canExchange,
 }: {
   issue: Issue; last: boolean;
   onAssign: () => void; onRequestApproval: () => void; onBlock: () => void;
   onPhoto: () => void; onDoc: () => void; onComplete: () => void; onReopen: () => void;
+  onStart: () => void; onEnd: () => void; onExchange: () => void; canExchange: boolean;
 }) {
   const resolved = i.state === 'resolved';
   const photos = i.photoCount ?? 0;
@@ -296,6 +413,11 @@ function IssueRow({
     photos > 0 ? `${photos} ${photos === 1 ? 'photo' : 'photos'}` : null,
     docs > 0 ? `${docs} ${docs === 1 ? 'document' : 'documents'}` : null,
   ].filter(Boolean).join(' · ');
+
+  const approvalPending = i.ownerApprovalRequired && !i.ownerApprovedAt && i.chargeTo === 'owner';
+  const duration = durationLabel(i.startedAt, i.endedAt);
+  const canStart = !resolved && !i.startedAt && !approvalPending;
+  const canEnd = !resolved && !!i.startedAt && !i.endedAt;
 
   return (
     <div className={cx('px-5 py-[15px] flex flex-col gap-2.5', !last && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
@@ -308,9 +430,18 @@ function IssueRow({
           </div>
           <span className="text-[12px] text-muted-ink">
             {i.propertyName} {i.unitNumber} · reported {dateShort(i.reportedAt)}
+            {i.skuCode ? ` · ${i.skuCode}` : ''}
             {i.assigneeName ? ` · ${i.assigneeName}` : i.vendorName ? ` · ${i.vendorName}` : ''}
             {evidence ? ` · ${evidence}` : ''}
           </span>
+          {(i.startedAt || duration) && (
+            <span className="text-[12px] text-muted-ink flex items-center gap-1.5 flex-wrap">
+              {i.startedAt && <span>Started {time(i.startedAt)}</span>}
+              {i.endedAt && <span>· ended {time(i.endedAt)}</span>}
+              {duration && <Badge tone="info" label={`Took ${duration}`} size="sm" />}
+              {i.startedAt && !i.endedAt && !resolved && <Badge tone="warning" label="In progress" size="sm" />}
+            </span>
+          )}
           {i.detail && <span className="text-[13px] text-pretty">{i.detail}</span>}
         </div>
         <div className="flex flex-col items-end gap-1 flex-none">
@@ -343,10 +474,13 @@ function IssueRow({
             {i.quotedAmount != null && !i.ownerApprovalRequired && (
               <RowAction onClick={onRequestApproval}>Request owner approval</RowAction>
             )}
+            {canStart && <RowAction onClick={onStart} primary>Start work</RowAction>}
+            {canEnd && <RowAction onClick={onEnd} primary>End work</RowAction>}
+            {canExchange && <RowAction onClick={onExchange}>Request to exchange</RowAction>}
             {!i.blocksUnit && <RowAction onClick={onBlock}>Block the unit</RowAction>}
             <RowAction onClick={onPhoto}>Upload photo</RowAction>
             <RowAction onClick={onDoc}>Upload POD / invoice</RowAction>
-            <RowAction onClick={onComplete} primary>Mark complete</RowAction>
+            <RowAction onClick={onComplete} primary={!canStart && !canEnd}>Mark complete</RowAction>
           </>
         )}
       </div>
@@ -402,7 +536,8 @@ function LabeledField({ label, children }: { label: string; children: ReactNode 
 
 // ---- Create job ------------------------------------------------------------
 
-function CreateJobModal({ onClose, onCreate }: { onClose: () => void; onCreate: (i: Omit<Issue, 'id' | 'state' | 'finalAmount' | 'ownerApprovalRequired' | 'reportedAt' | 'photoCount' | 'documentCount'>) => void }) {
+function CreateJobModal({ skus, onClose, onCreate }: { skus: Sku[]; onClose: () => void; onCreate: (i: Omit<Issue, 'id' | 'state' | 'finalAmount' | 'ownerApprovalRequired' | 'reportedAt' | 'photoCount' | 'documentCount'>) => void }) {
+  const [skuId, setSkuId] = useState('');
   const [propertyName, setPropertyName] = useState('');
   const [unitNumber, setUnitNumber] = useState('');
   const [title, setTitle] = useState('');
@@ -414,13 +549,26 @@ function CreateJobModal({ onClose, onCreate }: { onClose: () => void; onCreate: 
 
   const valid = propertyName.trim() && unitNumber.trim() && title.trim();
 
+  // Picking a catalog item seeds the title and the quote from its preset price.
+  // Both stay editable — this is a starting point, not a lock.
+  function pickSku(id: string) {
+    setSkuId(id);
+    const sku = skus.find(s => s.id === id);
+    if (sku) {
+      if (!title.trim()) setTitle(sku.name);
+      if (sku.defaultPrice != null) setQuote((sku.defaultPrice / 100).toFixed(2));
+    }
+  }
+
   function submit(e: FormEvent) {
     e.preventDefault();
     if (!valid) return;
+    const sku = skus.find(s => s.id === skuId);
     onCreate({
       propertyName: propertyName.trim(), unitNumber: unitNumber.trim(), title: title.trim(),
       detail: detail.trim() || null, vendorName: vendorName.trim() || null,
       quotedAmount: toSen(quote), chargeTo, blocksUnit, assigneeName: null,
+      skuId: skuId || null, skuCode: sku?.code ?? null, skuName: sku?.name ?? null,
     });
   }
 
@@ -431,6 +579,18 @@ function CreateJobModal({ onClose, onCreate }: { onClose: () => void; onCreate: 
         <Button size="sm" variant="primary" onClick={submit} disabled={!valid} disabledReason="Add the property, unit and a title first.">Create job</Button>
       </>}>
       <form id="create-job" onSubmit={submit} className="flex flex-col gap-[14px]">
+        {skus.length > 0 && (
+          <LabeledField label="Maintenance item (optional)">
+            <select value={skuId} onChange={e => pickSku(e.target.value)} className={INPUT_CX}>
+              <option value="">— Pick a catalog item to fill the price —</option>
+              {skus.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.code} · {s.name}{s.defaultPrice != null ? ` — ${rm(s.defaultPrice)}` : ''}
+                </option>
+              ))}
+            </select>
+          </LabeledField>
+        )}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
           <LabeledField label="Property"><input required value={propertyName} onChange={e => setPropertyName(e.target.value)} placeholder="Vista Jaya One" className={INPUT_CX} /></LabeledField>
           <LabeledField label="Unit"><input required value={unitNumber} onChange={e => setUnitNumber(e.target.value)} placeholder="#A-12-03" className={INPUT_CX} /></LabeledField>

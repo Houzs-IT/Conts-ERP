@@ -8,7 +8,7 @@ import Icon from '../components/Icon';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
-import { useCrew } from '../lib/useCrew';
+import { useCleaners, type Cleaner, type Employment } from '../lib/useCleaners';
 import { api, notifyFailure } from '../lib/api';
 import { todayMyt, rm, unitRef, dateTime } from '../lib/format';
 import { READINESS, TASK } from '../lib/vocabulary';
@@ -30,6 +30,15 @@ const RULE_LABEL: Record<OrderingRule, string> = {
   building: 'By building',
   manual: 'Manual',
 };
+
+// Auto-assign rules: how the roster is spread, and which employment dimension wins.
+type AssignStrategy = 'least_loaded' | 'round_robin';
+type AssignPrefer = 'any' | 'internal' | 'outsourced';
+const STRATEGY_LABEL: Record<AssignStrategy, string> = { least_loaded: 'Least loaded', round_robin: 'Round robin' };
+const PREFER_LABEL: Record<AssignPrefer, string> = { any: 'Any cleaner', internal: 'Internal staff first', outsourced: 'Outsourced first' };
+const EMPLOYMENT_LABEL: Record<Employment, string> = { internal: 'Internal staff', outsourced: 'Outsourced' };
+const SEQ_PHRASE: Record<OrderingRule, string> = { earliest_checkin: 'by earliest check-in', building: 'by building', manual: 'in manual order' };
+interface RulesDraft { rule: OrderingRule; strategy: AssignStrategy; prefer: AssignPrefer }
 
 // The three cleaning kinds a manual task may be. Inspection/maintenance are
 // their own screens, so this list never grows past cleaning.
@@ -58,6 +67,8 @@ interface Task {
   startedAt: string | null;    // ISO — when the cleaner started
   completedAt: string | null;  // ISO — when the clean finished (the "end")
   assigneeId: string | null;
+  cleanerId: string | null;          // roster entry the clean is given to
+  employmentType: Employment | null; // internal vs outsourced, from the roster
   assigneeName: string | null;
   sequence: number;
   state: TaskState;
@@ -75,12 +86,12 @@ const CO_DATE = todayMyt();
 const FALLBACK: Payload = {
   date: '2026-09-16', generatedAt: '',
   rows: [
-    { id: 'h1', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', buildingId: 'p-vista', sourceRef: 'RES-40821', title: 'Turnover, 2BR', linenSet: 'Set A', instructions: 'Late check-out to 13:00. Restock coffee pods.', scheduledFor: '08:00', dueAt: '14:00', nextGuestAt: '15:00', checkoutTime: '13:00', checkoutDate: CO_DATE, startedAt: isoAgo(38), completedAt: null, assigneeId: 'u5', assigneeName: 'Nurul Huda', sequence: 1, state: 'in_progress', readiness: 'cleaning', requiresPhoto: true, photoCount: 0 },
-    { id: 'h2', unitNumber: '#A-19-02', propertyName: 'Vista Jaya One', buildingId: 'p-vista', sourceRef: 'RES-40833', title: 'Turnover, studio', linenSet: 'Set B', instructions: 'Early check-in requested by next guest.', scheduledFor: '12:00', dueAt: '15:30', nextGuestAt: '16:00', checkoutTime: '11:00', checkoutDate: CO_DATE, startedAt: null, completedAt: null, assigneeId: 'u5', assigneeName: 'Nurul Huda', sequence: 2, state: 'assigned', readiness: 'dirty', requiresPhoto: true, photoCount: 0 },
-    { id: 'h3', unitNumber: '#15-06', propertyName: 'Scarletz', buildingId: 'p-scar', sourceRef: 'RES-40790', title: 'Deep clean', linenSet: 'Set A', instructions: 'Vacant 4 nights. Descale kettle and shower.', scheduledFor: '10:00', dueAt: '16:30', nextGuestAt: '18:00', checkoutTime: '11:00', checkoutDate: CO_DATE, startedAt: null, completedAt: null, assigneeId: 'u6', assigneeName: 'Faridah Ismail', sequence: 3, state: 'assigned', readiness: 'dirty', requiresPhoto: true, photoCount: 1 },
-    { id: 'h4', unitNumber: '#2207', propertyName: 'Tribeca', buildingId: 'p-trib', sourceRef: 'RES-40765', title: 'Light clean', linenSet: 'Set B', instructions: 'Owner stay ended. Standard refresh.', scheduledFor: '08:00', dueAt: '11:00', nextGuestAt: null, checkoutTime: '10:00', checkoutDate: CO_DATE, startedAt: isoAgo(205), completedAt: isoAgo(118), assigneeId: 'u9', assigneeName: 'Siti Rahmah', sequence: 4, state: 'resolved', readiness: 'ready', requiresPhoto: true, photoCount: 2 },
-    { id: 'h5', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', buildingId: 'p-sent', sourceRef: 'RES-40711', title: 'Post-works clean', linenSet: 'Set A', instructions: 'Plumbing repair completed. Clear dust sheets.', scheduledFor: '16:00', dueAt: '18:00', nextGuestAt: null, checkoutTime: null, checkoutDate: null, startedAt: null, completedAt: null, assigneeId: 'u9', assigneeName: 'Siti Rahmah', sequence: 5, state: 'assigned', readiness: 'maintenance', requiresPhoto: true, photoCount: 0 },
-    { id: 'h6', unitNumber: '#A-21-02', propertyName: 'Vista Jaya One', buildingId: 'p-vista', sourceRef: 'RES-40852', title: 'Turnover, 2BR', linenSet: 'Set A', instructions: 'No cleaner assigned yet.', scheduledFor: '14:00', dueAt: '14:54', nextGuestAt: '15:00', checkoutTime: '12:00', checkoutDate: CO_DATE, startedAt: null, completedAt: null, assigneeId: null, assigneeName: null, sequence: 6, state: 'open', readiness: 'dirty', requiresPhoto: true, photoCount: 0 },
+    { id: 'h1', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', buildingId: 'p-vista', sourceRef: 'RES-40821', title: 'Turnover, 2BR', linenSet: 'Set A', instructions: 'Late check-out to 13:00. Restock coffee pods.', scheduledFor: '08:00', dueAt: '14:00', nextGuestAt: '15:00', checkoutTime: '13:00', checkoutDate: CO_DATE, startedAt: isoAgo(38), completedAt: null, assigneeId: 'u5', cleanerId: 'cl-u5', employmentType: 'internal', assigneeName: 'Nurul Huda', sequence: 1, state: 'in_progress', readiness: 'cleaning', requiresPhoto: true, photoCount: 0 },
+    { id: 'h2', unitNumber: '#A-19-02', propertyName: 'Vista Jaya One', buildingId: 'p-vista', sourceRef: 'RES-40833', title: 'Turnover, studio', linenSet: 'Set B', instructions: 'Early check-in requested by next guest.', scheduledFor: '12:00', dueAt: '15:30', nextGuestAt: '16:00', checkoutTime: '11:00', checkoutDate: CO_DATE, startedAt: null, completedAt: null, assigneeId: 'u5', cleanerId: 'cl-u5', employmentType: 'internal', assigneeName: 'Nurul Huda', sequence: 2, state: 'assigned', readiness: 'dirty', requiresPhoto: true, photoCount: 0 },
+    { id: 'h3', unitNumber: '#15-06', propertyName: 'Scarletz', buildingId: 'p-scar', sourceRef: 'RES-40790', title: 'Deep clean', linenSet: 'Set A', instructions: 'Vacant 4 nights. Descale kettle and shower.', scheduledFor: '10:00', dueAt: '16:30', nextGuestAt: '18:00', checkoutTime: '11:00', checkoutDate: CO_DATE, startedAt: null, completedAt: null, assigneeId: 'u6', cleanerId: 'cl-u6', employmentType: 'internal', assigneeName: 'Faridah Ismail', sequence: 3, state: 'assigned', readiness: 'dirty', requiresPhoto: true, photoCount: 1 },
+    { id: 'h4', unitNumber: '#2207', propertyName: 'Tribeca', buildingId: 'p-trib', sourceRef: 'RES-40765', title: 'Light clean', linenSet: 'Set B', instructions: 'Owner stay ended. Standard refresh.', scheduledFor: '08:00', dueAt: '11:00', nextGuestAt: null, checkoutTime: '10:00', checkoutDate: CO_DATE, startedAt: isoAgo(205), completedAt: isoAgo(118), assigneeId: null, cleanerId: 'cl-out1', employmentType: 'outsourced', assigneeName: 'Siti Rahmah', sequence: 4, state: 'resolved', readiness: 'ready', requiresPhoto: true, photoCount: 2 },
+    { id: 'h5', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', buildingId: 'p-sent', sourceRef: 'RES-40711', title: 'Post-works clean', linenSet: 'Set A', instructions: 'Plumbing repair completed. Clear dust sheets.', scheduledFor: '16:00', dueAt: '18:00', nextGuestAt: null, checkoutTime: null, checkoutDate: null, startedAt: null, completedAt: null, assigneeId: null, cleanerId: 'cl-out1', employmentType: 'outsourced', assigneeName: 'Siti Rahmah', sequence: 5, state: 'assigned', readiness: 'maintenance', requiresPhoto: true, photoCount: 0 },
+    { id: 'h6', unitNumber: '#A-21-02', propertyName: 'Vista Jaya One', buildingId: 'p-vista', sourceRef: 'RES-40852', title: 'Turnover, 2BR', linenSet: 'Set A', instructions: 'No cleaner assigned yet.', scheduledFor: '14:00', dueAt: '14:54', nextGuestAt: '15:00', checkoutTime: '12:00', checkoutDate: CO_DATE, startedAt: null, completedAt: null, assigneeId: null, cleanerId: null, employmentType: null, assigneeName: null, sequence: 6, state: 'open', readiness: 'dirty', requiresPhoto: true, photoCount: 0 },
   ],
 };
 
@@ -180,7 +191,7 @@ const TABS: [Tab, string][] = [['today', 'Today'], ['tomorrow', 'Tomorrow'], ['w
 const TAB_DATE: Record<Tab, string> = { today: todayMyt(), tomorrow: todayMyt(1), week: `${todayMyt()}..${todayMyt(6)}` };
 
 export default function HousekeepingPage() {
-  const CREW = useCrew('housekeeping');
+  const { cleaners: CREW } = useCleaners();
   const [tab, setTab] = useState<Tab>('today');
   const { data, loading, error, reload } = useApi<Payload>(`/housekeeping/tasks?date=${TAB_DATE[tab]}`, FALLBACK);
   const toast = useToast();
@@ -192,6 +203,8 @@ export default function HousekeepingPage() {
   const patch = (id: string, p: Partial<Task>) => setEdits(e => ({ ...e, [id]: { ...e[id], ...p } }));
 
   const [rule, setRule] = useState<OrderingRule>('earliest_checkin');
+  const [strategy, setStrategy] = useState<AssignStrategy>('least_loaded');
+  const [prefer, setPrefer] = useState<AssignPrefer>('any');
 
   // Live clock for the SLA countdown.
   const [now, setNow] = useState(() => new Date());
@@ -201,7 +214,7 @@ export default function HousekeepingPage() {
   const [assign, setAssign] = useState<{ task: Task; cleanerId: string; force: boolean; warning?: string } | null>(null);
   const [reschedule, setReschedule] = useState<{ task: Task; start: string; end: string } | null>(null);
   const [damage, setDamage] = useState<{ task: Task; title: string; detail: string; chargeTo: 'owner' | 'company'; amount: string; blocksUnit: boolean } | null>(null);
-  const [editRule, setEditRule] = useState<OrderingRule | null>(null);
+  const [editRule, setEditRule] = useState<RulesDraft | null>(null);
   const [creating, setCreating] = useState(false);
   const [editTask, setEditTask] = useState<Task | null>(null);
   const [confirm, setConfirm] = useState<null | { kind: 'start' | 'complete' | 'autoassign'; task?: Task }>(null);
@@ -230,7 +243,7 @@ export default function HousekeepingPage() {
   }
 
   const merged = [...added, ...(data?.rows ?? [])].map(t => ({ ...t, ...edits[t.id] }));
-  const unassigned = merged.filter(t => !t.assigneeId);
+  const unassigned = merged.filter(t => !t.cleanerId && !t.assigneeId);
 
   // Ordering rule drives the displayed order; the sequence number shown is the
   // position in that order, so changing the rule visibly re-sequences the list.
@@ -246,7 +259,7 @@ export default function HousekeepingPage() {
 
   /* -------------------------------- actions ------------------------------- */
   function openAssign(task: Task) {
-    setAssign({ task, cleanerId: task.assigneeId ?? CREW[0]?.id ?? '', force: false });
+    setAssign({ task, cleanerId: task.cleanerId ?? CREW[0]?.id ?? '', force: false });
   }
 
   async function doCreate(draft: CreateDraft) {
@@ -260,7 +273,8 @@ export default function HousekeepingPage() {
       scheduledFor: draft.scheduledFor || null, dueAt: draft.dueAt || null,
       nextGuestAt: draft.nextGuestAt || null,
       checkoutTime: null, checkoutDate: null, startedAt: null, completedAt: null,
-      assigneeId: cleaner?.id ?? null, assigneeName: cleaner?.name ?? null,
+      assigneeId: cleaner?.userId ?? null, cleanerId: cleaner?.id ?? null, employmentType: cleaner?.employmentType ?? null,
+      assigneeName: cleaner?.name ?? null,
       sequence: 999, state: cleaner ? 'assigned' : 'open', readiness: 'dirty',
       requiresPhoto: draft.requiresPhoto, photoCount: 0, kind: draft.kind,
     };
@@ -273,7 +287,7 @@ export default function HousekeepingPage() {
         unitNumber: optimistic.unitNumber, propertyName: optimistic.propertyName, kind: draft.kind,
         title: KIND_LABEL[draft.kind], instructions: optimistic.instructions,
         scheduledFor: draft.scheduledFor || null, dueAt: draft.dueAt || null, nextGuestAt: draft.nextGuestAt || null,
-        assigneeId: cleaner?.id ?? null, requiresPhoto: draft.requiresPhoto,
+        cleanerId: cleaner?.id ?? null, requiresPhoto: draft.requiresPhoto,
       });
     } catch (e) { notifyFailure(e); }
     setBusy(false);
@@ -298,7 +312,7 @@ export default function HousekeepingPage() {
     // Simulate the 409 ASSIGNEE_BUSY overlap check the backend would run.
     if (!force) {
       const clash = merged.filter(t =>
-        t.id !== task.id && t.assigneeId === cleanerId &&
+        t.id !== task.id && t.cleanerId === cleanerId &&
         windowsOverlap(task.scheduledFor, task.dueAt, t.scheduledFor, t.dueAt));
       if (clash.length) {
         const at = clash[0].scheduledFor ?? clash[0].dueAt ?? '';
@@ -311,37 +325,44 @@ export default function HousekeepingPage() {
     }
 
     setBusy(true);
-    patch(task.id, { assigneeId: cleaner.id, assigneeName: cleaner.name, state: task.state === 'open' ? 'assigned' : task.state });
-    toast({ tone: 'success', title: 'Cleaner assigned.', body: `${firstName(cleaner.name)} has been notified.` });
+    patch(task.id, { cleanerId: cleaner.id, assigneeId: cleaner.userId, employmentType: cleaner.employmentType, assigneeName: cleaner.name, state: task.state === 'open' ? 'assigned' : task.state });
+    toast({ tone: 'success', title: 'Cleaner assigned.', body: `${firstName(cleaner.name)}${cleaner.employmentType === 'outsourced' && cleaner.vendorName ? ` (${cleaner.vendorName})` : ''} has been notified.` });
     setAssign(null);
-    try { await api.post(`/housekeeping/tasks/${task.id}/assign`, { assigneeId: cleaner.id, force }); }
+    try { await api.post(`/housekeeping/tasks/${task.id}/assign`, { cleanerId: cleaner.id, force }); }
     catch (e) { notifyFailure(e); }
     setBusy(false);
   }
 
   async function doAutoAssign() {
     const targets = unassigned;
-    if (!CREW.length) { toast({ tone: 'critical', title: 'No cleaners to assign to.', body: 'Add an active housekeeper under Users and roles first.' }); setConfirm(null); return; }
-    // Apply the preset ordering rule, then spread across the crew evenly.
+    // The employment preference narrows the pool the same way the backend does.
+    const pool = CREW.filter(c => prefer === 'any' || c.employmentType === prefer);
+    if (!pool.length) { toast({ tone: 'critical', title: 'No cleaners to assign to.', body: `No active ${prefer === 'any' ? '' : PREFER_LABEL[prefer].toLowerCase() + ' '}cleaners on the roster. Add one under Cleaners.` }); setConfirm(null); return; }
+    // Apply the ordering rule, then spread by the chosen strategy.
     const byRule = [...targets].sort((a, b) => (toMin(a.nextGuestAt) ?? 1e9) - (toMin(b.nextGuestAt) ?? 1e9));
+    const load = new Map(pool.map(c => [c.id, c.busy]));
     setBusy(true);
     byRule.forEach((t, i) => {
-      const c = CREW[i % Math.max(CREW.length, 1)];
-      patch(t.id, { assigneeId: c.id, assigneeName: c.name, state: 'assigned', sequence: t.sequence });
+      const c = strategy === 'round_robin'
+        ? pool[i % pool.length]
+        : pool.reduce((a, x) => (load.get(x.id)! <= load.get(a.id)! ? x : a));
+      load.set(c.id, (load.get(c.id) ?? 0) + 1);
+      patch(t.id, { cleanerId: c.id, assigneeId: c.userId, employmentType: c.employmentType, assigneeName: c.name, state: 'assigned', sequence: t.sequence });
     });
-    toast({ tone: 'success', title: `${targets.length} task${targets.length === 1 ? '' : 's'} auto-assigned.`, body: `Ordered by ${RULE_LABEL[rule].toLowerCase()}. Cleaners notified.` });
+    toast({ tone: 'success', title: `${targets.length} task${targets.length === 1 ? '' : 's'} auto-assigned.`, body: `Ordered by ${RULE_LABEL[rule].toLowerCase()}, ${STRATEGY_LABEL[strategy].toLowerCase()}, ${PREFER_LABEL[prefer].toLowerCase()}.` });
     setConfirm(null);
-    try { await api.post('/housekeeping/auto-assign', { rule }); } catch { /* dev */ }
+    try { await api.post('/housekeeping/auto-assign', { rule, strategy, prefer }); } catch { /* dev */ }
     setBusy(false);
   }
 
-  async function doSaveRule() {
+  async function doSaveRules() {
     if (!editRule) return;
+    const next = editRule;
     setBusy(true);
-    setRule(editRule);
-    toast({ tone: 'success', title: 'Ordering rule updated.', body: `Sequencing by ${RULE_LABEL[editRule].toLowerCase()}.` });
+    setRule(next.rule); setStrategy(next.strategy); setPrefer(next.prefer);
+    toast({ tone: 'success', title: 'Auto-assign rules saved.', body: `${RULE_LABEL[next.rule]} · ${STRATEGY_LABEL[next.strategy]} · ${PREFER_LABEL[next.prefer]}.` });
     setEditRule(null);
-    try { await api.put('/housekeeping/rules', { rule: editRule }); } catch { /* dev */ }
+    try { await api.put('/housekeeping/rules', { rule: next.rule, strategy: next.strategy, prefer: next.prefer }); } catch { /* dev */ }
     setBusy(false);
   }
 
@@ -422,6 +443,7 @@ export default function HousekeepingPage() {
     const inProgress = t.state === 'in_progress';
     const done = t.state === 'resolved';
     const noPhoto = t.requiresPhoto && t.photoCount < 1;
+    const hasCleaner = !!(t.cleanerId || t.assigneeId);
     const windowLabel = t.scheduledFor && t.dueAt ? `${t.scheduledFor} → ${t.dueAt}` : '—';
     const mins = elapsedMin(t.startedAt, t.completedAt, now);
     const durLabel = mins === null ? null : done ? `Cleaned in ${fmtDur(mins)}` : `Running ${fmtDur(mins)}`;
@@ -479,7 +501,7 @@ export default function HousekeepingPage() {
         <div className="flex flex-col gap-[7px] items-stretch min-w-[168px]">
           {!done && (
             <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => openAssign(t)}>
-              {t.assigneeId ? 'Reassign cleaner' : 'Assign cleaner'}
+              {hasCleaner ? 'Reassign cleaner' : 'Assign cleaner'}
             </Button>
           )}
           {!done && (
@@ -517,7 +539,7 @@ export default function HousekeepingPage() {
               View photos ({t.photoCount})
             </Button>
           )}
-          {!done && t.assigneeId && (
+          {!done && hasCleaner && (
             <Button size="sm" variant="tertiary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage({ task: t, title: '', detail: '', chargeTo: 'owner', amount: '', blocksUnit: false })}>
               Report damage
             </Button>
@@ -537,11 +559,11 @@ export default function HousekeepingPage() {
       <input ref={fileInputRef} type="file" accept="image/*" multiple hidden onChange={onPhotoPicked} />
       <PageHeader
         title="Housekeeping"
-        sub={`${merged.length} cleaning tasks · ${unassigned.length} unassigned · sequenced by ${RULE_LABEL[rule].toLowerCase()}`}
+        sub={`${merged.length} cleaning tasks · ${unassigned.length} unassigned · sequenced ${SEQ_PHRASE[rule]}`}
         right={
           <div className="flex gap-[9px] flex-wrap">
-            <Button variant="secondary" icon={<Icon name="ListOrdered" size="sm" />} onClick={() => setEditRule(rule)}>
-              Edit ordering rule
+            <Button variant="secondary" icon={<Icon name="ListOrdered" size="sm" />} onClick={() => setEditRule({ rule, strategy, prefer })}>
+              Auto-assign rules
             </Button>
             <Button
               variant="secondary"
@@ -627,7 +649,7 @@ export default function HousekeepingPage() {
             <select id="assign-cleaner" value={assign.cleanerId} disabled={busy}
               onChange={e => setAssign(a => a && { ...a, cleanerId: e.target.value, force: false, warning: undefined })}
               className={inputCls}>
-              {CREW.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {cleanerOptions(CREW)}
             </select>
           </div>
           {assign.task.nextGuestAt && (
@@ -683,36 +705,47 @@ export default function HousekeepingPage() {
         );
       })()}
 
-      {/* ------------------------- Edit ordering rule ------------------------- */}
+      {/* ------------------------- Auto-assign rules ------------------------- */}
       {editRule && (
         <Modal
-          title="Edit ordering rule"
-          sub="Auto-assign and the sequence numbers follow this rule."
+          title="Auto-assign rules"
+          sub="How cleaning is sequenced, and how Auto-assign spreads it across the roster."
           onClose={() => setEditRule(null)}
           busy={busy}
           footer={<>
             <Button size="sm" variant="secondary" onClick={() => setEditRule(null)} disabled={busy}>Cancel</Button>
-            <Button size="sm" variant="primary" loading={busy} onClick={doSaveRule}>Save rule</Button>
+            <Button size="sm" variant="primary" loading={busy} onClick={doSaveRules}>Save rules</Button>
           </>}
         >
-          <div className="flex flex-col gap-2">
-            {(Object.keys(RULE_LABEL) as OrderingRule[]).map(r => {
-              const on = editRule === r;
-              const desc = r === 'earliest_checkin' ? 'Clean the units whose next guest arrives soonest first.'
-                : r === 'building' ? 'Group a cleaner’s jobs by property to cut travel time.'
-                : 'Keep the order you set by hand.';
-              return (
-                <button key={r} type="button" onClick={() => setEditRule(r)}
-                  className={`text-left py-3 px-[13px] rounded-control cursor-pointer [font:inherit] flex gap-[11px] items-start border border-solid ${on ? 'border-gold bg-gold-tint' : 'border-line bg-white'}`}>
-                  <span className={`w-4 h-4 flex-none mt-px rounded-full border-2 border-solid ${on ? 'border-gold bg-gold' : 'border-line-strong bg-transparent'}`} />
-                  <span className="flex flex-col gap-0.5">
-                    <span className="text-[13.5px] font-semibold">{RULE_LABEL[r]}</span>
-                    <span className="text-[12px] text-muted-ink">{desc}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          <RuleChoice<OrderingRule>
+            legend="Order the day by"
+            value={editRule.rule}
+            options={[
+              ['earliest_checkin', RULE_LABEL.earliest_checkin, 'Clean the units whose next guest arrives soonest first.'],
+              ['building', RULE_LABEL.building, 'Group a cleaner’s jobs by building to cut travel time.'],
+              ['manual', RULE_LABEL.manual, 'Keep the order you set by hand.'],
+            ]}
+            onPick={r => setEditRule(d => d && { ...d, rule: r })}
+          />
+          <RuleChoice<AssignStrategy>
+            legend="Spread work by"
+            value={editRule.strategy}
+            options={[
+              ['least_loaded', STRATEGY_LABEL.least_loaded, 'Give each clean to whoever has the fewest open jobs.'],
+              ['round_robin', STRATEGY_LABEL.round_robin, 'Cycle through the roster in turn.'],
+            ]}
+            onPick={s => setEditRule(d => d && { ...d, strategy: s })}
+          />
+          <RuleChoice<AssignPrefer>
+            legend="Prefer which cleaners"
+            value={editRule.prefer}
+            options={[
+              ['any', PREFER_LABEL.any, 'Use internal staff and outsourced crews together.'],
+              ['internal', PREFER_LABEL.internal, 'Only your own staff; outsourced left for you to assign by hand.'],
+              ['outsourced', PREFER_LABEL.outsourced, 'Only third-party crews; keep staff free for other work.'],
+            ]}
+            onPick={p => setEditRule(d => d && { ...d, prefer: p })}
+          />
         </Modal>
       )}
 
@@ -819,6 +852,48 @@ export default function HousekeepingPage() {
   );
 }
 
+/** A labelled radio group of option cards, used across the auto-assign rules editor. */
+function RuleChoice<T extends string>({ legend, value, options, onPick }: {
+  legend: string; value: T; options: [T, string, string][]; onPick: (v: T) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-[12px] font-semibold text-muted-ink">{legend}</span>
+      {options.map(([v, label, desc]) => {
+        const on = value === v;
+        return (
+          <button key={v} type="button" onClick={() => onPick(v)}
+            className={`text-left py-3 px-[13px] rounded-control cursor-pointer [font:inherit] flex gap-[11px] items-start border border-solid ${on ? 'border-gold bg-gold-tint' : 'border-line bg-white'}`}>
+            <span className={`w-4 h-4 flex-none mt-px rounded-full border-2 border-solid ${on ? 'border-gold bg-gold' : 'border-line-strong bg-transparent'}`} />
+            <span className="flex flex-col gap-0.5">
+              <span className="text-[13.5px] font-semibold">{label}</span>
+              <span className="text-[12px] text-muted-ink">{desc}</span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** <option>s for a cleaner picker, grouped Internal vs Outsourced, with the vendor
+ *  and today's load so the operator can spread work. Used by Assign and Create. */
+function cleanerOptions(crew: Cleaner[]) {
+  return (['internal', 'outsourced'] as Employment[]).map(emp => {
+    const list = crew.filter(c => c.employmentType === emp);
+    if (!list.length) return null;
+    return (
+      <optgroup key={emp} label={EMPLOYMENT_LABEL[emp]}>
+        {list.map(c => (
+          <option key={c.id} value={c.id}>
+            {c.name}{emp === 'outsourced' && c.vendorName ? ` — ${c.vendorName}` : ''}{c.busy ? ` · ${c.busy} today` : ''}
+          </option>
+        ))}
+      </optgroup>
+    );
+  });
+}
+
 /** A compact label/value pair used across a task's field row. */
 function Field2({ label, value, muted, tone }: { label: string; value: string; muted?: boolean; tone?: Tone }) {
   return (
@@ -885,7 +960,6 @@ function PhotoGalleryModal({ task, onClose }: { task: Task; onClose: () => void 
 
 /* ------------------------- Manual create + edit ------------------------- */
 
-interface Crewmate { id: string; name: string; busy?: number }
 interface CreateDraft {
   propertyName: string; unitNumber: string; kind: CleanKind; linenSet: string;
   scheduledFor: string; dueAt: string; nextGuestAt: string; assigneeId: string;
@@ -895,7 +969,7 @@ interface CreateDraft {
 /** New cleaning task by hand — the manual equivalent of the one-clean-per-checkout
  *  auto path. Every field the roster shows can be set here; assigning is optional. */
 function CreateCleaningModal({ crew, defaultDate, busy, onClose, onCreate }: {
-  crew: Crewmate[]; defaultDate: string; busy?: boolean; onClose: () => void; onCreate: (d: CreateDraft) => void;
+  crew: Cleaner[]; defaultDate: string; busy?: boolean; onClose: () => void; onCreate: (d: CreateDraft) => void;
 }) {
   const [d, setD] = useState<CreateDraft>({
     propertyName: '', unitNumber: '', kind: 'turnover', linenSet: 'Set A',
@@ -981,7 +1055,7 @@ function CreateCleaningModal({ crew, defaultDate, busy, onClose, onCreate }: {
         <select id="ck-cleaner" value={d.assigneeId} disabled={busy}
           onChange={e => set({ assigneeId: e.target.value })} className={inputCls}>
           <option value="">Leave unassigned</option>
-          {crew.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          {cleanerOptions(crew)}
         </select>
       </div>
 

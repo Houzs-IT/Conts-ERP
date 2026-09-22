@@ -7,7 +7,7 @@ import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
-import { rm, monthLabel, dateTime } from '../lib/format';
+import { rm, monthLabel, dateTime, dateShort, todayMyt } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
@@ -46,6 +46,10 @@ interface Expense {
   id: string; unitNumber: string; propertyName: string; category: Category;
   description: string; amount: number; incurredOn: string; reference: string | null; chargeTo: ChargeTo;
   unitId?: string; locked?: boolean;
+  // When set, this row is a line item under another expense (its parent). The
+  // drill-down nests it one level deeper (L3 under an L2 rollup); the parent then
+  // carries no amount of its own — its children hold the money. See api.md.
+  parentExpenseId?: string | null;
 }
 interface Payload { data: Expense[]; total: number; generatedAt: string; sentPeriods?: string[] }
 
@@ -55,7 +59,11 @@ const FALLBACK: Payload = {
   data: [
     { id: 'EXP-0931', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', category: 'housekeeping', description: 'Housekeeping, 11 turnovers', amount: 38500, incurredOn: '2026-08-31', reference: 'HK-2026-08-A1203', chargeTo: 'owner' },
     { id: 'EXP-0920', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', category: 'maintenance', description: 'Aircon quarterly service', amount: 7800, incurredOn: '2026-08-20', reference: 'INV-2026-0820', chargeTo: 'owner' },
-    { id: 'EXP-0918', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', category: 'maintenance', description: 'Plumbing works, riser replacement', amount: 320000, incurredOn: '2026-09-14', reference: 'AQF-4417', chargeTo: 'owner' },
+    // A maintenance rollup: the parent carries no amount, its two line items do.
+    // The drill-down nests them as L3 under the Maintenance (L2) group.
+    { id: 'EXP-0918', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', category: 'maintenance', description: 'Plumbing works, riser replacement', amount: 0, incurredOn: '2026-09-14', reference: 'AQF-4417', chargeTo: 'owner' },
+    { id: 'EXP-0918-L', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', category: 'maintenance', description: 'Labour — riser replacement, 2 days', amount: 240000, incurredOn: '2026-09-14', reference: 'AQF-4417-L', chargeTo: 'owner', parentExpenseId: 'EXP-0918' },
+    { id: 'EXP-0918-P', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', category: 'maintenance', description: 'Parts — PPR piping & fittings', amount: 80000, incurredOn: '2026-09-14', reference: 'AQF-4417-P', chargeTo: 'owner', parentExpenseId: 'EXP-0918' },
     { id: 'EXP-0915', unitNumber: '#B-08-11', propertyName: 'Arcoris', category: 'consumables', description: 'Coffee pods, toiletries, 3 months', amount: 24000, incurredOn: '2026-09-12', reference: 'PO-2026-0912', chargeTo: 'owner' },
     { id: 'EXP-0911', unitNumber: '#15-06', propertyName: 'Scarletz', category: 'utilities', description: 'TNB and Indah Water, August', amount: 18600, incurredOn: '2026-09-05', reference: 'TNB-0895512', chargeTo: 'owner' },
     { id: 'EXP-0908', unitNumber: '#2207', propertyName: 'Tribeca', category: 'furniture', description: 'Replacement dining chairs, 2', amount: 56000, incurredOn: '2026-09-02', reference: 'FRN-2026-114', chargeTo: 'owner' },
@@ -83,6 +91,86 @@ const toSen = (s: string): number | null => {
   const n = parseFloat(s.replace(/[^0-9.]/g, ''));
   return Number.isFinite(n) ? Math.round(n * 100) : null;
 };
+const thisMonth = () => todayMyt().slice(0, 7);
+// Step a YYYY-MM month by whole months, staying in the calendar (Dec -> Jan).
+const stepMonth = (ym: string, delta: number) => {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(Date.UTC(y, (m - 1) + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+
+// ---- Drill-down tree -------------------------------------------------------
+// L1 Total -> L2 category -> L3 line items, built from the parent_expense_id
+// hierarchy. Every amount is a rolled-up sum of the LEAF expenses beneath it, so
+// a parent (container) expense never double-counts: its children carry the money.
+
+type NodeKind = 'total' | 'category' | 'expense';
+interface TreeNode {
+  key: string;
+  kind: NodeKind;
+  label: string;
+  sub?: string;
+  amount: number;          // rolled up over leaf descendants
+  tone?: Tone;
+  expense?: Expense;       // present only on leaf expense rows (enables Edit / lock)
+  count?: number;          // leaf count, for the "· N items" hint
+  children: TreeNode[];
+}
+
+function buildTree(rows: Expense[], month: string): TreeNode {
+  const byId = new Map(rows.map(e => [e.id, e]));
+  const kids = new Map<string, Expense[]>();
+  const roots: Expense[] = [];
+  for (const e of rows) {
+    const parent = e.parentExpenseId && byId.has(e.parentExpenseId) ? e.parentExpenseId : null;
+    if (parent) { const arr = kids.get(parent) ?? []; arr.push(e); kids.set(parent, arr); }
+    else roots.push(e);
+  }
+  const leafSum = (e: Expense): number => {
+    const c = kids.get(e.id);
+    return c && c.length ? c.reduce((s, k) => s + leafSum(k), 0) : e.amount;
+  };
+  const leafCount = (e: Expense): number => {
+    const c = kids.get(e.id);
+    return c && c.length ? c.reduce((s, k) => s + leafCount(k), 0) : 1;
+  };
+  const expenseNode = (e: Expense): TreeNode => {
+    const c = kids.get(e.id) ?? [];
+    return {
+      key: e.id, kind: 'expense', label: e.description || CAT_LABEL[e.category],
+      sub: `${dateShort(e.incurredOn)}${e.reference ? ` · ${e.reference}` : ''}`,
+      amount: leafSum(e), tone: CAT_TONE[e.category],
+      // A container (has children) is a rollup header, not an editable leaf.
+      expense: c.length ? undefined : e,
+      count: c.length ? leafCount(e) : undefined,
+      children: c.map(expenseNode),
+    };
+  };
+
+  const groups = new Map<Category, Expense[]>();
+  for (const e of roots) { const arr = groups.get(e.category) ?? []; arr.push(e); groups.set(e.category, arr); }
+  const categories: TreeNode[] = [...groups.entries()].map(([category, es]): TreeNode => ({
+    key: `cat:${category}`, kind: 'category', label: CAT_LABEL[category], tone: CAT_TONE[category],
+    amount: es.reduce((s, e) => s + leafSum(e), 0),
+    count: es.reduce((s, e) => s + leafCount(e), 0),
+    children: es.map(expenseNode),
+  })).sort((a, b) => b.amount - a.amount);
+
+  return {
+    key: 'total', kind: 'total', label: `Total deductions · ${monthLabel(month)}`,
+    amount: categories.reduce((s, c) => s + c.amount, 0),
+    count: categories.reduce((s, c) => s + (c.count ?? 0), 0),
+    children: categories,
+  };
+}
+
+// Depth-first flatten honouring which node keys are expanded.
+function flatten(node: TreeNode, depth: number, open: Set<string>, out: { node: TreeNode; depth: number }[]) {
+  out.push({ node, depth });
+  if (node.children.length && open.has(node.key)) {
+    for (const c of node.children) flatten(c, depth + 1, open, out);
+  }
+}
 
 // Standard field. The former inputStyle object relied on `font: inherit`, which
 // (applied last) resets the control to the inherited body font — 16px / 400 /
@@ -112,7 +200,18 @@ export default function ExpensesPage() {
   // added rows and edits survive a filter change.
   const [cat, setCat] = useState<Category | 'all'>('all');
   const [unit, setUnit] = useState<string>('all');
-  const [period, setPeriod] = useState<string>('all');
+  // The view is scoped to one month, stepped by the switcher; it opens on the
+  // current MYT month.
+  const [month, setMonth] = useState<string>(thisMonth);
+  const [view, setView] = useState<'grouped' | 'list'>('grouped');
+  // Drill-down starts on the Total with its category breakdown open; categories
+  // and their line items expand on demand.
+  const [open, setOpen] = useState<Set<string>>(() => new Set(['total']));
+  const toggle = (key: string) => setOpen(s => {
+    const n = new Set(s);
+    if (n.has(key)) n.delete(key); else n.add(key);
+    return n;
+  });
 
   const cats = useMemo(() => [...new Set(merged.map(e => e.category))], [merged]);
   const units = useMemo(() => [...new Set(merged.map(e => e.unitNumber))], [merged]);
@@ -121,11 +220,14 @@ export default function ExpensesPage() {
   const rows = merged.filter(e =>
     (cat === 'all' || e.category === cat) &&
     (unit === 'all' || e.unitNumber === unit) &&
-    (period === 'all' || periodOf(e.incurredOn) === period));
+    periodOf(e.incurredOn) === month);
 
   const total = rows.reduce((s, r) => s + r.amount, 0);
-  const filtered = cat !== 'all' || unit !== 'all' || period !== 'all';
-  const clearFilters = () => { setCat('all'); setUnit('all'); setPeriod('all'); };
+  const tree = buildTree(rows, month);
+  const treeRows: { node: TreeNode; depth: number }[] = [];
+  flatten(tree, 0, open, treeRows);
+  const filtered = cat !== 'all' || unit !== 'all';
+  const clearFilters = () => { setCat('all'); setUnit('all'); };
   const sentPeriods = useMemo(() => new Set(data?.sentPeriods ?? (import.meta.env.DEV ? [...SENT_PERIODS] : [])), [data]);
   const isLocked = (e: Expense) => e.locked ?? sentPeriods.has(periodOf(e.incurredOn));
 
@@ -197,7 +299,7 @@ export default function ExpensesPage() {
     <>
       <PageHeader
         title="Expenses"
-        sub={`${rows.length} ${rows.length === 1 ? 'entry' : 'entries'} · ${rm(total)} in this view`}
+        sub={`${monthLabel(month)} · ${rows.length} ${rows.length === 1 ? 'entry' : 'entries'} · ${rm(total)}`}
         right={
           <div className="flex gap-[9px] flex-wrap">
             <Button variant="secondary" onClick={() => setReporting(true)}>Generate report</Button>
@@ -221,70 +323,105 @@ export default function ExpensesPage() {
             );
           })}
         </div>
-        <div className="flex gap-2 flex-wrap ml-auto">
+        <div className="flex gap-2 flex-wrap items-center ml-auto">
           <select aria-label="Filter by unit" value={unit} onChange={e => setUnit(e.target.value)}
             className={cx('block box-border w-auto h-8 pl-3 pr-[30px] py-0 border border-solid border-line rounded-control outline-none bg-card font-sans text-[16px] font-normal', unit === 'all' ? 'text-muted-ink' : 'text-ink')}>
             <option value="all">All units</option>
             {units.map(u => <option key={u} value={u}>{u}</option>)}
           </select>
-          <select aria-label="Filter by period" value={period} onChange={e => setPeriod(e.target.value)}
-            className={cx('block box-border w-auto h-8 pl-3 pr-[30px] py-0 border border-solid border-line rounded-control outline-none bg-card font-sans text-[16px] font-normal', period === 'all' ? 'text-muted-ink' : 'text-ink')}>
-            <option value="all">All periods</option>
-            {periods.map(p => <option key={p} value={p}>{monthLabel(p)}{sentPeriods.has(p) ? ' · sent' : ''}</option>)}
-          </select>
+
+          {/* View toggle — grouped drill-down (default) or the flat list. */}
+          <div className="flex h-8 rounded-control border border-solid border-line overflow-hidden" role="group" aria-label="Expenses view">
+            {(['grouped', 'list'] as const).map(v => (
+              <button key={v} onClick={() => setView(v)} aria-pressed={view === v}
+                className={cx('h-full px-[13px] py-0 cursor-pointer whitespace-nowrap font-sans text-[13px] border-none',
+                  view === v ? 'bg-black text-white' : 'bg-card text-muted-ink')}>
+                {v === 'grouped' ? 'Grouped' : 'List'}
+              </button>
+            ))}
+          </div>
+
+          {/* Month switcher — steps whole months; opens on the current MYT month. */}
+          <div className="flex items-center h-8 rounded-control border border-solid border-line bg-card">
+            <button aria-label="Previous month" onClick={() => setMonth(m => stepMonth(m, -1))}
+              className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">‹</button>
+            <span className="px-2 min-w-[112px] text-center text-[13px] font-medium tabular-nums whitespace-nowrap">
+              {monthLabel(month)}{sentPeriods.has(month) ? ' · sent' : ''}
+            </span>
+            <button aria-label="Next month" onClick={() => setMonth(m => stepMonth(m, 1))}
+              className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">›</button>
+          </div>
         </div>
       </div>
 
       <Card>
-        <div className="overflow-x-auto">
-          <div className="min-w-[1000px]">
-            <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-[12px] font-semibold text-muted-ink')}>
-              <div>Description</div><div>Unit</div><div>Category</div><div>Date</div><div>Reference</div><div className="text-right">Amount</div><div />
-            </div>
-
-            {loading && rows.length === 0 ? <TableSkeleton rows={6} cols={7} /> : rows.length === 0 ? (
-              <div className="py-[28px] px-[22px] flex flex-col gap-2">
-                <span className="text-[13px]">No expenses match these filters.</span>
-                {filtered && <button onClick={clearFilters} className="self-start font-sans text-[16px] font-normal text-gold-ink bg-transparent border-none cursor-pointer">Clear filters</button>}
+        {loading && rows.length === 0 ? (
+          <div className="p-2"><TableSkeleton rows={6} cols={view === 'grouped' ? 3 : 7} /></div>
+        ) : rows.length === 0 ? (
+          <div className="py-[28px] px-[22px] flex flex-col gap-2">
+            <span className="text-[13px]">No expenses in {monthLabel(month)}{filtered ? ' for these filters' : ''}.</span>
+            {filtered && <button onClick={clearFilters} className="self-start font-sans text-[16px] font-normal text-gold-ink bg-transparent border-none cursor-pointer">Clear filters</button>}
+          </div>
+        ) : view === 'grouped' ? (
+          // ---- Drill-down: Total (L1) -> category (L2) -> line items (L3) ----
+          <div role="tree" aria-label={`Expenses for ${monthLabel(month)}`}>
+            {treeRows.map(({ node, depth }) => (
+              <TreeRowView
+                key={node.key}
+                node={node}
+                depth={depth}
+                expanded={open.has(node.key)}
+                onToggle={() => toggle(node.key)}
+                locked={node.expense ? isLocked(node.expense) : false}
+                onEdit={node.expense ? () => setEditing(node.expense!) : undefined}
+              />
+            ))}
+          </div>
+        ) : (
+          // ---- Flat list ----
+          <div className="overflow-x-auto">
+            <div className="min-w-[1000px]">
+              <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-[12px] font-semibold text-muted-ink')}>
+                <div>Description</div><div>Unit</div><div>Category</div><div>Date</div><div>Reference</div><div className="text-right">Amount</div><div />
               </div>
-            ) : rows.map(r => {
-              const locked = isLocked(r);
-              return (
-                <div key={r.id} className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[52px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]')}>
-                  <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-[13.5px]">{r.description}</span>
-                    {r.chargeTo !== 'owner' && <span className="text-[11.5px] text-muted-ink">Charged to {CHARGE_LABEL[r.chargeTo] ?? r.chargeTo}</span>}
-                  </div>
-                  <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-[13px]">{r.unitNumber}</span>
-                    <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.propertyName}</span>
-                  </div>
-                  <div><Badge tone={CAT_TONE[r.category]} label={CAT_LABEL[r.category]} /></div>
-                  <div className="flex flex-col gap-px">
-                    <span className="text-[12.5px]">{dateLabel(r.incurredOn)}</span>
-                    {locked && <span className="text-[11px] text-muted-ink">Statement sent</span>}
-                  </div>
-                  <div className="font-mono text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.reference ?? '—'}</div>
-                  <div className="text-right text-[13px] font-medium">{rm(r.amount)}</div>
-                  <div className="flex justify-end">
-                    <button onClick={() => setEditing(r)} title={locked ? `The ${monthLabel(periodOf(r.incurredOn))} statement has been sent, so this expense is locked.` : 'Edit this expense'}
-                      className={cx('h-[30px] px-[11px] py-0 rounded-control cursor-pointer font-sans text-[16px] font-normal inline-flex items-center gap-[5px] border border-solid border-line bg-card', locked ? 'text-muted-ink' : 'text-ink')}>
-                      {locked ? 'Locked' : 'Edit'}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
 
-            {rows.length > 0 && (
+              {rows.map(r => {
+                const locked = isLocked(r);
+                return (
+                  <div key={r.id} className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[52px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]')}>
+                    <div className="flex flex-col gap-px min-w-0">
+                      <span className="text-[13.5px]">{r.description}</span>
+                      {r.chargeTo !== 'owner' && <span className="text-[11.5px] text-muted-ink">Charged to {CHARGE_LABEL[r.chargeTo] ?? r.chargeTo}</span>}
+                    </div>
+                    <div className="flex flex-col gap-px min-w-0">
+                      <span className="text-[13px]">{r.unitNumber}</span>
+                      <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.propertyName}</span>
+                    </div>
+                    <div><Badge tone={CAT_TONE[r.category]} label={CAT_LABEL[r.category]} /></div>
+                    <div className="flex flex-col gap-px">
+                      <span className="text-[12.5px]">{dateLabel(r.incurredOn)}</span>
+                      {locked && <span className="text-[11px] text-muted-ink">Statement sent</span>}
+                    </div>
+                    <div className="font-mono text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.reference ?? '—'}</div>
+                    <div className="text-right text-[13px] font-medium">{rm(r.amount)}</div>
+                    <div className="flex justify-end">
+                      <button onClick={() => setEditing(r)} title={locked ? `The ${monthLabel(periodOf(r.incurredOn))} statement has been sent, so this expense is locked.` : 'Edit this expense'}
+                        className={cx('h-[30px] px-[11px] py-0 rounded-control cursor-pointer font-sans text-[16px] font-normal inline-flex items-center gap-[5px] border border-solid border-line bg-card', locked ? 'text-muted-ink' : 'text-ink')}>
+                        {locked ? 'Locked' : 'Edit'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+
               <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[13px] px-[22px] bg-page text-[13px] font-semibold')}>
                 <div className="[grid-column:1/6]">Total</div>
                 <div className="text-right">{rm(total)}</div>
                 <div />
               </div>
-            )}
+            </div>
           </div>
-        </div>
+        )}
       </Card>
 
       <span className="text-[12px] text-muted-ink">
@@ -307,7 +444,7 @@ export default function ExpensesPage() {
           units={units}
           periods={periods}
           defaultUnit={unit}
-          defaultPeriod={period !== 'all' ? period : (periods[0] ?? 'all')}
+          defaultPeriod={month}
           onClose={() => setReporting(false)}
           onGenerate={generateReport}
         />
@@ -344,6 +481,62 @@ function LabeledField({ label, children }: { label: string; children: ReactNode 
     <div className="flex flex-col gap-1.5">
       <label className={labelClass}>{label}</label>
       {children}
+    </div>
+  );
+}
+
+// ---- One drill-down row ----------------------------------------------------
+// Total / category / expense share this row; the chevron, indent, colour dot and
+// Edit affordance switch on the node kind. Leaf expenses (no children) carry the
+// Edit button; everything above is a rollup header.
+
+function TreeRowView({ node, depth, expanded, onToggle, locked, onEdit }: {
+  node: TreeNode; depth: number; expanded: boolean;
+  onToggle: () => void; locked: boolean; onEdit?: () => void;
+}) {
+  const expandable = node.children.length > 0;
+  const isTotal = node.kind === 'total';
+  const isCategory = node.kind === 'category';
+  const isLeaf = node.kind === 'expense' && !!node.expense;
+  const showCount = node.count != null && node.count > 0 && (isCategory || (node.kind === 'expense' && !isLeaf));
+
+  return (
+    <div
+      role="treeitem"
+      aria-expanded={expandable ? expanded : undefined}
+      className={cx(
+        'flex items-center gap-[10px] min-h-[46px] py-[9px] pr-[18px] [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]',
+        isTotal ? 'bg-muted font-semibold' : isCategory ? 'font-medium' : '',
+        isCategory && expanded ? 'bg-page' : '',
+      )}
+      style={{ paddingLeft: 14 + depth * 20 }}
+    >
+      {expandable ? (
+        <button onClick={onToggle} aria-expanded={expanded} aria-label={expanded ? 'Collapse' : 'Expand'}
+          className="w-[18px] h-[18px] grid place-items-center shrink-0 cursor-pointer bg-transparent border-none text-muted-ink text-[10px] leading-none">
+          {expanded ? '▾' : '▸'}
+        </button>
+      ) : <span className="w-[18px] shrink-0" aria-hidden />}
+
+      {node.tone && !isTotal && <span className={cx('w-[7px] h-[7px] rounded-full shrink-0', TONE[node.tone].dot)} aria-hidden />}
+
+      <div className="flex flex-col gap-px min-w-0 flex-1">
+        <span className={cx('whitespace-nowrap overflow-hidden text-ellipsis', isTotal ? 'text-[13.5px]' : isCategory ? 'text-[13px]' : 'text-[12.5px]')}>
+          {node.label}
+          {showCount && <span className="ml-[6px] text-[11px] font-normal text-muted-ink">· {node.count} {node.count === 1 ? 'item' : 'items'}</span>}
+        </span>
+        {node.sub && <span className="text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{node.sub}{locked ? ' · statement sent' : ''}</span>}
+      </div>
+
+      <span className={cx('font-mono shrink-0 text-right tabular-nums', isTotal ? 'text-[13.5px]' : 'text-[12.5px]')}>{rm(node.amount)}</span>
+
+      {isLeaf ? (
+        <button onClick={onEdit}
+          title={locked ? 'The statement for this month has been sent, so this expense is locked.' : 'Edit this expense'}
+          className={cx('h-[26px] px-[10px] py-0 rounded-control shrink-0 cursor-pointer font-sans text-[12px] inline-flex items-center border border-solid border-line bg-card', locked ? 'text-muted-ink' : 'text-ink')}>
+          {locked ? 'Locked' : 'Edit'}
+        </button>
+      ) : <span className="w-[54px] shrink-0" aria-hidden />}
     </div>
   );
 }

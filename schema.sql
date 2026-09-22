@@ -328,6 +328,7 @@ CREATE TABLE expenses (
   unit_id        uuid NOT NULL REFERENCES units(id) ON DELETE RESTRICT,
   maintenance_id uuid REFERENCES maintenance_issues(id) ON DELETE SET NULL,
   task_id        uuid REFERENCES tasks(id) ON DELETE SET NULL,
+  parent_expense_id uuid REFERENCES expenses(id) ON DELETE CASCADE,  -- L2->L3 drill-down: a line item nests under its parent expense
   category       expense_category NOT NULL,
   description    text NOT NULL,
   amount         numeric(12,2) NOT NULL,
@@ -341,6 +342,7 @@ CREATE TABLE expenses (
   CHECK (amount >= 0)
 );
 CREATE INDEX expenses_unit_date_idx ON expenses(unit_id, incurred_on);
+CREATE INDEX expenses_parent_idx ON expenses(parent_expense_id);
 
 CREATE TABLE owner_statements (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),

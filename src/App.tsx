@@ -19,6 +19,7 @@ const BookingsPage = lazy(() => import('./pages/BookingsPage'));
 const GuestsPage = lazy(() => import('./pages/GuestsPage'));
 const OperationsTodayPage = lazy(() => import('./pages/OperationsTodayPage'));
 const HousekeepingPage = lazy(() => import('./pages/HousekeepingPage'));
+const CleanersPage = lazy(() => import('./pages/CleanersPage')); // added: housekeeping cleaner roster
 const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
 const TasksPage = lazy(() => import('./pages/TasksPage'));
 const InspectionsPage = lazy(() => import('./pages/InspectionsPage'));
@@ -31,6 +32,7 @@ const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
 const StatementsPage = lazy(() => import('./pages/StatementsPage'));
 const PayoutsPage = lazy(() => import('./pages/PayoutsPage'));
 const OwnersPage = lazy(() => import('./pages/OwnersPage'));
+const OwnerProfilePage = lazy(() => import('./pages/OwnerProfilePage'));
 const ContractsPage = lazy(() => import('./pages/ContractsPage'));
 const PricingPage = lazy(() => import('./pages/PricingPage'));
 const ReviewsPage = lazy(() => import('./pages/ReviewsPage'));
@@ -59,6 +61,11 @@ function AppLayout() {
 function UnitRecordRoute() {
   const { id = '' } = useParams();
   return <UnitRecordPage unitId={decodeURIComponent(id)} />;
+}
+
+function OwnerProfileRoute() {
+  const { id = '' } = useParams();
+  return <OwnerProfilePage ownerId={decodeURIComponent(id)} />;
 }
 
 function Routed() {
@@ -95,6 +102,7 @@ function Routed() {
         <Route path="/reservations/guests" element={<GuestsPage />} />
         <Route path="/operations/today" element={<OperationsTodayPage />} />
         <Route path="/operations/housekeeping" element={<HousekeepingPage />} />
+        <Route path="/operations/cleaners" element={<CleanersPage />} /> {/* added: cleaner roster */}
         <Route path="/operations/maintenance" element={<MaintenancePage />} />
         <Route path="/operations/tasks" element={<TasksPage />} />
         <Route path="/operations/inspections" element={<InspectionsPage />} />
@@ -108,6 +116,7 @@ function Routed() {
         <Route path="/finance/statements" element={<StatementsPage />} />
         <Route path="/finance/payouts" element={<PayoutsPage />} />
         <Route path="/owners" element={<OwnersPage />} />
+        <Route path="/owners/:id" element={<OwnerProfileRoute />} />
         <Route path="/owners/contracts" element={<ContractsPage />} />
         <Route path="/performance/analytics" element={<AnalyticsPage />} />
         <Route path="/performance/pricing" element={<PricingPage />} />

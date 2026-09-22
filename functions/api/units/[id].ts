@@ -40,10 +40,11 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   await run(env, `
     UPDATE units SET unit_number = ?, unit_code = COALESCE(?, unit_code), listing_name = COALESCE(?, listing_name), address = COALESCE(?, address),
-                     package = COALESCE(?, package), term = COALESCE(?, term), split_kind = COALESCE(?, split_kind), split_value = ?, updated_at = ?
+                     package = COALESCE(?, package), term = COALESCE(?, term), split_kind = COALESCE(?, split_kind), split_value = ?,
+                     guarantee_period = COALESCE(?, guarantee_period), updated_at = ?
     WHERE id = ?`,
     number, code ?? null, b.listingName ?? null, b.address ?? null, b.pkg ?? null, b.term ?? null, b.split ?? null,
-    b.splitValue === undefined ? null : b.splitValue, now, id);
+    b.splitValue === undefined ? null : b.splitValue, b.guaranteePeriod ?? null, now, id);
 
   if (b.ownerName !== undefined || b.ic !== undefined || b.bankName !== undefined || b.bankAccount !== undefined || b.accountHolder !== undefined) {
     await run(env, `

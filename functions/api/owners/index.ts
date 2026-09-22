@@ -32,20 +32,26 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     generatedAt: nowIso(),
     data: owners.map(o => {
       const mine = contracts.find(c => c.owner_id === o.id) ?? null;
+      // Owner-level default management fee (migration 0009). Absent until applied → null.
+      const ownerDefault = o.default_management_fee_pct != null ? Number(o.default_management_fee_pct) : null;
       return {
         id: o.id, displayName: o.display_name, email: o.email, phone: o.phone,
         ic: banking ? o.ic_number : null, bankName: banking ? o.bank_name : null,
         bankAccount: banking ? o.bank_account_number : null, accountHolder: banking ? (o.bank_account_holder ?? o.display_name) : null,
         portalInvited: !!o.user_id,
+        defaultManagementFeePct: ownerDefault,
         contract: mine ? { feePct: Number(mine.management_fee_pct), startedOn: mine.starts_on, renewsOn: mine.renews_on } : null,
         units: units.filter(u => u.owner_id === o.id).map(u => {
           const grr = (u.model ?? (mine?.model ?? 'management')) === 'grr';
-          const feePct = u.management_fee_pct != null ? Number(u.management_fee_pct) : Number(mine?.management_fee_pct ?? 25);
+          // Fee resolution: the unit's own contract fee wins, then the owner default, then 25%.
+          const unitPct = u.management_fee_pct != null ? Number(u.management_fee_pct) : null;
+          const feePct = unitPct ?? ownerDefault ?? 25;
+          const feeSource: 'unit' | 'owner-default' | 'fallback' = unitPct != null ? 'unit' : ownerDefault != null ? 'owner-default' : 'fallback';
           const revenue = Number(u.revenue), nights = Number(u.nights);
           const grrAmount = Number(u.grr_amount ?? mine?.grr_amount ?? 0);
           return {
             unitId: u.id, unitLabel: `${u.property_name} ${u.unit_number}`, model: grr ? 'grr' : 'management',
-            ...(grr ? { grrAmount } : { feePct }),
+            ...(grr ? { grrAmount } : { feePct }), feeSource,
             occupancy: Math.min(100, Math.round((nights / days) * 100)), adr: nights ? Math.round(revenue / nights) : 0,
             gross: revenue, net: grr ? grrAmount : revenue - Math.round(revenue * (feePct / 100)) - Number(u.costs),
           };
