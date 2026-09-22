@@ -14,7 +14,7 @@ import { TASK } from '../lib/vocabulary';
 import type { TaskState } from '../lib/types';
 import { useSession } from '../lib/session';
 import {
-  CatalogPanel, SKU_FALLBACK, durationLabel,
+  CatalogPanel, ExchangeModal, SKU_FALLBACK, durationLabel,
   type Sku, type SkuPayload, type CatalogInput,
 } from './MaintenanceCatalog';
 
@@ -111,7 +111,9 @@ export default function MaintenancePage() {
   const [completeFor, setCompleteFor] = useState<Issue | null>(null);
   const [photoFor, setPhotoFor] = useState<Issue | null>(null);
   const [docFor, setDocFor] = useState<Issue | null>(null);
+  const [exchangeFor, setExchangeFor] = useState<Issue | null>(null);
   const [confirm, setConfirm] = useState<{ kind: 'approval' | 'block' | 'reopen'; issue: Issue } | null>(null);
+  const canExchange = activeSkus.some(s => s.trackStock && s.stockOnHand > 0);
 
   const rows = merged.filter(i =>
     filter === 'All' ? true
@@ -218,7 +220,8 @@ export default function MaintenancePage() {
   function createSku(input: CatalogInput) {
     const optimistic: Sku = {
       id: `SKU-${Math.floor(1000 + Math.random() * 9000)}`, code: input.code, name: input.name,
-      category: input.category, unitLabel: input.unitLabel, defaultPrice: input.defaultPrice, active: true, notes: input.notes,
+      category: input.category, unitLabel: input.unitLabel, defaultPrice: input.defaultPrice,
+      trackStock: input.trackStock, stockOnHand: input.stockOnHand, active: true, notes: input.notes,
     };
     setSkuAdded(a => [optimistic, ...a]);
     toast({ tone: 'success', title: 'Item added.', body: `${input.name} is in the catalog at ${rm(input.defaultPrice)}.` });
@@ -233,9 +236,22 @@ export default function MaintenancePage() {
     if (delta.category !== undefined) body.category = delta.category;
     if (delta.unitLabel !== undefined) body.unitLabel = delta.unitLabel;
     if (delta.defaultPrice !== undefined) body.defaultPrice = delta.defaultPrice;
+    if (delta.trackStock !== undefined) body.trackStock = delta.trackStock;
+    if (delta.stockOnHand !== undefined) body.stockOnHand = delta.stockOnHand;
     if (delta.notes !== undefined) body.notes = delta.notes;
     if (delta.active !== undefined) body.active = delta.active;
     fire(api.patch(`/maintenance/skus/${id}`, body));
+  }
+
+  function requestExchange(issue: Issue, sku: Sku, qty: number) {
+    // Optimistically decrement the SKU's stock; the ledger row is the server's job.
+    setSkuEdits(e => {
+      const cur = (e[sku.id]?.stockOnHand ?? sku.stockOnHand) as number;
+      return { ...e, [sku.id]: { ...e[sku.id], stockOnHand: Math.max(0, cur - qty) } };
+    });
+    setExchangeFor(null);
+    toast({ tone: 'success', title: 'Drawn from stock.', body: `${qty} × ${sku.name} taken for ${issue.title}.` });
+    fire(api.post(`/maintenance/issues/${issue.id}/exchange`, { skuId: sku.id, qty }));
   }
 
   // ---- Confirmation dialog spec -------------------------------------------
@@ -341,6 +357,8 @@ export default function MaintenancePage() {
                     onReopen={() => setConfirm({ kind: 'reopen', issue: i })}
                     onStart={() => startWork(i)}
                     onEnd={() => endWork(i)}
+                    onExchange={() => setExchangeFor(i)}
+                    canExchange={canExchange}
                   />
                 ))}
               </Card>
@@ -358,6 +376,14 @@ export default function MaintenancePage() {
       {assignFor && <AssignModal issue={assignFor} onClose={() => setAssignFor(null)} onAssign={assignTechnician} />}
       {photoFor && <PhotoModal issue={photoFor} onClose={() => setPhotoFor(null)} onAttach={attachPhoto} />}
       {docFor && <DocumentModal issue={docFor} onClose={() => setDocFor(null)} onAttach={attachDocument} />}
+      {exchangeFor && (
+        <ExchangeModal
+          jobLabel={`${exchangeFor.propertyName} ${exchangeFor.unitNumber} · ${exchangeFor.title}`}
+          skus={activeSkus}
+          onClose={() => setExchangeFor(null)}
+          onExchange={(sku, qty) => requestExchange(exchangeFor, sku, qty)}
+        />
+      )}
       {completeFor && (
         <CompleteModal
           issue={{ ...completeFor, photoCount: edits[completeFor.id]?.photoCount ?? completeFor.photoCount ?? 0 }}
@@ -373,12 +399,12 @@ export default function MaintenancePage() {
 // ---- Row -------------------------------------------------------------------
 
 function IssueRow({
-  issue: i, last, onAssign, onRequestApproval, onBlock, onPhoto, onDoc, onComplete, onReopen, onStart, onEnd,
+  issue: i, last, onAssign, onRequestApproval, onBlock, onPhoto, onDoc, onComplete, onReopen, onStart, onEnd, onExchange, canExchange,
 }: {
   issue: Issue; last: boolean;
   onAssign: () => void; onRequestApproval: () => void; onBlock: () => void;
   onPhoto: () => void; onDoc: () => void; onComplete: () => void; onReopen: () => void;
-  onStart: () => void; onEnd: () => void;
+  onStart: () => void; onEnd: () => void; onExchange: () => void; canExchange: boolean;
 }) {
   const resolved = i.state === 'resolved';
   const photos = i.photoCount ?? 0;
@@ -450,6 +476,7 @@ function IssueRow({
             )}
             {canStart && <RowAction onClick={onStart} primary>Start work</RowAction>}
             {canEnd && <RowAction onClick={onEnd} primary>End work</RowAction>}
+            {canExchange && <RowAction onClick={onExchange}>Request to exchange</RowAction>}
             {!i.blocksUnit && <RowAction onClick={onBlock}>Block the unit</RowAction>}
             <RowAction onClick={onPhoto}>Upload photo</RowAction>
             <RowAction onClick={onDoc}>Upload POD / invoice</RowAction>

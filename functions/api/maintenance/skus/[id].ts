@@ -17,6 +17,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b?.category !== undefined && !CATEGORIES.includes(b.category)) return fail('VALIDATION', 'Pick a category.', 422);
   if (b?.unitLabel !== undefined && !UNIT_LABELS.includes(b.unitLabel)) return fail('VALIDATION', 'Pick what the price is per.', 422);
   if (b?.defaultPrice != null && (!Number.isInteger(b.defaultPrice) || b.defaultPrice < 0)) return fail('VALIDATION', 'The price must be a whole number of sen.', 422, { defaultPrice: 'Enter a price.' });
+  if (b?.stockOnHand != null && (!Number.isInteger(b.stockOnHand) || b.stockOnHand < 0)) return fail('VALIDATION', 'Stock on hand must be a whole number.', 422, { stockOnHand: 'Enter a whole number.' });
 
   const cur = await one<any>(env, 'SELECT id, active, default_price FROM maintenance_skus WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That catalog item no longer exists.', 404);
@@ -27,6 +28,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       category      = COALESCE(?, category),
       unit_label    = COALESCE(?, unit_label),
       default_price = COALESCE(?, default_price),
+      track_stock   = COALESCE(?, track_stock),
+      stock_on_hand = COALESCE(?, stock_on_hand),
       active        = COALESCE(?, active),
       notes         = COALESCE(?, notes),
       updated_at    = ?
@@ -35,6 +38,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     b?.category ?? null,
     b?.unitLabel ?? null,
     b?.defaultPrice ?? null,
+    typeof b?.trackStock === 'boolean' ? (b.trackStock ? 1 : 0) : null,
+    b?.stockOnHand ?? null,
     typeof b?.active === 'boolean' ? (b.active ? 1 : 0) : null,
     typeof b?.notes === 'string' ? b.notes.slice(0, 500) : null,
     nowIso(), id);
