@@ -26,9 +26,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const when = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const rows = await all<any>(env, `
     SELECT t.id, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.next_guest_at, t.requires_photo, t.assignee_id,
-           u.unit_number, u.readiness, u.bedrooms, p.name AS property_name,
+           t.started_at, t.completed_at,
+           u.unit_number, u.readiness, u.bedrooms, p.id AS property_id, p.name AS property_name,
            COALESCE(a.full_name, '') AS assignee_name,
            COALESCE(r.external_ref, 'Manual') AS source_ref,
+           r.check_out AS checkout_date, r.check_out_time AS checkout_time,
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind = 'photo') AS photo_count
     FROM tasks t
     JOIN units u ON u.id = t.unit_id
@@ -44,9 +46,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return json({
     generatedAt: nowIso(), date: from,
     rows: rows.map((r, i) => ({
-      id: r.id, unitNumber: r.unit_number, propertyName: r.property_name, sourceRef: r.source_ref,
+      id: r.id, unitNumber: r.unit_number, propertyName: r.property_name, buildingId: r.property_id, sourceRef: r.source_ref,
       title: r.title, linenSet: linenSet(Number(r.bedrooms)), instructions: r.instructions,
       scheduledFor: hhmm(r.scheduled_for), dueAt: hhmm(r.due_at), nextGuestAt: hhmm(r.next_guest_at),
+      // This stay's checkout (source reservation) and the incoming guest's check-in bracket the SLA.
+      checkoutTime: r.checkout_time ?? null, checkoutDate: r.checkout_date ?? null,
+      // Full ISO start/end so the client can show how long the clean took.
+      startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,
       assigneeId: r.assignee_id, assigneeName: r.assignee_name || null,
       sequence: i + 1, state: r.state, readiness: r.readiness,
       requiresPhoto: !!r.requires_photo, photoCount: Number(r.photo_count),
