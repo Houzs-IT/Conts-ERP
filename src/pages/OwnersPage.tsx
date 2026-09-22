@@ -81,6 +81,7 @@ export default function OwnersPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [modal, setModal] = useState<null | 'owner' | 'link' | 'contract'>(null);
   const [dialog, setDialog] = useState<DialogSpec | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const rows = useMemo(() => (data?.data ?? []).map(o => ({ ...o, ...edits[o.id] })), [data, edits]);
   const open = rows.find(o => o.id === openId) ?? null;
@@ -130,13 +131,34 @@ export default function OwnersPage() {
       meta: o.email,
       confirmLabel: 'Send invite',
       onConfirm: async () => {
+        setBusy(true);
         try {
           await api.post(`/owners/${o.id}/invite`);
           patch(o.id, { portalInvited: true });
           toast({ tone: 'success', title: 'Invite sent.', body: `${o.displayName} can now sign in to the owner portal.` });
         } catch (e) {
           toast({ tone: 'critical', title: 'Invite was not sent.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
-        } finally { setDialog(null); }
+        } finally { setBusy(false); setDialog(null); }
+      },
+    });
+  }
+
+  function deleteOwner(o: Owner) {
+    setDialog({
+      title: `Delete ${o.displayName}?`,
+      body: 'This permanently removes the owner record and their portal login, if any. Only possible when they have no units, contract or statement history.',
+      meta: o.email,
+      confirmLabel: 'Delete owner', busyLabel: 'Deleting…', danger: true,
+      onConfirm: async () => {
+        setBusy(true);
+        try {
+          await api.del(`/owners/${o.id}`);
+          setOpenId(null);
+          toast({ tone: 'success', title: 'Owner deleted.', body: `${o.displayName} was removed.` });
+          reload();
+        } catch (e) {
+          toast({ tone: 'critical', title: 'Owner was not deleted.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+        } finally { setBusy(false); setDialog(null); }
       },
     });
   }
@@ -187,20 +209,21 @@ export default function OwnersPage() {
 
       <Drawer open={!!open} onClose={() => setOpenId(null)} width={520}>
         {open && <OwnerPanel o={open} onClose={() => setOpenId(null)}
-          onLink={() => setModal('link')} onContract={() => setModal('contract')} onInvite={() => invite(open)} />}
+          onLink={() => setModal('link')} onContract={() => setModal('contract')} onInvite={() => invite(open)} onDelete={() => deleteOwner(open)} />}
       </Drawer>
 
       {modal === 'owner' && <AddOwnerModal onClose={() => setModal(null)} onSubmit={addOwner} />}
       {modal === 'link' && open && <LinkUnitModal owner={open.displayName} units={rosterUnits} onClose={() => setModal(null)} onSubmit={linkUnit} />}
       {modal === 'contract' && open && <ContractModal owner={open.displayName} onClose={() => setModal(null)} onSubmit={addContract} />}
-      <Dialog spec={dialog} busy={false} onClose={() => setDialog(null)} />
+      <Dialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
     </>
   );
 }
 
-function OwnerPanel({ o, onClose, onLink, onContract, onInvite }: {
-  o: Owner; onClose: () => void; onLink: () => void; onContract: () => void; onInvite: () => void;
+function OwnerPanel({ o, onClose, onLink, onContract, onInvite, onDelete }: {
+  o: Owner; onClose: () => void; onLink: () => void; onContract: () => void; onInvite: () => void; onDelete: () => void;
 }) {
+  const canDelete = o.units.length === 0 && !o.contract;
   const net = netOf(o), gross = grossOf(o);
   return (
     <>
@@ -266,11 +289,17 @@ function OwnerPanel({ o, onClose, onLink, onContract, onInvite }: {
         <StatementHistory key={o.id} o={o} />
       </div>
 
-      <div className="p-4 [border-top:1px_solid_var(--color-line)] bg-page flex gap-[9px] flex-none">
-        <Button variant="primary" style={{ flex: 1 }} icon={<Icon name="Mail" size="sm" />} onClick={onInvite} disabled={o.portalInvited} disabledReason="This owner already has portal access">
-          {o.portalInvited ? 'Portal active' : 'Invite to portal'}
+      <div className="p-4 [border-top:1px_solid_var(--color-line)] bg-page flex flex-col gap-[9px] flex-none">
+        <div className="flex gap-[9px]">
+          <Button variant="primary" style={{ flex: 1 }} icon={<Icon name="Mail" size="sm" />} onClick={onInvite} disabled={o.portalInvited} disabledReason="This owner already has portal access">
+            {o.portalInvited ? 'Portal active' : 'Invite to portal'}
+          </Button>
+          <Button variant="secondary" onClick={onLink}>Link unit</Button>
+        </div>
+        <Button variant="danger" icon={<Icon name="Trash2" size="sm" />} onClick={onDelete} disabled={!canDelete}
+          disabledReason="This owner has units or a contract on file — reassign or remove those first.">
+          Delete owner
         </Button>
-        <Button variant="secondary" onClick={onLink}>Link unit</Button>
       </div>
     </>
   );
