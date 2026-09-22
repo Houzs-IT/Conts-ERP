@@ -47,6 +47,7 @@ export const NAV: NavGroup[] = [
       { key: 'paymentVouchers', label: 'Payment vouchers', path: '/procurement/payment-vouchers', designed: true },
       { key: 'purchaseReturns', label: 'Purchase returns', path: '/procurement/purchase-returns', designed: true },
       { key: 'purchaseConsignment', label: 'Consignment orders', path: '/procurement/consignment', designed: true },
+      { key: 'mrp', label: 'MRP', path: '/procurement/mrp', designed: true },
     ] },
     { key: 'scWarehouse', label: 'Warehouse', icon: 'warehouse', children: [
       { key: 'warehouses', label: 'Warehouses', path: '/procurement/warehouses', designed: true },
