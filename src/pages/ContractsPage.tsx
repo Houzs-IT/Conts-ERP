@@ -10,7 +10,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
-import { rm } from '../lib/format';
+import { rm, date } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
@@ -197,9 +197,9 @@ export default function ContractsPage() {
                   </div>
                   <span className="text-[12.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.unitsLabel}</span>
                   <span className="text-[12.5px] font-medium">{feeLabel(r)}</span>
-                  <span className="text-[12.5px]">{r.startsOn}</span>
+                  <span className="text-[12.5px]">{date(r.startsOn)}</span>
                   <div className="flex flex-col gap-[2px]">
-                    <span className="text-[12.5px]">{r.renewsOn ?? '—'}</span>
+                    <span className="text-[12.5px]">{r.renewsOn ? date(r.renewsOn) : '—'}</span>
                     {days !== null && days >= 0 && days <= RENEWAL_WINDOW_DAYS && (
                       <span className={cx('self-start text-[11px] font-semibold py-px px-[7px] rounded-full', TONE.warning.bg, TONE.warning.text)}>
                         {days === 0 ? 'renews today' : `in ${days} ${days === 1 ? 'day' : 'days'}`}
