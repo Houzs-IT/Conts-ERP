@@ -7,7 +7,7 @@ import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
-import { rm, monthLabel, dateTime, dateShort, todayMyt } from '../lib/format';
+import { rm, monthLabel, dateTime, dateShort, date, todayMyt } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
@@ -79,14 +79,8 @@ const SENT_PERIODS = new Set(['2026-07', '2026-08']);
 // Grid template shared by the table header, each row and the total row. Mirrors
 // the former COLS inline value as a Tailwind arbitrary grid-template-columns.
 const COLS_CLASS = 'grid-cols-[minmax(168px,1.5fr)_minmax(128px,1.1fr)_minmax(116px,1fr)_minmax(104px,0.9fr)_minmax(120px,1fr)_minmax(96px,0.85fr)_74px]';
-const MYT = 'Asia/Kuala_Lumpur';
 
 const periodOf = (iso: string) => iso.slice(0, 7);
-const dateLabel = (iso: string) => {
-  const d = new Date(`${iso}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric', timeZone: MYT });
-};
-const todayISO = () => new Intl.DateTimeFormat('en-CA', { timeZone: MYT, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const toSen = (s: string): number | null => {
   const n = parseFloat(s.replace(/[^0-9.]/g, ''));
   return Number.isFinite(n) ? Math.round(n * 100) : null;
@@ -399,7 +393,7 @@ export default function ExpensesPage() {
                     </div>
                     <div><Badge tone={CAT_TONE[r.category]} label={CAT_LABEL[r.category]} /></div>
                     <div className="flex flex-col gap-px">
-                      <span className="text-[12.5px]">{dateLabel(r.incurredOn)}</span>
+                      <span className="text-[12.5px]">{date(r.incurredOn)}</span>
                       {locked && <span className="text-[11px] text-muted-ink">Statement sent</span>}
                     </div>
                     <div className="font-mono text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.reference ?? '—'}</div>
@@ -556,7 +550,7 @@ function ExpenseModal({ mode, expense, locked, lockReason, onClose, onSubmit, on
   const [unitNumber, setUnitNumber] = useState(expense?.unitNumber ?? '');
   const [category, setCategory] = useState<Category>(expense?.category ?? 'internet');
   const [amount, setAmount] = useState(expense ? (expense.amount / 100).toFixed(2) : '');
-  const [incurredOn, setIncurredOn] = useState(expense?.incurredOn ?? todayISO());
+  const [incurredOn, setIncurredOn] = useState(expense?.incurredOn ?? todayMyt());
   const [reference, setReference] = useState(expense?.reference ?? '');
   const [description, setDescription] = useState(expense?.description ?? '');
 
