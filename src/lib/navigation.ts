@@ -49,6 +49,7 @@ export const NAV: NavGroup[] = [
   ] },
   { label: 'SALES', items: [
     { key: 'salesOrders', label: 'Sales orders', icon: 'file-text', path: '/sales/orders', designed: true },
+    { key: 'deliveryOrders', label: 'Delivery orders', icon: 'truck', path: '/sales/delivery-orders', designed: true },
   ] },
   { label: 'FINANCE', items: [
     { key: 'finance', label: 'Finance', icon: 'wallet', badge: '2', children: [
