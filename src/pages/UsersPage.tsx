@@ -7,6 +7,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, ApiFailure } from '../lib/api';
+import { date } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone, UserRole } from '../lib/types';
 
@@ -475,7 +476,7 @@ export default function UsersPage() {
                     <span className="text-[12.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.email}</span>
                     <span><span className={cx('inline-flex text-[11px] font-medium py-[3px] px-[9px] rounded-full whitespace-nowrap', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>{roleLabel(u.role)}</span></span>
                     <span className={cx('text-[12.5px] whitespace-nowrap overflow-hidden text-ellipsis', manager ? 'text-ink' : 'text-faint')}>{manager ?? '—'}</span>
-                    <span className="text-[12.5px] text-muted-ink">{u.lastLoginAt ?? 'Never'}</span>
+                    <span className="text-[12.5px] text-muted-ink">{u.lastLoginAt ? date(u.lastLoginAt) : 'Never'}</span>
                     <span><Badge tone={s.tone} label={s.label} /></span>
                   </button>
                 );

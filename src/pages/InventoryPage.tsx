@@ -88,6 +88,10 @@ export default function InventoryPage() {
     () => roster.map(u => ({ unitNumber: u.unitNumber, propertyName: u.propertyName, label: `${u.propertyName} ${u.unitNumber}` })),
     [roster],
   );
+  // Units the header/stat report are the distinct units actually present in the
+  // register — derived from the items themselves, not the unit roster, which is
+  // empty when its own endpoint is unavailable (leaving a wrong "0 units").
+  const unitCount = useMemo(() => new Set(all.map(i => i.unitNumber)).size, [all]);
 
   const rows = all.filter(i =>
     (unitFilter === 'all' || i.unitNumber === unitFilter) &&
@@ -125,7 +129,7 @@ export default function InventoryPage() {
     <>
       <PageHeader
         title="Inventory"
-        sub={`${all.length} items across ${units.length} ${units.length === 1 ? 'unit' : 'units'} · fit-out register`}
+        sub={`${all.length} items across ${unitCount} ${unitCount === 1 ? 'unit' : 'units'} · fit-out register`}
         right={<Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Add item</Button>}
       />
 
@@ -137,7 +141,7 @@ export default function InventoryPage() {
           active={condFilter === 'attention'} onClick={() => setCondFilter(f => f === 'attention' ? 'all' : 'attention')} hint="Replace soon or damaged" />
         <Stat label="Due for replacement" value={String(dueCount)} tone={dueCount ? 'warning' : undefined}
           active={dueOnly} onClick={() => setDueOnly(v => !v)} hint={`On schedule within ${DUE_WINDOW_DAYS} days`} />
-        <Stat label="Units furnished" value={String(units.length)} hint="With items on the register" />
+        <Stat label="Units furnished" value={String(unitCount)} hint="With items on the register" />
       </div>
 
       <div className="flex gap-[14px] items-end flex-wrap">
