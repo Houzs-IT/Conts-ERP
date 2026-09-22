@@ -1,6 +1,7 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { findClash, clashResponseBody } from '../../../_lib/reservations';
+import { syncAvailabilityIfLinked } from '../../../_lib/channexSync';
 
 /** PATCH /api/reservations/:id/dates { checkIn, checkOut, confirm } — without confirm: 428 with the consequence. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -27,5 +28,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   await run(env, 'UPDATE reservations SET check_in = ?, check_out = ?, updated_at = ? WHERE id = ?', b.checkIn, b.checkOut, nowIso(), id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.dates', entityTable: 'reservations', entityId: id, before: { checkIn: cur.check_in, checkOut: cur.check_out }, after: { checkIn: b.checkIn, checkOut: b.checkOut } });
+  await syncAvailabilityIfLinked(env, cur.unit_id, cur.check_in, cur.check_out, true);
+  await syncAvailabilityIfLinked(env, cur.unit_id, b.checkIn, b.checkOut, false);
   return json({ id, checkIn: b.checkIn, checkOut: b.checkOut });
 };

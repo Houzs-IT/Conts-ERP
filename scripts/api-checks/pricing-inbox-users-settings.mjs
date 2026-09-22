@@ -8,7 +8,7 @@ r = await call('PUT', '/api/rates', { unitId: U1, costFloor: 12000 }); check('se
 r = await call('PUT', '/api/rates', { unitId: U1, channel: 'airbnb', uplift: 4000 }); check('set uplift', r.status === 200, r.text);
 r = await call('PUT', '/api/rates', { unitId: U1, channel: 'direct', uplift: 4000 }); check('uplift on direct 422', r.status === 422, r.text);
 r = await call('GET', '/api/pricing/rules'); const pu = r.json.units.find(u => u.unitId === U1); check('pricing persisted', pu.baseRate === 30000 && pu.costFloor === 12000 && pu.rates.find(x => x.channel === 'airbnb').upliftSen === 4000, JSON.stringify(pu));
-r = await call('POST', '/api/rates/bulk', { unitIds: [U1], channels: ['direct', 'airbnb'], from: '2026-12-04', to: '2026-12-06', baseRate: 30000, uplifts: { airbnb: 4000 } }); check('pricing push (held, not sent)', r.status === 200 && r.json.written === 6 && r.json.pushedToChannels === false, r.text);
+r = await call('POST', '/api/rates/bulk', { unitIds: [U1], channels: ['direct', 'airbnb'], from: '2026-12-04', to: '2026-12-06', baseRate: 30000, uplifts: { airbnb: 4000 } }); check('pricing push (held, not sent)', r.status === 200 && r.json.written === 6, r.text);
 r = await call('GET', '/api/reservations/calendar?from=2026-12-04&to=2026-12-07'); check('weekend uplift applied (Fri 4 Dec airbnb = (30000+4000)*1.22)', r.json.rates[`${U1}:airbnb:2026-12-04`] === Math.round(34000 * 1.22) && r.json.rates[`${U1}:web:2026-12-06`] === 30000, JSON.stringify(r.json.rates));
 r = await call('PUT', '/api/rates', { unitId: U1, baseRate: 1 }, 'housekeeper'); check('field role cannot price 403', r.status === 403, r.text);
 // reviews

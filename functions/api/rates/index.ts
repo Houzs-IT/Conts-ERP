@@ -1,5 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { syncRateIfLinked } from '../../_lib/channexSync';
 
 const CHANNELS = ['web', 'airbnb', 'booking_com', 'agoda'];
 const OTAS = ['airbnb', 'booking_com', 'agoda'];
@@ -55,5 +56,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     ON CONFLICT (unit_id, channel, rate_date) DO UPDATE SET rate = excluded.rate, updated_at = excluded.updated_at`,
     unit.id, channel, b.date, b.rate, now);
   await done('rate.set', null, { channel, date: b.date, rate: b.rate });
+  // Only the direct/web rate is a real "the price for this night" figure worth telling Channex about.
+  if (channel === 'web') await syncRateIfLinked(env, unit.id, b.date, b.rate);
   return json({ ok: true });
 };
