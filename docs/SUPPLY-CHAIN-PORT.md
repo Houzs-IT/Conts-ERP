@@ -89,7 +89,7 @@ Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 - [ ] Consignment Notes / Orders / Returns (`Consignment*`)
 
 ### Tier 5 — Transportation / TMS
-- [ ] Fleet / Lorry / Drivers (`Fleet*`, `Lorry*`, `Drivers`, `DriverLeave`)
+- [x] **Drivers + Vehicles masters** — PR #46 `feat/scm-transport` (stacked on #45; HELD: migration 0021). New TRANSPORT nav group. DriverLeave / Fleet run-sheets / Lorry capacity = follow-up.
 - [ ] Delivery planning (`DeliveryPlanning*`, `DeliveryZones`, `DeliveryRateCards`,
       `DeliveryResidenceRules`, `AutoSchedule`, `DpOrders`, `Trips`)
 - [ ] 3PL (`ThreePLCompanies`), `DeliveryMaintenance`
