@@ -13,7 +13,7 @@ export interface GrnHeaderRow {
 export interface GrnLineRow {
   id: string; purchase_order_line_id: string | null; line_no: number; item_code: string; description: string; uom: string;
   qty_received: number; qty_accepted: number; qty_rejected: number; rejection_reason: string | null;
-  unit_price_sen: number; line_total_sen: number; invoiced_qty: number; notes: string | null;
+  unit_price_sen: number; line_total_sen: number; invoiced_qty: number; returned_qty: number; notes: string | null;
 }
 
 export function toGrnHeaderPayload(r: GrnHeaderRow) {
@@ -29,7 +29,7 @@ export function toGrnLinePayload(r: GrnLineRow) {
   return {
     id: r.id, purchaseOrderLineId: r.purchase_order_line_id ?? '', lineNo: r.line_no, itemCode: r.item_code, description: r.description, uom: r.uom,
     qtyReceived: r.qty_received, qtyAccepted: r.qty_accepted, qtyRejected: r.qty_rejected, rejectionReason: r.rejection_reason ?? '',
-    unitPriceSen: r.unit_price_sen, lineTotalSen: r.line_total_sen, invoicedQty: r.invoiced_qty, notes: r.notes ?? '',
+    unitPriceSen: r.unit_price_sen, lineTotalSen: r.line_total_sen, invoicedQty: r.invoiced_qty, returnedQty: r.returned_qty, notes: r.notes ?? '',
   };
 }
 
