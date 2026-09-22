@@ -19,6 +19,7 @@ const BookingsPage = lazy(() => import('./pages/BookingsPage'));
 const GuestsPage = lazy(() => import('./pages/GuestsPage'));
 const OperationsTodayPage = lazy(() => import('./pages/OperationsTodayPage'));
 const HousekeepingPage = lazy(() => import('./pages/HousekeepingPage'));
+const CleanersPage = lazy(() => import('./pages/CleanersPage')); // added: housekeeping cleaner roster
 const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
 const TasksPage = lazy(() => import('./pages/TasksPage'));
 const InspectionsPage = lazy(() => import('./pages/InspectionsPage'));
@@ -101,6 +102,7 @@ function Routed() {
         <Route path="/reservations/guests" element={<GuestsPage />} />
         <Route path="/operations/today" element={<OperationsTodayPage />} />
         <Route path="/operations/housekeeping" element={<HousekeepingPage />} />
+        <Route path="/operations/cleaners" element={<CleanersPage />} /> {/* added: cleaner roster */}
         <Route path="/operations/maintenance" element={<MaintenancePage />} />
         <Route path="/operations/tasks" element={<TasksPage />} />
         <Route path="/operations/inspections" element={<InspectionsPage />} />
