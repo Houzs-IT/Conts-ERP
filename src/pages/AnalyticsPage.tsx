@@ -327,7 +327,7 @@ export default function AnalyticsPage() {
       <Card>
         <CardHeader title="Where revenue came from" right={<span className="text-[12px] text-muted-ink">share of collected revenue</span>} />
         <div className="flex flex-col gap-0">
-          {loading ? <TableSkeleton rows={4} cols={2} /> : d.channelMix.map(c => (
+          {loading ? <TableSkeleton rows={4} cols={2} /> : (d.channelMix ?? []).map(c => (
             <div key={c.channel} className="flex items-center gap-[14px] px-5 py-[13px] [border-top:1px_solid_var(--color-line-soft)]">
               <ChannelMark ch={c.channel} size={22} />
               <div className="flex flex-col gap-1.5 min-w-0 flex-1">
