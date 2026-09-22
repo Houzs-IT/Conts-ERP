@@ -1,6 +1,33 @@
-import { type Env, one, run, json, fail, audit } from '../../_lib/db';
+import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { MASTER_ROLES } from '../../_lib/properties';
+
+/** PATCH /api/owners/:id { defaultManagementFeePct: number | null } — set or clear
+ *  the owner-level default management fee. A unit's own contract fee overrides it. */
+export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return response!;
+  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can change owner fees.', 403);
+
+  const id = String(params.id);
+  const owner = await one<{ id: string; display_name: string }>(env, 'SELECT id, display_name FROM owners WHERE id = ?', id);
+  if (!owner) return fail('NOT_FOUND', 'That owner no longer exists.', 404);
+
+  const b = await request.json<any>().catch(() => null);
+  if (!b || !('defaultManagementFeePct' in b)) return fail('VALIDATION', 'Provide a default management fee, or null to clear it.', 422);
+  const raw = b.defaultManagementFeePct;
+  let pct: number | null;
+  if (raw === null || raw === '') {
+    pct = null;
+  } else {
+    pct = Number(raw);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) return fail('VALIDATION', 'The fee must be between 0 and 100.', 422, { defaultManagementFeePct: 'Enter 0 to 100, or leave blank.' });
+  }
+
+  await run(env, 'UPDATE owners SET default_management_fee_pct = ?, updated_at = ? WHERE id = ?', pct, nowIso(), id);
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'owner.update', entityTable: 'owners', entityId: id, after: { defaultManagementFeePct: pct } });
+  return json({ ok: true, defaultManagementFeePct: pct });
+};
 
 /** DELETE /api/owners/:id — only when the owner has no units, contract, statements or payouts.
  *  An owner with any real history is never deleted here; reassign their units first. */

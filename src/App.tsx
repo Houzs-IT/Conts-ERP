@@ -31,6 +31,7 @@ const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
 const StatementsPage = lazy(() => import('./pages/StatementsPage'));
 const PayoutsPage = lazy(() => import('./pages/PayoutsPage'));
 const OwnersPage = lazy(() => import('./pages/OwnersPage'));
+const OwnerProfilePage = lazy(() => import('./pages/OwnerProfilePage'));
 const ContractsPage = lazy(() => import('./pages/ContractsPage'));
 const PricingPage = lazy(() => import('./pages/PricingPage'));
 const ReviewsPage = lazy(() => import('./pages/ReviewsPage'));
@@ -59,6 +60,11 @@ function AppLayout() {
 function UnitRecordRoute() {
   const { id = '' } = useParams();
   return <UnitRecordPage unitId={decodeURIComponent(id)} />;
+}
+
+function OwnerProfileRoute() {
+  const { id = '' } = useParams();
+  return <OwnerProfilePage ownerId={decodeURIComponent(id)} />;
 }
 
 function Routed() {
@@ -108,6 +114,7 @@ function Routed() {
         <Route path="/finance/statements" element={<StatementsPage />} />
         <Route path="/finance/payouts" element={<PayoutsPage />} />
         <Route path="/owners" element={<OwnersPage />} />
+        <Route path="/owners/:id" element={<OwnerProfileRoute />} />
         <Route path="/owners/contracts" element={<ContractsPage />} />
         <Route path="/performance/analytics" element={<AnalyticsPage />} />
         <Route path="/performance/pricing" element={<PricingPage />} />
