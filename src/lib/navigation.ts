@@ -40,6 +40,7 @@ export const NAV: NavGroup[] = [
     { key: 'categories', label: 'Categories', icon: 'tags', path: '/procurement/categories', designed: true },
     { key: 'warehouses', label: 'Warehouses', icon: 'warehouse', path: '/procurement/warehouses', designed: true },
     { key: 'purchaseOrders', label: 'Purchase orders', icon: 'shopping-cart', path: '/procurement/purchase-orders', designed: true },
+    { key: 'goodsReceived', label: 'Goods received', icon: 'package-check', path: '/procurement/goods-received', designed: true },
   ] },
   { label: 'FINANCE', items: [
     { key: 'finance', label: 'Finance', icon: 'wallet', badge: '2', children: [
