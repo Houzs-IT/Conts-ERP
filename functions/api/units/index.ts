@@ -63,12 +63,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return fail('CONFLICT', 'That building already has a unit with this code.', 409, { unitCode: 'This code is already used in the building.' });
   }
 
+  // A sub-unit must hang off a real unit in the same building; a bad parent just makes a top-level unit.
+  let parentUnitId: string | null = null;
+  if (typeof b.parentUnitId === 'string' && b.parentUnitId) {
+    if (await one(env, 'SELECT 1 AS x FROM units WHERE id = ? AND property_id = ?', b.parentUnitId, b.buildingId)) parentUnitId = b.parentUnitId;
+  }
+
   const ownerId = await ownerFor(env, b), now = nowIso();
   await run(env, `
-    INSERT INTO units (id, property_id, owner_id, unit_number, unit_code, listing_name, address, package, term, split_kind, split_value, readiness, base_rate, is_listed, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', 0, 0, ?, ?)`,
-    id, b.buildingId, ownerId, number, (b.unitCode ?? '').trim() || null, b.listingName ?? null, b.address ?? null,
-    b.pkg ?? 'Package C', b.term ?? 'Long term', b.split ?? 'Not set', b.splitValue ?? null, now, now);
+    INSERT INTO units (id, property_id, parent_unit_id, owner_id, unit_number, unit_code, listing_name, address, package, term, split_kind, split_value, guarantee_period, readiness, base_rate, is_listed, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', 0, 0, ?, ?)`,
+    id, b.buildingId, parentUnitId, ownerId, number, (b.unitCode ?? '').trim() || null, b.listingName ?? null, b.address ?? null,
+    b.pkg ?? 'Package C', b.term ?? 'Long term', b.split ?? 'Not set', b.splitValue ?? null, b.guaranteePeriod ?? 'month', now, now);
   if (b.expenses?.length) await saveExpenses(env, id, b.expenses);
   if (b.contract) await saveContract(env, id, ownerId, b.contract);
   await auditUnit(env, session, 'unit.create', id, { buildingId: b.buildingId, unitCode: number });
