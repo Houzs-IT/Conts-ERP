@@ -33,28 +33,37 @@ export const NAV: NavGroup[] = [
       { key: 'access', label: 'Access and keys', path: '/properties/access', designed: true },
     ] },
   ] },
-  { label: 'PROCUREMENT', items: [
-    { key: 'procurement', label: 'Products and maintenance', icon: 'package', path: '/procurement/products', designed: true },
-    { key: 'suppliers', label: 'Suppliers', icon: 'truck', path: '/procurement/suppliers', designed: true },
-    { key: 'productModels', label: 'Product models', icon: 'boxes', path: '/procurement/product-models', designed: true },
-    { key: 'categories', label: 'Categories', icon: 'tags', path: '/procurement/categories', designed: true },
-    { key: 'warehouses', label: 'Warehouses', icon: 'warehouse', path: '/procurement/warehouses', designed: true },
-    { key: 'purchaseOrders', label: 'Purchase orders', icon: 'shopping-cart', path: '/procurement/purchase-orders', designed: true },
-    { key: 'goodsReceived', label: 'Goods received', icon: 'package-check', path: '/procurement/goods-received', designed: true },
-    { key: 'purchaseInvoices', label: 'Purchase invoices', icon: 'receipt', path: '/procurement/purchase-invoices', designed: true },
-    { key: 'paymentVouchers', label: 'Payment vouchers', icon: 'banknote', path: '/procurement/payment-vouchers', designed: true },
-    { key: 'purchaseReturns', label: 'Purchase returns', icon: 'undo-2', path: '/procurement/purchase-returns', designed: true },
-    { key: 'purchaseConsignment', label: 'Consignment orders', icon: 'package-plus', path: '/procurement/consignment', designed: true },
-    { key: 'stock', label: 'Stock', icon: 'boxes', path: '/procurement/stock', designed: true },
-  ] },
-  { label: 'SALES', items: [
-    { key: 'salesOrders', label: 'Sales orders', icon: 'file-text', path: '/sales/orders', designed: true },
-    { key: 'deliveryOrders', label: 'Delivery orders', icon: 'truck', path: '/sales/delivery-orders', designed: true },
-    { key: 'salesInvoices', label: 'Sales invoices', icon: 'receipt', path: '/sales/invoices', designed: true },
-  ] },
-  { label: 'TRANSPORT', items: [
-    { key: 'drivers', label: 'Drivers', icon: 'user-round', path: '/transport/drivers', designed: true },
-    { key: 'vehicles', label: 'Vehicles', icon: 'truck', path: '/transport/vehicles', designed: true },
+  // Supply Chain — mirrors Houzs's nav hierarchy: L1 group (Supply Chain) → L2 collapsible
+  // sections (Procurement / Warehouse / Sales / Transportation / Furniture) → L3 pages.
+  { label: 'SUPPLY CHAIN', items: [
+    { key: 'scProcurement', label: 'Procurement', icon: 'shopping-cart', children: [
+      { key: 'procurement', label: 'Products and maintenance', path: '/procurement/products', designed: true },
+      { key: 'suppliers', label: 'Suppliers', path: '/procurement/suppliers', designed: true },
+      { key: 'productModels', label: 'Product models', path: '/procurement/product-models', designed: true },
+      { key: 'categories', label: 'Categories', path: '/procurement/categories', designed: true },
+      { key: 'purchaseOrders', label: 'Purchase orders', path: '/procurement/purchase-orders', designed: true },
+      { key: 'goodsReceived', label: 'Goods received', path: '/procurement/goods-received', designed: true },
+      { key: 'purchaseInvoices', label: 'Purchase invoices', path: '/procurement/purchase-invoices', designed: true },
+      { key: 'paymentVouchers', label: 'Payment vouchers', path: '/procurement/payment-vouchers', designed: true },
+      { key: 'purchaseReturns', label: 'Purchase returns', path: '/procurement/purchase-returns', designed: true },
+      { key: 'purchaseConsignment', label: 'Consignment orders', path: '/procurement/consignment', designed: true },
+    ] },
+    { key: 'scWarehouse', label: 'Warehouse', icon: 'warehouse', children: [
+      { key: 'warehouses', label: 'Warehouses', path: '/procurement/warehouses', designed: true },
+      { key: 'stock', label: 'Stock', path: '/procurement/stock', designed: true },
+    ] },
+    { key: 'scSales', label: 'Sales', icon: 'file-text', children: [
+      { key: 'salesOrders', label: 'Sales orders', path: '/sales/orders', designed: true },
+      { key: 'deliveryOrders', label: 'Delivery orders', path: '/sales/delivery-orders', designed: true },
+      { key: 'salesInvoices', label: 'Sales invoices', path: '/sales/invoices', designed: true },
+    ] },
+    { key: 'scTransport', label: 'Transportation', icon: 'truck', children: [
+      { key: 'drivers', label: 'Drivers', path: '/transport/drivers', designed: true },
+      { key: 'vehicles', label: 'Vehicles', path: '/transport/vehicles', designed: true },
+    ] },
+    { key: 'scFurniture', label: 'Furniture', icon: 'sofa', children: [
+      { key: 'fabrics', label: 'Fabric library', path: '/furniture/fabrics', designed: true },
+    ] },
   ] },
   { label: 'FINANCE', items: [
     { key: 'finance', label: 'Finance', icon: 'wallet', badge: '2', children: [
