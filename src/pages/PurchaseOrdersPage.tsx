@@ -1,0 +1,319 @@
+import { useMemo, useState } from 'react';
+import { Search, Plus, Trash2, X } from 'lucide-react';
+import { Card } from '../components/Card';
+import PageHeader from '../components/PageHeader';
+import { Button } from '../components/Button';
+import { Field } from '../components/Field';
+import { Drawer } from '../components/Dialog';
+import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { useApi } from '../lib/useApi';
+import { api, notifyFailure } from '../lib/api';
+import { useToast } from '../components/Toast';
+import { useSession } from '../lib/session';
+import { rm, date } from '../lib/format';
+import { TONE, cx } from '../lib/design-tokens';
+import type { Tone } from '../lib/types';
+
+/** Purchase Orders — ported from 2990's SCM (core priced document), drawn in Conts.
+ *  Header + priced lines + status flow. Money is integer sen; the form takes RM. */
+
+type Status = 'SUBMITTED' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CANCELLED';
+const STATUS_LABEL: Record<Status, string> = { SUBMITTED: 'Submitted', PARTIALLY_RECEIVED: 'Partly received', RECEIVED: 'Received', CANCELLED: 'Cancelled' };
+const STATUS_TONE: Record<Status, Tone> = { SUBMITTED: 'info', PARTIALLY_RECEIVED: 'warning', RECEIVED: 'success', CANCELLED: 'neutral' };
+const FILTERS: (Status | 'all')[] = ['all', 'SUBMITTED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED'];
+
+interface Line { id?: string; itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; discountSen: number; lineTotalSen: number; receivedQty?: number }
+interface Po {
+  id: string; poNumber: string; supplierId: string; supplierCode: string; supplierName: string; status: Status;
+  poDate: string; expectedAt: string; warehouseId: string; currency: string;
+  subtotalSen: number; taxSen: number; totalSen: number; notes: string; lines?: Line[];
+}
+interface Payload { data: Po[]; generatedAt: string }
+interface Opt { id: string; code: string; name: string }
+
+const FALLBACK: Payload = {
+  generatedAt: '',
+  data: [
+    { id: 'po1', poNumber: 'PO-2026-0001', supplierId: 's1', supplierCode: 'SUP-EMMA', supplierName: 'Emma Furnishings Sdn Bhd', status: 'SUBMITTED', poDate: '2026-09-18', expectedAt: '2026-10-02', warehouseId: 'w1', currency: 'MYR', subtotalSen: 984000, taxSen: 0, totalSen: 984000, notes: 'For Vista Jaya fit-out batch.', lines: [
+      { itemCode: 'SF-3S-GRY', description: 'Emma 3-Seater Sofa', uom: 'UNIT', qty: 2, unitPriceSen: 328000, discountSen: 0, lineTotalSen: 656000 },
+      { itemCode: 'SF-2S-CHR', description: 'Emma 2-Seater Sofa, Charcoal', uom: 'UNIT', qty: 1, unitPriceSen: 328000, discountSen: 0, lineTotalSen: 328000 },
+    ] },
+    { id: 'po2', poNumber: 'PO-2026-0002', supplierId: 's2', supplierCode: 'SUP-HILTON', supplierName: 'Hilton Bedding Manufacturing', status: 'PARTIALLY_RECEIVED', poDate: '2026-09-15', expectedAt: '2026-09-28', warehouseId: 'w1', currency: 'MYR', subtotalSen: 840000, taxSen: 0, totalSen: 840000, notes: '', lines: [
+      { itemCode: 'MT-KG-HIL', description: 'Hilton Pocket Spring Mattress, King', uom: 'UNIT', qty: 2, unitPriceSen: 420000, discountSen: 0, lineTotalSen: 840000, receivedQty: 1 },
+    ] },
+    { id: 'po3', poNumber: 'PO-2026-0003', supplierId: 's3', supplierCode: 'SUP-NORDIC', supplierName: 'Nordic Woodcraft', status: 'RECEIVED', poDate: '2026-09-05', expectedAt: '2026-09-19', warehouseId: 'w1', currency: 'MYR', subtotalSen: 378000, taxSen: 0, totalSen: 378000, notes: '', lines: [
+      { itemCode: 'BF-KG-OAK', description: 'Nordic Bedframe, Oak, King', uom: 'UNIT', qty: 2, unitPriceSen: 189000, discountSen: 0, lineTotalSen: 378000, receivedQty: 2 },
+    ] },
+  ],
+};
+const SUP_FALLBACK = { data: [
+  { id: 's1', code: 'SUP-EMMA', name: 'Emma Furnishings Sdn Bhd' }, { id: 's2', code: 'SUP-HILTON', name: 'Hilton Bedding Manufacturing' },
+  { id: 's3', code: 'SUP-NORDIC', name: 'Nordic Woodcraft' }, { id: 's4', code: 'SUP-TEXTILE', name: 'KL Textile & Carpet Co' },
+] };
+const WH_FALLBACK = { data: [{ id: 'w1', code: 'WH-MAIN', name: 'Main Warehouse' }, { id: 'w2', code: 'WH-KL', name: 'KL Transit Hub' }] };
+
+const senToRm = (sen: number) => (sen ? String(sen / 100) : '');
+const rmToSen = (v: string) => { const n = Number(v); return v.trim() && Number.isFinite(n) ? Math.round(n * 100) : 0; };
+
+export default function PurchaseOrdersPage() {
+  const { data, loading, error, reload } = useApi<Payload>('/purchase-orders', FALLBACK);
+  const suppliers = useApi<{ data: Opt[] }>('/suppliers', SUP_FALLBACK).data?.data ?? [];
+  const warehouses = useApi<{ data: Opt[] }>('/warehouses', WH_FALLBACK).data?.data ?? [];
+  const toast = useToast();
+  const { user } = useSession();
+  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+
+  const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
+  const [search, setSearch] = useState('');
+  const [drawer, setDrawer] = useState<Po | null>(null);
+  const [isNew, setIsNew] = useState(false);
+
+  const [added, setAdded] = useState<Po[]>([]);
+  const [edits, setEdits] = useState<Record<string, Partial<Po>>>({});
+
+  const all = useMemo(
+    () => [...added, ...(data?.data ?? [])].map(p => ({ ...p, ...edits[p.id] })),
+    [added, data, edits],
+  );
+
+  const q = search.trim().toLowerCase();
+  const rows = all.filter(p =>
+    (statusFilter === 'all' || p.status === statusFilter) &&
+    (!q || `${p.poNumber} ${p.supplierName} ${p.supplierCode}`.toLowerCase().includes(q)),
+  );
+
+  function openNew() {
+    setIsNew(true);
+    setDrawer({ id: '', poNumber: '', supplierId: suppliers[0]?.id ?? '', supplierCode: '', supplierName: '', status: 'SUBMITTED', poDate: new Date().toISOString().slice(0, 10), expectedAt: '', warehouseId: warehouses[0]?.id ?? '', currency: 'MYR', subtotalSen: 0, taxSen: 0, totalSen: 0, notes: '', lines: [] });
+  }
+  function openExisting(p: Po) { setIsNew(false); setDrawer({ ...p, lines: p.lines ?? [] }); }
+
+  function saveNew(po: Po, lines: Line[]) {
+    const supplier = suppliers.find(s => s.id === po.supplierId);
+    const local: Po = { ...po, id: `po-new-${crypto.randomUUID().slice(0, 8)}`, poNumber: `PO-${new Date().getFullYear()}-NEW`, supplierCode: supplier?.code ?? '', supplierName: supplier?.name ?? '', lines };
+    setAdded(a => [local, ...a]);
+    api.post('/purchase-orders', body(po, lines)).catch(notifyFailure);
+    toast({ tone: 'success', title: 'Purchase order raised.', body: `${local.poNumber} · ${local.supplierName}` });
+    setDrawer(null);
+  }
+  function saveEdit(po: Po, lines: Line[]) {
+    const supplier = suppliers.find(s => s.id === po.supplierId);
+    const patch: Partial<Po> = { ...totalsOf(lines, po.taxSen), supplierId: po.supplierId, supplierCode: supplier?.code ?? po.supplierCode, supplierName: supplier?.name ?? po.supplierName, expectedAt: po.expectedAt, warehouseId: po.warehouseId, notes: po.notes, poDate: po.poDate, lines };
+    setEdits(e => ({ ...e, [po.id]: { ...e[po.id], ...patch } }));
+    api.patch(`/purchase-orders/${po.id}`, body(po, lines)).catch(notifyFailure);
+    toast({ tone: 'success', title: 'Purchase order updated.', body: po.poNumber });
+    setDrawer(null);
+  }
+  function cancelPo(p: Po) {
+    setEdits(e => ({ ...e, [p.id]: { ...e[p.id], status: 'CANCELLED' } }));
+    api.patch(`/purchase-orders/${p.id}`, { status: 'CANCELLED' }).catch(notifyFailure);
+    toast({ tone: 'success', title: 'Purchase order cancelled.', body: p.poNumber });
+    setDrawer(null);
+  }
+
+  return (
+    <>
+      <PageHeader title="Purchase orders" sub={`${all.length} orders · buy-side documents`}
+        right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={openNew}>New PO</Button> : undefined} />
+
+      {error && <StaleBanner message={`Showing the last order list we have. ${error}`} onRetry={reload} />}
+
+      <div className="flex items-center justify-between gap-5 flex-wrap">
+        <div className="flex gap-2 flex-wrap">
+          {FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}
+        </div>
+        <div className="relative">
+          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search PO or supplier..." aria-label="Search purchase orders"
+            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[260px] max-w-full" />
+        </div>
+      </div>
+
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse min-w-[820px]">
+            <thead>
+              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+                {['PO number', 'Supplier', 'PO date', 'Expected', 'Status', 'Total'].map((h, i) => (
+                  <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 5 ? 'text-right' : 'text-left')}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading && all.length === 0 ? (
+                <tr><td colSpan={6}><TableSkeleton rows={6} cols={6} /></td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={6}>
+                  <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
+                    <span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No purchase orders match.' : 'No purchase orders yet.'}</span>
+                    <span className="text-[12.5px] text-muted-ink max-w-[380px]">{q || statusFilter !== 'all' ? 'Clear the search or status filter.' : 'Raise a PO to order stock from a supplier.'}</span>
+                  </div>
+                </td></tr>
+              ) : rows.map(p => (
+                <tr key={p.id} onClick={() => openExisting(p)} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
+                  <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{p.poNumber}</span></td>
+                  <td className="py-[13px] px-4"><div className="flex flex-col"><span className="text-[13.5px]">{p.supplierName}</span><span className="text-[11.5px] text-muted-ink">{p.supplierCode}</span></div></td>
+                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.poDate ? date(p.poDate) : '—'}</td>
+                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.expectedAt ? date(p.expectedAt) : '—'}</td>
+                  <td className="py-[13px] px-4"><StatusPill status={p.status} /></td>
+                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{rm(p.totalSen)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {drawer && <PoDrawer po={drawer} isNew={isNew} suppliers={suppliers} warehouses={warehouses} canWrite={canWrite}
+        onClose={() => setDrawer(null)} onCreate={saveNew} onSave={saveEdit} onCancelPo={cancelPo} />}
+    </>
+  );
+}
+
+function body(po: Po, lines: Line[]) {
+  return {
+    supplierId: po.supplierId, poDate: po.poDate, expectedAt: po.expectedAt || null, warehouseId: po.warehouseId || null,
+    currency: po.currency, notes: po.notes, taxSen: po.taxSen,
+    lines: lines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qty: l.qty, unitPriceSen: l.unitPriceSen, discountSen: l.discountSen, notes: '' })),
+  };
+}
+function totalsOf(lines: Line[], taxSen: number) {
+  const subtotalSen = lines.reduce((s, l) => s + l.lineTotalSen, 0);
+  return { subtotalSen, taxSen: Math.max(0, taxSen), totalSen: subtotalSen + Math.max(0, taxSen) };
+}
+
+/* ---------- primitives ---------- */
+
+function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} aria-pressed={active}
+      className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid',
+        active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>
+  );
+}
+function StatusPill({ status }: { status: Status }) {
+  const t = STATUS_TONE[status];
+  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}</span>;
+}
+
+/* ---------- editor / viewer drawer ---------- */
+
+interface DraftLine { itemCode: string; description: string; uom: string; qty: string; unitPrice: string; discount: string }
+const toDraftLine = (l: Line): DraftLine => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qty: String(l.qty), unitPrice: senToRm(l.unitPriceSen), discount: senToRm(l.discountSen) });
+const blankLine = (): DraftLine => ({ itemCode: '', description: '', uom: 'UNIT', qty: '1', unitPrice: '', discount: '' });
+const lineTotal = (l: DraftLine) => Math.max(0, (Number(l.qty) || 0) * rmToSen(l.unitPrice) - rmToSen(l.discount));
+
+function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreate, onSave, onCancelPo }: {
+  po: Po; isNew: boolean; suppliers: Opt[]; warehouses: Opt[]; canWrite: boolean;
+  onClose: () => void; onCreate: (p: Po, l: Line[]) => void; onSave: (p: Po, l: Line[]) => void; onCancelPo: (p: Po) => void;
+}) {
+  const editable = canWrite && (isNew || po.status === 'SUBMITTED');
+  const [h, setH] = useState<Po>(po);
+  const [lines, setLines] = useState<DraftLine[]>((po.lines ?? []).map(toDraftLine));
+  const setHf = <K extends keyof Po>(k: K) => (e: { target: { value: string } }) => setH(s => ({ ...s, [k]: e.target.value as Po[K] }));
+  const setLine = (i: number, k: keyof DraftLine, v: string) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
+
+  const subtotal = lines.reduce((s, l) => s + lineTotal(l), 0);
+  const total = subtotal + Math.max(0, h.taxSen);
+  const built = (): Line[] => lines.filter(l => l.itemCode.trim() && l.description.trim()).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), uom: l.uom.trim() || 'UNIT', qty: Number(l.qty) || 0, unitPriceSen: rmToSen(l.unitPrice), discountSen: rmToSen(l.discount), lineTotalSen: lineTotal(l) }));
+  const canSave = h.supplierId !== '' && built().length > 0;
+
+  function submit() {
+    const l = built();
+    const next = { ...h, ...totalsOf(l, h.taxSen) };
+    isNew ? onCreate(next, l) : onSave(next, l);
+  }
+
+  return (
+    <Drawer open onClose={onClose} width={880}>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
+        <div className="flex items-center gap-3">
+          <h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New purchase order' : po.poNumber}</h2>
+          {!isNew && <StatusPill status={po.status} />}
+        </div>
+        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
+      </div>
+
+      <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+          <div className="flex flex-col gap-[7px]">
+            <label className="text-[12px] font-medium text-muted-ink">Supplier</label>
+            <select value={h.supplierId} disabled={!editable} onChange={setHf('supplierId')}
+              className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer disabled:opacity-70">
+              {suppliers.length === 0 && <option value="">No suppliers</option>}
+              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <Field label="PO date" type="date" value={h.poDate} onChange={setHf('poDate')} disabled={!editable} />
+          <Field label="Expected" type="date" value={h.expectedAt} onChange={setHf('expectedAt')} disabled={!editable} />
+          <div className="flex flex-col gap-[7px]">
+            <label className="text-[12px] font-medium text-muted-ink">Warehouse</label>
+            <select value={h.warehouseId} disabled={!editable} onChange={setHf('warehouseId')}
+              className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer disabled:opacity-70">
+              <option value="">—</option>
+              {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Line editor */}
+        <div className="flex flex-col gap-2">
+          <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">Lines</div>
+          <div className="overflow-x-auto border border-solid border-line rounded-card">
+            <table className="w-full border-collapse min-w-[720px]">
+              <thead><tr className="bg-muted">
+                {['Item code', 'Description', 'UOM', 'Qty', 'Unit price', 'Discount', 'Line total', ''].map((th, i) => (
+                  <th key={th || i} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i >= 3 && i <= 6 ? 'text-right' : 'text-left')}>{th}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {lines.map((l, i) => (
+                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                    <td className="p-1.5"><CellInput value={l.itemCode} onChange={v => setLine(i, 'itemCode', v)} disabled={!editable} w="130px" /></td>
+                    <td className="p-1.5"><CellInput value={l.description} onChange={v => setLine(i, 'description', v)} disabled={!editable} w="100%" /></td>
+                    <td className="p-1.5"><CellInput value={l.uom} onChange={v => setLine(i, 'uom', v)} disabled={!editable} w="70px" /></td>
+                    <td className="p-1.5"><CellInput value={l.qty} onChange={v => setLine(i, 'qty', v)} disabled={!editable} w="64px" right num /></td>
+                    <td className="p-1.5"><CellInput value={l.unitPrice} onChange={v => setLine(i, 'unitPrice', v)} disabled={!editable} w="96px" right num /></td>
+                    <td className="p-1.5"><CellInput value={l.discount} onChange={v => setLine(i, 'discount', v)} disabled={!editable} w="90px" right num /></td>
+                    <td className="p-1.5 text-right tabular-nums text-[13px] whitespace-nowrap">{rm(lineTotal(l))}</td>
+                    <td className="p-1.5 text-center">{editable && <button onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} aria-label="Remove line" className="text-muted-ink hover:text-[var(--color-critical-fg)] bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button>}</td>
+                  </tr>
+                ))}
+                {lines.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-[12.5px] text-muted-ink">No lines yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          {editable && <div><Button size="sm" variant="secondary" icon={<Plus size={15} strokeWidth={1.75} />} onClick={() => setLines(ls => [...ls, blankLine()])}>Add line</Button></div>}
+        </div>
+
+        <div className="grid grid-cols-2 gap-5">
+          <Field label="Notes" placeholder="Optional" value={h.notes} onChange={setHf('notes')} disabled={!editable} />
+          <div className="flex flex-col gap-1.5 items-end justify-end">
+            <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Subtotal</span><span className="tabular-nums w-[110px] text-right">{rm(subtotal)}</span></div>
+            <div className="flex gap-8 text-[13px] items-center"><span className="text-muted-ink">Tax</span>
+              <input type="number" step="0.01" disabled={!editable} value={senToRm(h.taxSen)} onChange={e => setH(s => ({ ...s, taxSen: rmToSen(e.target.value) }))}
+                className="h-8 w-[110px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-70" /></div>
+            <div className="flex gap-8 text-[15px] font-semibold"><span>Total</span><span className="tabular-nums w-[110px] text-right">{rm(total)}</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+        <div>{!isNew && canWrite && po.status !== 'CANCELLED' && po.status !== 'RECEIVED' &&
+          <Button size="sm" variant="danger" onClick={() => onCancelPo(po)}>Cancel PO</Button>}</div>
+        <div className="flex gap-2.5">
+          <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
+          {editable && <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a supplier and add at least one line" onClick={submit}>{isNew ? 'Raise PO' : 'Save'}</Button>}
+        </div>
+      </div>
+    </Drawer>
+  );
+}
+
+function CellInput({ value, onChange, disabled, w, right, num }: { value: string; onChange: (v: string) => void; disabled?: boolean; w: string; right?: boolean; num?: boolean }) {
+  return (
+    <input value={value} disabled={disabled} type={num ? 'number' : 'text'} step={num ? '0.01' : undefined} onChange={e => onChange(e.target.value)}
+      style={{ width: w }}
+      className={cx('h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-70 disabled:bg-transparent disabled:border-transparent', right ? 'text-right tabular-nums' : '')} />
+  );
+}
