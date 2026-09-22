@@ -325,7 +325,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
               <div className="pt-[18px] px-[22px] pb-[14px]">
                 <span className="text-[18px] font-semibold">{pnlMonth(p.period)} P and L</span>
               </div>
-              {d.pnl.map((l, i) => {
+              {(d.pnl ?? []).map((l, i) => {
                 const net = l.type === 'net';
                 return (
                   <div key={i} className={cx('flex items-center justify-between gap-5 py-3 px-[22px] [border-top:1px_solid_var(--color-line-soft)]', net && 'bg-page')}>
@@ -348,7 +348,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
               <div className={cx(RES_COLS, 'grid gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink')}>
                 <div>Reference</div><div>Guest</div><div>Dates</div><div className="text-right">Gross</div><div>Status</div>
               </div>
-              {d.stays.map(s => (
+              {(d.stays ?? []).map(s => (
                 <div key={s.id} className={cx(RES_COLS, 'grid gap-[14px] items-center min-h-[52px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)]')}>
                   <div className="flex items-center gap-[9px] min-w-0">
                     <ChannelMark ch={s.channel} size={20} />
@@ -372,7 +372,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
 
       {tab === 'Operations' && (
         <Card>
-          {d.tasks.map(t => (
+          {(d.tasks ?? []).map(t => (
             <div key={t.id} className="flex items-center gap-[14px] py-[14px] px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex-wrap"
               style={{ borderLeft: `3px solid ${T[TASK_TONE[t.state]].line}` }}>
               <div className="flex flex-col gap-0.5 flex-1 min-w-[200px]">
@@ -394,7 +394,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
             <span className="text-[16px] font-semibold">Gross to net</span>
             <span className="text-[12px] text-muted-ink">{pnlMonth(p.period)}</span>
           </div>
-          {d.pnl.map((l, i) => {
+          {(d.pnl ?? []).map((l, i) => {
             const net = l.type === 'net';
             return (
               <div key={i} className={cx('flex items-center justify-between gap-5 [border-bottom:1px_solid_var(--color-line-soft)]', net ? 'py-[15px] px-5 bg-page' : 'py-3 px-5 bg-card')}>
@@ -415,7 +415,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
         <div className="flex flex-col gap-5">
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-[16px] font-semibold">Maintenance and inventory</div>
-            {d.maintenance.map(m => (
+            {(d.maintenance ?? []).map(m => (
               <div key={m.id} className="py-[14px] px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-start gap-4 flex-wrap">
                 <div className="flex flex-col gap-[3px] flex-1 min-w-[220px]">
                   <div className="flex items-center gap-[9px] flex-wrap">
@@ -440,7 +440,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
 
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-[16px] font-semibold">Fit-out register</div>
-            {d.inventory.map(i => (
+            {(d.inventory ?? []).map(i => (
               <div key={i.id} className="grid grid-cols-[minmax(200px,2fr)_minmax(90px,0.8fr)_minmax(130px,1fr)_minmax(100px,0.9fr)] gap-[14px] items-center min-h-[50px] py-[9px] px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
                 <div className="flex flex-col gap-px min-w-0">
                   <span className="text-[13.5px]">{i.name}</span>
@@ -463,7 +463,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
             <span className="text-[16px] font-semibold">Documents</span>
             <span className="text-[12px] text-muted-ink">Statements, agreements and inspection reports for this unit. Every file is versioned and audit-logged.</span>
           </div>
-          {d.documents.map(doc => (
+          {(d.documents ?? []).map(doc => (
             <div key={doc.id} className="flex items-center gap-[14px] py-[13px] px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
               <Icon name="FileText" size="nav" color={color.textMuted} />
               <div className="flex flex-col gap-0.5 flex-1 min-w-0">
@@ -485,7 +485,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
             <span className="text-[16px] font-semibold">Activity</span>
             <span className="text-[12px] text-muted-ink">Who did what, when, and from where. Read straight from the audit trail.</span>
           </div>
-          {d.activity.map((a, i) => (
+          {(d.activity ?? []).map((a, i) => (
             <div key={i} className="flex items-center gap-[14px] py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex-wrap">
               <span className="w-[30px] h-[30px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-[11px] font-semibold">
                 {a.actorLabel.split(' ').map(n => n[0]).slice(0, 2).join('')}
