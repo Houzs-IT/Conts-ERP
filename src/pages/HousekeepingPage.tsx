@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -195,6 +196,7 @@ export default function HousekeepingPage() {
   const [tab, setTab] = useState<Tab>('today');
   const { data, loading, error, reload } = useApi<Payload>(`/housekeeping/tasks?date=${TAB_DATE[tab]}`, FALLBACK);
   const toast = useToast();
+  const navigate = useNavigate();
 
   // Optimistic overlay: manually created tasks live in `added`; per-task patches
   // (assign, reschedule, edit, state) land in `edits` keyed by id.
@@ -562,8 +564,11 @@ export default function HousekeepingPage() {
         sub={`${merged.length} cleaning tasks · ${unassigned.length} unassigned · sequenced ${SEQ_PHRASE[rule]}`}
         right={
           <div className="flex gap-[9px] flex-wrap">
+            <Button variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/operations/cleaners')}>
+              Cleaners
+            </Button>
             <Button variant="secondary" icon={<Icon name="ListOrdered" size="sm" />} onClick={() => setEditRule({ rule, strategy, prefer })}>
-              Auto-assign rules
+              Assignment rules
             </Button>
             <Button
               variant="secondary"
@@ -572,7 +577,7 @@ export default function HousekeepingPage() {
               disabledReason="Every task already has a cleaner."
               onClick={() => setConfirm({ kind: 'autoassign' })}
             >
-              Auto-assign by rule
+              Auto-assign
             </Button>
             <Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>
               New cleaning task
@@ -708,7 +713,7 @@ export default function HousekeepingPage() {
       {/* ------------------------- Auto-assign rules ------------------------- */}
       {editRule && (
         <Modal
-          title="Auto-assign rules"
+          title="Assignment rules"
           sub="How cleaning is sequenced, and how Auto-assign spreads it across the roster."
           onClose={() => setEditRule(null)}
           busy={busy}

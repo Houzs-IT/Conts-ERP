@@ -22,7 +22,6 @@ export const NAV: NavGroup[] = [
     { key: 'operations', label: 'Operations', icon: 'clipboard-check', badge: '7', children: [
       { key: 'today', label: 'Today', path: '/operations/today', badge: '7', designed: true },
       { key: 'housekeeping', label: 'Housekeeping', path: '/operations/housekeeping', designed: true },
-      { key: 'cleaners', label: 'Cleaners', path: '/operations/cleaners', designed: true },
       { key: 'maintenance', label: 'Maintenance', path: '/operations/maintenance', badge: '3', designed: true },
       { key: 'tasks', label: 'Tasks', path: '/operations/tasks', designed: true },
       { key: 'inspections', label: 'Inspections', path: '/operations/inspections', designed: true },
