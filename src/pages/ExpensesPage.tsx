@@ -7,7 +7,7 @@ import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
-import { rm } from '../lib/format';
+import { rm, monthLabel, dateTime } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
@@ -74,11 +74,6 @@ const COLS_CLASS = 'grid-cols-[minmax(168px,1.5fr)_minmax(128px,1.1fr)_minmax(11
 const MYT = 'Asia/Kuala_Lumpur';
 
 const periodOf = (iso: string) => iso.slice(0, 7);
-const monthLabel = (period: string) => {
-  const [y, m] = period.split('-').map(Number);
-  if (!y || !m) return period;
-  return new Date(y, m - 1, 1).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' });
-};
 const dateLabel = (iso: string) => {
   const d = new Date(`${iso}T00:00:00`);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric', timeZone: MYT });
@@ -169,7 +164,7 @@ export default function ExpensesPage() {
     const sum = reportRows.reduce((s, r) => s + r.amount, 0);
     const unitLabel = scopeUnit === 'all' ? 'All units' : scopeUnit;
     const periodText = scopePeriod === 'all' ? 'All periods' : monthLabel(scopePeriod);
-    const generatedAt = new Date().toLocaleString('en-MY', { timeZone: MYT, hour12: false });
+    const generatedAt = dateTime(new Date().toISOString());
 
     const q = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
     const header = [

@@ -12,7 +12,7 @@ import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { todayMyt } from '../lib/format';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
-import { rm } from '../lib/format';
+import { rm, monthLabel } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { STATEMENT } from '../lib/vocabulary';
 import type { StatementState } from '../lib/types';
@@ -52,10 +52,7 @@ const terms = (u: UnitLine) => u.model === 'grr' ? `GRR ${rm(u.grrAmount ?? 0, {
 interface OwnerStatement { id: string; period: string; grossBookingValue: number; netPayout: number; state: StatementState }
 interface StatementsPayload { data: OwnerStatement[]; generatedAt: string }
 
-const periodLabel = (p: string) => {
-  const [y, m] = p.split('-').map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString('en-MY', { month: 'short', year: 'numeric' });
-};
+const periodLabel = (p: string) => monthLabel(p);
 
 // Dev fallback until GET /api/owners/:id/statements is live: synthesise the last
 // few settled months from the owner's current combined gross/net. A brand-new

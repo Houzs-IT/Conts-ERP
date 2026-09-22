@@ -9,7 +9,7 @@ import { EmptyState } from '../components/States';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
-import { rm, masked, date as fmtDate } from '../lib/format';
+import { rm, masked, date as fmtDate, todayMyt } from '../lib/format';
 import { PAYOUT } from '../lib/vocabulary';
 import type { PayoutState } from '../lib/types';
 
@@ -39,7 +39,7 @@ type Filter = 'all' | PayoutState;
 
 // COLS as an arbitrary grid-template-columns utility (underscores == spaces).
 const gridCols = 'grid-cols-[minmax(150px,1.4fr)_minmax(86px,0.7fr)_minmax(140px,1.1fr)_minmax(104px,0.9fr)_minmax(104px,0.9fr)_minmax(92px,0.8fr)_minmax(120px,1fr)]';
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayMyt();
 
 /** Bank never shows more than the tail — the raw number would need an audited reveal. */
 const destination = (p: Payout) => p.bankLast4 ? `${p.bankName ?? 'Bank'} ${masked(p.bankLast4)}` : (p.bankName ?? '—');

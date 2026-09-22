@@ -59,3 +59,49 @@ export const todayMyt = (offsetDays = 0) => {
   const d = new Date(Date.now() + offsetDays * 864e5);
   return d.toLocaleDateString('en-CA', { timeZone: MYT });
 };
+
+/** Aug 2026 (default) / August 2026 (long). Accepts "2026-08" or a full ISO date. */
+export const monthLabel = (iso: string, opts?: { long?: boolean }) => {
+  const s = iso.length === 7 ? `${iso}-01` : iso;
+  return new Date(s).toLocaleDateString('en-MY', { month: opts?.long ? 'long' : 'short', year: 'numeric', timeZone: MYT });
+};
+
+/** 2026 */
+export const year = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-MY', { year: 'numeric', timeZone: MYT });
+
+/** 16 Sep 2026 14:06 */
+export const dateTime = (iso: string) => `${date(iso)} ${time(iso)}`;
+
+/** 16 Sep — day and short month, no year. */
+export const dateShort = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', timeZone: MYT });
+
+/** Wed 16 — short weekday and day. */
+export const weekdayDay = (iso: string) => {
+  const d = new Date(iso);
+  const weekday = d.toLocaleDateString('en-MY', { weekday: 'short', timeZone: MYT });
+  const day = d.toLocaleDateString('en-MY', { day: 'numeric', timeZone: MYT });
+  return `${weekday} ${day}`;
+};
+
+/** Just now / N min ago / N hours ago / Yesterday, then falls back to date(). */
+export const relative = (iso: string, now: Date = new Date()) => {
+  const then = new Date(iso);
+  const diffMin = Math.floor((now.getTime() - then.getTime()) / 60000);
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays === 1) return 'Yesterday';
+  return date(iso);
+};
+
+/** yyyy-mm-dd for an <input type="date"> value, normalised to the MYT date part. */
+export const dateInputValue = (iso: string) =>
+  iso ? new Date(iso).toLocaleDateString('en-CA', { timeZone: MYT }) : '';
+
+/** yyyy-mm-dd MYT stamp for filenames and exports; defaults to now. */
+export const fileStamp = (iso?: string) =>
+  (iso ? new Date(iso) : new Date()).toLocaleDateString('en-CA', { timeZone: MYT });

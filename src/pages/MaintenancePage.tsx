@@ -9,7 +9,7 @@ import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
-import { rm } from '../lib/format';
+import { rm, dateShort, todayMyt } from '../lib/format';
 import { TASK } from '../lib/vocabulary';
 import type { TaskState } from '../lib/types';
 
@@ -36,11 +36,11 @@ interface Payload { data: Issue[]; generatedAt: string }
 const FALLBACK: Payload = {
   generatedAt: '',
   data: [
-    { id: 'MNT-0914', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', title: 'Plumbing works', detail: 'Riser replacement. Unit offline until 22 Sep.', state: 'in_progress', vendorName: 'AquaFix', quotedAmount: 320000, finalAmount: null, ownerApprovalRequired: false, blocksUnit: true, reportedAt: '14 Sep', chargeTo: 'owner', assigneeName: 'AquaFix', photoCount: 1, documentCount: 0 },
-    { id: 'MNT-0912', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', title: 'Curtain replacement quoted', detail: 'Blackout curtains, 3 windows. Awaiting owner approval.', state: 'waiting', vendorName: 'Kiara Interiors', quotedAmount: 89000, finalAmount: null, ownerApprovalRequired: true, blocksUnit: false, reportedAt: '12 Sep', chargeTo: 'owner', assigneeName: 'Kiara Interiors', photoCount: 0, documentCount: 0 },
-    { id: 'MNT-0916', unitNumber: '#B-08-11', propertyName: 'Arcoris', title: 'Broken blind, living room', detail: 'Guest reported on arrival. Inspect before next stay.', state: 'open', vendorName: null, quotedAmount: null, finalAmount: null, ownerApprovalRequired: false, blocksUnit: false, reportedAt: '16 Sep', chargeTo: 'owner', assigneeName: null, photoCount: 0, documentCount: 0 },
-    { id: 'MNT-0910', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', title: 'Aircon service', detail: 'Quarterly service. Gas top-up not required.', state: 'resolved', vendorName: 'CoolCare', quotedAmount: null, finalAmount: 18000, ownerApprovalRequired: false, blocksUnit: false, reportedAt: '10 Sep', chargeTo: 'owner', assigneeName: 'CoolCare', photoCount: 2, documentCount: 1 },
-    { id: 'MNT-0828', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', title: 'Water heater replaced', detail: 'Guest reported no hot water. Same-day replacement.', state: 'resolved', vendorName: 'In-house crew', quotedAmount: null, finalAmount: 64000, ownerApprovalRequired: false, blocksUnit: false, reportedAt: '28 Aug', chargeTo: 'warranty', assigneeName: 'In-house crew', photoCount: 2, documentCount: 1 },
+    { id: 'MNT-0914', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', title: 'Plumbing works', detail: 'Riser replacement. Unit offline until 22 Sep.', state: 'in_progress', vendorName: 'AquaFix', quotedAmount: 320000, finalAmount: null, ownerApprovalRequired: false, blocksUnit: true, reportedAt: '2026-09-14', chargeTo: 'owner', assigneeName: 'AquaFix', photoCount: 1, documentCount: 0 },
+    { id: 'MNT-0912', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', title: 'Curtain replacement quoted', detail: 'Blackout curtains, 3 windows. Awaiting owner approval.', state: 'waiting', vendorName: 'Kiara Interiors', quotedAmount: 89000, finalAmount: null, ownerApprovalRequired: true, blocksUnit: false, reportedAt: '2026-09-12', chargeTo: 'owner', assigneeName: 'Kiara Interiors', photoCount: 0, documentCount: 0 },
+    { id: 'MNT-0916', unitNumber: '#B-08-11', propertyName: 'Arcoris', title: 'Broken blind, living room', detail: 'Guest reported on arrival. Inspect before next stay.', state: 'open', vendorName: null, quotedAmount: null, finalAmount: null, ownerApprovalRequired: false, blocksUnit: false, reportedAt: '2026-09-16', chargeTo: 'owner', assigneeName: null, photoCount: 0, documentCount: 0 },
+    { id: 'MNT-0910', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', title: 'Aircon service', detail: 'Quarterly service. Gas top-up not required.', state: 'resolved', vendorName: 'CoolCare', quotedAmount: null, finalAmount: 18000, ownerApprovalRequired: false, blocksUnit: false, reportedAt: '2026-09-10', chargeTo: 'owner', assigneeName: 'CoolCare', photoCount: 2, documentCount: 1 },
+    { id: 'MNT-0828', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', title: 'Water heater replaced', detail: 'Guest reported no hot water. Same-day replacement.', state: 'resolved', vendorName: 'In-house crew', quotedAmount: null, finalAmount: 64000, ownerApprovalRequired: false, blocksUnit: false, reportedAt: '2026-08-28', chargeTo: 'warranty', assigneeName: 'In-house crew', photoCount: 2, documentCount: 1 },
   ],
 };
 
@@ -53,7 +53,6 @@ const GROUP_ORDER: TaskState[] = ['overdue', 'reopened', 'waiting', 'in_progress
 const INPUT_CX = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-[16px] font-normal';
 const LABEL_CX = 'text-[12px] font-medium text-muted-ink';
 
-const todayShort = () => new Date().toLocaleDateString('en-MY', { day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' });
 const toSen = (s: string): number | null => {
   const n = parseFloat(s.replace(/[^0-9.]/g, ''));
   return Number.isFinite(n) ? Math.round(n * 100) : null;
@@ -108,7 +107,7 @@ export default function MaintenancePage() {
   function createJob(input: Omit<Issue, 'id' | 'state' | 'finalAmount' | 'ownerApprovalRequired' | 'reportedAt' | 'photoCount' | 'documentCount'>) {
     const optimistic: Issue = {
       ...input, id: `MNT-${Math.floor(1000 + Math.random() * 9000)}`, state: 'open',
-      finalAmount: null, ownerApprovalRequired: false, reportedAt: todayShort(),
+      finalAmount: null, ownerApprovalRequired: false, reportedAt: todayMyt(),
       photoCount: 0, documentCount: 0, ownerApprovedAt: null,
     };
     setAdded(a => [optimistic, ...a]);
@@ -187,7 +186,7 @@ export default function MaintenancePage() {
     : confirm.kind === 'block' ? {
         title: `Block ${confirm.issue.propertyName} ${confirm.issue.unitNumber}?`,
         body: 'This holds the dates and takes the unit off sale until the work is done.',
-        meta: `${confirm.issue.title} · reported ${confirm.issue.reportedAt}`,
+        meta: `${confirm.issue.title} · reported ${dateShort(confirm.issue.reportedAt)}`,
         danger: true, confirmLabel: 'Block unit', onConfirm: () => blockUnit(confirm.issue),
       }
     : {
@@ -308,7 +307,7 @@ function IssueRow({
             {i.blocksUnit && <Badge tone="critical" label="Blocks the unit" />}
           </div>
           <span className="text-[12px] text-muted-ink">
-            {i.propertyName} {i.unitNumber} · reported {i.reportedAt}
+            {i.propertyName} {i.unitNumber} · reported {dateShort(i.reportedAt)}
             {i.assigneeName ? ` · ${i.assigneeName}` : i.vendorName ? ` · ${i.vendorName}` : ''}
             {evidence ? ` · ${evidence}` : ''}
           </span>

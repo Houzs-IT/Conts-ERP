@@ -11,7 +11,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
-import { rating as fmtRating, date as fmtDate } from '../lib/format';
+import { rating as fmtRating, date as fmtDate, todayMyt } from '../lib/format';
 import type { BookingChannel } from '../lib/types';
 
 /** A guest review pulled in from a channel. `reply`/`repliedAt` are set once the
@@ -115,7 +115,7 @@ export default function ReviewsPage() {
     e.preventDefault();
     const body = draft.trim();
     if (!body) return;
-    const repliedAt = new Date().toISOString();
+    const repliedAt = todayMyt();
 
     try {
       await api.post(`/reviews/${review.id}/reply`, { body });

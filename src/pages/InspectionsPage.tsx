@@ -10,6 +10,7 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { TONE } from '../lib/design-tokens';
+import { dateTime } from '../lib/format';
 import { TASK } from '../lib/vocabulary';
 import type { TaskState } from '../lib/types';
 
@@ -41,14 +42,14 @@ const FALLBACK: Payload = {
       { item: 'Aircon cooling within 10 minutes', ok: null, required: true },
       { item: 'Wifi reachable at 20 Mbps', ok: null, required: false },
     ] },
-    { id: 'INS-0415', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', inspector: 'Chan Wei Wen', state: 'resolved', passed: true, inspectedAt: '15 Sep 16:10', notes: null, checklist: [
+    { id: 'INS-0415', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', inspector: 'Chan Wei Wen', state: 'resolved', passed: true, inspectedAt: '2026-09-15T16:10', notes: null, checklist: [
       { item: 'Linen set complete and pressed', ok: true, required: true },
       { item: 'Bathroom sealed and dry', ok: true, required: true },
       { item: 'Consumables restocked', ok: true, required: true },
       { item: 'Aircon cooling within 10 minutes', ok: true, required: true },
       { item: 'Wifi reachable at 20 Mbps', ok: true, required: false },
     ] },
-    { id: 'INS-0414', unitNumber: '#15-06', propertyName: 'Scarletz', inspector: 'Aina Zulkifli', state: 'reopened', passed: false, inspectedAt: '14 Sep 11:40', notes: null, checklist: [
+    { id: 'INS-0414', unitNumber: '#15-06', propertyName: 'Scarletz', inspector: 'Aina Zulkifli', state: 'reopened', passed: false, inspectedAt: '2026-09-14T11:40', notes: null, checklist: [
       { item: 'Linen set complete and pressed', ok: true, required: true },
       { item: 'Bathroom sealed and dry', ok: false, required: true, linkedIssue: 'MNT-0913', note: 'Silicone lifting behind the basin. Raised as MNT-0913.' },
       { item: 'Consumables restocked', ok: true, required: true },
@@ -65,13 +66,7 @@ const FILTERS: Filter[] = ['All', 'In progress', 'Passed', 'Failed'];
 // passes. Every group renders only when it has rows.
 const GROUP_ORDER: TaskState[] = ['overdue', 'reopened', 'in_progress', 'waiting', 'assigned', 'open', 'resolved'];
 
-const MYT = 'Asia/Kuala_Lumpur';
-const nowStamp = () => {
-  const d = new Date();
-  const day = d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', timeZone: MYT });
-  const t = d.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: MYT });
-  return `${day} ${t}`;
-};
+const nowStamp = () => new Date().toISOString();
 const unitRef = (i: Inspection) => `${i.propertyName} ${i.unitNumber}`;
 
 function counts(cl: Check[]) {
@@ -321,7 +316,7 @@ function InspectionRow({ inspection: i, onOpen }: { inspection: Inspection; onOp
             <ReleaseBadge passed={i.passed} />
           </div>
           <span className="text-[12px] text-muted-ink">
-            {i.inspector ?? 'Unassigned'}{i.inspectedAt ? ` · ${i.inspectedAt}` : ''} · {c.passed} passed · {c.failed} failed
+            {i.inspector ?? 'Unassigned'}{i.inspectedAt ? ` · ${dateTime(i.inspectedAt)}` : ''} · {c.passed} passed · {c.failed} failed
             {c.pending > 0 ? ` · ${c.pending} to check` : ''}
           </span>
         </div>
@@ -389,7 +384,7 @@ function ChecklistPanel({
               <h2 className="m-0 text-[18px] font-semibold">{unitRef(i)}</h2>
             </div>
             <span className="text-[12px] text-muted-ink">
-              {i.inspector ?? 'Unassigned'}{i.inspectedAt ? ` · ${i.inspectedAt}` : ''}
+              {i.inspector ?? 'Unassigned'}{i.inspectedAt ? ` · ${dateTime(i.inspectedAt)}` : ''}
             </span>
           </div>
           <button onClick={onClose} aria-label="Close" className="bg-transparent border-none p-1 cursor-pointer text-muted-ink flex flex-none">

@@ -13,7 +13,7 @@ import { useApi } from '../lib/useApi';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
 import { api, notifyFailure } from '../lib/api';
-import { todayMyt, rm, dateRange, date as fmtDate, time as fmtTime, nights as fmtNights } from '../lib/format';
+import { todayMyt, rm, dateRange, date as fmtDate, time as fmtTime, nights as fmtNights, fileStamp } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { Tone, BookingChannel, ReservationState } from '../lib/types';
 
@@ -276,7 +276,7 @@ export default function BookingsPage() {
     const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `reservations-${filter}-${new Date(genAt).toISOString().slice(0, 10)}.csv`; a.click();
+    a.href = url; a.download = `reservations-${filter}-${fileStamp(genAt)}.csv`; a.click();
     URL.revokeObjectURL(url);
     toast({ tone: 'success', title: 'Export ready.', body: 'The CSV header prints the applied filters, generated time and scope.' });
   }

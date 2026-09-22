@@ -9,7 +9,7 @@ import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, downloadFile } from '../lib/api';
 import { useToast } from '../components/Toast';
-import { rm, dateRange, date } from '../lib/format';
+import { rm, dateRange, date, dateShort, dateTime, monthLabel } from '../lib/format';
 import type { Tone, UnitReadiness, TaskState, BookingChannel, ReservationState } from '../lib/types';
 
 const READY_TONE: Record<UnitReadiness, Tone> = {
@@ -29,13 +29,11 @@ const COND_TONE: Record<string, Tone> = {
 };
 const cap = (s: string) => s.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 /** The P&L on the record is the last CLOSED month; performance stats are the current month to date. */
 const pnlMonth = (period: string) => {
   const [y, m] = period.split('-').map(Number);
-  const dt = new Date(y, m - 1, 1);
-  dt.setMonth(dt.getMonth() - 1);
-  return MONTHS[dt.getMonth()];
+  const dt = new Date(y, m - 2, 1); // one month before the performance period
+  return monthLabel(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`);
 };
 
 /** Reservations table template — one arbitrary class so header and rows stay
@@ -95,13 +93,13 @@ const FALLBACK: Payload = {
     { id: 's3', guestName: 'Priya Sundaram', channel: 'booking_com', state: 'pending', checkIn: '2026-09-24', checkOut: '2026-10-01', guestsCount: 2, externalRef: 'BDC-5512087', grossBookingValue: 198800 },
   ],
   tasks: [
-    { id: 't1', title: 'Full turnover, 2BR', kind: 'turnover', state: 'in_progress', dueAt: '16 Sep 14:30', completedAt: null, assigneeName: 'Nurul Huda' },
-    { id: 't2', title: 'Owner report photos', kind: 'other', state: 'resolved', dueAt: '15 Sep 16:30', completedAt: '15 Sep 16:12', assigneeName: 'Chan Wei Wen' },
+    { id: 't1', title: 'Full turnover, 2BR', kind: 'turnover', state: 'in_progress', dueAt: '2026-09-16T14:30', completedAt: null, assigneeName: 'Nurul Huda' },
+    { id: 't2', title: 'Owner report photos', kind: 'other', state: 'resolved', dueAt: '2026-09-15T16:30', completedAt: '2026-09-15T16:12', assigneeName: 'Chan Wei Wen' },
   ],
   maintenance: [
-    { id: 'MNT-0912', title: 'Curtain replacement quoted', detail: 'Blackout curtains, 3 windows.', state: 'waiting', vendorName: 'Kiara Interiors', ownerApprovalRequired: true, blocksUnit: false, chargeTo: 'owner', reportedAt: '12 Sep', resolvedAt: null, quotedAmount: 89000 },
-    { id: 'MNT-0910', title: 'Aircon service', detail: 'Quarterly service.', state: 'resolved', vendorName: 'CoolCare', ownerApprovalRequired: false, blocksUnit: false, chargeTo: 'owner', reportedAt: '10 Sep', resolvedAt: '12 Sep', finalAmount: 18000 },
-    { id: 'MNT-0828', title: 'Water heater replaced', detail: 'Same-day replacement.', state: 'resolved', vendorName: 'In-house crew', ownerApprovalRequired: false, blocksUnit: false, chargeTo: 'warranty', reportedAt: '28 Aug', resolvedAt: '28 Aug', finalAmount: 64000 },
+    { id: 'MNT-0912', title: 'Curtain replacement quoted', detail: 'Blackout curtains, 3 windows.', state: 'waiting', vendorName: 'Kiara Interiors', ownerApprovalRequired: true, blocksUnit: false, chargeTo: 'owner', reportedAt: '2026-09-12', resolvedAt: null, quotedAmount: 89000 },
+    { id: 'MNT-0910', title: 'Aircon service', detail: 'Quarterly service.', state: 'resolved', vendorName: 'CoolCare', ownerApprovalRequired: false, blocksUnit: false, chargeTo: 'owner', reportedAt: '2026-09-10', resolvedAt: '2026-09-12', finalAmount: 18000 },
+    { id: 'MNT-0828', title: 'Water heater replaced', detail: 'Same-day replacement.', state: 'resolved', vendorName: 'In-house crew', ownerApprovalRequired: false, blocksUnit: false, chargeTo: 'warranty', reportedAt: '2026-08-28', resolvedAt: '2026-08-28', finalAmount: 64000 },
   ],
   inventory: [
     { id: 'i1', name: 'Queen bed frame and mattress', quantity: '1 set', condition: 'good', suppliedInHouse: true, installedOn: '2025-03-01', lastChecked: '2026-09-12', purchaseCost: 320000 },
@@ -117,9 +115,9 @@ const FALLBACK: Payload = {
     { id: 'a1', kind: 'smart_lock', label: 'Main door', instruction: 'Smart lock. Lobby via the guard — say The Conts.', rotatesAfterStay: true, updatedAt: '2026-09-13' },
   ],
   activity: [
-    { actorLabel: 'Aina Zulkifli', action: 'unit.readiness_change', source: 'web', occurredAt: '16 Sep 14:14' },
-    { actorLabel: 'Nurul Huda', action: 'task.complete', source: 'field_app', occurredAt: '16 Sep 13:50' },
-    { actorLabel: 'Priya Devi', action: 'statement.send', source: 'web', occurredAt: '1 Sep 11:00' },
+    { actorLabel: 'Aina Zulkifli', action: 'unit.readiness_change', source: 'web', occurredAt: '2026-09-16T14:14' },
+    { actorLabel: 'Nurul Huda', action: 'task.complete', source: 'field_app', occurredAt: '2026-09-16T13:50' },
+    { actorLabel: 'Priya Devi', action: 'statement.send', source: 'web', occurredAt: '2026-09-01T11:00' },
   ],
 };
 
@@ -379,7 +377,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
                 <span className="text-[13.5px] font-medium">{t.title}</span>
                 <span className="text-[11.5px] text-muted-ink">
                   {cap(t.kind)} · {t.assigneeName ?? 'Unassigned'}
-                  {t.completedAt ? ` · done ${t.completedAt}` : t.dueAt ? ` · due ${t.dueAt}` : ''}
+                  {t.completedAt ? ` · done ${dateTime(t.completedAt)}` : t.dueAt ? ` · due ${dateTime(t.dueAt)}` : ''}
                 </span>
               </div>
               <Badge tone={TASK_TONE[t.state]} label={cap(t.state)} />
@@ -424,7 +422,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
                     {m.blocksUnit && <Badge tone="critical" label="Blocks the unit" />}
                   </div>
                   <span className="text-[11.5px] text-muted-ink">
-                    {m.reportedAt}{m.vendorName ? ` · ${m.vendorName}` : ''} · charged to {cap(m.chargeTo)}
+                    {dateShort(m.reportedAt)}{m.vendorName ? ` · ${m.vendorName}` : ''} · charged to {cap(m.chargeTo)}
                   </span>
                   {m.detail && <span className="text-[12.5px] [text-wrap:pretty]">{m.detail}</span>}
                 </div>
@@ -496,7 +494,7 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
                 </span>
                 <span className="text-[11.5px] text-muted-ink">{a.source.replace(/_/g, ' ')}</span>
               </div>
-              <span className="text-[11.5px] text-muted-ink">{a.occurredAt}</span>
+              <span className="text-[11.5px] text-muted-ink">{dateTime(a.occurredAt)}</span>
             </div>
           ))}
         </Card>
