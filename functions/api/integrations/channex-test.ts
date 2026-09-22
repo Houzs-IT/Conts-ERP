@@ -29,10 +29,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     property: property.body?.data,
     roomTypes: roomTypes.body?.data,
     ratePlans: ratePlans.body?.data,
-    bookings: (bookings.body?.data ?? []).map((b: any) => ({
-      id: b.id, ota: b.ota_name, status: b.status, guestName: `${b.customer?.name ?? ''} ${b.customer?.surname ?? ''}`.trim(),
-      arrival: b.arrival_date, departure: b.departure_date, amount: b.amount, currency: b.currency,
-    })),
+    bookings: (bookings.body?.data ?? []).map((b: any) => {
+      const a = b.attributes ?? {};
+      return {
+        id: b.id, ota: a.ota_name, status: a.status, guestName: `${a.customer?.name ?? ''} ${a.customer?.surname ?? ''}`.trim(),
+        arrival: a.arrival_date, departure: a.departure_date, amount: a.amount, currency: a.currency,
+      };
+    }),
   });
 };
 
