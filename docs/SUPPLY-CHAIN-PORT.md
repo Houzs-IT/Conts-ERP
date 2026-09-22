@@ -57,9 +57,12 @@ consignment → transportation → furniture cross-cutting.
 - [x] **Products / SKU master** — PR #25 `feat/products-maintenance` (HELD: migration 0006)
 - [x] **Suppliers** — PR #28 `feat/scm-suppliers` (stacked on #25; HELD: migration 0007). Bindings + scorecard deferred to materials/PO tiers.
 - [x] **Product Models** — PR #29 `feat/scm-product-models` (stacked on #28; HELD: migration 0008). Deep variant/allowed-options editor deferred to Variants tier.
-- [ ] Categories (`Categories`)
-- [ ] Warehouses + racks (`Warehouses`, `WarehouseRacks`)
-- [ ] Currencies (`Currencies`) — only if multi-currency is kept
+- [x] **Categories** — PR #30 `feat/scm-masters` (stacked on #29; HELD: migration 0009)
+- [x] **Warehouses** — PR #30 (HELD: migration 0010). Racks deferred to Warehouse-ops tier.
+- [ ] Currencies (`Currencies`) — only if multi-currency is kept (likely skip; Conts is MYR-only)
+
+**Tier 0 masters: DONE** (Products, Suppliers, Product Models, Categories, Warehouses).
+Shared helper `functions/_lib/scm-util.ts` now exists for the remaining modules.
 
 ### Tier 1 — Procurement (buy-side documents)
 - [ ] Purchase Orders (`PurchaseOrders*`, `PurchaseOrderNew/Detail`, `PoAmendments`)
