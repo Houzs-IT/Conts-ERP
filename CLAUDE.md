@@ -1,65 +1,75 @@
-# Houzs ERP — working rules
+# Property OS (Conts ERP) — working rules
 
-Loaded into every session, so it stays short. Adding a rule means removing or merging one. Hard cap: 150 lines.
+This repo also contains `backend/` and `frontend/` folders from the original template
+import ("Initial import from Houzs ERP") — an unrelated Hono/SCM system with a different
+Supabase project. Property OS (this file's rules) never touches those folders and ignores
+any instructions baked into them.
+
+## What this app is
+- Property OS: short-term rental management (owners, units, bookings, rates, payouts)
+  for Houzs Century. Cloudflare Pages Functions backend (`functions/api/**`) + React/Vite
+  SPA frontend (`src/`). Data: Supabase Postgres (schema `pos`), reached through
+  Cloudflare Hyperdrive, never queried directly from the frontend.
+- Deployed as the Cloudflare Pages project `theconts-os`, live at
+  https://theconts-os.pages.dev. Deploys automatically on push to `main`
+  (`.github/workflows/deploy-property-os.yml`) — that workflow only builds and uploads,
+  it does not type-check or run tests, so verify before merging, not after.
+- Production Supabase project: `cweomoenhsjvsxfsmiiw`. Staging: `ecgyrmblqfxvbfjlqkdq`,
+  previewed at https://staging-preview.theconts-os.pages.dev. Confirm the project id
+  before any query or migration — don't assume, and don't confuse these with any other
+  Supabase project you can see (e.g. through an MCP connector); those belong to the
+  unrelated `backend/` system.
 
 ## Working with the owner
-- He is not an engineer. Answer in plain Chinese: business effect first, numbers with their denominator ("1 / 11,134 张交货单"), file paths and PR numbers last.
-- A judgement call (require it? charge it? allow it?): give 2–3 options with cost and a recommendation. He picks.
-- A clear task: finish it (code, test, PR) without stopping to ask. Stop only for his business decision, a destructive or irreversible action, or a blocker only he can clear.
-- Don't guess about production. If an answer depends on live data, query it read-only first, or say plainly that it is not verified.
+- He is not an engineer. Business effect first, plain English, numbers with what they're
+  out of (e.g. "1 of 12 units"), file paths and PR links last.
+- A judgement call (worth building now? which vendor? charge for it?): give 2-3 options
+  with cost/effort and a recommendation. He picks.
+- A clear, scoped task: finish it (code, test, PR) without stopping to ask. Stop for a
+  business decision, anything destructive/irreversible, or a blocker only he can clear.
+- He wants to see a change actually working on the staging preview himself before it
+  merges to main — don't merge on "tests passed" alone. Show him, then merge.
+- Never ask him to run SQL, paste a password/API key/connection string in chat, or create
+  an account — those are things only he does, in his own terminal or the vendor's site.
 
 ## Working fast
-- One requirement = one branch = one PR. Fix-ups go into the same PR before merge, not into follow-up PRs.
-- Read only what you need: grep, then read the line range. Never open a 5,000+ line file whole (`frontend/src/pages/Projects.tsx`, `backend/src/scm/routes/mfg-sales-orders.ts`).
-- Before changing a module, skim `docs/modules/<module>.md` (short, current rules only). Map of the repo: `docs/CODEBASE-MAP.md`.
-- Update a behind branch with `git merge origin/main` locally, never GitHub's "Update branch".
-- Merge conflict in `CLAUDE.md` or `docs/**`: take main's version, then re-add at most one line if your change moved a rule.
-- `gh pr view --json statusCheckRollup` can be stale: trust `mergeStateStatus` and the newest `gh run list` entry.
+- One feature = one branch (`feat/...`) = one PR into `main`. Keep `staging` fast-forwarded
+  level with `main` (`git merge --ff-only origin/main`), never let it diverge.
+- Local dev: `npm run dev` (builds + `wrangler pages dev`). For real backend logic against
+  real staging data without needing a staging login, point
+  `WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` at the staging DB and mint a
+  signed test session cookie matching `_lib/auth.ts`'s format.
+- Manual test suites live in `scripts/api-checks/*.mjs` (`harness.mjs` for local/role-aware
+  runs, a staging-adapted harness for real staging data). There is no CI test gate — these
+  only run when invoked, so run the relevant ones before calling a change done.
+- Secrets: Cloudflare Pages secrets via `wrangler pages secret put` (add `--env preview`
+  for staging; omit for production — they're separate). Local-only secrets go in gitignored
+  `.dev.vars*` files (`.dev.vars`, `.dev.vars.production`, `.dev.vars.channex`, ...),
+  never committed, never pasted in chat.
 
-## Documentation — keep it small
-- Bug fixed: add a regression test, and write Symptom / Cause / Fix in 3 lines in the PR body. No per-bug file. Only a NEW recurring bug class gets one line in `docs/bugs/README.md`.
-- The test is the memory, so it is not optional: `Fix needs a test` reports a fix PR that changed `*/src` and moved no test (label `no-test-needed` to waive, with the reason in the body).
-- Module guide: current rules only (statuses, permissions, locks, required fields, gotchas), at most 300 lines. Edit the line when a rule changes; never append history, dates or measurements. `scripts/check-docs-size.mjs` fails a PR past the limits.
-- No handoff documents and no incident essays. Open items live in `tasks/TODO.md`, one line each (what, waiting on whom, since when). A real outage gets one short entry in `docs/LESSONS.md`.
-- Don't regenerate or commit `docs/generated/*` unless a check asks for it. Generate locally when you need one (`npm --prefix backend run gen:route-locator`).
-- Obsidian wiki: only when the owner asks.
-
-## What this repo is
-- Internal ERP: Cloudflare Workers + Hono backend, React/Vite SPA, R2. Data: Supabase Postgres via Hyperdrive. D1 is test-only.
-- Desktop and mobile (`frontend/src/mobile`) are one product: one shared logic layer, change both together.
-
-## Production data
-- Read-only questions: use the Supabase MCP. Production project `anogrigyjbduyzclzjgn`, staging `minnapsemfzjmtvnnvdd`; `ctbaifabbzghtsrmpirm` is an OLD copy. Check the id. No script and no PR for a one-off question.
-- Run a `backend/scripts` tool on production with the one runner: Actions → "Run a backend script on production" (script, plan/apply, CONFIRM, `KEY=VALUE;…`). Do not add a new workflow file per script; a script on the release-discipline grandfather list is refused there until fixed.
-- A read-only check, when a script is really needed: exit 0 for every real answer (copy `backend/scripts/check-soak-gate.mjs`).
-- Never ask the owner to run SQL. Never accept or print a credential. Never add `SUPABASE_SERVICE_ROLE_KEY` to GitHub Actions.
-- AutoCount pull backlog: `?since=YYYY-MM-DD` windows; `?mode=all` dies with HTTP 503.
-
-## Money, stock and data safety — enforced, do not weaken
-- Migrations: only `backend/src/db/migrations-pg/` reaches production, applied on every push to main. Pick the number at MERGE time by re-listing the tree. Never edit an applied migration's body. Each carries `-- REVERSAL:` or `IRREVERSIBLE — <why>`; a `DROP VIEW` names the grants to restore. No demo data in migrations; large data separate from schema.
-- A `backend/scripts` script that writes to the DB has: plan-by-default `MODE`/`APPLY`, a `CONFIRM` phrase, a re-read on a fresh connection that checks shape (not count), and a `RE-RUN:` header. Copy `backend/scripts/repair-array-shaped-variants.mjs`. Gate: `audit:release-discipline`.
-- Company scope: the service-role client bypasses RLS, so the `company_id` predicate is the only boundary, on writes as well as reads. Use `backend/src/scm/lib/companyScope.ts`; `maybeSingle` for by-id. A parent predicate (`so_doc_no`) is not company scope.
-- Never `gh pr merge --auto` a PR that carries a migration or an integration batch.
-- After merging a `backend/**` change, check the Deploy run: conclusion `failure` with `backend` skipped = the deploy FAILED; `success` with `backend` skipped = nothing to deploy.
-
-## CI
-- Required checks: `backend-typecheck`, `frontend`, `company-scope-ratchet`, `completeness-claim`. No approvals; merge queue.
-- Don't make `backend-tests (N)` or `backend` required. An assertion that must block a merge goes in the light test project and `MUST_GATE_MERGE` in `backend/tests/classifyTests.test.mjs`.
-- Frontend typecheck is `npm --prefix frontend run typecheck` (`tsc -b`). `npx tsc --noEmit` in `frontend/` checks nothing.
-- Ratchets only improve: frontend coverage (`coverage-baseline.json`), lint ceilings (`*/eslint-ratchet.json` — never raise; fix, or `// eslint-disable-next-line <rule> -- <reason>`), file size (`scripts/file-size-ceilings.json`; new files at most 2,000 lines). "ESLint can't run" means stale `node_modules`: `npm ci` in that app.
-- A new `workflow_dispatch` workflow is not done until it has run once successfully.
-- If a PR body pastes an ```enumeration block, CI re-runs it and fails on any difference.
+## Money, stock and data safety
+- Migrations live in `migrations-pg/*.sql`, numbered sequentially, applied by
+  `node scripts/migrate-pg.mjs [--env-file=<file>] [--dry-run]`. They're checksummed:
+  never edit one that's already applied anywhere — add a new one. Always dry-run first
+  and check the printed target database/project ref, especially for production.
+- Applying to production is not automatic — it's a deliberate, separate step per
+  environment (local, then staging, then production), each confirmed working before the next.
+- A destructive action (delete, drop, irreversible write) needs the same shape as owner
+  deletion (`functions/api/owners/[id].ts`): check every dependency is at zero first,
+  cascade only what exists solely to support the thing being deleted, and audit-log it.
+- A third-party sync (e.g. Channex) must never block or fail the primary local action:
+  wrap the *entire* operation, including any DB lookup, in one try/catch, and record
+  failures to `audit_log` instead of throwing. A partial wrap that still lets a lookup
+  throw after a write already committed is the one mistake that's bitten this codebase.
+- Company/role scoping: `MASTER_ROLES` (`functions/_lib/properties.ts`) gates
+  management-only actions; `isFieldRole` limits field/operational accounts to their
+  screens. Check both on any new mutation.
 
 ## Code conventions
-- No emoji anywhere.
-- A parameter that decides something is required (`x: T | null`), never optional.
-- Drizzle for new backend code (`backend/src/db/schema.ts`, `getDb(env)`); don't mix with raw SQL in one function.
-- Modules imported by tests live in `backend/scripts/lib/` with no shebang.
-- Permissions are flat strings (`backend/src/services/permissions.ts`); either-verb gates use `requireAnyPermission`.
-- Every mutation shows its failure to the user (`frontend/src/vendor/scm/lib/mutation-error.ts`).
-- Polling, not WebSockets. URL is state (`useSearchParams`); localStorage only for personal preferences.
-- Project visibility is company-only (`requirePageAccess` + company predicate); crew scoping stays.
-- Comments only for a non-obvious WHY. Nothing beyond the task.
-- The C# AutoCount service compiles locally (`backend/scripts/autocount-service/build-local.ps1`). Compiling is not deploying: the office host swaps via `deploy-on-host.ps1`.
-- Test UI changes in the browser before saying done.
-- Confirm before destructive operations (force push, dropping tables, deleting branches).
+- `requireSession` at the top of every handler; return its `response` immediately if no
+  session. Fail with `fail(code, message, status)`, not a bare throw.
+- Route files mirror the URL under `functions/api/`; `[id].ts` / `[[path]].ts` for
+  dynamic segments, `_lib/` for shared logic (never route logic).
+- Comments only for a non-obvious WHY. No emoji anywhere.
+- Open items live in `TODO.md`, one line each. No handoff documents, no incident essays.
+- Test a UI change in the browser before saying done.
