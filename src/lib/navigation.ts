@@ -42,6 +42,7 @@ export const NAV: NavGroup[] = [
     { key: 'purchaseOrders', label: 'Purchase orders', icon: 'shopping-cart', path: '/procurement/purchase-orders', designed: true },
     { key: 'goodsReceived', label: 'Goods received', icon: 'package-check', path: '/procurement/goods-received', designed: true },
     { key: 'purchaseInvoices', label: 'Purchase invoices', icon: 'receipt', path: '/procurement/purchase-invoices', designed: true },
+    { key: 'paymentVouchers', label: 'Payment vouchers', icon: 'banknote', path: '/procurement/payment-vouchers', designed: true },
   ] },
   { label: 'FINANCE', items: [
     { key: 'finance', label: 'Finance', icon: 'wallet', badge: '2', children: [
