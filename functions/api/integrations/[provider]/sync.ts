@@ -2,9 +2,10 @@ import { type Env, one, fail, json, audit } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { channexConfigured } from '../../../_lib/channex';
 import { processChannexBookingFeed } from '../../../_lib/channexBookingSync';
+import { processChannexMessagesAndReviews } from '../../../_lib/channexMessageSync';
 
 /** Airbnb, Booking.com and Agoda are one Channex account behind the scenes, so any one of them
- *  syncs the same shared feed as the others. Other providers have no API wired up yet. */
+ *  syncs the same shared account as the others. Other providers have no API wired up yet. */
 const CHANNEX_PROVIDERS = ['airbnb', 'booking_com', 'agoda'];
 
 /** POST /api/integrations/:provider/sync — see integrations/sync.ts. */
@@ -21,6 +22,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!CHANNEX_PROVIDERS.includes(provider) || !channexConfigured(env)) {
     return fail('NOT_CONNECTED', 'Channel syncing is not connected yet. Bookings are entered or imported by hand for now.', 501);
   }
-  const result = await processChannexBookingFeed(env);
-  return json({ ok: true, ...result });
+  const bookings = await processChannexBookingFeed(env);
+  const rest = await processChannexMessagesAndReviews(env);
+  return json({ ok: true, bookings, ...rest });
 };

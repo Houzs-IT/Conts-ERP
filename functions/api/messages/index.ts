@@ -1,6 +1,7 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
+import { pushMessageIfLinked } from '../../_lib/channexMessageSync';
 
 /** POST /api/messages — send a message to a guest. Name the conversation one of four ways:
  *    { threadId, body }              an existing thread
@@ -64,6 +65,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     delivery = guest?.phone
       ? await notify(env, { template: b.kind === 'access_details' ? 'access_details' : 'guest.reply', recipient: guest.phone, channel: 'whatsapp', body, entityTable: b.kind ? 'reservations' : 'message_threads', entityId: b.kind ? (reservationId ?? thread.id) : thread.id, urgent: true })
       : { state: 'failed', reason: 'This guest has no phone number on file.' };
+  } else {
+    // Airbnb/Booking.com: pushed to the guest's own inbox on that platform. Agoda, and any
+    // conversation that hasn't come through Channex, has nowhere to push to — saved here only.
+    const pushed = await pushMessageIfLinked(env, thread.id, id, body);
+    delivery = pushed.state === 'sent'
+      ? { state: 'sent' }
+      : { state: 'not_linked', reason: pushed.reason ?? "This conversation isn't linked to the guest's platform, so they won't see this reply there." };
   }
   return json({ id, threadId: thread.id, sentAt: now, delivery: delivery.state, reason: delivery.reason }, 201);
 };

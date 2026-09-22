@@ -1,12 +1,13 @@
 import { type Env, json, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { channexConfigured, channexListWebhooks, channexCreateWebhook } from '../../_lib/channex';
+import { channexConfigured, channexListWebhooks, channexCreateWebhook, channexUpdateWebhookMask, CHANNEX_EVENT_MASK } from '../../_lib/channex';
 
 /** GET /api/integrations/channex-webhook-setup — lists what Channex has registered for us, so we
- *  can see whether the booking-in webhook is already set up.
- *  POST — registers it if it is not. Idempotent: safe to call again. Management-only and
- *  temporary, same as channex-test.ts — remove once stage 5 folds this into onboarding a real
- *  listing. */
+ *  can see whether the webhook is already set up, and for what.
+ *  POST — registers it if it is not, or brings its event mask up to date if a later stage added
+ *  events an earlier registration doesn't cover yet. Idempotent: safe to call again.
+ *  Management-only and temporary, same as channex-test.ts — remove once stage 5 folds this into
+ *  onboarding a real listing. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -30,9 +31,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const existing = await channexListWebhooks(env);
   const already = (existing.body?.data ?? []).find((w: any) => w.attributes?.callback_url === callbackUrl);
-  if (already) return json({ alreadyRegistered: true, id: already.id, callbackUrl });
+  if (already) {
+    if (already.attributes?.event_mask === CHANNEX_EVENT_MASK) return json({ alreadyRegistered: true, id: already.id, callbackUrl });
+    const upd = await channexUpdateWebhookMask(env, already.id, { callbackUrl, secret: env.CHANNEX_WEBHOOK_SECRET });
+    if (!upd.ok) return fail('CHANNEX_ERROR', `Channex refused the webhook update (status ${upd.status}).`, 502);
+    return json({ updated: true, id: already.id, callbackUrl, eventMask: CHANNEX_EVENT_MASK });
+  }
 
   const res = await channexCreateWebhook(env, { callbackUrl, secret: env.CHANNEX_WEBHOOK_SECRET });
   if (!res.ok) return fail('CHANNEX_ERROR', `Channex refused the webhook registration (status ${res.status}).`, 502);
-  return json({ registered: true, id: res.body?.data?.id, callbackUrl });
+  return json({ registered: true, id: res.body?.data?.id, callbackUrl, eventMask: CHANNEX_EVENT_MASK });
 };
