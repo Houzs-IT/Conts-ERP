@@ -34,9 +34,13 @@ const SPEC: Record<string, Record<string, Field>> = {
     payoutMethod: { def: 'bank_transfer', kind: 'text' },
   },
   security: {
-    inactivityTimeoutMins: { def: 30, kind: 'number', min: 5, max: 480 },
-    absoluteTimeoutHours: { def: 8, kind: 'number', min: 1, max: 72 },
+    // Staff stay signed in through a normal work week; the owner portal is a brief,
+    // occasional check-in so it times out sooner — see functions/_lib/auth.ts securitySettings().
+    staffInactivityTimeoutMins: { def: 10080, kind: 'number', min: 15, max: 43200 },
+    ownerInactivityTimeoutMins: { def: 480, kind: 'number', min: 15, max: 43200 },
+    absoluteTimeoutHours: { def: 720, kind: 'number', min: 1, max: 720 },
     lockoutAttempts: { def: 5, kind: 'number', min: 3, max: 20 },
+    lockoutMinutes: { def: 15, kind: 'number', min: 1, max: 120 },
   },
 };
 

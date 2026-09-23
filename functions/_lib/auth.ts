@@ -1,12 +1,33 @@
-import { type Env, one, run, fail, nowIso } from './db';
+import { type Env, all, one, run, fail, nowIso } from './db';
+
+export interface SecuritySettings { staffTtlHours: number; ownerTtlHours: number; absoluteDays: number; maxAttempts: number; lockoutMinutes: number }
+
+/** Same defaults as the Settings > Security spec (functions/api/settings/index.ts) — used
+ *  only for whatever a row is missing there, same as every other setting in that screen. */
+const SECURITY_DEFAULTS: SecuritySettings = { staffTtlHours: 168, ownerTtlHours: 8, absoluteDays: 30, maxAttempts: 5, lockoutMinutes: 15 };
+
+/** The owner-configurable values from Settings > Security, read live so a change there takes
+ *  effect on the very next request — including for someone already signed in, since the
+ *  session middleware re-signs the idle deadline (see functions/api/_middleware.ts) using
+ *  whatever this returns each time. */
+export async function securitySettings(env: Env): Promise<SecuritySettings> {
+  const rows = await all<{ key: string; value: string }>(env, `SELECT key, value FROM settings WHERE key LIKE 'security.%'`);
+  const map = new Map(rows.map(r => [r.key, r.value]));
+  const num = (key: string, def: number) => { const n = Number(map.get(key)); return map.has(key) && Number.isFinite(n) ? n : def; };
+  return {
+    staffTtlHours: num('security.staffInactivityTimeoutMins', SECURITY_DEFAULTS.staffTtlHours * 60) / 60,
+    ownerTtlHours: num('security.ownerInactivityTimeoutMins', SECURITY_DEFAULTS.ownerTtlHours * 60) / 60,
+    absoluteDays: num('security.absoluteTimeoutHours', SECURITY_DEFAULTS.absoluteDays * 24) / 24,
+    maxAttempts: num('security.lockoutAttempts', SECURITY_DEFAULTS.maxAttempts),
+    lockoutMinutes: num('security.lockoutMinutes', SECURITY_DEFAULTS.lockoutMinutes),
+  };
+}
 
 /** Staff sign in far less often than they'd want to be interrupted, so they idle out on a
- *  roughly weekly cadence; an owner's portal is used briefly and occasionally, so it times
- *  out the same day. Falls back to the documented defaults if a var is ever unset. */
-export function sessionLimits(env: Env, role: string) {
-  const staffTtl = Number(env.SESSION_TTL_HOURS) || 168;
-  const ownerTtl = Number(env.SESSION_TTL_HOURS_OWNER) || 8;
-  return { ttlHours: role === 'owner' ? ownerTtl : staffTtl, absoluteDays: Number(env.SESSION_ABSOLUTE_DAYS) || 30 };
+ *  roughly weekly cadence by default; an owner's portal is used briefly and occasionally, so
+ *  it times out the same day by default — both adjustable from Settings > Security. */
+export function sessionLimits(settings: SecuritySettings, role: string) {
+  return { ttlHours: role === 'owner' ? settings.ownerTtlHours : settings.staffTtlHours, absoluteDays: settings.absoluteDays };
 }
 
 /** `iat` anchors the absolute cap (fixed at first sign-in); `exp` is the idle deadline,

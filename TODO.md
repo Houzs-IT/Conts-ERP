@@ -11,12 +11,9 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Watch: one listing must never be controlled by both the old connection and Channex; plan the import of existing bookings.
 
 ## Later
-- Build a general Audit trail page (permission slot "Audit trail: who changed what" already exists in Users/roles, `GET /api/audit?entityTable=&entityId=` already works per-record — e.g. a reservation's own history — but there is no standalone screen listing everything). Owner asked for this after wanting to see a Channex sync confirmed and finding no such screen.
 - Update Wrangler CLI (3.114 -> 4.x, `npm install --save-dev wrangler@4`). Not urgent, do once current work settles.
 - Update vulnerable packages (GitHub reports 1 critical, 7 high, 14 moderate, 2 low). Do in its own PR and test.
-- Photo and document upload: needs Cloudflare R2 bucket bound as MEDIA (uploads return 501 until then).
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.
-- Sign-in timeout and lockout settings are saved but not yet enforced by login.
 - Deploy the timed background job (theconts-cron, wrangler.cron.toml) for delayed notifications and the overdue-task sweep.
 - Calendar rate model (multipliers) and Pricing screen (base + uplift) should be aligned.
 - Automatic staging preview deploy from the `staging` branch; keep `staging` level with `main`.
