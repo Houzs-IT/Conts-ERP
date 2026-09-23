@@ -70,6 +70,7 @@ export const NAV: NavGroup[] = [
       { key: 'consignmentNotes', label: 'Consignment notes', path: '/sales/consignment-notes', designed: true },
     ] },
     { key: 'scTransport', label: 'Transportation', icon: 'truck', children: [
+      { key: 'coverageFleet', label: 'Coverage & fleet', path: '/transport/coverage', designed: true },
       { key: 'drivers', label: 'Drivers', path: '/transport/drivers', designed: true },
       { key: 'vehicles', label: 'Vehicles', path: '/transport/vehicles', designed: true },
       { key: 'threepl', label: '3PL companies', path: '/transport/3pl', designed: true },
