@@ -149,8 +149,10 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
 
   const { data: unitsData } = useApi<{ data: UnitRow[] }>('/units', { data: UNITS_FALLBACK });
   const units = unitsData?.data ?? [];
+  // Wait for the unit list before deriving a fallback id — firing the detail request with a
+  // blank unitId just gets a guaranteed 422 while the list is still in flight.
   const openId = unitId || units[0]?.id || '';
-  const { data, error, reload } = useApi<Payload>(`/units/detail?unitId=${encodeURIComponent(openId)}`, FALLBACK);
+  const { data, error, reload } = useApi<Payload>(openId ? `/units/detail?unitId=${encodeURIComponent(openId)}` : null, FALLBACK);
 
   const d = data ?? (import.meta.env.DEV ? FALLBACK : null);
   if (!d) {

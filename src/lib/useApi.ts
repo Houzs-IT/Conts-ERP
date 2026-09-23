@@ -12,15 +12,20 @@ export interface Query<T> {
 /**
  * Fetches once per path change. Pages pass a fallback so the UI renders while the
  * API is still stubbed — delete the fallback once the endpoint is live.
+ *
+ * `path` may be `null` to skip fetching entirely — for a detail call whose id comes
+ * from a list that hasn't loaded yet, pass `list.length ? \`/thing?id=${id}\` : null`
+ * rather than firing a request with a blank id that the API will only reject.
  */
-export function useApi<T>(path: string, fallback?: T): Query<T> {
+export function useApi<T>(path: string | null, fallback?: T): Query<T> {
   // The fallback is design sample data. It exists only in dev; a real build shows nothing rather than invented figures.
   const [data, setData] = useState<T | null>(import.meta.env.DEV ? (fallback ?? null) : null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(path !== null);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
+    if (path === null) { setLoading(false); return; }
     let live = true;
     setLoading(true);
     api.get<T>(path)

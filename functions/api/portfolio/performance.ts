@@ -1,16 +1,39 @@
-import { type Env, all, one, json } from '../../_lib/db';
+import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession, canSeeFinance } from '../../_lib/auth';
 
-/** GET /api/portfolio/performance?period=2026-09 — one row per listed unit. */
+/** GET /api/portfolio/performance?period=2026-09 (a month) or ?period=2026-q3 (a quarter, to
+ *  today if the quarter isn't over yet) — one row per listed unit. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
 
-  const now = await one<{ d: string }>(env, `SELECT to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS d`);
-  const period = new URL(request.url).searchParams.get('period') ?? now!.d.slice(0, 7);
-  const [y, m] = period.split('-').map(Number);
-  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const nowRow = await one<{ d: string }>(env, `SELECT to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS d`);
+  const today = nowRow!.d;
+  const periodParam = new URL(request.url).searchParams.get('period') ?? today.slice(0, 7);
   const finance = canSeeFinance(session.role);
+
+  const quarter = periodParam.match(/^(\d{4})-q([1-4])$/i);
+  const month = periodParam.match(/^(\d{4})-(\d{2})$/);
+
+  let dateFrom: string, dateToExclusive: string, days: number, period: string;
+  if (quarter) {
+    const y = Number(quarter[1]), q = Number(quarter[2]);
+    const startMonth = (q - 1) * 3 + 1; // 1, 4, 7 or 10
+    dateFrom = `${y}-${String(startMonth).padStart(2, '0')}-01`;
+    const quarterEndExclusive = new Date(Date.UTC(y, startMonth + 2, 1)).toISOString().slice(0, 10); // first day after the quarter
+    const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 864e5).toISOString().slice(0, 10);
+    dateToExclusive = tomorrow < quarterEndExclusive ? tomorrow : quarterEndExclusive; // "to date": stop at today unless the quarter has already ended
+    days = Math.max(1, Math.round((Date.parse(dateToExclusive) - Date.parse(dateFrom)) / 864e5));
+    period = `${y}-q${q}`;
+  } else if (month) {
+    const y = Number(month[1]), m = Number(month[2]);
+    dateFrom = `${y}-${month[2]}-01`;
+    dateToExclusive = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
+    days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    period = `${y}-${month[2]}`;
+  } else {
+    return fail('VALIDATION', 'Unknown period.', 422);
+  }
 
   const rows = await all<any>(env, `
     SELECT u.id, u.unit_number, u.readiness, p.id AS property_id, p.name AS property_name, o.display_name AS owner_name,
@@ -24,10 +47,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     LEFT JOIN reservations r ON r.unit_id = u.id
       AND r.state IN ('confirmed','checked_in','checked_out')
       AND r.channel NOT IN ('maintenance_block','owner_stay')
-      AND substr(r.check_in, 1, 7) = ?
+      AND r.check_in >= ? AND r.check_in < ?
     WHERE u.is_listed = 1
     GROUP BY u.id, p.id, p.name, o.display_name
-    ORDER BY p.name, u.unit_number`, period);
+    ORDER BY p.name, u.unit_number`, dateFrom, dateToExclusive);
 
   const exception = (r: any) =>
     r.readiness === 'maintenance' || r.readiness === 'blocked' ? { label: 'Off sale', tone: 'warning' }
