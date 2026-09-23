@@ -53,6 +53,7 @@ const DeliveryResidenceRulesPage = lazy(() => import('./pages/DeliveryResidenceR
 const RateCardsPage = lazy(() => import('./pages/RateCardsPage'));
 const RacksBinsPage = lazy(() => import('./pages/RacksBinsPage'));
 const AdjustmentsPage = lazy(() => import('./pages/AdjustmentsPage'));
+const FleetHealthPage = lazy(() => import('./pages/FleetHealthPage'));
 const FabricsPage = lazy(() => import('./pages/FabricsPage'));
 const MrpPage = lazy(() => import('./pages/MrpPage'));
 const AccountingPage = lazy(() => import('./pages/AccountingPage'));
@@ -165,6 +166,7 @@ function Routed() {
         <Route path="/transport/zones" element={<DeliveryZonesPage />} />
         <Route path="/transport/residence-rules" element={<DeliveryResidenceRulesPage />} />
         <Route path="/transport/rate-cards" element={<RateCardsPage />} />
+        <Route path="/transport/fleet-health" element={<FleetHealthPage />} />
         <Route path="/furniture/fabrics" element={<FabricsPage />} />
         <Route path="/procurement/mrp" element={<MrpPage />} />
         <Route path="/accounting" element={<AccountingPage />} />
