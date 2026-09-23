@@ -6,7 +6,8 @@ import postgres from 'postgres';
 export interface Env {
   HYPERDRIVE: { connectionString: string };
   SESSION_SECRET: string;
-  /** R2 bucket for photos and documents. Not bound yet: uploads answer 501 until it is. */
+  /** R2 bucket for photos and documents (theconts-media / theconts-media-staging). Optional in the
+   *  type since local dev without the binding still needs upload endpoints to fail cleanly (501). */
   MEDIA?: R2Bucket;
   /** Channex channel-manager API key. Set on the preview environment only while we test against their staging demo property — see TODO.md. */
   CHANNEX_API_KEY?: string;
