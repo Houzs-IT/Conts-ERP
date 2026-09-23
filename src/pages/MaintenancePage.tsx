@@ -285,7 +285,7 @@ export default function MaintenancePage() {
       <PageHeader
         title="Maintenance"
         sub={tab === 'catalog'
-          ? 'Repair-item catalog and preset selling prices'
+          ? 'Item catalog and preset selling prices'
           : `${openCount} open · ${approvalCount} awaiting owner approval · ${blockingCount} blocking a unit`}
         right={tab === 'jobs' ? <Button variant="primary" onClick={() => setCreating(true)}>Create job</Button> : undefined}
       />
@@ -297,7 +297,7 @@ export default function MaintenancePage() {
             <button key={t} onClick={() => setTab(t)}
               className={cx('h-9 flex items-center px-4 py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border border-solid text-[13px] font-medium',
                 on ? 'border-black bg-black text-white' : 'border-line bg-white text-muted-ink')}>
-              {t === 'jobs' ? 'Jobs' : 'SKU catalog'}
+              {t === 'jobs' ? 'Jobs' : 'Item catalog'}
             </button>
           );
         })}
@@ -460,7 +460,7 @@ function IssueRow({
             The owner must approve {rm(i.quotedAmount)} before this is scheduled.
           </span>
           <button onClick={onRequestApproval} className="h-[34px] px-[13px] py-0 rounded-control border-none bg-black text-white cursor-pointer [font:inherit]">
-            Request owner approval
+            Resend approval request
           </button>
         </div>
       )}
