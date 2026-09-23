@@ -168,18 +168,22 @@ export default function MaintenancePage() {
     fire(api.post('/blocks', { unitId: issue.unitId ?? issue.unitNumber, propertyName: issue.propertyName, reason: 'maintenance', issueId: issue.id }));
   }
 
-  function attachPhoto(issue: Issue, kind: 'Before' | 'After') {
+  function attachPhoto(issue: Issue, kind: 'Before' | 'After', file: File) {
     bumpCount(issue, 'photoCount');
     setPhotoFor(null);
     toast({ tone: 'success', title: `${kind} photo added.`, body: 'Kept as evidence on the job.' });
-    fire(api.post(`/maintenance/issues/${issue.id}/photos`, { kind: kind.toLowerCase() }));
+    const fd = new FormData();
+    fd.append('file', file); fd.append('kind', kind.toLowerCase());
+    fire(api.post(`/maintenance/issues/${issue.id}/photos`, fd));
   }
 
-  function attachDocument(issue: Issue, kind: 'POD' | 'Invoice') {
+  function attachDocument(issue: Issue, kind: 'POD' | 'Invoice', file: File) {
     bumpCount(issue, 'documentCount');
     setDocFor(null);
     toast({ tone: 'success', title: `${kind} uploaded.`, body: 'Attached to the job for the owner statement.' });
-    fire(api.post(`/maintenance/issues/${issue.id}/documents`, { kind: kind.toLowerCase() }));
+    const fd = new FormData();
+    fd.append('file', file); fd.append('kind', kind.toLowerCase());
+    fire(api.post(`/maintenance/issues/${issue.id}/documents`, fd));
   }
 
   function markComplete(issue: Issue, finalAmount: number) {
@@ -643,24 +647,24 @@ function AssignModal({ issue, onClose, onAssign }: { issue: Issue; onClose: () =
 
 // ---- Upload photo ----------------------------------------------------------
 
-function PhotoModal({ issue, onClose, onAttach }: { issue: Issue; onClose: () => void; onAttach: (i: Issue, kind: 'Before' | 'After') => void }) {
+function PhotoModal({ issue, onClose, onAttach }: { issue: Issue; onClose: () => void; onAttach: (i: Issue, kind: 'Before' | 'After', file: File) => void }) {
   const [kind, setKind] = useState<'Before' | 'After'>('Before');
   const fileRef = useRef<HTMLInputElement>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   return (
     <Modal title="Upload photo" sub="Before-and-after evidence stays on the job and, once complete, on the owner statement." onClose={onClose}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={() => onAttach(issue, kind)}>Attach {kind.toLowerCase()} photo</Button>
+        <Button size="sm" variant="primary" disabled={!file} onClick={() => file && onAttach(issue, kind, file)}>Attach {kind.toLowerCase()} photo</Button>
       </>}>
       <LabeledField label="Type">
         <Segmented options={['Before', 'After']} value={kind} onChange={v => setKind(v as 'Before' | 'After')} />
       </LabeledField>
       <div>
-        <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => setFileName(e.target.files?.[0]?.name ?? null)} />
+        <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => setFile(e.target.files?.[0] ?? null)} />
         <button type="button" onClick={() => fileRef.current?.click()}
           className="flex w-full box-border h-auto min-h-[72px] px-3 py-0 items-center justify-center text-muted-ink bg-white border border-dashed border-line rounded-control outline-none [font:inherit] cursor-pointer">
-          {fileName ? fileName : 'Choose a photo'}
+          {file ? file.name : 'Choose a photo'}
         </button>
       </div>
     </Modal>
@@ -669,24 +673,24 @@ function PhotoModal({ issue, onClose, onAttach }: { issue: Issue; onClose: () =>
 
 // ---- Upload POD / invoice --------------------------------------------------
 
-function DocumentModal({ issue, onClose, onAttach }: { issue: Issue; onClose: () => void; onAttach: (i: Issue, kind: 'POD' | 'Invoice') => void }) {
+function DocumentModal({ issue, onClose, onAttach }: { issue: Issue; onClose: () => void; onAttach: (i: Issue, kind: 'POD' | 'Invoice', file: File) => void }) {
   const [kind, setKind] = useState<'POD' | 'Invoice'>('Invoice');
   const fileRef = useRef<HTMLInputElement>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   return (
     <Modal title="Upload POD / invoice" sub="Proof of delivery and the vendor invoice back the expense on the owner statement." onClose={onClose}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={() => onAttach(issue, kind)}>Upload {kind === 'POD' ? 'POD' : 'invoice'}</Button>
+        <Button size="sm" variant="primary" disabled={!file} onClick={() => file && onAttach(issue, kind, file)}>Upload {kind === 'POD' ? 'POD' : 'invoice'}</Button>
       </>}>
       <LabeledField label="Document">
         <Segmented options={['Invoice', 'POD']} value={kind} onChange={v => setKind(v as 'POD' | 'Invoice')} />
       </LabeledField>
       <div>
-        <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={e => setFileName(e.target.files?.[0]?.name ?? null)} />
+        <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={e => setFile(e.target.files?.[0] ?? null)} />
         <button type="button" onClick={() => fileRef.current?.click()}
           className="flex w-full box-border h-auto min-h-[72px] px-3 py-0 items-center justify-center text-muted-ink bg-white border border-dashed border-line rounded-control outline-none [font:inherit] cursor-pointer">
-          {fileName ? fileName : 'Choose a file'}
+          {file ? file.name : 'Choose a file'}
         </button>
       </div>
     </Modal>

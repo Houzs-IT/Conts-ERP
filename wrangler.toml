@@ -23,12 +23,10 @@ pages_build_output_dir = "dist"
 binding = "HYPERDRIVE"
 id = "e0781ccdee9046919161c28cb95694c0"
 
-# Media storage — not yet used. Photo upload writes to `documents.storage_key`
-# but the upload endpoint is not built. Uncomment together with that endpoint:
-#   npx wrangler r2 bucket create theconts-media
-# [[r2_buckets]]
-# binding = "MEDIA"
-# bucket_name = "theconts-media"
+# Media storage for photos and documents (documents.storage_key).
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "theconts-media"
 
 # Not used. Sessions are stateless HMAC-signed cookies — see
 # functions/_lib/auth.ts. A KV namespace would only be needed to support
@@ -78,6 +76,11 @@ QUIET_HOURS_END = "8"
 [[env.preview.hyperdrive]]
 binding = "HYPERDRIVE"
 id = "9c21c4f2b5f9470cb7df0afeb9ad633f"
+
+# Separate bucket from production, same isolation reasoning as the Hyperdrive above.
+[[env.preview.r2_buckets]]
+binding = "MEDIA"
+bucket_name = "theconts-media-staging"
 
 [env.preview.vars]
 APP_NAME = "Conts ERP (staging)"
