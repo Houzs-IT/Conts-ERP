@@ -73,6 +73,7 @@ export const NAV: NavGroup[] = [
       { key: 'driverLeave', label: 'Driver leave', path: '/transport/driver-leave', designed: true },
       { key: 'deliveryZones', label: 'Delivery zones', path: '/transport/zones', designed: true },
       { key: 'residenceRules', label: 'Residence rules', path: '/transport/residence-rules', designed: true },
+      { key: 'rateCards', label: 'Carriers & rates', path: '/transport/rate-cards', designed: true },
     ] },
     { key: 'scFurniture', label: 'Furniture', icon: 'sofa', children: [
       { key: 'fabrics', label: 'Fabric library', path: '/furniture/fabrics', designed: true },
