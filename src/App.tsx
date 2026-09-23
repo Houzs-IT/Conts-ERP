@@ -46,6 +46,8 @@ const FabricsPage = lazy(() => import('./pages/FabricsPage'));
 const MrpPage = lazy(() => import('./pages/MrpPage'));
 const AccountingPage = lazy(() => import('./pages/AccountingPage'));
 const ConsignmentNotesPage = lazy(() => import('./pages/ConsignmentNotesPage'));
+const StockTransfersPage = lazy(() => import('./pages/StockTransfersPage'));
+const StockTakesPage = lazy(() => import('./pages/StockTakesPage'));
 const AccessPage = lazy(() => import('./pages/AccessPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
@@ -145,6 +147,8 @@ function Routed() {
         <Route path="/procurement/mrp" element={<MrpPage />} />
         <Route path="/accounting" element={<AccountingPage />} />
         <Route path="/sales/consignment-notes" element={<ConsignmentNotesPage />} />
+        <Route path="/procurement/stock-transfers" element={<StockTransfersPage />} />
+        <Route path="/procurement/stock-takes" element={<StockTakesPage />} />
         <Route path="/finance/revenue" element={<AnalyticsPage />} />
         <Route path="/finance/expenses" element={<ExpensesPage />} />
         <Route path="/finance/statements" element={<StatementsPage />} />
