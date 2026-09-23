@@ -1,6 +1,6 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession, canSeeFinance } from '../../_lib/auth';
-import { stampMyt, shortDate } from '../../_lib/ops';
+import { stampMyt } from '../../_lib/ops';
 
 /**
  * The whole unit record in one request. Seven tabs of a detail page firing seven
@@ -167,7 +167,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       id: m.id, title: m.title, detail: m.detail, state: m.state,
       vendorName: m.vendor_name, ownerApprovalRequired: !!m.owner_approval_required,
       blocksUnit: !!m.blocks_unit, chargeTo: m.charge_to,
-      reportedAt: shortDate(m.reported_at), resolvedAt: shortDate(m.resolved_at),
+      // Raw ISO — UnitRecordPage formats these with dateShort(); a pre-formatted value would be
+      // re-parsed there. (dueAt/completedAt/occurredAt below are rendered as-is, so they stay stamped.)
+      reportedAt: m.reported_at, resolvedAt: m.resolved_at,
       ...(money ? { quotedAmount: m.quoted_amount, finalAmount: m.final_amount } : {}),
     })),
     inventory: inventory.map(i => ({

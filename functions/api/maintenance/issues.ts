@@ -1,7 +1,7 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, canSeeFinance, isFieldRole } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
-import { resolveUnit, shortDate } from '../../_lib/ops';
+import { resolveUnit } from '../../_lib/ops';
 
 const CHARGE_TO = ['owner', 'guest_deposit', 'the_conts', 'warranty'];
 
@@ -31,7 +31,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       id: r.id, unitId: r.unit_id, unitNumber: r.unit_number, propertyName: r.property_name,
       title: r.title, detail: r.detail, state: r.state,
       vendorName: r.vendor_name, assigneeName: r.vendor_name,
-      reportedAt: shortDate(r.reported_at), resolvedAt: r.resolved_at,
+      // Raw ISO, like resolvedAt beside it: MaintenancePage formats with dateShort(). Sending a
+      // pre-formatted "16 Sept" made the frontend re-parse its own display string.
+      reportedAt: r.reported_at, resolvedAt: r.resolved_at,
       blocksUnit: !!r.blocks_unit, blockedFrom: r.blocked_from, blockedTo: r.blocked_to,
       ownerApprovalRequired: !!r.owner_approval_required, ownerApprovedAt: r.owner_approved_at,
       chargeTo: r.charge_to, reporter: r.reporter || null,
