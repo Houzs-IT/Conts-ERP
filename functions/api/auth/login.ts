@@ -1,11 +1,11 @@
 import { type Env, one, run, json, fail, nowIso } from '../../_lib/db';
-import { signSession, cookie, verifyPassword } from '../../_lib/auth';
+import { signSession, cookie, verifyPassword, sessionLimits } from '../../_lib/auth';
 import { doorFor, doorRefusal, HOME } from '../../_lib/door';
 
-const MAX_ATTEMPTS = 5;
-const LOCK_MINUTES = 15;
-
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  const MAX_ATTEMPTS = Number(env.LOGIN_MAX_ATTEMPTS) || 5;
+  const LOCK_MINUTES = Number(env.LOGIN_LOCKOUT_MINUTES) || 15;
+
   const { email, password } = await request.json<{ email: string; password: string }>();
   if (!email || !password) return fail('VALIDATION', 'Enter your email and password.', 422);
 
@@ -40,9 +40,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   await run(env, 'UPDATE users SET failed_attempts = 0, locked_until = NULL, last_login_at = ? WHERE id = ?', nowIso(), user.id);
 
+  const { ttlHours, absoluteDays } = sessionLimits(env);
   const token = await signSession(env.SESSION_SECRET, {
     userId: user.id, email: user.email, role: user.role, fullName: user.full_name,
-  });
+  }, ttlHours, absoluteDays);
 
   return json({
     user: {
@@ -50,5 +51,5 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       mustChangePassword: !!user.must_change_password, locale: 'en-MY',
     },
     home: user.must_change_password ? '/change-password' : (HOME[user.role] ?? '/'),
-  }, 200, { 'set-cookie': cookie(request, token) });
+  }, 200, { 'set-cookie': cookie(request, token, ttlHours * 3600) });
 };

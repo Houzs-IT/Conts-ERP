@@ -1,6 +1,13 @@
 import { type Env, one, run, fail, nowIso } from './db';
 
-export interface Session { userId: string; email: string; role: string; fullName: string }
+/** Falls back to the documented defaults (8h idle / 30d absolute) if the vars are ever unset. */
+export function sessionLimits(env: Env) {
+  return { ttlHours: Number(env.SESSION_TTL_HOURS) || 8, absoluteDays: Number(env.SESSION_ABSOLUTE_DAYS) || 30 };
+}
+
+/** `iat` anchors the absolute cap (fixed at first sign-in); `exp` is the idle deadline,
+ *  extended on every request but never past `iat + SESSION_ABSOLUTE_DAYS` — see signSession. */
+export interface Session { userId: string; email: string; role: string; fullName: string; iat: number }
 
 const ENC = new TextEncoder();
 
@@ -10,9 +17,15 @@ async function hmac(secret: string, data: string) {
   return btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-export async function signSession(secret: string, s: Session, days = 30) {
-  const exp = Date.now() + days * 864e5;
-  const body = btoa(JSON.stringify({ ...s, exp })).replace(/=+$/, '');
+/** `iat` defaults to now (a fresh sign-in); the session middleware passes the original
+ *  `iat` back in when it slides an existing session's idle deadline forward, so the
+ *  absolute cap always counts from first login, never from the latest request. */
+export async function signSession(
+  secret: string, s: { userId: string; email: string; role: string; fullName: string },
+  ttlHours: number, absoluteDays: number, iat = Date.now(),
+) {
+  const exp = Math.min(Date.now() + ttlHours * 36e5, iat + absoluteDays * 864e5);
+  const body = btoa(JSON.stringify({ ...s, iat, exp })).replace(/=+$/, '');
   return `${body}.${await hmac(secret, body)}`;
 }
 
@@ -23,7 +36,7 @@ export async function readSession(secret: string, token: string | null): Promise
   try {
     const p = JSON.parse(atob(body));
     if (!p.exp || p.exp < Date.now()) return null;
-    return { userId: p.userId, email: p.email, role: p.role, fullName: p.fullName };
+    return { userId: p.userId, email: p.email, role: p.role, fullName: p.fullName, iat: p.iat ?? Date.now() };
   } catch { return null; }
 }
 
@@ -36,9 +49,11 @@ function isSecure(request: Request) {
   return new URL(request.url).protocol === 'https:';
 }
 
-export function cookie(request: Request, token: string, days = 30) {
+/** `maxAgeSeconds` is only the browser's own hint to drop the cookie — the server is the
+ *  real authority via the `exp`/`iat` checked in readSession. Pass the idle TTL in seconds. */
+export function cookie(request: Request, token: string, maxAgeSeconds: number) {
   const secure = isSecure(request) ? ' Secure;' : '';
-  return `tc_session=${token}; Path=/; HttpOnly;${secure} SameSite=Lax; Max-Age=${days * 86400}`;
+  return `tc_session=${token}; Path=/; HttpOnly;${secure} SameSite=Lax; Max-Age=${maxAgeSeconds}`;
 }
 
 export function clearCookie(request: Request) {

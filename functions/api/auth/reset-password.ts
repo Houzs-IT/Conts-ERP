@@ -1,5 +1,5 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
-import { signSession, cookie, hashPassword } from '../../_lib/auth';
+import { signSession, cookie, hashPassword, sessionLimits } from '../../_lib/auth';
 import { doorFor, doorRefusal, HOME } from '../../_lib/door';
 import { notify } from '../../_lib/notify';
 
@@ -94,12 +94,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     urgent: true,
   });
 
+  const { ttlHours, absoluteDays } = sessionLimits(env);
   const sessionToken = await signSession(env.SESSION_SECRET, {
     userId: user.id, email: user.email, role: user.role, fullName: user.full_name,
-  });
+  }, ttlHours, absoluteDays);
 
   return json({
     user: { id: user.id, fullName: user.full_name, email: user.email, role: user.role, mustChangePassword: false, locale: 'en-MY' },
     home: HOME[user.role] ?? '/',
-  }, 200, { 'set-cookie': cookie(request, sessionToken) });
+  }, 200, { 'set-cookie': cookie(request, sessionToken, ttlHours * 3600) });
 };
