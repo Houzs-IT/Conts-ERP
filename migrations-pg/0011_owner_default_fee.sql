@@ -13,6 +13,7 @@
 -- /owners/:id/pnl endpoint that read this column will error in prod.
 --
 -- REVERSAL: ALTER TABLE owners DROP COLUMN default_management_fee_pct;
+set local search_path = pos;
 
 ALTER TABLE owners
   ADD COLUMN default_management_fee_pct DOUBLE PRECISION
