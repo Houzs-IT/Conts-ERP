@@ -9,11 +9,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const url = new URL(request.url);
   const itemCode = (url.searchParams.get('itemCode') ?? '').trim();
   const warehouseId = url.searchParams.get('warehouseId');
+  const type = (url.searchParams.get('type') ?? '').trim().toUpperCase();
 
   const where: string[] = ['1 = 1'];
   const args: unknown[] = [];
   if (itemCode) { where.push('lower(m.item_code) LIKE ?'); args.push(`%${itemCode.toLowerCase()}%`); }
   if (warehouseId) { where.push('m.warehouse_id = ?'); args.push(warehouseId); }
+  if (type) { where.push('m.movement_type = ?'); args.push(type); }
 
   const rows = await all<MovementRow>(env, `
     SELECT m.id, m.item_code, m.warehouse_id, w.code AS warehouse_code, w.name AS warehouse_name,
