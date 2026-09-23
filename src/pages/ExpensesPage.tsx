@@ -216,7 +216,17 @@ export default function ExpensesPage() {
     (unit === 'all' || e.unitNumber === unit) &&
     periodOf(e.incurredOn) === month);
 
-  const total = rows.reduce((s, r) => s + r.amount, 0);
+  // A container is a parent row whose children are present in the current view.
+  // It carries no money of its own (its leaves hold it) and must not read as an
+  // editable expense. The Grouped tree already hides containers via buildTree;
+  // List view and the header count mirror that here so the two views agree.
+  const rowIds = new Set(rows.map(r => r.id));
+  const containerIds = new Set(
+    rows.filter(r => r.parentExpenseId && rowIds.has(r.parentExpenseId)).map(r => r.parentExpenseId as string),
+  );
+  const leafRows = rows.filter(r => !containerIds.has(r.id));
+
+  const total = leafRows.reduce((s, r) => s + r.amount, 0);
   const tree = buildTree(rows, month);
   const treeRows: { node: TreeNode; depth: number }[] = [];
   flatten(tree, 0, open, treeRows);
@@ -293,7 +303,7 @@ export default function ExpensesPage() {
     <>
       <PageHeader
         title="Expenses"
-        sub={`${monthLabel(month)} · ${rows.length} ${rows.length === 1 ? 'entry' : 'entries'} · ${rm(total)}`}
+        sub={`${monthLabel(month)} · ${leafRows.length} ${leafRows.length === 1 ? 'entry' : 'entries'} · ${rm(total)}`}
         right={
           <div className="flex gap-[9px] flex-wrap">
             <Button variant="secondary" onClick={() => setReporting(true)}>Generate report</Button>
@@ -328,7 +338,7 @@ export default function ExpensesPage() {
           <div className="flex h-8 rounded-control border border-solid border-line overflow-hidden" role="group" aria-label="Expenses view">
             {(['grouped', 'list'] as const).map(v => (
               <button key={v} onClick={() => setView(v)} aria-pressed={view === v}
-                className={cx('h-full px-[13px] py-0 cursor-pointer whitespace-nowrap font-sans text-[13px] border-none',
+                className={cx('h-full px-[13px] py-0 cursor-pointer whitespace-nowrap font-sans text-[16px] border-none',
                   view === v ? 'bg-black text-white' : 'bg-card text-muted-ink')}>
                 {v === 'grouped' ? 'Grouped' : 'List'}
               </button>
@@ -339,7 +349,7 @@ export default function ExpensesPage() {
           <div className="flex items-center h-8 rounded-control border border-solid border-line bg-card">
             <button aria-label="Previous month" onClick={() => setMonth(m => stepMonth(m, -1))}
               className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">‹</button>
-            <span className="px-2 min-w-[112px] text-center text-[13px] font-medium tabular-nums whitespace-nowrap">
+            <span className="px-2 min-w-[112px] text-center text-[16px] font-medium tabular-nums whitespace-nowrap">
               {monthLabel(month)}{sentPeriods.has(month) ? ' · sent' : ''}
             </span>
             <button aria-label="Next month" onClick={() => setMonth(m => stepMonth(m, 1))}
@@ -379,7 +389,7 @@ export default function ExpensesPage() {
                 <div>Description</div><div>Unit</div><div>Category</div><div>Date</div><div>Reference</div><div className="text-right">Amount</div><div />
               </div>
 
-              {rows.map(r => {
+              {leafRows.map(r => {
                 const locked = isLocked(r);
                 return (
                   <div key={r.id} className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[52px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]')}>
@@ -646,6 +656,12 @@ function ReportModal({ units, periods, defaultUnit, defaultPeriod, onClose, onGe
   const [period, setPeriod] = useState(defaultPeriod);
   const unitLabel = unit === 'all' ? 'All units' : unit;
   const periodText = period === 'all' ? 'All periods' : monthLabel(period);
+  // The month switcher is unbounded, so defaultPeriod can be a month with no
+  // expenses — one absent from `periods`. Without an option for it the native
+  // <select> would fall back to displaying "All periods" while `period` still
+  // held that month, desyncing the control from the scope line below. Keep the
+  // active value in the option list so the select always matches the scope.
+  const periodOptions = period === 'all' || periods.includes(period) ? periods : [period, ...periods];
 
   return (
     <Modal title="Generate expenses report" sub="Per unit, per month. Exports a CSV whose header prints the applied filters, the generated time and the data scope." onClose={onClose} width={480}
@@ -663,7 +679,7 @@ function ReportModal({ units, periods, defaultUnit, defaultPeriod, onClose, onGe
         <LabeledField label="Period">
           <select value={period} onChange={e => setPeriod(e.target.value)} className={field}>
             <option value="all">All periods</option>
-            {periods.map(p => <option key={p} value={p}>{monthLabel(p)}</option>)}
+            {periodOptions.map(p => <option key={p} value={p}>{monthLabel(p)}</option>)}
           </select>
         </LabeledField>
       </div>
