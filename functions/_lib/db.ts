@@ -6,8 +6,10 @@ import postgres from 'postgres';
 export interface Env {
   HYPERDRIVE: { connectionString: string };
   SESSION_SECRET: string;
-  /** Idle timeout (hours) and hard cap (days) for a signed-in session — see functions/_lib/auth.ts. */
+  /** Idle timeout (hours, staff default and owner override) and hard cap (days) for a
+   *  signed-in session — see functions/_lib/auth.ts sessionLimits(). */
   SESSION_TTL_HOURS: string;
+  SESSION_TTL_HOURS_OWNER: string;
   SESSION_ABSOLUTE_DAYS: string;
   /** Failed sign-in attempts before a lockout, and the lockout length — see functions/api/auth/login.ts. */
   LOGIN_MAX_ATTEMPTS: string;

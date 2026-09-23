@@ -43,7 +43,11 @@ CURRENCY = "MYR"
 CURRENCY_PREFIX = "RM "
 # Money is stored as INTEGER sen. 1245000 = RM 12,450.00
 MONEY_MINOR_UNITS = "100"
-SESSION_TTL_HOURS = "8"
+# Idle timeout: staff stay signed in through a normal work week; an owner's portal
+# is used briefly and occasionally, so it times out sooner. Both still cap at
+# SESSION_ABSOLUTE_DAYS overall. See functions/_lib/auth.ts sessionLimits().
+SESSION_TTL_HOURS = "168"
+SESSION_TTL_HOURS_OWNER = "8"
 SESSION_ABSOLUTE_DAYS = "30"
 LOGIN_MAX_ATTEMPTS = "5"
 LOGIN_LOCKOUT_MINUTES = "15"
@@ -89,7 +93,8 @@ TIMEZONE = "Asia/Kuala_Lumpur"
 CURRENCY = "MYR"
 CURRENCY_PREFIX = "RM "
 MONEY_MINOR_UNITS = "100"
-SESSION_TTL_HOURS = "8"
+SESSION_TTL_HOURS = "168"
+SESSION_TTL_HOURS_OWNER = "8"
 SESSION_ABSOLUTE_DAYS = "30"
 LOGIN_MAX_ATTEMPTS = "5"
 LOGIN_LOCKOUT_MINUTES = "15"

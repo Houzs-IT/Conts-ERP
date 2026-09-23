@@ -40,7 +40,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   await run(env, 'UPDATE users SET failed_attempts = 0, locked_until = NULL, last_login_at = ? WHERE id = ?', nowIso(), user.id);
 
-  const { ttlHours, absoluteDays } = sessionLimits(env);
+  const { ttlHours, absoluteDays } = sessionLimits(env, user.role);
   const token = await signSession(env.SESSION_SECRET, {
     userId: user.id, email: user.email, role: user.role, fullName: user.full_name,
   }, ttlHours, absoluteDays);
