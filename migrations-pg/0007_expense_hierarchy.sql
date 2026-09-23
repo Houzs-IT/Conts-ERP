@@ -4,6 +4,7 @@
 -- expenses (and the owner statement) can drill Total -> category -> items.
 -- Additive and idempotent: every existing expense stays top-level (NULL parent).
 -- See conts-buildout-plan.html, screen "整屏 D · Monthly expenses".
+set local search_path = pos;
 
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS parent_expense_id TEXT REFERENCES expenses(id) ON DELETE CASCADE;
 
