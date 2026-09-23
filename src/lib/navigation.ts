@@ -50,6 +50,7 @@ export const NAV: NavGroup[] = [
       { key: 'mrp', label: 'MRP', path: '/procurement/mrp', designed: true },
     ] },
     { key: 'scWarehouse', label: 'Warehouse', icon: 'warehouse', children: [
+      { key: 'loadingList', label: 'Loading list', path: '/procurement/loading-list', designed: true },
       { key: 'warehouses', label: 'Warehouses', path: '/procurement/warehouses', designed: true },
       { key: 'racksBins', label: 'Racks & bins', path: '/procurement/racks', designed: true },
       { key: 'stock', label: 'Inventory', path: '/procurement/stock', designed: true },
