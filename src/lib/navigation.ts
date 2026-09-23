@@ -58,9 +58,10 @@ export const NAV: NavGroup[] = [
     { key: 'scSales', label: 'Sales', icon: 'file-text', children: [
       { key: 'customers', label: 'Customers', path: '/sales/customers', designed: true },
       { key: 'salesOrders', label: 'Sales orders', path: '/sales/orders', designed: true },
+      { key: 'salesOrderAmendment', label: 'Sales order amendment', path: '/sales/amendments', designed: true },
       { key: 'deliveryOrders', label: 'Delivery orders', path: '/sales/delivery-orders', designed: true },
       { key: 'salesInvoices', label: 'Sales invoices', path: '/sales/invoices', designed: true },
-      { key: 'salesReturns', label: 'Sales returns', path: '/sales/returns', designed: true },
+      { key: 'salesReturns', label: 'Delivery returns', path: '/sales/returns', designed: true },
       { key: 'unbilledDeliveries', label: 'Unbilled deliveries', path: '/sales/unbilled', designed: true },
     ] },
     { key: 'scConsignment', label: 'Consignment', icon: 'handshake', children: [
