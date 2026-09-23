@@ -19,7 +19,6 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Sign-in timeout and lockout settings are saved but not yet enforced by login.
 - Deploy the timed background job (theconts-cron, wrangler.cron.toml) for delayed notifications and the overdue-task sweep.
 - Calendar rate model (multipliers) and Pricing screen (base + uplift) should be aligned.
-- Automatic staging preview deploy from the `staging` branch; keep `staging` level with `main`.
 - Remove leftovers from the old Cloudflare database (scripts/d1-source.toml, D1 setup scripts) once the old D1 is retired.
 
 ## Future (planning only, not started): guests pay online for direct bookings
