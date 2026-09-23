@@ -60,6 +60,7 @@ consignment → transportation → furniture cross-cutting.
 - [x] **Product Models** — PR #29 `feat/scm-product-models` (stacked on #28; HELD: migration 0008). Deep variant/allowed-options editor deferred to Variants tier.
 - [x] **Categories** — PR #30 `feat/scm-masters` (stacked on #29; HELD: migration 0009)
 - [x] **Warehouses** — PR #30 (HELD: migration 0010). Racks deferred to Warehouse-ops tier.
+- [x] **Customers** — PR #55 `feat/scm-customers` (stacked on #42; HELD: migration 0025). Sell-side debtor master; SO can reference it going forward. Bindings/credit-hold deferred.
 - [ ] Currencies (`Currencies`) — only if multi-currency is kept (likely skip; Conts is MYR-only)
 
 **Tier 0 masters: DONE** (Products, Suppliers, Product Models, Categories, Warehouses).
@@ -79,7 +80,7 @@ Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 
 ### Tier 2 — Warehouse / Stock
 - [x] **Stock ledger + on-hand** — PR #42 `feat/scm-stock` (stacked on #41; HELD: migration 0017). Movements ledger + on-hand + manual adjustment. FIFO cost + GRN/DO→stock auto-wiring deferred.
-- [ ] Stock Takes / Transfers (`StockTake*`, `StockTransfer*`) — dedicated docs; StockCard = the movements view (done)
+- [x] **Stock Transfers + Stock Takes** — PR #54 `feat/scm-stock-ops` (stacked on #51; HELD: migration 0024). Transfer between warehouses (posts paired out/in movements); stock take counts + variance posting. StockCard = the movements view (done). **TIER 2 DONE.**
 
 ### Tier 3 — Sales (sell-side documents)  — **SPINE DONE (SO→DO→SI)**
 - [x] **Sales Orders** — PR #43 `feat/scm-sales-orders` (stacked on #42; HELD: migration 0018). 9-state flow + deposit/payment; customer inline (customers master = follow-up); guided/from-products/margins/MRP-gate deferred.
@@ -104,15 +105,17 @@ Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 
 ---
 
-## STATUS: entire Supply Chain surface ported (20 modules, PRs #25–#51)
+## STATUS: entire Supply Chain surface ported (22 modules, PRs #25–#55)
 
 All five Houzs SC sections (Sales · Consignment · Procurement · Transportation · Warehouse)
-+ MRP + Fabric + Accounting, in the L1/L2/L3 nav. Migrations 0006–0023. **Merge order:**
++ MRP + Fabric + Accounting + Customers master + Stock Transfers/Takes, in the L1/L2/L3 nav.
+Migrations 0006–0025. **Merge order:**
 #25 #28 #29 #30 #32 #33 #35 #39 #40 #41 #42 #43 #44 #45 #46 #47 #48(no-mig) #49(no-mig) #51
-(+ #26 docs). All stacked, all HELD for their migrations (except no-mig #48/#49).
+#54 #55 (+ #26 docs). All stacked, all HELD for their migrations (except no-mig #48/#49).
+Tiers 0–4 masters + doc spines complete; Tier 2 warehouse complete.
 
-**Deferred sub-slices** (bounded cores shipped; depth follows as needed): customers master,
-GRN/DO→stock auto-wiring, FIFO cost layers, stock takes/transfers, delivery returns,
+**Deferred sub-slices** (bounded cores shipped; depth follows as needed):
+GRN/DO→stock auto-wiring, FIFO cost layers, delivery returns,
 unbilled-deliveries, consignment receives/returns, delivery planning/zones/rate-cards,
 driver leave, 3PL, run sheets, fair report, currencies, amendments, HR commission, furniture
 line specials (divan/leg/gap/custom/variants), model variant/allowed-options editor.
