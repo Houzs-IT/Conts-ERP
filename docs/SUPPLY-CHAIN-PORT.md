@@ -79,7 +79,8 @@ Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 #25→#28→#29→#30→#32→#33→#35→#39→#40.
 
 ### Tier 2 — Warehouse / Stock
-- [x] **Stock ledger + on-hand** — PR #42 `feat/scm-stock` (stacked on #41; HELD: migration 0017). Movements ledger + on-hand + manual adjustment. FIFO cost + GRN/DO→stock auto-wiring deferred.
+- [x] **Stock ledger + on-hand** — PR #42 `feat/scm-stock` (stacked on #41; HELD: migration 0017). Movements ledger + on-hand + manual adjustment. FIFO cost deferred.
+- [x] **GRN/DO → stock auto-wiring** — PR #58 `feat/scm-stock-wiring` (stacked on #55; HELD: migration 0026). GRN receive posts RECEIPT +qty; DO deliver posts ISSUE -qty; cancel reverses. Shared `postStockMovement` helper. Warehouse picker (optional) in both create drawers. Live posting UNTESTED until 0026 applied.
 - [x] **Stock Transfers + Stock Takes** — PR #54 `feat/scm-stock-ops` (stacked on #51; HELD: migration 0024). Transfer between warehouses (posts paired out/in movements); stock take counts + variance posting. StockCard = the movements view (done). **TIER 2 DONE.**
 
 ### Tier 3 — Sales (sell-side documents)  — **SPINE DONE (SO→DO→SI)**
@@ -115,13 +116,20 @@ Migrations 0006–0025. **Merge order:**
 Tiers 0–4 masters + doc spines complete; Tier 2 warehouse complete.
 
 **Deferred sub-slices** (bounded cores shipped; depth follows as needed):
-GRN/DO→stock auto-wiring, FIFO cost layers, delivery returns,
+FIFO cost layers, delivery returns,
 unbilled-deliveries, consignment receives/returns, delivery planning/zones/rate-cards,
 driver leave, 3PL, run sheets, fair report, currencies, amendments, HR commission, furniture
 line specials (divan/leg/gap/custom/variants), model variant/allowed-options editor.
 
 ## Notes
 
+- **Both apps share the same database family: Supabase Postgres.** Conts reaches it
+  through Cloudflare Hyperdrive (a pooler), Houzs/2990 through a Node server — but the
+  DB itself is Supabase both sides. So the port's only real incompatibilities are (1)
+  the backend **runtime** (Cloudflare Pages Functions vs Node/Hono — different route
+  shell) and (2) **data access** (Conts raw SQL via `postgres` vs Houzs Drizzle ORM).
+  The SQL logic, schema, fields, statuses and business rules are 1:1. This is why we
+  rewrite each file's shell but copy the logic — not because the DB differs.
 - Conts is a property **operator**. Sell-side flows (Sales/Consignment) are ported
   1:1 per the owner's decision; if a flow proves genuinely unused it is a candidate
   to hide (not delete) later — flagged, not assumed.
