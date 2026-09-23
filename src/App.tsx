@@ -56,6 +56,11 @@ const AdjustmentsPage = lazy(() => import('./pages/AdjustmentsPage'));
 const LoadingListPage = lazy(() => import('./pages/LoadingListPage'));
 const FleetHealthPage = lazy(() => import('./pages/FleetHealthPage'));
 const CoverageFleetPage = lazy(() => import('./pages/CoverageFleetPage'));
+const DpOrdersPage = lazy(() => import('./pages/DpOrdersPage'));
+const DeliveryPlanningPage = lazy(() => import('./pages/DeliveryPlanningPage'));
+const DeliveryDateArrangementPage = lazy(() => import('./pages/DeliveryDateArrangementPage'));
+const DeliveryTimeArrangementPage = lazy(() => import('./pages/DeliveryTimeArrangementPage'));
+const LastMileDeliveryPage = lazy(() => import('./pages/LastMileDeliveryPage'));
 const FabricsPage = lazy(() => import('./pages/FabricsPage'));
 const MrpPage = lazy(() => import('./pages/MrpPage'));
 const AccountingPage = lazy(() => import('./pages/AccountingPage'));
@@ -171,6 +176,11 @@ function Routed() {
         <Route path="/transport/rate-cards" element={<RateCardsPage />} />
         <Route path="/transport/fleet-health" element={<FleetHealthPage />} />
         <Route path="/transport/coverage" element={<CoverageFleetPage />} />
+        <Route path="/transport/planning" element={<DeliveryPlanningPage />} />
+        <Route path="/transport/dp-orders" element={<DpOrdersPage />} />
+        <Route path="/transport/delivery-dates" element={<DeliveryDateArrangementPage />} />
+        <Route path="/transport/delivery-times" element={<DeliveryTimeArrangementPage />} />
+        <Route path="/transport/last-mile" element={<LastMileDeliveryPage />} />
         <Route path="/furniture/fabrics" element={<FabricsPage />} />
         <Route path="/procurement/mrp" element={<MrpPage />} />
         <Route path="/accounting" element={<AccountingPage />} />

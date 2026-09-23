@@ -70,7 +70,14 @@ export const NAV: NavGroup[] = [
     { key: 'scConsignment', label: 'Consignment', icon: 'handshake', children: [
       { key: 'consignmentNotes', label: 'Consignment notes', path: '/sales/consignment-notes', designed: true },
     ] },
-    { key: 'scTransport', label: 'Transportation', icon: 'truck', children: [
+    { key: 'scTransportPlan', label: 'Transportation', icon: 'truck', children: [
+      { key: 'deliveryPlanning', label: 'Delivery planning', path: '/transport/planning', designed: true },
+      { key: 'dpOrders', label: 'DP orders', path: '/transport/dp-orders', designed: true },
+      { key: 'deliveryDates', label: 'Delivery date arrangement', path: '/transport/delivery-dates', designed: true },
+      { key: 'deliveryTimes', label: 'Delivery time arrangement', path: '/transport/delivery-times', designed: true },
+      { key: 'lastMile', label: 'Last mile delivery', path: '/transport/last-mile', designed: true },
+    ] },
+    { key: 'scFleet', label: 'Maintenance', icon: 'wrench', children: [
       { key: 'coverageFleet', label: 'Coverage & fleet', path: '/transport/coverage', designed: true },
       { key: 'drivers', label: 'Drivers', path: '/transport/drivers', designed: true },
       { key: 'vehicles', label: 'Vehicles', path: '/transport/vehicles', designed: true },
