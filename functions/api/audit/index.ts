@@ -1,6 +1,5 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { stampMyt } from '../../_lib/ops';
 
 const AUDIT_ROLES = ['management', 'operations_manager', 'finance_admin'];
 
@@ -46,7 +45,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       entityTable: r.entity_table, entityId: r.entity_id,
       before: r.before_state ? JSON.parse(r.before_state) : null,
       after: r.after_state ? JSON.parse(r.after_state) : null,
-      source: r.source, occurredAt: stampMyt(r.occurred_at) ?? r.occurred_at,
+      source: r.source, occurredAt: r.occurred_at,
     })),
   });
 };

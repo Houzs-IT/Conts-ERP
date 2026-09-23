@@ -60,12 +60,15 @@ export const NAV: NavGroup[] = [
     { key: 'users', label: 'Users and roles', icon: 'shield-check', path: '/system/users', designed: true },
     { key: 'integrations', label: 'Integrations', icon: 'plug', path: '/system/integrations', designed: true },
     { key: 'settings', label: 'Settings', icon: 'settings', path: '/system/settings', designed: true },
+    { key: 'audit', label: 'Audit trail', icon: 'history', path: '/system/audit', designed: true },
   ] },
 ];
 
-/** Destinations a role cannot reach are removed, never disabled — routes.json permissionRules. */
+/** Destinations a role cannot reach are removed, never disabled — routes.json permissionRules.
+ *  Audit trail matches functions/api/audit/index.ts's AUDIT_ROLES (management, operations_manager,
+ *  finance_admin) — keep the two in sync. */
 const DENY: Partial<Record<UserRole, string[]>> = {
-  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio'],
+  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'audit'],
   finance_admin: ['operations', 'comms'],
   housekeeper: ['*'],
   technician: ['*'],
