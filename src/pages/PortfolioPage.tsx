@@ -177,10 +177,10 @@ export default function PortfolioPage() {
                   <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.propertyName}</span>
                 </div>
                 <span className="text-[12.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName}</span>
-                <span className="text-[13px] text-right">{percent(u.occupancy)}</span>
-                <span className="text-[13px] text-right">{rm(u.adr, { cents: false })}</span>
-                <span className="text-[13px] text-right">{rm(u.revpar, { cents: false })}</span>
-                <span className="text-[13px] text-right font-medium">{rm(u.revenue, { cents: false })}</span>
+                <span className="text-[13px] text-right">{u.occupancy != null ? percent(u.occupancy) : '—'}</span>
+                <span className="text-[13px] text-right">{u.adr != null ? rm(u.adr, { cents: false }) : '—'}</span>
+                <span className="text-[13px] text-right">{u.revpar != null ? rm(u.revpar, { cents: false }) : '—'}</span>
+                <span className="text-[13px] text-right font-medium">{u.revenue != null ? rm(u.revenue, { cents: false }) : '—'}</span>
                 <span className="text-[13px] text-right">{u.rating != null ? fmtRating(u.rating) : '—'}</span>
                 <div>{u.exception ? <Badge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-[12px] text-faint">None</span>}</div>
               </a>
