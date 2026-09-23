@@ -2,15 +2,17 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { MASTER_ROLES } from '../../_lib/properties';
 import { nextGrnNumber, recomputePoStatus, toGrnHeaderPayload, type GrnHeaderRow } from '../../_lib/goods-receipts';
+import { postStockMovement } from '../../_lib/stock-ops';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
 const LIST_SQL = `
   SELECT g.id, g.grn_number, g.purchase_order_id, g.supplier_id, g.received_at, g.delivery_note_ref, g.status, g.notes,
-         g.currency, g.subtotal_sen, g.tax_sen, g.total_sen, g.posted_at, g.created_at, g.updated_at,
-         po.po_number, s.code AS supplier_code, s.name AS supplier_name
+         g.currency, g.subtotal_sen, g.tax_sen, g.total_sen, g.posted_at, g.warehouse_id, g.created_at, g.updated_at,
+         po.po_number, s.code AS supplier_code, s.name AS supplier_name, w.name AS warehouse_name
   FROM goods_receipts g
   JOIN purchase_orders po ON po.id = g.purchase_order_id
-  JOIN suppliers s ON s.id = g.supplier_id`;
+  JOIN suppliers s ON s.id = g.supplier_id
+  LEFT JOIN warehouses w ON w.id = g.warehouse_id`;
 
 /** GET /api/goods-receipts?status=&purchaseOrderId=&search= — headers, newest first. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -45,6 +47,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!po) return fail('VALIDATION', 'Pick a purchase order.', 422, { purchaseOrderId: 'Unknown purchase order.' });
   if (po.status === 'CANCELLED' || po.status === 'RECEIVED') return fail('CONFLICT', `That purchase order is ${po.status.toLowerCase()} and cannot receive more.`, 409);
 
+  // Optional receiving warehouse — when set, accepted qty posts to the stock ledger.
+  const warehouseId = strOrNull(b.warehouseId);
+  if (warehouseId && !await one(env, 'SELECT 1 AS x FROM warehouses WHERE id = ?', warehouseId)) return fail('VALIDATION', 'Unknown warehouse.', 422, { warehouseId: 'Unknown warehouse.' });
+
   const rawLines = Array.isArray(b.lines) ? (b.lines as Record<string, unknown>[]) : [];
   const lines = rawLines.map(l => {
     const qtyReceived = Math.max(0, intOrNull(l.qtyReceived) ?? 0);
@@ -67,9 +73,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   await run(env, `
     INSERT INTO goods_receipts (id, grn_number, purchase_order_id, supplier_id, received_at, delivery_note_ref, status, notes,
-      currency, subtotal_sen, tax_sen, total_sen, posted_at, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'POSTED', ?, 'MYR', ?, 0, ?, ?, ?, ?, ?)`,
-    id, grnNumber, poId, po.supplier_id, receivedAt, strOrNull(b.deliveryNoteRef), strOrNull(b.notes), subtotal, subtotal, now, session.userId, now, now);
+      currency, subtotal_sen, tax_sen, total_sen, posted_at, warehouse_id, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'POSTED', ?, 'MYR', ?, 0, ?, ?, ?, ?, ?, ?)`,
+    id, grnNumber, poId, po.supplier_id, receivedAt, strOrNull(b.deliveryNoteRef), strOrNull(b.notes), subtotal, subtotal, now, warehouseId, session.userId, now, now);
 
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
@@ -79,6 +85,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
       genId('grl'), id, l.poLineId, i + 1, l.itemCode, l.description, l.uom, l.qtyReceived, l.qtyAccepted, l.qtyRejected, l.rejectionReason, l.unitPriceSen, l.lineTotalSen);
     if (l.poLineId) await run(env, 'UPDATE purchase_order_lines SET received_qty = received_qty + ? WHERE id = ? AND purchase_order_id = ?', l.qtyAccepted, l.poLineId, poId);
+    // Accepted goods land in the receiving warehouse (positive movement).
+    if (warehouseId && l.qtyAccepted > 0) await postStockMovement(env, { itemCode: l.itemCode, warehouseId, qtyDelta: l.qtyAccepted, movementType: 'RECEIPT', refType: 'GRN', refId: id, note: grnNumber, movedAt: receivedAt, createdBy: session.userId });
   }
 
   await recomputePoStatus(env, poId);

@@ -8,7 +8,8 @@ export interface GrnHeaderRow {
   id: string; grn_number: string; purchase_order_id: string; supplier_id: string; received_at: string;
   delivery_note_ref: string | null; status: string; notes: string | null; currency: string;
   subtotal_sen: number; tax_sen: number; total_sen: number; posted_at: string | null;
-  created_at: string; updated_at: string; po_number?: string | null; supplier_code?: string | null; supplier_name?: string | null;
+  warehouse_id: string | null; created_at: string; updated_at: string;
+  po_number?: string | null; supplier_code?: string | null; supplier_name?: string | null; warehouse_name?: string | null;
 }
 export interface GrnLineRow {
   id: string; purchase_order_line_id: string | null; line_no: number; item_code: string; description: string; uom: string;
@@ -21,6 +22,7 @@ export function toGrnHeaderPayload(r: GrnHeaderRow) {
     id: r.id, grnNumber: r.grn_number, purchaseOrderId: r.purchase_order_id, supplierId: r.supplier_id,
     receivedAt: r.received_at, deliveryNoteRef: r.delivery_note_ref ?? '', status: r.status, notes: r.notes ?? '',
     currency: r.currency, subtotalSen: r.subtotal_sen, taxSen: r.tax_sen, totalSen: r.total_sen,
+    warehouseId: r.warehouse_id ?? '', warehouseName: r.warehouse_name ?? '',
     poNumber: r.po_number ?? '', supplierCode: r.supplier_code ?? '', supplierName: r.supplier_name ?? '',
   };
 }

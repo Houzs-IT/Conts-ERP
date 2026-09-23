@@ -1,5 +1,19 @@
 /** Stock Transfers + Stock Takes, ported from 2990's SCM. Post to the stock_movements ledger. */
-import { type Env, one, nowIso } from './db';
+import { type Env, one, run, nowIso } from './db';
+import { genId } from './scm-util';
+
+export type MovementType = 'RECEIPT' | 'ISSUE' | 'ADJUSTMENT' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'RETURN' | 'STOCK_TAKE';
+
+/** Post one row to the stock_movements ledger. qtyDelta is signed (+ in, - out). Shared by
+ *  manual adjustments, transfers, takes, and GRN/DO auto-wiring. */
+export async function postStockMovement(env: Env, m: {
+  itemCode: string; warehouseId: string; qtyDelta: number; movementType: MovementType;
+  refType: string; refId: string; note?: string | null; movedAt: string; createdBy?: string | null;
+}): Promise<void> {
+  await run(env, `INSERT INTO stock_movements (id, item_code, warehouse_id, qty_delta, movement_type, ref_type, ref_id, note, moved_at, created_by, created_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    genId('mv'), m.itemCode, m.warehouseId, m.qtyDelta, m.movementType, m.refType, m.refId, m.note ?? null, m.movedAt, m.createdBy ?? null, nowIso());
+}
 
 export interface TransferHeaderRow {
   id: string; transfer_number: string; from_warehouse_id: string; to_warehouse_id: string; transfer_date: string;

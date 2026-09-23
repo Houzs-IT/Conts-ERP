@@ -14,7 +14,8 @@ export interface DoHeaderRow {
   id: string; do_number: string; sales_order_id: string | null; customer_name: string; do_date: string;
   expected_delivery_at: string | null; status: string; driver_name: string | null; vehicle: string | null;
   address1: string | null; city: string | null; state: string | null; postcode: string | null; phone: string | null;
-  notes: string | null; created_at: string; updated_at: string; so_doc_no?: string | null;
+  notes: string | null; warehouse_id: string | null; created_at: string; updated_at: string;
+  so_doc_no?: string | null; warehouse_name?: string | null;
 }
 export interface DoLineRow { id: string; sales_order_line_id: string | null; line_no: number; item_code: string; description: string; uom: string; qty: number; unit_price_sen: number; line_total_sen: number }
 
@@ -23,6 +24,7 @@ export function toDoHeaderPayload(r: DoHeaderRow) {
     id: r.id, doNumber: r.do_number, salesOrderId: r.sales_order_id ?? '', soDocNo: r.so_doc_no ?? '', customerName: r.customer_name,
     doDate: r.do_date, expectedDeliveryAt: r.expected_delivery_at ?? '', status: r.status, driverName: r.driver_name ?? '', vehicle: r.vehicle ?? '',
     address1: r.address1 ?? '', city: r.city ?? '', state: r.state ?? '', postcode: r.postcode ?? '', phone: r.phone ?? '', notes: r.notes ?? '',
+    warehouseId: r.warehouse_id ?? '', warehouseName: r.warehouse_name ?? '',
   };
 }
 export function toDoLinePayload(r: DoLineRow) {

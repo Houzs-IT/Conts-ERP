@@ -2,14 +2,16 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { MASTER_ROLES } from '../../_lib/properties';
 import { recomputePoStatus, toGrnHeaderPayload, toGrnLinePayload, type GrnHeaderRow, type GrnLineRow } from '../../_lib/goods-receipts';
+import { postStockMovement } from '../../_lib/stock-ops';
 
 const HEADER_SQL = `
   SELECT g.id, g.grn_number, g.purchase_order_id, g.supplier_id, g.received_at, g.delivery_note_ref, g.status, g.notes,
-         g.currency, g.subtotal_sen, g.tax_sen, g.total_sen, g.posted_at, g.created_at, g.updated_at,
-         po.po_number, s.code AS supplier_code, s.name AS supplier_name
+         g.currency, g.subtotal_sen, g.tax_sen, g.total_sen, g.posted_at, g.warehouse_id, g.created_at, g.updated_at,
+         po.po_number, s.code AS supplier_code, s.name AS supplier_name, w.name AS warehouse_name
   FROM goods_receipts g
   JOIN purchase_orders po ON po.id = g.purchase_order_id
-  JOIN suppliers s ON s.id = g.supplier_id WHERE g.id = ?`;
+  JOIN suppliers s ON s.id = g.supplier_id
+  LEFT JOIN warehouses w ON w.id = g.warehouse_id WHERE g.id = ?`;
 
 /** GET /api/goods-receipts/:id — header + lines. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -30,7 +32,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can change goods receipts.', 403);
 
   const id = String(params.id);
-  const cur = await one<{ status: string; purchase_order_id: string }>(env, 'SELECT status, purchase_order_id FROM goods_receipts WHERE id = ?', id);
+  const cur = await one<{ status: string; purchase_order_id: string; warehouse_id: string | null; grn_number: string; received_at: string }>(env, 'SELECT status, purchase_order_id, warehouse_id, grn_number, received_at FROM goods_receipts WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That goods receipt does not exist.', 404);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
@@ -39,9 +41,11 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b.status === 'CANCELLED') {
     if (cur.status === 'CANCELLED') return json({ id });
     // Reverse the received_qty this GRN added, then recompute the PO status.
-    const lines = await all<{ purchase_order_line_id: string | null; qty_accepted: number }>(env, 'SELECT purchase_order_line_id, qty_accepted FROM goods_receipt_lines WHERE grn_id = ?', id);
+    const lines = await all<{ purchase_order_line_id: string | null; item_code: string; qty_accepted: number }>(env, 'SELECT purchase_order_line_id, item_code, qty_accepted FROM goods_receipt_lines WHERE grn_id = ?', id);
     for (const l of lines) {
       if (l.purchase_order_line_id) await run(env, 'UPDATE purchase_order_lines SET received_qty = GREATEST(0, received_qty - ?) WHERE id = ?', l.qty_accepted, l.purchase_order_line_id);
+      // Reverse the stock this GRN posted into the receiving warehouse.
+      if (cur.warehouse_id && l.qty_accepted > 0) await postStockMovement(env, { itemCode: l.item_code, warehouseId: cur.warehouse_id, qtyDelta: -l.qty_accepted, movementType: 'RECEIPT', refType: 'GRN-REV', refId: id, note: `${cur.grn_number} cancelled`, movedAt: now.slice(0, 10), createdBy: session.userId });
     }
     await run(env, 'UPDATE goods_receipts SET status = ?, updated_at = ? WHERE id = ?', 'CANCELLED', now, id);
     await recomputePoStatus(env, cur.purchase_order_id);

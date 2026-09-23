@@ -48,6 +48,10 @@ const PO_FALLBACK: { data: OpenPo[] } = { data: [
     { id: 'pol3', itemCode: 'MT-KG-HIL', description: 'Hilton Pocket Spring Mattress, King', uom: 'UNIT', qty: 2, receivedQty: 1, unitPriceSen: 420000 },
   ] },
 ] };
+const WH_FALLBACK: { data: { id: string; code: string; name: string }[] } = { data: [
+  { id: 'wh1', code: 'WH-MAIN', name: 'Main Warehouse' },
+  { id: 'wh2', code: 'WH-KL', name: 'KL Showroom Store' },
+] };
 
 export default function GoodsReceiptsPage() {
   const { data, loading, error, reload } = useApi<Payload>('/goods-receipts', FALLBACK);
@@ -159,6 +163,8 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
   const [receivedAt, setReceivedAt] = useState(new Date().toISOString().slice(0, 10));
   const [dnRef, setDnRef] = useState('');
   const [notes, setNotes] = useState('');
+  const [warehouseId, setWarehouseId] = useState('');
+  const warehouses = useApi<{ data: { id: string; code: string; name: string }[] }>('/warehouses', WH_FALLBACK).data?.data ?? [];
   const po = openPos.find(p => p.id === poId);
 
   async function pick(id: string) {
@@ -178,7 +184,7 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
 
   function submit() {
     const payloadLines = willReceive.map(l => ({ purchaseOrderLineId: l.poLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qtyReceived: Number(l.receive) || 0, qtyAccepted: Math.min(Number(l.receive) || 0, Number(l.accepted) || 0) }));
-    api.post('/goods-receipts', { purchaseOrderId: poId, receivedAt, deliveryNoteRef: dnRef, notes, lines: payloadLines }).catch(notifyFailure);
+    api.post('/goods-receipts', { purchaseOrderId: poId, receivedAt, deliveryNoteRef: dnRef, notes, warehouseId: warehouseId || undefined, lines: payloadLines }).catch(notifyFailure);
     onCreated({
       id: `grn-new-${crypto.randomUUID().slice(0, 8)}`, grnNumber: `GRN-${new Date().getFullYear()}-NEW`, poNumber: po?.poNumber ?? '', purchaseOrderId: poId,
       supplierName: po?.supplierName ?? '', supplierCode: '', receivedAt, deliveryNoteRef: dnRef, status: 'POSTED', notes, totalSen: total,
@@ -204,6 +210,14 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
           </div>
           <Field label="Received date" type="date" value={receivedAt} onChange={e => setReceivedAt(e.target.value)} />
           <Field label="Delivery note ref" placeholder="Optional" value={dnRef} onChange={e => setDnRef(e.target.value)} />
+          <div className="flex flex-col gap-[7px]">
+            <label className="text-[12px] font-medium text-muted-ink">Receive into warehouse</label>
+            <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)}
+              className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
+              <option value="">No stock posting</option>
+              {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}
+            </select>
+          </div>
         </div>
 
         {poId && (

@@ -42,6 +42,10 @@ const SO_FALLBACK: { data: OpenSo[] } = { data: [
     { id: 'sol3', itemCode: 'MT-KG-HIL', description: 'Hilton Mattress, King', uom: 'UNIT', qty: 1, deliveredQty: 0, unitPriceSen: 139000 },
   ] },
 ] };
+const WH_FALLBACK: { data: { id: string; code: string; name: string }[] } = { data: [
+  { id: 'wh1', code: 'WH-MAIN', name: 'Main Warehouse' },
+  { id: 'wh2', code: 'WH-KL', name: 'KL Showroom Store' },
+] };
 
 export default function DeliveryOrdersPage() {
   const { data, loading, error, reload } = useApi<Payload>('/delivery-orders', FALLBACK);
@@ -133,6 +137,8 @@ function DeliverDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: Ope
   const [vehicle, setVehicle] = useState('');
   const [address1, setAddress1] = useState('');
   const [notes, setNotes] = useState('');
+  const [warehouseId, setWarehouseId] = useState('');
+  const warehouses = useApi<{ data: { id: string; code: string; name: string }[] }>('/warehouses', WH_FALLBACK).data?.data ?? [];
   const so = openSos.find(s => s.id === soId);
 
   async function pick(id: string) {
@@ -148,7 +154,7 @@ function DeliverDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: Ope
 
   function submit() {
     const payloadLines = willDeliver.map(l => ({ salesOrderLineId: l.soLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qty: Math.min(Number(l.qty) || 0, l.outstanding) }));
-    api.post('/delivery-orders', { salesOrderId: soId, doDate, expectedDeliveryAt: expected || null, driverName, vehicle, address1, notes, lines: payloadLines }).catch(notifyFailure);
+    api.post('/delivery-orders', { salesOrderId: soId, doDate, expectedDeliveryAt: expected || null, driverName, vehicle, address1, notes, warehouseId: warehouseId || undefined, lines: payloadLines }).catch(notifyFailure);
     onCreated({
       id: `do-new-${crypto.randomUUID().slice(0, 8)}`, doNumber: `DO-${new Date().getFullYear()}-NEW`, soDocNo: so?.docNo ?? '', salesOrderId: soId, customerName: so?.customerName ?? '',
       doDate, expectedDeliveryAt: expected, status: 'LOADED', driverName, vehicle, address1, city: '', state: '', postcode: '', phone: '', notes,
@@ -176,6 +182,13 @@ function DeliverDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: Ope
           <Field label="Delivery address" placeholder="Optional" value={address1} onChange={e => setAddress1(e.target.value)} />
           <Field label="Driver" placeholder="Optional" value={driverName} onChange={e => setDriverName(e.target.value)} />
           <Field label="Vehicle" placeholder="Optional" value={vehicle} onChange={e => setVehicle(e.target.value)} />
+          <div className="flex flex-col gap-[7px]">
+            <label className="text-[12px] font-medium text-muted-ink">Dispatch from warehouse</label>
+            <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
+              <option value="">No stock posting</option>
+              {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}
+            </select>
+          </div>
         </div>
         {soId && (
           <div className="flex flex-col gap-2">
