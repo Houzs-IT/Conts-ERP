@@ -114,16 +114,19 @@ Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 
 ---
 
-## OWNER SCOPE RULING 2026-09-23 — build ONLY the nav-photo modules
+## OWNER SCOPE RULING 2026-09-23 — build ONLY the nav-photo modules — NOW COMPLETE
 
 Owner gave nav-screenshots as the definitive remaining scope. **DROPPED:** HR Commission,
-Fair Report, Lorry Capacity, photo/attachment features. **Remaining to build (from photos):**
-Warehouse → Loading List, Racks & Bins, Adjustments (own page); Fleet → Coverage & Fleet,
-Fleet Health; Transportation → Delivery Planning, DP Orders, Delivery Date Arrangement,
-Delivery Time Arrangement, Last Mile Delivery (MANUAL — no Google Maps unless a key is given).
-Everything not in the photos is out of scope.
+Fair Report, Lorry Capacity, photo/attachment features. **All photo modules are now BUILT:**
+- Sales Order: Sales Order Amendment (#80), Delivery Returns (=Sales Returns #63, relabelled)
+- Warehouse: Loading List (#85), Racks & Bins (#81), Adjustments (#82) + nav relabels
+- Maintenance/Fleet: Coverage & Fleet (#84), Fleet Health (#83), Delivery Zones (#77),
+  Carriers & Rates (#79), Crew Leave (=Driver Leave #76)
+- Transportation: Delivery Planning + DP Orders + Delivery Date/Time Arrangement + Last Mile
+  Delivery (#86, one delivery_schedule model, MANUAL — no Maps)
+Nav split into "Transportation" (planning) + "Maintenance" (fleet) per the photos.
 
-## STATUS: 32 modules ported, PRs #25–#80
+## STATUS: 41 modules ported, PRs #25–#86 (all HELD for migrations except no-mig ones)
 
 All five Houzs SC sections (Sales · Consignment · Procurement · Transportation · Warehouse)
 + MRP + Fabric + Accounting + Customers + Stock Transfers/Takes + full stock auto-wiring
