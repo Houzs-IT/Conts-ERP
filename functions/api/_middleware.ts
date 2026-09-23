@@ -1,5 +1,5 @@
 import { type Env, fail } from '../_lib/db';
-import { readSession, readCookie } from '../_lib/auth';
+import { readSession, readCookie, signSession, cookie, sessionLimits } from '../_lib/auth';
 import { doorFor, doorRefusal } from '../_lib/door';
 
 /**
@@ -35,5 +35,16 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, next }) => {
   if (session.role === 'owner' && !OWNER_ALLOWED.some(([m, re]) => m === request.method && re.test(path))) {
     return fail('FORBIDDEN', 'This is not available on the owner portal.', 403);
   }
-  return next();
+
+  const response = await next();
+  // Slide the idle deadline forward on every authenticated call, capped at the
+  // absolute limit from first login (see signSession). Skipped when the endpoint
+  // already set its own cookie (logout clearing it, login/reset-password issuing a
+  // fresh one) so this never overwrites that with a stale live session.
+  if (response.headers.has('set-cookie')) return response;
+  const { ttlHours, absoluteDays } = sessionLimits(env);
+  const refreshed = await signSession(env.SESSION_SECRET, session, ttlHours, absoluteDays, session.iat);
+  const headers = new Headers(response.headers);
+  headers.append('set-cookie', cookie(request, refreshed, ttlHours * 3600));
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 };
