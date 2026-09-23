@@ -81,12 +81,14 @@ Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 ### Tier 2 — Warehouse / Stock
 - [x] **Stock ledger + on-hand** — PR #42 `feat/scm-stock` (stacked on #41; HELD: migration 0017). Movements ledger + on-hand + manual adjustment. FIFO cost deferred.
 - [x] **GRN/DO → stock auto-wiring** — PR #58 `feat/scm-stock-wiring` (stacked on #55; HELD: migration 0026). GRN receive posts RECEIPT +qty; DO deliver posts ISSUE -qty; cancel reverses. Shared `postStockMovement` helper. Warehouse picker (optional) in both create drawers. Live posting UNTESTED until 0026 applied.
+- [x] **Purchase Returns → stock** — PR #62 `feat/scm-returns-stock` (stacked on #58; no migration). Return posts RETURN -qty out of the GRN's warehouse; cancel reverses. Backend-only.
 - [x] **Stock Transfers + Stock Takes** — PR #54 `feat/scm-stock-ops` (stacked on #51; HELD: migration 0024). Transfer between warehouses (posts paired out/in movements); stock take counts + variance posting. StockCard = the movements view (done). **TIER 2 DONE.**
 
 ### Tier 3 — Sales (sell-side documents)  — **SPINE DONE (SO→DO→SI)**
 - [x] **Sales Orders** — PR #43 `feat/scm-sales-orders` (stacked on #42; HELD: migration 0018). 9-state flow + deposit/payment; customer inline (customers master = follow-up); guided/from-products/margins/MRP-gate deferred.
 - [x] **Delivery Orders** — PR #44 `feat/scm-delivery-orders` (stacked on #43; HELD: migration 0019). Delivers a SO, drives delivered_qty + SO→DELIVERED; POD/signature deferred. Delivery Returns = follow-up.
 - [x] **Sales Invoices** — PR #45 `feat/scm-sales-invoices` (stacked on #44; HELD: migration 0020). Bills a DO, marks DO/SO INVOICED, receipts drive paid status. UnbilledDeliveries = follow-up.
+- [x] **Sales Returns** — PR #63 `feat/scm-sales-returns` (stacked on #62; HELD: migration 0027). Customer returns DO-delivered goods: reduces SO delivered_qty, posts RETURN +qty into the dispatch warehouse, credit-note value; cancel reverses. Adds delivery_order_lines.returned_qty. Sell-side twin of Purchase Returns.
 
 ### Tier 4 — Consignment (sell-side)
 - [x] **Consignment Notes** — PR #51 `feat/scm-consignment-notes` (stacked on #49; HELD: migration 0023). Consign out; track consigned/sold/returned + settle. Orders/Returns variants = follow-up.
@@ -106,20 +108,21 @@ Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 
 ---
 
-## STATUS: entire Supply Chain surface ported (22 modules, PRs #25–#55)
+## STATUS: entire Supply Chain surface ported (25 modules, PRs #25–#63)
 
 All five Houzs SC sections (Sales · Consignment · Procurement · Transportation · Warehouse)
-+ MRP + Fabric + Accounting + Customers master + Stock Transfers/Takes, in the L1/L2/L3 nav.
-Migrations 0006–0025. **Merge order:**
++ MRP + Fabric + Accounting + Customers + Stock Transfers/Takes + full stock auto-wiring
+(GRN/DO/returns) + Sales Returns, in the L1/L2/L3 nav. Migrations 0006–0027. **Merge order:**
 #25 #28 #29 #30 #32 #33 #35 #39 #40 #41 #42 #43 #44 #45 #46 #47 #48(no-mig) #49(no-mig) #51
-#54 #55 (+ #26 docs). All stacked, all HELD for their migrations (except no-mig #48/#49).
-Tiers 0–4 masters + doc spines complete; Tier 2 warehouse complete.
+#54 #55 #58 #62(no-mig) #63 (+ #26 docs). All stacked, all HELD for their migrations
+(except no-mig #48/#49/#62). Tiers 0–4 masters + doc spines complete; Tier 2 warehouse
+complete; buy/sell returns + stock ledger fully wired.
 
 **Deferred sub-slices** (bounded cores shipped; depth follows as needed):
-FIFO cost layers, delivery returns,
-unbilled-deliveries, consignment receives/returns, delivery planning/zones/rate-cards,
-driver leave, 3PL, run sheets, fair report, currencies, amendments, HR commission, furniture
-line specials (divan/leg/gap/custom/variants), model variant/allowed-options editor.
+FIFO cost layers, unbilled-deliveries, consignment receives/returns,
+delivery planning/zones/rate-cards, driver leave, 3PL, run sheets, fair report, currencies,
+amendments, HR commission, furniture line specials (divan/leg/gap/custom/variants),
+model variant/allowed-options editor.
 
 ## Notes
 
