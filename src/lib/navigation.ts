@@ -69,6 +69,7 @@ export const NAV: NavGroup[] = [
     { key: 'scTransport', label: 'Transportation', icon: 'truck', children: [
       { key: 'drivers', label: 'Drivers', path: '/transport/drivers', designed: true },
       { key: 'vehicles', label: 'Vehicles', path: '/transport/vehicles', designed: true },
+      { key: 'threepl', label: '3PL companies', path: '/transport/3pl', designed: true },
     ] },
     { key: 'scFurniture', label: 'Furniture', icon: 'sofa', children: [
       { key: 'fabrics', label: 'Fabric library', path: '/furniture/fabrics', designed: true },
