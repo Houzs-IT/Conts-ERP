@@ -56,6 +56,7 @@ export const NAV: NavGroup[] = [
       { key: 'stockTakes', label: 'Stock takes', path: '/procurement/stock-takes', designed: true },
     ] },
     { key: 'scSales', label: 'Sales', icon: 'file-text', children: [
+      { key: 'customers', label: 'Customers', path: '/sales/customers', designed: true },
       { key: 'salesOrders', label: 'Sales orders', path: '/sales/orders', designed: true },
       { key: 'deliveryOrders', label: 'Delivery orders', path: '/sales/delivery-orders', designed: true },
       { key: 'salesInvoices', label: 'Sales invoices', path: '/sales/invoices', designed: true },

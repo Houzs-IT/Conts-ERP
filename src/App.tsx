@@ -37,6 +37,7 @@ const PaymentVouchersPage = lazy(() => import('./pages/PaymentVouchersPage'));
 const PurchaseReturnsPage = lazy(() => import('./pages/PurchaseReturnsPage'));
 const PurchaseConsignmentPage = lazy(() => import('./pages/PurchaseConsignmentPage'));
 const StockPage = lazy(() => import('./pages/StockPage'));
+const CustomersPage = lazy(() => import('./pages/CustomersPage'));
 const SalesOrdersPage = lazy(() => import('./pages/SalesOrdersPage'));
 const DeliveryOrdersPage = lazy(() => import('./pages/DeliveryOrdersPage'));
 const SalesInvoicesPage = lazy(() => import('./pages/SalesInvoicesPage'));
@@ -138,6 +139,7 @@ function Routed() {
         <Route path="/procurement/purchase-returns" element={<PurchaseReturnsPage />} />
         <Route path="/procurement/consignment" element={<PurchaseConsignmentPage />} />
         <Route path="/procurement/stock" element={<StockPage />} />
+        <Route path="/sales/customers" element={<CustomersPage />} />
         <Route path="/sales/orders" element={<SalesOrdersPage />} />
         <Route path="/sales/delivery-orders" element={<DeliveryOrdersPage />} />
         <Route path="/sales/invoices" element={<SalesInvoicesPage />} />
