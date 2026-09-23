@@ -13,7 +13,7 @@ import { useApi } from '../lib/useApi';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
 import { api, notifyFailure } from '../lib/api';
-import { todayMyt, rm, dateRange, date as fmtDate, time as fmtTime, nights as fmtNights, fileStamp } from '../lib/format';
+import { todayMyt, rm, dateRange, date as fmtDate, time as fmtTime, dateTime, nights as fmtNights, fileStamp } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { Tone, BookingChannel, ReservationState } from '../lib/types';
 
@@ -565,9 +565,9 @@ interface ActivityItem { actorLabel: string; action: string; source: string; occ
 
 /** Dev fallback so the section renders before the audit endpoint is live. */
 const ACTIVITY_FALLBACK: ActivityItem[] = [
-  { actorLabel: 'Channel sync', action: 'reservation.created', source: 'channel_webhook', occurredAt: '2026-09-12 10:02' },
-  { actorLabel: 'Aina Zulkifli', action: 'payment.recorded', source: 'operator', occurredAt: '2026-09-12 10:05' },
-  { actorLabel: 'System', action: 'access_code.sent', source: 'automation', occurredAt: '2026-09-16 13:00' },
+  { actorLabel: 'Channel sync', action: 'reservation.created', source: 'channel_webhook', occurredAt: '2026-09-12T10:02:00+08:00' },
+  { actorLabel: 'Aina Zulkifli', action: 'payment.recorded', source: 'operator', occurredAt: '2026-09-12T10:05:00+08:00' },
+  { actorLabel: 'System', action: 'access_code.sent', source: 'automation', occurredAt: '2026-09-16T13:00:00+08:00' },
 ];
 
 function ActivityLog({ r }: { r: Row }) {
@@ -583,7 +583,7 @@ function ActivityLog({ r }: { r: Row }) {
           </span>
           <div className="flex flex-col gap-px flex-1 min-w-0">
             <span className="text-[12.5px]"><strong className="font-semibold">{a.actorLabel}</strong> · {a.action.replace(/[._]/g, ' ')}</span>
-            <span className="text-[11px] text-muted-ink">{a.source.replace(/_/g, ' ')} · {a.occurredAt}</span>
+            <span className="text-[11px] text-muted-ink">{a.source.replace(/_/g, ' ')} · {dateTime(a.occurredAt)}</span>
           </div>
         </div>
       ))}

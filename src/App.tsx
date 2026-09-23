@@ -41,6 +41,7 @@ const AutomationsPage = lazy(() => import('./pages/AutomationsPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
 const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const AuditPage = lazy(() => import('./pages/AuditPage'));
 const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
 const FieldTodayPage = lazy(() => import('./pages/FieldTodayPage'));
 const OwnerPortalPage = lazy(() => import('./pages/OwnerPortalPage'));
@@ -126,6 +127,7 @@ function Routed() {
         <Route path="/system/users" element={<UsersPage />} />
         <Route path="/system/integrations" element={<IntegrationsPage />} />
         <Route path="/system/settings" element={<SettingsPage />} />
+        <Route path="/system/audit" element={<AuditPage />} />
         <Route path="*" element={<NotDesignedPage />} />
       </Route>
     </Routes>
