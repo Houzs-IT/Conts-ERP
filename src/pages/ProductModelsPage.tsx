@@ -1,0 +1,227 @@
+import { useMemo, useState } from 'react';
+import { Search, Plus, Trash2 } from 'lucide-react';
+import { Card } from '../components/Card';
+import PageHeader from '../components/PageHeader';
+import { Button } from '../components/Button';
+import { Field } from '../components/Field';
+import { Drawer } from '../components/Dialog';
+import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { useApi } from '../lib/useApi';
+import { api, notifyFailure } from '../lib/api';
+import { useToast } from '../components/Toast';
+import { useSession } from '../lib/session';
+import { TONE, cx } from '../lib/design-tokens';
+
+/** Product Models — model master, ported from 2990's SCM (logic) and drawn in Conts.
+ *  A model groups SKUs of one design. The deep variant/allowed-options editor is a
+ *  later slice (Variants tier); this is the model master. */
+
+type Category = 'SOFA' | 'BEDFRAME' | 'ACCESSORY' | 'MATTRESS' | 'BEDLINES' | 'DINING' | 'DIFFUSER' | 'CARPET' | 'SERVICE';
+const CATEGORIES: Category[] = ['SOFA', 'BEDFRAME', 'ACCESSORY', 'MATTRESS', 'BEDLINES', 'DINING', 'DIFFUSER', 'CARPET', 'SERVICE'];
+const CAT_LABEL: Record<Category, string> = {
+  SOFA: 'Sofa', BEDFRAME: 'Bedframe', ACCESSORY: 'Accessory', MATTRESS: 'Mattress',
+  BEDLINES: 'Bedlines', DINING: 'Dining', DIFFUSER: 'Diffuser', CARPET: 'Carpet', SERVICE: 'Service',
+};
+
+interface Model {
+  id: string; modelCode: string; name: string; category: Category;
+  branding: string; description: string; photoUrl: string; active: boolean;
+}
+interface Payload { data: Model[]; generatedAt: string }
+
+const M = (o: Partial<Model> & Pick<Model, 'id' | 'modelCode' | 'name' | 'category'>): Model => ({
+  branding: '', description: '', photoUrl: '', active: true, ...o,
+});
+
+const FALLBACK: Payload = {
+  generatedAt: '',
+  data: [
+    M({ id: 'm1', modelCode: 'EMMA', name: 'Emma Sofa', category: 'SOFA', branding: '', description: 'Modular fabric sofa family' }),
+    M({ id: 'm2', modelCode: 'NORDIC', name: 'Nordic Bedframe', category: 'BEDFRAME', description: 'Oak slat bedframe' }),
+    M({ id: 'm3', modelCode: 'HILTON', name: 'Hilton Mattress', category: 'MATTRESS', branding: 'HILTON', description: 'Pocket-spring mattress' }),
+    M({ id: 'm4', modelCode: 'OSLO', name: 'Oslo Dining Set', category: 'DINING', description: 'Solid oak dining range' }),
+    M({ id: 'm5', modelCode: 'LEGACY-01', name: 'Legacy Console', category: 'ACCESSORY', description: 'Discontinued', active: false }),
+  ],
+};
+
+type Draft = Model;
+const emptyDraft = (): Draft => M({ id: '', modelCode: '', name: '', category: 'SOFA' });
+
+export default function ProductModelsPage() {
+  const { data, loading, error, reload } = useApi<Payload>('/product-models', FALLBACK);
+  const toast = useToast();
+  const { user } = useSession();
+  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+
+  const [cat, setCat] = useState<'all' | Category>('all');
+  const [search, setSearch] = useState('');
+  const [drawer, setDrawer] = useState<{ draft: Draft; isNew: boolean } | null>(null);
+
+  const [added, setAdded] = useState<Model[]>([]);
+  const [edits, setEdits] = useState<Record<string, Partial<Model>>>({});
+  const [removed, setRemoved] = useState<Set<string>>(new Set());
+
+  const all = useMemo(
+    () => [...added, ...(data?.data ?? [])].filter(m => !removed.has(m.id)).map(m => ({ ...m, ...edits[m.id] })),
+    [added, data, edits, removed],
+  );
+
+  const q = search.trim().toLowerCase();
+  const rows = all.filter(m =>
+    (cat === 'all' || m.category === cat) &&
+    (!q || `${m.modelCode} ${m.name} ${m.branding}`.toLowerCase().includes(q)),
+  );
+
+  function save(d: Draft, isNew: boolean) {
+    const body = { modelCode: d.modelCode.trim(), name: d.name.trim(), category: d.category, branding: d.branding.trim(), description: d.description.trim(), photoUrl: d.photoUrl.trim(), active: d.active };
+    if (isNew) {
+      setAdded(a => [M({ ...body, id: `pmdl-new-${crypto.randomUUID().slice(0, 8)}` }), ...a]);
+      api.post('/product-models', body).catch(notifyFailure);
+      toast({ tone: 'success', title: 'Model added.', body: `${body.modelCode} ${body.name}` });
+    } else {
+      setEdits(e => ({ ...e, [d.id]: { ...e[d.id], ...body } }));
+      api.patch(`/product-models/${d.id}`, body).catch(notifyFailure);
+      toast({ tone: 'success', title: 'Model updated.', body: `${body.modelCode} ${body.name}` });
+    }
+    setDrawer(null);
+  }
+
+  function remove(m: Model) {
+    setRemoved(r => new Set(r).add(m.id));
+    api.del(`/product-models/${m.id}`).catch(notifyFailure);
+    toast({ tone: 'success', title: 'Model removed.', body: m.modelCode });
+    setDrawer(null);
+  }
+
+  return (
+    <>
+      <PageHeader
+        title="Product models"
+        sub={`${all.length} models · groups SKUs of one design`}
+        right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyDraft(), isNew: true })}>New model</Button> : undefined}
+      />
+
+      {error && <StaleBanner message={`Showing the last model list we have. ${error}`} onRetry={reload} />}
+
+      <div className="flex items-center justify-between gap-5 flex-wrap">
+        <div className="flex gap-2 flex-wrap">
+          <Chip label="All" active={cat === 'all'} onClick={() => setCat('all')} />
+          {CATEGORIES.map(c => <Chip key={c} label={CAT_LABEL[c]} active={cat === c} onClick={() => setCat(c)} />)}
+        </div>
+        <div className="relative">
+          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search models..." aria-label="Search models"
+            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
+        </div>
+      </div>
+
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse min-w-[720px]">
+            <thead>
+              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+                {['Model code', 'Name', 'Category', 'Branding', 'Status'].map(h => (
+                  <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading && all.length === 0 ? (
+                <tr><td colSpan={5}><TableSkeleton rows={6} cols={5} /></td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={5}>
+                  <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
+                    <span className="text-[14px] font-semibold">{q || cat !== 'all' ? 'No models match.' : 'No models yet.'}</span>
+                    <span className="text-[12.5px] text-muted-ink max-w-[380px]">{q || cat !== 'all' ? 'Clear the search or category to see the full list.' : 'A model groups the SKUs of one design — add one to start.'}</span>
+                  </div>
+                </td></tr>
+              ) : rows.map(m => (
+                <tr key={m.id} onClick={() => { if (canWrite) setDrawer({ draft: { ...m }, isNew: false }); }}
+                  className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
+                  <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{m.modelCode}</span></td>
+                  <td className="py-[13px] px-4 text-[13.5px]">{m.name}</td>
+                  <td className="py-[13px] px-4"><span className="inline-block text-[11px] font-semibold uppercase tracking-[0.06em] bg-[var(--color-gold-50)] text-gold-ink px-2.5 py-0.5 rounded-full">{CAT_LABEL[m.category]}</span></td>
+                  <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{m.branding || '—'}</td>
+                  <td className="py-[13px] px-4"><ActivePill active={m.active} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {drawer && <ModelDrawer draft={drawer.draft} isNew={drawer.isNew} onClose={() => setDrawer(null)} onSave={save}
+        onDelete={drawer.isNew ? undefined : () => { const m = all.find(x => x.id === drawer.draft.id); if (m) remove(m); }} />}
+    </>
+  );
+}
+
+/* ---------- primitives ---------- */
+
+function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} aria-pressed={active}
+      className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid',
+        active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>
+      {label}
+    </button>
+  );
+}
+
+function ActivePill({ active }: { active: boolean }) {
+  const t = active ? TONE.success : TONE.neutral;
+  return (
+    <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', t.bg, t.text)}>
+      <span className="w-1.5 h-1.5 rounded-full bg-current" />{active ? 'Active' : 'Inactive'}
+    </span>
+  );
+}
+
+/* ---------- New / Edit drawer ---------- */
+
+function ModelDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Draft; isNew: boolean; onClose: () => void; onSave: (d: Draft, isNew: boolean) => void; onDelete?: () => void }) {
+  const [f, setF] = useState<Draft>(draft);
+  const set = <K extends keyof Draft>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value as Draft[K] }));
+  const canSave = f.modelCode.trim() !== '' && f.name.trim() !== '';
+
+  return (
+    <Drawer open onClose={onClose} width={560}>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
+        <h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New model' : 'Edit model'}</h2>
+        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button>
+      </div>
+      <div className="px-6 pb-5 overflow-y-auto grow">
+        <div className="grid grid-cols-2 gap-3.5">
+          <Field label="Model code" placeholder="e.g. EMMA" value={f.modelCode} onChange={set('modelCode')} />
+          <Field label="Name" placeholder="Model name" value={f.name} onChange={set('name')} />
+          <div className="flex flex-col gap-[7px]">
+            <label className="text-[12px] font-medium text-muted-ink">Category</label>
+            <select value={f.category} onChange={set('category')}
+              className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
+              {CATEGORIES.map(c => <option key={c} value={c}>{CAT_LABEL[c]}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-col gap-[7px]">
+            <label className="text-[12px] font-medium text-muted-ink">Status</label>
+            <select value={f.active ? '1' : '0'} onChange={e => setF(s => ({ ...s, active: e.target.value === '1' }))}
+              className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
+              <option value="1">Active</option>
+              <option value="0">Inactive</option>
+            </select>
+          </div>
+          <Field label="Branding" placeholder="Optional" value={f.branding} onChange={set('branding')} />
+          <Field label="Photo URL" placeholder="Optional" value={f.photoUrl} onChange={set('photoUrl')} />
+          <div className="col-span-2"><Field label="Description" placeholder="Optional" value={f.description} onChange={set('description')} /></div>
+        </div>
+        <p className="mt-4 text-[12px] text-muted-ink">Variant options (fabrics, sizes, compartments) are edited in the Variants tab — coming in a later slice.</p>
+      </div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+        <div className="flex gap-2.5">
+          <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a model code and a name first" onClick={() => onSave(f, isNew)}>{isNew ? 'Create model' : 'Save'}</Button>
+        </div>
+      </div>
+    </Drawer>
+  );
+}

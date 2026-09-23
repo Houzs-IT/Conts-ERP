@@ -1,0 +1,277 @@
+import { useMemo, useState, type ReactNode } from 'react';
+import { Search, Plus, Trash2 } from 'lucide-react';
+import { Card } from '../components/Card';
+import PageHeader from '../components/PageHeader';
+import { Button } from '../components/Button';
+import { Field } from '../components/Field';
+import { Drawer } from '../components/Dialog';
+import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { useApi } from '../lib/useApi';
+import { api, notifyFailure } from '../lib/api';
+import { useToast } from '../components/Toast';
+import { useSession } from '../lib/session';
+import { rm } from '../lib/format';
+import { TONE, cx } from '../lib/design-tokens';
+import type { Tone } from '../lib/types';
+
+/** Suppliers — supplier master, ported from 2990's SCM (logic) and drawn in Conts.
+ *  Money is integer sen; the form takes RM. Bindings/scorecard deferred to later slices. */
+
+type Status = 'ACTIVE' | 'INACTIVE' | 'BLOCKED';
+const STATUSES: Status[] = ['ACTIVE', 'INACTIVE', 'BLOCKED'];
+const STATUS_LABEL: Record<Status, string> = { ACTIVE: 'Active', INACTIVE: 'Inactive', BLOCKED: 'Blocked' };
+const STATUS_TONE: Record<Status, Tone> = { ACTIVE: 'success', INACTIVE: 'neutral', BLOCKED: 'critical' };
+
+interface Supplier {
+  id: string; code: string; name: string; status: Status;
+  contactPerson: string; attention: string; phone: string; mobile: string; whatsappNumber: string; fax: string;
+  email: string; website: string; address: string; area: string; postcode: string; state: string; country: string;
+  paymentTerms: string; creditLimitSen: number; currency: string; statementType: string; agingBasis: string;
+  supplierType: string; category: string; businessNature: string; tinNumber: string; businessRegNo: string;
+  rating: number; notes: string;
+}
+interface Payload { data: Supplier[]; generatedAt: string }
+
+const S = (o: Partial<Supplier> & Pick<Supplier, 'id' | 'code' | 'name'>): Supplier => ({
+  status: 'ACTIVE', contactPerson: '', attention: '', phone: '', mobile: '', whatsappNumber: '', fax: '',
+  email: '', website: '', address: '', area: '', postcode: '', state: '', country: 'Malaysia',
+  paymentTerms: '', creditLimitSen: 0, currency: 'MYR', statementType: 'OPEN_ITEM', agingBasis: 'INVOICE_DATE',
+  supplierType: '', category: '', businessNature: '', tinNumber: '', businessRegNo: '', rating: 0, notes: '', ...o,
+});
+
+const FALLBACK: Payload = {
+  generatedAt: '',
+  data: [
+    S({ id: 's1', code: 'SUP-EMMA', name: 'Emma Furnishings Sdn Bhd', contactPerson: 'Alicia Tan', phone: '+60123456789', email: 'sales@emma.my', state: 'Selangor', category: 'Sofa, Bedframe', paymentTerms: '30 days', creditLimitSen: 5000000 }),
+    S({ id: 's2', code: 'SUP-HILTON', name: 'Hilton Bedding Manufacturing', contactPerson: 'Rajesh Kumar', phone: '+60198887766', email: 'orders@hiltonbedding.my', state: 'Johor', category: 'Mattress', paymentTerms: '60 days', creditLimitSen: 8000000 }),
+    S({ id: 's3', code: 'SUP-NORDIC', name: 'Nordic Woodcraft', contactPerson: 'Lim Wei Jie', phone: '+60127773344', email: 'hello@nordicwood.my', state: 'Selangor', category: 'Bedframe, Dining', paymentTerms: '30 days', creditLimitSen: 3000000 }),
+    S({ id: 's4', code: 'SUP-TEXTILE', name: 'KL Textile & Carpet Co', contactPerson: 'Nurul Aina', phone: '+60133221100', email: 'sales@kltextile.my', state: 'Kuala Lumpur', category: 'Carpet, Bedlines', status: 'INACTIVE', paymentTerms: 'COD' }),
+  ],
+};
+
+const senToRm = (sen: number | null | undefined) => (sen == null ? '' : String(sen / 100));
+const rmToSen = (v: string): number => { const n = Number(v); return v.trim() && Number.isFinite(n) ? Math.round(n * 100) : 0; };
+
+type Draft = Omit<Supplier, 'creditLimitSen'> & { creditLimit: string };
+const toDraft = (s: Supplier): Draft => ({ ...s, creditLimit: senToRm(s.creditLimitSen) });
+const emptyDraft = (): Draft => toDraft(S({ id: '', code: '', name: '' }));
+
+export default function SuppliersPage() {
+  const { data, loading, error, reload } = useApi<Payload>('/suppliers', FALLBACK);
+  const toast = useToast();
+  const { user } = useSession();
+  const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
+
+  const [statusFilter, setStatusFilter] = useState<'all' | Status>('all');
+  const [search, setSearch] = useState('');
+  const [drawer, setDrawer] = useState<{ draft: Draft; isNew: boolean } | null>(null);
+
+  const [added, setAdded] = useState<Supplier[]>([]);
+  const [edits, setEdits] = useState<Record<string, Partial<Supplier>>>({});
+  const [removed, setRemoved] = useState<Set<string>>(new Set());
+
+  const all = useMemo(
+    () => [...added, ...(data?.data ?? [])].filter(s => !removed.has(s.id)).map(s => ({ ...s, ...edits[s.id] })),
+    [added, data, edits, removed],
+  );
+
+  const q = search.trim().toLowerCase();
+  const rows = all.filter(s =>
+    (statusFilter === 'all' || s.status === statusFilter) &&
+    (!q || `${s.code} ${s.name} ${s.contactPerson} ${s.category}`.toLowerCase().includes(q)),
+  );
+
+  function save(draft: Draft, isNew: boolean) {
+    const { creditLimit, ...rest } = draft;
+    const body = { ...rest, creditLimitSen: rmToSen(creditLimit) };
+    if (isNew) {
+      const local = S({ ...body, id: `sup-new-${crypto.randomUUID().slice(0, 8)}` });
+      setAdded(a => [local, ...a]);
+      api.post('/suppliers', body).catch(notifyFailure);
+      toast({ tone: 'success', title: 'Supplier added.', body: `${body.code} ${body.name}` });
+    } else {
+      setEdits(e => ({ ...e, [rest.id]: { ...e[rest.id], ...body } }));
+      api.patch(`/suppliers/${rest.id}`, body).catch(notifyFailure);
+      toast({ tone: 'success', title: 'Supplier updated.', body: `${body.code} ${body.name}` });
+    }
+    setDrawer(null);
+  }
+
+  function remove(s: Supplier) {
+    setRemoved(r => new Set(r).add(s.id));
+    api.del(`/suppliers/${s.id}`).catch(notifyFailure);
+    toast({ tone: 'success', title: 'Supplier removed.', body: s.code });
+    setDrawer(null);
+  }
+
+  const activeCount = all.filter(s => s.status === 'ACTIVE').length;
+
+  return (
+    <>
+      <PageHeader
+        title="Suppliers"
+        sub={`${all.length} suppliers · ${activeCount} active`}
+        right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyDraft(), isNew: true })}>New supplier</Button> : undefined}
+      />
+
+      {error && <StaleBanner message={`Showing the last supplier list we have. ${error}`} onRetry={reload} />}
+
+      <div className="flex items-center justify-between gap-5 flex-wrap">
+        <div className="flex gap-2 flex-wrap">
+          <Chip label="All" active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />
+          {STATUSES.map(s => <Chip key={s} label={STATUS_LABEL[s]} active={statusFilter === s} onClick={() => setStatusFilter(s)} />)}
+        </div>
+        <div className="relative">
+          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search suppliers..." aria-label="Search suppliers"
+            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
+        </div>
+      </div>
+
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse min-w-[840px]">
+            <thead>
+              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+                {['Code', 'Name', 'Contact', 'Phone', 'Category', 'Terms', 'Credit limit', 'Status'].map((h, i) => (
+                  <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 6 ? 'text-right' : 'text-left')}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading && all.length === 0 ? (
+                <tr><td colSpan={8}><TableSkeleton rows={6} cols={8} /></td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={8}>
+                  <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
+                    <span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No suppliers match.' : 'No suppliers yet.'}</span>
+                    <span className="text-[12.5px] text-muted-ink max-w-[380px]">{q || statusFilter !== 'all' ? 'Clear the search or status filter to see the full list.' : 'Add the suppliers you buy furniture, fittings and services from.'}</span>
+                  </div>
+                </td></tr>
+              ) : rows.map(s => (
+                <tr key={s.id} onClick={() => { if (canWrite) setDrawer({ draft: toDraft(s), isNew: false }); }}
+                  className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
+                  <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{s.code}</span></td>
+                  <td className="py-[13px] px-4 text-[13.5px]">{s.name}</td>
+                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{s.contactPerson || '—'}</td>
+                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums">{s.phone || '—'}</td>
+                  <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{s.category || '—'}</td>
+                  <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{s.paymentTerms || '—'}</td>
+                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{s.creditLimitSen ? rm(s.creditLimitSen, { cents: false }) : '—'}</td>
+                  <td className="py-[13px] px-4"><StatusPill status={s.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {drawer && <SupplierDrawer draft={drawer.draft} isNew={drawer.isNew} onClose={() => setDrawer(null)} onSave={save}
+        onDelete={drawer.isNew ? undefined : () => { const s = all.find(x => x.id === drawer.draft.id); if (s) remove(s); }} />}
+    </>
+  );
+}
+
+/* ---------- primitives ---------- */
+
+function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} aria-pressed={active}
+      className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid',
+        active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>
+      {label}
+    </button>
+  );
+}
+
+function StatusPill({ status }: { status: Status }) {
+  const t = STATUS_TONE[status];
+  return (
+    <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}>
+      <span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}
+    </span>
+  );
+}
+
+/* ---------- New / Edit drawer ---------- */
+
+function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Draft; isNew: boolean; onClose: () => void; onSave: (d: Draft, isNew: boolean) => void; onDelete?: () => void }) {
+  const [f, setF] = useState<Draft>(draft);
+  const set = <K extends keyof Draft>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value as Draft[K] }));
+  const canSave = f.code.trim() !== '' && f.name.trim() !== '';
+
+  return (
+    <Drawer open onClose={onClose} width={680}>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
+        <h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New supplier' : 'Edit supplier'}</h2>
+        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button>
+      </div>
+      <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
+        <Section title="Identity">
+          <Field label="Code" placeholder="e.g. SUP-EMMA" value={f.code} onChange={set('code')} />
+          <Field label="Name" placeholder="Supplier name" value={f.name} onChange={set('name')} />
+          <Sel label="Status" value={f.status} onChange={set('status')} options={STATUSES.map(s => ({ value: s, label: STATUS_LABEL[s] }))} />
+          <Field label="Category" placeholder="e.g. Sofa, Bedframe" value={f.category} onChange={set('category')} />
+          <Field label="Supplier type" placeholder="Manufacturer / Trader / 3PL" value={f.supplierType} onChange={set('supplierType')} />
+          <Field label="Business nature" placeholder="Optional" value={f.businessNature} onChange={set('businessNature')} />
+        </Section>
+        <Section title="Contact">
+          <Field label="Contact person" value={f.contactPerson} onChange={set('contactPerson')} />
+          <Field label="Attention" value={f.attention} onChange={set('attention')} />
+          <Field label="Phone" value={f.phone} onChange={set('phone')} />
+          <Field label="Mobile" value={f.mobile} onChange={set('mobile')} />
+          <Field label="WhatsApp" value={f.whatsappNumber} onChange={set('whatsappNumber')} />
+          <Field label="Fax" value={f.fax} onChange={set('fax')} />
+          <Field label="Email" type="email" value={f.email} onChange={set('email')} />
+          <Field label="Website" value={f.website} onChange={set('website')} />
+        </Section>
+        <Section title="Address">
+          <div className="col-span-2"><Field label="Address" value={f.address} onChange={set('address')} /></div>
+          <Field label="Area" value={f.area} onChange={set('area')} />
+          <Field label="Postcode" value={f.postcode} onChange={set('postcode')} />
+          <Field label="State" value={f.state} onChange={set('state')} />
+          <Field label="Country" value={f.country} onChange={set('country')} />
+        </Section>
+        <Section title="Terms & finance">
+          <Field label="Payment terms" placeholder="e.g. 30 days" value={f.paymentTerms} onChange={set('paymentTerms')} />
+          <Field label="Credit limit (RM)" type="number" numeric step="0.01" placeholder="0.00" value={f.creditLimit} onChange={set('creditLimit')} />
+          <Field label="Currency" value={f.currency} onChange={set('currency')} />
+          <Field label="Statement type" value={f.statementType} onChange={set('statementType')} />
+          <Field label="Aging basis" value={f.agingBasis} onChange={set('agingBasis')} />
+          <Field label="Rating (0–5)" type="number" numeric step="1" min={0} max={5} value={String(f.rating)} onChange={e => setF(s => ({ ...s, rating: Math.max(0, Math.min(5, Math.round(Number(e.target.value) || 0))) }))} />
+          <Field label="TIN number" value={f.tinNumber} onChange={set('tinNumber')} />
+          <Field label="Business reg. no" value={f.businessRegNo} onChange={set('businessRegNo')} />
+          <div className="col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
+        </Section>
+      </div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+        <div className="flex gap-2.5">
+          <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name first" onClick={() => onSave(f, isNew)}>{isNew ? 'Create supplier' : 'Save'}</Button>
+        </div>
+      </div>
+    </Drawer>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">{title}</div>
+      <div className="grid grid-cols-2 gap-3.5">{children}</div>
+    </div>
+  );
+}
+
+function Sel({ label, value, onChange, options }: { label: string; value: string; onChange: (e: { target: { value: string } }) => void; options: { value: string; label: string }[] }) {
+  return (
+    <div className="flex flex-col gap-[7px]">
+      <label className="text-[12px] font-medium text-muted-ink">{label}</label>
+      <select value={value} onChange={onChange}
+        className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+}

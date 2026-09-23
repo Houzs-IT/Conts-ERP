@@ -33,6 +33,68 @@ export const NAV: NavGroup[] = [
       { key: 'access', label: 'Access and keys', path: '/properties/access', designed: true },
     ] },
   ] },
+  // Supply Chain — mirrors Houzs's nav hierarchy: L1 group (Supply Chain) → L2 collapsible
+  // sections (Procurement / Warehouse / Sales / Transportation / Furniture) → L3 pages.
+  { label: 'SUPPLY CHAIN', items: [
+    { key: 'scProcurement', label: 'Procurement', icon: 'shopping-cart', children: [
+      { key: 'procurement', label: 'Products and maintenance', path: '/procurement/products', designed: true },
+      { key: 'suppliers', label: 'Suppliers', path: '/procurement/suppliers', designed: true },
+      { key: 'productModels', label: 'Product models', path: '/procurement/product-models', designed: true },
+      { key: 'categories', label: 'Categories', path: '/procurement/categories', designed: true },
+      { key: 'purchaseOrders', label: 'Purchase orders', path: '/procurement/purchase-orders', designed: true },
+      { key: 'goodsReceived', label: 'Goods received', path: '/procurement/goods-received', designed: true },
+      { key: 'purchaseInvoices', label: 'Purchase invoices', path: '/procurement/purchase-invoices', designed: true },
+      { key: 'paymentVouchers', label: 'Payment vouchers', path: '/procurement/payment-vouchers', designed: true },
+      { key: 'purchaseReturns', label: 'Purchase returns', path: '/procurement/purchase-returns', designed: true },
+      { key: 'purchaseConsignment', label: 'Consignment orders', path: '/procurement/consignment', designed: true },
+      { key: 'mrp', label: 'MRP', path: '/procurement/mrp', designed: true },
+    ] },
+    { key: 'scWarehouse', label: 'Warehouse', icon: 'warehouse', children: [
+      { key: 'loadingList', label: 'Loading list', path: '/procurement/loading-list', designed: true },
+      { key: 'warehouses', label: 'Warehouses', path: '/procurement/warehouses', designed: true },
+      { key: 'racksBins', label: 'Racks & bins', path: '/procurement/racks', designed: true },
+      { key: 'stock', label: 'Inventory', path: '/procurement/stock', designed: true },
+      { key: 'adjustments', label: 'Adjustments', path: '/procurement/adjustments', designed: true },
+      { key: 'stockTransfers', label: 'Transfers', path: '/procurement/stock-transfers', designed: true },
+      { key: 'stockTakes', label: 'Stock take', path: '/procurement/stock-takes', designed: true },
+    ] },
+    { key: 'scSales', label: 'Sales', icon: 'file-text', children: [
+      { key: 'customers', label: 'Customers', path: '/sales/customers', designed: true },
+      { key: 'salesOrders', label: 'Sales orders', path: '/sales/orders', designed: true },
+      { key: 'salesOrderAmendment', label: 'Sales order amendment', path: '/sales/amendments', designed: true },
+      { key: 'deliveryOrders', label: 'Delivery orders', path: '/sales/delivery-orders', designed: true },
+      { key: 'salesInvoices', label: 'Sales invoices', path: '/sales/invoices', designed: true },
+      { key: 'salesReturns', label: 'Delivery returns', path: '/sales/returns', designed: true },
+      { key: 'unbilledDeliveries', label: 'Unbilled deliveries', path: '/sales/unbilled', designed: true },
+    ] },
+    { key: 'scConsignment', label: 'Consignment', icon: 'handshake', children: [
+      { key: 'consignmentNotes', label: 'Consignment notes', path: '/sales/consignment-notes', designed: true },
+    ] },
+    { key: 'scTransportPlan', label: 'Transportation', icon: 'truck', children: [
+      { key: 'deliveryPlanning', label: 'Delivery planning', path: '/transport/planning', designed: true },
+      { key: 'dpOrders', label: 'DP orders', path: '/transport/dp-orders', designed: true },
+      { key: 'deliveryDates', label: 'Delivery date arrangement', path: '/transport/delivery-dates', designed: true },
+      { key: 'deliveryTimes', label: 'Delivery time arrangement', path: '/transport/delivery-times', designed: true },
+      { key: 'lastMile', label: 'Last mile delivery', path: '/transport/last-mile', designed: true },
+    ] },
+    { key: 'scFleet', label: 'Maintenance', icon: 'wrench', children: [
+      { key: 'coverageFleet', label: 'Coverage & fleet', path: '/transport/coverage', designed: true },
+      { key: 'drivers', label: 'Drivers', path: '/transport/drivers', designed: true },
+      { key: 'vehicles', label: 'Vehicles', path: '/transport/vehicles', designed: true },
+      { key: 'threepl', label: '3PL companies', path: '/transport/3pl', designed: true },
+      { key: 'driverLeave', label: 'Driver leave', path: '/transport/driver-leave', designed: true },
+      { key: 'deliveryZones', label: 'Delivery zones', path: '/transport/zones', designed: true },
+      { key: 'residenceRules', label: 'Residence rules', path: '/transport/residence-rules', designed: true },
+      { key: 'rateCards', label: 'Carriers & rates', path: '/transport/rate-cards', designed: true },
+      { key: 'fleetHealth', label: 'Fleet health', path: '/transport/fleet-health', designed: true },
+    ] },
+    { key: 'scFurniture', label: 'Furniture', icon: 'sofa', children: [
+      { key: 'fabrics', label: 'Fabric library', path: '/furniture/fabrics', designed: true },
+    ] },
+    { key: 'scAccounting', label: 'Accounting', icon: 'calculator', children: [
+      { key: 'accounting', label: 'Payables & receivables', path: '/accounting', designed: true },
+    ] },
+  ] },
   { label: 'FINANCE', items: [
     { key: 'finance', label: 'Finance', icon: 'wallet', badge: '2', children: [
       { key: 'revenue', label: 'Revenue', path: '/finance/revenue', designed: true },
