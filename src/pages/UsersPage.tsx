@@ -339,9 +339,14 @@ export default function UsersPage() {
   const [editRole, setEditRole] = useState<UserRole>('operations_staff');
   const [editManager, setEditManager] = useState<string>('');
   const [editActive, setEditActive] = useState(true);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editErrors, setEditErrors] = useState<{ fullName?: string; email?: string }>({});
 
   function openEdit(u: Row) {
     setEditing(u); setEditRole(u.role); setEditManager(u.managerId ?? ''); setEditActive(u.isActive);
+    setEditName(u.fullName); setEditEmail(u.email); setEditPhone(u.phone ?? ''); setEditErrors({});
   }
   // Re-send the invitation to someone who was invited but never signed in — a fresh
   // temporary password, emailed immediately. See functions/api/users/[id]/resend-invite.ts.
@@ -363,22 +368,31 @@ export default function UsersPage() {
   async function submitEdit(e: FormEvent) {
     e.preventDefault();
     if (!editing || busy) return;
-    setBusy(true);
+    const errs: { fullName?: string; email?: string } = {};
+    if (!editName.trim()) errs.fullName = 'Enter a name.';
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(editEmail)) errs.email = 'Enter a valid email address.';
+    if (Object.keys(errs).length) { setEditErrors(errs); return; }
+
+    setBusy(true); setEditErrors({});
     const roleChanged = editRole !== editing.role;
-    const patch: Partial<Row> = { role: editRole, managerId: editManager || null, isActive: editActive };
+    const patch = {
+      role: editRole, managerId: editManager || null, isActive: editActive,
+      fullName: editName.trim(), email: editEmail.trim(), phone: editPhone.trim() || null,
+    };
     try {
       await api.patch(`/users/${editing.id}`, patch);
-      setEdits(m => ({ ...m, [editing.id]: { ...m[editing.id], ...patch } }));
+      setEdits(m => ({ ...m, [editing.id]: { ...m[editing.id], ...patch, phone: patch.phone ?? '' } }));
       toast({
         tone: 'success',
-        title: `${editing.fullName} updated.`,
+        title: `${editName.trim()} updated.`,
         body: roleChanged
           ? `Role changed to ${roleLabel(editRole)}. Their navigation rebuilds on next sign-in.`
-          : 'Reporting line and status saved.',
+          : 'Account details saved.',
       });
       reload();
       setEditing(null);
     } catch (err) {
+      if (err instanceof ApiFailure && err.fields) setEditErrors(err.fields);
       toast({ tone: 'critical', title: `${editing.fullName} was not updated.`, body: err instanceof Error ? err.message : 'Try again in a moment.' });
     }
     setBusy(false);
@@ -627,6 +641,20 @@ export default function UsersPage() {
           }
         >
           <form id="edit-form" onSubmit={submitEdit} className="flex flex-col gap-[14px]">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="ed-name" className={labelClass}>Full name</label>
+              <input id="ed-name" value={editName} onChange={e => setEditName(e.target.value)} className={inputClass} />
+              {editErrors.fullName && <span className={cx('text-[12px]', TONE.critical.text)}>{editErrors.fullName}</span>}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="ed-email" className={labelClass}>Email</label>
+              <input id="ed-email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} className={inputClass} />
+              {editErrors.email && <span className={cx('text-[12px]', TONE.critical.text)}>{editErrors.email}</span>}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="ed-phone" className={labelClass}>Phone</label>
+              <input id="ed-phone" value={editPhone} onChange={e => setEditPhone(e.target.value)} placeholder="+60 12-345 6789" className={inputClass} />
+            </div>
             <div className="flex flex-col gap-1.5">
               <label htmlFor="ed-role" className={labelClass}>Role</label>
               <select id="ed-role" value={editRole} onChange={e => setEditRole(e.target.value as UserRole)} className={cx(inputClass, 'capitalize')}>

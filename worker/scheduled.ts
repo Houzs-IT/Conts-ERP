@@ -1,4 +1,5 @@
 import { type Env, all, run, nowIso } from '../functions/_lib/db';
+import { deliver } from '../functions/_lib/notify';
 
 /**
  * Cron worker. Deployed separately from Pages:
@@ -19,13 +20,24 @@ export default {
     const myt = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
     const hour = myt.getHours();
 
-    // 1. Quiet hours ended — release anything queued overnight.
+    // 1. Quiet hours ended — actually send anything queued overnight. (This used to just flip
+    //    the row to 'sent' without calling the provider, so nothing queued was ever really
+    //    delivered — see the IT handoff checklist and TODO.md.)
     if (hour >= 8 && hour < 22) {
-      const queued = await all<{ id: string }>(env,
-        "SELECT id FROM notification_log WHERE state = 'queued' ORDER BY queued_at LIMIT 100");
+      const queued = await all<{ id: string; template: string; recipient: string; channel: string; entity_table: string | null; entity_id: string | null; subject: string | null; body: string | null }>(env,
+        "SELECT id, template, recipient, channel, entity_table, entity_id, subject, body FROM notification_log WHERE state = 'queued' ORDER BY queued_at LIMIT 100");
       for (const q of queued) {
-        // The send itself is retried by the same adapter; here we only unblock it.
-        await run(env, "UPDATE notification_log SET state = 'sent', sent_at = ? WHERE id = ?", nowIso(), q.id);
+        try {
+          const providerId = await deliver(env, {
+            template: q.template, recipient: q.recipient, channel: q.channel as any,
+            subject: q.subject ?? undefined, body: q.body ?? '',
+            entityTable: q.entity_table ?? undefined, entityId: q.entity_id ?? undefined,
+          });
+          await run(env, "UPDATE notification_log SET state = 'sent', sent_at = ?, provider_message_id = ? WHERE id = ?", nowIso(), providerId, q.id);
+        } catch (e) {
+          const reason = e instanceof Error ? e.message : 'Unknown delivery error';
+          await run(env, "UPDATE notification_log SET state = 'failed', error = ? WHERE id = ?", reason, q.id);
+        }
       }
     }
 

@@ -61,12 +61,14 @@ export async function notify(env: Env, s: Send): Promise<{ state: 'sent' | 'queu
   const queued = !s.urgent && inQuietHours();
 
   await run(env, `
-    INSERT INTO notification_log (id, template, recipient, channel, entity_table, entity_id, idempotency_key, state, queued_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
-    id, s.template, s.recipient, s.channel, s.entityTable ?? null, s.entityId ?? null, idem, nowIso());
+    INSERT INTO notification_log (id, template, recipient, channel, entity_table, entity_id, idempotency_key, state, queued_at, subject, body)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
+    id, s.template, s.recipient, s.channel, s.entityTable ?? null, s.entityId ?? null, idem, nowIso(), s.subject ?? null, s.body);
 
   if (queued) {
-    // A scheduled Worker drains these at 08:00 — see functions/scheduled.ts.
+    // The scheduled Worker (worker/scheduled.ts) actually sends these at 08:00 using the
+    // subject/body just stored above — it must call deliver() below, not just flip the state,
+    // or the message is silently never delivered.
     return { state: 'queued', reason: `Quiet hours. Sending at ${nextSendTime().slice(11, 16)} MYT.` };
   }
 
@@ -83,7 +85,10 @@ export async function notify(env: Env, s: Send): Promise<{ state: 'sent' | 'queu
   }
 }
 
-async function deliver(env: Env, s: Send): Promise<string> {
+/** The actual provider call, shared by an immediate send above and the quiet-hours drainer
+ *  (worker/scheduled.ts) resending a queued row later — the drainer must never just flip a
+ *  row's state to 'sent' without going through this, or the message never really goes out. */
+export async function deliver(env: Env, s: Send): Promise<string> {
   if (s.channel === 'in_app' || s.channel === 'push') {
     // In-app lands in notification_log itself; the client polls /api/notifications.
     return 'internal';
