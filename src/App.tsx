@@ -42,6 +42,7 @@ const SalesOrdersPage = lazy(() => import('./pages/SalesOrdersPage'));
 const DeliveryOrdersPage = lazy(() => import('./pages/DeliveryOrdersPage'));
 const SalesInvoicesPage = lazy(() => import('./pages/SalesInvoicesPage'));
 const SalesReturnsPage = lazy(() => import('./pages/SalesReturnsPage'));
+const UnbilledDeliveriesPage = lazy(() => import('./pages/UnbilledDeliveriesPage'));
 const DriversPage = lazy(() => import('./pages/DriversPage'));
 const VehiclesPage = lazy(() => import('./pages/VehiclesPage'));
 const FabricsPage = lazy(() => import('./pages/FabricsPage'));
@@ -145,6 +146,7 @@ function Routed() {
         <Route path="/sales/delivery-orders" element={<DeliveryOrdersPage />} />
         <Route path="/sales/invoices" element={<SalesInvoicesPage />} />
         <Route path="/sales/returns" element={<SalesReturnsPage />} />
+        <Route path="/sales/unbilled" element={<UnbilledDeliveriesPage />} />
         <Route path="/transport/drivers" element={<DriversPage />} />
         <Route path="/transport/vehicles" element={<VehiclesPage />} />
         <Route path="/furniture/fabrics" element={<FabricsPage />} />
