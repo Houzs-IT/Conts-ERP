@@ -1,0 +1,22 @@
+# Keeps `staging` level with `main` after every merge, so staging-preview always
+# reflects what's actually live on production unless someone deliberately pushes
+# extra commits to `staging` for a one-off preview. Fast-forward only, never a
+# force-push: if `staging` has diverged (commits of its own not yet in main), this
+# fails loudly instead of discarding that work — resolve it by hand, then it
+# resumes automatically on the next push to main.
+name: Sync staging branch with main
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency: sync-staging-branch
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: git push origin origin/main:refs/heads/staging
