@@ -98,8 +98,11 @@ Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 - [x] **Drivers + Vehicles masters** — PR #46 `feat/scm-transport` (stacked on #45; HELD: migration 0021). New TRANSPORT nav group.
 - [x] **3PL Companies** — PR #74 `feat/scm-threepl` (stacked on #65; HELD: migration 0028). Master, like Suppliers-lite. Ported from Houzs `threepl-companies.ts`.
 - [x] **Driver Leave** — PR #76 `feat/scm-driver-leave` (stacked on #74; HELD: migration 0029). Dated leave per driver (drivers-only; Conts has no helpers).
+- [x] **Delivery Zones** (postcode→zone map admin) — PR #77 `feat/scm-delivery-zones` (stacked on #76; HELD: migration 0030). ZONES + default map byte-for-byte from 2990 zone-classify; "load default" seeding. Auto-propose engine deferred.
+- [x] **Delivery Residence Rules** — PR #78 `feat/scm-residence-rules` (stacked on #77; HELD: migration 0031). Per-building-type delivery window + lift/registration flags.
 - [ ] Delivery planning ENGINE (`DeliveryPlanning`, `AutoSchedule`, `Trips`, `Fleet` run-sheets) — **BIG: needs Google Maps key + geocoding + capacity-pack**. Deferred.
-- [ ] TMS masters still to port: `DeliveryZones` (postcode map), `DeliveryRateCards`, `DeliveryResidenceRules`, `LorryCapacity`, `DeliveryMaintenance` — simple tables, tractable.
+- [ ] `DeliveryRateCards` — freight PRICING engine (cards + tiered rules + computeDeliveryCost). Money logic; needs careful port, not a simple master.
+- [ ] `LorryCapacity` — computed DASHBOARD over trips + lorry_maintenance (needs Trips ported first). `DeliveryMaintenance` — fleet maintenance log.
 
 ### Tier 6 — Furniture-specific & cross-cutting
 - [x] **MRP** — PR #48 `feat/scm-mrp` (no migration). Demand − on-hand − on-order = net to buy.
@@ -110,16 +113,23 @@ Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 
 ---
 
-## STATUS: entire Supply Chain surface ported (28 modules, PRs #25–#76)
+## STATUS: entire Supply Chain surface ported (30 modules, PRs #25–#78)
 
 All five Houzs SC sections (Sales · Consignment · Procurement · Transportation · Warehouse)
 + MRP + Fabric + Accounting + Customers + Stock Transfers/Takes + full stock auto-wiring
 (GRN/DO/returns) + Sales Returns, in the L1/L2/L3 nav. Migrations 0006–0027. **Merge order:**
 #25 #28 #29 #30 #32 #33 #35 #39 #40 #41 #42 #43 #44 #45 #46 #47 #48(no-mig) #49(no-mig) #51
-#54 #55 #58 #62(no-mig) #63 #65(no-mig) #74 #76 (+ #26 docs). All stacked, all HELD for their
-migrations (except no-mig #48/#49/#62/#65). Tiers 0–4 masters + doc spines complete; Tier 2
-warehouse complete; buy/sell returns + stock ledger fully wired; unbilled-deliveries report
-done; TMS masters (3PL, Driver Leave) started. Migrations now 0006–0029.
+#54 #55 #58 #62(no-mig) #63 #65(no-mig) #74 #76 #77 #78 (+ #26 docs). All stacked, all HELD for
+their migrations (except no-mig #48/#49/#62/#65). Tiers 0–4 masters + doc spines complete;
+Tier 2 warehouse complete; buy/sell returns + stock ledger fully wired; unbilled-deliveries
+report done; TMS masters (3PL, Driver Leave, Delivery Zones, Residence Rules) done.
+Migrations now 0006–0031.
+
+**Remaining = engine-grade / decision-blocked** (not simple ports): DeliveryRateCards
+(freight pricing math), Delivery Planning + Trips + Fleet run-sheets (Google Maps key),
+LorryCapacity (needs Trips), HR Commission (payroll + single-tenant simplification),
+Fair Report (needs a fairs concept), Amendments, furniture line specials, model variant
+editor, FIFO cost. Currencies = skip (MYR-only).
 
 **Deferred sub-slices** (bounded cores shipped; depth follows as needed):
 FIFO cost layers, consignment receives/returns,
