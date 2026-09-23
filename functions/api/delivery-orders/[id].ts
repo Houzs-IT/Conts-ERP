@@ -18,7 +18,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const id = String(params.id);
   const header = await one<DoHeaderRow>(env, HEADER_SQL, id);
   if (!header) return fail('NOT_FOUND', 'That delivery order does not exist.', 404);
-  const lines = await all<DoLineRow>(env, 'SELECT id, sales_order_line_id, line_no, item_code, description, uom, qty, unit_price_sen, line_total_sen FROM delivery_order_lines WHERE delivery_order_id = ? ORDER BY line_no', id);
+  const lines = await all<DoLineRow>(env, 'SELECT id, sales_order_line_id, line_no, item_code, description, uom, qty, returned_qty, unit_price_sen, line_total_sen FROM delivery_order_lines WHERE delivery_order_id = ? ORDER BY line_no', id);
   return json({ data: { ...toDoHeaderPayload(header), lines: lines.map(toDoLinePayload) } });
 };
 

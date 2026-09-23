@@ -17,7 +17,7 @@ export interface DoHeaderRow {
   notes: string | null; warehouse_id: string | null; created_at: string; updated_at: string;
   so_doc_no?: string | null; warehouse_name?: string | null;
 }
-export interface DoLineRow { id: string; sales_order_line_id: string | null; line_no: number; item_code: string; description: string; uom: string; qty: number; unit_price_sen: number; line_total_sen: number }
+export interface DoLineRow { id: string; sales_order_line_id: string | null; line_no: number; item_code: string; description: string; uom: string; qty: number; returned_qty: number; unit_price_sen: number; line_total_sen: number }
 
 export function toDoHeaderPayload(r: DoHeaderRow) {
   return {
@@ -28,7 +28,7 @@ export function toDoHeaderPayload(r: DoHeaderRow) {
   };
 }
 export function toDoLinePayload(r: DoLineRow) {
-  return { id: r.id, salesOrderLineId: r.sales_order_line_id ?? '', lineNo: r.line_no, itemCode: r.item_code, description: r.description, uom: r.uom, qty: r.qty, unitPriceSen: r.unit_price_sen, lineTotalSen: r.line_total_sen };
+  return { id: r.id, salesOrderLineId: r.sales_order_line_id ?? '', lineNo: r.line_no, itemCode: r.item_code, description: r.description, uom: r.uom, qty: r.qty, returnedQty: r.returned_qty, unitPriceSen: r.unit_price_sen, lineTotalSen: r.line_total_sen };
 }
 
 export async function nextDoNumber(env: Env): Promise<string> {

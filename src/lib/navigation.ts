@@ -60,6 +60,7 @@ export const NAV: NavGroup[] = [
       { key: 'salesOrders', label: 'Sales orders', path: '/sales/orders', designed: true },
       { key: 'deliveryOrders', label: 'Delivery orders', path: '/sales/delivery-orders', designed: true },
       { key: 'salesInvoices', label: 'Sales invoices', path: '/sales/invoices', designed: true },
+      { key: 'salesReturns', label: 'Sales returns', path: '/sales/returns', designed: true },
     ] },
     { key: 'scConsignment', label: 'Consignment', icon: 'handshake', children: [
       { key: 'consignmentNotes', label: 'Consignment notes', path: '/sales/consignment-notes', designed: true },
