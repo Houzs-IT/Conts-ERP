@@ -88,7 +88,8 @@ Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 - [x] **Sales Orders** — PR #43 `feat/scm-sales-orders` (stacked on #42; HELD: migration 0018). 9-state flow + deposit/payment; customer inline (customers master = follow-up); guided/from-products/margins/MRP-gate deferred.
 - [x] **Delivery Orders** — PR #44 `feat/scm-delivery-orders` (stacked on #43; HELD: migration 0019). Delivers a SO, drives delivered_qty + SO→DELIVERED; POD/signature deferred. Delivery Returns = follow-up.
 - [x] **Sales Invoices** — PR #45 `feat/scm-sales-invoices` (stacked on #44; HELD: migration 0020). Bills a DO, marks DO/SO INVOICED, receipts drive paid status. UnbilledDeliveries = follow-up.
-- [x] **Sales Returns** — PR #63 `feat/scm-sales-returns` (stacked on #62; HELD: migration 0027). Customer returns DO-delivered goods: reduces SO delivered_qty, posts RETURN +qty into the dispatch warehouse, credit-note value; cancel reverses. Adds delivery_order_lines.returned_qty. Sell-side twin of Purchase Returns.
+- [x] **Sales Returns** ("Delivery returns" in nav) — PR #63 `feat/scm-sales-returns` (stacked on #62; HELD: migration 0027). Customer returns DO-delivered goods: reduces SO delivered_qty, posts RETURN +qty into the dispatch warehouse, credit-note value; cancel reverses. Adds delivery_order_lines.returned_qty.
+- [x] **Sales Order Amendment** — PR #80 `feat/scm-so-amendments` (stacked on #79; HELD: migration 0033). Amend a confirmed SO: REQUESTED→APPROVED→APPLIED (apply rewrites SO lines, guarded by delivered) / REJECTED / CANCELLED. Core only (2990 bridge machinery dropped).
 - [x] **Unbilled Deliveries** — PR #65 `feat/scm-unbilled-deliveries` (stacked on #63; no migration). Read-only AR report: dispatched DOs with no active SI + uninvoiced total + aging.
 
 ### Tier 4 — Consignment (sell-side)
@@ -100,9 +101,9 @@ Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 - [x] **Driver Leave** — PR #76 `feat/scm-driver-leave` (stacked on #74; HELD: migration 0029). Dated leave per driver (drivers-only; Conts has no helpers).
 - [x] **Delivery Zones** (postcode→zone map admin) — PR #77 `feat/scm-delivery-zones` (stacked on #76; HELD: migration 0030). ZONES + default map byte-for-byte from 2990 zone-classify; "load default" seeding. Auto-propose engine deferred.
 - [x] **Delivery Residence Rules** — PR #78 `feat/scm-residence-rules` (stacked on #77; HELD: migration 0031). Per-building-type delivery window + lift/registration flags.
-- [ ] Delivery planning ENGINE (`DeliveryPlanning`, `AutoSchedule`, `Trips`, `Fleet` run-sheets) — **BIG: needs Google Maps key + geocoding + capacity-pack**. Deferred.
-- [ ] `DeliveryRateCards` — freight PRICING engine (cards + tiered rules + computeDeliveryCost). Money logic; needs careful port, not a simple master.
-- [ ] `LorryCapacity` — computed DASHBOARD over trips + lorry_maintenance (needs Trips ported first). `DeliveryMaintenance` — fleet maintenance log.
+- [x] **Carriers & Rates** (rate cards) — PR #79 `feat/scm-rate-cards` (stacked on #78; HELD: migration 0032). Cards + 12 rule types + PURE computeDeliveryCost engine ported 1:1 + /compute. Under Transportation L2.
+- [ ] **Delivery Planning cluster** (owner photo: Delivery Planning, DP Orders, Delivery Date Arrangement, Delivery Time Arrangement, Last Mile Delivery) — build MANUAL versions (NO Google Maps unless owner gives a key).
+- [ ] **Fleet: Coverage & Fleet, Fleet Health** (owner photo). LorryCapacity = DROPPED by owner.
 
 ### Tier 6 — Furniture-specific & cross-cutting
 - [x] **MRP** — PR #48 `feat/scm-mrp` (no migration). Demand − on-hand − on-order = net to buy.
@@ -113,7 +114,16 @@ Purchase Consignment left in Tier 1). Migrations 0006–0015. Merge order:
 
 ---
 
-## STATUS: entire Supply Chain surface ported (30 modules, PRs #25–#78)
+## OWNER SCOPE RULING 2026-09-23 — build ONLY the nav-photo modules
+
+Owner gave nav-screenshots as the definitive remaining scope. **DROPPED:** HR Commission,
+Fair Report, Lorry Capacity, photo/attachment features. **Remaining to build (from photos):**
+Warehouse → Loading List, Racks & Bins, Adjustments (own page); Fleet → Coverage & Fleet,
+Fleet Health; Transportation → Delivery Planning, DP Orders, Delivery Date Arrangement,
+Delivery Time Arrangement, Last Mile Delivery (MANUAL — no Google Maps unless a key is given).
+Everything not in the photos is out of scope.
+
+## STATUS: 32 modules ported, PRs #25–#80
 
 All five Houzs SC sections (Sales · Consignment · Procurement · Transportation · Warehouse)
 + MRP + Fabric + Accounting + Customers + Stock Transfers/Takes + full stock auto-wiring
