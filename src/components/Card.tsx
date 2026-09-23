@@ -3,7 +3,16 @@ import { color, radius, text } from '../theme';
 
 export function Card({ children, style }: { children: ReactNode; style?: CSSProperties }) {
   return (
-    <div style={{ background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, overflow: 'hidden', ...style }}>
+    <div style={{
+      background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, overflow: 'hidden',
+      // `main` (AppShell) is a column flexbox with overflowY: auto, so it scrolls once its content is
+      // taller than the viewport — but a flex item with overflow != visible gets an automatic min-height
+      // of 0 (CSS flexbox spec), so without this a long card gets squeezed to fit main's height instead
+      // of pushing it taller, silently clipping rows with no scrollbar in sight. flexShrink: 0 keeps the
+      // card at its real content height so main is the thing that grows and scrolls, as intended.
+      flexShrink: 0,
+      ...style,
+    }}>
       {children}
     </div>
   );
