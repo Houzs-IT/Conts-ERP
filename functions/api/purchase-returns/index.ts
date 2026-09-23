@@ -3,6 +3,7 @@ import { requireSession } from '../../_lib/auth';
 import { MASTER_ROLES } from '../../_lib/properties';
 import { nextReturnNumber, toPretHeaderPayload, type PretHeaderRow } from '../../_lib/purchase-returns';
 import { recomputePoStatus } from '../../_lib/goods-receipts';
+import { postStockMovement } from '../../_lib/stock-ops';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
 const LIST_SQL = `
@@ -38,7 +39,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const grnId = String(b.grnId ?? '').trim();
-  const grn = await one<{ supplier_id: string; purchase_order_id: string; status: string }>(env, 'SELECT supplier_id, purchase_order_id, status FROM goods_receipts WHERE id = ?', grnId);
+  const grn = await one<{ supplier_id: string; purchase_order_id: string; status: string; warehouse_id: string | null }>(env, 'SELECT supplier_id, purchase_order_id, status, warehouse_id FROM goods_receipts WHERE id = ?', grnId);
   if (!grn) return fail('VALIDATION', 'Pick a goods receipt.', 422, { grnId: 'Unknown goods receipt.' });
   if (grn.status === 'CANCELLED') return fail('CONFLICT', 'A cancelled goods receipt has nothing to return.', 409);
 
@@ -70,6 +71,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const gl = await one<{ purchase_order_line_id: string | null }>(env, 'SELECT purchase_order_line_id FROM goods_receipt_lines WHERE id = ?', l.grnLineId);
       if (gl?.purchase_order_line_id) await run(env, 'UPDATE purchase_order_lines SET received_qty = GREATEST(0, received_qty - ?) WHERE id = ?', l.qty, gl.purchase_order_line_id);
     }
+    // Returned goods leave the warehouse they were received into (negative movement).
+    if (grn.warehouse_id) await postStockMovement(env, { itemCode: l.itemCode, warehouseId: grn.warehouse_id, qtyDelta: -l.qty, movementType: 'RETURN', refType: 'PRET', refId: id, note: returnNumber, movedAt: returnDate, createdBy: session.userId });
   }
   if (grn.purchase_order_id) await recomputePoStatus(env, grn.purchase_order_id);
 
