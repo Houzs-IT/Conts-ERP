@@ -377,7 +377,7 @@ export default function UsersPage() {
     const roleChanged = editRole !== editing.role;
     const patch = {
       role: editRole, managerId: editManager || null, isActive: editActive,
-      fullName: editName.trim(), email: editEmail.trim(), phone: editPhone.trim() || null,
+      fullName: editName.trim(), email: editEmail.trim().toLowerCase(), phone: editPhone.trim() || null,
     };
     try {
       await api.patch(`/users/${editing.id}`, patch);

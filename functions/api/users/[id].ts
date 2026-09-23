@@ -40,13 +40,13 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     UPDATE users SET role = COALESCE(?, role), is_active = COALESCE(?, is_active), manager_id = CASE WHEN ? THEN ? ELSE manager_id END,
       full_name = COALESCE(?, full_name), email = COALESCE(?, email), phone = CASE WHEN ? THEN ? ELSE phone END, updated_at = ? WHERE id = ?`,
     b.role ?? null, b.isActive === undefined ? null : (b.isActive ? 1 : 0), b.managerId !== undefined, b.managerId ?? null,
-    b.fullName?.trim() || null, b.email?.trim() || null, b.phone !== undefined, b.phone?.trim() || null, nowIso(), id);
+    b.fullName?.trim() || null, b.email?.trim().toLowerCase() || null, b.phone !== undefined, b.phone?.trim() || null, nowIso(), id);
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'user.update', entityTable: 'users', entityId: id,
     before: { role: before.role, isActive: !!before.is_active, managerId: before.manager_id, fullName: before.full_name, email: before.email, phone: before.phone },
     after: {
       role: b.role ?? before.role, isActive: b.isActive ?? !!before.is_active, managerId: b.managerId === undefined ? before.manager_id : b.managerId,
-      fullName: b.fullName ?? before.full_name, email: b.email ?? before.email, phone: b.phone === undefined ? before.phone : b.phone,
+      fullName: b.fullName ?? before.full_name, email: b.email !== undefined ? b.email.trim().toLowerCase() : before.email, phone: b.phone === undefined ? before.phone : b.phone,
     },
   });
   return json({ ok: true });
