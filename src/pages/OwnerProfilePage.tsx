@@ -239,7 +239,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
               <button onClick={() => setModal('link')} className={linkBtn}><Icon name="Plus" size="sm" /> Link unit</button>
             </div>
             {o.units.length === 0 ? (
-              <div className="px-[22px] pb-5 text-[12.5px] text-muted-ink">No units linked yet. Use <strong className="font-semibold">Link unit</strong> to assign one and preset the fee or GRR.</div>
+              <div className="px-[22px] pb-5 text-[12.5px] text-muted-ink">No units linked yet. Use <button onClick={() => setModal('link')} className="bg-transparent [border:none] p-0 cursor-pointer [font:inherit] font-semibold text-gold-ink underline underline-offset-2">Link unit</button> to assign one and preset the fee or GRR.</div>
             ) : (
               <div className="[border-top:1px_solid_var(--color-line-soft)]">
                 {o.units.map(u => <UnitPanel key={u.unitId} ownerId={o.id} unit={u} owner={o} />)}
@@ -286,7 +286,6 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
                 <Button variant="primary" style={{ flex: 1 }} icon={<Icon name="Mail" size="sm" />} onClick={invite} disabled={o.portalInvited} disabledReason="This owner already has portal access">
                   {o.portalInvited ? 'Portal active' : 'Invite to portal'}
                 </Button>
-                <Button variant="secondary" onClick={() => setModal('link')}>Link unit</Button>
               </div>
               <Button variant="danger" icon={<Icon name="Trash2" size="sm" />} onClick={deleteOwner} disabled={!canDelete}
                 disabledReason="This owner has units or a contract on file — reassign or remove those first.">

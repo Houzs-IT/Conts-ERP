@@ -28,6 +28,16 @@ import {
 
 const COLS = 'grid-cols-[minmax(170px,1.5fr)_minmax(190px,1.7fr)_minmax(120px,0.9fr)_minmax(120px,1fr)_minmax(120px,1fr)]';
 
+/** Terms shown for an owner in the list. A single-unit owner reads exactly as
+ *  that unit's terms; a multi-unit owner shows the shared terms when every unit
+ *  matches, otherwise "Mixed" (rather than misleadingly showing only the first
+ *  unit's). No units → em dash. */
+function ownerTerms(o: Owner): string {
+  if (o.units.length === 0) return '—';
+  const all = o.units.map(terms);
+  return all.every(t => t === all[0]) ? all[0] : 'Mixed';
+}
+
 export default function OwnersPage() {
   const { data, loading, error, reload } = useApi<Payload>('/owners', FALLBACK);
   const toast = useToast();
@@ -89,7 +99,7 @@ export default function OwnersPage() {
                 <span className="text-[12.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">
                   {o.units.length === 0 ? 'No units yet' : o.units.length === 1 ? o.units[0].unitLabel : `${o.units.length} units`}
                 </span>
-                <span className="text-[12.5px] text-right text-muted-ink">{o.units[0] ? terms(o.units[0]) : '—'}</span>
+                <span className="text-[12.5px] text-right text-muted-ink">{ownerTerms(o)}</span>
                 <span className="text-[13px] text-right font-medium">{rm(netOf(o), { cents: false })}</span>
                 <div className="flex items-center justify-between gap-2">
                   {o.portalInvited ? <Badge tone="success" label="Active" /> : <Badge tone="neutral" label="Not invited" />}
