@@ -1,9 +1,16 @@
 # Keeps `staging` level with `main` after every merge, so staging-preview always
 # reflects what's actually live on production unless someone deliberately pushes
 # extra commits to `staging` for a one-off preview. Fast-forward only, never a
-# force-push: if `staging` has diverged (commits of its own not yet in main), this
-# fails loudly instead of discarding that work — resolve it by hand, then it
-# resumes automatically on the next push to main.
+# force-push: if `staging` has diverged (commits of its own not yet in main), the
+# sync step fails loudly instead of discarding that work — resolve it by hand,
+# then it resumes automatically on the next push to main.
+#
+# Deploys right here instead of leaving it to deploy-staging-preview.yml's own
+# `push: branches: [staging]` trigger: a push made with the default GITHUB_TOKEN
+# (like the one below) does not fire other workflows — that's a deliberate
+# GitHub Actions guard against infinite trigger loops, not a bug — so relying on
+# that trigger would silently never deploy. deploy-staging-preview.yml still
+# does fire on its own for a genuine human push straight to `staging`.
 name: Sync staging branch with main
 on:
   push:
@@ -13,10 +20,20 @@ concurrency: sync-staging-branch
 permissions:
   contents: write
 jobs:
-  sync:
+  sync-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - run: git push origin origin/main:refs/heads/staging
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx wrangler pages deploy dist --project-name=theconts-os --branch=staging-preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 3a9ff01edda85702f9e2649fb340f1cc
