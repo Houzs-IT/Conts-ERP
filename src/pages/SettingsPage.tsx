@@ -29,7 +29,10 @@ interface Settings {
   locale: { default: string; timezone: string; currency: string; dateFormat: string; managementFeePct: number };
   operations: { checkIn: string; checkOut: string; cleaningWindowHours: number; linenSets: number; photoRequiredToMarkReady: boolean };
   statements: { cycleDay: number; autoGenerate: boolean; payoutMethod: string };
-  security: { inactivityTimeoutMins: number; absoluteTimeoutHours: number; lockoutAttempts: number };
+  security: {
+    staffInactivityTimeoutMins: number; ownerInactivityTimeoutMins: number;
+    absoluteTimeoutHours: number; lockoutAttempts: number; lockoutMinutes: number;
+  };
   generatedAt: string;
 }
 
@@ -45,7 +48,7 @@ const FALLBACK: Settings = {
   locale: { default: 'en-MY', timezone: 'Asia/Kuala_Lumpur', currency: 'MYR', dateFormat: 'D MMM YYYY', managementFeePct: 25 },
   operations: { checkIn: '15:00', checkOut: '11:00', cleaningWindowHours: 4, linenSets: 2, photoRequiredToMarkReady: true },
   statements: { cycleDay: 1, autoGenerate: true, payoutMethod: 'bank_transfer' },
-  security: { inactivityTimeoutMins: 30, absoluteTimeoutHours: 8, lockoutAttempts: 5 },
+  security: { staffInactivityTimeoutMins: 10080, ownerInactivityTimeoutMins: 480, absoluteTimeoutHours: 720, lockoutAttempts: 5, lockoutMinutes: 15 },
 };
 
 /* -------------------------------- options -------------------------------- */
@@ -76,6 +79,9 @@ const INACTIVITY = [
   { value: 30, label: '30 minutes' },
   { value: 60, label: '1 hour' },
   { value: 120, label: '2 hours' },
+  { value: 480, label: '8 hours' },
+  { value: 1440, label: '24 hours' },
+  { value: 10080, label: '7 days' },
 ];
 const ABSOLUTE = [
   { value: 8, label: '8 hours' },
@@ -246,7 +252,7 @@ export default function SettingsPage() {
         ? `Statements generate automatically on day ${draft.statements.cycleDay} of each month.`
         : 'Automatic generation is off. Generate statements manually each period.',
     },
-    security: { title: 'Security settings saved.', body: 'Sign-in timeouts and lockout still follow the server defaults until these are connected.' },
+    security: { title: 'Security settings saved.', body: 'Takes effect immediately, including for anyone already signed in.' },
   };
 
   async function save(k: SectionKey) {
@@ -442,23 +448,31 @@ export default function SettingsPage() {
           {/* --------------------------- Security --------------------------- */}
           <SectionCard
             title="Security"
-            description="Session lifetimes and the account lockout threshold for every staff account."
+            description="Session lifetimes and the account lockout threshold. Staff and owners are timed out separately — the owner portal is a brief, occasional check-in, so it defaults much shorter."
             dirty={dirty('security')} busy={busy === 'security'} saveLabel="Save security"
             onSave={() => save('security')} onDiscard={() => discard('security')}
           >
             <Grid>
               <SelectField
-                label="Session inactivity timeout"
-                value={draft.security.inactivityTimeoutMins}
-                help="Signed out after this long with no activity."
-                onChange={v => patch('security', { inactivityTimeoutMins: Number(v) })}
+                label="Staff inactivity timeout"
+                value={draft.security.staffInactivityTimeoutMins}
+                help="A staff account is signed out after this long with no activity."
+                onChange={v => patch('security', { staffInactivityTimeoutMins: Number(v) })}
+              >
+                {INACTIVITY.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </SelectField>
+              <SelectField
+                label="Owner inactivity timeout"
+                value={draft.security.ownerInactivityTimeoutMins}
+                help="An owner-portal account is signed out after this long with no activity."
+                onChange={v => patch('security', { ownerInactivityTimeoutMins: Number(v) })}
               >
                 {INACTIVITY.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </SelectField>
               <SelectField
                 label="Absolute session timeout"
                 value={draft.security.absoluteTimeoutHours}
-                help="Maximum session length before a fresh sign-in is required."
+                help="Maximum session length before a fresh sign-in is required, however active."
                 onChange={v => patch('security', { absoluteTimeoutHours: Number(v) })}
               >
                 {ABSOLUTE.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -470,8 +484,18 @@ export default function SettingsPage() {
                 min={3}
                 max={10}
                 value={draft.security.lockoutAttempts}
-                help="The account locks for 15 minutes after this many failed sign-ins."
+                help={`The account locks for ${draft.security.lockoutMinutes} minutes after this many failed sign-ins.`}
                 onChange={e => patch('security', { lockoutAttempts: clampInt(e.target.value, 3, 10, draft.security.lockoutAttempts) })}
+              />
+              <Field
+                label="Lockout length (minutes)"
+                type="number"
+                numeric
+                min={1}
+                max={120}
+                value={draft.security.lockoutMinutes}
+                help="How long a locked account stays locked before it can try again."
+                onChange={e => patch('security', { lockoutMinutes: clampInt(e.target.value, 1, 120, draft.security.lockoutMinutes) })}
               />
             </Grid>
           </SectionCard>

@@ -1,5 +1,5 @@
 import { type Env, fail } from '../_lib/db';
-import { readSession, readCookie, signSession, cookie, sessionLimits } from '../_lib/auth';
+import { readSession, readCookie, signSession, cookie, sessionLimits, securitySettings } from '../_lib/auth';
 import { doorFor, doorRefusal } from '../_lib/door';
 
 /**
@@ -42,7 +42,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, next }) => {
   // already set its own cookie (logout clearing it, login/reset-password issuing a
   // fresh one) so this never overwrites that with a stale live session.
   if (response.headers.has('set-cookie')) return response;
-  const { ttlHours, absoluteDays } = sessionLimits(env, session.role);
+  const { ttlHours, absoluteDays } = sessionLimits(await securitySettings(env), session.role);
   const refreshed = await signSession(env.SESSION_SECRET, session, ttlHours, absoluteDays, session.iat);
   const headers = new Headers(response.headers);
   headers.append('set-cookie', cookie(request, refreshed, ttlHours * 3600));

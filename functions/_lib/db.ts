@@ -6,14 +6,6 @@ import postgres from 'postgres';
 export interface Env {
   HYPERDRIVE: { connectionString: string };
   SESSION_SECRET: string;
-  /** Idle timeout (hours, staff default and owner override) and hard cap (days) for a
-   *  signed-in session — see functions/_lib/auth.ts sessionLimits(). */
-  SESSION_TTL_HOURS: string;
-  SESSION_TTL_HOURS_OWNER: string;
-  SESSION_ABSOLUTE_DAYS: string;
-  /** Failed sign-in attempts before a lockout, and the lockout length — see functions/api/auth/login.ts. */
-  LOGIN_MAX_ATTEMPTS: string;
-  LOGIN_LOCKOUT_MINUTES: string;
   /** R2 bucket for photos and documents (theconts-media / theconts-media-staging). Optional in the
    *  type since local dev without the binding still needs upload endpoints to fail cleanly (501). */
   MEDIA?: R2Bucket;
