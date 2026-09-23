@@ -1,8 +1,12 @@
 import { type Env, one, run, fail, nowIso } from './db';
 
-/** Falls back to the documented defaults (8h idle / 30d absolute) if the vars are ever unset. */
-export function sessionLimits(env: Env) {
-  return { ttlHours: Number(env.SESSION_TTL_HOURS) || 8, absoluteDays: Number(env.SESSION_ABSOLUTE_DAYS) || 30 };
+/** Staff sign in far less often than they'd want to be interrupted, so they idle out on a
+ *  roughly weekly cadence; an owner's portal is used briefly and occasionally, so it times
+ *  out the same day. Falls back to the documented defaults if a var is ever unset. */
+export function sessionLimits(env: Env, role: string) {
+  const staffTtl = Number(env.SESSION_TTL_HOURS) || 168;
+  const ownerTtl = Number(env.SESSION_TTL_HOURS_OWNER) || 8;
+  return { ttlHours: role === 'owner' ? ownerTtl : staffTtl, absoluteDays: Number(env.SESSION_ABSOLUTE_DAYS) || 30 };
 }
 
 /** `iat` anchors the absolute cap (fixed at first sign-in); `exp` is the idle deadline,

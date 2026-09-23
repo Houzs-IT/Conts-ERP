@@ -42,7 +42,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, next }) => {
   // already set its own cookie (logout clearing it, login/reset-password issuing a
   // fresh one) so this never overwrites that with a stale live session.
   if (response.headers.has('set-cookie')) return response;
-  const { ttlHours, absoluteDays } = sessionLimits(env);
+  const { ttlHours, absoluteDays } = sessionLimits(env, session.role);
   const refreshed = await signSession(env.SESSION_SECRET, session, ttlHours, absoluteDays, session.iat);
   const headers = new Headers(response.headers);
   headers.append('set-cookie', cookie(request, refreshed, ttlHours * 3600));

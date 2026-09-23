@@ -94,7 +94,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     urgent: true,
   });
 
-  const { ttlHours, absoluteDays } = sessionLimits(env);
+  const { ttlHours, absoluteDays } = sessionLimits(env, user.role);
   const sessionToken = await signSession(env.SESSION_SECRET, {
     userId: user.id, email: user.email, role: user.role, fullName: user.full_name,
   }, ttlHours, absoluteDays);
