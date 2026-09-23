@@ -51,9 +51,10 @@ export const NAV: NavGroup[] = [
     ] },
     { key: 'scWarehouse', label: 'Warehouse', icon: 'warehouse', children: [
       { key: 'warehouses', label: 'Warehouses', path: '/procurement/warehouses', designed: true },
-      { key: 'stock', label: 'Stock', path: '/procurement/stock', designed: true },
-      { key: 'stockTransfers', label: 'Stock transfers', path: '/procurement/stock-transfers', designed: true },
-      { key: 'stockTakes', label: 'Stock takes', path: '/procurement/stock-takes', designed: true },
+      { key: 'racksBins', label: 'Racks & bins', path: '/procurement/racks', designed: true },
+      { key: 'stock', label: 'Inventory', path: '/procurement/stock', designed: true },
+      { key: 'stockTransfers', label: 'Transfers', path: '/procurement/stock-transfers', designed: true },
+      { key: 'stockTakes', label: 'Stock take', path: '/procurement/stock-takes', designed: true },
     ] },
     { key: 'scSales', label: 'Sales', icon: 'file-text', children: [
       { key: 'customers', label: 'Customers', path: '/sales/customers', designed: true },
