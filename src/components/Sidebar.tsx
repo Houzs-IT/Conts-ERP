@@ -16,6 +16,7 @@ function parentOf(path: string) {
 export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   const { user, logout } = useSession();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [profileOpen, setProfileOpen] = useState(false);
   const activeParent = parentOf(path);
   const groups = navFor(user!.role);
@@ -44,10 +45,27 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
 
       {/* Own scroller: the sidebar never rides the page scroll. */}
       <nav style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin', padding: '12px 10px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {groups.map(g => (
+        {groups.map(g => {
+          const sectionCollapsed = open && !!collapsedSections[g.label];
+          return (
           <div key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {open && <div style={{ padding: '6px 8px 4px', fontSize: text.micro, fontWeight: 600, letterSpacing: '0.13em', color: color.dim }}>{g.label}</div>}
-            {g.items.map(it => {
+            {open && (
+              <button
+                onClick={() => setCollapsedSections(s => ({ ...s, [g.label]: !s[g.label] }))}
+                aria-expanded={!sectionCollapsed}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '6px 8px 4px',
+                  background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left',
+                  fontSize: text.micro, fontWeight: 600, letterSpacing: '0.13em', color: color.dim,
+                }}
+              >
+                <span style={{ flex: 1, minWidth: 0 }}>{g.label}</span>
+                <span style={{ display: 'flex', opacity: 0.7, transition: `transform 180ms ${motion.ease}`, transform: `rotate(${sectionCollapsed ? -90 : 0}deg)` }}>
+                  <Icon name="ChevronDown" size="sm" />
+                </span>
+              </button>
+            )}
+            {!sectionCollapsed && g.items.map(it => {
               const isOpen = open && (expanded[it.key] ?? activeParent === it.key);
               const selfActive = it.path === path || (!!it.children && activeParent === it.key && !isOpen);
               return (
@@ -107,7 +125,8 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
               );
             })}
           </div>
-        ))}
+          );
+        })}
       </nav>
 
       <div style={{ padding: 10, borderTop: `1px solid ${color.charcoal}`, position: 'relative' }}>
