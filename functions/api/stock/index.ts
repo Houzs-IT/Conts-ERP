@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { MASTER_ROLES } from '../../_lib/properties';
 import { toOnHandPayload, type OnHandRow } from '../../_lib/stock';
+import { onHandOf } from '../../_lib/stock-ops';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
 /** GET /api/stock?warehouseId=&search= — on-hand per item + warehouse (running sum of moves). */
@@ -41,6 +42,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!itemCode) return fail('VALIDATION', 'Enter an item code.', 422, { itemCode: 'Enter an item code.' });
   if (!warehouseId || !await one(env, 'SELECT 1 AS x FROM warehouses WHERE id = ?', warehouseId)) return fail('VALIDATION', 'Pick a warehouse.', 422, { warehouseId: 'Unknown warehouse.' });
   if (qtyDelta === 0) return fail('VALIDATION', 'Enter a non-zero quantity change.', 422, { qtyDelta: 'Enter a quantity.' });
+  // Houzs refuses a decrease larger than what is on hand, with no override.
+  if (qtyDelta < 0) {
+    const onHand = await onHandOf(env, itemCode, warehouseId);
+    if (-qtyDelta > onHand) {
+      return fail('INSUFFICIENT_STOCK', `Only ${onHand} on hand at this warehouse — you can't take out ${-qtyDelta}.`, 422, { qtyDelta: `Only ${onHand} on hand.` });
+    }
+  }
 
   const id = genId('mv');
   const now = nowIso();

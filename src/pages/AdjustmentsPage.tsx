@@ -46,7 +46,15 @@ export default function AdjustmentsPage() {
   const q = search.trim().toLowerCase();
   const rows = all.filter(m => (whFilter === 'all' || m.warehouseId === whFilter) && (!q || `${m.itemCode} ${m.note}`.toLowerCase().includes(q)));
 
-  function create(m: Mv) { setAdded(a => [m, ...a]); api.post('/stock', { itemCode: m.itemCode, warehouseId: m.warehouseId, qtyDelta: m.qtyDelta, note: m.note }).catch(notifyFailure); toast({ tone: 'success', title: 'Adjustment posted.', body: `${m.itemCode} ${m.qtyDelta > 0 ? '+' : ''}${m.qtyDelta}` }); setDrawer(false); }
+  // Waits for the server: a refused adjustment (e.g. more out than is on hand) must not show as posted.
+  async function create(m: Mv) {
+    try {
+      const r = await api.post<{ id: string }>('/stock', { itemCode: m.itemCode, warehouseId: m.warehouseId, qtyDelta: m.qtyDelta, note: m.note });
+      setAdded(a => [{ ...m, id: r.id }, ...a]);
+      toast({ tone: 'success', title: 'Adjustment posted.', body: `${m.itemCode} ${m.qtyDelta > 0 ? '+' : ''}${m.qtyDelta}` });
+      setDrawer(false);
+    } catch (e) { notifyFailure(e); }
+  }
 
   return (
     <>
@@ -91,7 +99,8 @@ export default function AdjustmentsPage() {
   );
 }
 
-function AdjustDrawer({ warehouses, canWrite, onClose, onCreate }: { warehouses: Wh[]; canWrite: boolean; onClose: () => void; onCreate: (m: Mv) => void }) {
+function AdjustDrawer({ warehouses, canWrite, onClose, onCreate }: { warehouses: Wh[]; canWrite: boolean; onClose: () => void; onCreate: (m: Mv) => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
   const [itemCode, setItemCode] = useState('');
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
   const [direction, setDirection] = useState<'in' | 'out'>('out');
@@ -101,11 +110,13 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onCreate }: { warehouses:
   const magnitude = Math.abs(Math.round(Number(qty) || 0));
   const canSave = canWrite && itemCode.trim() !== '' && warehouseId !== '' && magnitude > 0;
 
-  function submit() {
+  async function submit() {
     const wh = warehouses.find(w => w.id === warehouseId);
     const delta = direction === 'in' ? magnitude : -magnitude;
     const fullNote = note.trim() ? `${reason} — ${note.trim()}` : reason;
-    onCreate({ id: `adj-new-${crypto.randomUUID().slice(0, 8)}`, itemCode: itemCode.trim(), warehouseId, warehouseCode: wh?.code ?? '', warehouseName: wh?.name ?? '', qtyDelta: delta, note: fullNote, movedAt: new Date().toISOString().slice(0, 10) });
+    setBusy(true);
+    await onCreate({ id: '', itemCode: itemCode.trim(), warehouseId, warehouseCode: wh?.code ?? '', warehouseName: wh?.name ?? '', qtyDelta: delta, note: fullNote, movedAt: new Date().toISOString().slice(0, 10) });
+    setBusy(false);
   }
 
   return (
@@ -136,7 +147,7 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onCreate }: { warehouses:
       </div>
       <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter an item, warehouse and quantity" onClick={submit}>Post adjustment</Button>
+        <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter an item, warehouse and quantity" loading={busy} onClick={() => void submit()}>Post adjustment</Button>
       </div>
     </Drawer>
   );

@@ -2,7 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { MASTER_ROLES } from '../../_lib/properties';
 import { isDoStatus, nextDoNumber, maybeMarkSoDelivered, toDoHeaderPayload, type DoHeaderRow } from '../../_lib/delivery-orders';
-import { postStockMovement } from '../../_lib/stock-ops';
+import { postStockMovement, stockShortages, shortageText } from '../../_lib/stock-ops';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
 const LIST_SQL = `
@@ -53,6 +53,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return { soLineId: strOrNull(l.salesOrderLineId), itemCode: String(l.itemCode ?? '').trim(), description: String(l.description ?? '').trim(), uom: String(l.uom ?? 'UNIT').trim() || 'UNIT', qty, unitPriceSen, lineTotalSen: qty * unitPriceSen };
   }).filter(l => l.itemCode && l.description && l.qty > 0);
   if (!lines.length) return fail('VALIDATION', 'Deliver at least one line with a quantity.', 422, { lines: 'Enter a delivery quantity.' });
+  // Houzs: shipping more than is on hand is allowed, but only after the operator confirms it
+  // (the screen asks, then resends with confirmShortStock).
+  if (warehouseId && b.confirmShortStock !== true) {
+    const short = await stockShortages(env, warehouseId, lines);
+    if (short.length) return fail('SHORT_STOCK', `Not enough stock to deliver this. ${await shortageText(env, warehouseId, short)}. Delivering anyway takes stock below zero.`, 409);
+  }
 
   const id = genId('do');
   const doNumber = await nextDoNumber(env);
