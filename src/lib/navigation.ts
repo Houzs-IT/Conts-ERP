@@ -78,6 +78,10 @@ export const NAV: NavGroup[] = [
       { key: 'stockTransfers', label: 'Transfers', path: '/procurement/stock-transfers', designed: true },
       { key: 'stockTakes', label: 'Stock take', path: '/procurement/stock-takes', designed: true },
     ] },
+    // Houzs keeps credit / debit notes under Finance › Money in; finance roles only.
+    { key: 'scFinance', label: 'Finance', icon: 'wallet', children: [
+      { key: 'creditNotes', label: 'Credit / debit notes', path: '/accounting/credit-notes', designed: true },
+    ] },
   ] },
   { label: 'FINANCE', items: [
     { key: 'finance', label: 'Finance', icon: 'wallet', badge: '2', children: [
@@ -114,7 +118,7 @@ export const NAV: NavGroup[] = [
  *  Audit trail matches functions/api/audit/index.ts's AUDIT_ROLES (management, operations_manager,
  *  finance_admin) — keep the two in sync. */
 const DENY: Partial<Record<UserRole, string[]>> = {
-  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'audit'],
+  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'audit', 'scFinance'],
   finance_admin: ['operations', 'comms'],
   housekeeper: ['*'],
   technician: ['*'],
