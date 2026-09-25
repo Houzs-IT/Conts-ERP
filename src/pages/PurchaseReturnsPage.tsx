@@ -7,7 +7,8 @@ import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api, notifyFailure, ApiFailure } from '../lib/api';
+import { ShortStockPrompt } from '../components/ShortStockPrompt';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
@@ -159,14 +160,24 @@ function ReturnDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Op
   const refund = willReturn.reduce((s, l) => s + Math.min(Number(l.qty) || 0, l.returnable) * l.unitPriceSen, 0);
   const canSave = canWrite && grnId !== '' && willReturn.length > 0;
 
-  function submit() {
+  const [busy, setBusy] = useState(false);
+  const [shortStock, setShortStock] = useState<string | null>(null);
+
+  // Waits for the server: a refused return must never show as raised.
+  async function submit(confirmShortStock = false) {
     const payloadLines = willReturn.map(l => ({ grnLineId: l.grnLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qtyReturned: Math.min(Number(l.qty) || 0, l.returnable), reason: l.reason }));
-    api.post('/purchase-returns', { grnId, returnDate, reason, creditNoteRef, notes, lines: payloadLines }).catch(notifyFailure);
-    onCreated({
-      id: `pret-new-${crypto.randomUUID().slice(0, 8)}`, returnNumber: `PRET-${new Date().getFullYear()}-NEW`, supplierName: grn?.supplierName ?? '', supplierCode: '', grnNumber: grn?.grnNumber ?? '',
-      returnDate, status: 'POSTED', refundSen: refund, creditNoteRef, reason, notes,
-      lines: payloadLines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qtyReturned: l.qtyReturned, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qtyReturned * l.unitPriceSen, reason: l.reason })),
-    });
+    setBusy(true);
+    try {
+      const r = await api.post<{ id: string; returnNumber: string }>('/purchase-returns', { grnId, returnDate, reason, creditNoteRef, notes, lines: payloadLines, confirmShortStock: confirmShortStock || undefined });
+      onCreated({
+        id: r.id, returnNumber: r.returnNumber, supplierName: grn?.supplierName ?? '', supplierCode: '', grnNumber: grn?.grnNumber ?? '',
+        returnDate, status: 'POSTED', refundSen: refund, creditNoteRef, reason, notes,
+        lines: payloadLines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qtyReturned: l.qtyReturned, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qtyReturned * l.unitPriceSen, reason: l.reason })),
+      });
+    } catch (e) {
+      if (e instanceof ApiFailure && e.code === 'SHORT_STOCK') setShortStock(e.message);
+      else notifyFailure(e);
+    } finally { setBusy(false); }
   }
 
   return (
@@ -223,10 +234,11 @@ function ReturnDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Op
           <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
           <div className="flex items-end justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Refund value</span><span className="tabular-nums w-[120px] text-right">{rm(refund)}</span></div></div>
         </div>
+        {shortStock && <ShortStockPrompt message={shortStock} actionLabel="Return anyway" busy={busy} onCancel={() => setShortStock(null)} onConfirm={() => void submit(true)} />}
       </div>
       <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a GRN and return at least one line" onClick={submit}>Post return</Button>
+        <Button size="sm" variant="primary" disabled={!canSave || !!shortStock} disabledReason={shortStock ? 'Answer the stock question above first' : 'Pick a GRN and return at least one line'} loading={busy && !shortStock} onClick={() => void submit()}>Post return</Button>
       </div>
     </Drawer>
   );

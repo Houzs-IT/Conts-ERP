@@ -7,7 +7,8 @@ import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api, notifyFailure, ApiFailure } from '../lib/api';
+import { ShortStockPrompt } from '../components/ShortStockPrompt';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
@@ -152,14 +153,24 @@ function DeliverDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: Ope
   const willDeliver = lines.filter(l => (Number(l.qty) || 0) > 0);
   const canSave = canWrite && soId !== '' && willDeliver.length > 0;
 
-  function submit() {
+  const [busy, setBusy] = useState(false);
+  const [shortStock, setShortStock] = useState<string | null>(null);
+
+  // Waits for the server: a refused delivery must never show as raised.
+  async function submit(confirmShortStock = false) {
     const payloadLines = willDeliver.map(l => ({ salesOrderLineId: l.soLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qty: Math.min(Number(l.qty) || 0, l.outstanding) }));
-    api.post('/delivery-orders', { salesOrderId: soId, doDate, expectedDeliveryAt: expected || null, driverName, vehicle, address1, notes, warehouseId: warehouseId || undefined, lines: payloadLines }).catch(notifyFailure);
-    onCreated({
-      id: `do-new-${crypto.randomUUID().slice(0, 8)}`, doNumber: `DO-${new Date().getFullYear()}-NEW`, soDocNo: so?.docNo ?? '', salesOrderId: soId, customerName: so?.customerName ?? '',
-      doDate, expectedDeliveryAt: expected, status: 'LOADED', driverName, vehicle, address1, city: '', state: '', postcode: '', phone: '', notes,
-      lines: payloadLines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qty: l.qty, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qty * l.unitPriceSen })),
-    });
+    setBusy(true);
+    try {
+      const r = await api.post<{ id: string; doNumber: string }>('/delivery-orders', { salesOrderId: soId, doDate, expectedDeliveryAt: expected || null, driverName, vehicle, address1, notes, warehouseId: warehouseId || undefined, lines: payloadLines, confirmShortStock: confirmShortStock || undefined });
+      onCreated({
+        id: r.id, doNumber: r.doNumber, soDocNo: so?.docNo ?? '', salesOrderId: soId, customerName: so?.customerName ?? '',
+        doDate, expectedDeliveryAt: expected, status: 'LOADED', driverName, vehicle, address1, city: '', state: '', postcode: '', phone: '', notes,
+        lines: payloadLines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qty: l.qty, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qty * l.unitPriceSen })),
+      });
+    } catch (e) {
+      if (e instanceof ApiFailure && e.code === 'SHORT_STOCK') setShortStock(e.message);
+      else notifyFailure(e);
+    } finally { setBusy(false); }
   }
 
   return (
@@ -211,10 +222,11 @@ function DeliverDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: Ope
           </div>
         )}
         <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
+        {shortStock && <ShortStockPrompt message={shortStock} actionLabel="Deliver anyway" busy={busy} onCancel={() => setShortStock(null)} onConfirm={() => void submit(true)} />}
       </div>
       <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a SO and deliver at least one line" onClick={submit}>Raise delivery</Button>
+        <Button size="sm" variant="primary" disabled={!canSave || !!shortStock} disabledReason={shortStock ? 'Answer the stock question above first' : 'Pick a SO and deliver at least one line'} loading={busy && !shortStock} onClick={() => void submit()}>Raise delivery</Button>
       </div>
     </Drawer>
   );

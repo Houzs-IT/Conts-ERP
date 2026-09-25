@@ -78,6 +78,10 @@ export const NAV: NavGroup[] = [
       { key: 'stockTransfers', label: 'Transfers', path: '/procurement/stock-transfers', designed: true },
       { key: 'stockTakes', label: 'Stock take', path: '/procurement/stock-takes', designed: true },
     ] },
+    // Houzs keeps credit / debit notes under Finance › Money in; finance roles only.
+    { key: 'scFinance', label: 'Finance', icon: 'wallet', children: [
+      { key: 'creditNotes', label: 'Credit / debit notes', path: '/accounting/credit-notes', designed: true },
+    ] },
   ] },
   { label: 'FINANCE', items: [
     { key: 'finance', label: 'Finance', icon: 'wallet', badge: '2', children: [
@@ -115,7 +119,7 @@ export const NAV: NavGroup[] = [
  *  finance_admin) — keep the two in sync. */
 const DENY: Partial<Record<UserRole, string[]>> = {
   // salesInvoices / purchaseInvoices match MONEY_ONLY in functions/api/_middleware.ts.
-  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'audit', 'salesInvoices', 'purchaseInvoices'],
+  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'audit', 'scFinance', 'salesInvoices', 'purchaseInvoices'],
   finance_admin: ['operations', 'comms'],
   housekeeper: ['*'],
   technician: ['*'],
