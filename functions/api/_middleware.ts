@@ -1,5 +1,5 @@
 import { type Env, fail } from '../_lib/db';
-import { readSession, readCookie, signSession, cookie, sessionLimits, securitySettings } from '../_lib/auth';
+import { readSession, readCookie, signSession, cookie, sessionLimits, securitySettings, isFieldRole, canSeeFinance } from '../_lib/auth';
 import { doorFor, doorRefusal } from '../_lib/door';
 
 /**
@@ -15,6 +15,12 @@ const OWNER_ALLOWED: [string, RegExp][] = [
   ['GET', /^\/api\/owner\/statements\/[^/]+\/pdf$/],
   ['POST', /^\/api\/maintenance\/issues\/[^/]+\/approve$/],
 ];
+
+/** Supply chain endpoints only check for a signed-in user, and carry prices and costs;
+ *  field accounts have no supply chain screens, so they are refused here in one place. */
+const SUPPLY_CHAIN = /^\/api\/(consignment-notes|customers|delivery-orders|delivery-schedule|delivery-zones|driver-leave|drivers|fabrics|fleet-health|coverage-fleet|goods-receipts|loading-list|mrp|payment-vouchers|product-models|products|purchase-consignment|purchase-invoices|purchase-orders|purchase-returns|racks|rate-cards|sales-invoices|sales-orders|sales-returns|so-amendments|stock|stock-takes|stock-transfers|suppliers|threepl-companies|unbilled-deliveries|vehicles|warehouses|credit-notes|accounting)(\/|$)/;
+/** Invoices and payments: what is owed and paid. Finance roles only, like Accounting. */
+const MONEY_ONLY = /^\/api\/(payment-vouchers|purchase-invoices|sales-invoices|unbilled-deliveries|credit-notes|accounting)(\/|$)/;
 
 const PUBLIC = new Set([
   'POST /api/auth/login', 'POST /api/auth/forgot-password',
@@ -34,6 +40,12 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, next }) => {
   const path = new URL(request.url).pathname.replace(/\/+$/, '');
   if (session.role === 'owner' && !OWNER_ALLOWED.some(([m, re]) => m === request.method && re.test(path))) {
     return fail('FORBIDDEN', 'This is not available on the owner portal.', 403);
+  }
+  if (isFieldRole(session.role) && SUPPLY_CHAIN.test(path)) {
+    return fail('FORBIDDEN', 'Your account does not have access to supply chain records.', 403);
+  }
+  if (MONEY_ONLY.test(path) && !canSeeFinance(session.role)) {
+    return fail('FORBIDDEN', 'Only finance and management can see invoices and payments.', 403);
   }
 
   const response = await next();
