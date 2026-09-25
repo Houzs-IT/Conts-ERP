@@ -3,7 +3,7 @@ import { requireSession } from '../../_lib/auth';
 import { MASTER_ROLES } from '../../_lib/properties';
 import { nextReturnNumber, toPretHeaderPayload, type PretHeaderRow } from '../../_lib/purchase-returns';
 import { recomputePoStatus } from '../../_lib/goods-receipts';
-import { postStockMovement } from '../../_lib/stock-ops';
+import { postStockMovement, stockShortages, shortageText } from '../../_lib/stock-ops';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
 const LIST_SQL = `
@@ -50,6 +50,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return { grnLineId: strOrNull(l.grnLineId), itemCode: String(l.itemCode ?? '').trim(), description: String(l.description ?? '').trim(), uom: String(l.uom ?? 'UNIT').trim() || 'UNIT', qty, unitPriceSen, lineTotalSen: qty * unitPriceSen, reason: strOrNull(l.reason) };
   }).filter(l => l.itemCode && l.description && l.qty > 0);
   if (!lines.length) return fail('VALIDATION', 'Return at least one line with a quantity.', 422, { lines: 'Enter a return quantity.' });
+  // Houzs: returning more than is on hand is allowed, but only after the operator confirms it
+  // (the screen asks, then resends with confirmShortStock).
+  if (grn.warehouse_id && b.confirmShortStock !== true) {
+    const short = await stockShortages(env, grn.warehouse_id, lines);
+    if (short.length) return fail('SHORT_STOCK', `Not enough stock to return this. ${await shortageText(env, grn.warehouse_id, short)}. Returning anyway takes stock below zero.`, 409);
+  }
 
   const refund = lines.reduce((s, l) => s + l.lineTotalSen, 0);
   const id = genId('pret');

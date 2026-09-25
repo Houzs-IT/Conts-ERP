@@ -2,7 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { MASTER_ROLES } from '../../_lib/properties';
 import { recomputePoStatus, toGrnHeaderPayload, toGrnLinePayload, type GrnHeaderRow, type GrnLineRow } from '../../_lib/goods-receipts';
-import { postStockMovement } from '../../_lib/stock-ops';
+import { postStockMovement, stockShortages, shortageText } from '../../_lib/stock-ops';
 
 const HEADER_SQL = `
   SELECT g.id, g.grn_number, g.purchase_order_id, g.supplier_id, g.received_at, g.delivery_note_ref, g.status, g.notes,
@@ -42,6 +42,14 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     if (cur.status === 'CANCELLED') return json({ id });
     // Reverse the received_qty this GRN added, then recompute the PO status.
     const lines = await all<{ purchase_order_line_id: string | null; item_code: string; qty_accepted: number }>(env, 'SELECT purchase_order_line_id, item_code, qty_accepted FROM goods_receipt_lines WHERE grn_id = ?', id);
+    // Houzs: if what this receipt brought in has already left the warehouse, reversing it would
+    // eat other stock and go negative — refuse, and point to a purchase return instead.
+    if (cur.warehouse_id) {
+      const short = await stockShortages(env, cur.warehouse_id, lines.map(l => ({ itemCode: l.item_code, qty: l.qty_accepted })));
+      if (short.length) {
+        return fail('STOCK_ALREADY_USED', `${cur.grn_number} can't be cancelled: some of what it received has already left the warehouse. Make a purchase return instead. ${await shortageText(env, cur.warehouse_id, short)}.`, 409);
+      }
+    }
     for (const l of lines) {
       if (l.purchase_order_line_id) await run(env, 'UPDATE purchase_order_lines SET received_qty = GREATEST(0, received_qty - ?) WHERE id = ?', l.qty_accepted, l.purchase_order_line_id);
       // Reverse the stock this GRN posted into the receiving warehouse.

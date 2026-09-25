@@ -1,7 +1,7 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { MASTER_ROLES } from '../../_lib/properties';
-import { nextNumber, toTransferPayload, type TransferHeaderRow } from '../../_lib/stock-ops';
+import { nextNumber, toTransferPayload, stockShortages, shortageText, type TransferHeaderRow } from '../../_lib/stock-ops';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
 const LIST_SQL = `
@@ -31,6 +31,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const raw = Array.isArray(b.lines) ? (b.lines as Record<string, unknown>[]) : [];
   const lines = raw.map(l => ({ itemCode: String(l.itemCode ?? '').trim(), description: strOrNull(l.description), qty: Math.max(0, intOrNull(l.qty) ?? 0) })).filter(l => l.itemCode && l.qty > 0);
   if (!lines.length) return fail('VALIDATION', 'Add at least one line with a quantity.', 422, { lines: 'Add a line.' });
+  // Houzs refuses a transfer the source warehouse can't cover, with no override.
+  const short = await stockShortages(env, from, lines);
+  if (short.length) return fail('INSUFFICIENT_STOCK', `Not enough stock to transfer. ${await shortageText(env, from, short)}.`, 409, { lines: 'Not enough stock at the source warehouse.' });
 
   const id = genId('trf');
   const transferNumber = await nextNumber(env, 'stock_transfers', 'transfer_number', 'TRF');

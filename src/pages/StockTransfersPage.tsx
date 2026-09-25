@@ -82,10 +82,16 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
   const built = () => lines.filter(l => l.itemCode.trim() && (Number(l.qty) || 0) > 0).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), qty: Number(l.qty) || 0 }));
   const canSave = canWrite && from !== '' && to !== '' && from !== to && built().length > 0;
 
-  function submit() {
+  const [busy, setBusy] = useState(false);
+
+  // Waits for the server: a refused transfer (source can't cover it) must not show as posted.
+  async function submit() {
     const b = built();
-    api.post('/stock-transfers', { fromWarehouseId: from, toWarehouseId: to, transferDate: tdate, notes, lines: b }).catch(notifyFailure);
-    onCreated({ id: `trf-new-${crypto.randomUUID().slice(0, 8)}`, transferNumber: `TRF-${new Date().getFullYear()}-NEW`, fromName: warehouses.find(w => w.id === from)?.name ?? '', toName: warehouses.find(w => w.id === to)?.name ?? '', fromWarehouseId: from, toWarehouseId: to, transferDate: tdate, status: 'POSTED', notes, lines: b });
+    setBusy(true);
+    try {
+      const r = await api.post<{ id: string; transferNumber: string }>('/stock-transfers', { fromWarehouseId: from, toWarehouseId: to, transferDate: tdate, notes, lines: b });
+      onCreated({ id: r.id, transferNumber: r.transferNumber, fromName: warehouses.find(w => w.id === from)?.name ?? '', toName: warehouses.find(w => w.id === to)?.name ?? '', fromWarehouseId: from, toWarehouseId: to, transferDate: tdate, status: 'POSTED', notes, lines: b });
+    } catch (e) { notifyFailure(e); } finally { setBusy(false); }
   }
 
   return (
@@ -121,7 +127,7 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
       </div>
       <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick two different warehouses and add a line" onClick={submit}>Post transfer</Button>
+        <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick two different warehouses and add a line" loading={busy} onClick={() => void submit()}>Post transfer</Button>
       </div>
     </Drawer>
   );

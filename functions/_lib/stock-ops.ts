@@ -45,5 +45,29 @@ export async function nextNumber(env: Env, table: string, col: string, prefix: s
 /** On-hand for one item in one warehouse (running sum of the ledger). */
 export async function onHandOf(env: Env, itemCode: string, warehouseId: string): Promise<number> {
   const r = await one<{ h: number }>(env, 'SELECT COALESCE(SUM(qty_delta), 0) AS h FROM stock_movements WHERE item_code = ? AND warehouse_id = ?', itemCode, warehouseId);
-  return r?.h ?? 0;
+  return Number(r?.h ?? 0);
+}
+
+export interface StockShortage { itemCode: string; needed: number; available: number; short: number }
+
+/** Items these outgoing quantities would take below zero at one warehouse. The ledger itself
+ *  allows negative stock (as in Houzs); each caller decides whether a shortage refuses outright
+ *  or only asks. Repeated item codes are summed first, so two lines of the same item are judged
+ *  together. Run it before writing anything, so a refusal leaves nothing changed. */
+export async function stockShortages(env: Env, warehouseId: string, outgoing: { itemCode: string; qty: number }[]): Promise<StockShortage[]> {
+  const byItem = new Map<string, number>();
+  for (const o of outgoing) if (o.qty > 0) byItem.set(o.itemCode, (byItem.get(o.itemCode) ?? 0) + o.qty);
+  const out: StockShortage[] = [];
+  for (const [itemCode, needed] of byItem) {
+    const available = await onHandOf(env, itemCode, warehouseId);
+    if (needed > available) out.push({ itemCode, needed, available, short: needed - Math.max(0, available) });
+  }
+  return out;
+}
+
+/** "SF-3S at Main Warehouse: need 5, available 1 (short 4)" per item — Houzs's wording. */
+export async function shortageText(env: Env, warehouseId: string, s: StockShortage[]): Promise<string> {
+  const wh = await one<{ name: string }>(env, 'SELECT name FROM warehouses WHERE id = ?', warehouseId);
+  const at = wh?.name ?? 'this warehouse';
+  return s.map(x => `${x.itemCode} at ${at}: need ${x.needed}, available ${x.available} (short ${x.short})`).join('; ');
 }

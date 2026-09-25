@@ -78,11 +78,14 @@ export default function GoodsReceiptsPage() {
     toast({ tone: 'success', title: 'Goods received.', body: `${grn.grnNumber} · ${grn.supplierName}` });
     setDrawer(null);
   }
-  function cancel(g: Grn) {
-    setEdits(e => ({ ...e, [g.id]: { ...e[g.id], status: 'CANCELLED' } }));
-    api.patch(`/goods-receipts/${g.id}`, { status: 'CANCELLED' }).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Goods receipt cancelled.', body: g.grnNumber });
-    setDrawer(null);
+  // Waits for the server: it refuses once the received goods have already left the warehouse.
+  async function cancel(g: Grn) {
+    try {
+      await api.patch(`/goods-receipts/${g.id}`, { status: 'CANCELLED' });
+      setEdits(e => ({ ...e, [g.id]: { ...e[g.id], status: 'CANCELLED' } }));
+      toast({ tone: 'success', title: 'Goods receipt cancelled.', body: g.grnNumber });
+      setDrawer(null);
+    } catch (e) { notifyFailure(e); }
   }
 
   return (
