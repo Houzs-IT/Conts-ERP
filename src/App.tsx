@@ -85,6 +85,7 @@ const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const AuditPage = lazy(() => import('./pages/AuditPage'));
 const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
+const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
 const FieldTodayPage = lazy(() => import('./pages/FieldTodayPage'));
 const OwnerPortalPage = lazy(() => import('./pages/OwnerPortalPage'));
 
@@ -175,6 +176,13 @@ function Routed() {
         <Route path="/sales/invoices" element={<SalesInvoicesPage />} />
         <Route path="/sales/returns" element={<SalesReturnsPage />} />
         <Route path="/sales/amendments" element={<SalesOrderAmendmentPage />} />
+        {/* Target-nav items whose screens are being built out (placeholders keep nav complete). */}
+        <Route path="/consignment/order" element={<PlaceholderPage title="Consignment order" />} />
+        <Route path="/consignment/return" element={<PlaceholderPage title="Consignment return" />} />
+        <Route path="/consignment/purchase-receive" element={<PlaceholderPage title="Purchase consignment receive" />} />
+        <Route path="/consignment/purchase-return" element={<PlaceholderPage title="Purchase consignment return" />} />
+        <Route path="/procurement/po-amendments" element={<PlaceholderPage title="PO amendments" />} />
+        <Route path="/procurement/cancellations" element={<PlaceholderPage title="Cancellation requests" />} />
         <Route path="/sales/unbilled" element={<UnbilledDeliveriesPage />} />
         <Route path="/transport/drivers" element={<DriversPage />} />
         <Route path="/transport/vehicles" element={<VehiclesPage />} />
