@@ -114,7 +114,8 @@ export const NAV: NavGroup[] = [
  *  Audit trail matches functions/api/audit/index.ts's AUDIT_ROLES (management, operations_manager,
  *  finance_admin) — keep the two in sync. */
 const DENY: Partial<Record<UserRole, string[]>> = {
-  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'audit'],
+  // salesInvoices / purchaseInvoices match MONEY_ONLY in functions/api/_middleware.ts.
+  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'audit', 'salesInvoices', 'purchaseInvoices'],
   finance_admin: ['operations', 'comms'],
   housekeeper: ['*'],
   technician: ['*'],
@@ -125,7 +126,8 @@ export function navFor(role: UserRole): NavGroup[] {
   const deny = DENY[role] ?? [];
   if (deny.includes('*')) return [];
   return NAV
-    .map(g => ({ ...g, items: g.items.filter(i => !deny.includes(i.key)) }))
+    .map(g => ({ ...g, items: g.items.filter(i => !deny.includes(i.key))
+      .map(i => i.children ? { ...i, children: i.children.filter(c => !deny.includes(c.key)) } : i) }))
     .filter(g => g.items.length > 0);
 }
 
