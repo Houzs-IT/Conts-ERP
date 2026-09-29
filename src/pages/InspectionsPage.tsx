@@ -97,9 +97,7 @@ export default function InspectionsPage() {
   const { data, loading, error, reload } = useApi<Payload>('/inspections', FALLBACK);
   const toast = useToast();
 
-  // Optimistic overlay keyed by inspection id. There is no backend in dev, so
-  // every real call is attempted and its failure swallowed — the interaction
-  // still lands. See IMPL-BRIEF: the optimistic-local-state pattern.
+  // Overlay keyed by inspection id: a change shows at once and is rolled back if the server refuses.
   const [edits, setEdits] = useState<Record<string, Partial<Inspection>>>({});
   const [filter, setFilter] = useState<Filter>('All');
   const [openId, setOpenId] = useState<string | null>(null);
@@ -112,7 +110,12 @@ export default function InspectionsPage() {
 
   const patch = (id: string, delta: Partial<Inspection>) =>
     setEdits(e => ({ ...e, [id]: { ...e[id], ...delta } }));
-  const fire = (p: Promise<unknown>) => { void p.catch(notifyFailure); };
+  /** Show `delta` now, run `call`, then `ok()` on success or restore the previous overlay on failure. */
+  function tryEdit(id: string, delta: Partial<Inspection>, call: () => Promise<unknown>, ok?: () => void) {
+    const prev = edits[id];
+    patch(id, delta);
+    call().then(() => { ok?.(); reload(); }).catch(err => { setEdits(e => ({ ...e, [id]: prev ?? {} })); notifyFailure(err); });
+  }
 
   const active = openId ? rows.find(r => r.id === openId) ?? null : null;
 
@@ -120,9 +123,8 @@ export default function InspectionsPage() {
 
   function startInspection(i: Inspection) {
     if (i.state === 'assigned' || i.state === 'open') {
-      patch(i.id, { state: 'in_progress' });
-      toast({ tone: 'info', title: 'Inspection started.', body: `Checklist opened for ${unitRef(i)}.` });
-      fire(api.post(`/inspections/${i.id}/start`, {}));
+      tryEdit(i.id, { state: 'in_progress' }, () => api.post(`/inspections/${i.id}/start`, {}),
+        () => toast({ tone: 'info', title: 'Inspection started.', body: `Checklist opened for ${unitRef(i)}.` }));
     }
     setOpenId(i.id);
   }
@@ -131,11 +133,8 @@ export default function InspectionsPage() {
     const current = i.checklist[idx];
     const next = current.ok === ok ? null : ok; // second click on the same choice clears it
     const checklist = i.checklist.map((c, n) => n === idx ? { ...c, ok: next } : c);
-    patch(i.id, {
-      checklist,
-      state: i.state === 'assigned' || i.state === 'open' ? 'in_progress' : i.state,
-    });
-    fire(api.post(`/inspections/${i.id}/items`, { item: current.item, result: next }));
+    tryEdit(i.id, { checklist, state: i.state === 'assigned' || i.state === 'open' ? 'in_progress' : i.state },
+      () => api.post(`/inspections/${i.id}/items`, { item: current.item, result: next }));
   }
 
   async function raiseIssue(i: Inspection, idx: number) {
@@ -148,9 +147,8 @@ export default function InspectionsPage() {
       const ref = `MNT-${made.id.replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase()}`;
       const note = item.note?.trim() ? item.note : `Raised as ${ref}.`;
       const checklist = i.checklist.map((c, n) => n === idx ? { ...c, linkedIssue: ref, note } : c);
-      patch(i.id, { checklist });
       toast({ tone: 'success', title: 'Maintenance issue raised.', body: `${ref} raised for "${item.item}".` });
-      fire(api.post(`/inspections/${i.id}/items`, { item: item.item, result: false, note, linkedIssue: made.id }));
+      tryEdit(i.id, { checklist }, () => api.post(`/inspections/${i.id}/items`, { item: item.item, result: false, note, linkedIssue: made.id }));
     } catch (e) {
       toast({ tone: 'critical', title: 'Could not raise the issue.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
     }
@@ -162,26 +160,23 @@ export default function InspectionsPage() {
   }
 
   function completePass(i: Inspection) {
-    patch(i.id, { state: 'resolved', passed: true, inspectedAt: nowStamp() });
     setConfirm(null);
     setOpenId(null);
-    toast({
-      tone: 'success', title: 'Inspection passed.',
-      body: `${unitRef(i)} is released for check-in. The unit now shows ready.`,
-    });
-    fire(api.post(`/inspections/${i.id}/complete`, { result: 'pass', checklist: i.checklist }));
+    tryEdit(i.id, { state: 'resolved', passed: true, inspectedAt: nowStamp() },
+      () => api.post(`/inspections/${i.id}/complete`, { result: 'pass', checklist: i.checklist }),
+      () => toast({ tone: 'success', title: 'Inspection passed.', body: `${unitRef(i)} is released for check-in. The unit now shows ready.` }));
   }
 
   function completeFail(i: Inspection) {
     const failedCount = i.checklist.filter(c => c.ok === false).length;
-    patch(i.id, { state: 'reopened', passed: false, inspectedAt: nowStamp() });
     setConfirm(null);
     setOpenId(null);
-    toast({
-      tone: 'warning', title: 'Inspection failed.',
-      body: `${unitRef(i)} stays off check-in. ${failedCount} ${failedCount === 1 ? 'item is' : 'items are'} tracked as maintenance.`,
-    });
-    fire(api.post(`/inspections/${i.id}/complete`, { result: 'fail', checklist: i.checklist }));
+    tryEdit(i.id, { state: 'reopened', passed: false, inspectedAt: nowStamp() },
+      () => api.post(`/inspections/${i.id}/complete`, { result: 'fail', checklist: i.checklist }),
+      () => toast({
+        tone: 'warning', title: 'Inspection failed.',
+        body: `${unitRef(i)} stays off check-in. ${failedCount} ${failedCount === 1 ? 'item is' : 'items are'} tracked as maintenance.`,
+      }));
   }
 
   // ---- Derived -------------------------------------------------------------

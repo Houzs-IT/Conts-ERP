@@ -15,9 +15,9 @@ if (open) {
   r = await call('PATCH', `/api/housekeeping/tasks/${open.id}`, { scheduledFor: '09:00', dueAt: '11:00' }); check('reschedule', r.status === 200, r.text);
   r = await call('PATCH', `/api/housekeeping/tasks/${open.id}`, { scheduledFor: '11:00', dueAt: '09:00' }); check('reschedule bad 422', r.status === 422, r.text);
   r = await call('POST', `/api/housekeeping/tasks/${open.id}/start`, {}, 'housekeeper'); check('start as the assigned cleaner', r.status === 200, r.text);
-  r = await call('POST', `/api/tasks/${open.id}/photos`, {}, 'housekeeper'); check('photos honest 501 without R2', r.status === 501, r.text);
-  r = await call('POST', `/api/tasks/${open.id}/complete`, { photoIds: [] }, 'housekeeper'); check('complete (photo waived, no storage)', r.status === 200 && r.json.photoWaived !== undefined, r.text);
-  r = await call('GET', '/api/tasks'); check('task now resolved', r.json.data.find(x => x.id === open.id)?.state === 'resolved', '');
+  r = await call('POST', `/api/tasks/${open.id}/photos`, {}, 'housekeeper'); check('photo upload with no file refused (422)', r.status === 422, r.text);
+  r = await call('POST', `/api/tasks/${open.id}/complete`, { photoIds: [] }, 'housekeeper'); check('complete without a photo refused (PHOTO_REQUIRED)', r.status === 422 && r.json?.error?.code === 'PHOTO_REQUIRED', r.text);
+  r = await call('GET', '/api/tasks'); check('task stays open after the refusal', r.json.data.find(x => x.id === open.id)?.state !== 'resolved', '');
 }
 r = await call('PUT', '/api/housekeeping/rules', { rule: 'building' }); check('rule set', r.status === 200, r.text);
 r = await call('PUT', '/api/housekeeping/rules', { rule: 'bogus' }); check('rule bad 422', r.status === 422, r.text);

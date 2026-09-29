@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -111,13 +111,16 @@ export default function BookingsPage() {
   const rawField = params.get('field') ?? '';
   const field: ColKey | '' = COLUMNS.some(c => c.key === rawField) ? (rawField as ColKey) : '';
 
-  const [added, setAdded] = useState<Row[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Row>>>({});
   const [openId, setOpenId] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogSpec | null>(null);
   const [busy, setBusy] = useState(false);
 
   const [creating, setCreating] = useState(false);
+  // Guests' "Book again" passes the guest in router state (kept out of the URL). Captured when the
+  // form opens, because stripping the create flag below replaces the location and drops the state.
+  const location = useLocation();
+  const [prefill, setPrefill] = useState<{ guestName?: string; phone?: string; email?: string } | null>(null);
   const [importRows, setImportRows] = useState<ParsedRow[] | null>(null);
   // The message modal targets a specific reservation — the drawer's open row, or
   // any row via its per-row chat icon — so it is keyed by row, not a bare boolean.
@@ -129,16 +132,17 @@ export default function BookingsPage() {
   // refresh or a close does not reopen it.
   useEffect(() => {
     if (params.get('create') === '1') {
+      setPrefill((location.state ?? null) as typeof prefill);
       setCreating(true);
       const next = new URLSearchParams(params);
       next.delete('create');
       setParams(next, { replace: true });
     }
-  }, [params, setParams]);
+  }, [params, setParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rows = useMemo(
-    () => [...added, ...(data?.data ?? [])].map(r => ({ ...r, ...edits[r.id] })),
-    [data, edits, added],
+    () => (data?.data ?? []).map(r => ({ ...r, ...edits[r.id] })),
+    [data, edits],
   );
 
   const filtered = rows.filter(r => {
@@ -201,29 +205,23 @@ export default function BookingsPage() {
     });
   }
 
-  // ---- Create reservation (POST /reservations) — optimistic add ----
-  function createReservation(input: {
+  // ---- Create reservation (POST /reservations); the row appears once the server has saved it ----
+  async function createReservation(input: {
     unitId: string; channel: BookingChannel; guestName: string; phone: string; email: string;
     checkIn: string; checkOut: string; guestsCount: number; grossSen: number;
   }) {
     const unit = UNITS.find(u => u.id === input.unitId) ?? UNITS[0];
     if (!unit) return;
-    const id = crypto.randomUUID();
-    const row: Row = {
-      id, externalRef: `MAN-${id.slice(0, 6).toUpperCase()}`, guestName: input.guestName, guestsCount: input.guestsCount,
-      guestPhone: input.phone || null, unitNumber: unit.unitNumber, propertyName: unit.propertyName,
-      channel: input.channel, state: 'confirmed', checkIn: input.checkIn, checkOut: input.checkOut,
-      checkInTime: '15:00', checkOutTime: '11:00', nights: nightsBetween(input.checkIn, input.checkOut),
-      grossBookingValue: input.grossSen, paidAt: null, receivedAt: nowStamp(),
-    };
-    setAdded(a => [row, ...a]);
-    setCreating(false);
-    toast({ tone: 'success', title: 'Reservation created.', body: `${input.guestName} · ${unit.propertyName} ${unit.unitNumber} · ${dateRange(input.checkIn, input.checkOut)}.` });
-    api.post('/reservations', {
-      unitId: input.unitId, channel: input.channel,
-      guest: { fullName: input.guestName, email: input.email || null, phone: input.phone || null },
-      checkIn: input.checkIn, checkOut: input.checkOut, guestsCount: input.guestsCount, grossBookingValue: input.grossSen,
-    }).catch(notifyFailure);
+    try {
+      await api.post('/reservations', {
+        unitId: input.unitId, channel: input.channel,
+        guest: { fullName: input.guestName, email: input.email || null, phone: input.phone || null },
+        checkIn: input.checkIn, checkOut: input.checkOut, guestsCount: input.guestsCount, grossBookingValue: input.grossSen,
+      });
+      setCreating(false);
+      toast({ tone: 'success', title: 'Reservation created.', body: `${input.guestName} · ${unit.propertyName} ${unit.unitNumber} · ${dateRange(input.checkIn, input.checkOut)}.` });
+      reload();
+    } catch (e) { notifyFailure(e); }
   }
 
   // ---- Import reservations (CSV) ----
@@ -236,25 +234,30 @@ export default function BookingsPage() {
     reader.onload = () => setImportRows(buildImport(String(reader.result ?? ''), UNITS));
     reader.readAsText(file);
   }
-  function commitImport() {
+  // Reports the server's own count: rows it refused (e.g. clashing dates) are counted as rejected.
+  async function commitImport() {
     if (!importRows) return;
     const valid = importRows.filter(p => p.row).map(p => p.row!);
+    let created = 0, refused = 0;
     if (valid.length) {
-      setAdded(a => [...valid, ...a]);
-      api.post('/reservations/import', {
-        rows: valid.map(r => ({
-          unitNumber: r.unitNumber, channel: r.channel, guest: { fullName: r.guestName, phone: r.guestPhone },
-          checkIn: r.checkIn, checkOut: r.checkOut, guestsCount: r.guestsCount, grossBookingValue: r.grossBookingValue,
-        })),
-      }).catch(notifyFailure);
+      try {
+        const r = await api.post<{ created: number; failed: unknown[] }>('/reservations/import', {
+          rows: valid.map(r => ({
+            unitNumber: r.unitNumber, channel: r.channel, guest: { fullName: r.guestName, phone: r.guestPhone },
+            checkIn: r.checkIn, checkOut: r.checkOut, guestsCount: r.guestsCount, grossBookingValue: r.grossBookingValue,
+          })),
+        });
+        created = r.created; refused = r.failed?.length ?? 0;
+      } catch (e) { notifyFailure(e); return; }
     }
-    const rejected = importRows.length - valid.length;
+    const rejected = importRows.length - valid.length + refused;
     toast({
-      tone: valid.length ? 'success' : 'warning',
-      title: valid.length ? `Imported ${valid.length} ${valid.length === 1 ? 'reservation' : 'reservations'}.` : 'Nothing imported.',
+      tone: created ? 'success' : 'warning',
+      title: created ? `Imported ${created} ${created === 1 ? 'reservation' : 'reservations'}.` : 'Nothing imported.',
       body: rejected ? `${rejected} ${rejected === 1 ? 'row was' : 'rows were'} rejected and left out.` : 'Every row was accepted.',
     });
     setImportRows(null);
+    reload();
   }
 
   // ---- Export / Download CSV of the currently filtered rows ----
@@ -286,30 +289,30 @@ export default function BookingsPage() {
     const r = messageRow;
     if (!r) return;
     const ch = r.channel === 'direct' ? 'WhatsApp' : CHANNEL_META[r.channel].label;
-    toast({ tone: 'success', title: `Message sent to ${r.guestName}.`, body: `Thread opened on ${ch}.` });
-    api.post('/messages', { reservationId: r.id, body }).catch(notifyFailure);
-    setMessageRow(null);
+    api.post('/messages', { reservationId: r.id, body })
+      .then(() => { setMessageRow(null); toast({ tone: 'success', title: `Message sent to ${r.guestName}.`, body: `Thread opened on ${ch}.` }); })
+      .catch(notifyFailure);
   }
 
-  // ---- Drawer → Duplicate booking (POST /reservations/:id/duplicate) — optimistic clone ----
+  // ---- Drawer → Duplicate booking (POST /reservations/:id/duplicate); opens the real copy once saved ----
   function duplicateReservation(r: Row) {
-    const id = crypto.randomUUID();
-    const clone: Row = {
-      ...r, id, externalRef: `MAN-${id.slice(0, 6).toUpperCase()}`,
-      state: 'confirmed', paidAt: null, receivedAt: nowStamp(),
-    };
-    setAdded(a => [clone, ...a]);
-    setOpenId(clone.id);
-    toast({ tone: 'success', title: 'Reservation duplicated.', body: `${r.guestName} · ${clone.propertyName} ${clone.unitNumber} · ${dateRange(clone.checkIn, clone.checkOut)}. Adjust the dates as needed.` });
-    api.post(`/reservations/${r.id}/duplicate`, {}).catch(notifyFailure);
+    api.post<{ id: string }>(`/reservations/${r.id}/duplicate`, {})
+      .then(res => {
+        setOpenId(res.id);
+        toast({ tone: 'success', title: 'Reservation duplicated.', body: `${r.guestName} · ${r.propertyName} ${r.unitNumber}. Adjust the dates as needed.` });
+        reload();
+      })
+      .catch(notifyFailure);
   }
 
-  // ---- Drawer → Quick status update (PATCH /reservations/:id) — optimistic ----
+  // ---- Drawer → Quick status update (PATCH /reservations/:id); rolled back if refused ----
   function updateStatus(r: Row, status: ReservationState) {
     if (status === r.state) return;
+    const prev = edits[r.id];
     patch(r.id, { state: status });
-    api.patch(`/reservations/${r.id}`, { status }).catch(notifyFailure);
-    toast({ tone: 'neutral', title: 'Status updated.', body: `${r.externalRef ?? 'Reservation'} is now ${STATE_LABEL[status]}.` });
+    api.patch(`/reservations/${r.id}`, { status })
+      .then(() => { toast({ tone: 'neutral', title: 'Status updated.', body: `${r.externalRef ?? 'Reservation'} is now ${STATE_LABEL[status]}.` }); reload(); })
+      .catch(err => { setEdits(e => ({ ...e, [r.id]: prev ?? {} })); notifyFailure(err); });
   }
 
   // ---- Drawer → Change dates (PATCH /reservations/:id/dates) — optimistic ----
@@ -325,7 +328,7 @@ export default function BookingsPage() {
 
   return (
     <>
-      <PageHeader title="Bookings" sub={`${(data?.total ?? rows.length) + added.length} reservations`}
+      <PageHeader title="Bookings" sub={`${data?.total ?? rows.length} reservations`}
         right={<div className="flex gap-[9px] flex-wrap">
           <Button size="sm" variant="secondary" icon={<Icon name="Upload" size="sm" />} onClick={pickImportFile}>Import</Button>
           <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportCsv} disabled={shown.length === 0} disabledReason="Nothing to export for this filter yet.">Download CSV</Button>
@@ -424,7 +427,7 @@ export default function BookingsPage() {
       </Drawer>
       <Dialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
 
-      {creating && <CreateReservationModal units={UNITS} onClose={() => setCreating(false)} onCreate={createReservation} />}
+      {creating && <CreateReservationModal units={UNITS} prefill={prefill} onClose={() => setCreating(false)} onCreate={createReservation} />}
       {importRows && <ImportPreviewModal rows={importRows} onClose={() => setImportRows(null)} onConfirm={commitImport} />}
       {messageRow && <MessageModal r={messageRow} onClose={() => setMessageRow(null)} onSend={sendGuestMessage} />}
       {open && datesOpen && <ChangeDatesModal r={open} onClose={() => setDatesOpen(false)} onConfirm={submitChangeDates} />}
@@ -682,16 +685,17 @@ function Modal({ title, sub, onClose, children, maxWidth = 460 }: { title: strin
   );
 }
 
-function CreateReservationModal({ units: UNITS, onClose, onCreate }: {
+function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
   units: RosterUnit[];
+  prefill?: { guestName?: string; phone?: string; email?: string } | null;
   onClose: () => void;
   onCreate: (input: { unitId: string; channel: BookingChannel; guestName: string; phone: string; email: string; checkIn: string; checkOut: string; guestsCount: number; grossSen: number }) => void;
 }) {
   const [unitId, setUnitId] = useState(UNITS[0]?.id ?? '');
   const [channel, setChannel] = useState<BookingChannel>('direct');
-  const [guestName, setGuestName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
+  const [guestName, setGuestName] = useState(prefill?.guestName ?? '');
+  const [phone, setPhone] = useState(prefill?.phone ?? '');
+  const [email, setEmail] = useState(prefill?.email ?? '');
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [guestsCount, setGuestsCount] = useState('2');

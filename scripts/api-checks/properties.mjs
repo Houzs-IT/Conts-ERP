@@ -27,7 +27,7 @@ r = await call('GET', '/api/access-credentials'); const a = r.json.data[0]; chec
 r = await call('GET', `/api/access-credentials/${a.id}?reveal=true`); check('reveal as management', r.status === 200 && typeof r.json.secret === 'string' && !/•/.test(r.json.secret), r.text);
 r = await call('GET', `/api/access-credentials/${a.id}?reveal=true`, undefined, 'finance_admin'); check('reveal as finance 403', r.status === 403, r.text);
 r = await call('GET', `/api/access-credentials/${a.id}`); check('reveal needs explicit flag 422', r.status === 422, r.text);
-r = await call('GET', '/api/access-credentials'); check('last revealed recorded', r.json.data.find(x => x.id === a.id).lastRevealedBy === 'Lee Wei Siang', JSON.stringify(r.json.data.find(x => x.id === a.id)));
+r = await call('GET', '/api/access-credentials'); check('last revealed recorded', r.json.data.find(x => x.id === a.id).lastRevealedBy === 'Test Bot (management)', JSON.stringify(r.json.data.find(x => x.id === a.id)));
 r = await call('GET', '/api/access-credentials', undefined, 'housekeeper'); check('field role gets no secret', r.json.data.every(x => x.secret === ''), '');
-r = await call('POST', '/api/documents', {}); check('documents honest 501', r.status === 501, r.text);
+r = await call('POST', '/api/documents', {}); check('document upload with no file refused (422)', r.status === 422, r.text);
 done();

@@ -71,7 +71,6 @@ export default function InventoryPage() {
   const { data, loading, error, reload } = useApi<Payload>('/inventory', FALLBACK);
   const toast = useToast();
 
-  const [added, setAdded] = useState<Item[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Item>>>({});
   const [unitFilter, setUnitFilter] = useState('all');
   const [condFilter, setCondFilter] = useState<CondFilter>('all');
@@ -79,8 +78,8 @@ export default function InventoryPage() {
   const [adding, setAdding] = useState(false);
 
   const all = useMemo(
-    () => [...added, ...(data?.data ?? [])].map(i => ({ ...i, ...edits[i.id] })),
-    [added, data, edits],
+    () => (data?.data ?? []).map(i => ({ ...i, ...edits[i.id] })),
+    [data, edits],
   );
 
   const roster = useUnitRoster();
@@ -104,24 +103,27 @@ export default function InventoryPage() {
   const dueCount = all.filter(isDue).length;
   const filtersOn = unitFilter !== 'all' || condFilter !== 'all' || dueOnly;
 
-  function patchItem(id: string, p: Partial<Item>) {
+  /** Show the change now; toast once saved, or put the old value back if the server refuses. */
+  function patchItem(id: string, p: Partial<Item>, ok: () => void) {
+    const prev = edits[id];
     setEdits(e => ({ ...e, [id]: { ...e[id], ...p } }));
-    // Dev has no backend; keep the optimistic edit and let the banner explain staleness.
-    api.patch('/inventory', { id, ...p }).catch(notifyFailure);
+    api.patch('/inventory', { id, ...p })
+      .then(() => { ok(); reload(); })
+      .catch(err => { setEdits(e => ({ ...e, [id]: prev ?? {} })); notifyFailure(err); });
   }
   function setCondition(item: Item, condition: Condition) {
-    patchItem(item.id, { condition });
-    toast({ tone: 'success', title: 'Condition updated.', body: `${item.name} marked ${COND_LABEL[condition].toLowerCase()}.` });
+    patchItem(item.id, { condition }, () => toast({ tone: 'success', title: 'Condition updated.', body: `${item.name} marked ${COND_LABEL[condition].toLowerCase()}.` }));
   }
   function saveNote(item: Item, notes: string) {
-    patchItem(item.id, { notes });
-    toast({ tone: 'success', title: notes ? 'Note saved.' : 'Note cleared.', body: item.name });
+    patchItem(item.id, { notes }, () => toast({ tone: 'success', title: notes ? 'Note saved.' : 'Note cleared.', body: item.name }));
   }
-  function addItem(input: Item) {
-    setAdded(a => [input, ...a]);
-    toast({ tone: 'success', title: 'Item added.', body: `${input.name} recorded for ${input.propertyName} ${input.unitNumber}.` });
-    api.post('/inventory', input).catch(notifyFailure);
-    setAdding(false);
+  async function addItem(input: Item) {
+    try {
+      await api.post('/inventory', input);
+      toast({ tone: 'success', title: 'Item added.', body: `${input.name} recorded for ${input.propertyName} ${input.unitNumber}.` });
+      setAdding(false);
+      reload();
+    } catch (e) { notifyFailure(e); }
   }
   function clearFilters() { setUnitFilter('all'); setCondFilter('all'); setDueOnly(false); }
 

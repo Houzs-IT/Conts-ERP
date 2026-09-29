@@ -68,16 +68,14 @@ const FALLBACK: Payload = {
 export default function PropertiesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/properties', FALLBACK);
   const toast = useToast();
-  const [addedB, setAddedB] = useState<Building[]>([]);
-  const [addedU, setAddedU] = useState<Unit[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Unit>>>({});
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<'details' | 'expenses' | 'contract'>('details');
   const [modal, setModal] = useState<null | { kind: 'building' } | { kind: 'unit'; buildingId: string } | { kind: 'subunit'; buildingId: string; parentUnitId: string; parentLabel: string }>(null);
 
-  const buildings = [...addedB, ...(data?.buildings ?? [])];
-  const units = useMemo(() => [...addedU, ...(data?.units ?? [])].map(u => ({ ...u, ...edits[u.id] })), [addedU, data, edits]);
+  const buildings = data?.buildings ?? [];
+  const units = useMemo(() => (data?.units ?? []).map(u => ({ ...u, ...edits[u.id] })), [data, edits]);
   const selected = units.find(u => u.id === selectedId) ?? units[0] ?? null;
 
   useEffect(() => { if (!selectedId && units[0]) setSelectedId(units[0].id); }, [units, selectedId]);
@@ -89,30 +87,43 @@ export default function PropertiesPage() {
   const childrenOf = (uid: string) => units.filter(u => u.parentUnitId === uid);
 
   function patch(id: string, p: Partial<Unit>) { setEdits(e => ({ ...e, [id]: { ...e[id], ...p } })); }
-  function save(u: Unit) {
-    toast({ tone: 'success', title: 'Changes saved.', body: `${u.listingName || u.unitCode} updated.` });
-    api.patch(`/units/${u.id}`, u).catch(notifyFailure);
+  // Every write waits for the server: new buildings get their id from it, and a refused
+  // save leaves the edits in place so they can be corrected and saved again.
+  async function save(u: Unit) {
+    try {
+      await api.patch(`/units/${u.id}`, u);
+      toast({ tone: 'success', title: 'Changes saved.', body: `${u.listingName || u.unitCode} updated.` });
+      setEdits(e => { const n = { ...e }; delete n[u.id]; return n; });
+      reload();
+    } catch (e) { notifyFailure(e); }
   }
-  function addBuilding(b: Omit<Building, 'id'>) {
-    const nb = { id: crypto.randomUUID(), ...b };
-    setAddedB(l => [nb, ...l]); setCollapsed(c => ({ ...c, [nb.id]: false }));
-    toast({ tone: 'success', title: 'Building added.', body: `${b.name} — add units to it.` });
-    api.post('/properties', b).catch(notifyFailure); setModal(null);
+  async function addBuilding(b: Omit<Building, 'id'>) {
+    try {
+      const r = await api.post<{ id: string }>('/properties', b);
+      setCollapsed(c => ({ ...c, [r.id]: false })); setModal(null);
+      toast({ tone: 'success', title: 'Building added.', body: `${b.name} — add units to it.` });
+      reload();
+    } catch (e) { notifyFailure(e); }
+  }
+  async function createUnit(nu: Unit, title: string, body: string) {
+    try {
+      const r = await api.post<{ id: string }>('/units', nu);
+      setSelectedId(r.id); setTab('details'); setModal(null);
+      toast({ tone: 'success', title, body });
+      reload();
+    } catch (e) { notifyFailure(e); }
   }
   function addUnit(buildingId: string) {
     const nu = mkUnit(crypto.randomUUID(), buildingId, '', '', buildings.find(b => b.id === buildingId)?.state ?? STATES[0], '', { ownerName: '' });
-    setAddedU(l => [nu, ...l]); setSelectedId(nu.id); setTab('details');
-    toast({ tone: 'success', title: 'Unit added.', body: 'Fill in its details on the right.' });
-    api.post('/units', nu).catch(notifyFailure); setModal(null);
+    void createUnit(nu, 'Unit added.', 'Fill in its details on the right.');
   }
   function addSubUnit(buildingId: string, parentUnitId: string) {
     const parent = units.find(u => u.id === parentUnitId);
     const nu = mkUnit(crypto.randomUUID(), buildingId, '', '', parent?.state ?? buildings.find(b => b.id === buildingId)?.state ?? STATES[0], '', {
       parentUnitId, ownerName: parent?.ownerName ?? '', ic: parent?.ic, bankName: parent?.bankName, bankAccount: parent?.bankAccount, accountHolder: parent?.accountHolder, split: 'Profit share',
     });
-    setAddedU(l => [nu, ...l]); setCollapsed(c => ({ ...c, [parentUnitId]: false })); setSelectedId(nu.id); setTab('details');
-    toast({ tone: 'success', title: 'Sub-unit added.', body: 'A room or floor under the unit — fill in its details on the right.' });
-    api.post('/units', nu).catch(notifyFailure); setModal(null);
+    setCollapsed(c => ({ ...c, [parentUnitId]: false }));
+    void createUnit(nu, 'Sub-unit added.', 'A room or floor under the unit — fill in its details on the right.');
   }
 
   const totalUnits = units.length;
@@ -380,13 +391,15 @@ function ContractTab({ u, onChange }: { u: Unit; onChange: (p: Partial<Unit>) =>
     toast({ tone: 'info', title: 'Preparing download', body: `${d.name} — served as a signed link.` });
     downloadFile(`/documents/${d.id}/download`).catch(notifyFailure);
   }
-  function upload(file: File) {
-    const doc = { id: crypto.randomUUID(), name: file.name };
-    onChange({ contract: { ...c, documents: [...c.documents, doc] } });
-    toast({ tone: 'success', title: 'Document uploaded.', body: `${file.name} added to this unit.` });
+  // Waits for the upload so the listed document carries the server's id and can be downloaded.
+  async function upload(file: File) {
     const fd = new FormData();
     fd.append('file', file); fd.append('unitId', u.id); fd.append('kind', 'contract');
-    api.post('/documents', fd).catch(notifyFailure);
+    try {
+      const r = await api.post<{ id: string }>('/documents', fd);
+      onChange({ contract: { ...c, documents: [...c.documents, { id: r.id, name: file.name }] } });
+      toast({ tone: 'success', title: 'Document uploaded.', body: `${file.name} added to this unit.` });
+    } catch (e) { notifyFailure(e); }
   }
   return (
     <div>

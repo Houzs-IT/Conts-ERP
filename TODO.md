@@ -10,6 +10,12 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Screens still waiting on it: Integrations (Reconnect still 501).
 - Watch: one listing must never be controlled by both the old connection and Channex; plan the import of existing bookings.
 
+## Paused: Supply Chain as a copy of Houzs (decision: option B)
+- Plan: copy Houzs's supply chain screens and server code into Conts, re-coloured gold and black, instead of re-drawing each screen. Rental side untouched.
+- Needs Houzs's `scm` tables (177) in a separate schema, a bridge from Conts sessions to Houzs's code, and Supabase's data service (service key as a Cloudflare secret, set by the owner).
+- Waiting on: schema-only dump of Houzs `scm` (pg_dump --schema-only --schema=scm, command given to the owner), and whether Conts needs AutoCount.
+- First step when resumed: pilot the Houzs sales order list inside Conts on staging.
+
 ## Later
 - Update Wrangler CLI (3.114 -> 4.x, `npm install --save-dev wrangler@4`). Not urgent, do once current work settles.
 - Update vulnerable packages (GitHub reports 1 critical, 7 high, 14 moderate, 2 low). Do in its own PR and test.
@@ -36,8 +42,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 1. Two-step login (2FA) with an authenticator app. Required for management and finance, optional for others. Backup codes, and an admin reset that is logged.
 2. Login protection through Cloudflare: Turnstile on the login page, rate limiting on login, password reset and other sensitive endpoints. Check which Cloudflare plan includes each feature.
-3. Make the Settings screen's sign-in timeouts and lockout attempts actually apply at login (saved today, not enforced).
-4. Alerts and visibility: email management on a login from a new device, repeated failed logins, or a bank-detail change; a screen for the activity log (already recorded).
+3. Alerts: email management on a login from a new device, repeated failed logins, or a bank-detail change.
 5. Restrict the staff sign-in to office addresses or put it behind Cloudflare Access (needs office network details).
 6. Data safety: turn on Supabase point-in-time backups and test one restore; limit bulk data exports.
 - To discuss later: what "bandwidth" should mean here (blocking floods of requests = item 2, or limiting how much data one user can download = item 6).
