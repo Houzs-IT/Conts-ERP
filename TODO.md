@@ -6,8 +6,9 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Decision made: Channex (WhiteLabel plan, $130/month + $0.50 per unit per month, free staging at staging.channex.io; check current price at signup).
 - Stages 1-4 are done, tested and merged to main; migrations `0003`-`0005` are applied on production too. Still inert in production — no `CHANNEX_API_KEY` set there yet.
 - Stage 4 (messages and reviews) could not get a live end-to-end test: Channex's sandbox has no way to fake an inbound message or review (unlike bookings' "Booking CRS" tool), and the shared pool of test Booking.com hotel IDs stayed occupied throughout testing. Verified instead against real staging data with Channex's API calls stubbed — see PR #8. Worth a real look once an actual guest message/review comes in, or once stage 5 connects a real listing.
-- Next: stage 5 (one real listing, real OTA connections, wire the Integrations screen's Reconnect button — Retry-sync already works for airbnb/booking_com/agoda). Needs a paid Channex account first.
-- Screens still waiting on it: Integrations (Reconnect still 501).
+- Stage 5 built (feat/channex-stage5): CHANNEX_BASE_URL per environment (wrangler.toml), "Set up in Channex" on a unit creates its listing (apartment, MYR, one room, standard rate) and opens a year of dates; "Connect channels" opens Channex's channel screen for that unit. Tested on the sandbox: scripts/api-checks/channex-stage5.mjs.
+- Open: the embedded channel screen crashes inside Channex's own page on the free sandbox (after the one-time token is accepted). Ask Channex support at signup to enable the channel iframe (WhiteLabel) for the account; fallback is connecting channels in Channex's own dashboard.
+- Go-live needs: paid account, CHANNEX_API_KEY + CHANNEX_WEBHOOK_SECRET on production, webhook registered (channex-webhook-setup), then one pilot unit.
 - Watch: one listing must never be controlled by both the old connection and Channex; plan the import of existing bookings.
 
 ## Paused: Supply Chain as a copy of Houzs (decision: option B)

@@ -13,6 +13,8 @@ export interface Env {
   CHANNEX_API_KEY?: string;
   /** Shared secret Channex sends back as X-Channex-Webhook-Secret on every webhook call, so we can tell a real Channex call from anyone else who finds the URL. */
   CHANNEX_WEBHOOK_SECRET?: string;
+  /** Channex server (wrangler.toml var): https://staging.channex.io on preview, https://app.channex.io on production. */
+  CHANNEX_BASE_URL?: string;
 }
 
 // count(*) and sum() come back from Postgres as strings (int8 / numeric). The API

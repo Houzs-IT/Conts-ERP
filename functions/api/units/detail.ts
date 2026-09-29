@@ -117,6 +117,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     unit: {
       id: unit.id,
       unitNumber: unit.unit_number,
+      channexLinked: !!unit.channex_property_id,
       propertyId: unit.property_id,
       propertyName: unit.property_name,
       addressLine: unit.address_line,
