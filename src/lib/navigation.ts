@@ -1,9 +1,11 @@
 import type { UserRole } from './types';
 
-export interface NavChild { key: string; label: string; path: string; badge?: string; designed?: boolean }
+/** `badge` names a live count from /api/nav/badges; shown only when above zero. */
+export type BadgeKey = 'today' | 'maintenance' | 'inbox' | 'statements';
+export interface NavChild { key: string; label: string; path: string; badge?: BadgeKey; designed?: boolean }
 export interface NavItem {
   key: string; label: string; icon: string; path?: string;
-  badge?: string; designed?: boolean; children?: NavChild[];
+  badge?: BadgeKey; designed?: boolean; children?: NavChild[];
 }
 export interface NavGroup { label: string; items: NavItem[] }
 
@@ -19,10 +21,10 @@ export const NAV: NavGroup[] = [
       { key: 'bookings', label: 'Bookings', path: '/reservations/bookings', designed: true },
       { key: 'guests', label: 'Guests', path: '/reservations/guests', designed: true },
     ] },
-    { key: 'operations', label: 'Operations', icon: 'clipboard-check', badge: '7', children: [
-      { key: 'today', label: 'Today', path: '/operations/today', badge: '7', designed: true },
+    { key: 'operations', label: 'Operations', icon: 'clipboard-check', badge: 'today', children: [
+      { key: 'today', label: 'Today', path: '/operations/today', badge: 'today', designed: true },
       { key: 'housekeeping', label: 'Housekeeping', path: '/operations/housekeeping', designed: true },
-      { key: 'maintenance', label: 'Maintenance', path: '/operations/maintenance', badge: '3', designed: true },
+      { key: 'maintenance', label: 'Maintenance', path: '/operations/maintenance', badge: 'maintenance', designed: true },
       { key: 'tasks', label: 'Tasks', path: '/operations/tasks', designed: true },
       { key: 'inspections', label: 'Inspections', path: '/operations/inspections', designed: true },
     ] },
@@ -84,10 +86,10 @@ export const NAV: NavGroup[] = [
     ] },
   ] },
   { label: 'FINANCE', items: [
-    { key: 'finance', label: 'Finance', icon: 'wallet', badge: '2', children: [
+    { key: 'finance', label: 'Finance', icon: 'wallet', badge: 'statements', children: [
       { key: 'revenue', label: 'Revenue', path: '/finance/revenue', designed: true },
       { key: 'expenses', label: 'Expenses', path: '/finance/expenses', designed: true },
-      { key: 'statements', label: 'Owner statements', path: '/finance/statements', badge: '2', designed: true },
+      { key: 'statements', label: 'Owner statements', path: '/finance/statements', badge: 'statements', designed: true },
       { key: 'payouts', label: 'Payouts', path: '/finance/payouts', designed: true },
     ] },
     { key: 'owners', label: 'Owners', icon: 'users', children: [
@@ -101,8 +103,8 @@ export const NAV: NavGroup[] = [
       { key: 'pricing', label: 'Pricing', path: '/performance/pricing', designed: true },
       { key: 'reviews', label: 'Reviews', path: '/performance/reviews', designed: true },
     ] },
-    { key: 'comms', label: 'Communication', icon: 'inbox', badge: '5', children: [
-      { key: 'inbox', label: 'Inbox', path: '/communication/inbox', badge: '5', designed: true },
+    { key: 'comms', label: 'Communication', icon: 'inbox', badge: 'inbox', children: [
+      { key: 'inbox', label: 'Inbox', path: '/communication/inbox', badge: 'inbox', designed: true },
       { key: 'automations', label: 'Automations', path: '/communication/automations', designed: true },
     ] },
   ] },

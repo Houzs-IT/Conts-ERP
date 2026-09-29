@@ -1,6 +1,7 @@
-import { type CSSProperties, useState } from 'react';
+import { type CSSProperties, useEffect, useState } from 'react';
 import { color, shell, radius, motion, text } from '../theme';
-import { navFor, NAV } from '../lib/navigation';
+import { navFor, NAV, type BadgeKey } from '../lib/navigation';
+import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import Icon, { toPascal } from './Icon';
 import { Logo } from './Logo';
@@ -20,6 +21,11 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   const [profileOpen, setProfileOpen] = useState(false);
   const activeParent = parentOf(path);
   const groups = navFor(user!.role);
+  // Refetched on every page change so a count drops as soon as the work is done.
+  const counts = useApi<Record<BadgeKey, number>>('/nav/badges');
+  const reloadCounts = counts.reload;
+  useEffect(() => { reloadCounts(); }, [path]); // eslint-disable-line react-hooks/exhaustive-deps
+  const countOf = (k?: BadgeKey) => (k && counts.data?.[k]) || 0;
 
   const badge = (on: boolean): CSSProperties => ({
     fontSize: text.micro, fontWeight: 600, padding: '1px 6px', borderRadius: radius.pill, flex: 'none',
@@ -92,7 +98,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                   >
                     <Icon name={toPascal(it.icon)} size="nav" />
                     {open && <span style={{ flex: 1, minWidth: 0, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.label}</span>}
-                    {open && it.badge && <span style={badge(selfActive)}>{it.badge}</span>}
+                    {open && countOf(it.badge) > 0 && <span style={badge(selfActive)}>{countOf(it.badge)}</span>}
                     {open && it.children && (
                       <span style={{ display: 'flex', opacity: 0.6, transition: `transform 180ms ${motion.ease}`, transform: `rotate(${isOpen ? 90 : 0}deg)` }}>
                         <Icon name="ChevronRight" size="sm" />
@@ -115,7 +121,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                               fontWeight: on ? 500 : 400,
                             }}>
                             <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</span>
-                            {c.badge && <span style={badge(on)}>{c.badge}</span>}
+                            {countOf(c.badge) > 0 && <span style={badge(on)}>{countOf(c.badge)}</span>}
                           </button>
                         );
                       })}

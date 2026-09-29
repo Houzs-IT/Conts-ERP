@@ -172,9 +172,11 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
   const curReadiness = readinessEdits[u.id] ?? u.readiness;
   function changeReadiness(next: UnitReadiness) {
     if (next === curReadiness) return;
+    const prev = readinessEdits[u.id];
     setReadinessEdits(m => ({ ...m, [u.id]: next }));
-    toast({ tone: 'success', title: 'Unit state updated.', body: `${u.propertyName} ${u.unitNumber} is now ${cap(next)}.` });
-    api.patch(`/units/${u.id}/readiness`, { readiness: next }).catch(notifyFailure);
+    api.patch(`/units/${u.id}/readiness`, { readiness: next })
+      .then(() => { toast({ tone: 'success', title: 'Unit state updated.', body: `${u.propertyName} ${u.unitNumber} is now ${cap(next)}.` }); reload(); })
+      .catch(err => { setReadinessEdits(m => { const n = { ...m }; if (prev) n[u.id] = prev; else delete n[u.id]; return n; }); notifyFailure(err); });
   }
 
   // Financial sections are absent from the payload for roles without access,
@@ -182,11 +184,11 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
   const tabs = TABS.filter(t => t !== 'Financials' || d.pnl);
 
   function takeFile(file: File) {
-    setPhoto(URL.createObjectURL(file));
-    toast({ tone: 'success', title: 'Photo added to this unit.', body: 'It will appear on the owner statement and channel listings.' });
     const fd = new FormData();
     fd.append('file', file); fd.append('unitId', u.id); fd.append('kind', 'photo');
-    api.post('/documents', fd).catch(notifyFailure);
+    api.post('/documents', fd)
+      .then(() => { setPhoto(URL.createObjectURL(file)); toast({ tone: 'success', title: 'Photo added to this unit.', body: 'It will appear on the owner statement and channel listings.' }); reload(); })
+      .catch(notifyFailure);
   }
 
   function downloadDoc(doc: { id: string; name: string }) {

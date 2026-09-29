@@ -9,7 +9,7 @@ import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
-import { rm, dateShort, time, todayMyt } from '../lib/format';
+import { rm, dateShort, time } from '../lib/format';
 import { TASK } from '../lib/vocabulary';
 import type { TaskState } from '../lib/types';
 import { useSession } from '../lib/session';
@@ -75,35 +75,31 @@ export default function MaintenancePage() {
   const { user } = useSession();
   const canWriteSku = SKU_WRITE_ROLES.includes(user?.role ?? '');
 
-  // ---- SKU catalog (master data) with the same optimistic overlay as jobs ----
+  // ---- SKU catalog (master data); edits roll back on failure like jobs ----
   const skuQuery = useApi<SkuPayload>('/maintenance/skus', SKU_FALLBACK);
-  const [skuAdded, setSkuAdded] = useState<Sku[]>([]);
   const [skuEdits, setSkuEdits] = useState<Record<string, Partial<Sku>>>({});
   const skus = useMemo(
-    () => [...skuAdded, ...(skuQuery.data?.data ?? [])].map(s => ({ ...s, ...skuEdits[s.id] })),
-    [skuAdded, skuQuery.data, skuEdits],
+    () => (skuQuery.data?.data ?? []).map(s => ({ ...s, ...skuEdits[s.id] })),
+    [skuQuery.data, skuEdits],
   );
   const activeSkus = useMemo(() => skus.filter(s => s.active), [skus]);
 
-  // Optimistic overlay: created jobs live in `added`, every edit lands in
-  // `edits` keyed by id. There is no backend in dev, so the real call is
-  // attempted and its failure swallowed — the interaction still lands.
-  const [added, setAdded] = useState<Issue[]>([]);
+  // Edits show at once and are rolled back if the server refuses; creations wait for the
+  // server so the list only ever shows real job numbers.
   const [edits, setEdits] = useState<Record<string, Partial<Issue>>>({});
 
   const merged = useMemo(
-    () => [...added, ...(data?.data ?? [])].map(i => ({ ...i, ...edits[i.id] })),
-    [added, data, edits],
+    () => (data?.data ?? []).map(i => ({ ...i, ...edits[i.id] })),
+    [data, edits],
   );
 
-  const patch = (id: string, delta: Partial<Issue>) =>
+  /** Show `delta` now, run `call`, then toast on success or restore the previous overlay on failure. */
+  function tryEdit(id: string, delta: Partial<Issue>, call: () => Promise<unknown>, ok: () => void) {
+    const prev = edits[id];
     setEdits(e => ({ ...e, [id]: { ...e[id], ...delta } }));
-  const bumpCount = (issue: Issue, field: 'photoCount' | 'documentCount') =>
-    setEdits(e => {
-      const cur = (e[issue.id]?.[field] ?? issue[field] ?? 0) as number;
-      return { ...e, [issue.id]: { ...e[issue.id], [field]: cur + 1 } };
-    });
-  const fire = (p: Promise<unknown>) => { void p.catch(notifyFailure); };
+    call().then(() => { ok(); reload(); }).catch(err => { setEdits(e => ({ ...e, [id]: prev ?? {} })); notifyFailure(err); });
+  }
+  const countOf = (issue: Issue, field: 'photoCount' | 'documentCount') => ((edits[issue.id]?.[field] ?? issue[field] ?? 0) as number);
 
   // Modal state
   const [creating, setCreating] = useState(false);
@@ -128,113 +124,105 @@ export default function MaintenancePage() {
 
   // ---- Actions -------------------------------------------------------------
 
-  function createJob(input: Omit<Issue, 'id' | 'state' | 'finalAmount' | 'ownerApprovalRequired' | 'reportedAt' | 'photoCount' | 'documentCount'>) {
-    const optimistic: Issue = {
-      ...input, id: `MNT-${Math.floor(1000 + Math.random() * 9000)}`, state: 'open',
-      finalAmount: null, ownerApprovalRequired: false, reportedAt: todayMyt(),
-      photoCount: 0, documentCount: 0, ownerApprovedAt: null,
-    };
-    setAdded(a => [optimistic, ...a]);
-    setCreating(false);
-    toast({
-      tone: 'success', title: 'Job created.',
-      body: `${optimistic.propertyName} ${optimistic.unitNumber} now has an open maintenance issue${optimistic.blocksUnit ? ' and is off sale' : ''}.`,
-    });
-    fire(api.post('/maintenance/issues', {
-      unitId: optimistic.unitNumber, propertyName: optimistic.propertyName, title: optimistic.title, detail: optimistic.detail,
-      photoIds: [], blocksUnit: optimistic.blocksUnit, quotedAmount: optimistic.quotedAmount, chargeTo: optimistic.chargeTo,
-      skuId: optimistic.skuId ?? null,
-    }));
+  async function createJob(input: Omit<Issue, 'id' | 'state' | 'finalAmount' | 'ownerApprovalRequired' | 'reportedAt' | 'photoCount' | 'documentCount'>) {
+    try {
+      await api.post('/maintenance/issues', {
+        unitId: input.unitNumber, propertyName: input.propertyName, title: input.title, detail: input.detail,
+        photoIds: [], blocksUnit: input.blocksUnit, quotedAmount: input.quotedAmount, chargeTo: input.chargeTo,
+        skuId: input.skuId ?? null,
+      });
+      setCreating(false);
+      toast({
+        tone: 'success', title: 'Job created.',
+        body: `${input.propertyName} ${input.unitNumber} now has an open maintenance issue${input.blocksUnit ? ' and is off sale' : ''}.`,
+      });
+      reload();
+    } catch (e) { notifyFailure(e); }
   }
 
   function assignTechnician(issue: Issue, tech: string) {
-    patch(issue.id, { assigneeName: tech, state: issue.state === 'open' ? 'assigned' : issue.state });
     setAssignFor(null);
-    toast({ tone: 'success', title: `${tech} assigned.`, body: 'They have been notified by push.' });
-    fire(api.patch(`/maintenance/issues/${issue.id}`, { assigneeId: tech }));
+    tryEdit(issue.id, { assigneeName: tech, state: issue.state === 'open' ? 'assigned' : issue.state },
+      () => api.patch(`/maintenance/issues/${issue.id}`, { assigneeId: tech }),
+      () => toast({ tone: 'success', title: `${tech} assigned.`, body: 'They have been notified by push.' }));
   }
 
   function requestApproval(issue: Issue) {
-    patch(issue.id, { ownerApprovalRequired: true, state: 'waiting' });
     setConfirm(null);
-    toast({ tone: 'success', title: 'Sent for approval.', body: 'The owner sees the quote in their portal. Work is not scheduled until they approve.' });
-    fire(api.post(`/maintenance/issues/${issue.id}/request-approval`, {}));
+    tryEdit(issue.id, { ownerApprovalRequired: true, state: 'waiting' },
+      () => api.post(`/maintenance/issues/${issue.id}/request-approval`, {}),
+      () => toast({ tone: 'success', title: 'Sent for approval.', body: 'The owner sees the quote in their portal. Work is not scheduled until they approve.' }));
   }
 
   function blockUnit(issue: Issue) {
-    patch(issue.id, { blocksUnit: true });
     setConfirm(null);
-    toast({ tone: 'success', title: 'Unit blocked.', body: `${issue.propertyName} ${issue.unitNumber} is off sale and the dates are held.` });
-    fire(api.post('/blocks', { unitId: issue.unitId ?? issue.unitNumber, propertyName: issue.propertyName, reason: 'maintenance', issueId: issue.id }));
+    tryEdit(issue.id, { blocksUnit: true },
+      () => api.post('/blocks', { unitId: issue.unitId ?? issue.unitNumber, propertyName: issue.propertyName, reason: 'maintenance', issueId: issue.id }),
+      () => toast({ tone: 'success', title: 'Unit blocked.', body: `${issue.propertyName} ${issue.unitNumber} is off sale and the dates are held.` }));
   }
 
   function attachPhoto(issue: Issue, kind: 'Before' | 'After', file: File) {
-    bumpCount(issue, 'photoCount');
     setPhotoFor(null);
-    toast({ tone: 'success', title: `${kind} photo added.`, body: 'Kept as evidence on the job.' });
     const fd = new FormData();
     fd.append('file', file); fd.append('kind', kind.toLowerCase());
-    fire(api.post(`/maintenance/issues/${issue.id}/photos`, fd));
+    tryEdit(issue.id, { photoCount: countOf(issue, 'photoCount') + 1 },
+      () => api.post(`/maintenance/issues/${issue.id}/photos`, fd),
+      () => toast({ tone: 'success', title: `${kind} photo added.`, body: 'Kept as evidence on the job.' }));
   }
 
   function attachDocument(issue: Issue, kind: 'POD' | 'Invoice', file: File) {
-    bumpCount(issue, 'documentCount');
     setDocFor(null);
-    toast({ tone: 'success', title: `${kind} uploaded.`, body: 'Attached to the job for the owner statement.' });
     const fd = new FormData();
     fd.append('file', file); fd.append('kind', kind.toLowerCase());
-    fire(api.post(`/maintenance/issues/${issue.id}/documents`, fd));
+    tryEdit(issue.id, { documentCount: countOf(issue, 'documentCount') + 1 },
+      () => api.post(`/maintenance/issues/${issue.id}/documents`, fd),
+      () => toast({ tone: 'success', title: `${kind} uploaded.`, body: 'Attached to the job for the owner statement.' }));
   }
 
   function markComplete(issue: Issue, finalAmount: number) {
-    patch(issue.id, { state: 'resolved', finalAmount, blocksUnit: false, ownerApprovalRequired: false });
     setCompleteFor(null);
-    toast({
-      tone: 'success', title: 'Marked complete.',
-      body: `The ${rm(finalAmount)} expense was created${issue.blocksUnit ? ` and ${issue.unitNumber} is back on sale` : ''}.`,
-    });
-    fire(api.post(`/maintenance/issues/${issue.id}/complete`, { finalAmount }));
+    tryEdit(issue.id, { state: 'resolved', finalAmount, blocksUnit: false, ownerApprovalRequired: false },
+      () => api.post(`/maintenance/issues/${issue.id}/complete`, { finalAmount }),
+      () => toast({
+        tone: 'success', title: 'Marked complete.',
+        body: `The ${rm(finalAmount)} expense was created${issue.blocksUnit ? ` and ${issue.unitNumber} is back on sale` : ''}.`,
+      }));
   }
 
   function reopen(issue: Issue) {
-    patch(issue.id, { state: 'reopened', finalAmount: null });
     setConfirm(null);
-    toast({ tone: 'warning', title: 'Reopened.', body: `${issue.title} is active again.` });
-    fire(api.patch(`/maintenance/issues/${issue.id}`, { state: 'reopened' }));
+    tryEdit(issue.id, { state: 'reopened', finalAmount: null },
+      () => api.patch(`/maintenance/issues/${issue.id}`, { state: 'reopened' }),
+      () => toast({ tone: 'warning', title: 'Reopened.', body: `${issue.title} is active again.` }));
   }
 
   function startWork(issue: Issue) {
-    const startedAt = new Date().toISOString();
-    patch(issue.id, { state: 'in_progress', startedAt, endedAt: null });
-    toast({ tone: 'success', title: 'Work started.', body: `The clock is running on ${issue.title}.` });
-    fire(api.post(`/maintenance/issues/${issue.id}/start`, {}));
+    tryEdit(issue.id, { state: 'in_progress', startedAt: new Date().toISOString(), endedAt: null },
+      () => api.post(`/maintenance/issues/${issue.id}/start`, {}),
+      () => toast({ tone: 'success', title: 'Work started.', body: `The clock is running on ${issue.title}.` }));
   }
 
   function endWork(issue: Issue) {
     const endedAt = new Date().toISOString();
-    const started = edits[issue.id]?.startedAt ?? issue.startedAt;
-    patch(issue.id, { endedAt });
-    const dur = durationLabel(started, endedAt);
-    toast({ tone: 'success', title: 'Work ended.', body: dur ? `Took ${dur}. Mark it complete to raise the expense.` : 'Mark it complete to raise the expense.' });
-    fire(api.post(`/maintenance/issues/${issue.id}/end`, {}));
+    const dur = durationLabel(edits[issue.id]?.startedAt ?? issue.startedAt, endedAt);
+    tryEdit(issue.id, { endedAt },
+      () => api.post(`/maintenance/issues/${issue.id}/end`, {}),
+      () => toast({ tone: 'success', title: 'Work ended.', body: dur ? `Took ${dur}. Mark it complete to raise the expense.` : 'Mark it complete to raise the expense.' }));
   }
 
   // ---- SKU catalog actions -------------------------------------------------
 
-  function createSku(input: CatalogInput) {
-    const optimistic: Sku = {
-      id: `SKU-${Math.floor(1000 + Math.random() * 9000)}`, code: input.code, name: input.name,
-      category: input.category, unitLabel: input.unitLabel, defaultPrice: input.defaultPrice,
-      trackStock: input.trackStock, stockOnHand: input.stockOnHand, active: true, notes: input.notes,
-    };
-    setSkuAdded(a => [optimistic, ...a]);
-    toast({ tone: 'success', title: 'Item added.', body: `${input.name} is in the catalog at ${rm(input.defaultPrice)}.` });
-    fire(api.post('/maintenance/skus', input));
+  async function createSku(input: CatalogInput) {
+    try {
+      await api.post('/maintenance/skus', input);
+      toast({ tone: 'success', title: 'Item added.', body: `${input.name} is in the catalog at ${rm(input.defaultPrice)}.` });
+      skuQuery.reload();
+    } catch (e) { notifyFailure(e); }
   }
 
   function updateSku(id: string, delta: Partial<Sku>) {
+    const prev = skuEdits[id];
     setSkuEdits(e => ({ ...e, [id]: { ...e[id], ...delta } }));
-    toast({ tone: 'success', title: 'Catalog updated.', body: delta.active === false ? 'Item retired.' : delta.active === true ? 'Item restored.' : 'Changes saved.' });
     const body: Record<string, unknown> = {};
     if (delta.name !== undefined) body.name = delta.name;
     if (delta.category !== undefined) body.category = delta.category;
@@ -244,18 +232,16 @@ export default function MaintenancePage() {
     if (delta.stockOnHand !== undefined) body.stockOnHand = delta.stockOnHand;
     if (delta.notes !== undefined) body.notes = delta.notes;
     if (delta.active !== undefined) body.active = delta.active;
-    fire(api.patch(`/maintenance/skus/${id}`, body));
+    api.patch(`/maintenance/skus/${id}`, body)
+      .then(() => { toast({ tone: 'success', title: 'Catalog updated.', body: delta.active === false ? 'Item retired.' : delta.active === true ? 'Item restored.' : 'Changes saved.' }); skuQuery.reload(); })
+      .catch(err => { setSkuEdits(e => ({ ...e, [id]: prev ?? {} })); notifyFailure(err); });
   }
 
   function requestExchange(issue: Issue, sku: Sku, qty: number) {
-    // Optimistically decrement the SKU's stock; the ledger row is the server's job.
-    setSkuEdits(e => {
-      const cur = (e[sku.id]?.stockOnHand ?? sku.stockOnHand) as number;
-      return { ...e, [sku.id]: { ...e[sku.id], stockOnHand: Math.max(0, cur - qty) } };
-    });
     setExchangeFor(null);
-    toast({ tone: 'success', title: 'Drawn from stock.', body: `${qty} × ${sku.name} taken for ${issue.title}.` });
-    fire(api.post(`/maintenance/issues/${issue.id}/exchange`, { skuId: sku.id, qty }));
+    api.post(`/maintenance/issues/${issue.id}/exchange`, { skuId: sku.id, qty })
+      .then(() => { toast({ tone: 'success', title: 'Drawn from stock.', body: `${qty} × ${sku.name} taken for ${issue.title}.` }); skuQuery.reload(); reload(); })
+      .catch(notifyFailure);
   }
 
   // ---- Confirmation dialog spec -------------------------------------------

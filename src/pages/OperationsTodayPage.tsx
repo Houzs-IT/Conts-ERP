@@ -132,8 +132,7 @@ export default function OperationsTodayPage() {
   const [filter, setFilter] = useState<FilterKey>('all');
   const { data, loading, error, reload } = useApi<Payload>('/operations/today', FALLBACK);
 
-  // Optimistic overlay: assignments, resolved guest requests, etc. survive the
-  // absent dev backend so every action visibly lands.
+  // Overlay for changes already confirmed or in flight (assignments, answered guest requests).
   const [edits, setEdits] = useState<Record<string, Partial<Row>>>({});
 
   const [assign, setAssign] = useState<{ row: Row; cleanerId: string } | null>(null);
@@ -155,48 +154,55 @@ export default function OperationsTodayPage() {
     window.location.hash = `#/operations/tasks/${id}`;
   }
 
+  // Each action waits for the server before confirming; an assignment shows at once but is
+  // rolled back if the server refuses it.
   function doAssign() {
     if (!assign) return;
     const cleaner = CREW.find(c => c.id === assign.cleanerId);
     if (!cleaner) return;
-    setEdits(e => ({ ...e, [assign.row.id]: { ...e[assign.row.id], assigneeId: cleaner.id, assigneeName: cleaner.name } }));
-    toast({ tone: 'success', title: 'Cleaner assigned.', body: `${cleaner.name} has been notified.` });
     const row = assign.row;
+    const prev = edits[row.id];
+    setEdits(e => ({ ...e, [row.id]: { ...e[row.id], assigneeId: cleaner.id, assigneeName: cleaner.name } }));
     setAssign(null);
-    // Dev has no backend; keep the optimistic assignment either way.
-    api.post(`/housekeeping/tasks/${row.id}/assign`, { assigneeId: cleaner.id }).then(reload).catch(notifyFailure);
+    api.post(`/housekeeping/tasks/${row.id}/assign`, { assigneeId: cleaner.id })
+      .then(() => { toast({ tone: 'success', title: 'Cleaner assigned.', body: `${cleaner.name} has been notified.` }); reload(); })
+      .catch(err => { setEdits(e => ({ ...e, [row.id]: prev ?? {} })); notifyFailure(err); });
   }
 
-  function doMessage() {
+  async function doMessage() {
     if (!message) return;
     const row = message.row;
     const guest = row.guest;
     if (!guest) return;
-    const body = message.body;
-    setEdits(e => ({ ...e, [row.id]: { ...e[row.id], guest: null } }));
-    toast({ tone: 'success', title: 'Message sent.', body: `Sent to ${guest.name} on ${CHANNEL[guest.channel].label}.` });
-    setMessage(null);
-    api.post('/messages', { taskId: row.id, channel: guest.channel, body }).catch(notifyFailure);
+    try {
+      await api.post('/messages', { taskId: row.id, channel: guest.channel, body: message.body });
+      setEdits(e => ({ ...e, [row.id]: { ...e[row.id], guest: null } }));
+      setMessage(null);
+      toast({ tone: 'success', title: 'Message sent.', body: `Sent to ${guest.name} on ${CHANNEL[guest.channel].label}.` });
+    } catch (e) { notifyFailure(e); }
   }
 
-  function doInspect() {
+  async function doInspect() {
     if (!inspect) return;
     const row = inspect;
-    const id = crypto.randomUUID();
-    toast({ tone: 'success', title: 'Inspection started.', body: `Checklist opened for ${unitRef(row.propertyName, row.unitNumber)}.` });
-    setInspect(null);
-    api.post<{ id: string }>('/inspections', { taskId: row.id, unitNumber: row.unitNumber }).catch(notifyFailure);
-    window.location.hash = `#/operations/inspections/${id}`;
+    try {
+      await api.post<{ id: string }>('/inspections', { taskId: row.id, unitNumber: row.unitNumber });
+      setInspect(null);
+      toast({ tone: 'success', title: 'Inspection started.', body: `Checklist opened for ${unitRef(row.propertyName, row.unitNumber)}.` });
+      window.location.hash = '#/operations/inspections';
+    } catch (e) { notifyFailure(e); }
   }
 
-  function doOwnerNotice() {
+  async function doOwnerNotice() {
     if (!ownerNotice) return;
     const row = ownerNotice;
     const owner = row.owner;
     if (!owner) return;
-    toast({ tone: 'success', title: 'Owner notified.', body: `${owner.name} was sent the blocked-unit notice.` });
-    setOwnerNotice(null);
-    api.post(`/owners/${owner.id}/notify`, { unitNumber: row.unitNumber, reason: row.work }).catch(notifyFailure);
+    try {
+      await api.post(`/owners/${owner.id}/notify`, { unitNumber: row.unitNumber, reason: row.work });
+      setOwnerNotice(null);
+      toast({ tone: 'success', title: 'Owner notified.', body: `${owner.name} was sent the blocked-unit notice.` });
+    } catch (e) { notifyFailure(e); }
   }
 
   interface RowAction { key: string; label: string; primary?: boolean; run: () => void }

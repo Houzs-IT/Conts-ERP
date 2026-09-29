@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { color, channel } from '../theme';
 import PageHeader from '../components/PageHeader';
@@ -170,10 +171,10 @@ export default function GuestsPage() {
   const canSeeContact = user ? OPS_ROLES.includes(user.role) : false;
 
   const { data, error, reload } = useApi<Payload>('/guests', FALLBACK);
+  const navigate = useNavigate();
 
   // Optimistic overlays — no backend in dev.
   const [mEdits, setMEdits] = useState<Record<string, Partial<GuestMovement>>>({});
-  const [added, setAdded] = useState<Guest[]>([]);
   const [busy, setBusy] = useState(false);
 
   // Overlay / selection state.
@@ -192,8 +193,8 @@ export default function GuestsPage() {
     setMEdits(e => ({ ...e, [rid]: { ...e[rid], ...p } }));
 
   const allGuests = useMemo(
-    () => [...added, ...(data?.data ?? [])].map(mergeGuest),
-    [added, data, mEdits],
+    () => (data?.data ?? []).map(mergeGuest),
+    [data, mEdits],
   );
   const rows = useMemo(() => {
     const m = FILTERS.find(f => f.key === filter)!.match;
@@ -209,64 +210,64 @@ export default function GuestsPage() {
     return c;
   }, [allGuests]);
 
-  // ---- actions (optimistic; the real call is attempted and swallowed) ----
+  // ---- actions: a change shows at once and is rolled back if the server refuses it ----
+  function tryMove(rid: string, p: Partial<GuestMovement>, call: () => Promise<unknown>, ok: () => void) {
+    const prev = mEdits[rid];
+    mPatch(rid, p);
+    call().then(() => { ok(); reload(); }).catch(err => { setMEdits(e => ({ ...e, [rid]: prev ?? {} })); notifyFailure(err); });
+  }
   function prepareEarly(g: Guest) {
     const m = g.movement; if (!m) return;
-    mPatch(m.reservationId, { preparedAt: new Date().toISOString(), accessSentAt: new Date().toISOString(), readiness: 'ready' });
-    toast({ tone: 'success', title: `${m.propertyName} ${m.unitNumber} prepared.`, body: 'Access sent and the unit is confirmed ready.' });
-    api.post(`/reservations/${m.reservationId}/prepare`, {}).catch(notifyFailure);
+    tryMove(m.reservationId, { preparedAt: new Date().toISOString(), accessSentAt: new Date().toISOString(), readiness: 'ready' },
+      () => api.post(`/reservations/${m.reservationId}/prepare`, {}),
+      () => toast({ tone: 'success', title: `${m.propertyName} ${m.unitNumber} prepared.`, body: 'Access sent and the unit is confirmed ready.' }));
   }
   function sendAccess(g: Guest) {
     const m = g.movement; if (!m) return;
-    mPatch(m.reservationId, { accessSentAt: new Date().toISOString() });
-    toast({ tone: 'success', title: `Access details sent to ${g.fullName}.`, body: `Delivered on ${threadName(m.channel)}.` });
-    api.post('/messages', { reservationId: m.reservationId, kind: 'access_details' }).catch(notifyFailure);
+    tryMove(m.reservationId, { accessSentAt: new Date().toISOString() },
+      () => api.post('/messages', { reservationId: m.reservationId, kind: 'access_details' }),
+      () => toast({ tone: 'success', title: `Access details sent to ${g.fullName}.`, body: `Delivered on ${threadName(m.channel)}.` }));
   }
   function markCheckedIn(g: Guest) {
     const m = g.movement; if (!m) return;
-    mPatch(m.reservationId, { state: 'checked_in', readiness: 'occupied' });
-    toast({ tone: 'success', title: `${g.fullName} checked in.`, body: `${m.propertyName} ${m.unitNumber} is now occupied.` });
-    api.patch(`/reservations/${m.reservationId}`, { state: 'checked_in' }).catch(notifyFailure);
+    tryMove(m.reservationId, { state: 'checked_in', readiness: 'occupied' },
+      () => api.patch(`/reservations/${m.reservationId}`, { state: 'checked_in' }),
+      () => toast({ tone: 'success', title: `${g.fullName} checked in.`, body: `${m.propertyName} ${m.unitNumber} is now occupied.` }));
   }
   async function confirmCheckout() {
     if (!checkout?.movement) return;
     const g = checkout, m = checkout.movement;
     setBusy(true);
-    mPatch(m.reservationId, { state: 'checked_out', readiness: 'dirty' });
-    try { await api.patch(`/reservations/${m.reservationId}`, { state: 'checked_out' }); } catch (e) { notifyFailure(e); }
-    toast({ tone: 'success', title: `${g.fullName} checked out.`, body: `A cleaning task was created for ${m.propertyName} ${m.unitNumber}.` });
-    setBusy(false);
-    setCheckout(null);
+    try {
+      await api.patch(`/reservations/${m.reservationId}`, { state: 'checked_out' });
+      mPatch(m.reservationId, { state: 'checked_out', readiness: 'dirty' });
+      toast({ tone: 'success', title: `${g.fullName} checked out.`, body: `A cleaning task was created for ${m.propertyName} ${m.unitNumber}.` });
+      setCheckout(null);
+      reload();
+    } catch (e) { notifyFailure(e); } finally { setBusy(false); }
   }
-  function sendMessage(body: string) {
+  async function sendMessage(body: string) {
     if (!message) return;
     const g = message;
-    toast({ tone: 'success', title: `Message sent to ${g.fullName}.`, body: `Thread opened on ${threadName(g.channel)}.` });
-    api.post('/messages', { guestId: g.id, body }).catch(notifyFailure);
-    setMessage(null);
+    try {
+      await api.post('/messages', { guestId: g.id, body });
+      setMessage(null);
+      toast({ tone: 'success', title: `Message sent to ${g.fullName}.`, body: `Thread opened on ${threadName(g.channel)}.` });
+    } catch (e) { notifyFailure(e); }
   }
+  // A booking needs a unit and dates, so this opens the Bookings form with the guest filled in.
   function bookAgain(g: Guest) {
-    toast({ tone: 'success', title: `New booking started for ${g.fullName}.`, body: 'Pick a unit and dates to confirm.' });
-    api.post('/reservations', { guestId: g.id }).catch(notifyFailure);
+    navigate('/reservations/bookings?create=1', { state: { guestName: g.fullName, phone: g.phone ?? '', email: g.email ?? '' } });
   }
-  function addWalkIn(input: { fullName: string; phone: string; email: string; unitNumber: string; propertyName: string; guestsCount: number }) {
-    const id = crypto.randomUUID();
-    const g: Guest = {
-      id, fullName: input.fullName, email: input.email || null, phone: input.phone || null,
-      channel: 'direct', tag: { label: 'New', tone: 'neutral' }, since: 'First booking',
-      stays: 1, nights: 1, lifetimeValue: 0, ratingScore: null, history: [],
-      movement: {
-        reservationId: id, kind: 'arrival', day: 'today', checkInAt: new Date().toISOString(), checkOutAt: '',
-        unitNumber: input.unitNumber, propertyName: input.propertyName, channel: 'direct',
-        nights: 1, guestsCount: input.guestsCount, state: 'confirmed', readiness: 'ready', preparedAt: null, accessSentAt: null,
-      },
-    };
-    setAdded(a => [g, ...a]);
-    setFilter('all');
-    setSelectedId(id);
-    toast({ tone: 'success', title: `${input.fullName} added.`, body: 'Walk-in placed in today’s arrivals.' });
-    api.post('/guests', input).catch(notifyFailure);
-    setAdding(false);
+  async function addWalkIn(input: { fullName: string; phone: string; email: string; unitNumber: string; propertyName: string; guestsCount: number }) {
+    try {
+      const r = await api.post<{ id: string; reservationId: string }>('/guests', input);
+      setFilter('all');
+      setSelectedId(r.id);
+      setAdding(false);
+      toast({ tone: 'success', title: `${input.fullName} added.`, body: 'Walk-in placed in today’s arrivals.' });
+      reload();
+    } catch (e) { notifyFailure(e); }
   }
 
   return (

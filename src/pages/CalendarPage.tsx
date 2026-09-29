@@ -113,7 +113,6 @@ export default function CalendarPage() {
   // Optimistic overlays — there is no backend in dev.
   const [dateEdits, setDateEdits] = useState<Record<string, { checkIn: string; checkOut: string }>>({});
   const [stateEdits, setStateEdits] = useState<Record<string, ReservationState>>({});
-  const [addedBlocks, setAddedBlocks] = useState<Block[]>([]);
   // Which booking is being dragged, and where within it the pointer grabbed.
   const dragRef = useRef<{ id: string; grabOffset: number } | null>(null);
 
@@ -121,10 +120,10 @@ export default function CalendarPage() {
   const properties = useMemo(() => Array.from(new Set(allUnits.map(u => u.propertyName))), [allUnits]);
   const units = property === 'all' ? allUnits : allUnits.filter(u => u.propertyName === property);
   const liveBlocks = useMemo(
-    () => [...(data?.blocks ?? []), ...addedBlocks].map(b => ({
+    () => (data?.blocks ?? []).map(b => ({
       ...b, ...dateEdits[b.id], ...(stateEdits[b.id] ? { state: stateEdits[b.id] } : null),
     })),
-    [data, addedBlocks, dateEdits, stateEdits],
+    [data, dateEdits, stateEdits],
   );
   const blocks = liveBlocks.filter(b => {
     if (b.state === 'cancelled') return false; // a cancelled reservation releases its dates on the board
@@ -147,9 +146,12 @@ export default function CalendarPage() {
     return Math.round(base * UPLIFT[channel] * (weekend ? 1.22 : 1));
   }
   function setPrice(unitId: string, channel: string, i: number, rmValue: number) {
-    setRateEdits(e => ({ ...e, [`${unitId}:${channel}:${i}`]: Math.round(rmValue * 100) }));
-    toast({ tone: 'success', title: 'Rate set.', body: 'Saved for that night. Channel sync is not connected yet.' });
-    api.put('/rates', { unitId, channel, date: dayIso(i), rate: Math.round(rmValue * 100) }).catch(notifyFailure);
+    const key = `${unitId}:${channel}:${i}`;
+    const prev = rateEdits[key];
+    setRateEdits(e => ({ ...e, [key]: Math.round(rmValue * 100) }));
+    api.put('/rates', { unitId, channel, date: dayIso(i), rate: Math.round(rmValue * 100) })
+      .then(() => toast({ tone: 'success', title: 'Rate set.', body: 'Saved for that night. Channel sync is not connected yet.' }))
+      .catch(err => { setRateEdits(e => { const n = { ...e }; if (prev == null) delete n[key]; else n[key] = prev; return n; }); notifyFailure(err); });
   }
 
   function emptyNight(unit: Unit, i: number) {
@@ -228,32 +230,30 @@ export default function CalendarPage() {
   // ---- Reservation drawer: chat with guest (POST /messages) ----
   function sendGuestMessage(b: Block, body: string) {
     const thread = b.channel === 'direct' ? 'WhatsApp' : CHANNEL[b.channel].label;
-    toast({ tone: 'success', title: `Message sent to ${b.guestName}.`, body: `Thread opened on ${thread}.` });
-    api.post('/messages', { reservationId: b.id, body }).catch(notifyFailure);
-    setChatBlock(null);
+    api.post('/messages', { reservationId: b.id, body })
+      .then(() => { setChatBlock(null); toast({ tone: 'success', title: `Message sent to ${b.guestName}.`, body: `Thread opened on ${thread}.` }); })
+      .catch(notifyFailure);
   }
 
-  // ---- Reservation drawer: quick status update (PATCH /reservations/:id) — optimistic ----
+  // ---- Reservation drawer: quick status update (PATCH /reservations/:id); rolled back if refused ----
   function quickStatus(b: Block, state: ReservationState) {
     if (state === (stateEdits[b.id] ?? b.state)) return;
+    const prev = stateEdits[b.id];
     setStateEdits(e => ({ ...e, [b.id]: state }));
-    api.patch(`/reservations/${b.id}`, { state }).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Status updated.', body: `${b.guestName} is now ${RESERVATION[state].label}.` });
+    api.patch(`/reservations/${b.id}`, { state })
+      .then(() => { toast({ tone: 'success', title: 'Status updated.', body: `${b.guestName} is now ${RESERVATION[state].label}.` }); reload(); })
+      .catch(err => { setStateEdits(e => { const n = { ...e }; if (prev) n[b.id] = prev; else delete n[b.id]; return n; }); notifyFailure(err); });
   }
 
-  // ---- Reservation drawer: duplicate booking (POST /reservations/:id/duplicate) — optimistic add ----
+  // ---- Reservation drawer: duplicate booking (POST /reservations/:id/duplicate); the copy appears once saved ----
   function duplicateBooking(b: Block) {
-    const nights = dayIndex(b.checkOut) - dayIndex(b.checkIn);
-    const start = b.checkOut; // checkOut is exclusive, so this places the copy immediately after the stay
-    const nb: Block = {
-      id: `dup-${Date.now()}`, unitId: b.unitId, channel: b.channel, state: 'pending',
-      guestName: b.guestName, checkIn: start, checkOut: iso(addDays(new Date(start), nights)),
-      grossBookingValue: b.grossBookingValue, ref: null, reason: null,
-    };
-    setAddedBlocks(a => [...a, nb]);
-    setOpenBlock(null);
-    api.post(`/reservations/${b.id}/duplicate`).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Booking duplicated.', body: `A pending copy for ${b.guestName} was placed after the original — drag it to the dates you want.` });
+    api.post(`/reservations/${b.id}/duplicate`)
+      .then(() => {
+        setOpenBlock(null);
+        toast({ tone: 'success', title: 'Booking duplicated.', body: `A pending copy for ${b.guestName} was placed after the original — drag it to the dates you want.` });
+        reload();
+      })
+      .catch(notifyFailure);
   }
 
   // ---- Reservation drawer: cancel reservation (POST /reservations/:id/cancel) — optimistic release ----
@@ -529,28 +529,19 @@ export default function CalendarPage() {
         onSave={v => {
           const clash = conflictFor(v.unitId, v.from, v.to);
           if (clash) { toast({ tone: 'critical', title: 'Dates unavailable.', body: `${clash.guestName} already holds ${dateRange(clash.checkIn, clash.checkOut)} on this unit.` }); return; }
-          const nb: Block = { id: `blk-${Date.now()}`, unitId: v.unitId, channel: 'maintenance_block', state: 'confirmed', guestName: v.reason, checkIn: v.from, checkOut: v.to, grossBookingValue: 0, ref: null, reason: v.reason };
-          setAddedBlocks(a => [...a, nb]);
-          setBlockWizard(false);
-          api.post('/blocks', { unitId: v.unitId, from: v.from, to: v.to, reason: v.reason }).catch(notifyFailure);
-          toast({ tone: 'success', title: 'Dates blocked.', body: `Held on every channel · ${dateRange(v.from, v.to)}.` });
+          api.post('/blocks', { unitId: v.unitId, from: v.from, to: v.to, reason: v.reason })
+            .then(() => { setBlockWizard(false); toast({ tone: 'success', title: 'Dates blocked.', body: `Held on every channel · ${dateRange(v.from, v.to)}.` }); reload(); })
+            .catch(notifyFailure);
         }} />}
       {rateUpdate && <RateUpdate units={units} onClose={() => setRateUpdate(false)}
         onSave={v => {
-          setRateEdits(prev => {
-            const next = { ...prev };
-            for (let i = 0; i < span; i++) {
-              const dIso = dayIso(i);
-              if (dIso < v.from || dIso > v.to) continue;
-              for (const uid of v.unitIds) for (const ch of v.channels) {
-                next[`${uid}:${ch === 'direct' ? 'web' : ch}:${i}`] = v.priceSen;
-              }
-            }
-            return next;
-          });
-          setRateUpdate(false);
-          api.post('/rates/bulk', { unitIds: v.unitIds, channels: v.channels, from: v.from, to: v.to, baseRate: v.priceSen }).catch(notifyFailure);
-          toast({ tone: 'success', title: 'Rates saved.', body: `${v.channels.length} ${v.channels.length === 1 ? 'channel' : 'channels'} · ${v.unitIds.length} ${v.unitIds.length === 1 ? 'unit' : 'units'} · ${dateRange(v.from, v.to)}.` });
+          api.post('/rates/bulk', { unitIds: v.unitIds, channels: v.channels, from: v.from, to: v.to, baseRate: v.priceSen })
+            .then(() => {
+              setRateUpdate(false);
+              toast({ tone: 'success', title: 'Rates saved.', body: `${v.channels.length} ${v.channels.length === 1 ? 'channel' : 'channels'} · ${v.unitIds.length} ${v.unitIds.length === 1 ? 'unit' : 'units'} · ${dateRange(v.from, v.to)}.` });
+              reload();
+            })
+            .catch(notifyFailure);
         }} />}
     </>
   );
