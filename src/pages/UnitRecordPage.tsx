@@ -9,6 +9,8 @@ import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, downloadFile } from '../lib/api';
 import { useToast } from '../components/Toast';
+import ChannexChannelsCard from '../components/ChannexChannelsCard';
+import { useSession } from '../lib/session';
 import { rm, dateRange, date, dateShort, dateTime, monthLabel } from '../lib/format';
 import type { Tone, UnitReadiness, TaskState, BookingChannel, ReservationState } from '../lib/types';
 
@@ -45,7 +47,7 @@ const RES_COLS = 'grid-cols-[minmax(150px,1.3fr)_minmax(160px,1.4fr)_minmax(150p
 
 interface Payload {
   unit: {
-    id: string; unitNumber: string; propertyName: string; addressLine: string;
+    id: string; unitNumber: string; channexLinked?: boolean; propertyName: string; addressLine: string;
     city: string; state: string; postcode: string | null;
     readiness: UnitReadiness; bedrooms: number; bathrooms: number; maxGuests: number;
     sizeSqft: number | null; isListed: boolean; fittedOutAt: string | null;
@@ -152,6 +154,9 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
   // Wait for the unit list before deriving a fallback id — firing the detail request with a
   // blank unitId just gets a guaranteed 422 while the list is still in flight.
   const openId = unitId || units[0]?.id || '';
+  const { user } = useSession();
+  // Matches MASTER_ROLES on the server's channex-setup / channex-connect.
+  const canManageChannels = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
   const { data, error, reload } = useApi<Payload>(openId ? `/units/detail?unitId=${encodeURIComponent(openId)}` : null, FALLBACK);
 
   const d = data ?? (import.meta.env.DEV ? FALLBACK : null);
@@ -347,6 +352,8 @@ export default function UnitRecordPage({ unitId }: { unitId: string }) {
               </div>
             ))}
           </Card>
+
+          <ChannexChannelsCard unitId={u.id} linked={!!u.channexLinked} canManage={canManageChannels} onChanged={reload} />
 
           {d.pnl && (
             <Card>

@@ -46,6 +46,7 @@ MONEY_MINOR_UNITS = "100"
 RESET_TOKEN_MINUTES = "60"
 QUIET_HOURS_START = "22"
 QUIET_HOURS_END = "8"
+CHANNEX_BASE_URL = "https://app.channex.io"
 
 # ---------------------------------------------------------------------------
 # Secrets — never in this file. Set each with:
@@ -88,3 +89,4 @@ MONEY_MINOR_UNITS = "100"
 RESET_TOKEN_MINUTES = "60"
 QUIET_HOURS_START = "22"
 QUIET_HOURS_END = "8"
+CHANNEX_BASE_URL = "https://staging.channex.io"

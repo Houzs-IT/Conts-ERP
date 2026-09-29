@@ -1,12 +1,12 @@
 import type { Env } from './db';
 
-/** staging.channex.io while we test. Swap for the production base (app.channex.io) and a production
- *  key only once we move past the demo property to a real listing — see TODO.md. */
-const BASE = 'https://staging.channex.io/api/v1';
+/** Channex server for this environment, from wrangler.toml: staging.channex.io on preview, app.channex.io
+ *  on production. Falls back to staging so a missing setting can never touch real listings. */
+export const channexServer = (env: Env) => (env.CHANNEX_BASE_URL || 'https://staging.channex.io').replace(/\/+$/, '');
 
 async function channexFetch<T = unknown>(env: Env, path: string, init?: RequestInit): Promise<{ ok: boolean; status: number; body: T | null }> {
   if (!env.CHANNEX_API_KEY) return { ok: false, status: 0, body: null };
-  const res = await fetch(BASE + path, {
+  const res = await fetch(channexServer(env) + '/api/v1' + path, {
     ...init,
     headers: { 'user-api-key': env.CHANNEX_API_KEY, accept: 'application/json', 'content-type': 'application/json', ...(init?.headers ?? {}) },
   });
@@ -113,4 +113,56 @@ export function channexAvailability(env: Env, p: { propertyId: string; roomTypeI
   return channexFetch<{ data: Record<string, Record<string, number>> }>(
     env, `/availability?filter[property_id]=${p.propertyId}&filter[room_type_id]=${p.roomTypeId}&filter[date][gte]=${p.dateFrom}&filter[date][lte]=${p.dateTo}`,
   );
+}
+
+/* ---- Setting up a unit as a Channex listing (stage 5) ---- */
+
+/** One Channex property per unit, typed as an apartment: a vacation rental is billed per unit, while
+ *  Channex's default type (hotel) is billed as a hotel. Automatic availability updates stay on for new
+ *  OTA bookings only, as Channex advises for a PMS that sends its own availability. */
+export function channexCreateProperty(env: Env, p: { title: string; city: string; state: string; address: string }) {
+  return channexFetch<{ data: { id: string } }>(env, '/properties', {
+    method: 'POST',
+    body: JSON.stringify({ property: {
+      title: p.title, currency: 'MYR', property_type: 'apartment', timezone: 'Asia/Kuala_Lumpur', country: 'MY',
+      city: p.city || null, state: p.state || null, address: p.address || null,
+      settings: { allow_availability_autoupdate_on_confirmation: true, allow_availability_autoupdate_on_modification: false, allow_availability_autoupdate_on_cancellation: false, min_stay_type: 'both' },
+    } }),
+  });
+}
+
+export function channexCreateRoomType(env: Env, p: { propertyId: string; title: string; maxGuests: number }) {
+  return channexFetch<{ data: { id: string } }>(env, '/room_types', {
+    method: 'POST',
+    body: JSON.stringify({ room_type: {
+      property_id: p.propertyId, title: p.title, count_of_rooms: 1, occ_adults: p.maxGuests, occ_children: 0, occ_infants: 0,
+      default_occupancy: p.maxGuests, room_kind: 'room', facilities: [],
+    } }),
+  });
+}
+
+export function channexCreateRatePlan(env: Env, p: { propertyId: string; roomTypeId: string; maxGuests: number; rate: number }) {
+  return channexFetch<{ data: { id: string } }>(env, '/rate_plans', {
+    method: 'POST',
+    body: JSON.stringify({ rate_plan: {
+      title: 'Standard rate', property_id: p.propertyId, room_type_id: p.roomTypeId, currency: 'MYR',
+      sell_mode: 'per_room', rate_mode: 'manual', options: [{ occupancy: p.maxGuests, is_primary: true, rate: p.rate }],
+    } }),
+  });
+}
+
+export const channexDeleteProperty = (env: Env, propertyId: string) => channexFetch(env, `/properties/${propertyId}`, { method: 'DELETE' });
+
+/** A short-lived pass that lets a Conts user open Channex's own screens for one property without a Channex login. */
+export function channexOneTimeToken(env: Env, p: { propertyId: string; username: string }) {
+  return channexFetch<{ data: { token: string } }>(env, '/auth/one_time_token', {
+    method: 'POST',
+    body: JSON.stringify({ one_time_token: { property_id: p.propertyId, username: p.username } }),
+  });
+}
+
+/** Channex's channel-connection screen for one property, embedded ("headless"). `channels` limits it to the OTAs we sell on. */
+export function channexChannelScreenUrl(env: Env, p: { token: string; propertyId: string }) {
+  const q = new URLSearchParams({ oauth_session_key: p.token, app_mode: 'headless', redirect_to: '/channels', property_id: p.propertyId, available_channels: 'ABB,BDC,AGO', lng: 'en' });
+  return `${channexServer(env)}/auth/exchange?${q.toString()}`;
 }
