@@ -1,16 +1,11 @@
-import { type Env, one, all, run, json, fail, audit, nowIso } from '../../../_lib/db';
+import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { MASTER_ROLES } from '../../../_lib/properties';
-import {
-  channexConfigured, channexCreateProperty, channexCreateRoomType, channexCreateRatePlan, channexDeleteProperty,
-  channexPushAvailability, channexPushRate,
-} from '../../../_lib/channex';
-
-const HORIZON_DAYS = 365;
-const addDays = (iso: string, n: number) => new Date(Date.parse(iso) + n * 864e5).toISOString().slice(0, 10);
+import { channexConfigured, channexCreateProperty, channexCreateRoomType, channexCreateRatePlan, channexDeleteProperty } from '../../../_lib/channex';
+import { queueFullSync, flushChannexQueue } from '../../../_lib/channexQueue';
 
 /** POST /api/units/:id/channex-setup — creates the unit's Channex listing (property, room type, rate plan),
- *  links it, then sends a year of availability and the base price. If Channex refuses any creation step,
+ *  links it, then runs a full sync (500 days of availability, prices and restrictions). If Channex refuses any creation step,
  *  the property made so far is deleted again so no half-built listing is left behind. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
@@ -50,28 +45,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     propertyId, roomTypeId, ratePlanId, nowIso(), id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'unit.channex_setup', entityTable: 'units', entityId: id, after: { propertyId, roomTypeId, ratePlanId } });
 
-  // Opening availability is not allowed to undo the link: a failure here is logged and reported,
-  // and the next booking change or rate edit sends the affected dates again.
-  let ariOk = true;
+  // The first full sync goes through the outbox like every other update. It is not allowed to undo the
+  // link: if it cannot go now it stays queued and is retried.
+  let ariOk = false;
   try {
-    const today = (await one<{ d: string }>(env, `SELECT to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS d`))!.d;
-    const end = addDays(today, HORIZON_DAYS - 1);
-    const pushes = [
-      await channexPushAvailability(env, { propertyId, roomTypeId, dateFrom: today, dateTo: end, availability: 1 }),
-      await channexPushRate(env, { propertyId, ratePlanId, dateFrom: today, dateTo: end, rate }),
-    ];
-    const taken = await all<{ check_in: string; check_out: string }>(env, `
-      SELECT check_in, check_out FROM reservations
-      WHERE unit_id = ? AND state IN ('inquiry','pending','confirmed','checked_in') AND check_out > ?`, id, today);
-    for (const r of taken) {
-      const from = r.check_in < today ? today : r.check_in;
-      const lastNight = addDays(r.check_out, -1);
-      if (lastNight >= from) pushes.push(await channexPushAvailability(env, { propertyId, roomTypeId, dateFrom: from, dateTo: lastNight, availability: 0 }));
-    }
-    ariOk = pushes.every(p => p.ok);
-    if (!ariOk) await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.initial_push_failed', entityTable: 'units', entityId: id, after: { statuses: pushes.map(p => p.status) } });
+    await queueFullSync(env, [id]);
+    const sent = await flushChannexQueue(env, { fullSync: true });
+    ariOk = (sent.availability?.status ?? 0) < 300 && (sent.availability?.status ?? 0) >= 200 && (sent.restrictions?.status ?? 0) >= 200 && (sent.restrictions?.status ?? 0) < 300;
   } catch (e) {
-    ariOk = false;
     await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.initial_push_failed', entityTable: 'units', entityId: id, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
   }
 

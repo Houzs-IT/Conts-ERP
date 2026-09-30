@@ -94,26 +94,11 @@ export function channexReplyToReview(env: Env, reviewId: string, reply: string) 
 }
 
 /** Whole-currency-unit rate (e.g. 150.00), not sen — confirmed against the demo property. */
-export function channexPushRate(env: Env, p: { propertyId: string; ratePlanId: string; dateFrom: string; dateTo: string; rate: number }) {
-  return channexFetch<{ data: { id: string }[] }>(env, '/restrictions', {
-    method: 'POST',
-    body: JSON.stringify({ values: [{ property_id: p.propertyId, rate_plan_id: p.ratePlanId, date_from: p.dateFrom, date_to: p.dateTo, rate: p.rate }] }),
-  });
+/** One ARI call carrying every value in the batch — the only way the outbox (channexQueue.ts) talks to Channex. */
+export function channexSendAri(env: Env, kind: 'availability' | 'restrictions', values: Record<string, unknown>[]) {
+  return channexFetch<{ data?: { id: string; type: string }[] }>(env, `/${kind}`, { method: 'POST', body: JSON.stringify({ values }) });
 }
 
-export function channexPushAvailability(env: Env, p: { propertyId: string; roomTypeId: string; dateFrom: string; dateTo: string; availability: number }) {
-  return channexFetch<{ data: { id: string }[] }>(env, '/availability', {
-    method: 'POST',
-    body: JSON.stringify({ values: [{ property_id: p.propertyId, room_type_id: p.roomTypeId, date_from: p.dateFrom, date_to: p.dateTo, availability: p.availability }] }),
-  });
-}
-
-/** { [roomTypeId]: { [date]: count } } for the room types on this property in the window. */
-export function channexAvailability(env: Env, p: { propertyId: string; roomTypeId: string; dateFrom: string; dateTo: string }) {
-  return channexFetch<{ data: Record<string, Record<string, number>> }>(
-    env, `/availability?filter[property_id]=${p.propertyId}&filter[room_type_id]=${p.roomTypeId}&filter[date][gte]=${p.dateFrom}&filter[date][lte]=${p.dateTo}`,
-  );
-}
 
 /* ---- Setting up a unit as a Channex listing (stage 5) ---- */
 
@@ -146,7 +131,7 @@ export function channexCreateRatePlan(env: Env, p: { propertyId: string; roomTyp
     method: 'POST',
     body: JSON.stringify({ rate_plan: {
       title: 'Standard rate', property_id: p.propertyId, room_type_id: p.roomTypeId, currency: 'MYR',
-      sell_mode: 'per_room', rate_mode: 'manual', options: [{ occupancy: p.maxGuests, is_primary: true, rate: p.rate }],
+      sell_mode: 'per_room', rate_mode: 'manual', options: [{ occupancy: p.maxGuests, is_primary: true, rate: p.rate.toFixed(2) }],   // decimal text: a bare number means minor units
     } }),
   });
 }

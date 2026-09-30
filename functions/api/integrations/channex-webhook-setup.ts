@@ -6,7 +6,7 @@ import { channexConfigured, channexListWebhooks, channexCreateWebhook, channexUp
  *  can see whether the webhook is already set up, and for what.
  *  POST — registers it if it is not, or brings its event mask up to date if a later stage added
  *  events an earlier registration doesn't cover yet. Idempotent: safe to call again.
- *  Management-only and temporary, same as channex-test.ts — remove once stage 5 folds this into
+ *  Management-only; run once per environment after its Channex key is setto
  *  onboarding a real listing. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
