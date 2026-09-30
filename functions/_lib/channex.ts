@@ -138,16 +138,65 @@ export function channexCreateRatePlan(env: Env, p: { propertyId: string; roomTyp
 
 export const channexDeleteProperty = (env: Env, propertyId: string) => channexFetch(env, `/properties/${propertyId}`, { method: 'DELETE' });
 
-/** A short-lived pass that lets a Conts user open Channex's own screens for one property without a Channex login. */
-export function channexOneTimeToken(env: Env, p: { propertyId: string; username: string }) {
-  return channexFetch<{ data: { token: string } }>(env, '/auth/one_time_token', {
+/* ---- Channel connections through the Channel API (replaces the deprecated embedded /channels screen) ---- */
+
+/** Channex adapter codes for the OTAs Conts connects. */
+export const OTA_ADAPTER = { booking_com: 'BookingCom', agoda: 'Agoda' } as const;
+export type HotelOta = keyof typeof OTA_ADAPTER;
+
+/** The group a property belongs to (every property has at least one); new channels are created in it. */
+export async function channexPropertyGroupId(env: Env, propertyId: string): Promise<string | null> {
+  const r = await channexFetch<{ data: any }>(env, `/properties/${propertyId}`);
+  const g = r.body?.data?.relationships?.groups?.data ?? r.body?.data?.attributes?.groups;
+  return Array.isArray(g) && g[0]?.id ? String(g[0].id) : null;
+}
+
+export const channexTestConnection = (env: Env, ota: HotelOta, hotelId: string) =>
+  channexFetch<{ data?: { success: boolean; errors: unknown } }>(env, '/channels/test_connection', { method: 'POST', body: JSON.stringify({ channel: OTA_ADAPTER[ota], settings: { hotel_id: hotelId } }) });
+
+/** The rooms and rates the hotel exposes on the OTA side, to be matched to the unit. */
+export const channexMappingDetails = (env: Env, ota: HotelOta, hotelId: string) =>
+  channexFetch<{ data?: { pricing_type?: string; rooms?: { id: number | string; title: string; rates: { id: number | string; title: string; max_persons?: number; occupancies?: number[]; pricing?: string; readonly?: boolean }[] }[] } }>(
+    env, '/channels/mapping_details', { method: 'POST', body: JSON.stringify({ channel: OTA_ADAPTER[ota], settings: { hotel_id: hotelId } }) });
+
+/** Creates the connection (always created inactive by Channex) with the unit's one rate plan mapped. */
+export function channexCreateHotelChannel(env: Env, p: { ota: HotelOta; groupId: string; propertyId: string; ratePlanId: string; hotelId: string; title: string; roomCode: string; rateCode: string; occupancy: number; pricingType: string; readonly: boolean }) {
+  return channexFetch<{ data?: { id: string } }>(env, '/channels', {
     method: 'POST',
-    body: JSON.stringify({ one_time_token: { property_id: p.propertyId, username: p.username } }),
+    body: JSON.stringify({ channel: {
+      channel: OTA_ADAPTER[p.ota], group_id: p.groupId, title: p.title, properties: [p.propertyId], settings: { hotel_id: p.hotelId },
+      rate_plans: [{ rate_plan_id: p.ratePlanId, settings: { room_type_code: p.roomCode, rate_plan_code: p.rateCode, occupancy: p.occupancy, pricing_type: p.pricingType, primary_occ: true, readonly: p.readonly } }],
+    } }),
   });
 }
 
-/** Channex's channel-connection screen for one property, embedded ("headless"). `channels` limits it to the OTAs we sell on. */
-export function channexChannelScreenUrl(env: Env, p: { token: string; propertyId: string }) {
-  const q = new URLSearchParams({ oauth_session_key: p.token, app_mode: 'headless', redirect_to: '/channels', property_id: p.propertyId, available_channels: 'ABB,BDC,AGO', lng: 'en' });
-  return `${channexServer(env)}/auth/exchange?${q.toString()}`;
+export const channexActivateChannel = (env: Env, channelId: string) => channexFetch(env, `/channels/${channelId}/activate`, { method: 'POST' });
+export const channexDeactivateChannel = (env: Env, channelId: string) => channexFetch(env, `/channels/${channelId}/deactivate`, { method: 'POST' });
+export const channexDeleteChannel = (env: Env, channelId: string) => channexFetch(env, `/channels/${channelId}`, { method: 'DELETE' });
+export const channexGetChannel = (env: Env, channelId: string) => channexFetch<{ data?: { attributes?: { is_active?: boolean; title?: string } } }>(env, `/channels/${channelId}`);
+
+/** Pulls the bookings that already exist on the OTA into Channex (runs in the background, no guest notifications). */
+export const channexLoadFutureReservations = (env: Env, channelId: string, listingId?: string) =>
+  channexFetch(env, `/channels/${channelId}/execute/load_future_reservations`, { method: 'POST', body: JSON.stringify(listingId ? { listing_id: listingId } : {}) });
+
+/** Airbnb sign-in link (valid two hours). After approval Airbnb returns the browser to `redirectUri`
+ *  with ?success=true&channel_id=…&token=…; `token` is ours, echoed back. */
+export function channexAirbnbConnectionLink(env: Env, p: { groupId: string; propertyId: string; redirectUri: string; failureRedirectUri: string; token: string; channelId?: string }) {
+  return channexFetch<{ data?: { attributes?: { url: string } } }>(env, '/meta/airbnb/connection_link', {
+    method: 'POST',
+    body: JSON.stringify({ connection_link: {
+      group_id: p.groupId, properties: [p.propertyId], redirect_uri: p.redirectUri, failure_redirect_uri: p.failureRedirectUri, token: p.token,
+      ...(p.channelId ? { channel_id: p.channelId } : {}),
+    } }),
+  });
 }
+
+export const channexAirbnbListings = (env: Env, channelId: string) =>
+  channexFetch<{ data?: { listing_id_dictionary?: { values?: { id: string; title: string; type: string; city: string; occupancies: number[] }[] } } }>(env, `/channels/${channelId}/action/listings`);
+
+/** Maps one Airbnb listing to the unit's rate plan. Airbnb confirms it asynchronously (about 30 seconds). */
+export const channexCreateMapping = (env: Env, channelId: string, ratePlanId: string, settings: Record<string, unknown>) =>
+  channexFetch<{ data?: { id: string } }>(env, `/channels/${channelId}/mappings`, { method: 'POST', body: JSON.stringify({ mapping: { rate_plan_id: ratePlanId, settings } }) });
+
+export const channexDeleteMapping = (env: Env, channelId: string, mappingId: string) =>
+  channexFetch(env, `/channels/${channelId}/mappings/${mappingId}`, { method: 'DELETE' });

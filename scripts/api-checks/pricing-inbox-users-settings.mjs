@@ -49,7 +49,9 @@ r = await call('POST', '/api/users', { fullName: 'X', email: `x${tag}@example.co
 r = await call('PATCH', `/api/users/${uid}`, { role: 'finance_admin', managerId: null }); check('change role + clear manager', r.status === 200, r.text);
 r = await call('PATCH', `/api/users/${uid}`, { managerId: uid }); check('cannot report to self 422', r.status === 422, r.text);
 r = await call('PATCH', '/api/users/11111111-1111-4111-8111-000000000002', { isActive: false }); check('cannot deactivate yourself', r.status === 422, r.text);
-r = await call('PATCH', '/api/users/11111111-1111-4111-8111-000000000002', { role: 'operations_staff' }); check('demotion allowed only while another active management account exists', r.status === 200, r.text);
+// Demote the account this suite invited, not the shared management test account (which the rest of the run, and later runs, sign in as).
+r = await call('PATCH', `/api/users/${uid}`, { role: 'management' }); check('promote invited user to management', r.status === 200, r.text);
+r = await call('PATCH', `/api/users/${uid}`, { role: 'operations_staff' }); check('demotion allowed only while another active management account exists', r.status === 200, r.text);
 r = await call('PUT', '/api/users/org-chart', { managers: [{ id: uid, managerId: mgr.id }] }); check('org chart save', r.status === 200 && r.json.changed === 1, r.text);
 r = await call('PUT', '/api/users/org-chart', { managers: [{ id: uid, managerId: mgr.id }, { id: mgr.id, managerId: uid }] }); check('org chart loop refused 422', r.status === 422, r.text);
 r = await call('GET', '/api/users'); check('org chart persisted', r.json.data.find(u => u.id === uid).managerId === mgr.id, '');
