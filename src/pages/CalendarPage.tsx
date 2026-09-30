@@ -549,15 +549,18 @@ export default function CalendarPage() {
       {rateUpdate && <RateUpdate units={units} initial={rateUpdate} onClose={() => setRateUpdate(false)}
         onSave={v => {
           api.post('/rates/bulk', {
-            unitIds: v.unitIds, from: v.from, to: v.to,
-            ...(v.priceSen !== undefined ? { channels: v.channels, baseRate: v.priceSen } : {}),
-            ...(v.minStay !== undefined ? { minStay: v.minStay } : {}),
-            ...(v.stopSell !== undefined ? { stopSell: v.stopSell } : {}),
+            unitIds: v.unitIds, channels: v.channels,
+            lines: v.lines.map(l => ({
+              from: l.from, to: l.to,
+              ...(l.priceSen !== undefined ? { baseRate: l.priceSen } : {}),
+              ...(l.minStay !== undefined ? { minStay: l.minStay } : {}),
+              ...(l.stopSell !== undefined ? { stopSell: l.stopSell } : {}),
+            })),
           })
             .then(() => {
               setRateUpdate(false);
-              const what = [v.priceSen !== undefined && 'price', v.minStay !== undefined && 'minimum stay', v.stopSell !== undefined && (v.stopSell ? 'stop sell' : 'reopened')].filter(Boolean).join(', ');
-              toast({ tone: 'success', title: 'Saved.', body: `${what} · ${v.unitIds.length} ${v.unitIds.length === 1 ? 'unit' : 'units'} · ${dateRange(v.from, v.to)}.` });
+              const ranges = v.lines.length === 1 ? dateRange(v.lines[0].from, v.lines[0].to) : `${v.lines.length} date ranges`;
+              toast({ tone: 'success', title: 'Saved.', body: `${v.unitIds.length} ${v.unitIds.length === 1 ? 'unit' : 'units'} · ${ranges}.` });
               reload();
             })
             .catch(notifyFailure);
@@ -688,29 +691,41 @@ function BlockWizard({ units, initial, onClose, onSave }: {
     </CentreModal>
   );
 }
+interface RateLine { from: string; to: string; price: string; minStay: string; stop: 'same' | 'close' | 'open' }
+interface RateUpdateValue { unitIds: string[]; channels: BookingChannel[]; lines: { from: string; to: string; priceSen?: number; minStay?: number; stopSell?: boolean }[] }
+
+/** Several date ranges, each with its own price / minimum stay / stop sell, saved together: one save is one
+ *  batch for Channex, however many ranges it holds. */
 function RateUpdate({ units, initial, onClose, onSave }: {
   units: Unit[]; initial: { unitIds?: string[]; from?: string; to?: string }; onClose: () => void;
-  onSave: (v: { unitIds: string[]; channels: BookingChannel[]; from: string; to: string; priceSen?: number; minStay?: number; stopSell?: boolean }) => void;
+  onSave: (v: RateUpdateValue) => void;
 }) {
   const [unitSel, setUnitSel] = useState<Record<string, boolean>>(Object.fromEntries(units.map(u => [u.id, initial.unitIds ? initial.unitIds.includes(u.id) : true])));
   const [chanSel, setChanSel] = useState<Record<string, boolean>>({ direct: true, airbnb: true, booking_com: true, agoda: true });
-  const [fromD, setFromD] = useState(initial.from ?? ''); const [toD, setToD] = useState(initial.to ?? ''); const [price, setPrice] = useState('');
-  const [minStay, setMinStay] = useState('');
-  const [stop, setStop] = useState<'same' | 'close' | 'open'>('same');
+  const blank = (from = '', to = ''): RateLine => ({ from, to, price: '', minStay: '', stop: 'same' });
+  const [lines, setLines] = useState<RateLine[]>([blank(initial.from ?? '', initial.to ?? '')]);
+  const setLine = (i: number, p: Partial<RateLine>) => setLines(ls => ls.map((l, j) => (j === i ? { ...l, ...p } : l)));
+
   const unitIds = units.filter(u => unitSel[u.id]).map(u => u.id);
   const channels = PUSH.filter(c => chanSel[c]);
-  const hasPrice = price !== '' && Number(price) >= 0;
-  const minStayOk = minStay === '' || (Number.isInteger(Number(minStay)) && Number(minStay) >= 1 && Number(minStay) <= 60);
-  const valid = unitIds.length > 0 && fromD !== '' && toD !== '' && toD >= fromD && minStayOk
-    && (hasPrice || minStay !== '' || stop !== 'same') && (!hasPrice || channels.length > 0);
+  const hasPrice = (l: RateLine) => l.price !== '' && Number(l.price) >= 0;
+  const minStayOk = (l: RateLine) => l.minStay === '' || (Number.isInteger(Number(l.minStay)) && Number(l.minStay) >= 1 && Number(l.minStay) <= 60);
+  const lineOk = (l: RateLine) => l.from !== '' && l.to !== '' && l.to >= l.from && minStayOk(l) && (hasPrice(l) || l.minStay !== '' || l.stop !== 'same');
+  const anyPrice = lines.some(hasPrice);
+  const valid = unitIds.length > 0 && lines.every(lineOk) && (!anyPrice || channels.length > 0);
   const pill = (on: boolean) => `inline-flex items-center gap-[6px] h-[30px] px-[11px] rounded-pill cursor-pointer [font:inherit] text-[12px] border border-solid ${on ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink'}`;
+  const selectCls = 'h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer';
+
   return (
-    <CentreModal title="Rate update" sub="Set a price, minimum stay or stop sell across a date range and units in one save." onClose={onClose} saveLabel="Save" canSave={valid}
+    <CentreModal title="Rate update" sub="Set prices, minimum stay or stop sell for one or more date ranges, saved together." onClose={onClose} saveLabel="Save" canSave={valid}
       onSave={() => onSave({
-        unitIds, channels, from: fromD, to: toD,
-        ...(hasPrice ? { priceSen: Math.round(Number(price) * 100) } : {}),
-        ...(minStay !== '' ? { minStay: Number(minStay) } : {}),
-        ...(stop !== 'same' ? { stopSell: stop === 'close' } : {}),
+        unitIds, channels,
+        lines: lines.map(l => ({
+          from: l.from, to: l.to,
+          ...(hasPrice(l) ? { priceSen: Math.round(Number(l.price) * 100) } : {}),
+          ...(l.minStay !== '' ? { minStay: Number(l.minStay) } : {}),
+          ...(l.stop !== 'same' ? { stopSell: l.stop === 'close' } : {}),
+        })),
       })}>
       <div className="flex flex-col gap-[7px]">
         <label className="text-[12px] font-medium text-muted-ink">Units · {unitIds.length}/{units.length}</label>
@@ -720,14 +735,41 @@ function RateUpdate({ units, initial, onClose, onSave }: {
           ); })}
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="From" type="date" value={fromD} onChange={e => setFromD(e.target.value)} />
-        <Field label="To" type="date" value={toD} min={fromD || undefined} onChange={e => setToD(e.target.value)} />
+
+      <div className="flex flex-col gap-3 max-h-[46vh] overflow-y-auto">
+        {lines.map((l, i) => (
+          <div key={i} className="flex flex-col gap-2.5 p-3 border border-solid border-line rounded-card">
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] font-semibold text-muted-ink">Range {i + 1}</span>
+              {lines.length > 1 && <button type="button" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} className="bg-transparent border-none cursor-pointer text-[12px] text-muted-ink hover:text-ink">Remove</button>}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="From" type="date" value={l.from} onChange={e => setLine(i, { from: e.target.value })} />
+              <Field label="To" type="date" value={l.to} min={l.from || undefined} onChange={e => setLine(i, { to: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Price (RM)" type="number" min={0} numeric value={l.price} onChange={e => setLine(i, { price: e.target.value })} help="Empty keeps it." />
+              <Field label="Min stay" type="number" min={1} max={60} numeric value={l.minStay} onChange={e => setLine(i, { minStay: e.target.value })} help={minStayOk(l) ? '1 removes it.' : '1 to 60 nights.'} />
+              <div className="flex flex-col gap-[7px]">
+                <label className="text-[12px] font-medium text-muted-ink" htmlFor={`stop-${i}`}>Stop sell</label>
+                <select id={`stop-${i}`} value={l.stop} onChange={e => setLine(i, { stop: e.target.value as RateLine['stop'] })} className={selectCls}>
+                  <option value="same">Keep</option>
+                  <option value="close">Close</option>
+                  <option value="open">Open</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        ))}
+        {lines.length < 20 && (
+          <button type="button" onClick={() => setLines(ls => [...ls, blank()])}
+            className="self-start bg-transparent border border-dashed border-line rounded-control cursor-pointer px-3 h-9 font-sans text-[13px] text-ink hover:bg-muted">+ Add another range</button>
+        )}
       </div>
-      <Field label="Price (RM / night)" type="number" min={0} numeric value={price} onChange={e => setPrice(e.target.value)} help="Leave empty to keep the current prices." />
-      {hasPrice && (
+
+      {anyPrice && (
         <div className="flex flex-col gap-[7px]">
-          <label className="text-[12px] font-medium text-muted-ink">Price applies to</label>
+          <label className="text-[12px] font-medium text-muted-ink">Prices apply to</label>
           <div className="flex gap-2 flex-wrap">
             {PUSH.map(c => { const on = !!chanSel[c]; return (
               <button key={c} type="button" aria-pressed={on} onClick={() => setChanSel(s => ({ ...s, [c]: !on }))} className={pill(on)}>
@@ -737,18 +779,6 @@ function RateUpdate({ units, initial, onClose, onSave }: {
           </div>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Minimum stay (nights)" type="number" min={1} max={60} numeric value={minStay} onChange={e => setMinStay(e.target.value)} help={minStayOk ? 'Empty keeps it. 1 removes it.' : 'Enter 1 to 60 nights.'} />
-        <div className="flex flex-col gap-[7px]">
-          <label className="text-[12px] font-medium text-muted-ink" htmlFor="stop-sell">Stop sell</label>
-          <select id="stop-sell" value={stop} onChange={e => setStop(e.target.value as 'same' | 'close' | 'open')}
-            className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
-            <option value="same">Keep as is</option>
-            <option value="close">Close for sale</option>
-            <option value="open">Open for sale</option>
-          </select>
-        </div>
-      </div>
     </CentreModal>
   );
 }

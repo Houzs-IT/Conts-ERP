@@ -64,6 +64,21 @@ const rest2 = await chx(`/restrictions?filter[property_id]=${ids.propertyId}&fil
 const p2 = rest2.json?.data?.[ids.ratePlanId] ?? {};
 check('Channex shows min stay 3 and stop sell', p2[day(31)]?.min_stay_arrival === 3 && p2[day(34)]?.stop_sell === true, JSON.stringify(p2).slice(0, 400));
 
+// 3b. One Rate update save holding several ranges (how tests 3-8 are run) leaves as ONE call.
+since = new Date().toISOString();
+r = await call('POST', '/api/rates/bulk', { unitIds: [UID], channels: ['web'], lines: [
+  { from: day(50), to: day(59), baseRate: 24100 },
+  { from: day(59), to: day(65), baseRate: 31266, minStay: 2 },
+  { from: day(66), to: day(70), minStay: 5, stopSell: false },
+] });
+check('three ranges saved in one go', r.status === 200, r.text);
+await sleep(24_000);
+c = await newCalls(since);
+check('three ranges went as ONE call', c.length === 1 && c[0].kind === 'restrictions' && c[0].status < 300, JSON.stringify(c));
+const rest3 = await chx(`/restrictions?filter[property_id]=${ids.propertyId}&filter[date][gte]=${day(50)}&filter[date][lte]=${day(70)}&filter[restrictions]=rate,min_stay_arrival`);
+const p3 = rest3.json?.data?.[ids.ratePlanId] ?? {};
+check('Channex shows each range (later range wins on the overlap night)', Number(p3[day(52)]?.rate) === 241 && Number(p3[day(59)]?.rate) === 312.66 && p3[day(60)]?.min_stay_arrival === 2 && p3[day(68)]?.min_stay_arrival === 5, JSON.stringify(p3).slice(0, 500));
+
 // 4. Blocking dates closes availability.
 since = new Date().toISOString();
 r = await call('POST', '/api/blocks', { unitId: UID, from: day(40), to: day(42), reason: 'Queue test block' });
