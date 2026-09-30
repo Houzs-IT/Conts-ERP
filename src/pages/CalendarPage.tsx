@@ -600,7 +600,7 @@ function SetPriceModal({ m, onClose, onSave }: { m: { unit: Unit; channel: strin
   const label = m.channel === 'web' ? 'Web rate' : CHANNEL[m.channel as BookingChannel].label;
   return (
     <CentreModal title="Set price" sub={`${m.unit.unitNumber} · ${label} · ${m.dayIso}`} onClose={onClose} saveLabel="Set price" canSave={v !== '' && Number(v) >= 0} onSave={() => onSave(Number(v))}>
-      <Field label="Price (RM / night)" type="number" min={0} numeric value={v} onChange={e => setV(e.target.value)} help="Pushed to the connected channel for this night. Confirmed bookings keep their original rate." />
+      <Field label="Price (RM / night)" type="number" min={0} step="0.01" numeric value={v} onChange={e => setV(e.target.value)} help="Pushed to the connected channel for this night. Confirmed bookings keep their original rate." />
     </CentreModal>
   );
 }
@@ -748,7 +748,7 @@ function RateUpdate({ units, initial, onClose, onSave }: {
               <Field label="To" type="date" value={l.to} min={l.from || undefined} onChange={e => setLine(i, { to: e.target.value })} />
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <Field label="Price (RM)" type="number" min={0} numeric value={l.price} onChange={e => setLine(i, { price: e.target.value })} help="Empty keeps it." />
+              <Field label="Price (RM)" type="number" min={0} step="0.01" numeric value={l.price} onChange={e => setLine(i, { price: e.target.value })} help="Empty keeps it." />
               <Field label="Min stay" type="number" min={1} max={60} numeric value={l.minStay} onChange={e => setLine(i, { minStay: e.target.value })} help={minStayOk(l) ? '1 removes it.' : '1 to 60 nights.'} />
               <div className="flex flex-col gap-[7px]">
                 <label className="text-[12px] font-medium text-muted-ink" htmlFor={`stop-${i}`}>Stop sell</label>
