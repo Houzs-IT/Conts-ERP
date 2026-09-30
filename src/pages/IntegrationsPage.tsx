@@ -9,6 +9,7 @@ import Icon from '../components/Icon';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
+import ChannexSyncPanel from '../components/ChannexSyncPanel';
 import { api } from '../lib/api';
 import { date, timeWithZone, masked } from '../lib/format';
 import { INTEGRATION } from '../lib/vocabulary';
@@ -150,6 +151,8 @@ export default function IntegrationsPage() {
       <PageHeader title="Integrations" sub={`${rows.length} connections · ${problems} needing attention`} />
 
       {error && <StaleBanner message={`Showing the last status we have. ${error}`} onRetry={reload} />}
+
+      <ChannexSyncPanel />
 
       {loading && rows.length === 0 ? (
         <Card><TableSkeleton rows={6} cols={3} /></Card>

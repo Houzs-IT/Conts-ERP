@@ -34,6 +34,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ORDER BY r.check_in`, from, to);
 
   const rates = await all<any>(env, `SELECT unit_id, channel, rate_date, rate FROM channel_rates WHERE rate_date >= ? AND rate_date <= ?`, from, to);
+  const restr = await all<any>(env, `SELECT unit_id, rate_date, min_stay, stop_sell FROM unit_restrictions WHERE rate_date >= ? AND rate_date <= ? AND (min_stay > 1 OR stop_sell)`, from, to);
 
   return json({
     from, to,
@@ -42,6 +43,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     baseRate: Object.fromEntries(units.map(u => [u.id, Number(u.base_rate)])),
     // Nights priced by hand, keyed "unitId:channel:date" (channel 'web' is the direct rate).
     rates: Object.fromEntries(rates.map(r => [`${r.unit_id}:${r.channel}:${r.rate_date}`, Number(r.rate)])),
+    // Nights with a minimum stay above one or closed for sale, keyed "unitId:date".
+    restrictions: Object.fromEntries(restr.map(r => [`${r.unit_id}:${r.rate_date}`, { minStay: r.min_stay ?? 1, stopSell: !!r.stop_sell }])),
     // label is server-provided so channel and status never depend on colour.
     blocks: blocks.map(b => ({
       id: b.id, unitId: b.unit_id, channel: b.channel, state: b.state,

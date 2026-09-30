@@ -15,6 +15,7 @@ id = "e0781ccdee9046919161c28cb95694c0"
 
 [triggers]
 crons = [
+  "* * * * *",      # send the Channex outbox: retries and anything the request-time flush missed
   "*/15 * * * *",   # drain the quiet-hours notification queue
   "0 * * * *",      # SLA sweep: move overdue tasks, flag unsent statements
 ]
@@ -23,3 +24,4 @@ crons = [
 TIMEZONE = "Asia/Kuala_Lumpur"
 QUIET_HOURS_START = "22"
 QUIET_HOURS_END = "8"
+CHANNEX_BASE_URL = "https://app.channex.io"

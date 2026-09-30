@@ -1,5 +1,6 @@
 import { type Env, all, run, nowIso } from '../functions/_lib/db';
 import { deliver } from '../functions/_lib/notify';
+import { flushWhenQuiet } from '../functions/_lib/channexQueue';
 
 /**
  * Cron worker. Deployed separately from Pages:
@@ -9,13 +10,20 @@ import { deliver } from '../functions/_lib/notify';
  * be served as a URL instead of running on a schedule. It shares the same D1
  * binding and the same helpers.
  *
+ * The every-minute trigger only sends the Channex outbox (retries and anything the request-time
+ * flush missed); it returns before the jobs below, which run on the other two triggers.
+ *
  * Three jobs, all idempotent:
  *   1. drain the quiet-hours notification queue
  *   2. mark tasks overdue once their committed time passes
  *   3. flag statements finalised but unsent for three days
  */
+const CHANNEX_CRON = '* * * * *';
+
 export default {
-  async scheduled(_event: ScheduledEvent, env: Env) {
+  async scheduled(event: ScheduledEvent, env: Env) {
+    if (event.cron === CHANNEX_CRON) { await flushWhenQuiet(env); return; }
+
     const now = new Date();
     const myt = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
     const hour = myt.getHours();

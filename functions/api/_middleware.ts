@@ -1,6 +1,7 @@
 import { type Env, fail } from '../_lib/db';
 import { readSession, readCookie, signSession, cookie, sessionLimits, securitySettings, isFieldRole, canSeeFinance } from '../_lib/auth';
 import { doorFor, doorRefusal } from '../_lib/door';
+import { flushWhenQuiet, FLUSH_DELAY_MS } from '../_lib/channexQueue';
 
 /**
  * Runs before every /api endpoint. Most endpoints only check that someone is signed
@@ -27,7 +28,7 @@ const PUBLIC = new Set([
   'GET /api/auth/reset-password', 'POST /api/auth/reset-password',
 ]);
 
-export const onRequest: PagesFunction<Env> = async ({ request, env, next }) => {
+export const onRequest: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => {
   const route = `${request.method} ${new URL(request.url).pathname.replace(/\/+$/, '')}`;
   if (request.method === 'OPTIONS' || PUBLIC.has(route)) return next();
 
@@ -49,6 +50,10 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, next }) => {
   }
 
   const response = await next();
+  // Any write may have queued Channex updates; send them once the burst of edits has gone quiet.
+  if (request.method !== 'GET' && response.status < 400) {
+    waitUntil(new Promise(r => setTimeout(r, FLUSH_DELAY_MS)).then(() => flushWhenQuiet(env)).catch(() => {}));
+  }
   // Slide the idle deadline forward on every authenticated call, capped at the
   // absolute limit from first login (see signSession). Skipped when the endpoint
   // already set its own cookie (logout clearing it, login/reset-password issuing a

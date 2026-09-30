@@ -55,7 +55,7 @@ interface Block {
   id: string; unitId: string; channel: BookingChannel; state: ReservationState;
   guestName: string; checkIn: string; checkOut: string; grossBookingValue: number; ref: string | null; reason: string | null;
 }
-interface Payload { from: string; to: string; units: Unit[]; blocks: Block[]; baseRate: Record<string, number>; rates?: Record<string, number>; generatedAt: string }
+interface Payload { from: string; to: string; units: Unit[]; blocks: Block[]; baseRate: Record<string, number>; rates?: Record<string, number>; restrictions?: Record<string, { minStay: number; stopSell: boolean }>; generatedAt: string }
 
 const today = new Date(todayMyt());
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -104,7 +104,7 @@ export default function CalendarPage() {
   const [priceModal, setPriceModal] = useState<null | { unit: Unit; channel: string; dayIso: string; current: number }>(null);
   const [blockWizard, setBlockWizard] = useState(false);
   const [blockPrefill, setBlockPrefill] = useState<{ unitId?: string; from?: string; to?: string }>({});
-  const [rateUpdate, setRateUpdate] = useState(false);
+  const [rateUpdate, setRateUpdate] = useState<false | { unitIds?: string[]; from?: string; to?: string }>(false);
   const [openBlock, setOpenBlock] = useState<Block | null>(null);
   const [editDates, setEditDates] = useState<Block | null>(null);
   const [chatBlock, setChatBlock] = useState<Block | null>(null);
@@ -338,7 +338,7 @@ export default function CalendarPage() {
         {/* Toolbar */}
         <div className="px-5 py-[11px] [border-bottom:1px_solid_var(--color-line)] flex items-center gap-[9px] flex-wrap">
           <Button size="sm" variant={expanded ? 'primary' : 'secondary'} icon={<Icon name={expanded ? 'ChevronsLeft' : 'ChevronsRight'} size="sm" />} onClick={() => setExpanded(v => !v)}>{expanded ? 'Collapse rates' : 'Expand rates'}</Button>
-          <Button size="sm" variant="secondary" onClick={() => setRateUpdate(true)}>Rate update</Button>
+          <Button size="sm" variant="secondary" onClick={() => setRateUpdate({})}>Rate update</Button>
           <Button size="sm" variant="secondary" style={{ color: toneMap.critical.fg, borderColor: toneMap.critical.line }} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }}>Block wizard</Button>
           <Button size="sm" variant="secondary" icon={<Icon name="RefreshCw" size="sm" />} loading={syncing} onClick={refresh}>Refresh</Button>
           <span className="text-[12px] text-muted-ink">Airbnb, Booking.com and Agoda synced 14:06 MYT</span>
@@ -428,6 +428,19 @@ export default function CalendarPage() {
                         {Array.from({ length: span }, (_, i) => {
                           const booked = cells[i] != null;
                           return <div key={i} className="flex-none w-[62px] box-border [border-left:1px_solid_var(--color-line-soft)] grid place-items-center text-[11px] [font-variant-numeric:tabular-nums]" style={{ color: booked ? color.textMuted : color.ink, background: i === todayIdx ? color.goldTint : undefined }}>{booked ? '0 | 1' : '1 | 1'}</div>;
+                        })}
+                      </div>
+                      <div className="flex [border-bottom:1px_solid_var(--color-line-soft)] bg-page">
+                        <div className="w-60 box-border flex-none sticky left-0 z-[2] bg-page px-4 py-1.5 [border-right:1px_solid_var(--color-line)] text-[11.5px] font-medium text-muted-ink">Min stay · stop sell</div>
+                        {Array.from({ length: span }, (_, i) => {
+                          const rs = data?.restrictions?.[`${u.id}:${dayIso(i)}`];
+                          return (
+                            <button key={i} type="button" onClick={() => setRateUpdate({ unitIds: [u.id], from: dayIso(i), to: dayIso(i) })} title="Set minimum stay or stop sell"
+                              className="flex-none w-[62px] box-border border-none [border-left:1px_solid_var(--color-line-soft)]! cursor-pointer font-sans text-[11px] px-[2px] py-1.5 [font-variant-numeric:tabular-nums]"
+                              style={{ color: rs?.stopSell ? toneMap.critical.fg : rs ? color.ink : color.textMuted, background: i === todayIdx ? color.goldTint : 'transparent', fontWeight: rs ? 600 : 400 }}>
+                              {rs?.stopSell ? 'Closed' : rs && rs.minStay > 1 ? `min ${rs.minStay}` : '·'}
+                            </button>
+                          );
                         })}
                       </div>
                       {rateRowsFor(u).map(r => {
@@ -533,12 +546,18 @@ export default function CalendarPage() {
             .then(() => { setBlockWizard(false); toast({ tone: 'success', title: 'Dates blocked.', body: `Held on every channel · ${dateRange(v.from, v.to)}.` }); reload(); })
             .catch(notifyFailure);
         }} />}
-      {rateUpdate && <RateUpdate units={units} onClose={() => setRateUpdate(false)}
+      {rateUpdate && <RateUpdate units={units} initial={rateUpdate} onClose={() => setRateUpdate(false)}
         onSave={v => {
-          api.post('/rates/bulk', { unitIds: v.unitIds, channels: v.channels, from: v.from, to: v.to, baseRate: v.priceSen })
+          api.post('/rates/bulk', {
+            unitIds: v.unitIds, from: v.from, to: v.to,
+            ...(v.priceSen !== undefined ? { channels: v.channels, baseRate: v.priceSen } : {}),
+            ...(v.minStay !== undefined ? { minStay: v.minStay } : {}),
+            ...(v.stopSell !== undefined ? { stopSell: v.stopSell } : {}),
+          })
             .then(() => {
               setRateUpdate(false);
-              toast({ tone: 'success', title: 'Rates saved.', body: `${v.channels.length} ${v.channels.length === 1 ? 'channel' : 'channels'} · ${v.unitIds.length} ${v.unitIds.length === 1 ? 'unit' : 'units'} · ${dateRange(v.from, v.to)}.` });
+              const what = [v.priceSen !== undefined && 'price', v.minStay !== undefined && 'minimum stay', v.stopSell !== undefined && (v.stopSell ? 'stop sell' : 'reopened')].filter(Boolean).join(', ');
+              toast({ tone: 'success', title: 'Saved.', body: `${what} · ${v.unitIds.length} ${v.unitIds.length === 1 ? 'unit' : 'units'} · ${dateRange(v.from, v.to)}.` });
               reload();
             })
             .catch(notifyFailure);
@@ -669,20 +688,30 @@ function BlockWizard({ units, initial, onClose, onSave }: {
     </CentreModal>
   );
 }
-function RateUpdate({ units, onClose, onSave }: {
-  units: Unit[]; onClose: () => void;
-  onSave: (v: { unitIds: string[]; channels: BookingChannel[]; from: string; to: string; priceSen: number }) => void;
+function RateUpdate({ units, initial, onClose, onSave }: {
+  units: Unit[]; initial: { unitIds?: string[]; from?: string; to?: string }; onClose: () => void;
+  onSave: (v: { unitIds: string[]; channels: BookingChannel[]; from: string; to: string; priceSen?: number; minStay?: number; stopSell?: boolean }) => void;
 }) {
-  const [unitSel, setUnitSel] = useState<Record<string, boolean>>(Object.fromEntries(units.map(u => [u.id, true])));
+  const [unitSel, setUnitSel] = useState<Record<string, boolean>>(Object.fromEntries(units.map(u => [u.id, initial.unitIds ? initial.unitIds.includes(u.id) : true])));
   const [chanSel, setChanSel] = useState<Record<string, boolean>>({ direct: true, airbnb: true, booking_com: true, agoda: true });
-  const [fromD, setFromD] = useState(''); const [toD, setToD] = useState(''); const [price, setPrice] = useState('');
+  const [fromD, setFromD] = useState(initial.from ?? ''); const [toD, setToD] = useState(initial.to ?? ''); const [price, setPrice] = useState('');
+  const [minStay, setMinStay] = useState('');
+  const [stop, setStop] = useState<'same' | 'close' | 'open'>('same');
   const unitIds = units.filter(u => unitSel[u.id]).map(u => u.id);
   const channels = PUSH.filter(c => chanSel[c]);
-  const valid = unitIds.length > 0 && channels.length > 0 && fromD !== '' && toD !== '' && toD >= fromD && price !== '' && Number(price) >= 0;
+  const hasPrice = price !== '' && Number(price) >= 0;
+  const minStayOk = minStay === '' || (Number.isInteger(Number(minStay)) && Number(minStay) >= 1 && Number(minStay) <= 60);
+  const valid = unitIds.length > 0 && fromD !== '' && toD !== '' && toD >= fromD && minStayOk
+    && (hasPrice || minStay !== '' || stop !== 'same') && (!hasPrice || channels.length > 0);
   const pill = (on: boolean) => `inline-flex items-center gap-[6px] h-[30px] px-[11px] rounded-pill cursor-pointer [font:inherit] text-[12px] border border-solid ${on ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink'}`;
   return (
-    <CentreModal title="Rate update" sub="Apply a rate across a date range, units and channels in one push." onClose={onClose} saveLabel="Push rates" canSave={valid}
-      onSave={() => onSave({ unitIds, channels, from: fromD, to: toD, priceSen: Math.round(Number(price) * 100) })}>
+    <CentreModal title="Rate update" sub="Set a price, minimum stay or stop sell across a date range and units in one save." onClose={onClose} saveLabel="Save" canSave={valid}
+      onSave={() => onSave({
+        unitIds, channels, from: fromD, to: toD,
+        ...(hasPrice ? { priceSen: Math.round(Number(price) * 100) } : {}),
+        ...(minStay !== '' ? { minStay: Number(minStay) } : {}),
+        ...(stop !== 'same' ? { stopSell: stop === 'close' } : {}),
+      })}>
       <div className="flex flex-col gap-[7px]">
         <label className="text-[12px] font-medium text-muted-ink">Units · {unitIds.length}/{units.length}</label>
         <div className="flex gap-2 flex-wrap">
@@ -691,21 +720,35 @@ function RateUpdate({ units, onClose, onSave }: {
           ); })}
         </div>
       </div>
-      <div className="flex flex-col gap-[7px]">
-        <label className="text-[12px] font-medium text-muted-ink">Channels</label>
-        <div className="flex gap-2 flex-wrap">
-          {PUSH.map(c => { const on = !!chanSel[c]; return (
-            <button key={c} type="button" aria-pressed={on} onClick={() => setChanSel(s => ({ ...s, [c]: !on }))} className={pill(on)}>
-              <span className="w-2 h-2 rounded-full flex-none" style={{ background: CHANNEL[c].color }} />{c === 'direct' ? 'Web / Direct' : CHANNEL[c].label}
-            </button>
-          ); })}
-        </div>
-      </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="From" type="date" value={fromD} onChange={e => setFromD(e.target.value)} />
         <Field label="To" type="date" value={toD} min={fromD || undefined} onChange={e => setToD(e.target.value)} />
       </div>
-      <Field label="Price (RM / night)" type="number" min={0} numeric value={price} onChange={e => setPrice(e.target.value)} help="Pushed to every selected channel across the range." />
+      <Field label="Price (RM / night)" type="number" min={0} numeric value={price} onChange={e => setPrice(e.target.value)} help="Leave empty to keep the current prices." />
+      {hasPrice && (
+        <div className="flex flex-col gap-[7px]">
+          <label className="text-[12px] font-medium text-muted-ink">Price applies to</label>
+          <div className="flex gap-2 flex-wrap">
+            {PUSH.map(c => { const on = !!chanSel[c]; return (
+              <button key={c} type="button" aria-pressed={on} onClick={() => setChanSel(s => ({ ...s, [c]: !on }))} className={pill(on)}>
+                <span className="w-2 h-2 rounded-full flex-none" style={{ background: CHANNEL[c].color }} />{c === 'direct' ? 'Web / Direct' : CHANNEL[c].label}
+              </button>
+            ); })}
+          </div>
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Minimum stay (nights)" type="number" min={1} max={60} numeric value={minStay} onChange={e => setMinStay(e.target.value)} help={minStayOk ? 'Empty keeps it. 1 removes it.' : 'Enter 1 to 60 nights.'} />
+        <div className="flex flex-col gap-[7px]">
+          <label className="text-[12px] font-medium text-muted-ink" htmlFor="stop-sell">Stop sell</label>
+          <select id="stop-sell" value={stop} onChange={e => setStop(e.target.value as 'same' | 'close' | 'open')}
+            className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
+            <option value="same">Keep as is</option>
+            <option value="close">Close for sale</option>
+            <option value="open">Open for sale</option>
+          </select>
+        </div>
+      </div>
     </CentreModal>
   );
 }
