@@ -20,6 +20,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, id);
   if (!u) return fail('NOT_FOUND', 'That unit does not exist.', 404);
   if (u.channex_property_id) return fail('CONFLICT', 'This unit is already set up in Channex.', 409);
+  // Nights without their own price go to Channex at the base price, and Channex discards a zero price.
+  if (!(Number(u.base_rate) > 0)) return fail('NO_BASE_PRICE', "Set this unit's base price first (Performance, then Pricing). Channex needs a price for every night.", 409);
 
   const title = u.listing_name?.trim() || `${u.property_name} ${u.unit_number}`;
   const guests = Math.max(1, Number(u.max_guests) || 2);

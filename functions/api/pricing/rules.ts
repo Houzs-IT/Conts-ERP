@@ -13,9 +13,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   if (!canSeeFinance(session.role) && session.role !== 'operations_manager') return fail('FORBIDDEN', 'Pricing is visible to finance, operations managers and management.', 403);
 
+  // Every unit, listed or not: a new unit starts unlisted with no base rate, and it needs one set here
+  // before it can be sold anywhere (Channex setup refuses a unit without a base price).
   const units = await all<any>(env, `
     SELECT u.id, u.unit_number, u.base_rate, u.cost_floor, p.name AS property_name
-    FROM units u JOIN properties p ON p.id = u.property_id WHERE u.is_listed = 1 ORDER BY p.name, u.unit_number`);
+    FROM units u JOIN properties p ON p.id = u.property_id ORDER BY p.name, u.unit_number`);
   const uplifts = await all<any>(env, 'SELECT unit_id, channel, uplift FROM channel_uplifts');
   const integrations = await all<any>(env, 'SELECT provider, state FROM integrations');
 
