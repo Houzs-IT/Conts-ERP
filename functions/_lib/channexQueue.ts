@@ -194,7 +194,7 @@ function runs<T>(dates: string[], valueOf: (d: string) => T, same: (a: T, b: T) 
  * ones), built from Conts's own data. Anything already queued for those units is superseded. The
  * flush that follows sends it as exactly two calls — one availability, one restrictions.
  */
-export async function queueFullSync(env: Env, unitIds?: string[]): Promise<{ units: number }> {
+export async function queueFullSync(env: Env, unitIds?: string[], opts: { pricesOnly?: boolean } = {}): Promise<{ units: number }> {
   if (!channexConfigured(env)) return { units: 0 };
   const units = await all<{ id: string; base_rate: number; channex_property_id: string; channex_room_type_id: string; channex_rate_plan_id: string }>(env, `
     SELECT id, base_rate, channex_property_id, channex_room_type_id, channex_rate_plan_id FROM units
@@ -216,7 +216,7 @@ export async function queueFullSync(env: Env, unitIds?: string[]): Promise<{ uni
   const restr = await all<{ unit_id: string; rate_date: string; min_stay: number | null; stop_sell: boolean }>(env, `
     SELECT unit_id, rate_date, min_stay, stop_sell FROM unit_restrictions WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND rate_date BETWEEN ? AND ?`, JSON.stringify(ids), today, last);
 
-  await run(env, `DELETE FROM channex_outbox WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND status IN ('queued','failed')`, JSON.stringify(ids));
+  await run(env, `DELETE FROM channex_outbox WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND status IN ('queued','failed')${opts.pricesOnly ? " AND kind = 'restrictions'" : ''}`, JSON.stringify(ids));
   const now = nowIso();
   const avail: Record<string, unknown>[] = [], restrictions: Record<string, unknown>[] = [];
   for (const u of units) {
@@ -230,11 +230,11 @@ export async function queueFullSync(env: Env, unitIds?: string[]): Promise<{ uni
     }
     const night = (d: string) => ({ rate: rateOn.get(d) ?? Number(u.base_rate), minStay: resOn.get(d)?.min_stay ?? 1, stopSell: !!resOn.get(d)?.stop_sell });
     for (const r of runs(dates, night, (x, y) => x.rate === y.rate && x.minStay === y.minStay && x.stopSell === y.stopSell)) {
-      restrictions.push({ id: crypto.randomUUID(), unit_id: u.id, property_id: u.channex_property_id, rate_plan_id: u.channex_rate_plan_id, date_from: r.from, date_to: r.to, rate: r.value.rate / 100, min_stay: r.value.minStay, stop_sell: r.value.stopSell });
+      restrictions.push({ id: crypto.randomUUID(), unit_id: u.id, property_id: u.channex_property_id, rate_plan_id: u.channex_rate_plan_id, date_from: r.from, date_to: r.to, rate: r.value.rate > 0 ? r.value.rate / 100 : null, min_stay: r.value.minStay, stop_sell: r.value.stopSell });   // never a zero price: Channex discards it
     }
   }
-  // One insert per kind, whatever the number of ranges.
-  await run(env, `INSERT INTO channex_outbox (id, kind, unit_id, property_id, room_type_id, date_from, date_to, availability, next_attempt_at, created_at)
+  // One insert per kind, whatever the number of ranges. `pricesOnly` (a base price change) leaves availability alone.
+  if (!opts.pricesOnly) await run(env, `INSERT INTO channex_outbox (id, kind, unit_id, property_id, room_type_id, date_from, date_to, availability, next_attempt_at, created_at)
     SELECT id, 'availability', unit_id, property_id, room_type_id, date_from, date_to, availability, ?, ?
     FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, property_id text, room_type_id text, date_from text, date_to text, availability int)`, now, now, JSON.stringify(avail));
   await run(env, `INSERT INTO channex_outbox (id, kind, unit_id, property_id, rate_plan_id, date_from, date_to, rate, min_stay, stop_sell, next_attempt_at, created_at)
