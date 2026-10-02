@@ -1,6 +1,6 @@
 import { type Env, one, all, json } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
-import { channexConfigured, channexServer } from '../../../_lib/channex';
+import { channexConfigured, channexServer, channexListWebhooks } from '../../../_lib/channex';
 
 /** GET /api/integrations/channex/status — the outbox at a glance: linked units, what is waiting or
  *  failed, and the last calls with Channex's task ids (what the certification form asks for). */
@@ -19,7 +19,19 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     SELECT c.kind, c.called_at, c.status, c.task_id, c.row_count, c.full_sync, c.property_id,
            (SELECT u.unit_number FROM units u WHERE u.channex_property_id = c.property_id LIMIT 1) AS unit
     FROM channex_calls c ORDER BY c.called_at DESC LIMIT 25`);
+  // Whether Channex is set to notify this site about bookings (management only: it is theirs to switch on).
+  // `registered` is null when Channex could not be asked, so the panel does not claim either way.
+  let notifications: { secretSet: boolean; registered: boolean | null } | null = null;
+  if (channexConfigured(env) && session.role === 'management') {
+    const callbackUrl = `${new URL(request.url).origin}/api/integrations/channex-webhook`;
+    const hooks = await channexListWebhooks(env).catch(() => null);
+    notifications = {
+      secretSet: !!env.CHANNEX_WEBHOOK_SECRET,
+      registered: hooks?.ok ? (hooks.body?.data ?? []).some((w: any) => w.attributes?.callback_url === callbackUrl && w.attributes?.is_active !== false) : null,
+    };
+  }
   return json({
+    notifications,
     configured: channexConfigured(env),
     server: channexServer(env),
     linkedUnits: linked?.n ?? 0,
