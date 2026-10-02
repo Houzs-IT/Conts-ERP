@@ -14,6 +14,7 @@ const BID = r.json?.id;
 r = await call('POST', '/api/units', { buildingId: BID, unitCode: `CC-${tag}`, unitNumber: `CC-${tag}`, listingName: `Channex Channels Studio ${tag}` });
 const UID = r.json?.id;
 
+await call('PUT', '/api/rates', { unitId: UID, baseRate: 20000 });   // Channex setup needs a base price
 r = await call('POST', `/api/units/${UID}/channels/lookup`, { ota: 'booking_com', hotelId: '5868189' });
 check('lookup refused before the unit is in Channex (409)', r.status === 409, r.text);
 r = await call('POST', `/api/units/${UID}/channex-setup`, {});

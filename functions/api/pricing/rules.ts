@@ -1,9 +1,7 @@
 import { type Env, all, json, fail, nowIso } from '../../_lib/db';
 import { requireSession, canSeeFinance } from '../../_lib/auth';
 
-const WEEKEND_MULTIPLIER = 1.22;
-/** Until someone sets an uplift by hand, each channel adds this share of the base rate. */
-const DEFAULT_UPLIFT: Record<string, number> = { airbnb: 0.12, booking_com: 0.18, agoda: 0.16 };
+import { WEEKEND_MULTIPLIER, upliftFor } from '../../_lib/channelPrice';
 const CHANNELS = ['airbnb', 'booking_com', 'agoda'];
 const SYNC: Record<string, 'synced' | 'queued' | 'failed'> = { connected: 'synced', degraded: 'queued', expired: 'failed', failed: 'failed' };
 
@@ -31,7 +29,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         const integ = integrations.find(i => i.provider === ch);
         return {
           channel: ch,
-          upliftSen: set ? Number(set.uplift) : Math.round(Number(u.base_rate) * DEFAULT_UPLIFT[ch]),
+          upliftSen: upliftFor(ch, Number(u.base_rate), set?.uplift),
           sync: integ ? SYNC[integ.state] ?? 'failed' : 'failed',
         };
       }),

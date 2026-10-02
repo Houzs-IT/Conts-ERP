@@ -24,6 +24,7 @@ const BID = r.json?.id;
 r = await call('POST', '/api/units', { buildingId: BID, unitCode: `CQ-${tag}`, unitNumber: `CQ-${tag}`, listingName: `Channex Queue Studio ${tag}` });
 const UID = r.json?.id;
 
+await call('PUT', '/api/rates', { unitId: UID, baseRate: 20000 });   // Channex setup needs a base price
 // 1. Setup: full sync through the outbox, exactly one availability + one restrictions call.
 let since = new Date().toISOString();
 r = await call('POST', `/api/units/${UID}/channex-setup`, {});

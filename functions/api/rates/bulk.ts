@@ -3,7 +3,7 @@ import { requireSession, canSeeFinance } from '../../_lib/auth';
 import { syncRateIfLinked, syncRestrictionsIfLinked } from '../../_lib/channexSync';
 
 const CHANNELS = ['web', 'airbnb', 'booking_com', 'agoda'];
-const WEEKEND_MULTIPLIER = 1.22;
+import { WEEKEND_MULTIPLIER, type SalesChannel } from '../../_lib/channelPrice';
 const MAX_LINES = 20;
 
 interface Line { from: string; to: string; baseRate?: number; minStay?: number | null; stopSell?: boolean }
@@ -63,13 +63,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           ON CONFLICT (unit_id, channel, rate_date) DO UPDATE SET rate = excluded.rate, updated_at = excluded.updated_at`,
           unitId, now, JSON.stringify(rows));
         written += rows.length;
-        // Channex takes one flat rate per date range, so a run of consecutive nights at the same price is one value.
-        if (channels.includes('web')) {
+        // Channex takes one flat rate per date range, so a run of consecutive nights at the same price is one
+        // value. Each channel's prices go to that channel's own rate plan.
+        for (const channel of channels) {
           let i = 0;
           while (i < days.length) {
             let j = i;
-            while (j + 1 < days.length && priceOn('web', days[j + 1]) === priceOn('web', days[i])) j++;
-            await syncRateIfLinked(env, unitId, days[i], priceOn('web', days[i]), days[j]);
+            while (j + 1 < days.length && priceOn(channel, days[j + 1]) === priceOn(channel, days[i])) j++;
+            await syncRateIfLinked(env, unitId, days[i], priceOn(channel, days[i]), days[j], channel as SalesChannel);
             i = j + 1;
           }
         }
