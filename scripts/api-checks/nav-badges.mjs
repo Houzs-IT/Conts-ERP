@@ -16,4 +16,15 @@ check('housekeeper gets zeros', r.status === 200 && r.json.today === 0 && r.json
 r = await callAsUser({ userId: '11111111-1111-4111-8111-00000000aa01', email: 'ops-check@theconts.test', role: 'operations_staff' }, 'GET', '/api/nav/badges');
 check('operations staff are not shown the statements count', r.status === 200 && r.json.statements === 0, r.text);
 
+// The booking-site cards and the header chip come from real connections, never stored sample status.
+r = await call('GET', '/api/nav/badges');
+check('header chip data present (units, last sent, failed)', Number.isInteger(r.json?.channels?.units) && Number.isInteger(r.json?.channels?.failed), r.text);
+const integ = (await call('GET', '/api/integrations')).json?.data ?? [];
+const real = (await call('GET', '/api/integrations/channex/status')).json;
+for (const p of ['airbnb', 'booking_com', 'agoda']) {
+  const row = integ.find(i => i.provider === p);
+  check(`${p} card matches real connections`, row?.viaChannex === true && (row.unitsLinked === 0 ? row.state === 'not_connected' && row.lastSyncedAt === null : ['connected', 'degraded'].includes(row.state)) && row.credentialMasked === null, JSON.stringify(row));
+}
+check('no booking site claims to be connected while no unit is', r.json.channels.units > 0 || integ.filter(i => i.viaChannex).every(i => i.state === 'not_connected'), JSON.stringify({ units: r.json.channels.units, linked: real?.linkedUnits }));
+
 done();

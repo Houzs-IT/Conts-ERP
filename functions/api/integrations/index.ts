@@ -1,7 +1,9 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { channexConfigured } from '../../_lib/channex';
 
 const MANAGE = ['management', 'operations_manager'];
+const OTA_PROVIDERS = ['airbnb', 'booking_com', 'agoda'];
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -12,19 +14,37 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            (SELECT COUNT(*) FROM unit_channels c WHERE c.channel = i.provider AND c.is_active = 1) AS units_linked
     FROM integrations i ORDER BY i.provider`);
 
-  const INTERVAL: Record<string, string | null> = { airbnb: 'Every 15 min', booking_com: 'Every 15 min', agoda: 'Every 15 min', whatsapp: 'Real time', maybank: 'Daily', utilities: null };
+  const INTERVAL: Record<string, string | null> = { whatsapp: 'Real time', maybank: 'Daily', utilities: null };
+
+  // Airbnb, Booking.com and Agoda are connected per unit through Channex, so their cards are worked out from
+  // the real connections (channex_channels) and the outbox, never from the stored sample status.
+  const configured = channexConfigured(env);
+  const linked = await all<{ ota: string; n: number }>(env, 'SELECT ota, count(*)::int AS n FROM channex_channels GROUP BY ota');
+  const failed = await all<{ ota: string; n: number }>(env, `
+    SELECT c.ota, count(*)::int AS n FROM channex_outbox o JOIN channex_channels c ON c.unit_id = o.unit_id WHERE o.status = 'failed' GROUP BY c.ota`);
+  const lastSent = await one<{ at: string | null }>(env, 'SELECT max(called_at) AS at FROM channex_calls WHERE status BETWEEN 200 AND 299');
+  const ota = (provider: string) => {
+    const units = Number(linked.find(l => l.ota === provider)?.n ?? 0);
+    const refused = Number(failed.find(f => f.ota === provider)?.n ?? 0);
+    return {
+      state: !configured || units === 0 ? 'not_connected' : refused ? 'degraded' : 'connected',
+      lastSyncedAt: units ? lastSent?.at ?? null : null,
+      lastError: units && refused ? `${refused} ${refused === 1 ? 'update was' : 'updates were'} refused by Channex. See Channex sync above.` : null,
+      unitsLinked: units, syncInterval: 'As changes happen', credentialMasked: null, viaChannex: true,
+    };
+  };
 
   // Credentials are never serialised, at any role: only a masked tail.
   return json({
     generatedAt: new Date().toISOString(),
-    data: rows.map(r => ({
+    data: rows.map(r => OTA_PROVIDERS.includes(r.provider) ? { id: r.id, provider: r.provider, ...ota(r.provider) } : {
       id: r.id, provider: r.provider,
       state: r.provider === 'utilities' ? 'manual' : r.state,
       lastSyncedAt: r.last_synced_at, lastError: r.last_error,
       unitsLinked: Number(r.units_linked),
       syncInterval: INTERVAL[r.provider] ?? 'Every 15 min',
       credentialMasked: r.credentials ? `••••${String(r.credentials).slice(-4)}` : null,
-    })),
+    }),
   });
 };
 

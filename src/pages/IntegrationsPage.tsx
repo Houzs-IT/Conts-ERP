@@ -24,11 +24,12 @@ import type { IntegrationState, Tone } from '../lib/types';
  */
 
 /** Local-only pseudo-state for the manual utilities source. Not a sync enum. */
-type RowState = IntegrationState | 'manual';
+type RowState = IntegrationState | 'manual' | 'not_connected';
 
 const META: Record<RowState, { label: string; tone: Tone }> = {
   ...INTEGRATION,
   manual: { label: 'Manual', tone: 'neutral' },
+  not_connected: { label: 'Not connected', tone: 'neutral' },
 };
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -47,6 +48,8 @@ interface Row {
   /** ISO 8601. Null when a channel has never completed a pull. */
   lastSyncedAt: string | null;
   lastError: string | null;
+  /** Airbnb, Booking.com and Agoda: connected per unit through Channex; status comes from the real connections. */
+  viaChannex?: boolean;
   unitsLinked: number;
   /** Null for a manual source. */
   syncInterval: string | null;
@@ -72,9 +75,12 @@ const FALLBACK: Payload = {
 function noteFor(row: Row): string {
   const label = PROVIDER_LABEL[row.provider] ?? row.provider;
   switch (row.state) {
-    case 'connected': return row.lastSyncedAt ? `Synced with ${label} · ${timeWithZone(row.lastSyncedAt)}` : `Synced with ${label}.`;
+    case 'not_connected': return `No unit is connected to ${label} yet. Connect one from the unit's Channels card (Properties, then Units).`;
+    case 'connected': return row.viaChannex
+      ? 'Connected through Channex. Prices and open dates are sent as they change, and bookings arrive automatically.'
+      : row.lastSyncedAt ? `Synced with ${label} · ${timeWithZone(row.lastSyncedAt)}` : `Synced with ${label}.`;
     case 'expired':   return `${label} connection expired. Reconnect to resume syncing.`;
-    case 'degraded':  return `${label} is syncing slowly. Some bookings may be delayed.`;
+    case 'degraded':  return row.viaChannex ? `Some updates to ${label} were refused.` : `${label} is syncing slowly. Some bookings may be delayed.`;
     case 'failed':    return row.lastSyncedAt ? `${label} sync failed at ${timeWithZone(row.lastSyncedAt)}.` : `${label} sync failed.`;
     case 'manual':    return 'Readings are entered by hand each month. No automatic sync.';
   }
@@ -82,6 +88,8 @@ function noteFor(row: Row): string {
 
 function syncedLine(row: Row): string {
   if (row.state === 'manual') return row.lastSyncedAt ? `Last reading ${date(row.lastSyncedAt)}` : 'No readings yet';
+  if (row.state === 'not_connected') return 'Through Channex';
+  if (row.viaChannex) return row.lastSyncedAt ? `Last update sent ${date(row.lastSyncedAt)} · ${timeWithZone(row.lastSyncedAt)}` : 'No updates sent yet';
   return row.lastSyncedAt ? `Last synced ${date(row.lastSyncedAt)} · ${timeWithZone(row.lastSyncedAt)}` : 'Never synced';
 }
 
@@ -93,6 +101,7 @@ function actionsFor(state: RowState): { reconnect: boolean; retry: boolean } {
     case 'failed':    return { reconnect: true, retry: true };
     case 'expired':   return { reconnect: true, retry: false };
     case 'manual':    return { reconnect: false, retry: false };
+    case 'not_connected': return { reconnect: false, retry: false };
   }
 }
 
@@ -148,7 +157,7 @@ export default function IntegrationsPage() {
 
   return (
     <>
-      <PageHeader title="Integrations" sub={`${rows.length} connections · ${problems} needing attention`} />
+      <PageHeader title="Integrations" sub={`${rows.filter(r => r.state === 'connected' || r.state === 'degraded').length} connected · ${problems} needing attention`} />
 
       {error && <StaleBanner message={`Showing the last status we have. ${error}`} onRetry={reload} />}
 
@@ -194,12 +203,16 @@ export default function IntegrationsPage() {
                   )}
                   {act.retry && (
                     <Button size="sm" variant="secondary" loading={!!syncing[row.id]} icon={<Icon name="RefreshCw" size="sm" />} onClick={() => retrySync(row)}>
-                      {syncing[row.id] ? 'Syncing…' : 'Retry sync'}
+                      {syncing[row.id] ? 'Syncing…' : row.viaChannex ? 'Check for bookings' : 'Retry sync'}
                     </Button>
                   )}
-                  <Button size="sm" variant="tertiary" icon={<Icon name="SlidersHorizontal" size="sm" />} onClick={() => setManageId(row.id)}>
-                    Manage
-                  </Button>
+                  {row.viaChannex
+                    ? <Button size="sm" variant="tertiary" icon={<Icon name="Building2" size="sm" />} onClick={() => { window.location.hash = '#/properties/units'; }}>Open units</Button>
+                    : (
+                      <Button size="sm" variant="tertiary" icon={<Icon name="SlidersHorizontal" size="sm" />} onClick={() => setManageId(row.id)}>
+                        Manage
+                      </Button>
+                    )}
                 </div>
               </Card>
             );
