@@ -30,4 +30,19 @@ r = await call('GET', `/api/access-credentials/${a.id}`); check('reveal needs ex
 r = await call('GET', '/api/access-credentials'); check('last revealed recorded', r.json.data.find(x => x.id === a.id).lastRevealedBy === 'Test Bot (management)', JSON.stringify(r.json.data.find(x => x.id === a.id)));
 r = await call('GET', '/api/access-credentials', undefined, 'housekeeper'); check('field role gets no secret', r.json.data.every(x => x.secret === ''), '');
 r = await call('POST', '/api/documents', {}); check('document upload with no file refused (422)', r.status === 422, r.text);
+// Building rename and delete: a typo can be corrected, a duplicate name is refused, only an empty building can go.
+{
+  const tag2 = Date.now().toString().slice(-6);
+  let b = await call('POST', '/api/properties', { name: `Typo Tower ${tag2}`, state: 'Kuala Lumpur', city: 'KL' }); const bid = b.json?.id;
+  b = await call('PATCH', `/api/properties/${bid}`, { name: `Regalia Test ${tag2}`, city: 'Kuala Lumpur', state: 'Kuala Lumpur' });
+  check('building renamed', b.status === 200 && (await call('GET', '/api/properties')).json?.buildings?.some(x => x.id === bid && x.name === `Regalia Test ${tag2}`), b.text);
+  const other = (await call('POST', '/api/properties', { name: `Other Tower ${tag2}`, state: 'Kuala Lumpur', city: 'KL' })).json?.id;
+  b = await call('PATCH', `/api/properties/${other}`, { name: `Regalia Test ${tag2}` }); check('rename to an existing name refused (409)', b.status === 409, b.text);
+  b = await call('PATCH', `/api/properties/${bid}`, { name: 'x' }, 'housekeeper'); check('housekeeper cannot rename (403)', b.status === 403, b.text);
+  const u = await call('POST', '/api/units', { buildingId: bid, unitCode: `RT-${tag2}`, unitNumber: `RT-${tag2}`, listingName: 'Rename test' });
+  b = await call('DELETE', `/api/properties/${bid}`); check('building with a unit cannot be deleted (409)', b.status === 409 && b.json?.error?.code === 'HAS_UNITS', b.text);
+  b = await call('DELETE', `/api/properties/${other}`); check('empty building deleted', b.status === 200 && !(await call('GET', '/api/properties')).json?.buildings?.some(x => x.id === other), b.text);
+  console.log(`   rename-test building ${bid} / unit ${u.json?.id} left for SQL cleanup`);
+}
+
 done();

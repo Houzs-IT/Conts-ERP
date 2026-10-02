@@ -72,7 +72,7 @@ export default function PropertiesPage() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<'details' | 'expenses' | 'contract'>('details');
-  const [modal, setModal] = useState<null | { kind: 'building' } | { kind: 'unit'; buildingId: string } | { kind: 'subunit'; buildingId: string; parentUnitId: string; parentLabel: string }>(null);
+  const [modal, setModal] = useState<null | { kind: 'building' } | { kind: 'editBuilding'; building: Building } | { kind: 'unit'; buildingId: string } | { kind: 'subunit'; buildingId: string; parentUnitId: string; parentLabel: string }>(null);
 
   const buildings = data?.buildings ?? [];
   const units = useMemo(() => (data?.units ?? []).map(u => ({ ...u, ...edits[u.id] })), [data, edits]);
@@ -102,6 +102,22 @@ export default function PropertiesPage() {
       const r = await api.post<{ id: string }>('/properties', b);
       setCollapsed(c => ({ ...c, [r.id]: false })); setModal(null);
       toast({ tone: 'success', title: 'Building added.', body: `${b.name} — add units to it.` });
+      reload();
+    } catch (e) { notifyFailure(e); }
+  }
+  async function saveBuilding(id: string, b: Omit<Building, 'id'>) {
+    try {
+      await api.patch(`/properties/${id}`, b);
+      setModal(null);
+      toast({ tone: 'success', title: 'Building updated.', body: b.name });
+      reload();
+    } catch (e) { notifyFailure(e); }
+  }
+  async function deleteBuilding(b: Building) {
+    try {
+      await api.del(`/properties/${b.id}`);
+      setModal(null);
+      toast({ tone: 'success', title: 'Building deleted.', body: b.name });
       reload();
     } catch (e) { notifyFailure(e); }
   }
@@ -169,6 +185,7 @@ export default function PropertiesPage() {
                             </span>
                             <span className="text-[11.5px] text-muted-ink flex-none">{us.length}</span>
                           </button>
+                          <button onClick={() => setModal({ kind: 'editBuilding', building: b })} aria-label={`Edit ${b.name}`} title="Edit building" className="w-[26px] h-[26px] flex-none grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted"><Icon name="Pencil" size="sm" /></button>
                           <button onClick={() => setModal({ kind: 'unit', buildingId: b.id })} aria-label="Add unit" className="w-[26px] h-[26px] flex-none grid place-items-center rounded-control border border-solid border-line bg-card cursor-pointer text-muted-ink"><Icon name="Plus" size="sm" /></button>
                         </div>
                         {open && us.map(u => {
@@ -224,6 +241,9 @@ export default function PropertiesPage() {
       )}
 
       {modal?.kind === 'building' && <AddBuildingModal onClose={() => setModal(null)} onSubmit={addBuilding} />}
+      {modal?.kind === 'editBuilding' && <AddBuildingModal initial={modal.building} onClose={() => setModal(null)}
+        onSubmit={b => void saveBuilding(modal.building.id, b)}
+        onDelete={topUnitsOf(modal.building.id).length === 0 && units.every(u => u.buildingId !== modal.building.id) ? () => void deleteBuilding(modal.building) : undefined} />}
       {modal?.kind === 'unit' && <ConfirmAddUnit building={buildings.find(b => b.id === modal.buildingId)?.name ?? ''} onClose={() => setModal(null)} onConfirm={() => addUnit(modal.buildingId)} />}
       {modal?.kind === 'subunit' && <ConfirmAddSubUnit parentLabel={modal.parentLabel} onClose={() => setModal(null)} onConfirm={() => addSubUnit(modal.buildingId, modal.parentUnitId)} />}
     </>
@@ -463,12 +483,13 @@ function CentreModal({ title, sub, onClose, footer, children }: { title: string;
     </div>
   );
 }
-function AddBuildingModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (b: Omit<Building, 'id'>) => void }) {
-  const [name, setName] = useState(''); const [city, setCity] = useState(''); const [state, setState] = useState(STATES[0]);
+/** Adds a building, or with `initial` edits one. `onDelete` is offered only for a building with no units. */
+function AddBuildingModal({ initial, onClose, onSubmit, onDelete }: { initial?: Building; onClose: () => void; onSubmit: (b: Omit<Building, 'id'>) => void; onDelete?: () => void }) {
+  const [name, setName] = useState(initial?.name ?? ''); const [city, setCity] = useState(initial?.city ?? ''); const [state, setState] = useState(initial?.state ?? STATES[0]);
   const ok = name.trim() !== '' && city.trim() !== '';
   return (
-    <CentreModal title="Add building" sub="A building holds units. Add units to it next." onClose={onClose}
-      footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" disabled={!ok} disabledReason="Fill name and city" onClick={() => onSubmit({ name: name.trim(), city: city.trim(), state })}>Add building</Button></>}>
+    <CentreModal title={initial ? 'Edit building' : 'Add building'} sub={initial ? 'Correct the name or location. Its units stay as they are.' : 'A building holds units. Add units to it next.'} onClose={onClose}
+      footer={<>{onDelete && <Button size="sm" variant="danger" onClick={onDelete}>Delete building</Button>}<Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" disabled={!ok} disabledReason="Fill name and city" onClick={() => onSubmit({ name: name.trim(), city: city.trim(), state })}>{initial ? "Save" : "Add building"}</Button></>}>
       <Field label="Building name" placeholder="e.g. Arte Mont Kiara" value={name} onChange={e => setName(e.target.value)} />
       <Field label="City / area" placeholder="e.g. Mont Kiara, 50480 KL" value={city} onChange={e => setCity(e.target.value)} />
       <Labeled label="State" hint="DROPDOWN"><Select value={state} onChange={setState} options={STATES.map(s => ({ value: s, label: s }))} /></Labeled>

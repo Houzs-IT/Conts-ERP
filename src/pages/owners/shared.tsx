@@ -173,7 +173,8 @@ export function SelectField({ label, value, onChange, options }: { label: string
 export function AddOwnerModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (o: Omit<Owner, 'id' | 'units' | 'portalInvited' | 'contract' | 'defaultManagementFeePct'>) => void }) {
   const [f, setF] = useState({ displayName: '', email: '', phone: '', ic: '', bankName: '', bankAccount: '', accountHolder: '' });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value }));
-  const canSubmit = f.displayName.trim() !== '' && /.+@.+\..+/.test(f.email);
+  // Email is optional: an owner is often added before their email is known. If given, it must look like one.
+  const canSubmit = f.displayName.trim() !== '' && (f.email.trim() === '' || /.+@.+\..+/.test(f.email));
   return (
     <Modal title="Add owner" sub="Create the owner, then link units and preset the fee or GRR." onClose={onClose} submitLabel="Add owner" canSubmit={canSubmit}
       onSubmit={() => onSubmit({ displayName: f.displayName.trim(), email: f.email.trim(), phone: f.phone.trim() || null, ic: f.ic.trim() || null, bankName: f.bankName.trim() || null, bankAccount: f.bankAccount.trim() || null, accountHolder: f.accountHolder.trim() || f.displayName.trim() })}>
