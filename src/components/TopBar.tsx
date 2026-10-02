@@ -70,7 +70,8 @@ export default function TopBar({
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Reads GET /api/search?q=; the fallback keeps the palette populated in dev.
-  const { data: searchData } = useApi<SearchResult[]>(`/search?q=${encodeURIComponent(query.trim())}`, SEARCH_FALLBACK);
+  // Only asked once the palette is open: it used to run an empty search on every page load.
+  const { data: searchData } = useApi<SearchResult[]>(searchOpen ? `/search?q=${encodeURIComponent(query.trim())}` : null, SEARCH_FALLBACK);
 
   const results = useMemo(() => {
     const source = searchData ?? (import.meta.env.DEV ? SEARCH_FALLBACK : []);
