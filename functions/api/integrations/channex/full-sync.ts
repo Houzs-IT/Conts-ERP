@@ -3,6 +3,7 @@ import { requireSession } from '../../../_lib/auth';
 import { MASTER_ROLES } from '../../../_lib/properties';
 import { channexConfigured } from '../../../_lib/channex';
 import { queueFullSync, flushChannexQueue } from '../../../_lib/channexQueue';
+import { ensureOtaRatePlans } from '../../../_lib/channexSync';
 
 /** POST /api/integrations/channex/full-sync — resends 500 days of availability, prices and restrictions
  *  for every linked unit, as two calls. Used when going live and to recover after an outage. */
@@ -16,6 +17,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // which would leave the prices covering fewer days than the availability.
   const unpriced = await all<{ unit_number: string }>(env, 'SELECT unit_number FROM units WHERE channex_property_id IS NOT NULL AND base_rate <= 0 ORDER BY unit_number');
   if (unpriced.length) return fail('NO_BASE_PRICE', `Set a base price first for: ${unpriced.map(u => u.unit_number).join(', ')} (Performance, then Pricing). Nothing was sent.`, 409);
+
+  // Units linked before per-channel prices existed get their Airbnb / Booking.com / Agoda rate plans here.
+  const linked = await all<{ id: string }>(env, 'SELECT id FROM units WHERE channex_property_id IS NOT NULL');
+  try { for (const u of linked) await ensureOtaRatePlans(env, u.id); }
+  catch (e) { return fail('CHANNEX_REFUSED', `${e instanceof Error ? e.message : 'Channex refused a rate plan'}. Nothing was sent.`, 502); }
 
   const { units } = await queueFullSync(env);
   if (!units) return fail('NOTHING_LINKED', 'No unit is set up in Channex yet. Set a unit up from its Channels card first.', 409);

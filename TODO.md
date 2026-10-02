@@ -11,7 +11,10 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Certification build (feat/channex-cert): outbox queue (channexQueue.ts) with one call per property and kind, 10/min per property budget, 429/5xx backoff, quiet-period batching, full sync 500 days in two calls, min stay and stop sell per night (Calendar), Channex panel on Integrations with task ids. Tested on the sandbox: scripts/api-checks/channex-queue.mjs.
 - Certification form submitted 30 Sep (task ids in the owner's notes); waiting for Channex's review and live verification. Keep staging unit T-01 ("Test Property - Conts") for it.
 - Channel connect screens built (feat/channex-channel-connect): unit Channels card connects Booking.com / Agoda by Hotel ID (rooms and rates looked up, one picked) and Airbnb by sign-in link and listing pick (#/channex/airbnb-return). Full Booking.com connect not yet proven on the sandbox: all shared test hotels (5868189, 6519420, 4372137, 10484818) were held by other testers; ask support@channex.io to free one. Airbnb needs a real Airbnb account to test.
-- Go-live needs: pass certification, paid account, CHANNEX_API_KEY + CHANNEX_WEBHOOK_SECRET on production, webhook registered (channex-webhook-setup), migrations 0038-0039 on production, and the cron worker deployed (wrangler.cron.toml, with CHANNEX_API_KEY set on it) so retries run every minute.
+- Channex is live on production (2 Oct): certification passed, Whitelabel subscribed, production key and webhook secret set, booking notifications on. No real unit connected yet.
+- Per-channel prices (feat/channex-per-channel-prices): each linked unit has four Channex rate plans (Direct, Airbnb, Booking.com, Agoda); one pricing rule in functions/_lib/channelPrice.ts (night's own price, else base + uplift, weekend x1.22; default uplift 12/18/16% of base) shared by Pricing, Calendar and Channex. Needs migration 0041 on production before merge.
+- Next: pilot unit (base price, Set up in Channex, connect its OTA listings; make sure no iCal / other channel manager controls it). Integrations page still shows the old sample Airbnb / Booking.com / Agoda cards; make them reflect real connections.
+- Still off: the cron worker (wrangler.cron.toml, needs CHANNEX_API_KEY set on it) that retries the Channex outbox every minute; deploying it also starts the notification drain and overdue-task sweep.
 - Watch: one listing must never be controlled by both the old connection and Channex; plan the import of existing bookings.
 
 ## Paused: Supply Chain as a copy of Houzs (decision: option B)
@@ -25,7 +28,6 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Update vulnerable packages (GitHub reports 1 critical, 7 high, 14 moderate, 2 low). Do in its own PR and test.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.
 - Deploy the timed background job (theconts-cron, wrangler.cron.toml) for delayed notifications and the overdue-task sweep.
-- Calendar rate model (multipliers) and Pricing screen (base + uplift) should be aligned.
 - Remove leftovers from the old Cloudflare database (scripts/d1-source.toml, D1 setup scripts) once the old D1 is retired.
 
 ## Future (planning only, not started): guests pay online for direct bookings

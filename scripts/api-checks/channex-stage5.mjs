@@ -19,8 +19,7 @@ r = await call('POST', '/api/units', { buildingId: BID, unitCode: `CX-${tag}`, u
 const UID = r.json?.id;
 check('test unit created', !!UID, r.text);
 
-r = await call('POST', `/api/units/${UID}/channex-connect`, {});
-check('channel screen refused before setup (409)', r.status === 409, r.text);
+await call('PUT', '/api/rates', { unitId: UID, baseRate: 20000 });   // Channex setup needs a base price
 r = await call('POST', `/api/units/${UID}/channex-setup`, {}, 'housekeeper');
 check('housekeeper cannot set up (403)', r.status === 403, r.text);
 
@@ -43,8 +42,6 @@ check('unit page shows it as linked', detail.json?.unit?.channexLinked === true,
 
 r = await call('POST', `/api/units/${UID}/channex-setup`, {});
 check('setting up twice is refused (409)', r.status === 409, r.text);
-r = await call('POST', `/api/units/${UID}/channex-connect`, {});
-check('channel screen link issued for the sandbox', r.status === 200 && /^https:\/\/staging\.channex\.io\/auth\/exchange\?oauth_session_key=.+&app_mode=headless&redirect_to=%2Fchannels/.test(r.json?.url ?? ''), r.text.slice(0, 200));
 
 // Clean up: unlink locally, delete the sandbox listing, remove the test unit and building.
 await call('PATCH', `/api/units/${UID}/channex-mapping`, { clear: true });

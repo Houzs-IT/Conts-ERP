@@ -3,6 +3,7 @@ import { requireSession } from '../../../_lib/auth';
 import { MASTER_ROLES } from '../../../_lib/properties';
 import { channexConfigured, channexCreateProperty, channexCreateRoomType, channexCreateRatePlan, channexDeleteProperty } from '../../../_lib/channex';
 import { queueFullSync, flushChannexQueue } from '../../../_lib/channexQueue';
+import { ensureOtaRatePlans } from '../../../_lib/channexSync';
 
 /** POST /api/units/:id/channex-setup — creates the unit's Channex listing (property, room type, rate plan),
  *  links it, then runs a full sync (500 days of availability, prices and restrictions). If Channex refuses any creation step,
@@ -51,6 +52,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   // link: if it cannot go now it stays queued and is retried.
   let ariOk = false;
   try {
+    await ensureOtaRatePlans(env, id);   // one rate plan per booking site, each at its own price
     await queueFullSync(env, [id]);
     const sent = await flushChannexQueue(env, { fullSync: true });
     ariOk = (sent.availability?.status ?? 0) < 300 && (sent.availability?.status ?? 0) >= 200 && (sent.restrictions?.status ?? 0) >= 200 && (sent.restrictions?.status ?? 0) < 300;

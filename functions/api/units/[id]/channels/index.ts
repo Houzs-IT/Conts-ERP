@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, audit, nowIso } from '../../../../
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
 import { channexPropertyGroupId, channexCreateHotelChannel, channexActivateChannel, channexLoadFutureReservations, channexDeleteChannel, type HotelOta } from '../../../../_lib/channex';
 import { linkedUnitFor, channexRefused, OTA_LABEL } from '../../../../_lib/channexChannels';
+import { ensureOtaRatePlans } from '../../../../_lib/channexSync';
 
 /** GET /api/units/:id/channels — the unit's OTA connections made through Channex. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -31,12 +32,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!b?.roomId || !b?.rateId) return fail('VALIDATION', 'Pick the room and rate that match this unit.', 422);
   if (await one(env, 'SELECT 1 AS x FROM channex_channels WHERE unit_id = ? AND ota = ?', unit.id, ota)) return fail('CONFLICT', `This unit is already connected to ${OTA_LABEL[ota]}.`, 409);
 
+  // The channel is mapped to this OTA's own rate plan, so it carries this OTA's price.
+  let ratePlanId: string | undefined;
+  try { ratePlanId = (await ensureOtaRatePlans(env, unit.id))?.ratePlans[ota]; }
+  catch (e) { return fail('CHANNEX_REFUSED', e instanceof Error ? e.message : 'Channex refused the rate plan.', 502); }
+  if (!ratePlanId) return fail('NOT_LINKED', 'Set this unit up in Channex first.', 409);
+
   const groupId = await channexPropertyGroupId(env, unit.propertyId);
   if (!groupId) return fail('CHANNEX_REFUSED', 'Channex did not return the listing\'s group. Try again in a moment.', 502);
 
   const occupancy = Number.isInteger(b.occupancy) && b.occupancy > 0 ? b.occupancy : unit.maxGuests;
   const created = await channexCreateHotelChannel(env, {
-    ota, groupId, propertyId: unit.propertyId, ratePlanId: unit.ratePlanId, hotelId, title: `${unit.title} · ${OTA_LABEL[ota]}`,
+    ota, groupId, propertyId: unit.propertyId, ratePlanId, hotelId, title: `${unit.title} · ${OTA_LABEL[ota]}`,
     roomCode: String(b.roomId), rateCode: String(b.rateId), occupancy, pricingType: String(b.pricingType || 'Standard'), readonly: !!b.readonly,
   });
   const channelId = created.body?.data?.id;

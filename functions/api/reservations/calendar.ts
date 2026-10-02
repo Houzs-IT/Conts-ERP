@@ -1,3 +1,4 @@
+import { WEEKEND_MULTIPLIER, OTA_CHANNELS, upliftFor } from '../../_lib/channelPrice';
 import { type Env, all, json, fail } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 
@@ -34,6 +35,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ORDER BY r.check_in`, from, to);
 
   const rates = await all<any>(env, `SELECT unit_id, channel, rate_date, rate FROM channel_rates WHERE rate_date >= ? AND rate_date <= ?`, from, to);
+  const uplifts = await all<any>(env, 'SELECT unit_id, channel, uplift FROM channel_uplifts');
   const restr = await all<any>(env, `SELECT unit_id, rate_date, min_stay, stop_sell FROM unit_restrictions WHERE rate_date >= ? AND rate_date <= ? AND (min_stay > 1 OR stop_sell)`, from, to);
 
   return json({
@@ -41,6 +43,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     generatedAt: new Date().toISOString(),
     units: units.map(u => ({ id: u.id, unitNumber: u.unit_number, propertyName: u.property_name })),
     baseRate: Object.fromEntries(units.map(u => [u.id, Number(u.base_rate)])),
+    // What a night costs on a channel when it has no price of its own: (base + that channel's uplift), times
+    // the weekend multiplier on Friday and Saturday. Same rule as the Pricing page and Channex (channelPrice.ts).
+    uplifts: Object.fromEntries(units.flatMap(u => OTA_CHANNELS.map(ch => [`${u.id}:${ch}`, upliftFor(ch, Number(u.base_rate), uplifts.find(x => x.unit_id === u.id && x.channel === ch)?.uplift)]))),
+    weekendMultiplier: WEEKEND_MULTIPLIER,
     // Nights priced by hand, keyed "unitId:channel:date" (channel 'web' is the direct rate).
     rates: Object.fromEntries(rates.map(r => [`${r.unit_id}:${r.channel}:${r.rate_date}`, Number(r.rate)])),
     // Nights with a minimum stay above one or closed for sale, keyed "unitId:date".

@@ -2,6 +2,7 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, canSeeFinance } from '../../_lib/auth';
 import { syncRateIfLinked } from '../../_lib/channexSync';
 import { queueFullSync } from '../../_lib/channexQueue';
+import type { SalesChannel } from '../../_lib/channelPrice';
 
 const CHANNELS = ['web', 'airbnb', 'booking_com', 'agoda'];
 const OTAS = ['airbnb', 'booking_com', 'agoda'];
@@ -50,6 +51,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       INSERT INTO channel_uplifts (unit_id, channel, uplift, updated_at) VALUES (?, ?, ?, ?)
       ON CONFLICT (unit_id, channel) DO UPDATE SET uplift = excluded.uplift, updated_at = excluded.updated_at`, unit.id, b.channel, b.uplift, now);
     await done('pricing.uplift', null, { channel: b.channel, uplift: b.uplift });
+    // The uplift changes that channel's standard price on every night without its own price.
+    try { await queueFullSync(env, [unit.id], { pricesOnly: true }); }
+    catch (e) { await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.enqueue_failed', entityTable: 'units', entityId: unit.id, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {}); }
     return json({ ok: true });
   }
 
@@ -61,7 +65,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     ON CONFLICT (unit_id, channel, rate_date) DO UPDATE SET rate = excluded.rate, updated_at = excluded.updated_at`,
     unit.id, channel, b.date, b.rate, now);
   await done('rate.set', null, { channel, date: b.date, rate: b.rate });
-  // Only the direct/web rate is a real "the price for this night" figure worth telling Channex about.
-  if (channel === 'web') await syncRateIfLinked(env, unit.id, b.date, b.rate);
+  // Each channel has its own rate plan in Channex, so the night's price goes to that channel's plan.
+  await syncRateIfLinked(env, unit.id, b.date, b.rate, b.date, channel as SalesChannel);
   return json({ ok: true });
 };

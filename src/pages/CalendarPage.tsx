@@ -41,7 +41,6 @@ const RATE_ROWS: { key: 'web' | BookingChannel; label: string; sync: string; syn
   { key: 'booking_com', label: 'Booking.com rate', sync: 'Synced', syncTone: 'success', dot: CHANNEL.booking_com.color },
   { key: 'agoda', label: 'Agoda rate', sync: 'Expired', syncTone: 'critical', dot: CHANNEL.agoda.color },
 ];
-const UPLIFT: Record<string, number> = { web: 1, airbnb: 1.12, booking_com: 1.18, agoda: 1.16 };
 
 // The web rate is always shown; the OTA rows shown for a unit are only the
 // channels it is actually linked to (unit_channels / Channex). If the payload
@@ -55,7 +54,7 @@ interface Block {
   id: string; unitId: string; channel: BookingChannel; state: ReservationState;
   guestName: string; checkIn: string; checkOut: string; grossBookingValue: number; ref: string | null; reason: string | null;
 }
-interface Payload { from: string; to: string; units: Unit[]; blocks: Block[]; baseRate: Record<string, number>; rates?: Record<string, number>; restrictions?: Record<string, { minStay: number; stopSell: boolean }>; generatedAt: string }
+interface Payload { from: string; to: string; units: Unit[]; blocks: Block[]; baseRate: Record<string, number>; rates?: Record<string, number>; uplifts?: Record<string, number>; weekendMultiplier?: number; restrictions?: Record<string, { minStay: number; stopSell: boolean }>; generatedAt: string }
 
 const today = new Date(todayMyt());
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -141,9 +140,10 @@ export default function CalendarPage() {
     if (rateEdits[key] != null) return rateEdits[key];
     const saved = data?.rates?.[`${unitId}:${channel}:${dayIso(i)}`];
     if (saved != null) return saved;
-    const base = data?.baseRate[unitId] ?? 28800;
+    // Same rule as the Pricing page and Channex: (base + the channel's uplift), weekend multiplier on Fri/Sat.
+    const standard = (data?.baseRate[unitId] ?? 0) + (data?.uplifts?.[`${unitId}:${channel}`] ?? 0);
     const weekend = [5, 6].includes(addDays(gridStart, i).getDay());
-    return Math.round(base * UPLIFT[channel] * (weekend ? 1.22 : 1));
+    return weekend ? Math.round(standard * (data?.weekendMultiplier ?? 1.22)) : standard;
   }
   function setPrice(unitId: string, channel: string, i: number, rmValue: number) {
     const key = `${unitId}:${channel}:${i}`;

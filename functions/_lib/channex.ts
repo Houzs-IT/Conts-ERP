@@ -126,11 +126,11 @@ export function channexCreateRoomType(env: Env, p: { propertyId: string; title: 
   });
 }
 
-export function channexCreateRatePlan(env: Env, p: { propertyId: string; roomTypeId: string; maxGuests: number; rate: number }) {
+export function channexCreateRatePlan(env: Env, p: { propertyId: string; roomTypeId: string; maxGuests: number; rate: number; title?: string }) {
   return channexFetch<{ data: { id: string } }>(env, '/rate_plans', {
     method: 'POST',
     body: JSON.stringify({ rate_plan: {
-      title: 'Standard rate', property_id: p.propertyId, room_type_id: p.roomTypeId, currency: 'MYR',
+      title: p.title ?? 'Direct', property_id: p.propertyId, room_type_id: p.roomTypeId, currency: 'MYR',
       sell_mode: 'per_room', rate_mode: 'manual', options: [{ occupancy: p.maxGuests, is_primary: true, rate: p.rate.toFixed(2) }],   // decimal text: a bare number means minor units
     } }),
   });

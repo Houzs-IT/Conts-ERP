@@ -1,6 +1,7 @@
 import { type Env, one, all, run, audit, nowIso } from './db';
 import { channexConfigured, channexSendAri } from './channex';
 import { channexMappingFor } from './channexSync';
+import { standardRate, upliftFor, type SalesChannel } from './channelPrice';
 
 /**
  * The Channex outbox. Save handlers never call Channex: they enqueue the change here (enqueue*),
@@ -18,6 +19,8 @@ const CALLS_PER_KIND_PER_MINUTE = 10;
 const CLAIM_LEASE_MS = 2 * 60_000;            // a 'sending' row not finished by then is claimed again
 const MAX_BACKOFF_MS = 30 * 60_000;
 const FULL_SYNC_DAYS = 500;
+const SENT_KEPT_MS = 3 * 864e5;
+const CALLS_KEPT_MS = 30 * 864e5;
 
 const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 const inMs = (ms: number) => new Date(Date.now() + ms).toISOString();
@@ -44,16 +47,21 @@ export function enqueueAvailability(env: Env, unitId: string, dateFrom: string, 
   });
 }
 
-/** Queue a price and/or restriction for [dateFrom, dateTo] inclusive. Only the fields given are sent. */
-export function enqueueRestrictions(env: Env, unitId: string, dateFrom: string, dateTo: string, r: { rateSen?: number; minStay?: number; stopSell?: boolean }): Promise<void> {
+/** Queue a price and/or restriction for [dateFrom, dateTo] inclusive. Only the fields given are sent.
+ *  A price belongs to one sales channel and goes to that channel's rate plan (skipped if the unit has
+ *  none yet); a minimum stay or stop sell on its own applies to the unit, so it goes to every plan. */
+export function enqueueRestrictions(env: Env, unitId: string, dateFrom: string, dateTo: string, r: { rateSen?: number; minStay?: number; stopSell?: boolean }, channel: SalesChannel = 'web'): Promise<void> {
   return guarded(env, unitId, 'channex.enqueue_failed', async () => {
     if (dateTo < dateFrom || (r.rateSen === undefined && r.minStay === undefined && r.stopSell === undefined)) return;
     const m = await channexMappingFor(env, unitId);
     if (!m) return;
+    const plans = r.rateSen !== undefined ? [m.ratePlans[channel]].filter((x): x is string => !!x) : Object.values(m.ratePlans);
     const now = nowIso();
-    await run(env, `INSERT INTO channex_outbox (id, kind, unit_id, property_id, rate_plan_id, date_from, date_to, rate, min_stay, stop_sell, next_attempt_at, created_at)
-      VALUES (?, 'restrictions', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, crypto.randomUUID(), unitId, m.propertyId, m.ratePlanId, dateFrom, dateTo,
-      r.rateSen === undefined ? null : Math.round(r.rateSen) / 100, r.minStay ?? null, r.stopSell ?? null, now, now);
+    for (const planId of plans) {
+      await run(env, `INSERT INTO channex_outbox (id, kind, unit_id, property_id, rate_plan_id, date_from, date_to, rate, min_stay, stop_sell, next_attempt_at, created_at)
+        VALUES (?, 'restrictions', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, crypto.randomUUID(), unitId, m.propertyId, planId, dateFrom, dateTo,
+        r.rateSen === undefined || r.rateSen <= 0 ? null : Math.round(r.rateSen) / 100, r.minStay ?? null, r.stopSell ?? null, now, now);
+    }
   });
 }
 
@@ -97,6 +105,9 @@ const ID_IN = 'id IN (SELECT jsonb_array_elements_text(?::text::jsonb))';
 export async function flushChannexQueue(env: Env, opts: { fullSync?: boolean } = {}): Promise<FlushResult> {
   const result: FlushResult = { calls: [] };
   if (!channexConfigured(env)) return result;
+  // Sent rows are only kept for looking back; the outbox would otherwise grow with every sync.
+  await run(env, `DELETE FROM channex_outbox WHERE status = 'sent' AND sent_at < ?`, inMs(-SENT_KEPT_MS)).catch(() => {});
+  await run(env, `DELETE FROM channex_calls WHERE called_at < ?`, inMs(-CALLS_KEPT_MS)).catch(() => {});
 
   for (const kind of ['availability', 'restrictions'] as const) {
     const rows = await all<OutboxRow & { created_at: string }>(env, `
@@ -196,8 +207,8 @@ function runs<T>(dates: string[], valueOf: (d: string) => T, same: (a: T, b: T) 
  */
 export async function queueFullSync(env: Env, unitIds?: string[], opts: { pricesOnly?: boolean } = {}): Promise<{ units: number }> {
   if (!channexConfigured(env)) return { units: 0 };
-  const units = await all<{ id: string; base_rate: number; channex_property_id: string; channex_room_type_id: string; channex_rate_plan_id: string }>(env, `
-    SELECT id, base_rate, channex_property_id, channex_room_type_id, channex_rate_plan_id FROM units
+  const units = await all<{ id: string; base_rate: number; channex_property_id: string; channex_room_type_id: string; channex_rate_plan_id: string; channex_rate_plan_airbnb: string | null; channex_rate_plan_booking_com: string | null; channex_rate_plan_agoda: string | null }>(env, `
+    SELECT id, base_rate, channex_property_id, channex_room_type_id, channex_rate_plan_id, channex_rate_plan_airbnb, channex_rate_plan_booking_com, channex_rate_plan_agoda FROM units
     WHERE channex_property_id IS NOT NULL AND channex_room_type_id IS NOT NULL AND channex_rate_plan_id IS NOT NULL
       ${unitIds ? 'AND id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : ''}`, ...(unitIds ? [JSON.stringify(unitIds)] : []));
   if (!units.length) return { units: 0 };
@@ -211,8 +222,10 @@ export async function queueFullSync(env: Env, unitIds?: string[], opts: { prices
   const stays = await all<{ unit_id: string; check_in: string; check_out: string }>(env, `
     SELECT unit_id, check_in, check_out FROM reservations
     WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND state IN ('inquiry','pending','confirmed','checked_in') AND check_out > ? AND check_in <= ?`, JSON.stringify(ids), today, last);
-  const rates = await all<{ unit_id: string; rate_date: string; rate: number }>(env, `
-    SELECT unit_id, rate_date, rate FROM channel_rates WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND channel = 'web' AND rate_date BETWEEN ? AND ?`, JSON.stringify(ids), today, last);
+  const rates = await all<{ unit_id: string; channel: string; rate_date: string; rate: number }>(env, `
+    SELECT unit_id, channel, rate_date, rate FROM channel_rates WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND rate_date BETWEEN ? AND ?`, JSON.stringify(ids), today, last);
+  const uplifts = await all<{ unit_id: string; channel: string; uplift: number }>(env, `
+    SELECT unit_id, channel, uplift FROM channel_uplifts WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(ids));
   const restr = await all<{ unit_id: string; rate_date: string; min_stay: number | null; stop_sell: boolean }>(env, `
     SELECT unit_id, rate_date, min_stay, stop_sell FROM unit_restrictions WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND rate_date BETWEEN ? AND ?`, JSON.stringify(ids), today, last);
 
@@ -222,15 +235,21 @@ export async function queueFullSync(env: Env, unitIds?: string[], opts: { prices
   for (const u of units) {
     const taken = new Set<string>();
     for (const s of stays.filter(s => s.unit_id === u.id)) for (let d = s.check_in; d < s.check_out; d = addDays(d, 1)) taken.add(d);
-    const rateOn = new Map(rates.filter(r => r.unit_id === u.id).map(r => [r.rate_date, Number(r.rate)]));
     const resOn = new Map(restr.filter(r => r.unit_id === u.id).map(r => [r.rate_date, r]));
 
     for (const a of runs(dates, d => (taken.has(d) ? 0 : 1), (x, y) => x === y)) {
       avail.push({ id: crypto.randomUUID(), unit_id: u.id, property_id: u.channex_property_id, room_type_id: u.channex_room_type_id, date_from: a.from, date_to: a.to, availability: a.value });
     }
-    const night = (d: string) => ({ rate: rateOn.get(d) ?? Number(u.base_rate), minStay: resOn.get(d)?.min_stay ?? 1, stopSell: !!resOn.get(d)?.stop_sell });
-    for (const r of runs(dates, night, (x, y) => x.rate === y.rate && x.minStay === y.minStay && x.stopSell === y.stopSell)) {
-      restrictions.push({ id: crypto.randomUUID(), unit_id: u.id, property_id: u.channex_property_id, rate_plan_id: u.channex_rate_plan_id, date_from: r.from, date_to: r.to, rate: r.value.rate > 0 ? r.value.rate / 100 : null, min_stay: r.value.minStay, stop_sell: r.value.stopSell });   // never a zero price: Channex discards it
+    // Each rate plan carries its own channel's price: the night's own price if set, else the standard one.
+    const plans: [SalesChannel, string | null][] = [['web', u.channex_rate_plan_id], ['airbnb', u.channex_rate_plan_airbnb], ['booking_com', u.channex_rate_plan_booking_com], ['agoda', u.channex_rate_plan_agoda]];
+    for (const [channel, planId] of plans) {
+      if (!planId) continue;
+      const rateOn = new Map(rates.filter(r => r.unit_id === u.id && r.channel === channel).map(r => [r.rate_date, Number(r.rate)]));
+      const uplift = upliftFor(channel, Number(u.base_rate), uplifts.find(x => x.unit_id === u.id && x.channel === channel)?.uplift);
+      const night = (d: string) => ({ rate: rateOn.get(d) ?? standardRate(Number(u.base_rate), uplift, d), minStay: resOn.get(d)?.min_stay ?? 1, stopSell: !!resOn.get(d)?.stop_sell });
+      for (const r of runs(dates, night, (x, y) => x.rate === y.rate && x.minStay === y.minStay && x.stopSell === y.stopSell)) {
+        restrictions.push({ id: crypto.randomUUID(), unit_id: u.id, property_id: u.channex_property_id, rate_plan_id: planId, date_from: r.from, date_to: r.to, rate: r.value.rate > 0 ? r.value.rate / 100 : null, min_stay: r.value.minStay, stop_sell: r.value.stopSell });   // never a zero price: Channex discards it
+      }
     }
   }
   // One insert per kind, whatever the number of ranges. `pricesOnly` (a base price change) leaves availability alone.
