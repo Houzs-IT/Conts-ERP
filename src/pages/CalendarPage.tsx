@@ -275,7 +275,7 @@ export default function CalendarPage() {
 
   return (
     <>
-      <PageHeader title="Calendar" sub="24 units · 6 buildings · Asia/Kuala Lumpur" />
+      <PageHeader title="Calendar" sub={`${allUnits.length} ${allUnits.length === 1 ? 'unit' : 'units'} · ${new Set(allUnits.map(u => u.propertyName)).size} ${new Set(allUnits.map(u => u.propertyName)).size === 1 ? 'building' : 'buildings'} · Asia/Kuala Lumpur`} />
 
       {error && <StaleBanner message={`Showing the last board we have. ${error}`} onRetry={reload} />}
 
