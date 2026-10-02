@@ -33,7 +33,7 @@ interface ChannelRate {
   channel: OtaChannel;
   /** Sen added on top of the base web rate before the guest sees it. Editable. */
   upliftSen: number;
-  sync: SyncState;
+  sync: SyncState | 'not_connected';
 }
 interface Unit {
   unitId: string;
@@ -218,7 +218,7 @@ export default function PricingPage() {
             baseRate: selected.baseRate,
             uplifts: Object.fromEntries(selected.rates.map(r => [r.channel, r.upliftSen])),
           });
-          toast({ tone: 'success', title: 'Rates saved.', body: `${names} prices held for ${range}. Channel sync is not connected yet, so nothing was sent to the channels.` });
+          toast({ tone: 'success', title: 'Rates saved.', body: `${names} prices saved for ${range}. Units connected to a booking site are updated there automatically.` });
         } catch (e) {
           toast({ tone: 'critical', title: 'Rates were not saved.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
         }
@@ -255,7 +255,8 @@ export default function PricingPage() {
               const on = selected?.unitId === u.unitId;
               const failed = u.rates.filter(r => r.sync === 'failed').length;
               const queued = u.rates.filter(r => r.sync === 'queued').length;
-              const syncNote = failed ? `${failed} to fix` : queued ? `${queued} queued` : 'All synced';
+              const linked = u.rates.filter(r => r.sync !== 'not_connected').length;
+              const syncNote = failed ? `${failed} to fix` : queued ? `${queued} queued` : linked ? 'All synced' : 'Not connected';
               return (
                 <button
                   key={u.unitId} onClick={() => setSelectedId(u.unitId)}
@@ -325,7 +326,7 @@ export default function PricingPage() {
                     const commission = COMMISSION[r.channel];
                     const youKeep = Math.round(guestPays * (1 - commission / 100));
                     const belowFloor = youKeep < selected.costFloor;
-                    const s = SYNC[r.sync];
+                    const s = r.sync === 'not_connected' ? { label: 'Not connected', tone: 'neutral' as const } : SYNC[r.sync];
                     return (
                       <div key={r.channel} className={cx(COLS, 'grid gap-3 items-center min-h-[52px] py-2 px-5 [border-bottom:1px_solid_var(--color-line-soft)]')}>
                         <div className="flex items-center gap-2.5 min-w-0">
