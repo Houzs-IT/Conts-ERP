@@ -1,9 +1,9 @@
-import { type Env, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, canSeeFinance } from '../../_lib/auth';
 import { syncRateIfLinked, syncRestrictionsIfLinked } from '../../_lib/channexSync';
 
 const CHANNELS = ['web', 'airbnb', 'booking_com', 'agoda'];
-import { WEEKEND_MULTIPLIER, type SalesChannel } from '../../_lib/channelPrice';
+import { standardRate, type SalesChannel } from '../../_lib/channelPrice';
 const MAX_LINES = 20;
 
 interface Line { from: string; to: string; baseRate?: number; minStay?: number | null; stopSell?: boolean }
@@ -45,15 +45,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const days: string[] = [];
     for (let t = Date.parse(l.from); t <= Date.parse(l.to) && days.length < 500; t += 864e5) days.push(new Date(t).toISOString().slice(0, 10));
     const last = days[days.length - 1];
-    const priceOn = (channel: string, date: string) => {
-      if (!uplifts) return l.baseRate as number;
-      let rate = l.baseRate! + (channel === 'web' ? 0 : Math.max(0, Math.round(Number(uplifts[channel] ?? 0))));
-      const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-      if (weekday === 5 || weekday === 6) rate = Math.round(rate * WEEKEND_MULTIPLIER);
-      return rate;
-    };
-
     for (const unitId of b.unitIds as string[]) {
+      // With uplifts (the Pricing screen's push) the standard rule applies, including the unit's own weekend rate.
+      const weekendRate = uplifts ? (await one<{ weekend_rate: number | null }>(env, 'SELECT weekend_rate FROM units WHERE id = ?', unitId))?.weekend_rate ?? null : null;
+      const priceOn = (channel: string, date: string) => !uplifts ? (l.baseRate as number)
+        : standardRate(l.baseRate!, channel === 'web' ? 0 : Math.max(0, Math.round(Number(uplifts[channel] ?? 0))), date, weekendRate);
       if (hasRate) {
         // One statement per unit and range: every (channel, night, price) row goes in as a set.
         const rows = channels.flatMap(channel => days.map(date => ({ channel, date, rate: priceOn(channel, date) })));

@@ -54,7 +54,7 @@ interface Block {
   id: string; unitId: string; channel: BookingChannel; state: ReservationState;
   guestName: string; checkIn: string; checkOut: string; grossBookingValue: number; ref: string | null; reason: string | null;
 }
-interface Payload { from: string; to: string; units: Unit[]; blocks: Block[]; baseRate: Record<string, number>; rates?: Record<string, number>; uplifts?: Record<string, number>; weekendMultiplier?: number; restrictions?: Record<string, { minStay: number; stopSell: boolean }>; generatedAt: string }
+interface Payload { from: string; to: string; units: Unit[]; blocks: Block[]; baseRate: Record<string, number>; rates?: Record<string, number>; uplifts?: Record<string, number>; weekendMultiplier?: number; weekendRate?: Record<string, number>; restrictions?: Record<string, { minStay: number; stopSell: boolean }>; generatedAt: string }
 
 const today = new Date(todayMyt());
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -141,9 +141,11 @@ export default function CalendarPage() {
     const saved = data?.rates?.[`${unitId}:${channel}:${dayIso(i)}`];
     if (saved != null) return saved;
     // Same rule as the Pricing page and Channex: (base + the channel's uplift), weekend multiplier on Fri/Sat.
-    const standard = (data?.baseRate[unitId] ?? 0) + (data?.uplifts?.[`${unitId}:${channel}`] ?? 0);
-    const weekend = [5, 6].includes(addDays(gridStart, i).getDay());
-    return weekend ? Math.round(standard * (data?.weekendMultiplier ?? 1.22)) : standard;
+    const base = data?.baseRate[unitId] ?? 0, uplift = data?.uplifts?.[`${unitId}:${channel}`] ?? 0;
+    if (![5, 6].includes(addDays(gridStart, i).getDay())) return base + uplift;
+    // Weekend: the unit's own weekend rate if it has one, and the uplift grows in step with it.
+    const w = data?.weekendRate?.[unitId] ?? Math.round(base * (data?.weekendMultiplier ?? 1.22));
+    return Math.round(w + (base > 0 ? uplift * (w / base) : uplift));
   }
   function setPrice(unitId: string, channel: string, i: number, rmValue: number) {
     const key = `${unitId}:${channel}:${i}`;

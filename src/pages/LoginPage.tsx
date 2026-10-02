@@ -12,12 +12,6 @@ const COPY: Record<Screen, { eyebrow: string; heading: string; sub: string; subm
   reset: { eyebrow: 'ACCOUNT RECOVERY', heading: 'Set a new password', sub: 'Choose a new password for your account.', submit: 'Save and sign in' },
 };
 
-const STATS = [
-  { value: '4.91', label: 'RATING' },
-  { value: '86.2%', label: 'OCCUPANCY' },
-  { value: '11', label: 'UNITS' },
-];
-
 export default function LoginPage({ forceChangePassword = false, resetToken = null }: { forceChangePassword?: boolean; resetToken?: string | null }) {
   const { login, requestReset, changePassword, resetPassword, checkResetToken } = useSession();
   const [screen, setScreen] = useState<Screen>(forceChangePassword ? 'change' : resetToken ? 'reset' : 'signin');
@@ -106,14 +100,6 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
           </div>
 
           <div className="flex items-end justify-between gap-8 flex-wrap">
-            <div className="flex gap-14 flex-wrap">
-              {STATS.map(s => (
-                <div key={s.label} className="flex flex-col gap-2">
-                  <span className="text-[32px] leading-none font-semibold tracking-[-0.02em] text-white">{s.value}</span>
-                  <span className="text-[11px] tracking-[0.16em] text-[#8A8680]">{s.label}</span>
-                </div>
-              ))}
-            </div>
             <span className="text-[11px] tracking-[0.14em] text-[#8A8680]">KUALA LUMPUR · PETALING JAYA</span>
           </div>
         </div>

@@ -73,6 +73,18 @@ const WED = new Date(Date.parse(`${TUE}T00:00:00Z`) + 864e5).toISOString().slice
 v = await read(WED, WED);
 check('Agoda uplift change reaches Channex (250), others unchanged', rate(v, 'Agoda', WED) === 250 && rate(v, 'Airbnb', WED) === 228, `${rate(v, 'Agoda', WED)} ${rate(v, 'Airbnb', WED)}`);
 
+// A unit's own weekend rate replaces base + 22% on Friday and Saturday, and the uplift grows in step with it.
+r = await call('PUT', '/api/rates', { unitId: UID, weekendRate: 30000 });
+check('weekend rate saved', r.status === 200, r.text);
+check('pricing page carries the weekend rate', (await call('GET', '/api/pricing/rules')).json?.units?.find(u => u.unitId === UID)?.weekendRate === 30000);
+await sleep(24_000);
+v = await read(SAT, SAT);
+check('Saturday uses the unit weekend rate: Direct 300, Airbnb 342', rate(v, 'Direct', SAT) === 300 && rate(v, 'Airbnb', SAT) === 342, `${rate(v, 'Direct', SAT)} ${rate(v, 'Airbnb', SAT)}`);
+v = await read(WED, WED);
+check('weekdays are unchanged by the weekend rate (Direct 200)', rate(v, 'Direct', WED) === 200, String(rate(v, 'Direct', WED)));
+r = await call('PUT', '/api/rates', { unitId: UID, weekendRate: 0 }); check('zero weekend rate refused (422)', r.status === 422, r.text);
+r = await call('PUT', '/api/rates', { unitId: UID, weekendRate: null }); check('weekend rate can be cleared', r.status === 200, r.text);
+
 await call('PATCH', `/api/units/${UID}/channex-mapping`, { clear: true });
 const del = await chx(`/properties/${ids.propertyId}`, { method: 'DELETE' });
 check('sandbox listing deleted again', del.status === 200 || del.status === 204, String(del.status));

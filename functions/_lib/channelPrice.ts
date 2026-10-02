@@ -1,6 +1,7 @@
 /** The one pricing rule, shared by the Pricing page, the Calendar and what is sent to Channex:
  *  a night's price on a channel is the price set for that night if there is one, otherwise
- *  (base rate + the channel's uplift), with the weekend multiplier on Friday and Saturday nights. */
+ *  the unit's rate for that kind of night plus the channel's uplift. Friday and Saturday nights use
+ *  the unit's own weekend rate, or base rate times the weekend multiplier when none is set. */
 export const WEEKEND_MULTIPLIER = 1.22;
 export const SALES_CHANNELS = ['web', 'airbnb', 'booking_com', 'agoda'] as const;
 export type SalesChannel = typeof SALES_CHANNELS[number];
@@ -17,8 +18,14 @@ export function upliftFor(channel: string, baseSen: number, saved: number | null
 
 const isWeekendNight = (date: string) => { const d = new Date(`${date}T00:00:00Z`).getUTCDay(); return d === 5 || d === 6; };
 
-/** Standard price in sen for a night with no price of its own. */
-export function standardRate(baseSen: number, upliftSen: number, date: string): number {
-  const rate = baseSen + upliftSen;
-  return isWeekendNight(date) ? Math.round(rate * WEEKEND_MULTIPLIER) : rate;
+/** A unit's direct weekend rate in sen: its own if set, else base times the weekend multiplier. */
+export const weekendBase = (baseSen: number, weekendSen: number | null | undefined) =>
+  weekendSen !== null && weekendSen !== undefined && Number(weekendSen) > 0 ? Number(weekendSen) : Math.round(baseSen * WEEKEND_MULTIPLIER);
+
+/** Standard price in sen for a night with no price of its own. The uplift covers a channel's commission,
+ *  so on a weekend night it grows in step with the rate (uplift x weekend rate / base rate). */
+export function standardRate(baseSen: number, upliftSen: number, date: string, weekendSen?: number | null): number {
+  if (!isWeekendNight(date)) return baseSen + upliftSen;
+  const w = weekendBase(baseSen, weekendSen);
+  return Math.round(w + (baseSen > 0 ? upliftSen * (w / baseSen) : upliftSen));
 }

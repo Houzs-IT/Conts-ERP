@@ -44,6 +44,8 @@ interface Unit {
   costFloor: number;
   /** EXTERNAL. The direct/web sell price, before any channel uplift. */
   baseRate: number;
+  /** EXTERNAL. The unit's own Friday/Saturday rate; null means base rate times the weekend multiplier. */
+  weekendRate?: number | null;
   rates: ChannelRate[];
 }
 interface Payload { units: Unit[]; weekendMultiplier: number; generatedAt: string }
@@ -158,7 +160,7 @@ export default function PricingPage() {
   const weekendPct = Math.round((weekendMultiplier - 1) * 100);
 
   // Optimistic overlays — there is no backend in dev.
-  const [unitEdits, setUnitEdits] = useState<Record<string, { baseRate?: number; costFloor?: number }>>({});
+  const [unitEdits, setUnitEdits] = useState<Record<string, { baseRate?: number; costFloor?: number; weekendRate?: number | null }>>({});
   const [upliftEdits, setUpliftEdits] = useState<Record<string, number>>({}); // key `${unitId}:${channel}`
 
   const [selectedId, setSelectedId] = useState<string | null>(readUnitId());
@@ -177,26 +179,39 @@ export default function PricingPage() {
       ...u,
       baseRate: ue?.baseRate ?? u.baseRate,
       costFloor: ue?.costFloor ?? u.costFloor,
+      weekendRate: ue && 'weekendRate' in ue ? ue.weekendRate ?? null : u.weekendRate ?? null,
       rates: u.rates.map(r => ({ ...r, upliftSen: upliftEdits[`${u.unitId}:${r.channel}`] ?? r.upliftSen })),
     };
   }), [units, unitEdits, upliftEdits]);
 
   const selected = rows.find(u => u.unitId === selectedId) ?? rows[0] ?? null;
 
-  function setBase(unitId: string, baseRate: number) {
-    setUnitEdits(e => ({ ...e, [unitId]: { ...e[unitId], baseRate } }));
-    toast({ tone: 'success', title: 'Base web rate updated.', body: 'Push to send the new rate to each connected channel.' });
-    void api.put('/rates', { unitId, baseRate }).catch(notifyFailure);
+  // Rate changes wait for the server. A unit connected to a booking site is updated there automatically.
+  async function setBase(unitId: string, baseRate: number) {
+    try {
+      await api.put('/rates', { unitId, baseRate });
+      setUnitEdits(e => ({ ...e, [unitId]: { ...e[unitId], baseRate } }));
+      toast({ tone: 'success', title: 'Base rate saved.', body: 'Connected booking sites are updated automatically.' });
+    } catch (e) { notifyFailure(e); }
+  }
+  async function setWeekend(unitId: string, weekendRate: number | null) {
+    try {
+      await api.put('/rates', { unitId, weekendRate });
+      setUnitEdits(e => ({ ...e, [unitId]: { ...e[unitId], weekendRate } }));
+      toast({ tone: 'success', title: weekendRate === null ? 'Weekend rate reset.' : 'Weekend rate saved.', body: weekendRate === null ? `Friday and Saturday go back to base + ${weekendPct}%.` : 'Applies to Friday and Saturday nights. Connected booking sites are updated automatically.' });
+    } catch (e) { notifyFailure(e); }
   }
   function setFloor(unitId: string, costFloor: number) {
     setUnitEdits(e => ({ ...e, [unitId]: { ...e[unitId], costFloor } }));
     toast({ tone: 'neutral', title: 'Cost floor updated.', body: 'Internal only. The floor is never sent to a channel.' });
     void api.put('/rates', { unitId, costFloor }).catch(notifyFailure);
   }
-  function setUplift(unitId: string, ch: OtaChannel, upliftSen: number) {
-    setUpliftEdits(e => ({ ...e, [`${unitId}:${ch}`]: upliftSen }));
-    toast({ tone: 'success', title: `${CH[ch].label} uplift updated.`, body: 'Push to apply it over your chosen dates.' });
-    void api.put('/rates', { unitId, channel: ch, uplift: upliftSen }).catch(notifyFailure);
+  async function setUplift(unitId: string, ch: OtaChannel, upliftSen: number) {
+    try {
+      await api.put('/rates', { unitId, channel: ch, uplift: upliftSen });
+      setUpliftEdits(e => ({ ...e, [`${unitId}:${ch}`]: upliftSen }));
+      toast({ tone: 'success', title: `${CH[ch].label} uplift saved.`, body: 'If the unit is connected there, the price is updated automatically.' });
+    } catch (e) { notifyFailure(e); }
   }
 
   function pushRates() {
@@ -231,7 +246,7 @@ export default function PricingPage() {
     <>
       <PageHeader
         title="Pricing"
-        sub={`Base web rate per unit, then the uplift each channel carries. Weekend adds ${weekendPct}%.`}
+        sub={`Base rate per unit, then the uplift each channel carries. Friday and Saturday use the unit's weekend rate, or base + ${weekendPct}%.`}
       />
 
       {error && <StaleBanner message={`Showing the last rates we have. ${error}`} onRetry={reload} />}
@@ -280,7 +295,7 @@ export default function PricingPage() {
               <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line)] flex items-baseline justify-between gap-4 flex-wrap">
                 <div className="flex flex-col gap-0.5 min-w-0">
                   <span className="text-[15px] font-semibold">{selected.propertyName} {selected.unitNumber}</span>
-                  <span className="text-[12px] text-muted-ink">Tap any rate to edit. Changes stay local until you push.</span>
+                  <span className="text-[12px] text-muted-ink">Tap any rate to edit. Rates save as you change them.</span>
                 </div>
               </div>
 
@@ -293,7 +308,21 @@ export default function PricingPage() {
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[11px] text-faint">Direct · per night</span>
-                    <EditableMoney sen={selected.baseRate} ariaLabel="base web rate" onCommit={s => setBase(selected.unitId, s)} />
+                    <EditableMoney sen={selected.baseRate} ariaLabel="base web rate" onCommit={s => void setBase(selected.unitId, s)} />
+                  </div>
+                </div>
+                <div className="bg-card py-[14px] px-5 flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] text-muted-ink">Weekend rate</span>
+                    <Tag label="SELL" kind="external" />
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-faint">
+                      {selected.weekendRate
+                        ? <>Fri and Sat · <button type="button" onClick={() => void setWeekend(selected.unitId, null)} className="bg-transparent border-none p-0 cursor-pointer [font:inherit] text-[11px] underline text-faint">use base + {weekendPct}%</button></>
+                        : `Fri and Sat · base + ${weekendPct}%`}
+                    </span>
+                    <EditableMoney sen={selected.weekendRate ?? Math.round(selected.baseRate * weekendMultiplier)} ariaLabel="weekend rate" onCommit={s => void setWeekend(selected.unitId, s)} />
                   </div>
                 </div>
                 <div className="bg-card py-[14px] px-5 flex flex-col gap-1.5">
@@ -322,7 +351,9 @@ export default function PricingPage() {
 
                   {selected.rates.map(r => {
                     const guestPays = selected.baseRate + r.upliftSen;
-                    const weekend = Math.round(guestPays * weekendMultiplier);
+                    // Weekend: the unit's own weekend rate (or base x multiplier), with the uplift growing in step.
+                    const wBase = selected.weekendRate ?? Math.round(selected.baseRate * weekendMultiplier);
+                    const weekend = Math.round(wBase + (selected.baseRate > 0 ? r.upliftSen * (wBase / selected.baseRate) : r.upliftSen));
                     const commission = COMMISSION[r.channel];
                     const youKeep = Math.round(guestPays * (1 - commission / 100));
                     const belowFloor = youKeep < selected.costFloor;

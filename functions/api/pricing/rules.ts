@@ -13,7 +13,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Every unit, listed or not: a new unit starts unlisted with no base rate, and it needs one set here
   // before it can be sold anywhere (Channex setup refuses a unit without a base price).
   const units = await all<any>(env, `
-    SELECT u.id, u.unit_number, u.base_rate, u.cost_floor, u.channex_rate_plan_airbnb, u.channex_rate_plan_booking_com, u.channex_rate_plan_agoda, p.name AS property_name
+    SELECT u.id, u.unit_number, u.base_rate, u.weekend_rate, u.cost_floor, u.channex_rate_plan_airbnb, u.channex_rate_plan_booking_com, u.channex_rate_plan_agoda, p.name AS property_name
     FROM units u JOIN properties p ON p.id = u.property_id ORDER BY p.name, u.unit_number`);
   const uplifts = await all<any>(env, 'SELECT unit_id, channel, uplift FROM channel_uplifts');
   // Sync state per unit and channel comes from the real Channex connection and its outbox, never from a
@@ -34,6 +34,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     units: units.map(u => ({
       unitId: u.id, unitNumber: u.unit_number, propertyName: u.property_name,
       costFloor: Number(u.cost_floor), baseRate: Number(u.base_rate),
+      // The unit's own Friday/Saturday rate; null means base rate times weekendMultiplier.
+      weekendRate: u.weekend_rate === null || u.weekend_rate === undefined ? null : Number(u.weekend_rate),
       rates: CHANNELS.map(ch => {
         const set = uplifts.find(x => x.unit_id === u.id && x.channel === ch);
         return {

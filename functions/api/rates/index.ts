@@ -12,6 +12,7 @@ const whole = (v: unknown) => Number.isInteger(v) && (v as number) >= 0;
 /** PUT /api/rates — one of:
  *    { unitId, channel, date, rate }   the price of one night on one channel
  *    { unitId, baseRate }              the unit's base web rate
+ *    { unitId, weekendRate }           the unit's own Friday/Saturday rate (null goes back to base x multiplier)
  *    { unitId, costFloor }             the internal nightly cost floor
  *    { unitId, channel, uplift }       what a channel adds on top of the base rate
  *  All money is integer sen. */
@@ -22,7 +23,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
 
   const b = await request.json<any>().catch(() => null);
   if (!b?.unitId) return fail('VALIDATION', 'Say which unit.', 422);
-  const unit = await one<{ id: string; base_rate: number; cost_floor: number }>(env, 'SELECT id, base_rate, cost_floor FROM units WHERE id = ?', b.unitId);
+  const unit = await one<{ id: string; base_rate: number; weekend_rate: number | null; cost_floor: number }>(env, 'SELECT id, base_rate, weekend_rate, cost_floor FROM units WHERE id = ?', b.unitId);
   if (!unit) return fail('NOT_FOUND', 'That unit does not exist.', 404);
   const now = nowIso();
   const done = (action: string, before: unknown, after: unknown) =>
@@ -34,6 +35,15 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     await done('pricing.base_rate', { baseRate: Number(unit.base_rate) }, { baseRate: b.baseRate });
     // Every night without its own price is sold at the base price, so a linked unit's whole price range is
     // queued again. Queue trouble is audited and never fails the save.
+    try { await queueFullSync(env, [unit.id], { pricesOnly: true }); }
+    catch (e) { await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.enqueue_failed', entityTable: 'units', entityId: unit.id, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {}); }
+    return json({ ok: true });
+  }
+  if (b.weekendRate !== undefined) {
+    if (b.weekendRate !== null && (!whole(b.weekendRate) || b.weekendRate <= 0)) return fail('VALIDATION', 'Enter a weekend rate above RM 0.00, or clear it.', 422, { weekendRate: 'Enter a rate above RM 0.00.' });
+    await run(env, 'UPDATE units SET weekend_rate = ?, updated_at = ? WHERE id = ?', b.weekendRate, now, unit.id);
+    await done('pricing.weekend_rate', { weekendRate: unit.weekend_rate === null ? null : Number(unit.weekend_rate) }, { weekendRate: b.weekendRate });
+    // Every Friday and Saturday night without its own price changes on every channel.
     try { await queueFullSync(env, [unit.id], { pricesOnly: true }); }
     catch (e) { await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.enqueue_failed', entityTable: 'units', entityId: unit.id, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {}); }
     return json({ ok: true });
