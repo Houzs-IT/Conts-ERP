@@ -112,6 +112,7 @@ export default function TopBar({
   const [readIds, setReadIds] = useState<Record<string, boolean>>({});
 
   const { data: notifRaw } = useApi<Notif[] | NotifPayload>('/notifications', NOTIF_FALLBACK);
+  const channelSync = useApi<{ channels?: { units: number; lastSentAt: string | null; failed: number } }>('/nav/badges').data?.channels;
   const notifData = useMemo(() => toNotifs(notifRaw), [notifRaw]);
   const notifs = useMemo(() => (notifData ?? (import.meta.env.DEV ? NOTIF_FALLBACK : [])).map(n => ({
     ...n, read: readIds[n.id] ?? !!n.readAt,
@@ -150,10 +151,16 @@ export default function TopBar({
           <span style={{ marginLeft: 'auto', fontSize: text.micro, color: color.faint, flex: 'none' }}>/</span>
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, height: shell.controlSm, flex: 'none', padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: radius.control, fontSize: text.small, whiteSpace: 'nowrap', color: color.textMuted }}>
-          <span className="animate-live" style={{ width: 6, height: 6, borderRadius: radius.pill, background: '#16845B' }} />
-          <span>Airbnb synced 14:06</span>
-        </div>
+        {/* Shown only when units are really connected to a booking site; never a fixed figure. */}
+        {channelSync && channelSync.units > 0 && (
+          <a href="#/system/integrations" title="Open Integrations"
+            style={{ display: 'flex', alignItems: 'center', gap: 7, height: shell.controlSm, flex: 'none', padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: radius.control, fontSize: text.small, whiteSpace: 'nowrap', color: color.textMuted, textDecoration: 'none' }}>
+            <span className={channelSync.failed ? undefined : 'animate-live'} style={{ width: 6, height: 6, borderRadius: radius.pill, background: channelSync.failed ? '#B7791F' : '#16845B' }} />
+            <span>{channelSync.failed
+              ? 'Channel sync needs attention'
+              : channelSync.lastSentAt ? `Channels synced ${new Date(channelSync.lastSentAt).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuala_Lumpur' })}` : 'Channels connected'}</span>
+          </a>
+        )}
 
         <div style={{ position: 'relative', flex: 'none' }}>
           <button aria-label="Notifications" aria-expanded={bellOpen} onClick={() => setBellOpen(v => !v)}
