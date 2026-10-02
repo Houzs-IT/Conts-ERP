@@ -4,6 +4,7 @@ import { SessionProvider, useSession } from './lib/session';
 import { ToastProvider } from './components/Toast';
 import AppShell from './components/AppShell';
 import FieldShell from './components/FieldShell';
+import UpdateNotice from './components/UpdateNotice';
 import OwnerShell from './components/OwnerShell';
 import LoginPage from './pages/LoginPage';
 import { HOME } from './lib/navigation';
@@ -235,6 +236,7 @@ export default function App() {
     <SessionProvider>
       <ToastProvider>
         <Routed />
+        <UpdateNotice />
       </ToastProvider>
     </SessionProvider>
   );
