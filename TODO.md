@@ -15,7 +15,6 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Per-channel prices (feat/channex-per-channel-prices): each linked unit has four Channex rate plans (Direct, Airbnb, Booking.com, Agoda); one pricing rule in functions/_lib/channelPrice.ts (night's own price, else base + uplift, weekend x1.22; default uplift 12/18/16% of base) shared by Pricing, Calendar and Channex. Needs migration 0041 on production before merge.
 - Production still holds the seeded example data (3 sample units, 5 owners, 5 bookings ...). Owner chose to clear it before real data: scripts/clear-example-data.mjs (listing by default; --apply --confirm=<ref>; keeps users, settings, integrations, automations, audit trail). Then enter the real owner, building and unit, and connect Airbnb first (Booking.com after; Agoda not used yet).
 - Four seeded staff accounts exist on production (management@, finance@, aina@, nurul@theconts.com); owner to confirm whether they are used or switch them off.
-- System Health (feat/system-health): System > System health, laid out and shaped like the Hookka /admin/health page (banner, stat cards, audit feed with range and sensitive-only) so it can be moved between systems; `db`, `r2`, `counts` and the audit feed are the portable core, `checks` are Conts's own (email, Channex, booking notifications, sync queue, background jobs, problems). No migration. Tested: scripts/api-checks/system-health.mjs.
 - Still off: the cron worker (wrangler.cron.toml, needs CHANNEX_API_KEY set on it) that retries the Channex outbox every minute; deploying it also starts the notification drain and overdue-task sweep.
 - Watch: one listing must never be controlled by both the old connection and Channex; plan the import of existing bookings.
 
@@ -54,3 +53,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 5. Restrict the staff sign-in to office addresses or put it behind Cloudflare Access (needs office network details).
 6. Data safety: turn on Supabase point-in-time backups and test one restore; limit bulk data exports.
 - To discuss later: what "bandwidth" should mean here (blocking floods of requests = item 2, or limiting how much data one user can download = item 6).
+
+## System health
+- System Health (feat/system-health): System > System health, laid out and shaped like the Hookka /admin/health page (banner, stat cards, audit feed with range and sensitive-only) so it can be moved between systems; `db`, `r2`, `counts` and the audit feed are the portable core, `checks` are Conts's own (email, Channex, booking notifications, sync queue, background jobs, problems). No migration. Tested: scripts/api-checks/system-health.mjs.
