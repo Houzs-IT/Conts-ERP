@@ -53,3 +53,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 5. Restrict the staff sign-in to office addresses or put it behind Cloudflare Access (needs office network details).
 6. Data safety: turn on Supabase point-in-time backups and test one restore; limit bulk data exports.
 - To discuss later: what "bandwidth" should mean here (blocking floods of requests = item 2, or limiting how much data one user can download = item 6).
+
+## System health
+- System Health (feat/system-health): System > System health, laid out and shaped like the Hookka /admin/health page (banner, stat cards, audit feed with range and sensitive-only) so it can be moved between systems; `db`, `r2`, `counts` and the audit feed are the portable core, `checks` are Conts's own (email, Channex, booking notifications, sync queue, background jobs, problems). No migration. The separate Audit trail page is gone: the audit feed here opens each row to its before/after and pages up to 1000 events per range (/system/audit redirects; /api/audit stays for booking history). Tested: scripts/api-checks/system-health.mjs.

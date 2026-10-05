@@ -221,7 +221,7 @@ const MATRIX_MODULES: { module: string; note: string; resources: ResourceKey[] }
   { module: 'Owners and contracts', note: 'Owner records and agreements', resources: ['owners', 'contracts'] },
   { module: 'Users and roles', note: 'Invite and permissions', resources: ['users'] },
   { module: 'Integrations', note: 'Channel and bank connections', resources: ['integrations'] },
-  { module: 'Audit trail', note: 'Who changed what', resources: ['audit'] },
+  { module: 'System health', note: 'Live status and who changed what', resources: ['audit'] },
 ];
 
 /* ------------------------------- styles ------------------------------- */
