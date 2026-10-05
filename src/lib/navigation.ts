@@ -113,6 +113,7 @@ export const NAV: NavGroup[] = [
     { key: 'integrations', label: 'Integrations', icon: 'plug', path: '/system/integrations', designed: true },
     { key: 'settings', label: 'Settings', icon: 'settings', path: '/system/settings', designed: true },
     { key: 'audit', label: 'Audit trail', icon: 'history', path: '/system/audit', designed: true },
+    { key: 'health', label: 'System health', icon: 'activity', path: '/system/health', designed: true },
   ] },
 ];
 
@@ -121,7 +122,7 @@ export const NAV: NavGroup[] = [
  *  finance_admin) — keep the two in sync. */
 const DENY: Partial<Record<UserRole, string[]>> = {
   // salesInvoices / purchaseInvoices match MONEY_ONLY in functions/api/_middleware.ts.
-  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'audit', 'scFinance', 'salesInvoices', 'purchaseInvoices'],
+  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'audit', 'health', 'scFinance', 'salesInvoices', 'purchaseInvoices'],
   finance_admin: ['operations', 'comms'],
   housekeeper: ['*'],
   technician: ['*'],
