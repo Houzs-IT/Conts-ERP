@@ -194,6 +194,15 @@ export function channexAirbnbConnectionLink(env: Env, p: { groupId: string; prop
 export const channexAirbnbListings = (env: Env, channelId: string) =>
   channexFetch<{ data?: { listing_id_dictionary?: { values?: { id: string; title: string; type: string; city: string; occupancies: number[] }[] } } }>(env, `/channels/${channelId}/action/listings`);
 
+/** One listing's own settings on Airbnb: its standing price, weekend price if it has one, and minimum nights. */
+export const channexAirbnbListingDetails = (env: Env, channelId: string, listingId: string) =>
+  channexFetch<{ data?: { listing?: { pricing_settings?: { default_daily_price?: number; weekend_price?: number | null; listing_currency?: string }; availability_rules?: { default_min_nights?: number } } } }>(
+    env, `/channels/${channelId}/action/listing_details?listing_id=${encodeURIComponent(listingId)}`);
+
+/** Every channel on the account; used to find the Airbnb connection before any listing is mapped on it. */
+export const channexListChannels = (env: Env) =>
+  channexFetch<{ data?: { id: string; attributes?: { channel?: string; title?: string; is_active?: boolean } }[] }>(env, '/channels?pagination[limit]=100');
+
 /** Maps one Airbnb listing to the unit's rate plan. Airbnb confirms it asynchronously (about 30 seconds). */
 export const channexCreateMapping = (env: Env, channelId: string, ratePlanId: string, settings: Record<string, unknown>) =>
   channexFetch<{ data?: { id: string } }>(env, `/channels/${channelId}/mappings`, { method: 'POST', body: JSON.stringify({ mapping: { rate_plan_id: ratePlanId, settings } }) });

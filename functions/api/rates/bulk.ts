@@ -80,9 +80,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
             stop_sell = CASE WHEN ?::boolean THEN excluded.stop_sell ELSE unit_restrictions.stop_sell END,
             updated_at = excluded.updated_at`,
           unitId, hasMinStay ? l.minStay : null, hasStopSell ? l.stopSell : null, now, days[0], last, hasMinStay, hasStopSell);
-        // Clearing a minimum stay means one night again, as far as the channels are concerned.
+        // Clearing a night's minimum stay puts it back on the unit's standing one.
+        const standing = hasMinStay && l.minStay == null ? Number((await one<{ min_stay: number }>(env, 'SELECT min_stay FROM units WHERE id = ?', unitId))?.min_stay) || 1 : 1;
         await syncRestrictionsIfLinked(env, unitId, days[0], last, {
-          ...(hasMinStay ? { minStay: l.minStay ?? 1 } : {}), ...(hasStopSell ? { stopSell: l.stopSell } : {}),
+          ...(hasMinStay ? { minStay: l.minStay ?? standing } : {}), ...(hasStopSell ? { stopSell: l.stopSell } : {}),
         });
       }
     }

@@ -154,7 +154,10 @@ export default function PropertiesPage() {
           <h1 className="m-0 text-[28px] font-semibold tracking-[-0.01em]">Properties</h1>
           <div className="text-[12px] text-muted-ink mt-1">{totalUnits} units · add a building, then add units to it</div>
         </div>
-        <Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button>
+        <div className="flex gap-2.5">
+          <Button variant="secondary" onClick={() => { window.location.hash = '#/properties/import-airbnb'; }}>Import from Airbnb</Button>
+          <Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button>
+        </div>
       </div>
 
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}

@@ -1,4 +1,4 @@
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -14,6 +14,8 @@ export default function AirbnbReturnPage() {
   const ok = params.get('success') === 'true';
   const channelId = params.get('channel_id') ?? '';
   const unitId = params.get('token') ?? '';
+  // The whole-account import starts the same sign-in with the token "import".
+  if (params.get('token') === 'import') return <Navigate to={ok ? '/properties/import-airbnb' : '/properties/import-airbnb?signin=failed'} replace />;
   const backToUnit = () => navigate(unitId ? `/properties/units/${encodeURIComponent(unitId)}` : '/properties/units');
 
   return (

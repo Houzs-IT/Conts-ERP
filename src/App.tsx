@@ -25,6 +25,7 @@ const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
 const TasksPage = lazy(() => import('./pages/TasksPage'));
 const InspectionsPage = lazy(() => import('./pages/InspectionsPage'));
 const PropertiesPage = lazy(() => import('./pages/PropertiesPage'));
+const AirbnbImportPage = lazy(() => import('./pages/AirbnbImportPage'));
 const UnitRecordPage = lazy(() => import('./pages/UnitRecordPage'));
 const InventoryPage = lazy(() => import('./pages/InventoryPage'));
 const ProductsPage = lazy(() => import('./pages/ProductsPage'));
@@ -206,6 +207,7 @@ function Routed() {
         <Route path="/accounting" element={<AccountingPage />} />
         <Route path="/accounting/credit-notes" element={<CreditNotesPage />} />
         <Route path="/channex/airbnb-return" element={<AirbnbReturnPage />} />
+        <Route path="/properties/import-airbnb" element={<AirbnbImportPage />} />
         <Route path="/sales/consignment-notes" element={<ConsignmentNotesPage />} />
         <Route path="/procurement/stock-transfers" element={<StockTransfersPage />} />
         <Route path="/procurement/stock-takes" element={<StockTakesPage />} />

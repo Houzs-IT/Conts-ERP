@@ -46,6 +46,8 @@ interface Unit {
   baseRate: number;
   /** EXTERNAL. The unit's own Friday/Saturday rate; null means base rate times the weekend multiplier. */
   weekendRate?: number | null;
+  /** The unit's standing minimum nights; a night's own minimum stay (Calendar) overrides it. */
+  minStay?: number;
   rates: ChannelRate[];
 }
 interface Payload { units: Unit[]; weekendMultiplier: number; generatedAt: string }
@@ -160,7 +162,7 @@ export default function PricingPage() {
   const weekendPct = Math.round((weekendMultiplier - 1) * 100);
 
   // Optimistic overlays — there is no backend in dev.
-  const [unitEdits, setUnitEdits] = useState<Record<string, { baseRate?: number; costFloor?: number; weekendRate?: number | null }>>({});
+  const [unitEdits, setUnitEdits] = useState<Record<string, { baseRate?: number; costFloor?: number; weekendRate?: number | null; minStay?: number }>>({});
   const [upliftEdits, setUpliftEdits] = useState<Record<string, number>>({}); // key `${unitId}:${channel}`
 
   const [selectedId, setSelectedId] = useState<string | null>(readUnitId());
@@ -179,6 +181,7 @@ export default function PricingPage() {
       ...u,
       baseRate: ue?.baseRate ?? u.baseRate,
       costFloor: ue?.costFloor ?? u.costFloor,
+      minStay: ue?.minStay ?? u.minStay ?? 1,
       weekendRate: ue && 'weekendRate' in ue ? ue.weekendRate ?? null : u.weekendRate ?? null,
       rates: u.rates.map(r => ({ ...r, upliftSen: upliftEdits[`${u.unitId}:${r.channel}`] ?? r.upliftSen })),
     };
@@ -192,6 +195,13 @@ export default function PricingPage() {
       await api.put('/rates', { unitId, baseRate });
       setUnitEdits(e => ({ ...e, [unitId]: { ...e[unitId], baseRate } }));
       toast({ tone: 'success', title: 'Base rate saved.', body: 'Connected booking sites are updated automatically.' });
+    } catch (e) { notifyFailure(e); }
+  }
+  async function setMinStay(unitId: string, minStay: number) {
+    try {
+      await api.put('/rates', { unitId, minStay });
+      setUnitEdits(e => ({ ...e, [unitId]: { ...e[unitId], minStay } }));
+      toast({ tone: 'success', title: 'Minimum nights saved.', body: 'Applies to every night without its own minimum stay. Connected booking sites are updated automatically.' });
     } catch (e) { notifyFailure(e); }
   }
   async function setWeekend(unitId: string, weekendRate: number | null) {
@@ -323,6 +333,19 @@ export default function PricingPage() {
                         : `Fri and Sat · base + ${weekendPct}%`}
                     </span>
                     <EditableMoney sen={selected.weekendRate ?? Math.round(selected.baseRate * weekendMultiplier)} ariaLabel="weekend rate" onCommit={s => void setWeekend(selected.unitId, s)} />
+                  </div>
+                </div>
+                <div className="bg-card py-[14px] px-5 flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] text-muted-ink">Minimum nights</span>
+                    <Tag label="SELL" kind="external" />
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-faint">Every night, unless the Calendar sets one</span>
+                    <select aria-label="minimum nights" value={selected.minStay ?? 1} onChange={e => void setMinStay(selected.unitId, Number(e.target.value))}
+                      className="h-8 px-2 rounded-control border border-solid border-line bg-card text-[13px] [font:inherit] [font-variant-numeric:tabular-nums]">
+                      {Array.from({ length: 30 }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
                   </div>
                 </div>
                 <div className="bg-card py-[14px] px-5 flex flex-col gap-1.5">

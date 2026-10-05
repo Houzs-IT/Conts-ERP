@@ -22,7 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const to = url.searchParams.get('to') ?? from;
 
   const units = await all<any>(env, `
-    SELECT u.id, u.unit_number, u.base_rate, u.weekend_rate, p.name AS property_name
+    SELECT u.id, u.unit_number, u.base_rate, u.weekend_rate, u.min_stay, p.name AS property_name
     FROM units u JOIN properties p ON p.id = u.property_id
     ORDER BY p.name, u.unit_number`);
 
@@ -36,7 +36,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const rates = await all<any>(env, `SELECT unit_id, channel, rate_date, rate FROM channel_rates WHERE rate_date >= ? AND rate_date <= ?`, from, to);
   const uplifts = await all<any>(env, 'SELECT unit_id, channel, uplift FROM channel_uplifts');
-  const restr = await all<any>(env, `SELECT unit_id, rate_date, min_stay, stop_sell FROM unit_restrictions WHERE rate_date >= ? AND rate_date <= ? AND (min_stay > 1 OR stop_sell)`, from, to);
+  const restr = await all<any>(env, `SELECT unit_id, rate_date, min_stay, stop_sell FROM unit_restrictions WHERE rate_date >= ? AND rate_date <= ? AND (min_stay IS NOT NULL OR stop_sell)`, from, to);
 
   return json({
     from, to,
@@ -47,12 +47,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // the weekend multiplier on Friday and Saturday. Same rule as the Pricing page and Channex (channelPrice.ts).
     uplifts: Object.fromEntries(units.flatMap(u => OTA_CHANNELS.map(ch => [`${u.id}:${ch}`, upliftFor(ch, Number(u.base_rate), uplifts.find(x => x.unit_id === u.id && x.channel === ch)?.uplift)]))),
     weekendMultiplier: WEEKEND_MULTIPLIER,
+    // Units whose standing minimum stay is above one night; a night's own restriction overrides it.
+    unitMinStay: Object.fromEntries(units.filter(u => Number(u.min_stay) > 1).map(u => [u.id, Number(u.min_stay)])),
     // Units with their own Friday/Saturday rate (sen); the rest use base rate times weekendMultiplier.
     weekendRate: Object.fromEntries(units.filter(u => u.weekend_rate).map(u => [u.id, Number(u.weekend_rate)])),
     // Nights priced by hand, keyed "unitId:channel:date" (channel 'web' is the direct rate).
     rates: Object.fromEntries(rates.map(r => [`${r.unit_id}:${r.channel}:${r.rate_date}`, Number(r.rate)])),
     // Nights with a minimum stay above one or closed for sale, keyed "unitId:date".
-    restrictions: Object.fromEntries(restr.map(r => [`${r.unit_id}:${r.rate_date}`, { minStay: r.min_stay ?? 1, stopSell: !!r.stop_sell }])),
+    restrictions: Object.fromEntries(restr.map(r => [`${r.unit_id}:${r.rate_date}`, { minStay: r.min_stay === null ? null : Number(r.min_stay), stopSell: !!r.stop_sell }])),
     // label is server-provided so channel and status never depend on colour.
     blocks: blocks.map(b => ({
       id: b.id, unitId: b.unit_id, channel: b.channel, state: b.state,

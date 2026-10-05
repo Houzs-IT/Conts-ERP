@@ -12,6 +12,7 @@ const whole = (v: unknown) => Number.isInteger(v) && (v as number) >= 0;
 /** PUT /api/rates — one of:
  *    { unitId, channel, date, rate }   the price of one night on one channel
  *    { unitId, baseRate }              the unit's base web rate
+ *    { unitId, minStay }               the unit's standing minimum nights (a night's own minimum stay still wins)
  *    { unitId, weekendRate }           the unit's own Friday/Saturday rate (null goes back to base x multiplier)
  *    { unitId, costFloor }             the internal nightly cost floor
  *    { unitId, channel, uplift }       what a channel adds on top of the base rate
@@ -23,7 +24,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
 
   const b = await request.json<any>().catch(() => null);
   if (!b?.unitId) return fail('VALIDATION', 'Say which unit.', 422);
-  const unit = await one<{ id: string; base_rate: number; weekend_rate: number | null; cost_floor: number }>(env, 'SELECT id, base_rate, weekend_rate, cost_floor FROM units WHERE id = ?', b.unitId);
+  const unit = await one<{ id: string; base_rate: number; weekend_rate: number | null; min_stay: number; cost_floor: number }>(env, 'SELECT id, base_rate, weekend_rate, min_stay, cost_floor FROM units WHERE id = ?', b.unitId);
   if (!unit) return fail('NOT_FOUND', 'That unit does not exist.', 404);
   const now = nowIso();
   const done = (action: string, before: unknown, after: unknown) =>
@@ -35,6 +36,15 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     await done('pricing.base_rate', { baseRate: Number(unit.base_rate) }, { baseRate: b.baseRate });
     // Every night without its own price is sold at the base price, so a linked unit's whole price range is
     // queued again. Queue trouble is audited and never fails the save.
+    try { await queueFullSync(env, [unit.id], { pricesOnly: true }); }
+    catch (e) { await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.enqueue_failed', entityTable: 'units', entityId: unit.id, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {}); }
+    return json({ ok: true });
+  }
+  if (b.minStay !== undefined) {
+    if (!whole(b.minStay) || b.minStay < 1 || b.minStay > 60) return fail('VALIDATION', 'Minimum nights must be 1 to 60.', 422, { minStay: '1 to 60 nights.' });
+    await run(env, 'UPDATE units SET min_stay = ?, updated_at = ? WHERE id = ?', b.minStay, now, unit.id);
+    await done('pricing.min_stay', { minStay: Number(unit.min_stay) }, { minStay: b.minStay });
+    // Every night without its own minimum stay changes on every channel.
     try { await queueFullSync(env, [unit.id], { pricesOnly: true }); }
     catch (e) { await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.enqueue_failed', entityTable: 'units', entityId: unit.id, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {}); }
     return json({ ok: true });

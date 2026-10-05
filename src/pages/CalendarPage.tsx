@@ -54,7 +54,7 @@ interface Block {
   id: string; unitId: string; channel: BookingChannel; state: ReservationState;
   guestName: string; checkIn: string; checkOut: string; grossBookingValue: number; ref: string | null; reason: string | null;
 }
-interface Payload { from: string; to: string; units: Unit[]; blocks: Block[]; baseRate: Record<string, number>; rates?: Record<string, number>; uplifts?: Record<string, number>; weekendMultiplier?: number; weekendRate?: Record<string, number>; restrictions?: Record<string, { minStay: number; stopSell: boolean }>; generatedAt: string }
+interface Payload { from: string; to: string; units: Unit[]; blocks: Block[]; baseRate: Record<string, number>; rates?: Record<string, number>; uplifts?: Record<string, number>; weekendMultiplier?: number; weekendRate?: Record<string, number>; restrictions?: Record<string, { minStay: number | null; stopSell: boolean }>; unitMinStay?: Record<string, number>; generatedAt: string }
 
 const today = new Date(todayMyt());
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -436,11 +436,13 @@ export default function CalendarPage() {
                         <div className="w-60 box-border flex-none sticky left-0 z-[2] bg-page px-4 py-1.5 [border-right:1px_solid_var(--color-line)] text-[11.5px] font-medium text-muted-ink">Min stay · stop sell</div>
                         {Array.from({ length: span }, (_, i) => {
                           const rs = data?.restrictions?.[`${u.id}:${dayIso(i)}`];
+                          // A night's own minimum stay wins; otherwise the unit's standing one.
+                          const minStay = rs?.minStay ?? data?.unitMinStay?.[u.id] ?? 1;
                           return (
                             <button key={i} type="button" onClick={() => setRateUpdate({ unitIds: [u.id], from: dayIso(i), to: dayIso(i) })} title="Set minimum stay or stop sell"
                               className="flex-none w-[62px] box-border border-none [border-left:1px_solid_var(--color-line-soft)]! cursor-pointer font-sans text-[11px] px-[2px] py-1.5 [font-variant-numeric:tabular-nums]"
-                              style={{ color: rs?.stopSell ? toneMap.critical.fg : rs ? color.ink : color.textMuted, background: i === todayIdx ? color.goldTint : 'transparent', fontWeight: rs ? 600 : 400 }}>
-                              {rs?.stopSell ? 'Closed' : rs && rs.minStay > 1 ? `min ${rs.minStay}` : '·'}
+                              style={{ color: rs?.stopSell ? toneMap.critical.fg : rs || minStay > 1 ? color.ink : color.textMuted, background: i === todayIdx ? color.goldTint : 'transparent', fontWeight: rs ? 600 : 400 }}>
+                              {rs?.stopSell ? 'Closed' : minStay > 1 ? `min ${minStay}` : '·'}
                             </button>
                           );
                         })}

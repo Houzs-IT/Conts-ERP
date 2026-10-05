@@ -207,8 +207,8 @@ function runs<T>(dates: string[], valueOf: (d: string) => T, same: (a: T, b: T) 
  */
 export async function queueFullSync(env: Env, unitIds?: string[], opts: { pricesOnly?: boolean } = {}): Promise<{ units: number }> {
   if (!channexConfigured(env)) return { units: 0 };
-  const units = await all<{ id: string; base_rate: number; weekend_rate: number | null; channex_property_id: string; channex_room_type_id: string; channex_rate_plan_id: string; channex_rate_plan_airbnb: string | null; channex_rate_plan_booking_com: string | null; channex_rate_plan_agoda: string | null }>(env, `
-    SELECT id, base_rate, weekend_rate, channex_property_id, channex_room_type_id, channex_rate_plan_id, channex_rate_plan_airbnb, channex_rate_plan_booking_com, channex_rate_plan_agoda FROM units
+  const units = await all<{ id: string; base_rate: number; weekend_rate: number | null; min_stay: number | null; channex_property_id: string; channex_room_type_id: string; channex_rate_plan_id: string; channex_rate_plan_airbnb: string | null; channex_rate_plan_booking_com: string | null; channex_rate_plan_agoda: string | null }>(env, `
+    SELECT id, base_rate, weekend_rate, min_stay, channex_property_id, channex_room_type_id, channex_rate_plan_id, channex_rate_plan_airbnb, channex_rate_plan_booking_com, channex_rate_plan_agoda FROM units
     WHERE channex_property_id IS NOT NULL AND channex_room_type_id IS NOT NULL AND channex_rate_plan_id IS NOT NULL
       ${unitIds ? 'AND id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : ''}`, ...(unitIds ? [JSON.stringify(unitIds)] : []));
   if (!units.length) return { units: 0 };
@@ -246,7 +246,7 @@ export async function queueFullSync(env: Env, unitIds?: string[], opts: { prices
       if (!planId) continue;
       const rateOn = new Map(rates.filter(r => r.unit_id === u.id && r.channel === channel).map(r => [r.rate_date, Number(r.rate)]));
       const uplift = upliftFor(channel, Number(u.base_rate), uplifts.find(x => x.unit_id === u.id && x.channel === channel)?.uplift);
-      const night = (d: string) => ({ rate: rateOn.get(d) ?? standardRate(Number(u.base_rate), uplift, d, u.weekend_rate), minStay: resOn.get(d)?.min_stay ?? 1, stopSell: !!resOn.get(d)?.stop_sell });
+      const night = (d: string) => ({ rate: rateOn.get(d) ?? standardRate(Number(u.base_rate), uplift, d, u.weekend_rate), minStay: resOn.get(d)?.min_stay ?? (Number(u.min_stay) || 1), stopSell: !!resOn.get(d)?.stop_sell });
       for (const r of runs(dates, night, (x, y) => x.rate === y.rate && x.minStay === y.minStay && x.stopSell === y.stopSell)) {
         restrictions.push({ id: crypto.randomUUID(), unit_id: u.id, property_id: u.channex_property_id, rate_plan_id: planId, date_from: r.from, date_to: r.to, rate: r.value.rate > 0 ? r.value.rate / 100 : null, min_stay: r.value.minStay, stop_sell: r.value.stopSell });   // never a zero price: Channex discards it
       }
