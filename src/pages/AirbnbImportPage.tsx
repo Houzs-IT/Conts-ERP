@@ -162,7 +162,7 @@ export default function AirbnbImportPage() {
       {data && !data.channelId && (
         <Card>
           <div className="p-6 max-w-[640px] flex flex-col gap-3 text-[13.5px]">
-            {params.get('signin') === 'failed' && <span className="text-[var(--color-critical)]">The Airbnb sign-in was cancelled or did not complete, so nothing was connected.</span>}
+            {params.get('signin') === 'failed' && <span className="text-[var(--color-critical-fg)]">The Airbnb sign-in was cancelled or did not complete, so nothing was connected.</span>}
             <span>Sign in with the Airbnb host account. Signing in only lets Conts read the listings: nothing on Airbnb changes until you bring a listing in.</span>
             <span className="text-muted-ink">Airbnb allows one management software per account. If another one is connected, Airbnb refuses the sign-in until it is removed there.</span>
             <div><Button variant="primary" loading={signingIn} onClick={() => void signIn()}>Sign in to Airbnb</Button></div>
@@ -213,8 +213,8 @@ export default function AirbnbImportPage() {
                       <td className="px-3 py-2.5 min-w-[220px] max-w-[300px]">
                         <div className="font-semibold">{l.title}</div>
                         <div className="text-[12px] text-muted-ink">{[l.type, l.city, l.maxGuests ? `up to ${l.maxGuests} guests` : ''].filter(Boolean).join(' · ')}</div>
-                        {r.on && r.currency && r.currency !== 'MYR' && <div className="text-[12px] text-[var(--color-critical)]">Priced in {r.currency} on Airbnb. Enter the price in RM.</div>}
-                        {r.on && r.details === 'failed' && <div className="text-[12px] text-[var(--color-critical)]">Could not read its price from Airbnb. Enter it by hand.</div>}
+                        {r.on && r.currency && r.currency !== 'MYR' && <div className="text-[12px] text-[var(--color-critical-fg)]">Priced in {r.currency} on Airbnb. Enter the price in RM.</div>}
+                        {r.on && r.details === 'failed' && <div className="text-[12px] text-[var(--color-critical-fg)]">Could not read its price from Airbnb. Enter it by hand.</div>}
                       </td>
                       {isDone ? (
                         <td colSpan={7} className="px-3 py-2.5 text-muted-ink">Linked to {l.linkedTo ?? 'its new unit'}</td>
@@ -253,7 +253,7 @@ export default function AirbnbImportPage() {
                       <td className="px-3 py-2.5 whitespace-nowrap max-w-[220px]">
                         {isDone ? <Badge tone="success" label="Linked" />
                           : r.result === 'working' ? <Badge tone="info" label="Bringing in…" />
-                          : typeof r.result === 'object' ? <span className="text-[12px] text-[var(--color-critical)] whitespace-normal">{r.result.error}</span>
+                          : typeof r.result === 'object' ? <span className="text-[12px] text-[var(--color-critical-fg)] whitespace-normal">{r.result.error}</span>
                           : why ? <span className="text-[12px] text-muted-ink whitespace-normal">{why}</span> : null}
                       </td>
                     </tr>
