@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -10,7 +10,7 @@ import { cx } from '../lib/design-tokens';
 
 // System Health, laid out like the Hookka /admin/health page so the two can be moved between systems:
 // a status banner, a grid of stat cards fed by one live payload, then the audit feed with its range and
-// "sensitive only" switches. `db`, `r2` and `counts` are the shared core; `checks` are this system's own.
+// "sensitive only" switches. The audit feed is also the system's audit trail: a row opens to its before/after. `db`, `r2` and `counts` are the shared core; `checks` are this system's own.
 
 type Status = 'ok' | 'warning' | 'critical' | 'off';
 interface Check { key: string; label: string; value: string; status: Status; summary: string; detail?: string; link?: { label: string; path: string } }
@@ -22,8 +22,9 @@ interface LivePayload {
   checks: Check[];
   problems: { at: string; what: string; where: string | null; error: string | null }[];
 }
-interface AuditRow { id: number; created_at: string; actor_label: string; action: string; entity_type: string; entity_id: string }
-interface AuditFeed { data: AuditRow[]; summary: { byAction: { action: string; n: number }[]; byResource: { resource: string; n: number }[] } }
+type Detail = Record<string, unknown> | null;
+interface AuditRow { id: number; created_at: string; actor_label: string; action: string; entity_type: string; entity_id: string; before: Detail; after: Detail }
+interface AuditFeed { total: number; data: AuditRow[]; summary: { byAction: { action: string; n: number }[]; byResource: { resource: string; n: number }[] } }
 
 type Range = '24h' | '7d' | '30d' | '90d';
 const RANGES: Range[] = ['24h', '7d', '30d', '90d'];
@@ -92,14 +93,39 @@ function Breakdown({ title, items }: { title: string; items: { label: string; co
   );
 }
 
+/** What an audit entry changed: each field's value before and after. */
+function AuditDiff({ before, after }: { before: Detail; after: Detail }) {
+  if (!before && !after) return <div className="py-2 text-[12px] text-muted-ink">No before/after detail was recorded for this entry.</div>;
+  const keys = Array.from(new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])).sort();
+  const show = (v: unknown) => (v === undefined ? '—' : v === null ? 'empty' : typeof v === 'object' ? JSON.stringify(v) : String(v));
+  return (
+    <div className="my-1 border border-solid border-line rounded-card overflow-hidden bg-card">
+      {keys.map((k, i) => {
+        const b = before?.[k], a = after?.[k];
+        const changed = before && after && show(b) !== show(a);
+        return (
+          <div key={k} className={cx('grid grid-cols-[160px_1fr] gap-3 py-[7px] px-[13px]', i < keys.length - 1 && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
+            <span className="text-[11.5px] font-medium text-muted-ink">{words(k)}</span>
+            <span className="text-[12px] font-mono break-all">
+              {before && after ? (changed ? <>{show(b)} <span className="text-muted-ink">→</span> {show(a)}</> : show(a)) : show(a ?? b)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 const panel = 'rounded-card border border-solid border-line bg-card px-5 py-5';
 const panelTitle = 'text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-ink';
 
 export default function SystemHealthPage() {
   const [range, setRange] = useState<Range>('7d');
   const [sensitiveOnly, setSensitiveOnly] = useState(false);
+  const [limit, setLimit] = useState(100);
+  const [openRow, setOpenRow] = useState<number | null>(null);
   const live = useApi<LivePayload>('/system/health');
-  const feed = useApi<AuditFeed>(`/system/health/audit-feed?range=${range}${sensitiveOnly ? '&sensitive=1' : ''}`);
+  const feed = useApi<AuditFeed>(`/system/health/audit-feed?range=${range}${sensitiveOnly ? '&sensitive=1' : ''}&limit=${limit}`);
   const navigate = useNavigate();
   const reloadLive = live.reload, reloadFeed = feed.reload;
   useEffect(() => { const t = setInterval(reloadLive, REFRESH_MS); return () => clearInterval(t); }, [reloadLive]);
@@ -202,14 +228,14 @@ export default function SystemHealthPage() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className={panelTitle}>Audit feed: recent changes</div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setSensitiveOnly(v => !v)} title="Only accounts and passwords, settings, payouts, deletions and failures"
+            <button type="button" onClick={() => { setSensitiveOnly(v => !v); setLimit(100); }} title="Only accounts and passwords, settings, payouts, deletions and failures"
               className={cx('inline-flex h-7 items-center gap-1.5 rounded-control border border-solid px-2.5 text-[11px] font-semibold cursor-pointer [font-family:inherit]',
                 sensitiveOnly ? 'border-[var(--color-warning-line)] bg-[var(--color-warning)] text-[var(--color-warning-fg)]' : 'border-line bg-card text-muted-ink')}>
               <Icon name="ShieldAlert" size="sm" /> Sensitive only
             </button>
             <div className="inline-flex rounded-control border border-solid border-line bg-card p-0.5">
               {RANGES.map(r => (
-                <button key={r} type="button" onClick={() => setRange(r)}
+                <button key={r} type="button" onClick={() => { setRange(r); setLimit(100); }}
                   className={cx('h-6 rounded-[4px] border-none px-2 text-[11px] font-semibold cursor-pointer [font-family:inherit]', range === r ? 'bg-ink text-white' : 'bg-transparent text-muted-ink')}>
                   {r}
                 </button>
@@ -227,21 +253,37 @@ export default function SystemHealthPage() {
           : feed.error && rows.length === 0 ? <div className="py-6 text-center text-[12.5px] text-[var(--color-critical-fg)]">{feed.error}</div>
           : rows.length === 0 ? <div className="py-6 text-center text-[12.5px] text-muted-ink">No {sensitiveOnly ? 'sensitive ' : ''}events in the last {range}.</div>
           : (
-            <div className="max-h-[420px] overflow-y-auto">
+            <>
+            <div className="max-h-[520px] overflow-y-auto">
               <table className="w-full border-collapse text-[12.5px]">
                 <thead><tr className="text-left text-[11px] text-muted-ink">{['When', 'Who', 'Action', 'Resource'].map(h => <th key={h} className="sticky top-0 bg-card font-medium py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{h}</th>)}</tr></thead>
                 <tbody>
                   {rows.map(r => (
-                    <tr key={r.id}>
-                      <td className="py-2 pr-4 whitespace-nowrap [border-bottom:1px_solid_var(--color-line-soft)]" title={dateTime(r.created_at)}>{relative(r.created_at)}</td>
-                      <td className="py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{r.actor_label}</td>
-                      <td className="py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{words(r.action)}</td>
-                      <td className="py-2 text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]">{words(r.entity_type)}</td>
-                    </tr>
+                    <Fragment key={r.id}>
+                      <tr onClick={() => setOpenRow(openRow === r.id ? null : r.id)} className="cursor-pointer hover:bg-page" title="Show what changed">
+                        <td className="py-2 pr-4 whitespace-nowrap [border-bottom:1px_solid_var(--color-line-soft)]" title={dateTime(r.created_at)}>
+                          <span className="inline-flex items-center gap-1.5"><Icon name={openRow === r.id ? 'ChevronDown' : 'ChevronRight'} size="sm" color="var(--color-muted-ink)" />{relative(r.created_at)}</span>
+                        </td>
+                        <td className="py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{r.actor_label}</td>
+                        <td className="py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{words(r.action)}</td>
+                        <td className="py-2 text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]">{words(r.entity_type)}</td>
+                      </tr>
+                      {openRow === r.id && (
+                        <tr><td colSpan={4} className="px-5 py-2 bg-page [border-bottom:1px_solid_var(--color-line-soft)]">
+                          <div className="text-[11.5px] text-muted-ink">{dateTime(r.created_at)} · record {r.entity_id}</div>
+                          <AuditDiff before={r.before} after={r.after} />
+                        </td></tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
             </div>
+            <div className="mt-3 flex items-center justify-between gap-3 text-[12px] text-muted-ink">
+              <span>Showing {rows.length} of {(feed.data?.total ?? rows.length).toLocaleString()} in the last {range}. Click a row to see what changed.</span>
+              {rows.length < (feed.data?.total ?? 0) && limit < 1000 && <Button size="sm" variant="secondary" loading={feed.loading} onClick={() => setLimit(l => Math.min(1000, l + 200))}>Show more</Button>}
+            </div>
+            </>
           )}
       </div>
     </>

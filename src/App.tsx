@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Routes, Route, Outlet, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { SessionProvider, useSession } from './lib/session';
 import { ToastProvider } from './components/Toast';
 import AppShell from './components/AppShell';
@@ -87,7 +87,6 @@ const UsersPage = lazy(() => import('./pages/UsersPage'));
 const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'));
 const SystemHealthPage = lazy(() => import('./pages/SystemHealthPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
-const AuditPage = lazy(() => import('./pages/AuditPage'));
 const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
 const FieldTodayPage = lazy(() => import('./pages/FieldTodayPage'));
@@ -225,7 +224,7 @@ function Routed() {
         <Route path="/system/users" element={<UsersPage />} />
         <Route path="/system/integrations" element={<IntegrationsPage />} />
         <Route path="/system/settings" element={<SettingsPage />} />
-        <Route path="/system/audit" element={<AuditPage />} />
+        <Route path="/system/audit" element={<Navigate to="/system/health" replace />} />
         <Route path="/system/health" element={<SystemHealthPage />} />
         <Route path="*" element={<NotDesignedPage />} />
       </Route>
