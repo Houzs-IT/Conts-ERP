@@ -34,12 +34,8 @@ export const NAV: NavGroup[] = [
       { key: 'inventory', label: 'Inventory', path: '/properties/inventory', designed: true },
       { key: 'access', label: 'Access and keys', path: '/properties/access', designed: true },
     ] },
-  ] },
-  // Supply Chain — mirrors Houzs's nav hierarchy: L1 group (Supply Chain) → L2 collapsible
-  // sections (Procurement / Warehouse / Sales / Transportation / Furniture) → L3 pages.
-  { label: 'SUPPLY CHAIN', items: [
-    // Service cases and Projects come from the supply chain engine, like the groups below; they have no
-    // built-in screens, so they open only where the engine is set up (src/lib/scmEngine.ts).
+    // Service cases and Projects sit here as they do in Houzs. They come from the supply chain engine and
+    // have no built-in screens, so they open only where the engine is set up (src/lib/scmEngine.ts).
     { key: 'serviceCases', label: 'Service cases', icon: 'zap', children: [
       { key: 'serviceCaseList', label: 'Service cases', path: '/service/cases', designed: true },
       { key: 'serviceMetrics', label: 'Quality metrics', path: '/service/metrics', designed: true },
@@ -52,6 +48,10 @@ export const NAV: NavGroup[] = [
       { key: 'projectFinances', label: 'Finances', path: '/projects/finances', designed: true },
       { key: 'projectMaintenance', label: 'Project maintenance', path: '/projects/maintenance', designed: true },
     ] },
+  ] },
+  // Supply Chain — mirrors Houzs's nav hierarchy: L1 group (Supply Chain) → L2 collapsible
+  // sections (Procurement / Warehouse / Sales / Transportation / Furniture) → L3 pages.
+  { label: 'SUPPLY CHAIN', items: [
     { key: 'scSales', label: 'Sales order', icon: 'shopping-cart', children: [
       { key: 'salesOrders', label: 'Sales orders', path: '/sales/orders', designed: true },
       { key: 'salesOrderAmendment', label: 'Sales order amendment', path: '/sales/amendments', designed: true },
