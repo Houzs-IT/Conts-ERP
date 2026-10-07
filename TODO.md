@@ -35,7 +35,8 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Found and fixed by that test: no system staff row (migration 0048).
 - Found, not fixed: document numbers carry Houzs's prefix (HC-SO-, HC-PO-, HC-GRN-, HC-DO-); a new record does not show in its list until Refresh (list responses are cached for 60 seconds); the venue name box in Project Maintenance is squashed to a few pixels inside the frame; "Default warehouse" tick did not stick on the first warehouse.
 - A new instance cannot raise an order until it has: Malaysian localities, a warehouse, a state-to-warehouse link (Sales Order Maintenance > Geo), a venue (Project Maintenance) or a salesperson parked under a showroom, and a product. Staging got Houzs's own starter reference data (engine/backend/scripts/scm-schema/seed-scm-reference-data.sql: 2,933 localities, 39 dropdown options, 7 categories, 4 sizes, 12 accounts, 46 fabric trackings) for the test; production still needs the owner's manager to choose copy or enter.
-- Before staff rely on it: fix the hang above; sales invoice step; engine permissions for operations staff; email, scanning, maps and AutoCount are off.
+- Sales invoice step tested on the local engine (7 Oct): HC-SI-2610-001 from DO 005, RM 100, saved in 1.8s; revenue not posted to accounts ("group_unbound": item groups have no account linked yet).
+- Before staff rely on it: fix the hang above; link item groups to accounts; engine permissions for operations staff; email, scanning, maps and AutoCount are off.
 - Before production: a database role for the engine that cannot read schema `pos` (local testing uses the admin connection); reference data the screens need (dropdown options, categories, warehouses) entered or agreed with the owner.
 - Open with the owner: does Conts use AutoCount; which Houzs modules Conts does not need (accounting ledger, consignment, HR commission, POS).
 
