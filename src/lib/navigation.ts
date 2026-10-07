@@ -139,8 +139,11 @@ const DENY: Partial<Record<UserRole, string[]>> = {
   owner: ['*'],
 };
 
-export function navFor(role: UserRole): NavGroup[] {
-  const deny = DENY[role] ?? [];
+/** Menu items whose screens exist only in the supply chain engine: hidden where it is not set up. */
+const ENGINE_ONLY = ['serviceCases', 'projects'];
+
+export function navFor(role: UserRole, engine = false): NavGroup[] {
+  const deny = [...(DENY[role] ?? []), ...(engine ? [] : ENGINE_ONLY)];
   if (deny.includes('*')) return [];
   return NAV
     .map(g => ({ ...g, items: g.items.filter(i => !deny.includes(i.key))
