@@ -287,7 +287,7 @@ export default function UsersPage() {
         )}
       />
 
-      <div role="tablist" aria-label="Users and roles sections" className="flex gap-1 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] overflow-x-auto mt-0.5">
+      <div role="tablist" aria-label="Users and roles sections" className="flex shrink-0 gap-1 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] overflow-x-auto mt-0.5">
         {tabs.map(t => {
           const on = tab === t.key;
           return (
