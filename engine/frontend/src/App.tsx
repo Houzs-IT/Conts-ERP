@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
-import { CONTS_HOME } from "./conts/navOnly";
+import { CONTS_HOME, CONTS_EXTRAS } from "./conts/navOnly";
 import { Layout } from "./components/Layout";
 import { useAuth } from "./auth/AuthContext";
 import { canUseAssistant } from "./auth/assistantAccess";
@@ -444,10 +444,11 @@ export default function App() {
       <BrowserPushSink />
       <AnnouncementBanner />
       <LazySlot resetKey="pending-reminder" fallback={null}><PendingTasksReminder /></LazySlot>
-      <QuickActionsFAB />
+      {/* Conts: the quick-add button and the assistant serve Houzs areas that are not used here. */}
+      {CONTS_EXTRAS && <QuickActionsFAB />}
       <BackToTopFAB />
       <AssistantPanelProvider>
-        <AssistantLauncher />
+        {CONTS_EXTRAS && <AssistantLauncher />}
         <AssistantPanel />
       </AssistantPanelProvider>
       <IosInstallGuide />

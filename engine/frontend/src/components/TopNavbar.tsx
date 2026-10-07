@@ -1,3 +1,4 @@
+import { CONTS_EMBEDDED } from "../conts/embed";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -63,14 +64,19 @@ export function TopNavbar() {
                 apply for all pages"). One control in the shared chrome reaches
                 every page — see RefreshButton for why it drops two caches. */}
             <RefreshButton />
-            <PresenceButton />
+            {/* Conts: inside Property OS, who is online and the profile menu belong to Property OS. */}
+            {!CONTS_EMBEDDED && <PresenceButton />}
             {/* Count, not the 2b dot (owner 2026-09-02, "需要有红色号码
                 notice"): a dot says something happened, a number says how
                 much is waiting — which is the whole point of routing
                 amendment approvals here. */}
             <NotificationBell collapsed direction="down" align="end" tone="navbar" />
-            <span aria-hidden className="mx-0.5 h-6 w-px bg-border-subtle" />
-            <ProfileMenu />
+            {!CONTS_EMBEDDED && (
+              <>
+                <span aria-hidden className="mx-0.5 h-6 w-px bg-border-subtle" />
+                <ProfileMenu />
+              </>
+            )}
           </>
         )}
       </div>

@@ -13,3 +13,7 @@ export function contsNavOnly<T extends { label: string }>(tabs: T[]): T[] {
 
 /** Where the app opens: the old landing page is a Houzs-wide overview of areas hidden here. */
 export const CONTS_HOME = "/scm/sales-orders";
+
+/** The floating quick-add button and the AI assistant: off. Quick-add offers service cases and projects,
+ *  and the assistant needs a key this instance does not have. */
+export const CONTS_EXTRAS = false;
