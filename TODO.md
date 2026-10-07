@@ -18,11 +18,13 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Still off: the cron worker (wrangler.cron.toml, needs CHANNEX_API_KEY set on it) that retries the Channex outbox every minute; deploying it also starts the notification drain and overdue-task sweep.
 - Watch: one listing must never be controlled by both the old connection and Channex; plan the import of existing bookings.
 
-## Paused: Supply Chain as a copy of Houzs (decision: option B)
-- Plan: copy Houzs's supply chain screens and server code into Conts, re-coloured gold and black, instead of re-drawing each screen. Rental side untouched.
-- Needs Houzs's `scm` tables (177) in a separate schema, a bridge from Conts sessions to Houzs's code, and Supabase's data service (service key as a Cloudflare secret, set by the owner).
-- Waiting on: schema-only dump of Houzs `scm` (pg_dump --schema-only --schema=scm, command given to the owner), and whether Conts needs AutoCount.
-- First step when resumed: pilot the Houzs sales order list inside Conts on staging.
+## Supply Chain as a copy of Houzs (decision: option B, resumed 7 Oct)
+- Plan: copy Houzs's supply chain screens and server code into Conts, re-coloured gold and black, instead of re-drawing each screen. Rental side untouched. Houzs's code is on this machine at C:\dev\Houzs-ERP (reference only).
+- Size: about 390 screen files and 167 server route files in Houzs against 29 simplified screens here; menus already carry the same names.
+- Done: Houzs's `scm` structure as migration 0044 (248 tables, 22 views, 64 functions, 31 triggers, plus public.companies with one row, CONTS), built from read-only catalogue exports of live Houzs. Applied to staging only. Row level security on with no policies; pos_app and service_role granted.
+- Known gaps in 0044: three functions name Houzs tables outside scm (mfg_product_category, positions, projects, project_event_types) and fail if called; Houzs's `authenticated` policies were not copied.
+- Next: pilot the Houzs sales order list inside Conts on staging (needs the bridge from Conts sessions to Houzs's server code, which talks to Supabase's data service with a service key held as a Cloudflare secret, set by the owner).
+- Open with the owner: does Conts use AutoCount; which Houzs modules Conts does not need (accounting ledger, consignment, HR commission, POS).
 
 ## Later
 - Update Wrangler CLI (3.114 -> 4.x, `npm install --save-dev wrangler@4`). Not urgent, do once current work settles.
