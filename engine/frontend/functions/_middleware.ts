@@ -38,7 +38,8 @@ const CSP_REPORT_ONLY = [
   "img-src 'self' data: blob:",
   "font-src 'self'",
   "connect-src 'self' https://conts-scm-engine.invalid",
-  "frame-ancestors 'none'",
+  // Conts: Property OS shows this app in a frame under its Supply chain menu.
+  "frame-ancestors https://erp.theconts.com https://*.theconts-os.pages.dev https://theconts-os.pages.dev",
   "base-uri 'self'",
   "object-src 'none'",
   "form-action 'self'",

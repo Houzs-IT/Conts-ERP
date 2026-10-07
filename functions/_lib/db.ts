@@ -15,6 +15,11 @@ export interface Env {
   CHANNEX_WEBHOOK_SECRET?: string;
   /** Channex server (wrangler.toml var): https://staging.channex.io on preview, https://app.channex.io on production. */
   CHANNEX_BASE_URL?: string;
+  /** The supply chain engine (engine/): its server, its site, and the secret the two servers share for
+   *  signing people in. Supply chain uses the built-in screens wherever these are not all set. */
+  SCM_ENGINE_API?: string;
+  SCM_ENGINE_SITE?: string;
+  SCM_ENGINE_SSO_SECRET?: string;
 }
 
 // count(*) and sum() come back from Postgres as strings (int8 / numeric). The API

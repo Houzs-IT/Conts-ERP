@@ -29,6 +29,11 @@ import { registerNativePush } from "./lib/nativePush";
 import { readAuthToken } from "./lib/authToken";
 import { canonicalRedirectUrl } from "./lib/canonicalHost";
 import { useAppSurface } from "./routing/appSurface";
+import { consumeContsSignIn, listenForContsNavigation } from "./conts/embed";
+
+// Conts: take the sign-in handed over by Property OS before anything reads the session.
+consumeContsSignIn();
+listenForContsNavigation();
 
 // Canonical-domain guard (owner 2026-07: "我要全部看到 .houzscentury.com").
 // Production also answers on the Cloudflare Pages default host

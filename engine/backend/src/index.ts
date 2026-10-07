@@ -25,6 +25,7 @@ import systemHealthRoutes from "./routes/systemHealth";
 import clientErrors from "./routes/clientErrors";
 import udf from "./routes/udf";
 import authRoutes from "./routes/auth";
+import contsSso from "./conts/sso";
 import totpRoutes from "./routes/totp";
 import users from "./routes/users";
 import roles from "./routes/roles";
@@ -273,6 +274,8 @@ app.get("/health", (c) => {
 // /api/auth/* is unauthenticated (login, bootstrap, accept-invite, status,
 // me, logout). It must be mounted BEFORE the auth middleware below.
 app.route("/api/auth", authRoutes);
+// Conts: sign-on from Property OS, server to server, proven by a shared secret (src/conts/sso.ts).
+app.route("/api/conts-sso", contsSso);
 
 // Public customer survey — unauthenticated, token-based. Lives under
 // /api/survey (not /survey) so it doesn't collide with the SPA route

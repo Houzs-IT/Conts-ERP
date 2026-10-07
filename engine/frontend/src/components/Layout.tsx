@@ -1,3 +1,4 @@
+import { CONTS_EMBEDDED } from "../conts/embed";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ShieldAlert } from "lucide-react";
@@ -52,11 +53,14 @@ export function Layout({ children }: Props) {
 
   return (
     <div className="flex h-dvh min-h-dvh w-screen overflow-hidden">
-      <Sidebar
-        collapsed={collapsed}
-        onToggle={() => setCollapsed((c) => !c)}
-        mobileOpen={false}
-      />
+      {/* Conts: inside Property OS its menu is the menu, so this app's own is not drawn. */}
+      {!CONTS_EMBEDDED && (
+        <Sidebar
+          collapsed={collapsed}
+          onToggle={() => setCollapsed((c) => !c)}
+          mobileOpen={false}
+        />
+      )}
 
       <main className="paper-grain thin-scroll flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
         {/* Mobile top bar — brand + topbar chrome only. Hidden on lg+. */}
@@ -92,7 +96,7 @@ export function Layout({ children }: Props) {
           Floating Chat FAB which auto-clears it on mobile. The centre
           "Menu" tab opens its own bottom-sheet modal (no longer
           delegates to the Sidebar drawer), so onOpenDrawer is gone. */}
-      <MobileTabBar />
+      {!CONTS_EMBEDDED && <MobileTabBar />}
     </div>
   );
 }
