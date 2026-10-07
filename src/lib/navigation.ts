@@ -95,9 +95,6 @@ export const NAV: NavGroup[] = [
       { key: 'stockTakes', label: 'Stock take', path: '/procurement/stock-takes', designed: true },
     ] },
     // Houzs keeps credit / debit notes under Finance › Money in; finance roles only.
-    { key: 'scFinance', label: 'Finance', icon: 'wallet', children: [
-      { key: 'creditNotes', label: 'Credit / debit notes', path: '/accounting/credit-notes', designed: true },
-    ] },
   ] },
   { label: 'FINANCE', items: [
     { key: 'finance', label: 'Finance', icon: 'wallet', badge: 'statements', children: [
@@ -105,6 +102,9 @@ export const NAV: NavGroup[] = [
       { key: 'expenses', label: 'Expenses', path: '/finance/expenses', designed: true },
       { key: 'statements', label: 'Owner statements', path: '/finance/statements', badge: 'statements', designed: true },
       { key: 'payouts', label: 'Payouts', path: '/finance/payouts', designed: true },
+      // Supply chain's credit and debit notes. Under Finance, as in Houzs, so the Supply chain section
+      // holds only its five groups (owner's manager, 7 Oct).
+      { key: 'creditNotes', label: 'Credit / debit notes', path: '/accounting/credit-notes', designed: true },
     ] },
     { key: 'owners', label: 'Owners', icon: 'users', children: [
       { key: 'ownerList', label: 'Owners', path: '/owners', designed: true },
@@ -135,7 +135,7 @@ export const NAV: NavGroup[] = [
  *  operations managers): keep the two in sync. */
 const DENY: Partial<Record<UserRole, string[]>> = {
   // salesInvoices / purchaseInvoices match MONEY_ONLY in functions/api/_middleware.ts.
-  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'health', 'scFinance', 'salesInvoices', 'purchaseInvoices'],
+  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'health', 'salesInvoices', 'purchaseInvoices'],
   finance_admin: ['operations', 'comms'],
   housekeeper: ['*'],
   technician: ['*'],
