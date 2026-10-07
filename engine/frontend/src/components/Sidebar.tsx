@@ -1,3 +1,4 @@
+import { contsNavOnly } from "../conts/navOnly";
 import { NavLink, useLocation } from "react-router-dom";
 import { markWorkspaceOpenIntent } from "../lib/workspaceTabs";
 
@@ -230,7 +231,7 @@ export interface NavTab {
  * Management). Tabs declare permission via `perm` / `anyPerm`; the
  * filter recurses so groups with no visible kids hide entirely.
  */
-export const NAV_TABS: NavTab[] = [
+const ALL_NAV_TABS: NavTab[] = [
   // ══ WORKSPACE ════════════════════════════════════════════════
   {
     section: "workspace",
@@ -956,6 +957,9 @@ export const NAV_TABS: NavTab[] = [
     perm: "settings.manage",
   },
 ];
+
+// Conts: supply chain only (see src/conts/navOnly.ts).
+export const NAV_TABS: NavTab[] = contsNavOnly(ALL_NAV_TABS);
 
 // Accordion sibling map — each expandable group's same-level peers. Opening a
 // group collapses its siblings (top-level groups are mutually exclusive; so are

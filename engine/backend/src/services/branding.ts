@@ -88,16 +88,15 @@ export function brandingKeyForCompany(companyCode: string): string {
 // hardcodes). Used only if the row is missing (fresh/restored DB before
 // the migration runs) so consumers never get an empty company name.
 export const DEFAULT_BRANDING: Branding = {
-  companyName: "Houzs Century Sdn Bhd",
-  registrationNo: "202201031135 (1476832-W)",
+  // Conts: the built-in fallback, shown before sign-in and whenever a saved field is blank. These were
+  // Houzs's own details in the source this was copied from; they mirror the rental app's Settings.
+  companyName: "The Conts Sdn Bhd",
+  registrationNo: "202301027399 (1521322-V)",
   address:
-    "1831-B, Jalan KPB 1, Kawasan Perindustrian Balakong, 43300 Seri Kembangan, Selangor.",
-  // Mirrors migration 0142's backfill (extracted from the address above). The
-  // address still carries "43300", so composeBrandingAddress leaves the printed
-  // letterhead byte-identical — this only makes the structured value available.
-  postcode: "43300",
-  phone: "011-1110 8883",
-  email: "hello@houzscentury.com",
+    "C-41-06, Jaya One, Jalan Universiti, 46200 Petaling Jaya",
+  postcode: "46200",
+  phone: "+60 17-465 8868",
+  email: "help@theconts.com",
   website: "",
   logoR2Key: "",
   printLogoR2Key: "",

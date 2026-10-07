@@ -1,5 +1,7 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+// @ts-ignore -- plain .mjs shared with tailwind.config.js and postcss.config.js
+import { contsPaletteVite } from "./conts/palette.mjs";
 import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
@@ -134,6 +136,7 @@ export default defineConfig(({ mode }) => {
       ],
     },
     plugins: [
+      contsPaletteVite(),
       react(),
       // Stamp the build id into dist/sw.js (replacing the __SW_BUILD_ID__ token)
       // so the service-worker cache VERSION is unique per deploy → the SW's

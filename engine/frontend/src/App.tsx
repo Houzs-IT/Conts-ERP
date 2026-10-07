@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
+import { CONTS_HOME } from "./conts/navOnly";
 import { Layout } from "./components/Layout";
 import { useAuth } from "./auth/AuthContext";
 import { canUseAssistant } from "./auth/assistantAccess";
@@ -456,7 +457,7 @@ export default function App() {
         <Suspense fallback={<PageSkeleton />}>
         <Routes>
         {/* Landing → Overview workspace home (P1). */}
-        <Route path="/" element={<Overview />} />
+        <Route path="/" element={<Navigate to={CONTS_HOME} replace />} />
         <Route
           path="/assr"
           element={

@@ -1,5 +1,7 @@
+import { recolourTheme } from "./conts/palette.mjs";
+
 /** @type {import('tailwindcss').Config} */
-export default {
+const config = {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   // Semantic utilities the design-system docs (conventions header)
   // enumerate for the claude.ai/design agent — keep them in the
@@ -217,3 +219,7 @@ export default {
   },
   plugins: [],
 };
+
+// Conts: Houzs's colour values above are swapped for The Conts palette (conts/palette.mjs).
+config.theme = recolourTheme(config.theme);
+export default config;

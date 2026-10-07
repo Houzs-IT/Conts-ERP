@@ -1,6 +1,9 @@
+import { contsPalettePostcss } from "./conts/palette.mjs";
+
 export default {
-  plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
-  },
+  plugins: [
+    (await import("tailwindcss")).default(),
+    (await import("autoprefixer")).default(),
+    contsPalettePostcss(),
+  ],
 };
