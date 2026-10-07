@@ -541,13 +541,16 @@ function VenueManager() {
           overflow the owner reported: a bare <input> in a fixed 110px grid cell
           keeps min-width:auto, refuses to shrink below its content box, and
           spills past the cell. min-w-0 lets it size to the track. */}
-      <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_170px_130px_120px_110px_110px_auto]">
+      {/* Conts: the name takes its own row and the rest share three equal columns. The single-row
+          layout needs about 750px for its fixed tracks, but this section sits in a half-width card
+          (about 500px on a laptop), which left the name track at 0px and pushed the row out of the card. */}
+      <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="Venue name…"
-          className="h-9 min-w-0 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 min-w-0 sm:col-span-3 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
         />
         <StatePicker
           value={stateField}
