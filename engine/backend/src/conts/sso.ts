@@ -45,7 +45,7 @@ async function roleIdFor(env: Env, contsRole: string): Promise<number | null> {
   const found = await env.DB.prepare(`SELECT id FROM roles WHERE name = ?`).bind("Supply Chain").first<{ id: number }>();
   if (found) return found.id;
   await env.DB.prepare(`INSERT INTO roles (name, description, permissions, is_system, scope_to_pic) VALUES (?, ?, ?, 0, 0)`)
-    .bind("Supply Chain", "Supply chain screens, signed in from Property OS", JSON.stringify(["scm.access"])).run();
+    .bind("Supply Chain", "Supply chain screens, signed in from Property OS", JSON.stringify(["scm.access", "service_cases.read"])).run();
   return (await env.DB.prepare(`SELECT id FROM roles WHERE name = ?`).bind("Supply Chain").first<{ id: number }>())?.id ?? null;
 }
 

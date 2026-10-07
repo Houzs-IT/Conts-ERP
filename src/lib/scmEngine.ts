@@ -1,6 +1,15 @@
-/** Each Supply chain menu destination here and the screen it opens in the supply chain engine
- *  (Houzs's screens, see engine/). Keep in step with the SUPPLY CHAIN group in navigation.ts. */
+/** Each Supply chain menu destination here (service cases and projects included) and the screen it opens
+ *  in the supply chain engine (Houzs's screens, see engine/). Keep in step with the SUPPLY CHAIN group in
+ *  navigation.ts. */
 export const ENGINE_PATH: Record<string, string> = {
+  '/service/cases': '/assr?view=cases',
+  '/service/metrics': '/assr?view=metrics',
+  '/service/maintenance': '/assr?view=settings',
+  '/service/my-cases': '/my-cases',
+  '/projects/list': '/projects?view=list',
+  '/projects/calendar': '/projects?view=calendar',
+  '/projects/finances': '/projects?view=finances',
+  '/projects/maintenance': '/projects?view=maintenance',
   '/sales/orders': '/scm/sales-orders',
   '/sales/amendments': '/scm/amendments',
   '/sales/delivery-orders': '/scm/delivery-orders',
