@@ -21,6 +21,7 @@ import { issueSessionPass, sessionSigningSecret } from "./session-pass";
 import { sidFor, revokeSession } from "./session-revocation";
 import { resolvePositionPolicy, positionGrantsWildcard } from "./positionPolicy";
 import { policyRowFromDb, type PositionPolicyRow } from "./positionPolicyRows";
+import { contsRoleAccess } from "../conts/access";
 
 // ── Crypto helpers ────────────────────────────────────────
 // PBKDF2 via Web Crypto — built into Workers, no WASM needed.
@@ -579,6 +580,13 @@ async function hydrateAuthUser(env: Env, row: any): Promise<AuthUser> {
   } else {
     // No Title: pages come from the role's permission keys alone.
     pageAccess = pageAccessFromPermissions(permissionsSet);
+  }
+  // Conts: a role signed in from Property OS follows the levels management chose there, page by page
+  // (src/conts/access.ts). Stating them makes the area guard enforce each one.
+  const contsAccess = permissionsSet.has("*") ? null : await contsRoleAccess(env, row.role_name);
+  if (contsAccess) {
+    pageAccess = contsAccess;
+    scmMeta.explicitScm = true;
   }
 
   // Actions matrix (owner 2026-08-22): the position's operational capability
