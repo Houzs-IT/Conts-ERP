@@ -23,7 +23,10 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Size: about 390 screen files and 167 server route files in Houzs against 29 simplified screens here; menus already carry the same names.
 - Done: Houzs's `scm` structure as migration 0044 (248 tables, 22 views, 64 functions, 31 triggers, plus public.companies with one row, CONTS), built from read-only catalogue exports of live Houzs. Applied to staging only. Row level security on with no policies; pos_app and service_role granted.
 - Known gaps in 0044: three functions name Houzs tables outside scm (mfg_product_category, positions, projects, project_event_types) and fail if called; Houzs's `authenticated` policies were not copied.
-- Next: pilot the Houzs sales order list inside Conts on staging (needs the bridge from Conts sessions to Houzs's server code, which talks to Supabase's data service with a service key held as a Cloudflare secret, set by the owner).
+- Finding (7 Oct): the supply chain is not separable from the rest of Houzs (the sales order list alone pulls in 40% of the server code and 63% of the screen code), so the owner chose to run Houzs's code whole, alongside the rental app, with only supply chain switched on.
+- Done: migration 0045 (rest of Houzs's structure in `public`, RLS on, nothing granted to anon), staging only. `engine/` holds the copy; it starts locally against staging, a test admin signs in, and the Sales Orders screen and the main supply chain lists load (empty).
+- Next: Conts colours and name on the engine's sign-in and shell; hide every menu except Supply Chain; deploy the engine to staging as its own worker and site (Hyperdrive, one R2 bucket, one KV namespace, secrets set by the owner); open it from the Conts Supply Chain menu; one sign-in for both; then retire the 29 simplified supply chain screens.
+- Before production: a database role for the engine that cannot read schema `pos` (local testing uses the admin connection); reference data the screens need (dropdown options, categories, warehouses) entered or agreed with the owner.
 - Open with the owner: does Conts use AutoCount; which Houzs modules Conts does not need (accounting ledger, consignment, HR commission, POS).
 
 ## Later

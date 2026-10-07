@@ -1,0 +1,49 @@
+# Conts's own instance of the supply chain engine (Houzs's server code, unchanged, at commit c20343f5).
+# Houzs's settings are kept beside this file as wrangler.houzs.toml for reference only: never deploy
+# with them. This file names only Conts resources. No scheduled jobs and no AutoCount: both would act
+# on Houzs's systems.
+name = "conts-scm-engine"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+AUTOCOUNT_API_URL = "https://autocount.invalid/"
+AUTOCOUNT_SYNC_DISABLED = "true"
+COSTING_DISPLAY_ENABLED = "true"
+SESSION_FALLBACK_ENABLED = "false"
+SESSION_FALLBACK_TTL_MS = "60000"
+HOUZS_OWNS_2990 = "true"
+PUBLIC_APP_URL = "https://staging-preview.theconts-os.pages.dev"
+EMAIL_FROM = "The Conts <noreply@theconts.com>"
+SO_ITEM_PHOTOS_BUCKET_NAME = "theconts-scm-staging"
+SENTRY_ENVIRONMENT = "staging"
+
+# The id is a placeholder until the Hyperdrive for this engine is created; local runs read the
+# connection from WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE instead.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "00000000000000000000000000000000"
+
+[[r2_buckets]]
+binding = "POD_BUCKET"
+bucket_name = "theconts-scm-staging"
+
+[[r2_buckets]]
+binding = "SO_ITEM_PHOTOS"
+bucket_name = "theconts-scm-staging"
+
+[[r2_buckets]]
+binding = "PUBLIC_ASSETS"
+bucket_name = "theconts-scm-staging"
+
+[[r2_buckets]]
+binding = "SLIPS"
+bucket_name = "theconts-scm-staging"
+
+[[kv_namespaces]]
+binding = "SESSION_CACHE"
+id = "00000000000000000000000000000000"
+
+[alias]
+zod = "./node_modules/zod"

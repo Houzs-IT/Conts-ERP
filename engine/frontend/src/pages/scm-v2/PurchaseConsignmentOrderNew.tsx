@@ -1,0 +1,833 @@
+// ----------------------------------------------------------------------------
+// PurchaseConsignmentOrderNew — full-page Create at /scm/purchase-consignment-orders/new.
+//
+// Faithful clone of PurchaseOrderNew.tsx. It reuses the SAME shared components
+// UNCHANGED — MoneyInput, ActionResultDialog, the supplier picker + supplier /
+// product / fabric / maintenance / warehouse data hooks — and the SAME per-line
+// card editor (item code · supplier SKU · description · per-category variant
+// editor · pricing). Only the create mutation is repointed at
+// `/purchase-consignment-orders` (useCreatePurchaseConsignmentOrder) and the
+// page title / back link / post-save navigate point at /purchase-consignment.
+//
+// Dropped from the PO clone (per scope): the "From Sales Order" picker / MRP
+// shortage flow / from-SO prefill + the one-supplier-per-PO From-SO guard. The
+// full line / variant / colour / pricing + supplier entry are kept intact.
+//
+// The backend route `/purchase-consignment-orders` mirrors `/mfg-purchase-orders`
+// 1:1; numbering is PCO-…
+// ----------------------------------------------------------------------------
+
+import { todayMyt } from '../../vendor/scm/lib/dates';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Save, Trash2, X } from 'lucide-react';
+import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
+import { Button } from '@2990s/design-system';
+import { formatPhone } from '@2990s/shared/phone';
+import { useCreatePurchaseConsignmentOrder } from '../../vendor/scm/lib/purchase-consignment-order-queries';
+import { useIdempotencyKey } from '../../lib/idempotency';
+import {
+  useSuppliers,
+  useSupplierDetail,
+  useSuppliersForMaterial,
+  type BindingRow,
+  type NewPoItem,
+  type MaterialKind,
+} from '../../vendor/scm/lib/suppliers-queries';
+import { useMfgProducts, useMaintenanceConfig, mfgCategoryLabel } from '../../vendor/scm/lib/mfg-products-queries';
+import { useFabricTrackings } from '../../vendor/scm/lib/fabric-queries';
+import { PcVariantEditor } from '../../vendor/scm/components/PcVariantEditor';
+import { useWarehouses } from '../../vendor/scm/lib/inventory-queries';
+import {
+  computeMfgPoUnitCost,
+  type MfgFabricTier,
+  type PoPriceMatrix,
+} from '@2990s/shared/mfg-pricing';
+import { MoneyInput } from '../../vendor/scm/components/MoneyInput';
+import { NumberInput } from '../../vendor/scm/components/NumberInput';
+import { DiscountInput } from '../../vendor/scm/components/DiscountInput';
+import { ActionResultDialog } from '../../vendor/scm/components/ActionResultDialog';
+import { sortByText } from '../../vendor/scm/lib/sort-options';
+import styles from './SalesOrderDetail.module.css';
+import { PageHeader } from '../../components/Layout';
+import { computeTotalHeight, isTotalHeightCategory, isTotalHeightPart } from '../../vendor/shared/total-height';
+import { DateField } from "../../vendor/scm/components/DateField";
+import { showsVariantEditor } from '../../vendor/scm/lib/variant-editor-groups';
+
+import { fmtMoneySen } from '../../vendor/shared/format';
+const ICON    = { size: 16, strokeWidth: 1.75 } as const;
+
+const fmtRm = (centi: number | null | undefined, currency = 'MYR'): string => {
+  const v = centi ?? 0;
+  return fmtMoneySen(v, currency);
+};
+
+type DraftLine = {
+  rid: string;
+  bindingId?: string;
+  materialKind: MaterialKind;
+  itemCode: string;
+  materialName: string;
+  supplierSku?: string;
+  qty: number;
+  unitPriceSen: number;
+  discountSen?: number;
+  deliveryDate?: string;
+  warehouseId?: string;
+  category?: string;
+  variants: Record<string, unknown>;
+  priceTouched?: boolean;
+};
+
+const newLine = (): DraftLine => ({
+  rid: `l${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  materialKind: 'mfg_product',
+  itemCode: '',
+  materialName: '',
+  qty: 1,
+  unitPriceSen: 0,
+  variants: {},
+});
+
+export const PurchaseConsignmentOrderNew = () => {
+  const navigate = useNavigate();
+  const create   = useCreatePurchaseConsignmentOrder();
+  /* One key for the one order this page is open to raise (lib/idempotency.ts).
+     Route-level form, navigates to the order detail on success, so the MOUNT is
+     exactly one order: stable across re-renders and across a re-press after a
+     stalled submit, fresh on remount. */
+  const idemKey  = useIdempotencyKey();
+
+  // ── Header state ────────────────────────────────────────────────────
+  const [supplierId, setSupplierId]   = useState<string>('');
+  const [poDate, setPoDate]           = useState<string>(() => todayMyt());
+  const [expectedAt, setExpectedAt]   = useState<string>('');
+  const [purchaseLocationId, setPurchaseLocationId] = useState<string>('');
+  const [notes, setNotes]             = useState<string>('');
+
+  // ── Items state ─────────────────────────────────────────────────────
+  const [lines, setLines] = useState<DraftLine[]>([newLine()]);
+
+  const [dialog, setDialog] = useState<{ title: string; body: string } | null>(null);
+
+  // ── Data ────────────────────────────────────────────────────────────
+  const suppliers       = useSuppliers({ status: 'ACTIVE' });
+  const supplierDetail  = useSupplierDetail(supplierId || null);
+  const warehouses      = useWarehouses();
+  const supplier        = supplierDetail.data?.supplier ?? null;
+  const bindings        = useMemo(() => supplierDetail.data?.bindings ?? [], [supplierDetail.data?.bindings]);
+  const currency        = supplier?.currency ?? 'MYR';
+
+  // Item-first picking — item input is enabled even when supplier is unset; the
+  // datalist falls back to the full mfg_products list when no supplier is picked.
+  const allSkus = useMfgProducts();
+  const supplierMaintQ = useMaintenanceConfig(
+    supplierId ? `supplier:${supplierId}` : '',
+    { enabled: Boolean(supplierId) },
+  );
+  const masterMaintQ = useMaintenanceConfig('master', {
+    enabled: !supplierId || !supplierMaintQ.data?.data,
+  });
+  const maint =
+    supplierMaintQ.data?.data ?? masterMaintQ.data?.data ?? null;
+  const fabrics = useFabricTrackings().data ?? [];
+
+  const categoryForCode = (code: string): string | undefined => {
+    const sku = (allSkus.data ?? []).find((p) => p.code === code);
+    return sku?.category.toLowerCase();
+  };
+  const [pendingItemPick, setPendingItemPick] = useState<{ rid: string; code: string } | null>(null);
+  const itemSuppliersQuery = useSuppliersForMaterial(
+    pendingItemPick ? 'mfg_product' : null,
+    pendingItemPick?.code ?? null,
+  );
+  useEffect(() => {
+    if (!pendingItemPick) return;
+    if (supplierId) { setPendingItemPick(null); return; }
+    if (itemSuppliersQuery.isLoading) return;
+    const matches = itemSuppliersQuery.data?.bindings ?? [];
+    const b = matches[0];
+    if (matches.length === 1 && b) {
+      setSupplierId(b.supplier.id);
+      setLines((prev) => prev.map((l) => (l.rid === pendingItemPick.rid ? {
+        ...l,
+        bindingId:      b.id,
+        materialKind:   b.material_kind,
+        itemCode:   b.item_code,
+        materialName:   b.material_name,
+        supplierSku:    b.supplier_sku,
+        unitPriceSen: b.unit_price_sen,
+        category:       categoryForCode(b.item_code) ?? l.category,
+      } : l)));
+      setPendingItemPick(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- categoryForCode is a stable code→category lookup, not a reactive trigger
+  }, [pendingItemPick, supplierId, itemSuppliersQuery.isLoading, itemSuppliersQuery.data]);
+
+  // Once a supplier resolves, backfill any line whose itemCode matches a
+  // binding but lacks a bindingId.
+  useEffect(() => {
+    if (!supplierId || bindings.length === 0) return;
+    setLines((prev) => prev.map((l) => {
+      if (l.bindingId || !l.itemCode) return l;
+      const b = bindings.find((x) => x.item_code === l.itemCode);
+      if (!b) return l;
+      return {
+        ...l,
+        bindingId:      b.id,
+        materialKind:   b.material_kind,
+        materialName:   b.material_name,
+        supplierSku:    b.supplier_sku,
+        unitPriceSen: l.unitPriceSen || b.unit_price_sen,
+        category:       l.category ?? categoryForCode(b.item_code),
+      };
+    }));
+    setPendingItemPick(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- categoryForCode is a stable code→category lookup, not a reactive trigger
+  }, [supplierId, bindings]);
+
+  // Header Purchase Location / Expected Delivery fan out to all lines.
+  useEffect(() => {
+    if (!purchaseLocationId) return;
+    setLines((prev) => prev.map((l) => ({ ...l, warehouseId: purchaseLocationId })));
+  }, [purchaseLocationId]);
+  useEffect(() => {
+    if (!expectedAt) return;
+    setLines((prev) => prev.map((l) => ({ ...l, deliveryDate: expectedAt })));
+  }, [expectedAt]);
+
+  const fabricTierForLine = (line: DraftLine): MfgFabricTier | null => {
+    const code = String(line.variants.fabricCode ?? '');
+    if (!code) return null;
+    const f = fabrics.find((x) => x.fabric_code === code);
+    if (!f) return null;
+    const cat = line.category?.toLowerCase();
+    if (cat === 'sofa')     return f.sofa_price_tier ?? f.price_tier ?? null;
+    if (cat === 'bedframe') return f.bedframe_price_tier ?? f.price_tier ?? null;
+    return null;
+  };
+
+  const recomputeLineCost = (line: DraftLine): number => {
+    const binding = line.bindingId
+      ? bindings.find((b) => b.id === line.bindingId)
+      : bindings.find((b) => b.item_code === line.itemCode);
+    if (!binding) return line.unitPriceSen;
+    const category = (line.category?.toUpperCase() ?? '') as
+      'BEDFRAME' | 'SOFA' | 'MATTRESS' | 'ACCESSORY' | 'SERVICE' | '';
+    if (!category) return binding.unit_price_sen;
+    const v = line.variants;
+    const specials = Array.isArray(v.specials) ? (v.specials as string[]) : [];
+    const breakdown = computeMfgPoUnitCost(
+      {
+        category,
+        priceMatrix:    (binding.price_matrix ?? null) as PoPriceMatrix,
+        unitPriceSen: binding.unit_price_sen,
+        fabricTier:     fabricTierForLine(line),
+        seatSize:       category === 'SOFA' ? (v.seatHeight as string | undefined) ?? null : null,
+        divanHeight:    (v.divanHeight as string | undefined) ?? null,
+        legHeight:      category === 'BEDFRAME' ? (v.legHeight as string | undefined) ?? null : null,
+        sofaLegHeight:  category === 'SOFA' ? (v.legHeight as string | undefined) ?? null : null,
+        totalHeight:    (v.totalHeight as string | undefined) ?? null,
+        specials,
+      },
+      maint,
+    );
+    return breakdown.unitPriceSen;
+  };
+
+  // ── Helpers ─────────────────────────────────────────────────────────
+  const setLine  = (rid: string, patch: Partial<DraftLine>) =>
+    setLines((prev) => prev.map((l) => (l.rid === rid ? { ...l, ...patch } : l)));
+  const addLine  = () => setLines((prev) => [...prev, { ...newLine(), warehouseId: purchaseLocationId || undefined, deliveryDate: expectedAt || undefined }]);
+  const dropLine = (rid: string) => setLines((prev) =>
+    prev.length === 1 ? [newLine()] : prev.filter((l) => l.rid !== rid),
+  );
+
+  const pickBinding = (rid: string, b: BindingRow) => {
+    setLine(rid, {
+      bindingId:      b.id,
+      materialKind:   b.material_kind,
+      itemCode:   b.item_code,
+      materialName:   b.material_name,
+      supplierSku:    b.supplier_sku,
+      unitPriceSen: b.unit_price_sen,
+      category:       categoryForCode(b.item_code),
+      priceTouched:   false,
+    });
+  };
+
+  const setVariant = (rid: string, k: string, v: unknown) =>
+    setLines((prev) => prev.map((l) => {
+      if (l.rid !== rid) return l;
+      const variants: Record<string, unknown> = { ...l.variants, [k]: v };
+      if (isTotalHeightCategory(l.category) && isTotalHeightPart(k)) {
+        variants.totalHeight = computeTotalHeight(l.category, variants);
+      }
+      return { ...l, variants };
+    }));
+
+  useEffect(() => {
+    setLines((prev) => {
+      let changed = false;
+      const next = prev.map((l) => {
+        if (l.priceTouched) return l;
+        const cost = recomputeLineCost(l);
+        if (cost === l.unitPriceSen) return l;
+        changed = true;
+        return { ...l, unitPriceSen: cost };
+      });
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bindings, fabrics, maint, lines]);
+
+  const subtotalSen = useMemo(
+    () => lines.reduce(
+      (s, l) => s + Math.max(0, l.qty * l.unitPriceSen - (l.discountSen ?? 0)),
+      0,
+    ),
+    [lines],
+  );
+
+  const onSave = () => {
+    if (!supplierId) {
+      setDialog({ title: 'Pick a Creditor', body: 'Pick a Creditor (supplier) first.' });
+      return;
+    }
+    if (!expectedAt) {
+      setDialog({ title: 'Expected Delivery required', body: 'Expected Delivery date is required.' });
+      return;
+    }
+    if (!purchaseLocationId) {
+      setDialog({ title: 'Purchase Location required', body: 'Purchase Location is required.' });
+      return;
+    }
+    const validLines = lines.filter((l) => l.itemCode.trim() && l.qty > 0);
+    const items: NewPoItem[] = validLines.map((l) => ({
+      materialKind:   l.materialKind,
+      itemCode:   l.itemCode,
+      materialName:   l.materialName || l.itemCode,
+      supplierSku:    l.supplierSku,
+      qty:            l.qty,
+      unitPriceSen: l.unitPriceSen,
+      bindingId:      l.bindingId,
+      discountSen:  l.discountSen,
+      deliveryDate:   l.deliveryDate || undefined,
+      warehouseId:    l.warehouseId  || undefined,
+      itemGroup:      l.category,
+      variants:       Object.keys(l.variants).length ? l.variants : undefined,
+    }));
+
+    create.mutate(
+      {
+        idempotencyKey: idemKey,
+        supplierId,
+        currency,
+        poDate,
+        expectedAt,
+        notes: notes || undefined,
+        purchaseLocationId,
+        items,
+      },
+      {
+        onSuccess: (res) => navigate(`/scm/purchase-consignment-orders/${res.id}`),
+        onError:   (err) => setDialog({ title: 'Save failed', body: err instanceof Error ? err.message : 'Something went wrong.' }),
+      },
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <PageHeader back
+        eyebrow="Procurement"
+        title="New Purchase Consignment Order"
+        actions={
+          <div className={styles.actions}>
+            <Button variant="ghost" size="md" onClick={() => navigate('/scm/purchase-consignment-orders')}>
+              <X {...ICON} /> Cancel
+            </Button>
+            <Button
+              variant="primary" size="md"
+              onClick={onSave}
+              disabled={create.isPending}
+            >
+              <Save {...ICON} />
+              {create.isPending ? 'Saving…' : 'Create Purchase Consignment Order'}
+            </Button>
+          </div>
+        }
+      />
+
+      {/* Header card — 2-column grid */}
+      <section className={styles.card}>
+        <div className={styles.cardHeader}>
+          <h2 className={styles.cardTitle}>Header</h2>
+        </div>
+        <div className={styles.cardBody}>
+          <div className={styles.formGrid2}>
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Creditor *</span>
+              <select
+                value={supplierId}
+                onChange={(e) => setSupplierId(e.target.value)}
+                className={styles.fieldInput}
+              >
+                <option value="">— Pick a supplier —</option>
+                {sortByText(suppliers.data ?? []).map((s) => (
+                  <option key={s.id} value={s.id}>{s.code} · {s.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>P/CO No</span>
+              <input
+                type="text"
+                readOnly
+                value="(assigned on Save)"
+                className={styles.fieldInput}
+                style={{ background: 'var(--c-cream)', color: 'var(--fg-muted)' }}
+              />
+            </label>
+
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Name</span>
+              <input
+                type="text"
+                readOnly
+                value={supplier?.name ?? ''}
+                placeholder="(auto-filled when supplier selected)"
+                className={styles.fieldInput}
+                style={{ background: 'var(--c-cream)', color: 'var(--fg-muted)' }}
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Date *</span>
+              <DateField fullWidth value={poDate} onChange={(iso) => setPoDate(iso)} className={styles.fieldInput}/>
+            </label>
+
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Address</span>
+              <textarea
+                readOnly
+                value={[supplier?.address, supplier?.area, supplier?.postcode, supplier?.state, supplier?.country]
+                  .filter(Boolean).join(', ')}
+                placeholder="(auto-filled when supplier selected)"
+                className={styles.fieldInput}
+                style={{ background: 'var(--c-cream)', color: 'var(--fg-muted)', minHeight: 52, resize: 'vertical' }}
+                rows={3}
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Expected Delivery *</span>
+              <DateField fullWidth value={expectedAt} onChange={(iso) => setExpectedAt(iso)} className={styles.fieldInput} required/>
+            </label>
+
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Purchase Location *</span>
+              <select
+                value={purchaseLocationId}
+                onChange={(e) => setPurchaseLocationId(e.target.value)}
+                className={styles.fieldInput}
+                required
+              >
+                <option value="">— Pick a warehouse —</option>
+                {sortByText(warehouses.data ?? []).map((w) => (
+                  <option key={w.id} value={w.id}>{w.code}</option>
+                ))}
+              </select>
+              <span style={{ fontSize: 'var(--fs-11)', color: 'var(--fg-muted)' }}>
+                Default ship-to warehouse for every line; each line can override below.
+              </span>
+            </label>
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Notes</span>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Free text — supplier instructions, internal notes…"
+                className={styles.fieldInput}
+                rows={3}
+                style={{ minHeight: 52, resize: 'vertical' }}
+              />
+            </label>
+          </div>
+
+          {supplier && (
+            <div style={{
+              marginTop: 'var(--space-3)',
+              background: 'var(--c-cream)',
+              border: '1px solid var(--line)',
+              borderRadius: 'var(--radius-md)',
+              padding: 'var(--space-2) var(--space-3)',
+              fontSize: 'var(--fs-12)',
+              color: 'var(--fg-muted)',
+              display: 'flex',
+              gap: 'var(--space-4)',
+              flexWrap: 'wrap',
+            }}>
+              {supplier.contact_person && <span>Contact: <strong>{supplier.contact_person}</strong></span>}
+              {supplier.phone          && <span>Phone: <strong>{formatPhone(supplier.phone)}</strong></span>}
+              {supplier.email          && <span>Email: <strong>{supplier.email}</strong></span>}
+              {supplier.payment_terms  && <span>Terms: <strong>{supplier.payment_terms}</strong></span>}
+              <span>Currency: <strong>{currency}</strong></span>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Item-first lookup hint */}
+      {pendingItemPick && !supplierId && !itemSuppliersQuery.isLoading && (() => {
+        const matches = itemSuppliersQuery.data?.bindings ?? [];
+        if (matches.length === 0) {
+          return (
+            <div style={{
+              padding: 'var(--space-3) var(--space-4)',
+              background: 'var(--c-cream)',
+              border: '1px solid var(--line)',
+              borderLeft: '3px solid var(--fg-muted)',
+              borderRadius: 'var(--radius-md)',
+              fontSize: 'var(--fs-13)',
+              color: 'var(--fg)',
+            }}>
+              <strong style={{ fontFamily: 'var(--font-mono)' }}>{pendingItemPick.code}</strong> isn't bound to any supplier yet. Pick any Creditor above for a one-off purchase, or add a binding from the supplier detail page first.
+            </div>
+          );
+        }
+        return (
+          <div style={{
+            padding: 'var(--space-3) var(--space-4)',
+            background: 'rgba(213, 90, 40, 0.06)',
+            border: '1px solid var(--c-orange)',
+            borderRadius: 'var(--radius-md)',
+            fontSize: 'var(--fs-13)',
+            color: 'var(--fg)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+          }}>
+            <div>
+              <strong style={{ fontFamily: 'var(--font-mono)' }}>{pendingItemPick.code}</strong> is bound to {matches.length} suppliers — pick one above to auto-fill price + supplier SKU.
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
+              {matches.map((b) => (
+                <span key={b.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSupplierId(b.supplier.id)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      padding: 0,
+                      color: 'var(--c-orange)',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    {b.supplier.code} · {b.supplier.name}
+                  </button>
+                  {' '}({fmtRm(b.unit_price_sen, b.currency)})
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Items card */}
+      <section className={styles.card}>
+        <div className={styles.cardHeader}>
+          <h2 className={styles.cardTitle}>Items</h2>
+          <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
+            {supplierId
+              ? (bindings.length > 0
+                  ? `${bindings.length} item(s) bound to this supplier — picker filters to these`
+                  : `No SKUs bound to this supplier yet — picker shows all ${(allSkus.data ?? []).length} SKUs (one-off purchase)`)
+              : `Pick any item from ${(allSkus.data ?? []).length} SKUs — supplier auto-narrows`}
+          </span>
+        </div>
+        <div className={styles.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          {lines.map((l, idx) => {
+            const lineTotalSen = Math.max(0, l.qty * l.unitPriceSen - (l.discountSen ?? 0));
+            const categoryLabel = l.category?.toUpperCase() ?? 'UNSET';
+            const showVariants  = showsVariantEditor(l.category) && maint;
+
+            return (
+              <div
+                key={l.rid}
+                style={{
+                  background: 'var(--c-paper)',
+                  border: '1px solid var(--line)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: 'var(--space-4)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 'var(--space-3)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    <span style={{
+                      fontFamily: 'var(--font-button)',
+                      fontSize: 'var(--fs-12)',
+                      fontWeight: 700,
+                      letterSpacing: '0.10em',
+                      color: 'var(--fg-muted)',
+                    }}>
+                      LINE {idx + 1}
+                    </span>
+                    {l.category && (
+                      <span style={{
+                        fontFamily: 'var(--font-button)',
+                        fontSize: 'var(--fs-11)',
+                        fontWeight: 700,
+                        letterSpacing: '0.10em',
+                        padding: '2px 8px',
+                        borderRadius: 'var(--radius-pill)',
+                        background: 'rgba(166, 71, 30, 0.12)',
+                        color: 'var(--c-burnt)',
+                      }}>
+                        {categoryLabel}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                    <span className={styles.previewPrice}>{fmtRm(lineTotalSen, currency)}</span>
+                    <button
+                      type="button"
+                      onClick={() => dropLine(l.rid)}
+                      title="Remove line"
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--c-festive-b, #B8331F)',
+                        padding: 4,
+                        display: 'inline-flex',
+                      }}
+                    >
+                      <Trash2 {...ICON} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Identity row — Internal code + Supplier SKU side by side */}
+                <div className={styles.formGrid2}>
+                  <label className={styles.field}>
+                    <span className={styles.fieldLabel}>Item Code (Internal)</span>
+                    <input
+                      type="text"
+                      list={`bindings-${l.rid}`}
+                      value={l.itemCode}
+                      onChange={(e) => {
+                        const code = e.target.value;
+                        const match = supplierId
+                          ? bindings.find((b) => b.item_code === code)
+                          : undefined;
+                        if (match) { pickBinding(l.rid, match); return; }
+                        const sku = (allSkus.data ?? []).find((p) => p.code === code);
+                        setLine(l.rid, {
+                          itemCode: code,
+                          materialName: sku?.name ?? l.materialName,
+                          bindingId: undefined,
+                          category: sku?.category.toLowerCase() ?? categoryForCode(code),
+                        });
+                        if (!supplierId) setPendingItemPick(code ? { rid: l.rid, code } : null);
+                      }}
+                      placeholder="Type or pick our internal SKU…"
+                      className={styles.fieldInput}
+                      style={{ fontFamily: 'var(--font-mono)' }}
+                    />
+                    <datalist id={`bindings-${l.rid}`}>
+                      {supplierId && bindings.length > 0
+                        ? sortByText(bindings).map((b) => (
+                            <option key={b.id} value={b.item_code}>
+                              {b.material_name} · {b.supplier_sku} · {fmtRm(b.unit_price_sen, b.currency)}
+                            </option>
+                          ))
+                        : sortByText(allSkus.data ?? []).map((p) => (
+                            <option key={p.id} value={p.code}>
+                              {p.name} · {mfgCategoryLabel(p.category)}
+                            </option>
+                          ))
+                      }
+                    </datalist>
+                  </label>
+                  <label className={styles.field}>
+                    <span className={styles.fieldLabel}>Supplier SKU</span>
+                    <input
+                      type="text"
+                      list={`supplier-skus-${l.rid}`}
+                      value={l.supplierSku ?? ''}
+                      onChange={(e) => {
+                        const sku = e.target.value;
+                        if (supplierId) {
+                          const match = bindings.find((b) => b.supplier_sku === sku);
+                          if (match) {
+                            pickBinding(l.rid, match);
+                          } else {
+                            setLine(l.rid, { supplierSku: sku });
+                          }
+                        } else {
+                          setLine(l.rid, { supplierSku: sku });
+                        }
+                      }}
+                      placeholder={supplierId
+                        ? 'Type or pick supplier’s code…'
+                        : 'Pick a supplier first to enable picker'}
+                      className={styles.fieldInput}
+                      style={{ fontFamily: 'var(--font-mono)' }}
+                    />
+                    <datalist id={`supplier-skus-${l.rid}`}>
+                      {supplierId && sortByText(bindings).map((b) => (
+                        <option key={b.id} value={b.supplier_sku || ''}>
+                          {b.item_code} · {b.material_name} · {fmtRm(b.unit_price_sen, b.currency)}
+                        </option>
+                      ))}
+                    </datalist>
+                  </label>
+                </div>
+
+                {/* Description — full width */}
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Description</span>
+                  <input
+                    type="text"
+                    value={l.materialName}
+                    onChange={(e) => setLine(l.rid, { materialName: e.target.value })}
+                    placeholder="(auto-filled if bound — editable for one-off purchases)"
+                    className={styles.fieldInput}
+                  />
+                </label>
+
+                {/* Per-category variant editor */}
+                {showVariants && (
+                  <div style={{
+                    background: 'var(--c-cream)',
+                    border: '1px solid var(--line)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: 'var(--space-3)',
+                  }}>
+                    <div style={{
+                      fontFamily: 'var(--font-button)',
+                      fontSize: 'var(--fs-11)',
+                      fontWeight: 700,
+                      letterSpacing: '0.16em',
+                      textTransform: 'uppercase',
+                      color: 'var(--fg-muted)',
+                      marginBottom: 'var(--space-2)',
+                    }}>
+                      {mfgCategoryLabel(l.category)} Variants
+                    </div>
+
+                    <PcVariantEditor
+                      category={l.category ?? ''}
+                      itemCode={l.itemCode}
+                      variants={l.variants as Record<string, unknown>}
+                      onChange={(k, v) => setVariant(l.rid, k, v)}
+                      fabrics={fabrics}
+                      maint={maint!}
+                    />
+                  </div>
+                )}
+
+                {/* Pricing row — Qty · Unit Price · Discount · Delivery · Ship-to */}
+                <div className={styles.formGrid4} style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
+                  <label className={styles.field}>
+                    <span className={styles.fieldLabel}>Qty</span>
+                    <NumberInput
+                      value={l.qty}
+                      sign="unsigned"
+                      decimal={false}
+                      onValueChange={(n) => setLine(l.rid, { qty: n ?? 0 })}
+                      className={styles.fieldInput}
+                      style={{ textAlign: 'right' }}
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span className={styles.fieldLabel}>Unit Price ({currency})</span>
+                    <MoneyInput
+                      bare
+                      valueSen={l.unitPriceSen}
+                      onCommit={(sen) => setLine(l.rid, { unitPriceSen: sen ?? 0, priceTouched: true })}
+                      inputClassName={styles.fieldInput}
+                      selectOnFocus
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span className={styles.fieldLabel}>Discount ({currency})</span>
+                    <DiscountInput
+                      bare
+                      valueSen={l.discountSen ?? 0}
+                      baseSen={l.qty * l.unitPriceSen}
+                      onCommit={(sen) => setLine(l.rid, { discountSen: sen ?? 0 })}
+                      inputClassName={styles.fieldInput}
+                      selectOnFocus
+                      currency={currency}
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span className={styles.fieldLabel}>Delivery Date</span>
+                    <DateField
+                      fullWidth
+                      value={l.deliveryDate ?? ''}
+                      onChange={(iso) => setLine(l.rid, { deliveryDate: iso })}
+                      className={styles.fieldInput}
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span className={styles.fieldLabel}>Ship-to Location</span>
+                    <select
+                      value={l.warehouseId ?? ''}
+                      onChange={(e) => setLine(l.rid, { warehouseId: e.target.value })}
+                      className={styles.fieldInput}
+                    >
+                      <option value="">— Inherit Purchase Location —</option>
+                      {sortByText(warehouses.data ?? []).map((w) => (
+                        <option key={w.id} value={w.id}>{w.code}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+            );
+          })}
+
+          <AddLineButton variant="block" onClick={addLine} />
+        </div>
+      </section>
+
+      {/* Totals card aligned right — lg:pr-32 clears the fixed FAB cluster. */}
+      <div className="lg:pr-32" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <section className={styles.card} style={{ maxWidth: 360, width: '100%' }}>
+          <div className={styles.cardBody}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-14)', marginBottom: 'var(--space-2)' }}>
+              <span>Subtotal</span>
+              <span style={{ fontFamily: 'var(--font-mono)' }}>{fmtRm(subtotalSen, currency)}</span>
+            </div>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: 'var(--fs-16)',
+              fontWeight: 700,
+              borderTop: '1px solid var(--line)',
+              paddingTop: 'var(--space-2)',
+            }}>
+              <span>Total</span>
+              <span style={{ fontFamily: 'var(--font-mono)' }}>{fmtRm(subtotalSen, currency)}</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {dialog && (
+        <ActionResultDialog
+          title={dialog.title}
+          body={dialog.body}
+          onClose={() => setDialog(null)}
+        />
+      )}
+    </div>
+  );
+};

@@ -4,6 +4,8 @@
    existing inline-styled pages are untouched while new/converted code uses classes. */
 @import 'tailwindcss/theme.css' layer(theme);
 @import 'tailwindcss/utilities.css' layer(utilities);
+/* The supply chain engine is its own app with its own styles; its classes are not this app's. */
+@source not "../../engine";
 
 /* The canonical token sheet lives at the project root as tokens.css.
    Keep them identical — root tokens.css is the source of truth. */
