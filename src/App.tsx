@@ -7,7 +7,7 @@ import FieldShell from './components/FieldShell';
 import UpdateNotice from './components/UpdateNotice';
 import OwnerShell from './components/OwnerShell';
 import LoginPage from './pages/LoginPage';
-import { HOME } from './lib/navigation';
+import { HOME, areaOfPath } from './lib/navigation';
 
 /** react-router (ERP convention) with route-level code splitting — every page is
  *  lazy-loaded so the initial bundle stays small. HashRouter (see main.tsx) keeps
@@ -105,12 +105,26 @@ function AppLayout() {
   const enginePath = ENGINE_PATH[location.pathname];
   const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
   const viaEngine = !!enginePath && !!engine.data?.enabled;
+  // A screen whose area is closed to this role (Users and roles > Permissions) is not shown even by its address.
+  const { user } = useSession();
+  const area = areaOfPath(location.pathname);
+  const closed = !!area && user?.access?.[area] === 'none';
   return (
     <AppShell path={location.pathname} navigate={(p: string) => navigate(p)} flush={viaEngine}>
-      {viaEngine ? <SupplyChainEngine enginePath={enginePath} />
+      {closed ? <NoAccess />
+        : viaEngine ? <SupplyChainEngine enginePath={enginePath} />
         : enginePath && !engine.data && engine.loading ? <Fallback />
         : <Suspense fallback={<Fallback />}><Outlet /></Suspense>}
     </AppShell>
+  );
+}
+
+function NoAccess() {
+  return (
+    <div className="p-10 text-center">
+      <h1 className="m-0 text-[18px] font-semibold">Your role does not have access to this screen</h1>
+      <p className="mt-2 text-[13px] text-muted-ink">Management sets what each role can open, under Users and roles.</p>
+    </div>
   );
 }
 

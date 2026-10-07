@@ -1,12 +1,11 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { strOrNull, flag } from '../../_lib/scm-util';
 
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit racks.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit racks.', 403);
   const id = String(params.id);
   const cur = await one<{ warehouse_id: string }>(env, 'SELECT warehouse_id FROM warehouse_racks WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That rack does not exist.', 404);
@@ -27,7 +26,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete racks.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete racks.', 403);
   const id = String(params.id);
   const cur = await one<{ rack: string }>(env, 'SELECT rack FROM warehouse_racks WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That rack does not exist.', 404);

@@ -21,7 +21,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   const [profileOpen, setProfileOpen] = useState(false);
   const activeParent = parentOf(path);
   const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
-  const groups = navFor(user!.role, !!engine.data?.enabled);
+  const groups = navFor(user!.role, !!engine.data?.enabled, user!.access);
   // Refetched on every page change so a count drops as soon as the work is done.
   const counts = useApi<Record<BadgeKey, number>>('/nav/badges');
   const reloadCounts = counts.reload;

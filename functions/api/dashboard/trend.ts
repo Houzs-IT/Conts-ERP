@@ -1,5 +1,5 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 import { monthsBack, daysIn } from '../../_lib/ops';
 
 const KL_TODAY = `to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')`;
@@ -30,7 +30,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const byPeriod = new Map(rows.map(r => [r.period, r]));
 
   const listed = (await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM units WHERE is_listed = 1'))!.n;
-  const finance = canSeeFinance(session.role);
+  const finance = session.manage;
 
   const points = periods.map(p => {
     const r = byPeriod.get(p);

@@ -1,13 +1,12 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { isCategory, strOrNull, intOrNull } from '../../_lib/products';
 
 /** PATCH /api/products/:id — edit a product. Only the fields present in the body change. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit products.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit products.', 403);
 
   const id = String(params.id);
   const cur = await one<{ id: string }>(env, 'SELECT id FROM products WHERE id = ?', id);
@@ -64,7 +63,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete products.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete products.', 403);
 
   const id = String(params.id);
   const cur = await one<{ code: string }>(env, 'SELECT code FROM products WHERE id = ?', id);

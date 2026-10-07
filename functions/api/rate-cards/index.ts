@@ -1,6 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { isBasis, isAggregation, isRounding, isRateRuleType, toCardPayload, type CardRow } from '../../_lib/rate-cards';
 import { strOrNull, intOrNull, flag, genId } from '../../_lib/scm-util';
 
@@ -42,7 +41,7 @@ export async function insertRules(env: Env, cardId: string, raw: unknown): Promi
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit rate cards.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit rate cards.', 403);
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const name = String(b.name ?? '').trim();
   if (!name) return fail('VALIDATION', 'Enter a card name.', 422, { name: 'Enter a card name.' });

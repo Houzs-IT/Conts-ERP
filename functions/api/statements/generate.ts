@@ -1,5 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 
 /** POST /api/statements/generate { period: "2026-08" }
  *  Builds a provisional statement per owner from settled bookings and owner-charged expenses, with every line kept.
@@ -7,7 +7,7 @@ import { requireSession, canSeeFinance } from '../../_lib/auth';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) return fail('FORBIDDEN', 'You can view statements but cannot generate them. Ask a Finance Admin for access.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'You can view statements but cannot generate them. Ask a Finance Admin for access.', 403);
 
   const b = await request.json<{ period: string }>().catch(() => null);
   const period = b?.period ?? '';

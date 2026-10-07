@@ -1,6 +1,5 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { isCategory, toModelPayload, strOrNull, flag, type ModelRow } from '../../_lib/product-models';
 
 const COLS = 'id, model_code, name, category, branding, description, photo_url, allowed_options, active';
@@ -18,7 +17,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit product models.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit product models.', 403);
 
   const id = String(params.id);
   if (!await one(env, 'SELECT 1 AS x FROM product_models WHERE id = ?', id)) return fail('NOT_FOUND', 'That model does not exist.', 404);
@@ -54,7 +53,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete product models.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete product models.', 403);
 
   const id = String(params.id);
   const cur = await one<{ model_code: string }>(env, 'SELECT model_code FROM product_models WHERE id = ?', id);

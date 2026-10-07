@@ -1,12 +1,11 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 
 /** PATCH /api/properties/:id { name, city, state } — correct a building's name or location. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit buildings.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit buildings.', 403);
 
   const id = String(params.id);
   const cur = await one<{ id: string; name: string; city: string; state: string }>(env, 'SELECT id, name, city, state FROM properties WHERE id = ?', id);
@@ -26,7 +25,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete buildings.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete buildings.', 403);
 
   const id = String(params.id);
   const cur = await one<{ name: string }>(env, 'SELECT name FROM properties WHERE id = ?', id);

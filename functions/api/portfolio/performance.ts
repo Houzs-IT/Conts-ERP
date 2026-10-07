@@ -1,5 +1,5 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 
 /** GET /api/portfolio/performance?period=2026-09 (a month) or ?period=2026-q3 (a quarter, to
  *  today if the quarter isn't over yet) — one row per listed unit. */
@@ -10,7 +10,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const nowRow = await one<{ d: string }>(env, `SELECT to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS d`);
   const today = nowRow!.d;
   const periodParam = new URL(request.url).searchParams.get('period') ?? today.slice(0, 7);
-  const finance = canSeeFinance(session.role);
+  const finance = session.manage;
 
   const quarter = periodParam.match(/^(\d{4})-q([1-4])$/i);
   const month = periodParam.match(/^(\d{4})-(\d{2})$/);

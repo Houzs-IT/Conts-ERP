@@ -1,6 +1,7 @@
 import { type Env, fail } from '../_lib/db';
 import { readSession, readCookie, signSession, cookie, sessionLimits, securitySettings, isFieldRole, canSeeFinance } from '../_lib/auth';
 import { doorFor, doorRefusal } from '../_lib/door';
+import { accessFor, refusalFor } from '../_lib/access';
 import { flushWhenQuiet, FLUSH_DELAY_MS } from '../_lib/channexQueue';
 
 /**
@@ -45,7 +46,11 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, next, waitUn
   if (isFieldRole(session.role) && SUPPLY_CHAIN.test(path)) {
     return fail('FORBIDDEN', 'Your account does not have access to supply chain records.', 403);
   }
-  if (MONEY_ONLY.test(path) && !canSeeFinance(session.role)) {
+  // A level management chose on Users and roles > Permissions replaces the built-in rule for that area.
+  const access = await accessFor(env, session.role, path);
+  const refused = refusalFor(access, request.method);
+  if (refused) return fail('FORBIDDEN', refused, 403);
+  if (MONEY_ONLY.test(path) && !(access.chosen ? access.level !== 'none' : canSeeFinance(session.role))) {
     return fail('FORBIDDEN', 'Only finance and management can see invoices and payments.', 403);
   }
 

@@ -1,13 +1,12 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
+import { requireSession } from '../../_lib/auth';
 import { HEADER_SQL, buildLines, toNotePayload, toNoteLinePayload, type NoteHeaderRow, type NoteLineRow } from '../../_lib/credit-notes';
 import { strOrNull, genId } from '../../_lib/scm-util';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) return fail('FORBIDDEN', 'Credit and debit notes are for finance and management.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Credit and debit notes are for finance and management.', 403);
   const id = String(params.id);
   const header = await one<NoteHeaderRow>(env, `${HEADER_SQL} WHERE n.id = ?`, id);
   if (!header) return fail('NOT_FOUND', 'That note does not exist.', 404);
@@ -21,7 +20,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can change credit or debit notes.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change credit or debit notes.', 403);
   const id = String(params.id);
   const cur = await one<{ status: string; note_number: string; total_sen: number }>(env, 'SELECT status, note_number, total_sen FROM credit_notes WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That note does not exist.', 404);

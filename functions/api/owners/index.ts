@@ -11,7 +11,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (!READ_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Owner records are visible to operations and finance roles.', 403);
-  const banking = MASTER_ROLES.includes(session.role);
+  const banking = session.manage;
 
   const month = todayMyt().slice(0, 7), days = daysIn(month);
   const owners = await all<any>(env, 'SELECT * FROM owners ORDER BY display_name');
@@ -65,7 +65,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can add owners.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can add owners.', 403);
 
   const b = await request.json<any>().catch(() => null);
   const fields: Record<string, string> = {};

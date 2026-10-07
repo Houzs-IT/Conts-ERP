@@ -1,13 +1,12 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 
 /** PATCH /api/owners/:id { defaultManagementFeePct: number | null } — set or clear
  *  the owner-level default management fee. A unit's own contract fee overrides it. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can change owner fees.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change owner fees.', 403);
 
   const id = String(params.id);
   const owner = await one<{ id: string; display_name: string }>(env, 'SELECT id, display_name FROM owners WHERE id = ?', id);
@@ -34,7 +33,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete owners.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete owners.', 403);
 
   const id = String(params.id);
   const owner = await one<{ id: string; display_name: string; email: string; user_id: string | null }>(env, 'SELECT id, display_name, email, user_id FROM owners WHERE id = ?', id);

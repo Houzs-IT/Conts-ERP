@@ -1,5 +1,5 @@
 import { type Env, all, json, fail, nowIso } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 
 import { WEEKEND_MULTIPLIER, upliftFor } from '../../_lib/channelPrice';
 const CHANNELS = ['airbnb', 'booking_com', 'agoda'];
@@ -8,7 +8,7 @@ const CHANNELS = ['airbnb', 'booking_com', 'agoda'];
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role) && session.role !== 'operations_manager') return fail('FORBIDDEN', 'Pricing is visible to finance, operations managers and management.', 403);
+  if (!session.manage && session.role !== 'operations_manager') return fail('FORBIDDEN', 'Pricing is visible to finance, operations managers and management.', 403);
 
   // Every unit, listed or not: a new unit starts unlisted with no base rate, and it needs one set here
   // before it can be sold anywhere (Channex setup refuses a unit without a base price).

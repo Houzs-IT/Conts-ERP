@@ -1,5 +1,5 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 import { stampMyt } from '../../_lib/ops';
 
 /**
@@ -37,7 +37,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     if (!owned?.n) return fail('FORBIDDEN', 'This unit is not on your account.', 403);
   }
 
-  const money = canSeeFinance(session.role);
+  const money = session.manage;
   const month = new Date().toISOString().slice(0, 7);
 
   const channels = await all<{ channel: string }>(env,
@@ -135,7 +135,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       channels: channels.map(c => c.channel),
       owner: {
         id: unit.owner_id, name: unit.owner_name,
-        email: canSeeFinance(session.role) ? unit.owner_email : null,
+        email: session.manage ? unit.owner_email : null,
       },
       contract: unit.management_fee_pct != null ? {
         managementFeePct: unit.management_fee_pct,

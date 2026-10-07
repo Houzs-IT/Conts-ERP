@@ -1,5 +1,5 @@
 import { type Env, one, json } from '../../_lib/db';
-import { requireSession, isFieldRole, canSeeFinance } from '../../_lib/auth';
+import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
 
 /** GET /api/nav/badges — live counts for the side menu: open work up to today, open maintenance,
@@ -24,5 +24,5 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            (SELECT count(*)::int FROM channex_outbox o WHERE o.status = 'failed' AND o.unit_id IN (SELECT unit_id FROM channex_channels)) AS failed`);
   const channels = { units: ch?.units ?? 0, lastSentAt: ch?.last_sent ?? null, failed: ch?.failed ?? 0 };
   // Today lists open maintenance alongside the day's tasks (operations/today.ts), so its count does too.
-  return json({ channels, ...c!, today: c!.today + c!.maintenance, statements: canSeeFinance(session.role) ? c!.statements : 0 });
+  return json({ channels, ...c!, today: c!.today + c!.maintenance, statements: session.manage ? c!.statements : 0 });
 };

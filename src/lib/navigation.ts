@@ -1,4 +1,4 @@
-import type { UserRole } from './types';
+import type { UserRole, AccessLevel } from './types';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
 export type BadgeKey = 'today' | 'maintenance' | 'inbox' | 'statements';
@@ -142,8 +142,29 @@ const DENY: Partial<Record<UserRole, string[]>> = {
 /** Menu items whose screens exist only in the supply chain engine: hidden where it is not set up. */
 const ENGINE_ONLY = ['serviceCases', 'projects'];
 
-export function navFor(role: UserRole, engine = false): NavGroup[] {
-  const deny = [...(DENY[role] ?? []), ...(engine ? [] : ENGINE_ONLY)];
+/** Menu keys an area covers where they are not simply the area's own key. */
+const AREA_NAV: Record<string, string[]> = { scInvoices: ['salesInvoices', 'purchaseInvoices'] };
+const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'owner'];
+
+/** Menu keys closed to a role: from its permission levels where the session carries them, else the built-in list. */
+function denied(role: UserRole, access?: Record<string, AccessLevel>): string[] {
+  if (!access || FIXED_ROLES.includes(role)) return DENY[role] ?? [];
+  return Object.entries(access).filter(([, level]) => level === 'none').flatMap(([area]) => AREA_NAV[area] ?? [area]);
+}
+
+/** The permission area a screen belongs to, or null for screens outside the chart. */
+export function areaOfPath(path: string): string | null {
+  for (const g of NAV) for (const it of g.items) {
+    const child = it.children?.find(c => c.path === path);
+    if (!child && it.path !== path) continue;
+    const key = child?.key ?? it.key;
+    return Object.keys(AREA_NAV).find(a => AREA_NAV[a].includes(key)) ?? it.key;
+  }
+  return null;
+}
+
+export function navFor(role: UserRole, engine = false, access?: Record<string, AccessLevel>): NavGroup[] {
+  const deny = [...denied(role, access), ...(engine ? [] : ENGINE_ONLY)];
   if (deny.includes('*')) return [];
   return NAV
     .map(g => ({ ...g, items: g.items.filter(i => !deny.includes(i.key))

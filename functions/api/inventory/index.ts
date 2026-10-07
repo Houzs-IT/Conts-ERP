@@ -1,5 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, canSeeFinance, isFieldRole } from '../../_lib/auth';
+import { requireSession, isFieldRole } from '../../_lib/auth';
 import { resolveUnit } from '../../_lib/ops';
 
 const CONDITIONS = ['good', 'fair', 'replace_soon', 'damaged'];
@@ -21,7 +21,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     WHERE 1 = 1 ${unitId ? 'AND i.unit_id = ?' : ''}
     ORDER BY p.name, u.unit_number, i.name`, ...(unitId ? [unitId] : []));
 
-  const money = canSeeFinance(session.role);
+  const money = session.manage;
   return json({
     generatedAt: nowIso(),
     data: rows.map(r => ({

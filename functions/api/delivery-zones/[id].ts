@@ -1,6 +1,5 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { invalidZone } from '../../_lib/delivery-zones';
 import { strOrNull, flag } from '../../_lib/scm-util';
 
@@ -8,7 +7,7 @@ import { strOrNull, flag } from '../../_lib/scm-util';
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit the zone map.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit the zone map.', 403);
   const id = String(params.id);
   if (!await one(env, 'SELECT 1 AS x FROM delivery_zone_postcodes WHERE id = ?', id)) return fail('NOT_FOUND', 'That zone rule does not exist.', 404);
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
@@ -34,7 +33,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit the zone map.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit the zone map.', 403);
   const id = String(params.id);
   const cur = await one<{ zone: string }>(env, 'SELECT zone FROM delivery_zone_postcodes WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That zone rule does not exist.', 404);

@@ -1,5 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, canSeeFinance, isFieldRole } from '../../_lib/auth';
+import { requireSession, isFieldRole } from '../../_lib/auth';
 
 const CATEGORIES = ['plumbing', 'electrical', 'aircon', 'furniture', 'appliance', 'cleaning', 'general', 'other'];
 const UNIT_LABELS = ['job', 'unit', 'hour'];
@@ -25,7 +25,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     WHERE ${where.join(' AND ')}
     ORDER BY active DESC, code`, ...args);
 
-  const money = canSeeFinance(session.role) || WRITE_ROLES.includes(session.role);
+  const money = session.manage || WRITE_ROLES.includes(session.role);
   return json({
     generatedAt: nowIso(),
     data: rows.map(r => ({

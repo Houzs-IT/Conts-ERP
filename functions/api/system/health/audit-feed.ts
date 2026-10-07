@@ -1,6 +1,5 @@
 import { type Env, all, json, fail } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
-import { MASTER_ROLES } from '../../../_lib/properties';
 import { SENSITIVE_SQL, RANGES } from '../../../_lib/systemHealth';
 
 /** GET /api/system/health/audit-feed?range=24h|7d|30d|90d&sensitive=1&limit= — who changed what in the range:
@@ -9,7 +8,7 @@ import { SENSITIVE_SQL, RANGES } from '../../../_lib/systemHealth';
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'System health is visible to management, finance and operations managers.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'System health is visible to management, finance and operations managers.', 403);
 
   const url = new URL(request.url);
   const range = url.searchParams.get('range') ?? '7d';

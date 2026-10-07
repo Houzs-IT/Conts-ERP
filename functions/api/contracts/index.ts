@@ -1,5 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 import { type ContractInput, normalise, invalidContract } from '../../_lib/contracts';
 
 const READ_ROLES = ['management', 'operations_manager', 'operations_staff', 'finance_admin'];
@@ -41,7 +41,7 @@ async function findOwner(env: Env, b: ContractInput): Promise<{ id: string } | '
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) return fail('FORBIDDEN', 'Finance or management access is required.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Finance or management access is required.', 403);
 
   const b = await request.json<ContractInput>().catch(() => null);
   if (!b) return fail('VALIDATION', 'Check the contract details.', 422);

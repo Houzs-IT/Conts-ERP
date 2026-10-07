@@ -1,6 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { isDoStatus, nextDoNumber, maybeMarkSoDelivered, toDoHeaderPayload, type DoHeaderRow } from '../../_lib/delivery-orders';
 import { postStockMovement, stockShortages, shortageText } from '../../_lib/stock-ops';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
@@ -34,7 +33,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can raise delivery orders.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can raise delivery orders.', 403);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const soId = String(b.salesOrderId ?? '').trim();

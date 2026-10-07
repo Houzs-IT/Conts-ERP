@@ -1,5 +1,5 @@
 import { type Env, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 import { resolveUnit } from '../../_lib/ops';
 import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked } from '../../_lib/expenses';
 
@@ -8,7 +8,7 @@ import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked } from '../../_lib/expens
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) return fail('FORBIDDEN', 'You can view expenses but cannot add them. Ask a Finance Admin for access.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'You can view expenses but cannot add them. Ask a Finance Admin for access.', 403);
 
   const b = await request.json<any>().catch(() => null);
   const fields: Record<string, string> = {};

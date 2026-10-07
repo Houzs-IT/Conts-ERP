@@ -1,6 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { normalizeLines, nextStatus, toSoHeaderPayload, toSoLinePayload, type SoHeaderRow, type SoLineRow } from '../../_lib/sales-orders';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
@@ -20,7 +19,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can change sales orders.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change sales orders.', 403);
 
   const id = String(params.id);
   const cur = await one<{ status: string; subtotal_sen: number; tax_sen: number; total_sen: number; paid_sen: number }>(env, 'SELECT status, subtotal_sen, tax_sen, total_sen, paid_sen FROM sales_orders WHERE id = ?', id);
@@ -97,7 +96,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete sales orders.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete sales orders.', 403);
   const id = String(params.id);
   const c = await one<{ doc_no: string; status: string }>(env, 'SELECT doc_no, status FROM sales_orders WHERE id = ?', id);
   if (!c) return fail('NOT_FOUND', 'That sales order does not exist.', 404);

@@ -1,13 +1,12 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { strOrNull, intOrNull, flag } from '../../_lib/scm-util';
 
 /** PATCH /api/categories/:id — id is immutable; label/icon/tbc/hero/sort change. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit categories.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit categories.', 403);
 
   const id = String(params.id);
   if (!await one(env, 'SELECT 1 AS x FROM product_categories WHERE id = ?', id)) return fail('NOT_FOUND', 'That category does not exist.', 404);
@@ -33,7 +32,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete categories.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete categories.', 403);
 
   const id = String(params.id);
   if (!await one(env, 'SELECT 1 AS x FROM product_categories WHERE id = ?', id)) return fail('NOT_FOUND', 'That category does not exist.', 404);

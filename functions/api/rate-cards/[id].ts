@@ -1,6 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { isBasis, isAggregation, isRounding, toCardPayload, toRulePayload, type CardRow, type RuleRow } from '../../_lib/rate-cards';
 import { insertRules } from './index';
 import { strOrNull, intOrNull, flag } from '../../_lib/scm-util';
@@ -24,7 +23,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit rate cards.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit rate cards.', 403);
   const id = String(params.id);
   if (!await one(env, 'SELECT 1 AS x FROM delivery_rate_cards WHERE id = ?', id)) return fail('NOT_FOUND', 'That rate card does not exist.', 404);
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
@@ -54,7 +53,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete rate cards.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete rate cards.', 403);
   const id = String(params.id);
   const cur = await one<{ name: string }>(env, 'SELECT name FROM delivery_rate_cards WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That rate card does not exist.', 404);

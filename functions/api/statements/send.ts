@@ -1,5 +1,5 @@
 import { type Env, all, run, json, fail, audit } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { one } from '../../_lib/db';
 import { nowIso } from '../../_lib/db';
@@ -7,7 +7,7 @@ import { nowIso } from '../../_lib/db';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) {
+  if (!session.manage) {
     return fail('FORBIDDEN', 'You can view statements but cannot send them. Ask a Finance Admin for access.', 403);
   }
 

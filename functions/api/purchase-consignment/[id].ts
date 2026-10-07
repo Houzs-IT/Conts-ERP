@@ -1,6 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { normalizeLines, toPcHeaderPayload, toPcLinePayload, type PcHeaderRow, type PcLineRow } from '../../_lib/purchase-consignment';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
@@ -23,7 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can change consignment orders.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change consignment orders.', 403);
 
   const id = String(params.id);
   const cur = await one<{ status: string; subtotal_sen: number; tax_sen: number }>(env, 'SELECT status, subtotal_sen, tax_sen FROM pc_orders WHERE id = ?', id);
@@ -74,7 +73,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete consignment orders.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete consignment orders.', 403);
   const id = String(params.id);
   const cur = await one<{ pc_number: string; status: string }>(env, 'SELECT pc_number, status FROM pc_orders WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That consignment order does not exist.', 404);

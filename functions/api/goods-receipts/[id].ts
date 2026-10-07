@@ -1,6 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { recomputePoStatus, toGrnHeaderPayload, toGrnLinePayload, type GrnHeaderRow, type GrnLineRow } from '../../_lib/goods-receipts';
 import { postStockMovement, stockShortages, shortageText } from '../../_lib/stock-ops';
 
@@ -29,7 +28,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can change goods receipts.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change goods receipts.', 403);
 
   const id = String(params.id);
   const cur = await one<{ status: string; purchase_order_id: string; warehouse_id: string | null; grn_number: string; received_at: string }>(env, 'SELECT status, purchase_order_id, warehouse_id, grn_number, received_at FROM goods_receipts WHERE id = ?', id);

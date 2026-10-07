@@ -1,6 +1,5 @@
 import { type Env, all, json, fail, audit } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
-import { MASTER_ROLES } from '../../../_lib/properties';
 import { channexConfigured } from '../../../_lib/channex';
 import { queueFullSync, flushChannexQueue } from '../../../_lib/channexQueue';
 import { ensureOtaRatePlans } from '../../../_lib/channexSync';
@@ -10,7 +9,7 @@ import { ensureOtaRatePlans } from '../../../_lib/channexSync';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can run a full sync.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can run a full sync.', 403);
   if (!channexConfigured(env)) return fail('NOT_CONFIGURED', 'Channex is not connected on this environment yet.', 501);
 
   // A night without its own price is sent at the unit's base price, and Channex discards a zero price,

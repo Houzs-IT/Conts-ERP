@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
+import PermissionsChart from '../components/PermissionsChart';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -14,8 +15,8 @@ import type { Tone, UserRole } from '../lib/types';
 /* ------------------------------------------------------------------ *
  * Users and roles — three tabs (routes.json → SYSTEM → UsersPage):
  *   1. Users        — list with role + reporting line; invite + edit.
- *   2. Permissions  — deny-by-default matrix, six roles x eleven modules,
- *                     rendered read-only from the permission model.
+ *   2. Permissions  — the editable chart (components/PermissionsChart): what each
+ *                     office role can do in each area, saved to role_access.
  *   3. Organisation — the reporting line (manager_id). Explicitly NOT a
  *                     permission source; permissions come from the role.
  * There is no backend in dev, so every mutation is applied to a local
@@ -64,166 +65,6 @@ function status(u: Row): { label: string; tone: Tone } {
 
 const initials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('');
 
-/* -------------------------- permission model -------------------------- *
- * Read-only mirror of permissions.json (role -> resource -> {actions, scope}).
- * Deny by default: a resource absent for a role is forbidden (rendered None).
- * The tab shows a per-module summary chip derived from these action lists, so
- * every cell can be traced back to the permission model rather than authored
- * by hand. Six columns; Field collapses housekeeper + technician.            */
-type Scope = 'all' | 'own_properties' | 'assigned' | 'none';
-type Grant = { actions: string[]; scope: Scope };
-type ResourceKey =
-  | 'dashboard' | 'portfolio' | 'reservations' | 'guests' | 'tasks' | 'maintenance'
-  | 'inspections' | 'properties' | 'inventory' | 'access_credentials' | 'expenses'
-  | 'statements' | 'payouts' | 'owners' | 'contracts' | 'users' | 'integrations' | 'audit';
-
-const PERMISSIONS: Record<string, Partial<Record<ResourceKey, Grant>>> = {
-  management: {
-    dashboard: { actions: ['view', 'export'], scope: 'all' },
-    portfolio: { actions: ['view', 'export'], scope: 'all' },
-    reservations: { actions: ['view', 'create', 'edit', 'delete'], scope: 'all' },
-    guests: { actions: ['view', 'edit'], scope: 'all' },
-    tasks: { actions: ['view', 'create', 'edit', 'assign', 'delete'], scope: 'all' },
-    maintenance: { actions: ['view', 'create', 'edit', 'approve', 'delete'], scope: 'all' },
-    inspections: { actions: ['view', 'create', 'edit'], scope: 'all' },
-    properties: { actions: ['view', 'create', 'edit', 'delete'], scope: 'all' },
-    inventory: { actions: ['view', 'create', 'edit', 'delete'], scope: 'all' },
-    access_credentials: { actions: ['view', 'create', 'edit', 'reveal'], scope: 'all' },
-    expenses: { actions: ['view', 'create', 'edit', 'delete', 'export'], scope: 'all' },
-    statements: { actions: ['view', 'create', 'edit', 'send', 'export'], scope: 'all' },
-    payouts: { actions: ['view', 'create', 'edit', 'export'], scope: 'all' },
-    owners: { actions: ['view', 'create', 'edit'], scope: 'all' },
-    contracts: { actions: ['view', 'create', 'edit'], scope: 'all' },
-    users: { actions: ['view', 'create', 'edit', 'delete'], scope: 'all' },
-    integrations: { actions: ['view', 'edit'], scope: 'all' },
-    audit: { actions: ['view', 'export'], scope: 'all' },
-  },
-  operations_manager: {
-    dashboard: { actions: ['view', 'export'], scope: 'all' },
-    portfolio: { actions: ['view'], scope: 'all' },
-    reservations: { actions: ['view', 'create', 'edit'], scope: 'all' },
-    guests: { actions: ['view', 'edit'], scope: 'all' },
-    tasks: { actions: ['view', 'create', 'edit', 'assign'], scope: 'all' },
-    maintenance: { actions: ['view', 'create', 'edit'], scope: 'all' },
-    inspections: { actions: ['view', 'create', 'edit'], scope: 'all' },
-    properties: { actions: ['view', 'create', 'edit'], scope: 'all' },
-    inventory: { actions: ['view', 'create', 'edit'], scope: 'all' },
-    access_credentials: { actions: ['view', 'edit', 'reveal'], scope: 'all' },
-    expenses: { actions: ['view', 'create'], scope: 'all' },
-    statements: { actions: ['view'], scope: 'all' },
-    payouts: { actions: ['view'], scope: 'all' },
-    owners: { actions: ['view', 'edit'], scope: 'all' },
-    contracts: { actions: ['view'], scope: 'all' },
-    audit: { actions: ['view'], scope: 'all' },
-  },
-  operations_staff: {
-    dashboard: { actions: ['view'], scope: 'all' },
-    reservations: { actions: ['view', 'create', 'edit'], scope: 'all' },
-    guests: { actions: ['view', 'edit'], scope: 'all' },
-    tasks: { actions: ['view', 'create', 'edit', 'assign'], scope: 'all' },
-    maintenance: { actions: ['view', 'create', 'edit'], scope: 'all' },
-    inspections: { actions: ['view', 'create', 'edit'], scope: 'all' },
-    properties: { actions: ['view'], scope: 'all' },
-    inventory: { actions: ['view', 'edit'], scope: 'all' },
-    access_credentials: { actions: ['view'], scope: 'all' },
-    expenses: { actions: [], scope: 'none' },
-    statements: { actions: [], scope: 'none' },
-    payouts: { actions: [], scope: 'none' },
-    contracts: { actions: [], scope: 'none' },
-  },
-  finance_admin: {
-    dashboard: { actions: ['view', 'export'], scope: 'all' },
-    portfolio: { actions: ['view', 'export'], scope: 'all' },
-    reservations: { actions: ['view'], scope: 'all' },
-    tasks: { actions: ['view'], scope: 'all' },
-    maintenance: { actions: ['view'], scope: 'all' },
-    properties: { actions: ['view'], scope: 'all' },
-    expenses: { actions: ['view', 'create', 'edit', 'delete', 'export'], scope: 'all' },
-    statements: { actions: ['view', 'create', 'edit', 'send', 'export'], scope: 'all' },
-    payouts: { actions: ['view', 'create', 'edit', 'export'], scope: 'all' },
-    owners: { actions: ['view', 'edit'], scope: 'all' },
-    contracts: { actions: ['view', 'create', 'edit'], scope: 'all' },
-    audit: { actions: ['view', 'export'], scope: 'all' },
-  },
-  housekeeper: {
-    tasks: { actions: ['view', 'edit'], scope: 'assigned' },
-    maintenance: { actions: ['view', 'create'], scope: 'assigned' },
-    properties: { actions: ['view'], scope: 'assigned' },
-    access_credentials: { actions: ['view'], scope: 'assigned' },
-    inventory: { actions: ['view'], scope: 'assigned' },
-    guests: { actions: [], scope: 'none' },
-  },
-  technician: {
-    tasks: { actions: ['view', 'edit'], scope: 'assigned' },
-    maintenance: { actions: ['view', 'create', 'edit'], scope: 'assigned' },
-    properties: { actions: ['view'], scope: 'assigned' },
-    access_credentials: { actions: ['view'], scope: 'assigned' },
-    inventory: { actions: ['view', 'edit'], scope: 'assigned' },
-    expenses: { actions: ['create'], scope: 'assigned' },
-  },
-  owner: {
-    statements: { actions: ['view', 'export'], scope: 'own_properties' },
-    payouts: { actions: ['view'], scope: 'own_properties' },
-    expenses: { actions: ['view'], scope: 'own_properties' },
-    maintenance: { actions: ['view', 'approve'], scope: 'own_properties' },
-    properties: { actions: ['view'], scope: 'own_properties' },
-    reservations: { actions: ['view'], scope: 'own_properties' },
-    contracts: { actions: ['view'], scope: 'own_properties' },
-  },
-};
-
-type Tier = 'full' | 'edit' | 'view' | 'own' | 'none';
-const TIER: Record<Tier, { label: string; tone: Tone }> = {
-  full: { label: 'Full', tone: 'success' },
-  edit: { label: 'Edit', tone: 'info' },
-  view: { label: 'View', tone: 'neutral' },
-  own: { label: 'Own only', tone: 'warning' },
-  none: { label: 'None', tone: 'critical' },
-};
-const RANK: Record<Tier, number> = { none: 0, own: 1, view: 2, edit: 3, full: 4 };
-
-function tierOfGrant(g?: Grant): Tier {
-  if (!g || g.scope === 'none' || g.actions.length === 0) return 'none';
-  if (g.scope !== 'all') return 'own';
-  if (g.actions.includes('create') || g.actions.includes('delete')) return 'full';
-  if (g.actions.includes('edit')) return 'edit';
-  return 'view';
-}
-/** Roll a module (several resources) and a column (one or two roles) up to the
- *  most permissive tier any of them grants. */
-function cellTier(resources: ResourceKey[], roles: string[]): Tier {
-  let best: Tier = 'none';
-  for (const role of roles) {
-    for (const res of resources) {
-      const t = tierOfGrant(PERMISSIONS[role]?.[res]);
-      if (RANK[t] > RANK[best]) best = t;
-    }
-  }
-  return best;
-}
-
-const MATRIX_COLS: { label: string; title: string; roles: string[] }[] = [
-  { label: 'Mgmt', title: 'Management', roles: ['management'] },
-  { label: 'Ops mgr', title: 'Operations manager', roles: ['operations_manager'] },
-  { label: 'Ops staff', title: 'Operations staff', roles: ['operations_staff'] },
-  { label: 'Finance', title: 'Finance admin', roles: ['finance_admin'] },
-  { label: 'Field', title: 'Housekeeping and technicians', roles: ['housekeeper', 'technician'] },
-  { label: 'Owner', title: 'Property owner (portal)', roles: ['owner'] },
-];
-const MATRIX_MODULES: { module: string; note: string; resources: ResourceKey[] }[] = [
-  { module: 'Dashboard', note: 'KPIs and exceptions', resources: ['dashboard', 'portfolio'] },
-  { module: 'Reservations', note: 'Calendar, bookings, guests', resources: ['reservations', 'guests'] },
-  { module: 'Operations', note: 'Today, housekeeping, maintenance', resources: ['tasks', 'maintenance', 'inspections'] },
-  { module: 'Properties', note: 'Buildings, units, access keys', resources: ['properties', 'inventory', 'access_credentials'] },
-  { module: 'Monthly expenses', note: 'Utilities and deductions', resources: ['expenses'] },
-  { module: 'Owner statements', note: 'Generate and send', resources: ['statements'] },
-  { module: 'Payouts', note: 'Bank transfers', resources: ['payouts'] },
-  { module: 'Owners and contracts', note: 'Owner records and agreements', resources: ['owners', 'contracts'] },
-  { module: 'Users and roles', note: 'Invite and permissions', resources: ['users'] },
-  { module: 'Integrations', note: 'Channel and bank connections', resources: ['integrations'] },
-  { module: 'System health', note: 'Live status and who changed what', resources: ['audit'] },
-];
-
 /* ------------------------------- styles ------------------------------- */
 // The former inputStyle object ended with `font: 'inherit'` (last shorthand key),
 // so inputs/selects actually render at the inherited 16px / 400 / IBM Plex Sans —
@@ -232,7 +73,6 @@ const inputClass = 'block w-full box-border h-10 px-3 py-0 [font:inherit] text-i
 const labelClass = 'text-[12px] font-medium text-muted-ink';
 const errClass = cx('text-[12px]', TONE.critical.text);
 const LIST_COLS_CLASS = 'grid-cols-[minmax(180px,1.6fr)_minmax(180px,1.4fr)_150px_140px_120px_110px]';
-const MATRIX_COLS_CLASS = 'grid-cols-[minmax(200px,1.5fr)_repeat(6,minmax(104px,1fr))]';
 // Left accent on org cards — the -line tone shade, as a box-shadow inset (kept off
 // the border so it does not change the card geometry). Static per-tone literals so
 // the JIT scanner sees each class.
@@ -243,13 +83,6 @@ const ORG_ACCENT: Record<Tone, string> = {
   info:     '[box-shadow:inset_3px_0_0_var(--color-info-line,#2E6DA4)]',
   neutral:  '[box-shadow:inset_3px_0_0_var(--color-neutral-line,#C7C1B6)]',
 };
-
-function TierChip({ tier }: { tier: Tier }) {
-  const t = TIER[tier];
-  return (
-    <span className={cx('inline-flex justify-center min-w-[64px] text-[10.5px] font-semibold py-[3px] px-2 rounded-[6px]', TONE[t.tone].bg, TONE[t.tone].text)}>{t.label}</span>
-  );
-}
 
 /** Local modal shell — the shared Dialog is confirmation-only, so form-bearing
  *  dialogs (invite, edit, org structure) get this lightweight overlay. */
@@ -518,42 +351,7 @@ export default function UsersPage() {
       )}
 
       {/* --------------------------- Permissions tab --------------------------- */}
-      {tab === 'permissions' && (
-        <Card>
-          <div className="py-[13px] px-5 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-[12px] text-muted-ink leading-[1.5]">
-            Deny by default. An action absent from a role is forbidden, and destinations a role cannot reach are removed from its navigation rather than disabled. This is a read-only view of the permission model — permissions are set in the role, not here.
-          </div>
-          <div className="flex gap-[14px] flex-wrap py-[11px] px-5 [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
-            {(['full', 'edit', 'view', 'own', 'none'] as Tier[]).map(t => (
-              <span key={t} className="inline-flex items-center gap-[7px] text-[11px] text-muted-ink">
-                <TierChip tier={t} />
-                <span>{t === 'full' ? 'Create, edit, delete' : t === 'edit' ? 'View and edit' : t === 'view' ? 'View only' : t === 'own' ? 'Own or assigned records' : 'No access'}</span>
-              </span>
-            ))}
-          </div>
-          <div className="overflow-x-auto">
-            <div className="min-w-[1020px]">
-              <div className={cx('grid', MATRIX_COLS_CLASS, 'gap-2.5 py-2.5 px-5 bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-[11px] font-semibold text-muted-ink')}>
-                <div>Module</div>
-                {MATRIX_COLS.map(c => <div key={c.label} title={c.title} className="text-center">{c.label}</div>)}
-              </div>
-              {MATRIX_MODULES.map(m => (
-                <div key={m.module} className={cx('grid', MATRIX_COLS_CLASS, 'gap-2.5 items-center py-[9px] px-5 [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]')}>
-                  <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-[13px] font-medium">{m.module}</span>
-                    <span className="text-[11px] text-muted-ink">{m.note}</span>
-                  </div>
-                  {MATRIX_COLS.map(c => (
-                    <div key={c.label} className="flex justify-center">
-                      <TierChip tier={cellTier(m.resources, c.roles)} />
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
-        </Card>
-      )}
+      {tab === 'permissions' && <PermissionsChart />}
 
       {/* --------------------------- Organisation tab -------------------------- */}
       {tab === 'org' && (

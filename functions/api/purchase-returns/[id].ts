@@ -1,6 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { toPretHeaderPayload, toPretLinePayload, type PretHeaderRow, type PretLineRow } from '../../_lib/purchase-returns';
 import { recomputePoStatus } from '../../_lib/goods-receipts';
 import { postStockMovement } from '../../_lib/stock-ops';
@@ -26,7 +25,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can change purchase returns.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change purchase returns.', 403);
 
   const id = String(params.id);
   const cur = await one<{ status: string; purchase_order_id: string | null; return_number: string; warehouse_id: string | null }>(env,

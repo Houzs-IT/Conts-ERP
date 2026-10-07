@@ -1,5 +1,5 @@
 import { type Env, one, json } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -28,7 +28,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Occupancy, ADR and RevPAR use the definitions in tokens.json / the brand guide.
   const kpis = [
     { key: 'occupancy', value: available ? ((nights / available) * 100).toFixed(1) : '0.0', unit: 'percent' },
-    ...(canSeeFinance(session.role) ? [
+    ...(session.manage ? [
       { key: 'accommodation_revenue', value: collected, currency: 'MYR' },
       { key: 'adr', value: nights ? Math.round(collected / nights) : 0, currency: 'MYR' },
       { key: 'revpar', value: available ? Math.round(collected / available) : 0, currency: 'MYR' },
