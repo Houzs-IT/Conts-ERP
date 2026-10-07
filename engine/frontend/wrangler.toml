@@ -1,0 +1,8 @@
+# The supply chain engine's screens, as Conts's own Pages project. Houzs's settings are kept beside this
+# file as wrangler.houzs.toml for reference only. /api/* is forwarded to the engine named here.
+name = "theconts-scm"
+compatibility_date = "2024-12-01"
+pages_build_output_dir = "./dist"
+
+[vars]
+API_ORIGIN = "https://conts-scm-engine-staging.conts-erp.workers.dev"

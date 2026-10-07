@@ -50,8 +50,10 @@ function useMediaQuery(query: string): boolean {
  *  main content is full-width on first load; a hamburger in a slim mobile header
  *  opens it. The desktop collapse/localStorage state is left untouched. */
 export default function AppShell({
-  path, navigate, children, action,
-}: { path: string; navigate: (p: string) => void; children: ReactNode; action?: { label: string; onClick: () => void } }) {
+  path, navigate, children, action, flush,
+}: { path: string; navigate: (p: string) => void; children: ReactNode; action?: { label: string; onClick: () => void };
+  /** The content fills the area edge to edge and scrolls itself (the supply chain engine's frame). */
+  flush?: boolean }) {
   const [navOpen, setNavOpen] = useState(readNavOpen);
   const toggleNav = () => setNavOpen(v => { const next = !v; persistNavOpen(next); return next; });
 
@@ -127,7 +129,7 @@ export default function AppShell({
           </div>
         )}
         <TopBar path={path} navigate={navigate} action={action} />
-        <main style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px 28px 40px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <main style={{ flex: 1, minHeight: 0, overflowY: flush ? 'hidden' : 'auto', padding: flush ? 0 : '24px 28px 40px', display: 'flex', flexDirection: 'column', gap: flush ? 0 : 20 }}>
           {children}
         </main>
       </div>

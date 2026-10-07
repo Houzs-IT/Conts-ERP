@@ -24,6 +24,9 @@ const CleanersPage = lazy(() => import('./pages/CleanersPage')); // added: house
 const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
 const TasksPage = lazy(() => import('./pages/TasksPage'));
 const InspectionsPage = lazy(() => import('./pages/InspectionsPage'));
+import SupplyChainEngine from './components/SupplyChainEngine';
+import { ENGINE_PATH } from './lib/scmEngine';
+import { useApi } from './lib/useApi';
 const PropertiesPage = lazy(() => import('./pages/PropertiesPage'));
 const UnitRecordPage = lazy(() => import('./pages/UnitRecordPage'));
 const InventoryPage = lazy(() => import('./pages/InventoryPage'));
@@ -98,9 +101,15 @@ const Fallback = () => null;
 function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+  // Supply chain destinations open the engine's screens where it is set up, the built-in ones elsewhere.
+  const enginePath = ENGINE_PATH[location.pathname];
+  const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
+  const viaEngine = !!enginePath && !!engine.data?.enabled;
   return (
-    <AppShell path={location.pathname} navigate={(p: string) => navigate(p)}>
-      <Suspense fallback={<Fallback />}><Outlet /></Suspense>
+    <AppShell path={location.pathname} navigate={(p: string) => navigate(p)} flush={viaEngine}>
+      {viaEngine ? <SupplyChainEngine enginePath={enginePath} />
+        : enginePath && !engine.data && engine.loading ? <Fallback />
+        : <Suspense fallback={<Fallback />}><Outlet /></Suspense>}
     </AppShell>
   );
 }

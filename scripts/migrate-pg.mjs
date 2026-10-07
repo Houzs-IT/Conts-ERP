@@ -7,7 +7,7 @@
 //
 // DATABASE_URL: admin connection (the `postgres` user) from the environment or the vars
 // file. POS_APP_PASSWORD: the password to give pos_app (needed on the first run and
-// whenever you want to rotate it). SAY WHICH DATABASE THIS IS BEFORE RUNNING IT.
+// whenever you want to rotate it). SCM_ENGINE_PASSWORD: the same for scm_engine, optional. SAY WHICH DATABASE THIS IS BEFORE RUNNING IT.
 // --env-file reads the URL straight from the file — no shell interpolation, so a
 // mis-escaped one-liner can't mangle the value or dump it into a crash message.
 // RE-RUN: safe. Applied files are checksummed and skipped; a changed file stops the run.
@@ -56,5 +56,10 @@ for (const filename of readdirSync('migrations-pg').filter((f) => f.endsWith('.s
 const pw = read('POS_APP_PASSWORD');
 if (!DRY && pw) { await sql.unsafe(`alter role pos_app password '${pw.replace(/'/g, "''")}'`); console.log('pos_app password set.'); }
 else if (!DRY) console.log('POS_APP_PASSWORD not given: pos_app password unchanged.');
+// The supply chain engine's role (migration 0047), set the same way and only when a password is given.
+const enginePw = read('SCM_ENGINE_PASSWORD');
+if (!DRY && enginePw && (await sql`select 1 from pg_roles where rolname = 'scm_engine'`).length) {
+  await sql.unsafe(`alter role scm_engine password '${enginePw.replace(/'/g, "''")}'`); console.log('scm_engine password set.');
+}
 console.log(pending === 0 ? 'Nothing to apply; the database is up to date.' : DRY ? `${pending} pending.` : `Applied ${pending}.`);
 await sql.end();

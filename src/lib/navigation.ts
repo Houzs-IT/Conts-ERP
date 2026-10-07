@@ -34,6 +34,20 @@ export const NAV: NavGroup[] = [
       { key: 'inventory', label: 'Inventory', path: '/properties/inventory', designed: true },
       { key: 'access', label: 'Access and keys', path: '/properties/access', designed: true },
     ] },
+    // Service cases and Projects sit here as they do in Houzs. They come from the supply chain engine and
+    // have no built-in screens, so they open only where the engine is set up (src/lib/scmEngine.ts).
+    { key: 'serviceCases', label: 'Service cases', icon: 'zap', children: [
+      { key: 'serviceCaseList', label: 'Service cases', path: '/service/cases', designed: true },
+      { key: 'serviceMetrics', label: 'Quality metrics', path: '/service/metrics', designed: true },
+      { key: 'serviceMaintenance', label: 'Service maintenance', path: '/service/maintenance', designed: true },
+      { key: 'myCases', label: 'My cases', path: '/service/my-cases', designed: true },
+    ] },
+    { key: 'projects', label: 'Projects', icon: 'folder-kanban', children: [
+      { key: 'projectList', label: 'Project list', path: '/projects/list', designed: true },
+      { key: 'projectCalendar', label: 'Calendar', path: '/projects/calendar', designed: true },
+      { key: 'projectFinances', label: 'Finances', path: '/projects/finances', designed: true },
+      { key: 'projectMaintenance', label: 'Project maintenance', path: '/projects/maintenance', designed: true },
+    ] },
   ] },
   // Supply Chain — mirrors Houzs's nav hierarchy: L1 group (Supply Chain) → L2 collapsible
   // sections (Procurement / Warehouse / Sales / Transportation / Furniture) → L3 pages.
@@ -81,9 +95,6 @@ export const NAV: NavGroup[] = [
       { key: 'stockTakes', label: 'Stock take', path: '/procurement/stock-takes', designed: true },
     ] },
     // Houzs keeps credit / debit notes under Finance › Money in; finance roles only.
-    { key: 'scFinance', label: 'Finance', icon: 'wallet', children: [
-      { key: 'creditNotes', label: 'Credit / debit notes', path: '/accounting/credit-notes', designed: true },
-    ] },
   ] },
   { label: 'FINANCE', items: [
     { key: 'finance', label: 'Finance', icon: 'wallet', badge: 'statements', children: [
@@ -121,15 +132,18 @@ export const NAV: NavGroup[] = [
  *  operations managers): keep the two in sync. */
 const DENY: Partial<Record<UserRole, string[]>> = {
   // salesInvoices / purchaseInvoices match MONEY_ONLY in functions/api/_middleware.ts.
-  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'health', 'scFinance', 'salesInvoices', 'purchaseInvoices'],
+  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'health', 'salesInvoices', 'purchaseInvoices'],
   finance_admin: ['operations', 'comms'],
   housekeeper: ['*'],
   technician: ['*'],
   owner: ['*'],
 };
 
-export function navFor(role: UserRole): NavGroup[] {
-  const deny = DENY[role] ?? [];
+/** Menu items whose screens exist only in the supply chain engine: hidden where it is not set up. */
+const ENGINE_ONLY = ['serviceCases', 'projects'];
+
+export function navFor(role: UserRole, engine = false): NavGroup[] {
+  const deny = [...(DENY[role] ?? []), ...(engine ? [] : ENGINE_ONLY)];
   if (deny.includes('*')) return [];
   return NAV
     .map(g => ({ ...g, items: g.items.filter(i => !deny.includes(i.key))
