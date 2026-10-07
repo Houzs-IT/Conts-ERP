@@ -102,9 +102,6 @@ export const NAV: NavGroup[] = [
       { key: 'expenses', label: 'Expenses', path: '/finance/expenses', designed: true },
       { key: 'statements', label: 'Owner statements', path: '/finance/statements', badge: 'statements', designed: true },
       { key: 'payouts', label: 'Payouts', path: '/finance/payouts', designed: true },
-      // Supply chain's credit and debit notes. Under Finance, as in Houzs, so the Supply chain section
-      // holds only its five groups (owner's manager, 7 Oct).
-      { key: 'creditNotes', label: 'Credit / debit notes', path: '/accounting/credit-notes', designed: true },
     ] },
     { key: 'owners', label: 'Owners', icon: 'users', children: [
       { key: 'ownerList', label: 'Owners', path: '/owners', designed: true },

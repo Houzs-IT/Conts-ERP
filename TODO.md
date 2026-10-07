@@ -66,3 +66,4 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## System health
 - System Health (feat/system-health): System > System health, laid out and shaped like the Hookka /admin/health page (banner, stat cards, audit feed with range and sensitive-only) so it can be moved between systems; `db`, `r2`, `counts` and the audit feed are the portable core, `checks` are Conts's own (email, Channex, booking notifications, sync queue, background jobs, problems). No migration. The separate Audit trail page is gone: the audit feed here opens each row to its before/after and pages up to 1000 events per range (/system/audit redirects; /api/audit stays for booking history). Tested: scripts/api-checks/system-health.mjs.
+- Credit / debit notes is out of the menu (owner, 7 Oct: add back if asked). The screen and its route /accounting/credit-notes still exist; restore by adding the item to navigation.ts.
