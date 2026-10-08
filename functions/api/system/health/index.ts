@@ -1,6 +1,5 @@
 import { type Env, all, one, json, fail, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
-import { MASTER_ROLES } from '../../../_lib/properties';
 import { channexConfigured, channexListWebhooks } from '../../../_lib/channex';
 import { SENSITIVE_SQL } from '../../../_lib/systemHealth';
 
@@ -30,7 +29,7 @@ const PROBLEM: Record<string, string> = {
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'System health is visible to management, finance and operations managers.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'System health is visible to management, finance and operations managers.', 403);
 
   const guarded = async (key: string, label: string, run: () => Promise<Omit<Check, 'key' | 'label'>>): Promise<Check> => {
     try { return { key, label, ...(await run()) }; }

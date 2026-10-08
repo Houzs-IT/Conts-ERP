@@ -1,5 +1,5 @@
 import { type Env, all, json, nowIso } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 
 /** GET /api/accounting — AP (what we owe suppliers, from purchase invoices) and AR (what
  *  customers owe us, from sales invoices), each summarised by party with outstanding + count.
@@ -9,7 +9,7 @@ import { requireSession, canSeeFinance } from '../../_lib/auth';
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) return json({ generatedAt: nowIso(), payables: [], receivables: [], apTotalSen: 0, arTotalSen: 0, restricted: true });
+  if (!session.manage) return json({ generatedAt: nowIso(), payables: [], receivables: [], apTotalSen: 0, arTotalSen: 0, restricted: true });
 
   const today = nowIso().slice(0, 10);
   const payables = await all<{ code: string; name: string; outstanding: number; invoices: number; overdue: number }>(env, `

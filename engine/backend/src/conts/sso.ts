@@ -7,9 +7,10 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { createSession, mintSessionPass } from "../services/auth";
+import { type ContsAccess, parseContsAccess, isFullEverywhere, hasAnyAccess, contsPermissions, contsRoleName, saveContsRoleAccess } from "./access";
 
 type ContsEnv = Env & { CONTS_SSO_SECRET?: string };
-interface Assertion { email: string; name: string; role: string; exp: number }
+interface Assertion { email: string; name: string; role: string; exp: number; access?: unknown }
 
 const MAX_AGE_MS = 60_000;
 const b64url = (bytes: ArrayBuffer | Uint8Array) =>
@@ -30,23 +31,29 @@ async function verify(secret: string, token: string): Promise<Assertion | null> 
   } catch { return null; }
 }
 
-/** Property OS roles that may use supply chain, and the engine role each gets. Management, finance and
- *  operations managers get the full-access role; operations staff get supply chain without the rest.
- *  Field roles and owners are refused by Property OS before it ever calls here, and again here. */
-const FULL = new Set(["management", "finance_admin", "operations_manager"]);
-const LIMITED = new Set(["operations_staff"]);
+/** The engine role for a Property OS role. Full in every area gets the full-access role, as before the
+ *  Permissions chart existed; anything less gets that role's own engine role, whose permission keys and
+ *  page access are rewritten from the chart at every sign-on. Field roles and owners never reach here:
+ *  Property OS refuses them, and they are refused again below. */
+const OFFICE = new Set(["management", "finance_admin", "operations_manager", "operations_staff"]);
 
-async function roleIdFor(env: Env, contsRole: string): Promise<number | null> {
-  if (FULL.has(contsRole)) {
+async function roleIdFor(env: Env, contsRole: string, access: ContsAccess): Promise<number | null> {
+  if (!OFFICE.has(contsRole) || !hasAnyAccess(access)) return null;
+  if (isFullEverywhere(access)) {
     const r = await env.DB.prepare(`SELECT id FROM roles WHERE permissions LIKE '%"*"%' ORDER BY id LIMIT 1`).first<{ id: number }>();
     return r?.id ?? null;
   }
-  if (!LIMITED.has(contsRole)) return null;
-  const found = await env.DB.prepare(`SELECT id FROM roles WHERE name = ?`).bind("Supply Chain").first<{ id: number }>();
-  if (found) return found.id;
-  await env.DB.prepare(`INSERT INTO roles (name, description, permissions, is_system, scope_to_pic) VALUES (?, ?, ?, 0, 0)`)
-    .bind("Supply Chain", "Supply chain screens, signed in from Property OS", JSON.stringify(["scm.access", "service_cases.read"])).run();
-  return (await env.DB.prepare(`SELECT id FROM roles WHERE name = ?`).bind("Supply Chain").first<{ id: number }>())?.id ?? null;
+  const name = contsRoleName(contsRole);
+  const permissions = JSON.stringify(contsPermissions(access));
+  const found = await env.DB.prepare(`SELECT id, permissions FROM roles WHERE name = ?`).bind(name).first<{ id: number; permissions: string }>();
+  if (!found) {
+    await env.DB.prepare(`INSERT INTO roles (name, description, permissions, is_system, scope_to_pic) VALUES (?, ?, ?, 0, 0)`)
+      .bind(name, "Set from the Permissions chart in Property OS", permissions).run();
+  } else if (found.permissions !== permissions) {
+    await env.DB.prepare(`UPDATE roles SET permissions = ? WHERE id = ?`).bind(permissions, found.id).run();
+  }
+  await saveContsRoleAccess(env, name, access);
+  return found?.id ?? (await env.DB.prepare(`SELECT id FROM roles WHERE name = ?`).bind(name).first<{ id: number }>())?.id ?? null;
 }
 
 const app = new Hono<{ Bindings: ContsEnv }>();
@@ -60,7 +67,9 @@ app.post("/", async (c) => {
   if (!a) return c.json({ error: "Sign-in could not be verified." }, 401);
 
   const email = a.email.toLowerCase().trim();
-  const roleId = await roleIdFor(c.env, a.role);
+  const access = parseContsAccess(a.access);
+  if (!access) return c.json({ error: "Sign-in did not say what this account may open." }, 401);
+  const roleId = await roleIdFor(c.env, a.role, access);
   if (!roleId) return c.json({ error: "This account does not have access to supply chain." }, 403);
 
   let user = await c.env.DB.prepare(`SELECT id, status, role_id FROM users WHERE email = ?`).bind(email).first<{ id: number; status: string; role_id: number }>();

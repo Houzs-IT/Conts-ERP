@@ -1,12 +1,12 @@
 import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 
 /** POST /api/statements/finalise { statementIds } — provisional → finalised. From then on the figures are frozen, owners can see them, and they can be sent.
  *  Anything not provisional is named in `failed` and left alone. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) return fail('FORBIDDEN', 'Only finance and management can finalise statements.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only finance and management can finalise statements.', 403);
 
   const b = await request.json<{ statementIds: string[] }>().catch(() => null);
   if (!Array.isArray(b?.statementIds) || !b.statementIds.length || b.statementIds.length > 200) return fail('VALIDATION', 'Select at least one statement.', 422);

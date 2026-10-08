@@ -1,11 +1,11 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
-import { requireSession, canSeeFinance } from '../../../../_lib/auth';
+import { requireSession } from '../../../../_lib/auth';
 
 /** POST /api/maintenance/issues/:id/complete { finalAmount } — closes the job, puts a blocked unit back on sale and raises the expense. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role) && session.role !== 'operations_manager') return fail('FORBIDDEN', 'Only operations managers, finance and management can close a job.', 403);
+  if (!session.manage && session.role !== 'operations_manager') return fail('FORBIDDEN', 'Only operations managers, finance and management can close a job.', 403);
 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);

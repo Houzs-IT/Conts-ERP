@@ -1,5 +1,5 @@
 import { type Env, all, json } from '../../_lib/db';
-import { requireSession, canSeeFinance, isFieldRole } from '../../_lib/auth';
+import { requireSession, isFieldRole } from '../../_lib/auth';
 
 /** GET /api/search?q= — the palette behind the top bar. Empty query returns a few recent units. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -30,7 +30,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ORDER BY r.check_in DESC LIMIT 4`, like);
   for (const r of bookings) out.push({ id: r.id, kind: 'reservation', label: `${r.full_name ?? 'Reservation'} · ${r.check_in}`, sub: `Reservation · ${r.property_name} ${r.unit_number} · ${String(r.state).replace('_', ' ')}`, target: '/reservations/bookings' });
 
-  if (canSeeFinance(session.role) || session.role === 'operations_manager') {
+  if (session.manage || session.role === 'operations_manager') {
     const owners = await all<any>(env, `SELECT id, display_name, email FROM owners WHERE lower(display_name || ' ' || email) LIKE ? ORDER BY display_name LIMIT 4`, like);
     for (const o of owners) out.push({ id: o.id, kind: 'owner', label: o.display_name, sub: `Owner · ${o.email}`, target: '/owners' });
   }

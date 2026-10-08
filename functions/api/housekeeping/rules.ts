@@ -1,3 +1,4 @@
+import { mayRun } from '../../_lib/access';
 import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 
@@ -31,7 +32,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!['management', 'operations_manager'].includes(session.role)) return fail('FORBIDDEN', 'Only operations managers and management can change the rules.', 403);
+  if (!mayRun(session, ['management', 'operations_manager'])) return fail('FORBIDDEN', 'Only operations managers and management can change the rules.', 403);
 
   const b = await request.json<any>().catch(() => null);
   const writes: [string, string][] = [];

@@ -1,5 +1,5 @@
 import { type Env, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 import { syncRateIfLinked, syncRestrictionsIfLinked } from '../../_lib/channexSync';
 
 const CHANNELS = ['web', 'airbnb', 'booking_com', 'agoda'];
@@ -18,7 +18,7 @@ interface Line { from: string; to: string; baseRate?: number; minStay?: number |
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role) && session.role !== 'operations_manager') return fail('FORBIDDEN', 'Only finance, operations managers and management can set rates.', 403);
+  if (!session.manage && session.role !== 'operations_manager') return fail('FORBIDDEN', 'Only finance, operations managers and management can set rates.', 403);
 
   const b = await request.json<any>().catch(() => null);
   const channels: string[] = Array.isArray(b?.channels) ? b.channels.map((c: string) => (c === 'direct' ? 'web' : c)) : [];

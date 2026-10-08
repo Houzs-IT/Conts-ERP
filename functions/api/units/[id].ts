@@ -1,13 +1,13 @@
 import { type Env, one, run, json, fail, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES, invalidUnit, saveExpenses, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
+import { invalidUnit, saveExpenses, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
 
 /** PATCH /api/units/:id — the Properties screen's Save. Sends the whole unit; only what is present is changed.
  *  Owner name, ID number and bank details belong to the owner, so they change for every unit that owner has. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit units.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit units.', 403);
 
   const id = String(params.id);
   const b = await request.json<UnitInput>().catch(() => null);

@@ -1,6 +1,5 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { deriveStatus, isTimeSlot } from '../../_lib/delivery-schedule';
 import { strOrNull, intOrNull } from '../../_lib/scm-util';
 
@@ -9,7 +8,7 @@ interface Cur { status: string; planned_date: string | null; driver_id: string |
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can change the schedule.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change the schedule.', 403);
   const id = String(params.id);
   const cur = await one<Cur>(env, 'SELECT status, planned_date, driver_id FROM delivery_schedule WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That schedule entry does not exist.', 404);
@@ -61,7 +60,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can remove a schedule entry.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can remove a schedule entry.', 403);
   const id = String(params.id);
   const cur = await one<{ so_doc_no: string }>(env, 'SELECT so_doc_no FROM delivery_schedule WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That schedule entry does not exist.', 404);

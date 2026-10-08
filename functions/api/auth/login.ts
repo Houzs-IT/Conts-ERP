@@ -1,3 +1,4 @@
+import { levelsFor } from '../../_lib/access';
 import { type Env, one, run, json, fail, nowIso } from '../../_lib/db';
 import { signSession, cookie, verifyPassword, sessionLimits, securitySettings } from '../../_lib/auth';
 import { doorFor, doorRefusal, HOME } from '../../_lib/door';
@@ -50,6 +51,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     user: {
       id: user.id, fullName: user.full_name, email: user.email, role: user.role,
       mustChangePassword: !!user.must_change_password, locale: 'en-MY',
+      access: await levelsFor(env, user.role),
     },
     home: user.must_change_password ? '/change-password' : (HOME[user.role] ?? '/'),
   }, 200, { 'set-cookie': cookie(request, token, ttlHours * 3600) });

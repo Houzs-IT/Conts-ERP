@@ -1,6 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { isCnStatus, normalizeCnLines, toCnHeaderPayload, type CnHeaderRow } from '../../_lib/consignment-notes';
 import { strOrNull, genId } from '../../_lib/scm-util';
 
@@ -22,7 +21,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can raise consignment notes.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can raise consignment notes.', 403);
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const consigneeName = String(b.consigneeName ?? '').trim();
   if (!consigneeName) return fail('VALIDATION', 'Enter a consignee name.', 422, { consigneeName: 'Enter a consignee name.' });

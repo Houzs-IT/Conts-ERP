@@ -1,12 +1,12 @@
 import { type Env, all, json, fail, nowIso } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 import { LOCKED_SQL } from '../../_lib/expenses';
 
 /** GET /api/finance/expenses?category=&unitId=&from=&to= — every expense; `locked` is true once its statement is final. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) return fail('FORBIDDEN', 'Expenses are visible to finance and management roles.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Expenses are visible to finance and management roles.', 403);
 
   const url = new URL(request.url);
   const category = url.searchParams.get('category'), unitId = url.searchParams.get('unitId');

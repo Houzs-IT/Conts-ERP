@@ -1,12 +1,11 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { strOrNull, intOrNull, flag } from '../../_lib/scm-util';
 
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit vehicles.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can edit vehicles.', 403);
   const id = String(params.id);
   if (!await one(env, 'SELECT 1 AS x FROM vehicles WHERE id = ?', id)) return fail('NOT_FOUND', 'That vehicle does not exist.', 404);
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
@@ -27,7 +26,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete vehicles.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can delete vehicles.', 403);
   const id = String(params.id);
   const cur = await one<{ code: string }>(env, 'SELECT code FROM vehicles WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That vehicle does not exist.', 404);

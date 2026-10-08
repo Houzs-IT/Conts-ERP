@@ -1,3 +1,4 @@
+import { mayWork } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 
@@ -42,7 +43,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MANAGE.includes(session.role)) return fail('FORBIDDEN', 'Only operations can change the roster.', 403);
+  if (!mayWork(session, MANAGE)) return fail('FORBIDDEN', 'Only operations can change the roster.', 403);
 
   const b = await request.json<any>().catch(() => null);
   const name = typeof b?.name === 'string' ? b.name.trim() : '';

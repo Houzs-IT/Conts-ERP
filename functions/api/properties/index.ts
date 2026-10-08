@@ -1,6 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 
 const area = (city: string, postcode: string | null) => (postcode ? `${city}, ${postcode}` : city);
 
@@ -8,9 +7,9 @@ const area = (city: string, postcode: string | null) => (postcode ? `${city}, ${
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role) && session.role !== 'operations_staff') return fail('FORBIDDEN', 'Property records are visible to operations and finance roles.', 403);
+  if (!session.manage && session.role !== 'operations_staff') return fail('FORBIDDEN', 'Property records are visible to operations and finance roles.', 403);
   // Owner identity and bank numbers are shown only to roles that manage them.
-  const banking = MASTER_ROLES.includes(session.role);
+  const banking = session.manage;
 
   const buildings = await all<any>(env, 'SELECT id, name, city, state, postcode FROM properties ORDER BY state, name');
   const units = await all<any>(env, `
@@ -48,7 +47,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can add buildings.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can add buildings.', 403);
 
   const b = await request.json<any>().catch(() => null);
   if (!b?.name?.trim()) return fail('VALIDATION', 'Enter the building name.', 422, { name: 'Enter the building name.' });

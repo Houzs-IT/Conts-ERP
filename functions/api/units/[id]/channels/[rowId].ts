@@ -1,6 +1,5 @@
 import { type Env, one, run, json, fail, audit } from '../../../../_lib/db';
 import { requireSession } from '../../../../_lib/auth';
-import { MASTER_ROLES } from '../../../../_lib/properties';
 import { channexDeactivateChannel, channexDeleteChannel, channexDeleteMapping } from '../../../../_lib/channex';
 import { OTA_LABEL, type Ota } from '../../../../_lib/channexChannels';
 
@@ -10,7 +9,7 @@ import { OTA_LABEL, type Ota } from '../../../../_lib/channexChannels';
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can change channel connections.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change channel connections.', 403);
 
   const row = await one<{ id: string; ota: Ota; channex_channel_id: string; channex_mapping_id: string | null; external_id: string }>(env,
     'SELECT id, ota, channex_channel_id, channex_mapping_id, external_id FROM channex_channels WHERE id = ? AND unit_id = ?', String(params.rowId), String(params.id));

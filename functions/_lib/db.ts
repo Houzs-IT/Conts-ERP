@@ -20,6 +20,9 @@ export interface Env {
   SCM_ENGINE_API?: string;
   SCM_ENGINE_SITE?: string;
   SCM_ENGINE_SSO_SECRET?: string;
+  /** "staging" on the preview environment only: lets management view the system as another account
+   *  (functions/api/auth/view-as.ts). Never set on production. */
+  VIEW_AS?: string;
 }
 
 // count(*) and sum() come back from Postgres as strings (int8 / numeric). The API

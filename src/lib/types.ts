@@ -32,7 +32,11 @@ export interface SessionUser {
   mustChangePassword: boolean;
   locale: string;
   permissions: string[];
+  /** Each area's level for this person's role (Users and roles > Permissions). Absent on an older session. */
+  access?: Record<string, AccessLevel>;
 }
+
+export type AccessLevel = 'none' | 'view' | 'edit' | 'full';
 
 export interface Money {
   /** Integer sen. RM 12,450.00 === 1245000. Never a float. */

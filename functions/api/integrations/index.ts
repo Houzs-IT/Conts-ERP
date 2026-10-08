@@ -1,3 +1,4 @@
+import { mayRun } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { channexConfigured } from '../../_lib/channex';
@@ -53,7 +54,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MANAGE.includes(session.role)) {
+  if (!mayRun(session, MANAGE)) {
     return fail('FORBIDDEN', 'You can see connection status but cannot change it. Ask an operations manager.', 403);
   }
 

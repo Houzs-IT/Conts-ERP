@@ -1,5 +1,5 @@
 import { type Env, all, one, json } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 
 const KL_TODAY = `to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')`;
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuala_Lumpur' });
@@ -54,14 +54,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       unitId: b.unit_id, unitLabel: label, owner: { id: b.owner_id, name: b.owner_name },
       reason: b.title,
       datesBlocked: from && to ? `${day(from)} – ${day(to)}` : 'Dates not set',
-      revenueAtRisk: canSeeFinance(session.role) ? Number(b.base_rate) * nights : undefined,
+      revenueAtRisk: session.manage ? Number(b.base_rate) * nights : undefined,
       expectedReturn: to ? day(to) : undefined,
     });
   }
 
   // 3. Finalised statements waiting to go out.
   const stmts = await one<{ n: number }>(env, `SELECT COUNT(*) AS n FROM owner_statements WHERE state = 'finalised'`);
-  if (canSeeFinance(session.role) && Number(stmts?.n) > 0) {
+  if (session.manage && Number(stmts?.n) > 0) {
     const n = Number(stmts!.n);
     out.push({
       id: 'statements-ready', tone: 'info',

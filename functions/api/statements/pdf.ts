@@ -1,5 +1,5 @@
 import { type Env, one, all, fail } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 
 /**
  * GET /api/statements/pdf?id=…
@@ -32,7 +32,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (session.role === 'owner' && s.state === 'provisional') {
     return fail('NOT_FINAL', 'This statement is not final yet.', 403);
   }
-  if (!canSeeFinance(session.role) && session.role !== 'owner') {
+  if (!session.manage && session.role !== 'owner') {
     return fail('FORBIDDEN', 'Statements are available to finance, management and the owner.', 403);
   }
 

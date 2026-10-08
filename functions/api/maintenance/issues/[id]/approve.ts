@@ -1,5 +1,5 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
-import { requireSession, canSeeFinance } from '../../../../_lib/auth';
+import { requireSession } from '../../../../_lib/auth';
 
 /** POST /api/maintenance/issues/:id/approve { approved, quotedAmount }
  *  The owner's decision. The quote is echoed back so nobody approves a figure that changed after they saw it. */
@@ -17,7 +17,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!issue) return fail('NOT_FOUND', 'That request no longer exists.', 404);
 
   if (session.role === 'owner' && issue.owner_user !== session.userId) return fail('FORBIDDEN', 'This request belongs to another owner.', 403);
-  if (session.role !== 'owner' && !canSeeFinance(session.role)) return fail('FORBIDDEN', 'Only the owner or a finance or management role can decide on a quote.', 403);
+  if (session.role !== 'owner' && !session.manage) return fail('FORBIDDEN', 'Only the owner or a finance or management role can decide on a quote.', 403);
   if (issue.owner_approved_at || issue.state === 'resolved') return fail('ALREADY_DECIDED', 'This quote was already approved.', 409);
   if (!issue.owner_approval_required) return fail('NOT_APPLICABLE', 'This work does not need approval.', 422);
   if (issue.quoted_amount !== b.quotedAmount) return fail('QUOTE_CHANGED', 'This quote changed since you last saw it. Review the new amount before approving.', 409);

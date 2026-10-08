@@ -1,3 +1,4 @@
+import { mayWork } from '../../../_lib/access';
 import { type Env, one, json, fail, audit } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { notify } from '../../../_lib/notify';
@@ -6,7 +7,7 @@ import { notify } from '../../../_lib/notify';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!['management', 'operations_manager', 'operations_staff'].includes(session.role)) return fail('FORBIDDEN', 'Only operations can notify owners.', 403);
+  if (!mayWork(session, ['management', 'operations_manager', 'operations_staff'])) return fail('FORBIDDEN', 'Only operations can notify owners.', 403);
 
   const id = String(params.id);
   const owner = await one<{ display_name: string; email: string }>(env, 'SELECT display_name, email FROM owners WHERE id = ?', id);

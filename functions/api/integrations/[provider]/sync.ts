@@ -1,3 +1,4 @@
+import { mayWork } from '../../../_lib/access';
 import { type Env, one, fail, json, audit } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { channexConfigured } from '../../../_lib/channex';
@@ -12,7 +13,7 @@ const CHANNEX_PROVIDERS = ['airbnb', 'booking_com', 'agoda'];
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!['management', 'operations_manager', 'operations_staff'].includes(session.role)) return fail('FORBIDDEN', 'You cannot start a channel sync.', 403);
+  if (!mayWork(session, ['management', 'operations_manager', 'operations_staff'])) return fail('FORBIDDEN', 'You cannot start a channel sync.', 403);
 
   const provider = String(params.provider);
   const row = await one<{ id: string }>(env, 'SELECT id FROM integrations WHERE provider = ?', provider);

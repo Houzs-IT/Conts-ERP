@@ -1,12 +1,12 @@
 import { type Env, one, run, json, fail, audit } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 import { invalidContract, normalise } from '../../_lib/contracts';
 
 /** PATCH /api/contracts/:id — changes the terms. Statements already finalised keep the fee they were made with. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) return fail('FORBIDDEN', 'Finance or management access is required.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Finance or management access is required.', 403);
 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);

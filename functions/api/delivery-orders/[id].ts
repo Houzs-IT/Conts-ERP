@@ -1,6 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { nextDoStatus, maybeMarkSoDelivered, toDoHeaderPayload, toDoLinePayload, type DoHeaderRow, type DoLineRow } from '../../_lib/delivery-orders';
 import { postStockMovement } from '../../_lib/stock-ops';
 
@@ -25,7 +24,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can change delivery orders.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change delivery orders.', 403);
 
   const id = String(params.id);
   const cur = await one<{ status: string; sales_order_id: string | null; warehouse_id: string | null; do_number: string }>(env, 'SELECT status, sales_order_id, warehouse_id, do_number FROM delivery_orders WHERE id = ?', id);

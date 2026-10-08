@@ -1,6 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { isPoStatus, normalizeLines, computeTotals, toPoHeaderPayload, type PoHeaderRow } from '../../_lib/purchase-orders';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
@@ -44,7 +43,7 @@ async function nextPoNumber(env: Env): Promise<string> {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can raise purchase orders.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can raise purchase orders.', 403);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const supplierId = String(b.supplierId ?? '').trim();

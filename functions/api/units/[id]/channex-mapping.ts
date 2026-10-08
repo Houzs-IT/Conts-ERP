@@ -1,6 +1,5 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
-import { MASTER_ROLES } from '../../../_lib/properties';
 
 /** PATCH /api/units/:id/channex-mapping
  *    { channexPropertyId, channexRoomTypeId, channexRatePlanId } — link the unit to a Channex listing.
@@ -9,7 +8,7 @@ import { MASTER_ROLES } from '../../../_lib/properties';
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can change channel connections.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change channel connections.', 403);
 
   const id = String(params.id);
   const unit = await one<{ id: string }>(env, 'SELECT id FROM units WHERE id = ?', id);

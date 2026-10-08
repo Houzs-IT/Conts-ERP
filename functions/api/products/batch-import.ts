@@ -1,6 +1,5 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { isCategory, strOrNull, intOrNull } from '../../_lib/products';
 
 /** POST /api/products/batch-import { rows: [...] } — upsert products by code.
@@ -9,7 +8,7 @@ import { isCategory, strOrNull, intOrNull } from '../../_lib/products';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can import products.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can import products.', 403);
 
   const b = await request.json<{ rows?: unknown }>().catch(() => null);
   const rows = Array.isArray(b?.rows) ? (b!.rows as Record<string, unknown>[]) : [];

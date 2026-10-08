@@ -1,5 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { refOf } from '../../_lib/ops';
 
@@ -10,7 +10,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
 
   const ownerScoped = session.role === 'owner';
-  if (!canSeeFinance(session.role) && !ownerScoped) {
+  if (!session.manage && !ownerScoped) {
     return fail('FORBIDDEN', 'Payouts are visible to finance and management roles.', 403);
   }
 
@@ -38,7 +38,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) {
+  if (!session.manage) {
     return fail('FORBIDDEN', 'You can view payouts but cannot create them. Ask a Finance Admin for access.', 403);
   }
 
@@ -82,7 +82,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) return fail('FORBIDDEN', 'Finance access is required.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Finance access is required.', 403);
 
   const b = await request.json<{ id: string; state: string; failureReason?: string }>().catch(() => null);
   const { id, state, failureReason } = b ?? ({} as { id: string; state: string; failureReason?: string });

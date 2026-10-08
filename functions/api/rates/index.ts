@@ -1,5 +1,5 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 import { syncRateIfLinked } from '../../_lib/channexSync';
 import { queueFullSync } from '../../_lib/channexQueue';
 import type { SalesChannel } from '../../_lib/channelPrice';
@@ -18,7 +18,7 @@ const whole = (v: unknown) => Number.isInteger(v) && (v as number) >= 0;
 export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role) && session.role !== 'operations_manager') return fail('FORBIDDEN', 'Only finance, operations managers and management can set rates.', 403);
+  if (!session.manage && session.role !== 'operations_manager') return fail('FORBIDDEN', 'Only finance, operations managers and management can set rates.', 403);
 
   const b = await request.json<any>().catch(() => null);
   if (!b?.unitId) return fail('VALIDATION', 'Say which unit.', 422);

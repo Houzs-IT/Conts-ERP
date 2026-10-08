@@ -1,6 +1,6 @@
 import { type Env, all, one, run, json, fail, nowIso } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
-import { MASTER_ROLES, invalidUnit, ownerFor, saveExpenses, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
+import { requireSession } from '../../_lib/auth';
+import { invalidUnit, ownerFor, saveExpenses, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
 
 /** GET /api/units?propertyId=&readiness= — the unit list (also the roster behind every unit picker). */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -40,7 +40,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       bedrooms: r.bedrooms, bathrooms: r.bathrooms, maxGuests: r.max_guests,
       isListed: !!r.is_listed,
       // baseRate is integer sen. Field roles never receive money at all.
-      ...(canSeeFinance(session.role) ? { baseRate: r.base_rate } : {}),
+      ...(session.manage ? { baseRate: r.base_rate } : {}),
     })),
   });
 };
@@ -49,7 +49,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can add units.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can add units.', 403);
 
   const b = await request.json<UnitInput & { id?: string }>().catch(() => null);
   if (!b?.buildingId) return fail('VALIDATION', 'Pick a building.', 422, { buildingId: 'Pick a building.' });

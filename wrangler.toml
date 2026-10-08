@@ -90,6 +90,9 @@ RESET_TOKEN_MINUTES = "60"
 QUIET_HOURS_START = "22"
 QUIET_HOURS_END = "8"
 CHANNEX_BASE_URL = "https://staging.channex.io"
+# Staging only: management can view the system as another account (functions/api/auth/view-as.ts).
+# Do not add this to the production [vars] above.
+VIEW_AS = "staging"
 # The supply chain engine on staging (engine/). The shared secret is SCM_ENGINE_SSO_SECRET, set as a secret.
 SCM_ENGINE_API = "https://conts-scm-engine-staging.conts-erp.workers.dev"
 SCM_ENGINE_SITE = "https://theconts-scm.pages.dev"

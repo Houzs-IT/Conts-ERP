@@ -1,5 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, canSeeFinance, isFieldRole } from '../../_lib/auth';
+import { requireSession, isFieldRole } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { resolveUnit } from '../../_lib/ops';
 
@@ -24,7 +24,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     WHERE 1 = 1 ${state ? 'AND m.state = ?' : ''}
     ORDER BY m.reported_at DESC`, ...(state ? [state] : []));
 
-  const money = canSeeFinance(session.role) || session.role === 'operations_manager';
+  const money = session.manage || session.role === 'operations_manager';
   return json({
     generatedAt: nowIso(),
     data: rows.map(r => ({

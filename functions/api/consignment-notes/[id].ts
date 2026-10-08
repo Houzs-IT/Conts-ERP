@@ -1,6 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { toCnHeaderPayload, toCnLinePayload, type CnHeaderRow, type CnLineRow } from '../../_lib/consignment-notes';
 import { intOrNull } from '../../_lib/scm-util';
 
@@ -20,7 +19,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can change consignment notes.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change consignment notes.', 403);
   const id = String(params.id);
   const cur = await one<{ status: string }>(env, 'SELECT status FROM consignment_notes WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That consignment note does not exist.', 404);

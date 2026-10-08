@@ -1,5 +1,6 @@
+import { maySee } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 import { type ContractInput, normalise, invalidContract } from '../../_lib/contracts';
 
 const READ_ROLES = ['management', 'operations_manager', 'operations_staff', 'finance_admin'];
@@ -9,7 +10,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   const ownerScoped = session.role === 'owner';
-  if (!READ_ROLES.includes(session.role) && !ownerScoped) return fail('FORBIDDEN', 'Contracts are visible to operations, finance and management.', 403);
+  if (!maySee(session, READ_ROLES) && !ownerScoped) return fail('FORBIDDEN', 'Contracts are visible to operations, finance and management.', 403);
 
   const rows = await all<any>(env, `
     SELECT c.*, o.display_name,
@@ -41,7 +42,7 @@ async function findOwner(env: Env, b: ContractInput): Promise<{ id: string } | '
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) return fail('FORBIDDEN', 'Finance or management access is required.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Finance or management access is required.', 403);
 
   const b = await request.json<ContractInput>().catch(() => null);
   if (!b) return fail('VALIDATION', 'Check the contract details.', 422);

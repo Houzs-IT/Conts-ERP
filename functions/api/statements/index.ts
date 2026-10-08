@@ -1,12 +1,12 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
 
   const ownerScoped = session.role === 'owner';
-  if (!canSeeFinance(session.role) && !ownerScoped) {
+  if (!session.manage && !ownerScoped) {
     return fail('FORBIDDEN', 'Statements are visible to finance and management roles.', 403);
   }
 

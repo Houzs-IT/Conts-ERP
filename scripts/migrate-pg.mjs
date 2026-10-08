@@ -3,6 +3,7 @@
 //
 //   node scripts/migrate-pg.mjs --dry-run                    show the target and what is pending (.dev.vars)
 //   node scripts/migrate-pg.mjs --env-file=.dev.vars.production --dry-run
+//   node scripts/migrate-pg.mjs --only=0049,0050              apply only those files, leave the rest pending
 //   node scripts/migrate-pg.mjs --env-file=.dev.vars.production   apply
 //
 // DATABASE_URL: admin connection (the `postgres` user) from the environment or the vars
@@ -16,6 +17,9 @@ import { createHash } from 'node:crypto';
 import postgres from 'postgres';
 
 const DRY = process.argv.includes('--dry-run');
+// --only=0049,0050 applies just the files starting with those numbers and leaves the other pending ones
+// pending: for a change that must reach an environment before an earlier, larger one is due there.
+const ONLY = process.argv.find((a) => a.startsWith('--only='))?.slice('--only='.length).split(',').filter(Boolean) ?? null;
 const envFile = process.argv.find((a) => a.startsWith('--env-file='))?.slice('--env-file='.length) ?? '.dev.vars';
 const vars = (() => { try { return readFileSync(envFile, 'utf8'); } catch { return ''; } })();
 const read = (n) => process.env[n] ?? vars.match(new RegExp(`^${n}="([^"]+)"`, 'm'))?.[1];
@@ -44,6 +48,7 @@ for (const filename of readdirSync('migrations-pg').filter((f) => f.endsWith('.s
   const seen = applied.get(filename);
   if (seen && seen !== checksum) { console.error(`${filename} was edited after it ran. Add a new migration instead.`); await sql.end(); process.exit(1); }
   if (seen) continue;
+  if (ONLY && !ONLY.some((n) => filename.startsWith(n))) { console.log(`left pending: ${filename}`); continue; }
   pending++;
   if (DRY) { console.log(`pending: ${filename}`); continue; }
   console.log(`applying: ${filename}`);

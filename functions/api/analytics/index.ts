@@ -1,5 +1,5 @@
 import { type Env, all, json, fail } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 import { monthsBack, daysIn, todayMyt } from '../../_lib/ops';
 
 const RANGES = ['3m', '12m', 'ytd'];
@@ -22,7 +22,7 @@ const pointDelta = (now: number, before: number): Delta => {
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) return fail('FORBIDDEN', 'Analytics are visible to finance and management roles.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Analytics are visible to finance and management roles.', 403);
 
   const range = new URL(request.url).searchParams.get('range') ?? '12m';
   if (!RANGES.includes(range)) return fail('VALIDATION', 'Range must be 3m, 12m or ytd.', 422);

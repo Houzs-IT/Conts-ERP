@@ -1,3 +1,4 @@
+import { mayRun } from '../../_lib/access';
 import { type Env, one, json, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 
@@ -8,7 +9,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (new URL(request.url).searchParams.get('reveal') !== 'true') return fail('VALIDATION', 'Ask for a reveal explicitly.', 422);
-  if (!REVEAL_ROLES.includes(session.role)) return fail('FORBIDDEN', 'You can see the access instruction but not the raw code. Ask an operations manager.', 403);
+  if (!mayRun(session, REVEAL_ROLES)) return fail('FORBIDDEN', 'You can see the access instruction but not the raw code. Ask an operations manager.', 403);
 
   const id = String(params.id);
   const row = await one<any>(env, `

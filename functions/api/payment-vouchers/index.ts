@@ -1,6 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MASTER_ROLES } from '../../_lib/properties';
 import { nextVoucherNumber, toPvHeaderPayload, PV_METHODS, type PvHeaderRow } from '../../_lib/payment-vouchers';
 import { recomputePiStatus } from '../../_lib/purchase-invoices';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
@@ -33,7 +32,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MASTER_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can record payments.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can record payments.', 403);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const supplierId = String(b.supplierId ?? '').trim();

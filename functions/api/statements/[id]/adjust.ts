@@ -1,5 +1,5 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
-import { requireSession, canSeeFinance } from '../../../_lib/auth';
+import { requireSession } from '../../../_lib/auth';
 
 /** POST /api/statements/:id/adjust { label, amount }
  *  Records a manual adjustment line on a statement and rebalances the net payout.
@@ -15,7 +15,7 @@ import { requireSession, canSeeFinance } from '../../../_lib/auth';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) return fail('FORBIDDEN', 'You can view statements but cannot adjust them. Ask a Finance Admin for access.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'You can view statements but cannot adjust them. Ask a Finance Admin for access.', 403);
 
   const id = String(params.id);
   const b = await request.json<{ label?: string; amount?: number }>().catch(() => null);

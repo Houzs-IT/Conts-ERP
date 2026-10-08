@@ -1,5 +1,6 @@
 import { type Env, one, json, fail } from '../../_lib/db';
 import { readSession, readCookie } from '../../_lib/auth';
+import { levelsFor } from '../../_lib/access';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const s = await readSession(env.SESSION_SECRET, readCookie(request));
@@ -13,6 +14,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     user: {
       id: user.id, fullName: user.full_name, email: user.email, role: user.role,
       mustChangePassword: !!user.must_change_password, locale: user.locale,
+      access: await levelsFor(env, user.role),
     },
   });
 };

@@ -1,5 +1,5 @@
 import { type Env, all, fail, audit } from '../../_lib/db';
-import { requireSession, canSeeFinance } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
 
 const q = (v: string | number | null) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 
@@ -7,7 +7,7 @@ const q = (v: string | number | null) => `"${String(v ?? '').replace(/"/g, '""')
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!canSeeFinance(session.role)) return fail('FORBIDDEN', 'Expense reports are for finance and management roles.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Expense reports are for finance and management roles.', 403);
 
   const url = new URL(request.url);
   const unitId = url.searchParams.get('unitId') || null, period = url.searchParams.get('period') || null;
