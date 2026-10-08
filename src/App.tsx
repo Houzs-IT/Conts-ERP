@@ -77,6 +77,8 @@ const StockTakesPage = lazy(() => import('./pages/StockTakesPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
 const StatementsPage = lazy(() => import('./pages/StatementsPage'));
+const StatementDetailPage = lazy(() => import('./pages/StatementDetailPage'));
+const OwnerIncomeReportPage = lazy(() => import('./pages/OwnerIncomeReportPage'));
 const PayoutsPage = lazy(() => import('./pages/PayoutsPage'));
 const OwnersPage = lazy(() => import('./pages/OwnersPage'));
 const OwnerProfilePage = lazy(() => import('./pages/OwnerProfilePage'));
@@ -172,6 +174,8 @@ function Routed() {
 
   return (
     <Routes>
+      {/* The Owner Income Report prints on its own: no app shell around it. */}
+      <Route path="/finance/statements/:id/report" element={<Suspense fallback={<Fallback />}><OwnerIncomeReportPage /></Suspense>} />
       <Route element={<AppLayout />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/portfolio" element={<PortfolioPage />} />
@@ -243,6 +247,7 @@ function Routed() {
         <Route path="/finance/revenue" element={<AnalyticsPage />} />
         <Route path="/finance/expenses" element={<ExpensesPage />} />
         <Route path="/finance/statements" element={<StatementsPage />} />
+        <Route path="/finance/statements/:id" element={<StatementDetailPage />} />
         <Route path="/finance/payouts" element={<PayoutsPage />} />
         <Route path="/owners" element={<OwnersPage />} />
         <Route path="/owners/:id" element={<OwnerProfileRoute />} />

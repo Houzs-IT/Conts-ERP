@@ -219,12 +219,12 @@ export default function HostPlatformImportPage() {
         action={wbCleaning && <Button variant="primary" loading={runs.workbook_cleaning?.busy} disabled={!wbCleaning.cleanings.length} disabledReason="No cleaning records."
           onClick={() => send('workbook_cleaning', chunks(wb![WORKBOOK_SHEETS.cleaning]), { prices: wb![WORKBOOK_SHEETS.cleaningPrices] })}>Import {n(wbCleaning.cleanings.length)} cleans</Button>} />
 
-      <Step no={6} title="Owner workbook: utilities and charges" hint="Sheets 水费, 电费, 网络费, INDAH WATER and 杂费扣款. Each month's bill becomes an expense dated the 1st of that month. Negative 杂费扣款 lines are money back to the owner and become owner credits." run={runs.workbook_expenses}
+      <Step no={6} title="Owner workbook: utilities and charges" hint="Sheets 水费, 电费, 网络费, INDAH WATER and 杂费扣款. Each month's bill becomes an expense dated the 1st of that month. 杂费扣款 'Additional Deduction' lines are costs taken off before the split; 'O2' lines are owner adjustments added to the payout after the split, sign as written." run={runs.workbook_expenses}
         waitFor={!wb ? 'Choose the workbook in step 2.' : null}
         preview={wbExpenses && (
           <Stats items={[
             ['Expenses', n(wbExpenses.expenses.length)], ['Total', rm(wbExpenses.expenses.reduce((s, e) => s + e.amount, 0))],
-            ['Owner credits', n(wbExpenses.credits.length)], ['Credited back', rm(wbExpenses.credits.reduce((s, c) => s + c.amount, 0))],
+            ['Owner adjustments', n(wbExpenses.credits.length)], ['Net to owners', rm(wbExpenses.credits.reduce((s, c) => s + c.amount, 0))],
             ...Object.entries(tally(wbExpenses.expenses, e => e.category)).map(([k, v]) => [k[0].toUpperCase() + k.slice(1), n(v)] as [string, string]),
             ['Skipped', n(wbExpenses.skipped.length)],
           ]} errors={wbExpenses.errors} notes={wbExpenses.credits.length ? [`${n(wbExpenses.credits.length)} lines are money back to the owner. They are kept as owner credits: credits dated in a month step 7 covers were already in that month's payout; later ones go on the next statement.`] : []} />

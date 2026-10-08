@@ -305,7 +305,7 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
       const takeOwner = ownerId && (unitOurs || hit.ownerName === PLACEHOLDER_OWNER);
       updates.push({
         id: unitId, ours: unitOurs, owner_id: takeOwner ? ownerId : null, listing_name: w.listingName, address: w.address,
-        package: w.pkg, term: w.term, split_kind: w.split, split_value: w.splitValue, updated_at: now,
+        package: w.pkg, term: w.term, split_kind: w.split, split_value: w.splitValue, misc_charges: w.miscCharges ? 1 : 0, updated_at: now,
       });
     } else {
       workbookOnly++;
@@ -320,7 +320,7 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
       newUnits.push({
         id: unitId, property_id: b.id, owner_id: ownerId ?? placeholder, unit_number: code || w.workbookId, unit_code: code || w.workbookId,
         listing_name: w.listingName, address: w.address, base_rate: 0, is_listed: 0, package: w.pkg ?? 'Package C', term: w.term ?? 'Long term',
-        split_kind: w.split ?? 'Not set', split_value: w.splitValue, created_at: now, updated_at: now,
+        split_kind: w.split ?? 'Not set', split_value: w.splitValue, misc_charges: w.miscCharges ? 1 : 0, created_at: now, updated_at: now,
       });
       snap.units.push({ id: unitId, unitNumber: code || w.workbookId, propertyId: b.id, propertyName: b.name, ownerName: '' });
     }
@@ -371,7 +371,7 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
       display_name = CASE WHEN owners.id LIKE 'wb-%' THEN EXCLUDED.display_name ELSE owners.display_name END, updated_at = EXCLUDED.updated_at`));
   add(res, 'units', await upsert(db, 'units',
     [['id', 'text'], ['property_id', 'text'], ['owner_id', 'text'], ['unit_number', 'text'], ['unit_code', 'text'], ['listing_name', 'text'], ['address', 'text'], ['base_rate', 'int'],
-     ['is_listed', 'int'], ['package', 'text'], ['term', 'text'], ['split_kind', 'text'], ['split_value', 'int'], ['created_at', 'text'], ['updated_at', 'text']],
+     ['is_listed', 'int'], ['package', 'text'], ['term', 'text'], ['split_kind', 'text'], ['split_value', 'int'], ['misc_charges', 'int'], ['created_at', 'text'], ['updated_at', 'text']],
     newUnits, 'DO NOTHING'));
   if (updates.length) {
     const out = await db.all(`
@@ -384,8 +384,9 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
         split_kind = CASE WHEN x.ours AND x.split_kind IS NOT NULL THEN x.split_kind ELSE u.split_kind END,
         split_value = CASE WHEN x.ours AND x.split_kind IS NOT NULL THEN x.split_value ELSE u.split_value END,
         guarantee_period = CASE WHEN x.ours AND x.split_kind IS NOT NULL THEN 'month' ELSE u.guarantee_period END,
+        misc_charges = x.misc_charges,
         updated_at = x.updated_at
-      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, ours boolean, owner_id text, listing_name text, address text, package text, term text, split_kind text, split_value int, updated_at text)
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, ours boolean, owner_id text, listing_name text, address text, package text, term text, split_kind text, split_value int, misc_charges int, updated_at text)
       WHERE u.id = x.id RETURNING u.id`, JSON.stringify(updates));
     add(res, 'units', { created: 0, updated: out.length });
   }
@@ -564,7 +565,7 @@ export async function importExpenses(db: Db, expenses: ExpenseIn[], now: string,
     const unit = match(c.workbookId)?.unit;
     if (!unit) { res.errors.push({ row: c.row, reason: `Unit ${c.workbookId} is not in Property OS.` }); continue; }
     if (!unit.ownerId || unit.ownerId === placeholder) { res.errors.push({ row: c.row, reason: `${c.workbookId}: credit not recorded because the unit has no named owner. Import the workbook units first.` }); continue; }
-    adjustments.push({ id: c.id, owner_id: unit.ownerId, unit_id: unit.id, kind: 'credit', amount: c.amount, description: c.description, occurred_on: c.occurredOn,
+    adjustments.push({ id: c.id, owner_id: unit.ownerId, unit_id: unit.id, kind: c.amount > 0 ? 'credit' : 'charge', amount: c.amount, description: c.description, occurred_on: c.occurredOn,
       reference: c.reference, state: 'open', source: 'owner_workbook', created_at: now, updated_at: now });
   }
   add(res, 'expenses', await upsertExpenses(db, rows));
@@ -601,7 +602,7 @@ export const HISTORY_STATEMENT = 'wb-stmt-';
  *  Statement generation refuses periods holding a paid statement, so these months are never regenerated.
  *  All rows of the sheet must come in one request: an owner's units are summed into one statement.
  *
- *  Workbook credits (negative 杂费扣款 lines) dated in or before the last month of this history were already in
+ *  Workbook credits and charges (O2 and negative 杂费扣款 lines) dated in or before the last month of this history were already in
  *  those payouts (the report's O2 column), so they are marked settled, never paid a second time; later ones stay
  *  open for the next generated statement. */
 export async function importPayoutHistory(db: Db, months: PayoutMonthIn[], now: string): Promise<ImportResult> {
@@ -691,7 +692,7 @@ export async function importPayoutHistory(db: Db, months: PayoutMonthIn[], now: 
       UPDATE owner_adjustments a SET state = 'settled', updated_at = ?,
         statement_id = (SELECT s.id FROM owner_statements s WHERE s.owner_id = a.owner_id AND s.period_start = substr(a.occurred_on, 1, 7) || '-01' AND s.id LIKE '${HISTORY_STATEMENT}%'),
         settled_note = 'Included in the owner workbook payout for ' || substr(a.occurred_on, 1, 7)
-      WHERE a.source = 'owner_workbook' AND a.kind = 'credit' AND a.state = 'open' AND a.statement_id IS NULL AND a.occurred_on <= ?
+      WHERE a.source = 'owner_workbook' AND a.kind IN ('credit','charge') AND a.state = 'open' AND a.statement_id IS NULL AND a.occurred_on <= ?
       RETURNING a.id`, now, lastDay);
     settled = out.length;
     add(res, 'owner_adjustments', { created: 0, updated: settled });

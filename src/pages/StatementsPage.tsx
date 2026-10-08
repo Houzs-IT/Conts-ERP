@@ -185,7 +185,7 @@ export default function StatementsPage() {
     const buildings = b && b !== 'all' ? b : 'all buildings';
     const filtersLine = `Filters applied: period ${periodLabel(viewPeriod)}, ${buildings} · generated ${fmtDate(genAt)} ${fmtTime(genAt)}`;
     const scopeLine = `Scope: ${rows.length} owners · ${periodLabel(viewPeriod)} · management + finance view`;
-    const head = ['Owner', 'Units', 'Gross booking value', 'Fees', 'Expenses', 'Net payout', 'Status'];
+    const head = ['Owner', 'Units', 'Hospitality income', 'To operator', 'Deductions', 'Net payout', 'Status'];
     const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
     const body = rows.map(r => [r.ownerName, r.unitsLabel, rm(r.grossBookingValue), rm(r.managementFee), rm(r.expensesTotal), rm(r.netPayout), STATEMENT[r.state].label]);
     const lines = [`# ${filtersLine}`, `# ${scopeLine}`, '', head.map(esc).join(','), ...body.map(r => r.map(esc).join(','))];
@@ -201,7 +201,7 @@ export default function StatementsPage() {
 
   function downloadPdf(r: Statement, e: MouseEvent) {
     e.stopPropagation();
-    window.open(`/api/statements/${encodeURIComponent(r.id)}/pdf`, '_blank', 'noopener');
+    window.location.hash = `#/finance/statements/${encodeURIComponent(r.id)}/report`;
   }
 
   return (
@@ -262,9 +262,9 @@ export default function StatementsPage() {
               <div className={`grid ${gridCols} gap-[14px] px-[22px] py-[9px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink`}>
                 <div />
                 <div>Owner</div>
-                <div className="text-right">Gross booking value</div>
-                <div className="text-right">Fees</div>
-                <div className="text-right">Expenses</div>
+                <div className="text-right">Hospitality income</div>
+                <div className="text-right">To operator</div>
+                <div className="text-right">Deductions</div>
                 <div className="text-right">Net payout</div>
                 <div>Status</div>
                 <div />
@@ -315,8 +315,8 @@ export default function StatementsPage() {
                       )}
                       <button
                         onClick={e => downloadPdf(s, e)}
-                        aria-label={`Download PDF for ${s.ownerName}`}
-                        title="Download PDF"
+                        aria-label={`Owner Income Report for ${s.ownerName}`}
+                        title="Owner Income Report (PDF)"
                         className="grid place-items-center w-[30px] h-[30px] rounded-control bg-transparent border border-solid border-line text-muted-ink cursor-pointer"
                       >
                         <Icon name="FileText" size="sm" />
@@ -403,7 +403,7 @@ function GenerateDialog({ initialPeriod, periods, lockedPeriods, onClose, onGene
         <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-3">
           <h2 className="m-0 text-[18px] leading-[1.3] font-semibold">Generate statements</h2>
           <p className="m-0 text-[13px] leading-[1.55] text-muted-ink">
-            Draws every settled booking, fee and documented expense for the period. Statements land as Provisional and must be reviewed before sending.
+            Builds each owner's month by the owner workbook's rules: stays split by night into the month, cleaning, bills and other deductions, the contract split, then owner adjustments. Statements land as Provisional and must be reviewed before sending.
           </p>
           <div className="flex flex-col gap-[7px]">
             <label htmlFor="gen-period" className="text-[12px] font-medium text-muted-ink">Period</label>

@@ -478,6 +478,8 @@ export interface WorkbookUnitIn {
   ownerName: string | null; ic: string | null; bankName: string | null; bankAccount: string | null; bankHolder: string | null;
   pkg: Package | null; packageD: boolean; term: 'Long term' | 'Short term' | null;
   split: 'Profit share' | 'GRR — guaranteed rent' | null; splitValue: number | null;
+  /** Unit资料 'Miscellaneous Charges', kept on the unit too: a row without a contract start date has no contract to hold it. */
+  miscCharges: boolean;
   contract: {
     model: 'management' | 'grr'; feePct: number; grrAmount: number; startsOn: string; endsOn: string | null;
     agentPct: number | null; minimumGuarantee: number; minimumGuaranteeAnnual: number | null;
@@ -562,12 +564,17 @@ export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[], today 
     const splitText = /^(\d{1,3})\s*\/\s*(\d{1,3})$/.exec(str(r['分成']));
     const ownerShare = owner ?? (splitText ? Number(splitText[1]) : null);
     const grr = sen(r['GRR']);
-    const minimum = pl ? sen(pl['每月最低拿到（保底）']) : null;
-    const annual = pl ? sen(pl['全年租金（GRR）']) : null;
+    // The owner's floor on a profit share (整体报告 PROFIT SHARING 'GRR' column): on Package D it is the annual rent
+    // over 12 (水池: 每月最低 = 全年租金 ÷ 12), from the contract start; on other packages Unit资料 GRR is the monthly floor itself.
+    const isD = pkgLetter === 'D';
+    const grrFloor = kind !== 'LT' ? sen(r['GRR']) : null;
+    const minimum = pl ? sen(pl['每月最低拿到（保底）']) : isD ? (grrFloor ? Math.round(grrFloor / 12) : null) : grrFloor;
+    const annual = pl ? sen(pl['全年租金（GRR）']) : isD ? grrFloor : null;
     const startsOn = toDate(r['合约开始日期']) ?? (pl ? toDate(pl['合约开始']) : null);
     const endsOn = toDate(r['合约结束日期']) ?? (pl ? toDate(pl['合约结束']) : null);
     const isGrr = kind === 'LT' && !!grr;
     const feePct = isGrr ? 0 : ownerShare !== null ? Math.max(0, Math.min(100, 100 - ownerShare)) : 25;
+    const miscCharges = r['Miscellaneous Charges'] === true || /^(true|yes|y|1)$/i.test(str(r['Miscellaneous Charges']));
     const ic = opt(r['IC'])?.replace(/\s*\n\s*|\s{2,}/g, ' / ') ?? null;
     const account = opt(r['BANK AC']);
     const debt = sen(r['DEBT AMOUNT']);
@@ -585,10 +592,12 @@ export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[], today 
         model: isGrr ? 'grr' : 'management', feePct, grrAmount: isGrr ? grr! : 0, startsOn, endsOn,
         agentPct: agent !== null && agent > 0 ? Math.min(agent, feePct) : null,
         minimumGuarantee: Math.max(0, minimum ?? 0), minimumGuaranteeAnnual: annual !== null && annual > 0 ? annual : null,
-        guaranteeStartsOn: pl ? toDate(pl['合约开始']) : null, guaranteeEndsOn: pl ? toDate(pl['合约结束']) : null,
+        // Package D's floor applies from the contract start (prorated by day in its first month); another package's applies throughout.
+        guaranteeStartsOn: isD ? (pl ? toDate(pl['合约开始']) : null) ?? startsOn : null, guaranteeEndsOn: isD ? (pl ? toDate(pl['合约结束']) : null) ?? endsOn : null,
         agreementFile: opt(r['CONTRACT'])?.slice(0, 200) ?? null,
-        miscCharges: r['Miscellaneous Charges'] === true || /^(true|yes|y|1)$/i.test(str(r['Miscellaneous Charges'])),
+        miscCharges,
       } : null,
+      miscCharges,
       utilityAccounts: accounts, debt: debt !== null && debt > 0 ? debt : null,
       poolMonths: [...(months.get(workbookId)?.values() ?? [])],
     });
@@ -704,7 +713,9 @@ export function mapCleaning(rows: Row[], prices: Row[]): { cleanings: CleaningIn
 /* ------------------------------------------------------------------ */
 
 export interface ExpenseIn { row: number; id: string; workbookId: string; category: string; description: string; amount: number; incurredOn: string; reference: string | null }
-/** Money back to the owner: a negative 杂费扣款 line. amount is positive sen (it adds to the owner's payout). */
+/** Money for or against the owner after the split (owner_adjustments). amount is signed sen: positive adds to the
+ *  owner's payout, negative deducts. An 'O2' 杂费扣款 line is exactly this, sign included (the workbook adds the O2
+ *  column to the owner's share); a negative 'Additional Deduction' line is money back to the owner. */
 export interface CreditIn { row: number | string; id: string; workbookId: string; description: string; amount: number; occurredOn: string; reference: string | null }
 
 const UTILITY: Record<string, { category: string; tag: string; label: string }> = {
@@ -714,9 +725,13 @@ const UTILITY: Record<string, { category: string; tag: string; label: string }> 
   'INDAH WATER': { category: 'utilities', tag: 'sewerage', label: 'Indah Water (sewerage)' },
 };
 
-/** Rows carry `_sheet`: one of the four utility sheets or 杂费扣款. Positive 杂费扣款 lines ('Additional Deduction'
- *  repairs, 'O2' bills) are costs charged to the owner, so they are expenses; negative ones are money back to the
- *  owner and become owner credits (owner_adjustments), which the next statement adds to the payout. */
+/** Rows carry `_sheet`: one of the four utility sheets or 杂费扣款. 杂费扣款 has two kinds of line, and the workbook
+ *  treats them differently (整体报告):
+ *   - 'Additional Deduction' is a cost taken off the income BEFORE the owner/company split: an expense. A negative
+ *     one is money back to the owner and becomes an owner credit.
+ *   - 'O2' is added to the owner's share AFTER the split, sign as written: -423.94 'MAINTENANCE FEE' is paid by the
+ *     company for the owner and taken off his payout; +1,038.05 'TNB' is a bill the owner paid himself, given back.
+ *     Every O2 line becomes an owner adjustment with that signed amount. */
 export function mapWorkbookExpenses(rows: Row[]): { expenses: ExpenseIn[]; credits: CreditIn[]; errors: RowError[]; skipped: RowError[] } {
   const errors: RowError[] = [], skipped: RowError[] = [], expenses: ExpenseIn[] = [], credits: CreditIn[] = [], seen = new Set<string>();
   rows.forEach((r, i) => {
@@ -742,11 +757,14 @@ export function mapWorkbookExpenses(rows: Row[]): { expenses: ExpenseIn[]; credi
     const date = toDate(r['日期']), amount = sen(r['金额(RM)']), type = opt(r['类型']) ?? 'Charge', what = opt(r['项目描述']) ?? '';
     if (!date || amount === null) return errors.push({ row: where, reason: 'No date or amount.' });
     if (amount === 0) return;
-    const id = `wb-${amount < 0 ? 'credit' : 'misc'}-${hash(`${workbookId}|${date}|${type}|${what}|${amount}`)}`;
+    const afterSplit = /^O2$/i.test(type);
+    const key = hash(`${workbookId}|${date}|${type}|${what}|${amount}`);
+    const id = afterSplit ? `wb-o2-${key}` : `wb-${amount < 0 ? 'credit' : 'misc'}-${key}`;
     if (seen.has(id)) return skipped.push({ row: where, reason: 'Same charge listed twice; counted once.' });
     seen.add(id);
     const description = `${type}: ${what}`.slice(0, 300), reference = opt(r['备注'])?.slice(0, 200) ?? null;
-    if (amount < 0) credits.push({ row: where, id, workbookId, description, amount: -amount, occurredOn: date, reference });
+    if (afterSplit) credits.push({ row: where, id, workbookId, description, amount, occurredOn: date, reference });
+    else if (amount < 0) credits.push({ row: where, id, workbookId, description, amount: -amount, occurredOn: date, reference });
     else expenses.push({ row, id, workbookId, category: 'other', description, amount, incurredOn: date, reference });
   });
   return { expenses, credits, errors, skipped };

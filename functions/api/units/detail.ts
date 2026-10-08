@@ -1,6 +1,8 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { stampMyt } from '../../_lib/ops';
+import { stayMonths, metrics, monthEndExclusive, daysInMonth as daysInMonthOf } from '../../_lib/revenue';
+import { loadInputs, computeMonth, statementSettings, fmtPct, type Query } from '../../_lib/ownerStatement';
 
 /**
  * The whole unit record in one request. Seven tabs of a detail page firing seven
@@ -85,41 +87,32 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     FROM audit_log WHERE entity_id = ? OR entity_table = 'units' AND entity_id = ?
     ORDER BY occurred_at DESC LIMIT 20`, unitId, unitId);
 
-  const perf = await one<any>(env, `
-    SELECT COALESCE(SUM(check_out::date - check_in::date),0) AS nights,
-           COALESCE(SUM(collected_revenue),0) AS revenue,
-           COALESCE(SUM(gross_booking_value),0) AS gross
-    FROM reservations
-    WHERE unit_id = ? AND state IN ('confirmed','checked_in','checked_out')
-      AND channel NOT IN ('maintenance_block','owner_stay')
-      AND substr(check_in, 1, 7) = ?`, unitId, month);
+  // Occupancy, ADR and RevPAR as everywhere else (functions/_lib/revenue.ts): gross value and nights split by night into the month.
+  const monthEndEx = monthEndExclusive(month), daysInMonth = daysInMonthOf(month);
+  const perf = metrics(await stayMonths(env, `${month}-01`, monthEndEx, { unitId }), daysInMonth);
 
   const rating = await one<{ avg: number | null; n: number }>(env,
     'SELECT AVG(rating) AS avg, COUNT(*) AS n FROM reviews WHERE unit_id = ?', unitId);
 
-  const nights = perf?.nights ?? 0;
-  const revenue = perf?.revenue ?? 0;
-  const daysInMonth = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
-
-  // The gross-to-net chain, only for finance-permitted roles.
+  // The month so far, worked out the way the owner statement will be (functions/_lib/ownerStatement.ts),
+  // only for finance-permitted roles.
   let pnl: { label: string; amount: number; type: string }[] | undefined;
   if (money) {
-    const expenses = await all<{ category: string; total: number }>(env, `
-      SELECT category, SUM(amount) AS total FROM expenses
-      WHERE unit_id = ? AND substr(incurred_on, 1, 7) = ?
-      GROUP BY category`, unitId, month);
-    const feePct = unit.management_fee_pct ?? 25;
-    const fee = Math.round(revenue * (feePct / 100));
-    const expTotal = expenses.reduce((s, e) => s + e.total, 0);
-    pnl = [
-      { label: 'Gross booking value', amount: perf?.gross ?? 0, type: 'gross' },
-      { label: `Management fee · ${feePct}%`, amount: -fee, type: 'fee' },
-      ...expenses.map(e => ({
-        label: e.category.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()),
-        amount: -e.total, type: 'expense',
-      })),
-      { label: 'Net payout', amount: revenue - fee - expTotal, type: 'net' },
-    ];
+    const q: Query = (sql, ...args) => all(env, sql, ...args);
+    const [settings, inputs] = await Promise.all([statementSettings(q), loadInputs(q, `${month}-01`, monthEndEx, { unitId })]);
+    const m = computeMonth(month, inputs, settings, 'dated').find(x => x.unitId === unitId);
+    if (m) {
+      pnl = m.terms.basis === 'fixed_rent'
+        ? [{ label: 'Fixed monthly rent', amount: m.fixedRent, type: 'gross' }]
+        : [
+          { label: 'Hospitality income', amount: m.gross, type: 'gross' },
+          ...m.deductionGroups.filter(g => g.amount).map(g => ({ label: g.label, amount: -g.amount, type: 'expense' })),
+          { label: `${fmtPct(100 - (m.ownerPct ?? 0))} to operator`, amount: -m.operatorShare, type: 'fee' },
+          ...(m.topUp ? [{ label: 'Minimum guarantee top-up', amount: m.topUp, type: 'adjustment' }] : []),
+        ];
+      if (m.adjustmentsTotal) pnl.push({ label: 'Owner adjustments', amount: m.adjustmentsTotal, type: 'adjustment' });
+      pnl.push({ label: 'Net payout', amount: m.netPayout, type: 'net' });
+    }
   }
 
   return json({
@@ -155,13 +148,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     },
     performance: {
       period: month,
-      occupancy: Number(((nights / daysInMonth) * 100).toFixed(1)),
-      occupiedNights: nights,
-      adr: nights ? Math.round(revenue / nights) : 0,
-      revpar: Math.round(revenue / daysInMonth),
+      occupancy: perf.occupancy,
+      occupiedNights: perf.nights,
+      adr: perf.adr,
+      revpar: perf.revpar,
       rating: rating?.avg != null ? Number(rating.avg.toFixed(2)) : null,
       reviewCount: rating?.n ?? 0,
-      ...(money ? { revenue, gross: perf?.gross ?? 0 } : {}),
+      ...(money ? { revenue: perf.collected, gross: perf.gross } : {}),
     },
     pnl,
     stays: stays.map(s => ({

@@ -18,7 +18,7 @@ r = await call('POST', '/api/statements/generate', { period: '2026-09' }); check
 const gen = r.json.count;
 r = await call('GET', '/api/statements?pageSize=500'); const rows = r.json.data.filter(x => x.period === '2026-09'); check('statements have period', rows.length === gen && rows.every(x => x.state === 'provisional'), JSON.stringify(rows.slice(0, 1)));
 const stm = rows[0];
-r = await call('GET', `/api/statements/${stm.id}/pdf`); check('pdf by id (has fee line)', r.status === 200 && /management fee/i.test(r.text), r.text.slice(0, 150));
+r = await call('GET', `/api/statements/${stm.id}/pdf`); check('pdf by id (has fee line)', r.status === 200 && /management fee|to operator/i.test(r.text), r.text.slice(0, 150));
 r = await call('POST', '/api/statements/send', { statementIds: [stm.id] }); check('send provisional refused (in failed)', r.status === 200 && r.json.sent === 0 && r.json.failed.length === 1, r.text);
 r = await call('POST', '/api/statements/finalise', { statementIds: rows.map(x => x.id) }); check('finalise all', r.status === 200 && r.json.finalised === rows.length, r.text);
 r = await call('POST', '/api/statements/finalise', { statementIds: [stm.id] }); check('finalise again refused', r.json.finalised === 0 && r.json.failed.length === 1, r.text);
