@@ -9,11 +9,12 @@ import ChannelMark from '../components/ChannelMark';
 import { Drawer, Dialog, type DialogSpec } from '../components/Dialog';
 import { Field } from '../components/Field';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { PageControls } from '../components/PageControls';
 import { useApi } from '../lib/useApi';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
-import { api, notifyFailure } from '../lib/api';
-import { todayMyt, rm, dateRange, date as fmtDate, time as fmtTime, dateTime, nights as fmtNights, fileStamp } from '../lib/format';
+import { api, notifyFailure, downloadFile } from '../lib/api';
+import { rm, dateRange, dateTime, nights as fmtNights } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { Tone, BookingChannel, ReservationState } from '../lib/types';
 
@@ -31,90 +32,119 @@ interface Row {
   id: string; externalRef: string | null; guestName: string; guestsCount: number;
   guestPhone: string | null; unitNumber: string; propertyName: string; channel: BookingChannel;
   state: ReservationState; checkIn: string; checkOut: string; checkInTime: string; checkOutTime: string;
-  nights: number; grossBookingValue: number; paidAt: string | null; receivedAt: string;
+  nights: number; grossBookingValue: number; channelFee: number; paidAt: string | null; receivedAt: string;
 }
-interface Payload { data: Row[]; total: number; page: number; generatedAt: string }
 
-const FALLBACK: Payload = {
-  total: 6, page: 1, generatedAt: '',
-  data: [
-    { id: 'b1', externalRef: 'ABNB-7741QK', guestName: 'Nadia Abdullah', guestsCount: 2, guestPhone: '+60 12-111 0001', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', channel: 'airbnb', state: 'checked_in', checkIn: '2026-09-16', checkOut: '2026-09-19', checkInTime: '15:00', checkOutTime: '11:00', nights: 3, grossBookingValue: 85200, paidAt: '2026-09-12 10:04', receivedAt: '2026-09-12 10:02' },
-    { id: 'b2', externalRef: 'DIR-2026-0916', guestName: 'Aaron Lee', guestsCount: 2, guestPhone: '+60 12-111 0002', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', channel: 'direct', state: 'confirmed', checkIn: '2026-09-19', checkOut: '2026-09-23', checkInTime: '15:00', checkOutTime: '11:00', nights: 4, grossBookingValue: 113600, paidAt: '2026-09-14 09:20', receivedAt: '2026-09-14 09:18' },
-    { id: 'b3', externalRef: 'BDC-5512088', guestName: 'Priya Sundaram', guestsCount: 2, guestPhone: '+60 12-111 0003', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', channel: 'booking_com', state: 'confirmed', checkIn: '2026-09-24', checkOut: '2026-09-27', checkInTime: '15:00', checkOutTime: '11:00', nights: 3, grossBookingValue: 198800, paidAt: null, receivedAt: '2026-09-15 22:41' },
-    { id: 'b4', externalRef: 'AGD-33110', guestName: 'Marcus Wong', guestsCount: 2, guestPhone: '+60 12-111 0004', unitNumber: '#MK2-09-16', propertyName: 'Arte Mont Kiara', channel: 'agoda', state: 'confirmed', checkIn: '2026-09-16', checkOut: '2026-09-19', checkInTime: '15:00', checkOutTime: '11:00', nights: 3, grossBookingValue: 159000, paidAt: '2026-09-13 12:00', receivedAt: '2026-09-13 11:58' },
-    { id: 'b5', externalRef: 'OWN-0032', guestName: 'Chong Wei Han', guestsCount: 2, guestPhone: null, unitNumber: '#MK2-09-15', propertyName: 'Arte Mont Kiara', channel: 'owner_stay', state: 'confirmed', checkIn: '2026-09-23', checkOut: '2026-09-25', checkInTime: '15:00', checkOutTime: '11:00', nights: 2, grossBookingValue: 0, paidAt: null, receivedAt: '2026-09-12 08:00' },
-    { id: 'b6', externalRef: 'MNT-0914', guestName: 'AquaFix Sdn Bhd', guestsCount: 0, guestPhone: null, unitNumber: '#C-31-14', propertyName: 'Sentral Suites', channel: 'maintenance_block', state: 'confirmed', checkIn: '2026-09-16', checkOut: '2026-09-22', checkInTime: '09:00', checkOutTime: '18:00', nights: 6, grossBookingValue: 0, paidAt: null, receivedAt: '2026-09-14 16:00' },
-  ],
-};
-
-const FILTERS = [
-  { key: 'all', label: 'All' },
-  { key: 'arriving', label: 'Arriving today' },
-  { key: 'inhouse', label: 'In house' },
-  { key: 'pending', label: 'Pending payment' },
-  { key: 'blocks', label: 'Blocks' },
-  { key: 'cancelled', label: 'Cancelled' },
+const VIEWS = [
+  { key: 'upcoming', label: 'Upcoming', empty: 'No upcoming or in-house bookings.' },
+  { key: 'arriving', label: 'Arriving today', empty: 'Nobody arrives today.' },
+  { key: 'inhouse', label: 'In house', empty: 'Nobody is in house right now.' },
+  { key: 'pending', label: 'Pending payment', empty: 'Every live booking has been paid.' },
+  { key: 'past', label: 'Past', empty: 'No past bookings yet.' },
+  { key: 'cancelled', label: 'Cancelled', empty: 'No cancelled bookings.' },
+  { key: 'blocks', label: 'Blocks', empty: 'No maintenance blocks or owner stays.' },
+  { key: 'all', label: 'All', empty: 'No bookings yet.' },
 ] as const;
-type FilterKey = typeof FILTERS[number]['key'];
-const TODAY = todayMyt();
+type ViewKey = typeof VIEWS[number]['key'];
+
+interface Payload {
+  data: Row[]; total: number; page: number; pageSize: number; generatedAt: string; today: string; view: ViewKey;
+  counts: Record<ViewKey, number>;
+  totals: { bookings: number; nights: number; gross: number; fees: number };
+}
+
+const SAMPLE: Row[] = [
+  { id: 'b1', externalRef: 'ABNB-7741QK', guestName: 'Nadia Abdullah', guestsCount: 2, guestPhone: '+60 12-111 0001', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', channel: 'airbnb', state: 'checked_in', checkIn: '2026-09-16', checkOut: '2026-09-19', checkInTime: '15:00', checkOutTime: '11:00', nights: 3, grossBookingValue: 85200, channelFee: 12780, paidAt: '2026-09-12 10:04', receivedAt: '2026-09-12 10:02' },
+  { id: 'b2', externalRef: 'DIR-2026-0916', guestName: 'Aaron Lee', guestsCount: 2, guestPhone: '+60 12-111 0002', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', channel: 'direct', state: 'confirmed', checkIn: '2026-09-19', checkOut: '2026-09-23', checkInTime: '15:00', checkOutTime: '11:00', nights: 4, grossBookingValue: 113600, channelFee: 0, paidAt: '2026-09-14 09:20', receivedAt: '2026-09-14 09:18' },
+  { id: 'b3', externalRef: 'BDC-5512088', guestName: 'Priya Sundaram', guestsCount: 2, guestPhone: '+60 12-111 0003', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', channel: 'booking_com', state: 'confirmed', checkIn: '2026-09-24', checkOut: '2026-09-27', checkInTime: '15:00', checkOutTime: '11:00', nights: 3, grossBookingValue: 198800, channelFee: 29820, paidAt: null, receivedAt: '2026-09-15 22:41' },
+];
+const FALLBACK: Payload = {
+  total: 3, page: 1, pageSize: 50, generatedAt: '', today: '2026-09-16', view: 'upcoming', data: SAMPLE,
+  counts: { upcoming: 3, arriving: 0, inhouse: 1, pending: 1, past: 0, cancelled: 0, blocks: 0, all: 3 },
+  totals: { bookings: 3, nights: 10, gross: 397600, fees: 42600 },
+};
 
 /** Channels a manual entry may use — revenue channels only; blocks/owner stays are set on the calendar. */
 const CREATE_CHANNELS: BookingChannel[] = ['direct', 'airbnb', 'booking_com', 'agoda'];
 
-const COLS = 'grid-cols-[minmax(140px,1.2fr)_minmax(150px,1.4fr)_minmax(150px,1.2fr)_minmax(96px,0.7fr)_minmax(140px,1.1fr)_minmax(96px,0.8fr)_minmax(96px,0.8fr)_48px]';
+const COLS = 'grid-cols-[minmax(130px,1.1fr)_minmax(150px,1.4fr)_minmax(140px,1.2fr)_minmax(96px,0.7fr)_minmax(140px,1.1fr)_minmax(96px,0.8fr)_minmax(104px,0.8fr)_48px]';
 
 type ColKey = 'reference' | 'guest' | 'unit' | 'channel' | 'stay' | 'gross' | 'status';
-interface ColDef { key: ColKey; label: string; align?: 'right'; text: (r: Row) => string; val: (r: Row) => string | number }
-const COLUMNS: ColDef[] = [
-  { key: 'reference', label: 'Reference', text: r => r.externalRef ?? '', val: r => r.externalRef ?? '' },
-  { key: 'guest', label: 'Guest', text: r => `${r.guestName} ${r.guestPhone ?? ''}`, val: r => r.guestName.toLowerCase() },
-  { key: 'unit', label: 'Unit', text: r => `${r.unitNumber} ${r.propertyName}`, val: r => r.unitNumber.toLowerCase() },
-  { key: 'channel', label: 'Channel', text: r => CHANNEL_META[r.channel].label, val: r => CHANNEL_META[r.channel].label },
-  { key: 'stay', label: 'Stay', text: r => dateRange(r.checkIn, r.checkOut), val: r => r.checkIn },
-  { key: 'gross', label: 'Gross', align: 'right', text: r => (r.grossBookingValue > 0 ? rm(r.grossBookingValue, { cents: false }) : ''), val: r => r.grossBookingValue },
-  { key: 'status', label: 'Status', text: r => STATE_LABEL[r.state], val: r => STATE_LABEL[r.state] },
+/** Each column's search box writes its own URL parameter; the server searches every booking, not just this page. */
+const COLUMNS: { key: ColKey; param: string; label: string; align?: 'right'; hint: string }[] = [
+  { key: 'reference', param: 'ref', label: 'Reference', hint: 'Search' },
+  { key: 'guest', param: 'guest', label: 'Guest', hint: 'Name or phone' },
+  { key: 'unit', param: 'unit', label: 'Unit', hint: 'Unit or building' },
+  { key: 'channel', param: 'channel', label: 'Channel', hint: 'Search' },
+  { key: 'stay', param: 'stay', label: 'Stay', hint: 'e.g. 12 Oct' },
+  { key: 'gross', param: 'gross', label: 'Gross', align: 'right', hint: 'Search' },
+  { key: 'status', param: 'status', label: 'Status', hint: 'Search' },
 ];
+const SEARCH_PARAMS = ['q', ...COLUMNS.map(c => c.param)];
+/** URL parameters the server reads. The drawer's `open` stays out so opening a booking does not refetch the list. */
+const API_PARAMS = ['view', 'sort', 'page', 'size', ...SEARCH_PARAMS];
 
-const nowStamp = () => new Date().toISOString().slice(0, 16).replace('T', ' ');
 const nightsBetween = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 864e5);
+const nowStamp = () => new Date().toISOString().slice(0, 16).replace('T', ' ');
+const num = (v: number) => v.toLocaleString('en-MY');
 
 function feeLines(r: Row) {
-  const pct = FEE_PCT[r.channel] ?? 0;
-  const channelFee = Math.round(r.grossBookingValue * pct / 100);
+  const gross = r.grossBookingValue;
+  const channelFee = r.channelFee > 0 ? r.channelFee : Math.round(gross * (FEE_PCT[r.channel] ?? 0) / 100);
+  const pct = gross > 0 ? Math.round(channelFee / gross * 1000) / 10 : 0;
   const revenue = r.channel !== 'maintenance_block' && r.channel !== 'owner_stay';
-  const cleaning = revenue && r.grossBookingValue > 0 ? 3500 : 0;
-  const tourismTax = revenue && r.grossBookingValue > 0 ? 1000 * r.nights : 0;
-  const collected = r.grossBookingValue - channelFee - cleaning - tourismTax;
+  const cleaning = revenue && gross > 0 ? 3500 : 0;
+  const tourismTax = revenue && gross > 0 ? 1000 * r.nights : 0;
+  const collected = gross - channelFee - cleaning - tourismTax;
   return { pct, channelFee, cleaning, tourismTax, collected };
 }
 
 export default function BookingsPage() {
   const UNITS = useUnitRoster();
-  const { data, loading, error, reload } = useApi<Payload>('/reservations', FALLBACK);
   const toast = useToast();
 
-  // URL-as-state (react-router, HashRouter): filter chips, sort and the single
-  // active per-column search all live in the query string, and the calendar's
-  // "Create reservation" deep-links here with ?create=1.
+  // URL-as-state (react-router, HashRouter): tab, sort, page, page size and every search live in the
+  // query string, so a link or a refresh shows the same list. The calendar deep-links with ?create=1.
   const [params, setParams] = useSearchParams();
   function updateParams(mut: (p: URLSearchParams) => void) {
-    const next = new URLSearchParams(params);
-    mut(next);
-    setParams(next, { replace: true });
+    setParams(prev => { const next = new URLSearchParams(prev); mut(next); return next; }, { replace: true });
   }
 
-  const rawFilter = params.get('filter');
-  const filter: FilterKey = FILTERS.some(f => f.key === rawFilter) ? (rawFilter as FilterKey) : 'all';
-  const sort = params.get('sort') ?? '';
-  const [sortKey, sortDir] = sort.split(':') as [ColKey | undefined, string | undefined];
-  const q = params.get('q') ?? '';
-  const rawField = params.get('field') ?? '';
-  const field: ColKey | '' = COLUMNS.some(c => c.key === rawField) ? (rawField as ColKey) : '';
+  const rawView = params.get('view');
+  const view: ViewKey = VIEWS.some(v => v.key === rawView) ? (rawView as ViewKey) : 'upcoming';
+  const [sortKey, sortDir] = (params.get('sort') ?? '').split(':') as [ColKey | undefined, string | undefined];
+
+  const apiQuery = useMemo(() => {
+    const p = new URLSearchParams();
+    for (const k of API_PARAMS) { const v = params.get(k); if (v) p.set(k, v); }
+    return p.toString();
+  }, [params]);
+  const { data, loading, error, reload } = useApi<Payload>(`/reservations${apiQuery ? `?${apiQuery}` : ''}`, FALLBACK);
+
+  // Search boxes answer every keystroke locally; the URL (and so the server) follows once typing pauses.
+  const [drafts, setDrafts] = useState<Record<string, string>>(() => Object.fromEntries(SEARCH_PARAMS.map(k => [k, params.get(k) ?? ''])));
+  const timer = useRef<number | undefined>(undefined);
+  function setSearch(param: string, value: string) {
+    setDrafts(d => ({ ...d, [param]: value }));
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => updateParams(p => {
+      if (value.trim()) p.set(param, value); else p.delete(param);
+      p.delete('page');
+    }), 300);
+  }
+  function clearSearches() {
+    window.clearTimeout(timer.current);
+    setDrafts(Object.fromEntries(SEARCH_PARAMS.map(k => [k, ''])));
+    updateParams(p => { SEARCH_PARAMS.forEach(k => p.delete(k)); p.delete('page'); });
+  }
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const searching = SEARCH_PARAMS.some(k => params.get(k));
 
   const [edits, setEdits] = useState<Record<string, Partial<Row>>>({});
   const [openId, setOpenId] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogSpec | null>(null);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const [creating, setCreating] = useState(false);
   // Guests' "Book again" passes the guest in router state (kept out of the URL). Captured when the
@@ -134,57 +164,50 @@ export default function BookingsPage() {
     if (params.get('create') === '1') {
       setPrefill((location.state ?? null) as typeof prefill);
       setCreating(true);
-      const next = new URLSearchParams(params);
-      next.delete('create');
-      setParams(next, { replace: true });
+      updateParams(p => p.delete('create'));
     }
-  }, [params, setParams]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rows = useMemo(
     () => (data?.data ?? []).map(r => ({ ...r, ...edits[r.id] })),
     [data, edits],
   );
 
-  const filtered = rows.filter(r => {
-    switch (filter) {
-      case 'arriving': return r.checkIn === TODAY && r.channel !== 'maintenance_block';
-      case 'inhouse': return r.state === 'checked_in';
-      case 'pending': return r.paidAt === null && r.channel !== 'maintenance_block' && r.channel !== 'owner_stay' && r.state !== 'cancelled';
-      case 'blocks': return r.channel === 'maintenance_block' || r.channel === 'owner_stay';
-      case 'cancelled': return r.state === 'cancelled';
-      default: return true;
-    }
-  });
-  const searchCol = field ? COLUMNS.find(c => c.key === field) : undefined;
-  const searched = searchCol && q.trim()
-    ? filtered.filter(r => searchCol.text(r).toLowerCase().includes(q.trim().toLowerCase()))
-    : filtered;
-  const sortCol = sortKey ? COLUMNS.find(c => c.key === sortKey) : undefined;
-  const shown = sortCol
-    ? [...searched].sort((a, b) => {
-        const av = sortCol.val(a), bv = sortCol.val(b);
-        const d = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
-        return sortDir === 'desc' ? -d : d;
-      })
-    : searched;
+  // A booking opened from outside this page (a fresh duplicate) is read on its own.
+  const onPage = openId ? rows.find(r => r.id === openId) : undefined;
+  const { data: fetchedOpen } = useApi<Row>(openId && !onPage ? `/reservations/${openId}` : null);
+  const open = onPage ?? (fetchedOpen && fetchedOpen.id === openId ? { ...fetchedOpen, ...edits[openId] } : null);
 
-  const open = rows.find(r => r.id === openId) ?? null;
+  const page = data?.page ?? 1;
+  // A new page or tab starts at its first row, not wherever the last one was scrolled to.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+    // Phones have no inner table scroll: the cards scroll with the page, so bring the page back up instead.
+    if (window.matchMedia('(max-width: 767.98px)').matches) document.querySelector('main')?.scrollTo({ top: 0 });
+  }, [data?.page, data?.view]);
+  const pageSize = data?.pageSize ?? 50;
+  const total = data?.total ?? 0;
+  const counts = data?.counts;
+  const totals = data?.totals;
+  const refreshing = loading && !!data;
 
-  function setFilter(key: FilterKey) {
-    updateParams(p => { if (key === 'all') p.delete('filter'); else p.set('filter', key); });
+  function setView(key: ViewKey) {
+    updateParams(p => { if (key === 'upcoming') p.delete('view'); else p.set('view', key); p.delete('page'); });
   }
   function toggleSort(key: ColKey) {
     updateParams(p => {
       const [c, dir] = (p.get('sort') ?? '').split(':');
       if (c === key) { if (dir === 'asc') p.set('sort', `${key}:desc`); else p.delete('sort'); }
       else p.set('sort', `${key}:asc`);
+      p.delete('page');
     });
   }
-  function setSearch(key: ColKey, value: string) {
-    updateParams(p => {
-      if (value.trim()) { p.set('field', key); p.set('q', value); }
-      else if (p.get('field') === key) { p.delete('field'); p.delete('q'); }
-    });
+  function goPage(n: number) {
+    updateParams(p => { if (n <= 1) p.delete('page'); else p.set('page', String(n)); });
+  }
+  function setSize(n: number) {
+    updateParams(p => { if (n === 50) p.delete('size'); else p.set('size', String(n)); p.delete('page'); });
   }
 
   function patch(id: string, p: Partial<Row>) { setEdits(e => ({ ...e, [id]: { ...e[id], ...p } })); }
@@ -197,10 +220,14 @@ export default function BookingsPage() {
       confirmLabel: 'Cancel reservation', busyLabel: 'Cancelling…', danger: true,
       onConfirm: async () => {
         setBusy(true);
+        const prev = edits[r.id];
         patch(r.id, { state: 'cancelled' });
-        try { await api.post(`/reservations/${r.id}/cancel`, { reason: 'operator_cancelled' }); } catch { /* dev */ }
+        try {
+          await api.post(`/reservations/${r.id}/cancel`, { reason: 'operator_cancelled' });
+          toast({ tone: 'neutral', title: 'Reservation cancelled.', body: `${r.guestName} has been notified and the dates released.` });
+          reload();
+        } catch (e) { setEdits(x => ({ ...x, [r.id]: prev ?? {} })); notifyFailure(e); }
         setBusy(false); setDialog(null);
-        toast({ tone: 'neutral', title: 'Reservation cancelled.', body: `${r.guestName} has been notified and the dates released.` });
       },
     });
   }
@@ -213,12 +240,13 @@ export default function BookingsPage() {
     const unit = UNITS.find(u => u.id === input.unitId) ?? UNITS[0];
     if (!unit) return;
     try {
-      await api.post('/reservations', {
+      const res = await api.post<{ id: string }>('/reservations', {
         unitId: input.unitId, channel: input.channel,
         guest: { fullName: input.guestName, email: input.email || null, phone: input.phone || null },
         checkIn: input.checkIn, checkOut: input.checkOut, guestsCount: input.guestsCount, grossBookingValue: input.grossSen,
       });
       setCreating(false);
+      setOpenId(res.id);
       toast({ tone: 'success', title: 'Reservation created.', body: `${input.guestName} · ${unit.propertyName} ${unit.unitNumber} · ${dateRange(input.checkIn, input.checkOut)}.` });
       reload();
     } catch (e) { notifyFailure(e); }
@@ -260,28 +288,14 @@ export default function BookingsPage() {
     reload();
   }
 
-  // ---- Export / Download CSV of the currently filtered rows ----
-  function exportCsv() {
-    const genAt = data?.generatedAt || new Date().toISOString();
-    const bits: string[] = [FILTERS.find(f => f.key === filter)!.label];
-    if (searchCol && q.trim()) bits.push(`${searchCol.label} contains "${q.trim()}"`);
-    if (sortCol) bits.push(`sorted by ${sortCol.label} ${sortDir === 'desc' ? 'descending' : 'ascending'}`);
-    const filtersLine = `Filters applied: ${bits.join(', ')} · generated ${fmtDate(genAt)} ${fmtTime(genAt)}`;
-    const scopeLine = `Scope: ${shown.length} ${shown.length === 1 ? 'reservation' : 'reservations'} · reservations board · Asia/Kuala_Lumpur`;
-    const head = ['Reference', 'Guest', 'Guests', 'Contact', 'Unit', 'Property', 'Channel', 'Check-in', 'Check-out', 'Nights', 'Gross', 'Status'];
-    const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
-    const body = shown.map(r => [
-      r.externalRef ?? '', r.guestName, String(r.guestsCount), r.guestPhone ?? '', r.unitNumber, r.propertyName,
-      CHANNEL_META[r.channel].label, r.checkIn, r.checkOut, String(r.nights),
-      r.grossBookingValue > 0 ? rm(r.grossBookingValue) : '', STATE_LABEL[r.state],
-    ]);
-    const lines = [`# ${filtersLine}`, `# ${scopeLine}`, '', head.map(esc).join(','), ...body.map(r => r.map(esc).join(','))];
-    const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `reservations-${filter}-${fileStamp(genAt)}.csv`; a.click();
-    URL.revokeObjectURL(url);
-    toast({ tone: 'success', title: 'Export ready.', body: 'The CSV header prints the applied filters, generated time and scope.' });
+  // ---- Download CSV: the server writes every booking matching this tab and these searches, not just this page ----
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      await downloadFile('/reservations/export', Object.fromEntries(API_PARAMS.filter(k => k !== 'page' && k !== 'size').map(k => [k, params.get(k)])));
+      toast({ tone: 'success', title: 'Export ready.', body: `${num(total)} ${total === 1 ? 'booking' : 'bookings'}. The first lines of the file name the filters and totals.` });
+    } catch (e) { notifyFailure(e); }
+    setExporting(false);
   }
 
   // ---- Message guest (POST /messages) — from the drawer or a row's chat icon ----
@@ -315,23 +329,32 @@ export default function BookingsPage() {
       .catch(err => { setEdits(e => ({ ...e, [r.id]: prev ?? {} })); notifyFailure(err); });
   }
 
-  // ---- Drawer → Change dates (PATCH /reservations/:id/dates) — optimistic ----
+  // ---- Drawer → Change dates (PATCH /reservations/:id/dates) — optimistic, rolled back if refused ----
   async function submitChangeDates(vals: { checkIn: string; checkOut: string }) {
     if (!open) return;
     const r = open;
+    const prev = edits[r.id];
     patch(r.id, { checkIn: vals.checkIn, checkOut: vals.checkOut, nights: nightsBetween(vals.checkIn, vals.checkOut) });
-    try { await api.patch(`/reservations/${r.id}/dates`, { checkIn: vals.checkIn, checkOut: vals.checkOut, confirm: true }); }
-    catch (e) { notifyFailure(e); }
+    try {
+      await api.patch(`/reservations/${r.id}/dates`, { checkIn: vals.checkIn, checkOut: vals.checkOut, confirm: true });
+      toast({ tone: 'success', title: 'Dates changed.', body: `${r.guestName} moved to ${dateRange(vals.checkIn, vals.checkOut)} and notified.` });
+      reload();
+    } catch (e) { setEdits(x => ({ ...x, [r.id]: prev ?? {} })); notifyFailure(e); }
     setDatesOpen(false);
-    toast({ tone: 'success', title: 'Dates changed.', body: `${r.guestName} moved to ${dateRange(vals.checkIn, vals.checkOut)} and notified.` });
   }
+
+  const viewMeta = VIEWS.find(v => v.key === view)!;
+  const sub = counts
+    ? `${num(counts.upcoming)} upcoming or in house · ${num(counts.all)} bookings in total${searching ? ' matching your search' : ''}`
+    : 'Loading bookings';
 
   return (
     <>
-      <PageHeader title="Bookings" sub={`${data?.total ?? rows.length} reservations`}
+      <PageHeader title="Bookings" sub={sub}
         right={<div className="flex gap-[9px] flex-wrap">
           <Button size="sm" variant="secondary" icon={<Icon name="Upload" size="sm" />} onClick={pickImportFile}>Import</Button>
-          <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportCsv} disabled={shown.length === 0} disabledReason="Nothing to export for this filter yet.">Download CSV</Button>
+          <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportCsv} loading={exporting}
+            disabled={!data || total === 0} disabledReason="Nothing to export for this tab and search.">Download CSV</Button>
           <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Create reservation</Button>
         </div>} />
 
@@ -340,86 +363,157 @@ export default function BookingsPage() {
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <Card>
-        <div className="flex gap-2 flex-wrap py-3 px-[22px] [border-bottom:1px_solid_var(--color-line)]">
-          {FILTERS.map(f => {
-            const on = filter === f.key;
+        {/* Tabs, each with its count under the current searches */}
+        <div role="tablist" aria-label="Booking views"
+          className="flex gap-2 py-3 px-[22px] [border-bottom:1px_solid_var(--color-line)] overflow-x-auto [scrollbar-width:none] md:flex-wrap max-md:px-4">
+          {VIEWS.map(v => {
+            const on = view === v.key;
+            const n = counts?.[v.key];
             return (
-              <button key={f.key} onClick={() => setFilter(f.key)}
+              <button key={v.key} role="tab" aria-selected={on} onClick={() => setView(v.key)}
                 className={cx(
-                  'h-8 px-[13px] py-0 rounded-pill cursor-pointer [font-family:inherit] text-[12.5px] border border-solid',
+                  'flex-none h-8 inline-flex items-center gap-[6px] px-[13px] py-0 rounded-pill cursor-pointer [font-family:inherit] text-[12.5px] border border-solid whitespace-nowrap',
                   on ? 'font-semibold border-transparent bg-black text-white' : 'font-medium border-line bg-page text-muted-ink',
                 )}>
-                {f.label}
+                {v.label}
+                <span className={cx('[font-variant-numeric:tabular-nums] min-w-[1ch]', on ? 'opacity-80' : 'opacity-70')}>{n === undefined ? '' : num(n)}</span>
               </button>
             );
           })}
         </div>
 
-        <div className="overflow-x-auto">
+        {/* One search across reference, guest, phone, unit and building */}
+        <div className="flex items-center gap-3 flex-wrap py-[10px] px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
+          <label className="relative flex-[1_1_260px] max-w-[420px]">
+            <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid"><Icon name="Search" size="sm" /></span>
+            <input value={drafts.q} onChange={e => setSearch('q', e.target.value)} placeholder="Guest, phone, reference or unit"
+              aria-label="Search bookings"
+              className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-[13px] pl-[32px] pr-3 py-0 outline-none" />
+          </label>
+          {searching && (
+            <button type="button" onClick={clearSearches}
+              className="h-8 inline-flex items-center gap-1 px-[10px] rounded-control border-none bg-transparent text-muted-ink [font:inherit] text-[12.5px] cursor-pointer hover:bg-muted">
+              <Icon name="X" size="sm" /> Clear search
+            </button>
+          )}
+          {/* Totals of the whole filtered set, so the owner reads the figure for the tab, not one page */}
+          <dl className="m-0 ml-auto flex items-center gap-x-5 gap-y-1 flex-wrap text-[12.5px] min-h-[20px] max-md:ml-0 max-md:w-full">
+            {totals && <>
+              <Total label="Bookings" value={num(totals.bookings)} />
+              <Total label="Nights" value={num(totals.nights)} />
+              <Total label="Gross" value={rm(totals.gross, { cents: false })} />
+              <Total label="Channel fees" value={rm(totals.fees, { cents: false })} />
+            </>}
+          </dl>
+        </div>
+
+        {/* Desktop and tablet: the sortable table. Its own scroll area keeps the header in view. */}
+        <div ref={scrollRef} className="max-md:hidden overflow-auto max-h-[calc(100dvh-330px)] min-h-[360px]" aria-busy={loading}>
           <div className="min-w-[1010px]">
-            {/* Sortable header */}
-            <div className={cx(COLS, 'grid gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)]')}>
-              {COLUMNS.map(c => {
-                const active = sortKey === c.key;
-                return (
-                  <button key={c.key} type="button" onClick={() => toggleSort(c.key)} title={`Sort by ${c.label}`}
-                    className={cx('flex items-center gap-1 [font:inherit] text-[12px] font-semibold text-muted-ink bg-transparent border-none cursor-pointer p-0', c.align === 'right' && 'justify-end')}>
-                    <span>{c.label}</span>
-                    <Icon name={active ? (sortDir === 'desc' ? 'ChevronDown' : 'ChevronUp') : 'ChevronsUpDown'} size="sm"
-                      color={active ? 'var(--color-ink)' : 'var(--color-line)'} />
-                  </button>
-                );
-              })}
-              <div className="flex items-center justify-center text-[12px] font-semibold text-muted-ink">Chat</div>
-            </div>
-            {/* Per-column search */}
-            <div className={cx(COLS, 'grid gap-[14px] py-[7px] px-[22px] bg-page [border-bottom:1px_solid_var(--color-line-soft)]')}>
-              {COLUMNS.map(c => (
-                <input key={c.key} value={field === c.key ? q : ''} onChange={e => setSearch(c.key, e.target.value)}
-                  placeholder="Search" aria-label={`Search ${c.label}`}
-                  className={cx('h-7 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-[12px] px-2 py-0 outline-none', c.align === 'right' && 'text-right')} />
-              ))}
-              <div aria-hidden />
+            <div className="sticky top-0 z-[2]">
+              <div className={cx(COLS, 'grid gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)]')}>
+                {COLUMNS.map(c => {
+                  const active = sortKey === c.key;
+                  return (
+                    <button key={c.key} type="button" onClick={() => toggleSort(c.key)} title={`Sort by ${c.label}`}
+                      className={cx('flex items-center gap-1 [font:inherit] text-[12px] font-semibold text-muted-ink bg-transparent border-none cursor-pointer p-0', c.align === 'right' && 'justify-end')}>
+                      <span>{c.label}</span>
+                      <Icon name={active ? (sortDir === 'desc' ? 'ChevronDown' : 'ChevronUp') : 'ChevronsUpDown'} size="sm"
+                        color={active ? 'var(--color-ink)' : 'var(--color-line)'} />
+                    </button>
+                  );
+                })}
+                <div className="flex items-center justify-center text-[12px] font-semibold text-muted-ink">Chat</div>
+              </div>
+              <div className={cx(COLS, 'grid gap-[14px] py-[7px] px-[22px] bg-page [border-bottom:1px_solid_var(--color-line-soft)]')}>
+                {COLUMNS.map(c => (
+                  <input key={c.key} value={drafts[c.param]} onChange={e => setSearch(c.param, e.target.value)}
+                    placeholder={c.hint} aria-label={`Search ${c.label}`}
+                    className={cx('h-7 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-[12px] px-2 py-0 outline-none', c.align === 'right' && 'text-right')} />
+                ))}
+                <div aria-hidden />
+              </div>
             </div>
 
-            {loading && rows.length === 0 ? <TableSkeleton rows={6} cols={8} /> : shown.length === 0 ? (
-              <div className="py-[34px] px-[22px] text-center text-[13.5px] text-muted-ink">No reservations match this filter.</div>
-            ) : shown.map(b => {
-              const ch = CHANNEL_META[b.channel];
-              return (
-                <div key={b.id} role="button" tabIndex={0} onClick={() => setOpenId(b.id)}
-                  onKeyDown={e => { if (e.key === 'Enter') setOpenId(b.id); }}
-                  className={cx(COLS, 'grid gap-[14px] items-center min-h-[54px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer')}>
-                  <div className="flex items-center gap-[9px] min-w-0">
-                    <ChannelMark ch={b.channel} size={20} />
-                    <span className="font-mono text-[12px] whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? '—'}</span>
-                  </div>
-                  <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{b.guestName}</span>
-                    <span className="text-[11.5px] text-muted-ink">{b.guestsCount > 0 ? `${b.guestsCount} guests` : 'No guest'}</span>
-                  </div>
-                  <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-[13px]">{b.unitNumber}</span>
-                    <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.propertyName}</span>
-                  </div>
-                  <div>
-                    <span className="inline-flex items-center h-[22px] px-[9px] rounded-pill text-[11.5px] font-semibold whitespace-nowrap" style={{ background: ch.tint, color: ch.ink }}>{ch.label}</span>
-                  </div>
-                  <div className="text-[12.5px]">{dateRange(b.checkIn, b.checkOut)}</div>
-                  <div className="text-right text-[13px] font-medium">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</div>
-                  <div><Badge tone={STATE_TONE[b.state]} label={STATE_LABEL[b.state]} /></div>
-                  <div className="flex justify-center">
-                    <button type="button" title="Message guest" aria-label={`Message ${b.guestName}`}
-                      onClick={e => { e.stopPropagation(); setMessageRow(b); }}
-                      className="w-8 h-8 grid place-items-center rounded-control text-muted-ink bg-transparent border-none cursor-pointer hover:bg-muted">
-                      <Icon name="MessageSquare" size="sm" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+            {!data ? <TableSkeleton rows={8} cols={8} /> : rows.length === 0 ? (
+              <EmptyList searching={searching} message={viewMeta.empty} onClear={clearSearches} />
+            ) : (
+              <div className={cx('transition-opacity duration-150', refreshing && 'opacity-55')}>
+                {rows.map(b => {
+                  const ch = CHANNEL_META[b.channel];
+                  return (
+                    <div key={b.id} role="button" tabIndex={0} onClick={() => setOpenId(b.id)}
+                      onKeyDown={e => { if (e.key === 'Enter') setOpenId(b.id); }}
+                      className={cx(COLS, 'grid gap-[14px] items-center min-h-[54px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-page')}>
+                      <div className="flex items-center gap-[9px] min-w-0">
+                        <ChannelMark ch={b.channel} size={20} />
+                        <span className="font-mono text-[12px] whitespace-nowrap overflow-hidden text-ellipsis" title={b.externalRef ?? undefined}>{b.externalRef ?? '—'}</span>
+                      </div>
+                      <div className="flex flex-col gap-px min-w-0">
+                        <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={b.guestName}>{b.guestName || '—'}</span>
+                        <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.guestsCount > 0 ? `${b.guestsCount} ${b.guestsCount === 1 ? 'guest' : 'guests'}` : 'No guest'}</span>
+                      </div>
+                      <div className="flex flex-col gap-px min-w-0">
+                        <span className="text-[13px] whitespace-nowrap overflow-hidden text-ellipsis" title={b.unitNumber}>{b.unitNumber}</span>
+                        <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={b.propertyName}>{b.propertyName}</span>
+                      </div>
+                      <div>
+                        <span className="inline-flex items-center h-[22px] px-[9px] rounded-pill text-[11.5px] font-semibold whitespace-nowrap" style={{ background: ch.tint, color: ch.ink }}>{ch.label}</span>
+                      </div>
+                      <div className="flex flex-col gap-px min-w-0">
+                        <span className="text-[12.5px] whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span>
+                        <span className="text-[11.5px] text-muted-ink">{fmtNights(b.nights)}</span>
+                      </div>
+                      <div className="text-right text-[13px] font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</div>
+                      <div><Badge tone={STATE_TONE[b.state]} label={STATE_LABEL[b.state]} /></div>
+                      <div className="flex justify-center">
+                        <button type="button" title="Message guest" aria-label={`Message ${b.guestName}`}
+                          onClick={e => { e.stopPropagation(); setMessageRow(b); }}
+                          className="w-8 h-8 grid place-items-center rounded-control text-muted-ink bg-transparent border-none cursor-pointer hover:bg-muted">
+                          <Icon name="MessageSquare" size="sm" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Phones: one condensed card per booking, no wide table */}
+        <div className="md:hidden" aria-busy={loading}>
+          {!data ? <TableSkeleton rows={6} cols={2} /> : rows.length === 0 ? (
+            <EmptyList searching={searching} message={viewMeta.empty} onClear={clearSearches} />
+          ) : (
+            <ul className={cx('list-none m-0 p-0 transition-opacity duration-150', refreshing && 'opacity-55')}>
+              {rows.map(b => (
+                <li key={b.id} className="[border-bottom:1px_solid_var(--color-line-soft)]">
+                  <button type="button" onClick={() => setOpenId(b.id)}
+                    className="w-full text-left [font:inherit] text-ink bg-transparent border-none cursor-pointer py-3 px-4 flex gap-3 items-start">
+                    <ChannelMark ch={b.channel} size={22} />
+                    <span className="flex flex-col gap-[3px] min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="text-[14px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{b.guestName || '—'}</span>
+                        <span className="text-[13px] font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>
+                      </span>
+                      <span className="text-[12px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.unitNumber} · {b.propertyName}</span>
+                      <span className="flex items-center justify-between gap-2 pt-[2px]">
+                        <span className="text-[12px] whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)} · {fmtNights(b.nights)}</span>
+                        <Badge tone={STATE_TONE[b.state]} label={STATE_LABEL[b.state]} size="sm" />
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {data && total > 0 && (
+          <PageControls page={page} pageSize={pageSize} total={total} onPage={goPage} onSize={setSize} sizes={[25, 50, 100, 200]}
+            noun={total === 1 ? 'booking' : 'bookings'} className="[border-top:1px_solid_var(--color-line)] max-md:px-4" />
+        )}
       </Card>
 
       <Drawer open={!!open} onClose={() => setOpenId(null)} width={440}>
@@ -434,6 +528,25 @@ export default function BookingsPage() {
     </>
   );
 }
+
+function Total({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline gap-[6px]">
+      <dt className="text-muted-ink">{label}</dt>
+      <dd className="m-0 font-semibold text-ink [font-variant-numeric:tabular-nums]">{value}</dd>
+    </div>
+  );
+}
+
+function EmptyList({ searching, message, onClear }: { searching: boolean; message: string; onClear: () => void }) {
+  return (
+    <div className="py-[42px] px-[22px] flex flex-col items-center gap-3 text-center">
+      <span className="text-[13.5px] text-muted-ink">{searching ? 'No bookings match this search in this tab.' : message}</span>
+      {searching && <Button size="sm" variant="secondary" onClick={onClear}>Clear search</Button>}
+    </div>
+  );
+}
+
 
 /* ------------------------------------------------------------------ */
 /* Reservation drawer                                                  */
@@ -651,7 +764,7 @@ function buildImport(text: string, UNITS: RosterUnit[]): ParsedRow[] {
       guestPhone: phone || null, unitNumber: unit.unitNumber, propertyName: unit.propertyName,
       channel: channelRaw as BookingChannel, state: 'confirmed', checkIn, checkOut,
       checkInTime: '15:00', checkOutTime: '11:00', nights: nightsBetween(checkIn, checkOut),
-      grossBookingValue: Math.round(rateNum * 100), paidAt: null, receivedAt: nowStamp(),
+      grossBookingValue: Math.round(rateNum * 100), channelFee: 0, paidAt: null, receivedAt: nowStamp(),
     };
     return { line, label, row };
   });

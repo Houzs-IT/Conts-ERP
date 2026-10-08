@@ -3,85 +3,70 @@ import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/d
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { findClash, clashResponseBody, upsertGuest } from '../../_lib/reservations';
 import { syncAvailabilityIfLinked } from '../../_lib/channexSync';
+import { CONTACT_ROLES, FILTERS, FILTER_WHERE, SORTS, type GuestFilter, guestTag, monthYear, statsCte, todayAndTomorrow } from '../../_lib/guestList';
+import { like } from '../../_lib/bookingList';
 
-const OPS = ['management', 'operations_manager', 'operations_staff'];
-const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 864e5));
-const monthYear = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
-const at = (date: string, time: string) => `${date}T${time}:00+08:00`;
+const OPS = CONTACT_ROLES;
 
-/** GET /api/guests — the guest directory, each guest with their history and today/tomorrow movement. */
+/** GET /api/guests?q=&filter=&sort=&page=&size= — one page of the guest directory with lifetime
+ *  figures, plus the count behind each filter. The full profile is GET /api/guests/:id. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Guest contact details are not available to field roles.', 403);
   const contact = mayWork(session, OPS);
 
-  const today = (await one<{ d: string; t: string }>(env, `
-    SELECT to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS d,
-           to_char((now() AT TIME ZONE 'Asia/Kuala_Lumpur') + interval '1 day', 'YYYY-MM-DD') AS t`))!;
+  const sp = new URL(request.url).searchParams;
+  const rawFilter = sp.get('filter') ?? '';
+  const filter: GuestFilter = (FILTERS as readonly string[]).includes(rawFilter) ? rawFilter as GuestFilter : 'all';
+  const sortKey = SORTS[sp.get('sort') ?? ''] ? sp.get('sort')! : 'name';
+  const size = Number(sp.get('size'));
+  const pageSize = [25, 50, 100].includes(size) ? size : 50;
+  const q = (sp.get('q') ?? '').trim().slice(0, 80);
 
-  const guests = await all<any>(env, 'SELECT id, full_name, email, phone, created_at FROM guests ORDER BY full_name');
-  const stays = await all<any>(env, `
-    SELECT r.id, r.guest_id, r.channel, r.state, r.check_in, r.check_out, r.check_in_time, r.check_out_time, r.guests_count,
-           r.gross_booking_value, r.notes, u.unit_number, u.readiness, p.name AS property_name,
-           (SELECT MIN(t.created_at) FROM tasks t WHERE t.reservation_id = r.id) AS prepared_at,
-           (SELECT MAX(n.sent_at) FROM notification_log n WHERE n.template = 'access_details' AND n.entity_id = r.id) AS access_sent_at,
-           (SELECT AVG(v.rating) FROM reviews v WHERE v.reservation_id = r.id) AS rating
-    FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id
-    WHERE r.guest_id IS NOT NULL AND r.channel NOT IN ('maintenance_block','owner_stay') AND r.state != 'cancelled'
-    ORDER BY r.check_in DESC`);
-
-  const byGuest = new Map<string, any[]>();
-  for (const s of stays) {
-    const list = byGuest.get(s.guest_id) ?? [];
-    list.push(s);
-    byGuest.set(s.guest_id, list);
-  }
-
-  const data = guests.map(g => {
-    const mine = byGuest.get(g.id) ?? [];
-    const done = mine.filter(s => s.state === 'checked_out' || s.state === 'checked_in');
-    const latest = mine[0];
-    const ratings = mine.map(s => s.rating).filter(x => x !== null).map(Number);
-
-    let movement: Record<string, unknown> | undefined;
-    const candidates = mine.flatMap(s => {
-      const out: { kind: 'arrival' | 'departure'; day: 'today' | 'tomorrow'; s: any }[] = [];
-      if ((s.state === 'confirmed' || s.state === 'pending' || s.state === 'checked_in') && (s.check_in === today.d || s.check_in === today.t)) out.push({ kind: 'arrival', day: s.check_in === today.d ? 'today' : 'tomorrow', s });
-      if ((s.state === 'checked_in' || s.state === 'checked_out') && (s.check_out === today.d || s.check_out === today.t)) out.push({ kind: 'departure', day: s.check_out === today.d ? 'today' : 'tomorrow', s });
-      return out;
-    }).sort((a, b) => (a.day === b.day ? (a.kind === 'arrival' ? -1 : 1) : a.day === 'today' ? -1 : 1));
-    if (candidates[0]) {
-      const { kind, day, s } = candidates[0];
-      movement = {
-        reservationId: s.id, kind, day,
-        checkInAt: at(s.check_in, s.check_in_time), checkOutAt: at(s.check_out, s.check_out_time),
-        unitNumber: s.unit_number, propertyName: s.property_name, channel: s.channel,
-        nights: nightsBetween(s.check_in, s.check_out), guestsCount: s.guests_count,
-        state: s.state, readiness: s.readiness, preparedAt: s.prepared_at, accessSentAt: s.access_sent_at,
-      };
+  // Contact fields are only searchable by the roles allowed to see them.
+  const conds: string[] = [];
+  const args: unknown[] = [];
+  if (q) {
+    const p = like(q);
+    const digits = q.replace(/\D/g, '');
+    if (contact) {
+      conds.push(`(g.full_name ILIKE ? OR g.email ILIKE ? OR g.phone ILIKE ?${digits.length >= 3 ? ` OR regexp_replace(COALESCE(g.phone, ''), '[^0-9]', '', 'g') LIKE ?` : ''})`);
+      args.push(p, p, p, ...(digits.length >= 3 ? [`%${digits}%`] : []));
+    } else {
+      conds.push('g.full_name ILIKE ?');
+      args.push(p);
     }
+  }
+  const where = conds.length ? conds.join(' AND ') : 'TRUE';
+  const { today, tomorrow } = todayAndTomorrow();
+  const cte = statsCte(today, tomorrow);
 
-    const tag = done.length >= 2 ? { label: 'Repeat guest', tone: 'success' }
-      : latest?.channel === 'direct' ? { label: 'Direct', tone: 'info' }
-      : { label: mine.length ? 'New' : 'No stays yet', tone: 'neutral' };
+  const counts = await one<Record<GuestFilter, number>>(env, `${cte}
+    SELECT ${FILTERS.map(f => `COUNT(*) FILTER (WHERE ${FILTER_WHERE[f]}) AS "${f}"`).join(', ')}
+    FROM guests g LEFT JOIN s ON s.guest_id = g.id WHERE ${where}`, ...args);
+  const total = Number(counts?.[filter] ?? 0);
+  const page = Math.min(Math.max(1, Math.floor(Number(sp.get('page')) || 1)), Math.max(1, Math.ceil(total / pageSize)));
 
-    return {
+  const rows = total ? await all<any>(env, `${cte}
+    SELECT g.id, g.full_name, g.email, g.phone, g.created_at,
+           COALESCE(s.bookings, 0) AS bookings, COALESCE(s.stays, 0) AS stays, COALESCE(s.nights, 0) AS nights,
+           COALESCE(s.value, 0) AS value, s.last_check_in, s.channel
+    FROM guests g LEFT JOIN s ON s.guest_id = g.id
+    WHERE ${where} AND ${FILTER_WHERE[filter]}
+    ORDER BY ${SORTS[sortKey]} LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`, ...args) : [];
+
+  return json({
+    generatedAt: nowIso(), filter, sort: sortKey, page, pageSize, total,
+    counts: Object.fromEntries(FILTERS.map(f => [f, Number(counts?.[f] ?? 0)])),
+    data: rows.map(g => ({
       id: g.id, fullName: g.full_name,
       email: contact ? g.email : null, phone: contact ? g.phone : null,
-      channel: latest?.channel ?? 'direct', tag, since: `Guest since ${monthYear(g.created_at)}`,
-      stays: done.length, nights: done.reduce((n, s) => n + nightsBetween(s.check_in, s.check_out), 0),
-      lifetimeValue: done.reduce((n, s) => n + Number(s.gross_booking_value), 0),
-      ratingScore: ratings.length ? Number((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1)) : null,
-      history: mine.map(s => ({
-        checkIn: s.check_in, checkOut: s.check_out, unitNumber: s.unit_number, propertyName: s.property_name,
-        nights: nightsBetween(s.check_in, s.check_out), channel: s.channel, value: Number(s.gross_booking_value), state: s.state,
-      })),
-      ...(movement ? { movement } : {}),
-    };
+      channel: g.channel ?? 'direct', tag: guestTag(Number(g.stays), Number(g.bookings), g.channel),
+      since: `Guest since ${monthYear(g.created_at)}`,
+      stays: Number(g.stays), nights: Number(g.nights), lifetimeValue: Number(g.value), lastCheckIn: g.last_check_in ?? null,
+    })),
   });
-
-  return json({ generatedAt: nowIso(), total: data.length, data });
 };
 
 /** POST /api/guests { fullName, phone, email, unitNumber, propertyName, guestsCount } — a walk-in: guest plus a stay from today. */
