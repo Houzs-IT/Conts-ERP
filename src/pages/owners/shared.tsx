@@ -23,7 +23,7 @@ export type FeeSource = 'unit' | 'owner-default' | 'fallback';
 
 export interface UnitLine {
   unitId: string; unitLabel: string; model: FeeModel; feePct?: number; grrAmount?: number;
-  feeSource?: FeeSource;
+  feeSource?: FeeSource; buildingId?: string;
   occupancy: number; adr: number; gross: number; net: number;
 }
 export interface Owner {
@@ -32,10 +32,10 @@ export interface Owner {
   portalInvited: boolean;
   /** Owner-level default management fee, applied to units with no per-unit override. Null = none set. */
   defaultManagementFeePct: number | null;
-  contract: { feePct: number; startedOn: string; renewsOn: string | null } | null;
+  contract: { feePct: number; startedOn: string; renewsOn: string | null; endsOn?: string | null } | null;
   units: UnitLine[];
 }
-export interface Payload { data: Owner[]; generatedAt: string }
+export interface Payload { data: Owner[]; generatedAt: string; month?: string }
 
 export const line = (unitId: string, unitLabel: string, model: FeeModel, feePct: number | undefined, grrAmount: number | undefined, occupancy: number, adr: number, gross: number, net: number): UnitLine =>
   ({ unitId, unitLabel, model, feePct, grrAmount, occupancy, adr, gross, net });

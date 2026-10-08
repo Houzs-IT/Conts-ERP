@@ -9,13 +9,14 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
-import { rm } from '../lib/format';
-import { cx } from '../lib/design-tokens';
+import { rm, monthLabel, todayMyt } from '../lib/format';
+import { TONE, cx } from '../lib/design-tokens';
 import {
   type Owner, type Payload,
   FALLBACK, netOf, grossOf, terms,
   Roll, AddOwnerModal,
 } from './owners/shared';
+import { useUrlState, usePhone, ListCard, SearchBox, FilterSelect, Chip, MonthStepper, STICKY_HEAD, shiftMonth, useFinanceFilters } from './finance/listKit';
 
 /**
  * Owners list. Each row opens the full owner profile at `#/owners/:id`
@@ -24,9 +25,16 @@ import {
  * link unit, contract, invite, delete and the per-unit financials all live on
  * the profile. The rows, stats and fee model are shared with the profile so the
  * two surfaces never drift.
+ *
+ * About 120 owners: the whole list comes in one response (~60 KB) and is
+ * searched and sorted here, which keeps sorting by net instant.
  */
 
-const COLS = 'grid-cols-[minmax(170px,1.5fr)_minmax(190px,1.7fr)_minmax(120px,0.9fr)_minmax(120px,1fr)_minmax(120px,1fr)]';
+const COLS = 'grid-cols-[minmax(0,1.7fr)_minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(96px,0.85fr)_minmax(104px,0.9fr)_minmax(96px,0.75fr)]';
+
+type SortKey = 'name' | 'units' | 'gross' | 'net';
+const SORT_KEYS: SortKey[] = ['name', 'units', 'gross', 'net'];
+type ModelFilter = '' | 'management' | 'grr' | 'none';
 
 /** Terms shown for an owner in the list. A single-unit owner reads exactly as
  *  that unit's terms; a multi-unit owner shows the shared terms when every unit
@@ -37,21 +45,59 @@ function ownerTerms(o: Owner): string {
   const all = o.units.map(terms);
   return all.every(t => t === all[0]) ? all[0] : 'Mixed';
 }
+const unitsText = (o: Owner) => o.units.length === 0 ? 'No units yet' : o.units.length === 1 ? o.units[0].unitLabel : `${o.units.length} units`;
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
 
 export default function OwnersPage() {
-  const { data, loading, error, reload } = useApi<Payload>('/owners', FALLBACK);
+  const url = useUrlState();
+  const phone = usePhone();
+  const thisMonth = todayMyt().slice(0, 7);
+  const month = /^\d{4}-\d{2}$/.test(url.get('month')) ? url.get('month') : thisMonth;
+  const q = url.get('q').toLowerCase();
+  const building = url.get('building');
+  const model = (['management', 'grr', 'none'].includes(url.get('model')) ? url.get('model') : '') as ModelFilter;
+  const sortRaw = url.get('sort', 'name');
+  const desc = sortRaw.startsWith('-');
+  const sortKey: SortKey = SORT_KEYS.includes(sortRaw.replace(/^-/, '') as SortKey) ? sortRaw.replace(/^-/, '') as SortKey : 'name';
+
+  const { data, loading, error, reload } = useApi<Payload>(`/owners${month === thisMonth ? '' : `?month=${month}`}`, FALLBACK);
+  const filters = useFinanceFilters();
   const toast = useToast();
   const navigate = useNavigate();
   const [modal, setModal] = useState(false);
 
-  const rows = useMemo(() => data?.data ?? [], [data]);
-  const unitCount = rows.reduce((s, o) => s + o.units.length, 0);
-  // Portfolio net-payout rollup — pure client compute over loaded owners (no
-  // /owners/summary endpoint in api.md), reusing the same per-owner net the profile shows.
-  const portfolioNet = rows.reduce((s, o) => s + netOf(o), 0);
-  const portfolioGross = rows.reduce((s, o) => s + grossOf(o), 0);
+  const all = useMemo(() => data?.data ?? [], [data]);
+  const counts = useMemo(() => ({
+    all: all.length,
+    management: all.filter(o => o.units.some(u => u.model === 'management')).length,
+    grr: all.filter(o => o.units.some(u => u.model === 'grr')).length,
+    none: all.filter(o => o.units.length === 0).length,
+  }), [all]);
+
+  const rows = useMemo(() => {
+    const list = all.filter(o =>
+      (!q || o.displayName.toLowerCase().includes(q) || (o.email ?? '').toLowerCase().includes(q) || o.units.some(u => u.unitLabel.toLowerCase().includes(q))) &&
+      (!building || o.units.some(u => u.buildingId === building)) &&
+      (!model || (model === 'none' ? o.units.length === 0 : o.units.some(u => u.model === model))));
+    const val = (o: Owner) => sortKey === 'units' ? o.units.length : sortKey === 'gross' ? grossOf(o) : sortKey === 'net' ? netOf(o) : 0;
+    list.sort((a, b) => sortKey === 'name'
+      ? a.displayName.localeCompare(b.displayName) * (desc ? -1 : 1)
+      : (val(a) - val(b)) * (desc ? -1 : 1) || a.displayName.localeCompare(b.displayName));
+    return list;
+  }, [all, q, building, model, sortKey, desc]);
+
+  const unitCount = all.reduce((s, o) => s + o.units.length, 0);
+  // Portfolio rollup — pure client compute over loaded owners, reusing the same per-owner net the profile shows.
+  const portfolioNet = all.reduce((s, o) => s + netOf(o), 0);
+  const portfolioGross = all.reduce((s, o) => s + grossOf(o), 0);
+  const shownNet = rows.reduce((s, o) => s + netOf(o), 0);
+  const shownGross = rows.reduce((s, o) => s + grossOf(o), 0);
+  const filtered = !!(q || building || model);
+  const monthText = month === thisMonth ? 'this month' : monthLabel(month);
 
   const openProfile = (id: string) => navigate(`/owners/${encodeURIComponent(id)}`);
+  // Numbers sort biggest first on the first click; names A to Z.
+  const sortBy = (k: SortKey) => url.set({ sort: sortKey === k ? (desc ? k : `-${k}`) : (k === 'name' ? null : `-${k}`) });
 
   async function addOwner(o: Omit<Owner, 'id' | 'units' | 'portalInvited' | 'contract' | 'defaultManagementFeePct'>) {
     try {
@@ -64,52 +110,116 @@ export default function OwnersPage() {
     }
   }
 
+  const Head = ({ k, label, right }: { k: SortKey; label: string; right?: boolean }) => (
+    <button onClick={() => sortBy(k)} aria-sort={sortKey === k ? (desc ? 'descending' : 'ascending') : undefined}
+      className={cx('p-0 bg-transparent border-none cursor-pointer font-sans text-[12px] font-semibold inline-flex items-center gap-1', right ? 'justify-end' : '', sortKey === k ? 'text-ink' : 'text-muted-ink')}>
+      {label}{sortKey === k && <span aria-hidden className="text-[10px]">{desc ? '▼' : '▲'}</span>}
+    </button>
+  );
+
   return (
     <>
-      <PageHeader title="Owners" sub={`${rows.length} owners · ${unitCount} units under management`}
+      <PageHeader title="Owners" sub={`${all.length} owners · ${unitCount} units under management`}
         right={<Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal(true)}>Add owner</Button>} />
 
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <Card>
-        <div className="flex gap-[30px] flex-wrap py-4 px-[22px]">
-          <Roll label="Net payout, this month" value={rm(portfolioNet)} strong />
-          <Roll label="Gross, this month" value={rm(portfolioGross)} />
+        <div className="flex gap-[30px] gap-y-3 flex-wrap items-center py-4 px-[22px]">
+          <Roll label={`Net payout, ${monthText}`} value={rm(portfolioNet)} strong />
+          <Roll label={`Gross, ${monthText}`} value={rm(portfolioGross)} />
+          <div className="ml-auto"><MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} /></div>
+        </div>
+        <div className="px-[22px] pb-3 -mt-1 text-[11.5px] text-muted-ink">
+          Estimate from bookings that start in the month (collected revenue), less the fee and owner-charged expenses. The owner statement is the figure that is paid.
         </div>
       </Card>
 
-      <Card>
-        <div className="overflow-x-auto">
-          <div className="min-w-[860px]">
-            <div className={cx(COLS, 'grid gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink')}>
-              <div>Owner</div><div>Units</div><div className="text-right">Terms</div><div className="text-right">Net this month</div><div>Portal</div>
+      <div className="flex flex-col gap-2">
+        <div className={cx('flex gap-[7px] shrink-0', phone ? 'overflow-x-auto -mx-4 px-4 pb-1' : 'flex-wrap')}>
+          <Chip on={!model} onClick={() => url.set({ model: null })} count={counts.all}>All owners</Chip>
+          <Chip on={model === 'management'} onClick={() => url.set({ model: 'management' })} count={counts.management}>Management fee</Chip>
+          <Chip on={model === 'grr'} onClick={() => url.set({ model: 'grr' })} count={counts.grr}>Guaranteed rent</Chip>
+          <Chip on={model === 'none'} onClick={() => url.set({ model: 'none' })} count={counts.none}>No units</Chip>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <SearchBox className="flex-[2_1_240px]" label="Search owners" placeholder="Search owner, email or unit" value={url.get('q')} onChange={v => url.set({ q: v || null })} />
+          {filters && (
+            <FilterSelect className="flex-[1_1_180px]" label="Building" all="All buildings" value={building} onChange={v => url.set({ building: v || null })}
+              options={filters.buildings.map(b => ({ value: b.id, label: b.name }))} />
+          )}
+          {phone && (
+            <FilterSelect className="flex-[1_1_180px]" label="Sort by" all="Sort: name A-Z" value={sortRaw === 'name' ? '' : sortRaw}
+              onChange={v => url.set({ sort: v || null })}
+              options={[{ value: '-net', label: 'Sort: net, highest first' }, { value: 'net', label: 'Sort: net, lowest first' }, { value: '-gross', label: 'Sort: gross, highest first' }, { value: '-units', label: 'Sort: most units' }]} />
+          )}
+        </div>
+      </div>
+
+      <ListCard busy={loading && !!data}>
+        {loading && !data ? <TableSkeleton rows={8} cols={phone ? 2 : 6} /> : rows.length === 0 ? (
+          <div className="py-[44px] px-[22px] text-center flex flex-col items-center gap-2">
+            <span className="text-[14px] font-medium">{all.length === 0 ? 'No owners yet.' : 'No owners match these filters.'}</span>
+            {filtered && <button onClick={() => url.set({ q: null, building: null, model: null })} className="font-sans text-[14px] text-gold-ink bg-transparent border-none cursor-pointer">Clear filters</button>}
+          </div>
+        ) : phone ? (
+          <div>
+            {rows.map(o => (
+              <button key={o.id} onClick={() => openProfile(o.id)}
+                className="w-full text-left flex items-center gap-3 py-[11px] px-4 bg-card border-none [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer font-sans text-ink">
+                <span className="w-[32px] h-[32px] flex-none rounded-full bg-black text-gold grid place-items-center text-[11px] font-semibold">{initials(o.displayName)}</span>
+                <div className="flex flex-col gap-[2px] min-w-0 flex-1">
+                  <span className="text-[13.5px] font-medium truncate">{o.displayName}</span>
+                  <span className="text-[12px] text-muted-ink truncate">{unitsText(o)} · {ownerTerms(o)}</span>
+                </div>
+                <div className="flex flex-col items-end gap-[2px] shrink-0">
+                  <span className="text-[13.5px] font-semibold tabular-nums">{rm(netOf(o), { cents: false })}</span>
+                  <span className="text-[11px] text-muted-ink">net</span>
+                </div>
+              </button>
+            ))}
+            <div className="flex items-center justify-between py-3 px-4 bg-page text-[13px] font-semibold">
+              <span>{rows.length} {rows.length === 1 ? 'owner' : 'owners'}</span>
+              <span className="tabular-nums">{rm(shownNet, { cents: false })}</span>
             </div>
-            {loading && rows.length === 0 ? <TableSkeleton rows={6} cols={5} /> : rows.map(o => (
-              <div key={o.id} role="button" tabIndex={0} onClick={() => openProfile(o.id)} onKeyDown={e => { if (e.key === 'Enter') openProfile(o.id); }}
-                className={cx(COLS, 'grid gap-[14px] items-center min-h-[54px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer')}>
+          </div>
+        ) : (
+          <div role="table" aria-label="Owners">
+            <div role="row" className={cx(COLS, 'grid gap-[14px] py-[9px] px-[22px]', STICKY_HEAD)}>
+              <Head k="name" label="Owner" /><Head k="units" label="Units" /><div>Terms</div>
+              <Head k="gross" label={`Gross, ${month === thisMonth ? 'month' : monthLabel(month)}`} right />
+              <Head k="net" label={`Net, ${month === thisMonth ? 'month' : monthLabel(month)}`} right />
+              <div>Portal</div>
+            </div>
+            {rows.map(o => (
+              <div key={o.id} role="row" tabIndex={0} onClick={() => openProfile(o.id)} onKeyDown={e => { if (e.key === 'Enter') openProfile(o.id); }}
+                className={cx(COLS, 'grid gap-[14px] items-center min-h-[52px] py-[7px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-page')}>
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-[30px] h-[30px] flex-none rounded-[999px] bg-black text-gold grid place-items-center text-[11px] font-semibold">
-                    {o.displayName.split(' ').map(n => n[0]).slice(0, 2).join('')}
-                  </span>
+                  <span className="w-[30px] h-[30px] flex-none rounded-full bg-black text-gold grid place-items-center text-[11px] font-semibold">{initials(o.displayName)}</span>
                   <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{o.displayName}</span>
-                    <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{o.email}</span>
+                    <span className="text-[13.5px] font-medium truncate" title={o.displayName}>{o.displayName}</span>
+                    {o.email && <span className="text-[11.5px] text-muted-ink truncate" title={o.email}>{o.email}</span>}
                   </div>
                 </div>
-                <span className="text-[12.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">
-                  {o.units.length === 0 ? 'No units yet' : o.units.length === 1 ? o.units[0].unitLabel : `${o.units.length} units`}
-                </span>
-                <span className="text-[12.5px] text-right text-muted-ink">{ownerTerms(o)}</span>
-                <span className="text-[13px] text-right font-medium">{rm(netOf(o), { cents: false })}</span>
-                <div className="flex items-center justify-between gap-2">
+                <span className="text-[12.5px] text-muted-ink truncate" title={o.units.map(u => u.unitLabel).join(', ')}>{unitsText(o)}</span>
+                <span className="text-[12.5px] text-muted-ink truncate">{ownerTerms(o)}</span>
+                <span className="text-[12.5px] text-right text-muted-ink tabular-nums whitespace-nowrap">{rm(grossOf(o), { cents: false })}</span>
+                <span className={cx('text-[13px] text-right font-medium tabular-nums whitespace-nowrap', netOf(o) < 0 ? TONE.critical.text : '')}>{rm(netOf(o), { cents: false })}</span>
+                <div className="flex items-center justify-between gap-2 min-w-0">
                   {o.portalInvited ? <Badge tone="success" label="Active" /> : <Badge tone="neutral" label="Not invited" />}
                   <Icon name="ChevronRight" size="sm" color="var(--color-muted-ink)" />
                 </div>
               </div>
             ))}
+            <div className={cx(COLS, 'grid gap-[14px] items-center py-[12px] px-[22px] bg-page text-[13px] font-semibold')}>
+              <span>{filtered ? `${rows.length} of ${all.length} owners` : `${rows.length} owners`}</span><span /><span />
+              <span className="text-right tabular-nums whitespace-nowrap">{rm(shownGross, { cents: false })}</span>
+              <span className="text-right tabular-nums whitespace-nowrap">{rm(shownNet, { cents: false })}</span>
+              <span />
+            </div>
           </div>
-        </div>
-      </Card>
+        )}
+      </ListCard>
 
       {modal && <AddOwnerModal onClose={() => setModal(false)} onSubmit={addOwner} />}
     </>

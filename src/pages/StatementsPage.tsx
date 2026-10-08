@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
@@ -13,41 +12,36 @@ import { useToast } from '../components/Toast';
 import { api, ApiFailure } from '../lib/api';
 import { rm, date as fmtDate, time as fmtTime, todayMyt, monthLabel } from '../lib/format';
 import { STATEMENT } from '../lib/vocabulary';
-import { TONE } from '../lib/design-tokens';
+import { TONE, cx } from '../lib/design-tokens';
 import type { StatementState } from '../lib/types';
+import { useUrlState, usePhone, ListCard, Pager, SearchBox, Chip, STICKY_HEAD, shiftMonth } from './finance/listKit';
 
 interface Statement {
   id: string; period?: string; ownerName: string; unitsLabel: string; state: StatementState;
   grossBookingValue: number; managementFee: number; expensesTotal: number; netPayout: number;
 }
+interface PeriodSummary { period: string; count: number; net: number; provisional: number; finalised: number; sent: number; paid: number }
 interface Payload {
-  data: Statement[]; summary: { notSent: number }; generatedAt: string;
-  filtersApplied: Record<string, string>; total?: number; pageSize?: number;
+  data: Statement[]; summary: { notSent: number }; generatedAt: string; period?: string | null;
+  filtersApplied: Record<string, string>; total?: number; page?: number; pageSize?: number;
+  totals?: { gross: number; fee: number; expenses: number; net: number };
+  periods?: PeriodSummary[];
 }
 
 const BASE_PERIOD = '2026-08';
 
 const FALLBACK: Payload = {
-  generatedAt: '2026-09-16T06:06:00Z', filtersApplied: { period: BASE_PERIOD, building: 'all' },
-  summary: { notSent: 2 }, total: 6, pageSize: 25,
+  generatedAt: '2026-09-16T06:06:00Z', filtersApplied: { period: BASE_PERIOD, building: 'all' }, period: BASE_PERIOD,
+  summary: { notSent: 2 }, total: 3, pageSize: 200,
   data: [
     { id: 's1', period: BASE_PERIOD, ownerName: 'Lim Chee Keong', unitsLabel: 'Vista Jaya One #A-12-03', grossBookingValue: 926000, managementFee: 231500, expensesTotal: 46300, netPayout: 648200, state: 'paid' },
-    { id: 's2', period: BASE_PERIOD, ownerName: 'Rajesh Kumar', unitsLabel: 'Tribeca #2207', grossBookingValue: 1048000, managementFee: 262000, expensesTotal: 31800, netPayout: 754200, state: 'paid' },
-    { id: 's3', period: BASE_PERIOD, ownerName: 'Wong Mei Ling', unitsLabel: 'Arcoris #B-08-11', grossBookingValue: 714000, managementFee: 178500, expensesTotal: 24000, netPayout: 511500, state: 'paid' },
     { id: 's4', period: BASE_PERIOD, ownerName: 'Nur Aisyah', unitsLabel: 'The Establishment #A-21-02', grossBookingValue: 769000, managementFee: 192200, expensesTotal: 51200, netPayout: 525600, state: 'finalised' },
-    { id: 's5', period: BASE_PERIOD, ownerName: 'Tan Boon Huat', unitsLabel: 'Sentral Suites #C-31-14', grossBookingValue: 498000, managementFee: 124500, expensesTotal: 164000, netPayout: 209500, state: 'finalised' },
     { id: 's6', period: BASE_PERIOD, ownerName: 'Goh Family Trust', unitsLabel: '3 units · Sunway Velocity', grossBookingValue: 2134000, managementFee: 533500, expensesTotal: 89400, netPayout: 1511100, state: 'provisional' },
   ],
 };
 
-/** YYYY-MM, moved by whole months. */
-const shiftMonth = (p: string, by: number) => {
-  const [y, m] = p.split('-').map(Number);
-  const d = new Date(Date.UTC(y, m - 1 + by, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-};
-
 const periodLabel = (p: string) => monthLabel(p);
+const PAGE_SIZE = 200;
 
 const SELECT_REASON: Record<StatementState, string> = {
   provisional: 'Cannot send. This statement is still provisional.',
@@ -55,16 +49,23 @@ const SELECT_REASON: Record<StatementState, string> = {
   sent: 'Already sent to the owner.',
   paid: 'Paid — nothing left to send.',
 };
+const STATE_ORDER: StatementState[] = ['provisional', 'finalised', 'sent', 'paid'];
 
-// COLS as an arbitrary grid-template-columns utility (underscores == spaces).
-const gridCols = 'grid-cols-[32px_minmax(160px,1.6fr)_minmax(118px,1fr)_minmax(96px,0.9fr)_minmax(96px,0.9fr)_minmax(110px,1fr)_minmax(92px,0.9fr)_76px]';
+// Every column can shrink so the table fits without a sideways scrollbar (which would stop the header sticking).
+const gridCols = 'grid-cols-[28px_minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(92px,0.85fr)_70px]';
 
 export default function StatementsPage() {
-  const { data, loading, error, reload } = useApi<Payload>('/statements?pageSize=500', FALLBACK);
+  const url = useUrlState();
+  const phone = usePhone();
+  const thisMonth = todayMyt().slice(0, 7);
+  const pickedPeriod = /^\d{4}-\d{2}$/.test(url.get('period')) ? url.get('period') : '';
+  const stateFilter = (STATE_ORDER as string[]).includes(url.get('state')) ? url.get('state') as StatementState : '';
+  const q = url.get('q');
+  const page = Math.max(1, Number(url.get('page')) || 1);
+  const query = new URLSearchParams({ pageSize: String(PAGE_SIZE), ...(pickedPeriod ? { period: pickedPeriod } : {}), ...(stateFilter ? { state: stateFilter } : {}), ...(q ? { q } : {}), ...(page > 1 ? { page: String(page) } : {}) });
+  const { data, loading, error, reload } = useApi<Payload>(`/statements?${query}`, FALLBACK);
   const toast = useToast();
 
-  const [pickedPeriod, setViewPeriod] = useState<string | null>(null);
-  const thisMonth = todayMyt().slice(0, 7);
   const [edits, setEdits] = useState<Record<string, Partial<Statement>>>({});
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const [sendConfirm, setSendConfirm] = useState(false);
@@ -73,30 +74,34 @@ export default function StatementsPage() {
   const [adjustTarget, setAdjustTarget] = useState<Statement | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const baseRows = data?.data ?? [];
-  const allRows = useMemo(
-    () => baseRows.map(r => ({ ...r, ...edits[r.id], period: r.period ?? BASE_PERIOD })),
-    [baseRows, edits],
+  // The server opens on the latest period that has statements; the URL holds a period only once one is picked.
+  const viewPeriod = pickedPeriod || data?.period || shiftMonth(thisMonth, -1);
+  const setViewPeriod = (p: string) => { url.set({ period: p, page: null }); setSel({}); };
+  const periodRows = data?.periods ?? [];
+  const current = periodRows.find(p => p.period === viewPeriod);
+
+  const rows = useMemo(
+    () => (data?.data ?? []).map(r => ({ ...r, ...edits[r.id], period: r.period ?? viewPeriod })).filter(r => r.period === viewPeriod),
+    [data, edits, viewPeriod],
   );
   // Every month that has statements, plus the last three and the current one.
   const PERIODS = useMemo(() => {
-    const set = new Set<string>(allRows.map(r => r.period ?? BASE_PERIOD));
+    const set = new Set<string>(periodRows.map(p => p.period));
     for (let i = -3; i <= 0; i++) set.add(shiftMonth(thisMonth, i));
+    set.add(viewPeriod);
     return [...set].sort();
-  }, [allRows, thisMonth]);
-  const latestWithData = useMemo(() => [...new Set(allRows.map(r => r.period ?? BASE_PERIOD))].sort().pop(), [allRows]);
-  const viewPeriod = pickedPeriod ?? latestWithData ?? shiftMonth(thisMonth, -1);
-  const rows = allRows.filter(r => r.period === viewPeriod);
-  const lockedPeriods = useMemo(() => {
-    const s = new Set<string>();
-    allRows.forEach(r => { if (r.state === 'sent' || r.state === 'paid') s.add(r.period ?? BASE_PERIOD); });
-    return s;
-  }, [allRows]);
+  }, [periodRows, thisMonth, viewPeriod]);
+  const lockedPeriods = useMemo(() => new Set(periodRows.filter(p => p.sent + p.paid > 0).map(p => p.period)), [periodRows]);
 
   const selected = rows.filter(r => sel[r.id] && r.state === 'finalised');
   const selectedProvisional = rows.filter(r => sel[r.id] && r.state === 'provisional');
-  const sendable = rows.filter(r => r.state === 'finalised');
-  const notSent = sendable.length;
+  const notSent = current?.finalised ?? rows.filter(r => r.state === 'finalised').length;
+  const totals = data?.totals ?? {
+    gross: rows.reduce((n, r) => n + r.grossBookingValue, 0), fee: rows.reduce((n, r) => n + r.managementFee, 0),
+    expenses: rows.reduce((n, r) => n + r.expensesTotal, 0), net: rows.reduce((n, r) => n + r.netPayout, 0),
+  };
+  const total = data?.total ?? rows.length;
+  const filtered = !!(stateFilter || q);
 
   function openGenerate(initial: string) {
     setGenInitial(initial);
@@ -108,7 +113,7 @@ export default function StatementsPage() {
     try {
       const res = await api.post<{ count: number; skipped: number }>('/statements/generate', { period, ownerIds: [] });
       setEdits({});
-      setViewPeriod(period);
+      url.set({ period, page: null, state: null });
       setSel({});
       setGenOpen(false);
       reload();
@@ -181,19 +186,19 @@ export default function StatementsPage() {
 
   function exportCsv() {
     const genAt = data?.generatedAt || new Date().toISOString();
-    const b = data?.filtersApplied?.building;
-    const buildings = b && b !== 'all' ? b : 'all buildings';
-    const filtersLine = `Filters applied: period ${periodLabel(viewPeriod)}, ${buildings} · generated ${fmtDate(genAt)} ${fmtTime(genAt)}`;
+    const extra = [stateFilter && `status ${STATEMENT[stateFilter].label}`, q && `search "${q}"`].filter(Boolean).join(', ');
+    const filtersLine = `Filters applied: period ${periodLabel(viewPeriod)}${extra ? `, ${extra}` : ''} · generated ${fmtDate(genAt)} ${fmtTime(genAt)}`;
     const scopeLine = `Scope: ${rows.length} owners · ${periodLabel(viewPeriod)} · management + finance view`;
     const head = ['Owner', 'Units', 'Gross booking value', 'Fees', 'Expenses', 'Net payout', 'Status'];
     const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
     const body = rows.map(r => [r.ownerName, r.unitsLabel, rm(r.grossBookingValue), rm(r.managementFee), rm(r.expensesTotal), rm(r.netPayout), STATEMENT[r.state].label]);
-    const lines = [`# ${filtersLine}`, `# ${scopeLine}`, '', head.map(esc).join(','), ...body.map(r => r.map(esc).join(','))];
-    const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
+    const lines = [`# ${filtersLine}`, `# ${scopeLine}`, '', head.map(esc).join(','), ...body.map(r => r.map(esc).join(',')),
+      ['Total', '', rm(totals.gross), rm(totals.fee), rm(totals.expenses), rm(totals.net), ''].map(esc).join(',')];
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const href = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `owner-statements-${viewPeriod}.csv`; a.click();
-    URL.revokeObjectURL(url);
+    a.href = href; a.download = `owner-statements-${viewPeriod}.csv`; a.click();
+    URL.revokeObjectURL(href);
     toast({ tone: 'success', title: 'Export ready.', body: 'The CSV header prints the applied filters, generated time and scope.' });
   }
 
@@ -204,24 +209,29 @@ export default function StatementsPage() {
     window.open(`/api/statements/${encodeURIComponent(r.id)}/pdf`, '_blank', 'noopener');
   }
 
+  const periodHasNone = !!data && !current && !filtered;
+
   return (
     <>
       <PageHeader
         title="Owner statements"
-        sub={`${periodLabel(viewPeriod)} period · ${notSent} ${notSent === 1 ? 'statement' : 'statements'} not yet sent`}
+        sub={`${periodLabel(viewPeriod)} period · ${current?.count ?? 0} statements · ${notSent} not yet sent`}
         right={
           <div className="flex gap-[9px] flex-wrap items-center">
-            <label className="relative flex items-center">
-              <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Statement period</span>
-              <select
-                value={viewPeriod}
-                onChange={e => { setViewPeriod(e.target.value); setSel({}); }}
-                className="h-9 py-0 pr-[30px] pl-3 rounded-control border border-solid border-line bg-card text-ink [font:inherit] cursor-pointer appearance-none"
-              >
-                {PERIODS.map(p => <option key={p} value={p}>{periodLabel(p)}</option>)}
-              </select>
-              <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" style={{ position: 'absolute', right: 9, pointerEvents: 'none' }} />
-            </label>
+            <div className="flex items-center h-9 rounded-control border border-solid border-line bg-card">
+              <button aria-label="Previous period" onClick={() => setViewPeriod(shiftMonth(viewPeriod, -1))} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">‹</button>
+              <label className="relative h-full">
+                <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Statement period</span>
+                <select value={viewPeriod} onChange={e => setViewPeriod(e.target.value)}
+                  className="h-full appearance-none bg-transparent border-none outline-none font-sans text-[14px] font-medium text-ink cursor-pointer px-1 tabular-nums [text-align-last:center]">
+                  {[...PERIODS].reverse().map(p => {
+                    const s = periodRows.find(x => x.period === p);
+                    return <option key={p} value={p}>{periodLabel(p)}{s ? ` · ${s.count}` : ''}</option>;
+                  })}
+                </select>
+              </label>
+              <button aria-label="Next period" onClick={() => setViewPeriod(shiftMonth(viewPeriod, 1))} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">›</button>
+            </div>
             <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportCsv} disabled={rows.length === 0} disabledReason="Nothing to export for this period yet.">Export</Button>
             <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => openGenerate(lockedPeriods.has(shiftMonth(thisMonth, -1)) ? thisMonth : shiftMonth(thisMonth, -1))}>Generate statements</Button>
           </div>
@@ -230,16 +240,26 @@ export default function StatementsPage() {
 
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
 
-      {!loading && rows.length === 0 ? (
+      {periodHasNone ? (
         <EmptyState
           title={`No statements for ${periodLabel(viewPeriod)} yet.`}
           body="Generate the period to draw every settled booking, fee and documented expense into provisional statements."
           action={{ label: 'Generate statements', onClick: () => openGenerate(viewPeriod) }}
         />
-      ) : (
-        <Card>
+      ) : (<>
+        <div className="flex flex-col gap-2">
+          <div className={cx('flex gap-[7px] shrink-0', phone ? 'overflow-x-auto -mx-4 px-4 pb-1' : 'flex-wrap')}>
+            <Chip on={!stateFilter} onClick={() => url.set({ state: null, page: null })} count={current?.count}>All</Chip>
+            {STATE_ORDER.map(s => (
+              <Chip key={s} on={stateFilter === s} onClick={() => url.set({ state: stateFilter === s ? null : s, page: null })} count={current ? current[s] : undefined}>{STATEMENT[s].label}</Chip>
+            ))}
+          </div>
+          <SearchBox className="max-w-[420px]" label="Search statements" placeholder="Search owner or unit" value={q} onChange={v => url.set({ q: v || null, page: null })} />
+        </div>
+
+        <ListCard busy={loading && !!data}>
           {(selected.length > 0 || selectedProvisional.length > 0) && (
-            <div className="flex items-center justify-between gap-[14px] flex-wrap px-[22px] py-[11px] bg-black text-white">
+            <div className="sticky -top-6 z-[3] flex items-center justify-between gap-[14px] flex-wrap px-[22px] py-[11px] bg-black text-white">
               <span className="text-[13px] font-medium">{selected.length + selectedProvisional.length} selected · {periodLabel(viewPeriod)}</span>
               <div className="flex items-center gap-[10px]">
                 <button onClick={() => setSel({})} className="[font:inherit] text-[var(--color-text-on-dark)] bg-transparent border-none cursor-pointer">Clear</button>
@@ -257,9 +277,39 @@ export default function StatementsPage() {
             </div>
           )}
 
-          <div className="overflow-x-auto">
-            <div className="min-w-[920px]">
-              <div className={`grid ${gridCols} gap-[14px] px-[22px] py-[9px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink`}>
+          {loading && !data ? <TableSkeleton rows={8} cols={phone ? 2 : 7} /> : rows.length === 0 ? (
+            <div className="py-[44px] px-[22px] text-center flex flex-col items-center gap-2">
+              <span className="text-[14px] font-medium">No statements match these filters.</span>
+              <button onClick={() => url.set({ state: null, q: null, page: null })} className="font-sans text-[14px] text-gold-ink bg-transparent border-none cursor-pointer">Clear filters</button>
+            </div>
+          ) : phone ? (
+            <div>
+              {rows.map(s => {
+                const can = s.state === 'finalised' || s.state === 'provisional';
+                return (
+                  <div key={s.id} className={cx('flex items-start gap-3 py-[11px] px-4 [border-bottom:1px_solid_var(--color-line-soft)]', sel[s.id] ? 'bg-gold-tint' : 'bg-card')}>
+                    <input type="checkbox" disabled={!can} checked={!!sel[s.id]} aria-label={`Select ${s.ownerName}`}
+                      onChange={() => setSel(v => ({ ...v, [s.id]: !v[s.id] }))} className="mt-[3px] w-[17px] h-[17px] accent-[#11694A]" />
+                    <button onClick={() => openRow(s)} className="flex flex-col gap-[3px] min-w-0 flex-1 text-left bg-transparent border-none p-0 cursor-pointer font-sans text-ink">
+                      <span className="text-[13.5px] font-medium truncate">{s.ownerName}</span>
+                      <span className="text-[12px] text-muted-ink truncate">{s.unitsLabel}</span>
+                      <span className="text-[11.5px] text-muted-ink tabular-nums">Gross {rm(s.grossBookingValue, { cents: false })} · fees {rm(s.managementFee, { cents: false })} · costs {rm(s.expensesTotal, { cents: false })}</span>
+                    </button>
+                    <div className="flex flex-col items-end gap-[5px] shrink-0">
+                      <span className="text-[13.5px] font-semibold tabular-nums">{rm(s.netPayout, { cents: false })}</span>
+                      <Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} size="sm" />
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="flex items-center justify-between py-3 px-4 bg-page text-[13px] font-semibold">
+                <span>{total} {total === 1 ? 'owner' : 'owners'}</span>
+                <span className="tabular-nums">{rm(totals.net)}</span>
+              </div>
+            </div>
+          ) : (
+            <div role="table" aria-label={`Owner statements, ${periodLabel(viewPeriod)}`}>
+              <div role="row" className={cx('grid', gridCols, 'gap-[14px] px-[22px] py-[9px]', STICKY_HEAD)}>
                 <div />
                 <div>Owner</div>
                 <div className="text-right">Gross booking value</div>
@@ -270,17 +320,17 @@ export default function StatementsPage() {
                 <div />
               </div>
 
-              {loading && rows.length === 0 ? <TableSkeleton rows={6} cols={8} /> : rows.map(s => {
+              {rows.map(s => {
                 const can = s.state === 'finalised' || s.state === 'provisional';
                 const on = !!sel[s.id];
                 return (
                   <div
                     key={s.id}
-                    role="button"
+                    role="row"
                     tabIndex={0}
                     onClick={() => openRow(s)}
                     onKeyDown={e => { if (e.key === 'Enter') openRow(s); }}
-                    className={`grid ${gridCols} gap-[14px] items-center min-h-[50px] py-2 px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer ${on ? 'bg-gold-tint' : 'bg-card'}`}
+                    className={cx('grid', gridCols, 'gap-[14px] items-center min-h-[50px] py-[7px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer', on ? 'bg-gold-tint' : 'bg-card hover:bg-page')}
                   >
                     <span onClick={e => e.stopPropagation()} className="flex">
                       <input
@@ -294,13 +344,13 @@ export default function StatementsPage() {
                       />
                     </span>
                     <div className="flex flex-col gap-px min-w-0">
-                      <span className="text-[13.5px] font-medium">{s.ownerName}</span>
-                      <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{s.unitsLabel}</span>
+                      <span className="text-[13.5px] font-medium truncate" title={s.ownerName}>{s.ownerName}</span>
+                      <span className="text-[11.5px] text-muted-ink truncate" title={s.unitsLabel}>{s.unitsLabel}</span>
                     </div>
-                    <div className="text-right text-[13px] tabular-nums">{rm(s.grossBookingValue, { cents: false })}</div>
-                    <div className="text-right text-[13px] text-muted-ink tabular-nums">&minus; {rm(s.managementFee, { cents: false })}</div>
-                    <div className="text-right text-[13px] text-muted-ink tabular-nums">&minus; {rm(s.expensesTotal, { cents: false })}</div>
-                    <div className="text-right text-[13px] font-semibold tabular-nums">{rm(s.netPayout)}</div>
+                    <div className="text-right text-[13px] tabular-nums whitespace-nowrap">{rm(s.grossBookingValue, { cents: false })}</div>
+                    <div className="text-right text-[13px] text-muted-ink tabular-nums whitespace-nowrap">&minus; {rm(s.managementFee, { cents: false })}</div>
+                    <div className="text-right text-[13px] text-muted-ink tabular-nums whitespace-nowrap">&minus; {rm(s.expensesTotal, { cents: false })}</div>
+                    <div className={cx('text-right text-[13px] font-semibold tabular-nums whitespace-nowrap', s.netPayout < 0 ? TONE.critical.text : '')}>{rm(s.netPayout)}</div>
                     <div><Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} /></div>
                     <div className="flex justify-end gap-[6px]" onClick={e => e.stopPropagation()}>
                       {(s.state === 'provisional' || s.state === 'finalised') && (
@@ -325,15 +375,25 @@ export default function StatementsPage() {
                   </div>
                 );
               })}
-            </div>
-          </div>
 
+              <div className={cx('grid', gridCols, 'gap-[14px] items-center px-[22px] py-[12px] bg-page text-[13px] font-semibold')}>
+                <div />
+                <div>Total · {total} {total === 1 ? 'owner' : 'owners'}</div>
+                <div className="text-right tabular-nums whitespace-nowrap">{rm(totals.gross, { cents: false })}</div>
+                <div className="text-right tabular-nums whitespace-nowrap">&minus; {rm(totals.fee, { cents: false })}</div>
+                <div className="text-right tabular-nums whitespace-nowrap">&minus; {rm(totals.expenses, { cents: false })}</div>
+                <div className="text-right tabular-nums whitespace-nowrap">{rm(totals.net)}</div>
+                <div /><div />
+              </div>
+            </div>
+          )}
+          <Pager page={page} pageSize={PAGE_SIZE} total={total} unit="statements" onPage={p => url.set({ page: p > 1 ? p : null })} />
           <div className="flex items-center justify-between gap-3 flex-wrap px-[22px] py-[11px] [border-top:1px_solid_var(--color-line)] bg-page text-[12px] text-muted-ink">
-            <span>{rows.length} {rows.length === 1 ? 'owner' : 'owners'} · {periodLabel(viewPeriod)}</span>
-            <span>Every deduction carries a category, date, amount and reference</span>
+            <span>{periodLabel(viewPeriod)}{filtered ? ' · filtered' : ''}</span>
+            <span>Every deduction carries a category, date and amount</span>
           </div>
-        </Card>
-      )}
+        </ListCard>
+      </>)}
 
       {genOpen && (
         <GenerateDialog

@@ -1,6 +1,6 @@
 import { call, check, done } from './harness.mjs';
 const U2 = '55555555-5555-4555-8555-000000000002';
-let r = await call('GET', '/api/reservations'); check('list', r.status === 200 && r.json.data.length > 0 && r.json.data[0].nights > 0 && 'checkInTime' in r.json.data[0], r.text.slice(0, 200));
+let r = await call('GET', '/api/reservations?view=all'); check('list', r.status === 200 && r.json.data.length > 0 && r.json.data[0].nights > 0 && 'checkInTime' in r.json.data[0], r.text.slice(0, 200));
 r = await call('POST', '/api/reservations', { unitId: U2, channel: 'direct', guest: { fullName: 'Test Guest', email: 'tg@example.com', phone: '+60111' }, checkIn: '2026-12-01', checkOut: '2026-12-04', guestsCount: 2, grossBookingValue: 60000 });
 check('create', r.status === 201, r.text); const id = r.json?.id;
 r = await call('POST', '/api/reservations', { unitId: U2, channel: 'direct', checkIn: '2026-12-02', checkOut: '2026-12-03' }); check('overlap 409', r.status === 409 && r.json.error.code === 'DATE_CONFLICT', r.text);
@@ -17,7 +17,8 @@ r = await call('PUT', '/api/rates', { unitId: U2, channel: 'web', date: '2026-12
 r = await call('POST', '/api/rates/bulk', { unitIds: [U2], channels: ['direct', 'airbnb'], from: '2026-12-10', to: '2026-12-12', baseRate: 29900 }); check('rates bulk', r.status === 200 && r.json.written === 6, r.text);
 r = await call('GET', '/api/reservations/calendar?from=2026-12-01&to=2026-12-31'); check('calendar has baseRate+rates+block', r.status === 200 && r.json.baseRate[U2] > 0 && r.json.rates[`${U2}:web:2026-12-01`] === 31000 && r.json.blocks.some(b => b.channel === 'maintenance_block'), r.text.slice(0, 300));
 r = await call('POST', '/api/reservations/import', { rows: [{ unitNumber: '#2207', channel: 'airbnb', guest: { fullName: 'Imp One' }, checkIn: '2026-11-10', checkOut: '2026-11-12', guestsCount: 1, grossBookingValue: 1000 }, { unitNumber: 'NOPE', channel: 'airbnb', checkIn: '2026-11-10', checkOut: '2026-11-12' }] }); check('import 1 ok 1 rejected', r.status === 201 && r.json.created === 1 && r.json.failed.length === 1, r.text);
-r = await call('GET', '/api/guests'); check('guests model', r.status === 200 && r.json.data[0].history && r.json.data[0].tag && 'since' in r.json.data[0], r.text.slice(0, 300));
+r = await call('GET', '/api/guests'); check('guests list model', r.status === 200 && r.json.data[0].tag && 'since' in r.json.data[0] && r.json.counts.all >= r.json.data.length, r.text.slice(0, 300));
+r = await call('GET', `/api/guests/${r.json.data[0].id}`); check('guest profile has history', r.status === 200 && Array.isArray(r.json.history) && r.json.tag, r.text.slice(0, 300));
 r = await call('POST', '/api/guests', { fullName: 'Walk In', phone: '+60122', email: '', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', guestsCount: 1 }); check('walk-in clash (unit occupied) 409', r.status === 409 || r.status === 201, r.text);
 r = await call('POST', '/api/integrations/sync', {}); check('sync honest 501', r.status === 501, r.text);
 r = await call('GET', '/api/integrations'); check('integrations shape', r.json.data[0].unitsLinked !== undefined && 'syncInterval' in r.json.data[0], r.text.slice(0, 200));
