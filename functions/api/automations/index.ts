@@ -1,3 +1,4 @@
+import { mayRun } from '../../_lib/access';
 import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { CATALOG, QUIET_HOURS } from '../../_lib/automationCatalog';
@@ -22,7 +23,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!MANAGE.includes(session.role)) return fail('FORBIDDEN', 'You can view automations but cannot change them. Ask an operations manager.', 403);
+  if (!mayRun(session, MANAGE)) return fail('FORBIDDEN', 'You can view automations but cannot change them. Ask an operations manager.', 403);
 
   const b = await request.json<{ id: string; isActive: boolean }>().catch(() => null);
   const rule = CATALOG.find(r => r.id === b?.id);

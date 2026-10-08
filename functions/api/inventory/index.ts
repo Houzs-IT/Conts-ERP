@@ -1,3 +1,4 @@
+import { mayWork } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { resolveUnit } from '../../_lib/ops';
@@ -38,7 +39,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!WRITE_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only operations and management can add inventory.', 403);
+  if (!mayWork(session, WRITE_ROLES)) return fail('FORBIDDEN', 'Only operations and management can add inventory.', 403);
 
   const b = await request.json<any>().catch(() => null);
   if (!b?.name?.trim()) return fail('VALIDATION', 'Enter the item name.', 422, { name: 'Enter the item name.' });
@@ -64,7 +65,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!WRITE_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only operations and management can change inventory.', 403);
+  if (!mayWork(session, WRITE_ROLES)) return fail('FORBIDDEN', 'Only operations and management can change inventory.', 403);
 
   const b = await request.json<any>().catch(() => null);
   if (!b?.id) return fail('VALIDATION', 'Say which item.', 422);

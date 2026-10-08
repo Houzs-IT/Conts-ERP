@@ -1,5 +1,5 @@
 import { type Env, all, one, run, fail, nowIso } from './db';
-import { accessFor, canManage } from './access';
+import { accessFor, canManage, type Level } from './access';
 
 export interface SecuritySettings { staffTtlHours: number; ownerTtlHours: number; absoluteDays: number; maxAttempts: number; lockoutMinutes: number }
 
@@ -35,7 +35,7 @@ export function sessionLimits(settings: SecuritySettings, role: string) {
  *  extended on every request but never past `iat + SESSION_ABSOLUTE_DAYS` — see signSession. */
 /** `manage`: whether the management-only actions in the area this request belongs to are open to the role
  *  (Users and roles > Permissions; functions/_lib/access.ts). Set by requireSession, not stored in the cookie. */
-export interface Session { userId: string; email: string; role: string; fullName: string; iat: number; manage?: boolean }
+export interface Session { userId: string; email: string; role: string; fullName: string; iat: number; manage?: boolean; picked?: Level | null }
 
 const ENC = new TextEncoder();
 
@@ -116,8 +116,9 @@ export async function verifyPassword(password: string, stored: string) {
 export async function requireSession(req: Request, env: Env) {
   const s = await readSession(env.SESSION_SECRET, readCookie(req));
   if (!s) return { session: null, response: fail('UNAUTHENTICATED', 'Your session expired. Sign in to continue.', 401) };
-  const manage = canManage(s.role, await accessFor(env, s.role, new URL(req.url).pathname));
-  return { session: { ...s, manage } as Session & { manage: boolean }, response: null };
+  const access = await accessFor(env, s.role, new URL(req.url).pathname);
+  const session = { ...s, manage: canManage(s.role, access), picked: access.chosen ? access.level : null };
+  return { session: session as Session & { manage: boolean }, response: null };
 }
 
 const FINANCE = ['management', 'finance_admin', 'operations_manager'];

@@ -123,3 +123,13 @@ export async function chart(env: Env) {
     })),
   }));
 }
+
+/** The three questions the handlers ask, for rules that name roles themselves. Where management chose a
+ *  level for the request's area (`picked`), the level answers; otherwise the handler's own list does. */
+interface Asker { role: string; picked?: Level | null }
+/** Day-to-day work: create and update. */
+export const mayWork = (s: Asker, roles: string[]) => s.picked ? RANK[s.picked] >= RANK.edit : roles.includes(s.role);
+/** Open and read. */
+export const maySee = (s: Asker, roles: string[]) => s.picked ? s.picked !== 'none' : roles.includes(s.role);
+/** A management-only action: Full only. */
+export const mayRun = (s: Asker, roles: string[]) => s.picked ? s.picked === 'full' : roles.includes(s.role);

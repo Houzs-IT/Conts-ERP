@@ -1,3 +1,4 @@
+import { mayWork } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { findClash, clashResponseBody, upsertGuest } from '../../_lib/reservations';
@@ -13,7 +14,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Guest contact details are not available to field roles.', 403);
-  const contact = OPS.includes(session.role);
+  const contact = mayWork(session, OPS);
 
   const today = (await one<{ d: string; t: string }>(env, `
     SELECT to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS d,
@@ -87,7 +88,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!OPS.includes(session.role)) return fail('FORBIDDEN', 'Only operations and management can add guests.', 403);
+  if (!mayWork(session, OPS)) return fail('FORBIDDEN', 'Only operations and management can add guests.', 403);
 
   const b = await request.json<any>().catch(() => null);
   if (!b?.fullName?.trim()) return fail('VALIDATION', 'Enter the guest name.', 422, { fullName: 'Enter the guest name.' });

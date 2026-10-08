@@ -1,3 +1,4 @@
+import { mayWork } from '../../../_lib/access';
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 
@@ -10,7 +11,7 @@ const WRITE_ROLES = ['management', 'operations_manager', 'operations_staff'];
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!WRITE_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only operations and management can change the catalog.', 403);
+  if (!mayWork(session, WRITE_ROLES)) return fail('FORBIDDEN', 'Only operations and management can change the catalog.', 403);
 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);

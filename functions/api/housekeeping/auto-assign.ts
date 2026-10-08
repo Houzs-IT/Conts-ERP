@@ -1,3 +1,4 @@
+import { mayWork } from '../../_lib/access';
 import { type Env, all, one, json, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { assignCleaner, activeCleaners, MYT_DATE } from '../../_lib/ops';
@@ -18,7 +19,7 @@ const setting = async (env: Env, key: string, fallback: string) =>
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!['management', 'operations_manager', 'operations_staff'].includes(session.role)) return fail('FORBIDDEN', 'Only operations can auto-assign.', 403);
+  if (!mayWork(session, ['management', 'operations_manager', 'operations_staff'])) return fail('FORBIDDEN', 'Only operations can auto-assign.', 403);
 
   const b = await request.json<any>().catch(() => ({}));
   const rule = b?.rule in ORDER ? b.rule : await setting(env, 'housekeeping.ordering_rule', 'earliest_checkin');

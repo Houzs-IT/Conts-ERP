@@ -1,3 +1,4 @@
+import { mayRun } from '../../../_lib/access';
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, hashPassword } from '../../../_lib/auth';
 import { notify } from '../../../_lib/notify';
@@ -6,7 +7,7 @@ import { notify } from '../../../_lib/notify';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!['management', 'operations_manager'].includes(session.role)) return fail('FORBIDDEN', 'Only management and operations managers can invite owners.', 403);
+  if (!mayRun(session, ['management', 'operations_manager'])) return fail('FORBIDDEN', 'Only management and operations managers can invite owners.', 403);
 
   const id = String(params.id);
   const owner = await one<any>(env, 'SELECT id, display_name, email, phone, user_id FROM owners WHERE id = ?', id);

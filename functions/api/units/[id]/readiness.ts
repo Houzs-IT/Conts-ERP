@@ -1,3 +1,4 @@
+import { mayWork } from '../../../_lib/access';
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { MASTER_ROLES } from '../../../_lib/properties';
@@ -12,7 +13,7 @@ const CAN_SET = [...MASTER_ROLES, 'operations_staff'];
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!CAN_SET.includes(session.role)) return fail('FORBIDDEN', 'Only operations and management roles can change a unit state.', 403);
+  if (!mayWork(session, CAN_SET)) return fail('FORBIDDEN', 'Only operations and management roles can change a unit state.', 403);
 
   const id = String(params.id);
   const b = await request.json<{ readiness?: string }>().catch(() => null);

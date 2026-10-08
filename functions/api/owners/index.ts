@@ -1,3 +1,4 @@
+import { maySee } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { MASTER_ROLES } from '../../_lib/properties';
@@ -10,7 +11,7 @@ const READ_ROLES = [...MASTER_ROLES, 'operations_staff'];
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!READ_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Owner records are visible to operations and finance roles.', 403);
+  if (!maySee(session, READ_ROLES)) return fail('FORBIDDEN', 'Owner records are visible to operations and finance roles.', 403);
   const banking = session.manage;
 
   const month = todayMyt().slice(0, 7), days = daysIn(month);

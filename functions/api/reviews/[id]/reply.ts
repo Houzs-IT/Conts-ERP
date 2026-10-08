@@ -1,3 +1,4 @@
+import { mayWork } from '../../../_lib/access';
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { pushReviewReplyIfLinked } from '../../../_lib/channexMessageSync';
@@ -9,7 +10,7 @@ import { pushReviewReplyIfLinked } from '../../../_lib/channexMessageSync';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!['management', 'operations_manager', 'operations_staff'].includes(session.role)) return fail('FORBIDDEN', 'Only operations and management can reply to reviews.', 403);
+  if (!mayWork(session, ['management', 'operations_manager', 'operations_staff'])) return fail('FORBIDDEN', 'Only operations and management can reply to reviews.', 403);
 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);

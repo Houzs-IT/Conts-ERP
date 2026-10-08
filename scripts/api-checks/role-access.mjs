@@ -70,6 +70,17 @@ r = await call('GET', '/api/system/health/audit-feed?range=24h&sensitive=1');
 const logged = (r.json?.data ?? []).filter(e => e.action === 'user.permission_change');
 check('each change is in the audit feed, with before and after', logged.length >= 3 && logged.some(e => e.after?.area === 'Finance' && e.after.level === 'view' && e.before?.level === 'none'), JSON.stringify(logged[0]));
 
+// A rule that names roles itself (inventory: operations and management only) follows a chosen level.
+r = await call('POST', '/api/inventory', {}, 'finance_admin');
+check('built-in: finance admin cannot add inventory (403)', r.status === 403, );
+await put([{ role: 'finance_admin', area: 'properties', level: 'edit' }]);
+await sleep(WAIT);
+r = await call('POST', '/api/inventory', {}, 'finance_admin');
+check('Edit on Properties: finance admin reaches the inventory form checks (not 403)', r.status !== 403, );
+r = await call('POST', '/api/users', {}, 'finance_admin');
+check('inviting users stays with management whatever the chart says (403)', r.status === 403, );
+await put([{ role: 'finance_admin', area: 'properties', level: null }]);
+
 // Back to how it was.
 r = await put([...keep, { role: 'finance_admin', area: 'comms', level: null }]);
 check('putting the levels back succeeds', r.status === 200 && cell(r.json, 'finance', 'operations_staff').level === cell(start, 'finance', 'operations_staff').level, r.text.slice(0, 200));

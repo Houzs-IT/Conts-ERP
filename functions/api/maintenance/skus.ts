@@ -1,3 +1,4 @@
+import { mayWork } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 
@@ -25,7 +26,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     WHERE ${where.join(' AND ')}
     ORDER BY active DESC, code`, ...args);
 
-  const money = session.manage || WRITE_ROLES.includes(session.role);
+  const money = session.manage || mayWork(session, WRITE_ROLES);
   return json({
     generatedAt: nowIso(),
     data: rows.map(r => ({
@@ -43,7 +44,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!WRITE_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only operations and management can change the catalog.', 403);
+  if (!mayWork(session, WRITE_ROLES)) return fail('FORBIDDEN', 'Only operations and management can change the catalog.', 403);
 
   const b = await request.json<any>().catch(() => null);
   if (!b?.code?.trim()) return fail('VALIDATION', 'Give the item a short code.', 422, { code: 'Enter a code.' });
