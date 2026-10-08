@@ -1,9 +1,9 @@
 import { type Env, all, fail } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { FROM, COLUMNS, parseListQuery, viewWhere, toRow } from '../../_lib/bookingList';
+import { FROM, COLUMNS, parseListQuery, viewWhere, toRow, hasPayoutColumns } from '../../_lib/bookingList';
 
 const VIEW_LABEL: Record<string, string> = {
-  upcoming: 'Upcoming and in house', arriving: 'Arriving today', inhouse: 'In house', pending: 'Pending payment',
+  upcoming: 'Upcoming and in house', arriving: 'Arriving today', inhouse: 'In house', unpaid: 'Direct, not paid', payout: 'Booking-site payout pending',
   past: 'Past', cancelled: 'Cancelled', blocks: 'Blocks and owner stays', all: 'All bookings',
 };
 const CHANNEL: Record<string, string> = {
@@ -22,7 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const q = parseListQuery(new URL(request.url));
   const rows = (await all<any>(env, `
-    SELECT ${COLUMNS} ${FROM} WHERE ${q.where} AND ${viewWhere(q.view, q.today)}
+    SELECT ${COLUMNS} ${FROM} WHERE ${q.where} AND ${viewWhere(q.view, q.today, await hasPayoutColumns(env))}
     ORDER BY ${q.orderBy} LIMIT ${MAX_ROWS}`, ...q.args)).map(toRow);
 
   const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;

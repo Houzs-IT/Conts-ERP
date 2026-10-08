@@ -117,3 +117,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner to check: building states are written three ways (13 "W.P Kuala Lumpur", 1 "WP", 6 blank), so the Units tree shows three groups for one state. Fix on each building (Units, pencil on the building).
 - ADR on Dashboard and Portfolio is collected revenue over booked nights; bookings later this month count their nights before their money is collected, so the month-to-date ADR reads low (RM 70 against RM 112-187 per unit on the import). Decide: gross booking value instead, or count only nights already stayed.
 - Calendar rate rows for all 139 units are about 20,000 cells (0.6 s to draw); they start hidden above 8 units. If people want them on for the whole board, virtualise the rows.
+
+## Booking lifecycle (fix/booking-lifecycle)
+- Status moves are one map in functions/_lib/bookingLifecycle.ts, enforced on PATCH and cancel; drawer menu built from it. Check: scripts/api-checks/booking-lifecycle.mjs.
+- Owner to confirm: no-show allowed from the check-in day (audit said "after"); undo check-in / check-out only on the same day and only for management; reinstating a cancelled stay is management only.
+- Booking drawer money lines from migration 0052 (room, cleaning paid by guest, SST, tourism tax, payout, payout date ...) show automatically once 0052 is applied and filled; nothing is estimated before that.
+- Not built: guest notification on cancel / date change (the screens now say the guest is not messaged); refunds; repricing rule for date changes (direct bookings take a new total by hand).

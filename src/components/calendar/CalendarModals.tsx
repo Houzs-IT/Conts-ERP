@@ -2,10 +2,11 @@ import { useState, type ReactNode } from 'react';
 import { Button } from '../Button';
 import { Field } from '../Field';
 import ChannelMark from '../ChannelMark';
-import { dateRange } from '../../lib/format';
+import { date } from '../../lib/format';
+import { UnitPicker } from '../booking/UnitPicker';
 import { CHANNEL } from '../../lib/vocabulary';
 import type { BookingChannel } from '../../lib/types';
-import { selectCls, type CalendarBlock, type CalendarUnit } from './types';
+import { selectCls, type CalendarUnit } from './types';
 
 // Channels a bulk rate push can target. Direct is the web rate itself.
 const PUSH: BookingChannel[] = ['direct', 'airbnb', 'booking_com', 'agoda'];
@@ -29,39 +30,11 @@ function CentreModal({ title, sub, onClose, onSave, saveLabel, canSave, children
 }
 
 export function SetPriceModal({ m, onClose, onSave }: { m: { unit: CalendarUnit; channel: string; dayIso: string; current: number }; onClose: () => void; onSave: (rm: number) => void }) {
-  const [v, setV] = useState(String(Math.round(m.current / 100)));
+  const [v, setV] = useState(m.current > 0 ? String(Math.round(m.current / 100)) : '');
   const label = m.channel === 'web' ? 'Web rate' : CHANNEL[m.channel as BookingChannel].label;
   return (
-    <CentreModal title="Set price" sub={`${m.unit.unitNumber} · ${label} · ${m.dayIso}`} onClose={onClose} saveLabel="Set price" canSave={v !== '' && Number(v) >= 0} onSave={() => onSave(Number(v))}>
+    <CentreModal title="Set price" sub={`${m.unit.unitNumber} · ${label} · ${date(m.dayIso)}`} onClose={onClose} saveLabel="Set price" canSave={v !== '' && Number(v) >= 0} onSave={() => onSave(Number(v))}>
       <Field label="Price (RM / night)" type="number" min={0} step="0.01" numeric value={v} onChange={e => setV(e.target.value)} help="Pushed to the connected channel for this night. Confirmed bookings keep their original rate." />
-    </CentreModal>
-  );
-}
-
-export function ChangeDatesModal({ b, onClose, onSave }: { b: CalendarBlock; onClose: () => void; onSave: (checkIn: string, checkOut: string) => void }) {
-  const [ci, setCi] = useState(b.checkIn); const [co, setCo] = useState(b.checkOut);
-  return (
-    <CentreModal title="Change dates" sub={`${b.guestName} · currently ${dateRange(b.checkIn, b.checkOut)}`} onClose={onClose} saveLabel="Review move" canSave={ci !== '' && co !== '' && co > ci} onSave={() => onSave(ci, co)}>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Check-in" type="date" value={ci} onChange={e => setCi(e.target.value)} />
-        <Field label="Check-out" type="date" value={co} onChange={e => setCo(e.target.value)} />
-      </div>
-      <p className="m-0 text-[12px] text-muted-ink">The move is availability-checked and confirmed on the next step before anything is sent.</p>
-    </CentreModal>
-  );
-}
-
-export function MessageModal({ b, onClose, onSend }: { b: CalendarBlock; onClose: () => void; onSend: (body: string) => void }) {
-  const [body, setBody] = useState('');
-  const thread = b.channel === 'direct' ? 'WhatsApp' : CHANNEL[b.channel].label;
-  return (
-    <CentreModal title={`Message ${b.guestName}`} sub={`Thread opens on ${thread}.`} onClose={onClose} saveLabel="Send message" canSave={body.trim() !== ''} onSave={() => onSend(body.trim())}>
-      <div className="flex flex-col gap-[6px]">
-        <label className="text-[12px] font-medium text-muted-ink">Message</label>
-        <textarea value={body} onChange={e => setBody(e.target.value)} rows={4}
-          placeholder={`Hi ${b.guestName.split(' ')[0]}, checking in on your upcoming stay…`}
-          className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit] p-[10px_12px] resize-y" />
-      </div>
     </CentreModal>
   );
 }
@@ -70,24 +43,17 @@ export function BlockWizard({ units, initial, onClose, onSave }: {
   units: CalendarUnit[]; initial: { unitId?: string; from?: string; to?: string };
   onClose: () => void; onSave: (v: { unitId: string; from: string; to: string; reason: string }) => void;
 }) {
-  const [unit, setUnit] = useState(initial.unitId ?? units[0]?.id ?? '');
+  const [unit, setUnit] = useState(initial.unitId ?? '');
   const [fromD, setFromD] = useState(initial.from ?? ''); const [toD, setToD] = useState(initial.to ?? ''); const [reason, setReason] = useState('');
   const valid = !!unit && fromD !== '' && toD !== '' && toD > fromD && reason.trim() !== '';
   return (
     <CentreModal title="Block wizard" sub="Hold nights so no channel can sell them." onClose={onClose} saveLabel="Block dates" canSave={valid} onSave={() => onSave({ unitId: unit, from: fromD, to: toD, reason: reason.trim() })}>
-      <div className="flex flex-col gap-[7px]">
-        <label className="text-[12px] font-medium text-muted-ink">Unit</label>
-        <select value={unit} onChange={e => setUnit(e.target.value)} className={`${selectCls} h-11 w-full text-[13px]`}>
-          {groupByBuilding(units).map(([name, us]) => (
-            <optgroup key={name} label={name}>{us.map(u => <option key={u.id} value={u.id}>{u.unitNumber}</option>)}</optgroup>
-          ))}
-        </select>
-      </div>
+      <UnitPicker units={units} value={unit} onChange={setUnit} />
       <div className="grid grid-cols-2 gap-3">
         <Field label="From" type="date" value={fromD} onChange={e => setFromD(e.target.value)} />
         <Field label="To" type="date" value={toD} min={fromD || undefined} onChange={e => setToD(e.target.value)} />
       </div>
-      <Field label="Reason" placeholder="e.g. Plumbing works" value={reason} onChange={e => setReason(e.target.value)} help="Required. Shown on the block and pushed to every channel as unavailable." />
+      <Field label="Reason" placeholder="e.g. Plumbing works" value={reason} onChange={e => setReason(e.target.value)} help="Required. Shown on the block. A unit linked to Channex has the nights closed on the booking sites." />
     </CentreModal>
   );
 }

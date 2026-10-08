@@ -7,10 +7,10 @@ r = await call('POST', '/api/reservations', { unitId: U2, channel: 'direct', che
 r = await call('PATCH', `/api/reservations/${id}/dates`, { checkIn: '2026-12-05', checkOut: '2026-12-08' }); check('dates need confirm 428', r.status === 428, r.text);
 r = await call('PATCH', `/api/reservations/${id}/dates`, { checkIn: '2026-12-05', checkOut: '2026-12-08', confirm: true }); check('dates moved', r.status === 200, r.text);
 r = await call('POST', `/api/reservations/${id}/duplicate`, {}); check('duplicate', r.status === 201, r.text);
-r = await call('PATCH', `/api/reservations/${id}`, { status: 'checked_in' }); check('status -> checked_in', r.status === 200 && r.json.state === 'checked_in', r.text);
-r = await call('PATCH', `/api/reservations/${id}`, { state: 'checked_out' }); check('status -> checked_out', r.status === 200, r.text);
-r = await call('GET', '/api/dashboard/today'); check('cleaning task appears after checkout', r.json.rows.find(x => x.key === 'cleaning_pending').count >= 4, r.text);
-r = await call('POST', `/api/reservations/${id}/cancel`, { reason: 'x' }); check('cancel finished stay refused 409', r.status === 409, r.text);
+// Full status rules and their side effects: booking-lifecycle.mjs. Here only that a future stay cannot be checked in early.
+r = await call('PATCH', `/api/reservations/${id}`, { status: 'checked_in' }); check('check in before the day refused 409', r.status === 409 && r.json.error.code === 'ILLEGAL_TRANSITION', r.text);
+r = await call('POST', `/api/reservations/${id}/cancel`, {}); check('cancel without a reason refused 422', r.status === 422, r.text);
+r = await call('POST', `/api/reservations/${id}/cancel`, { reason: 'x' }); check('cancel with a reason', r.status === 200 && r.json.state === 'cancelled', r.text);
 r = await call('POST', '/api/blocks', { unitId: U2, from: '2026-12-20', to: '2026-12-22', reason: 'Painting' }); check('block', r.status === 201, r.text);
 r = await call('POST', '/api/blocks', { unitId: U2, from: '2026-12-21', to: '2026-12-23', reason: 'x' }); check('block clash 409', r.status === 409, r.text);
 r = await call('PUT', '/api/rates', { unitId: U2, channel: 'web', date: '2026-12-01', rate: 31000 }); check('rate set', r.status === 200, r.text);
