@@ -34,12 +34,15 @@
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
-    "wrangler": "^4.143.0"
+    "wrangler": "^4.148.0"
   },
   "allowScripts": {
     "esbuild@0.25.12": true,
     "esbuild@0.28.1": true,
     "workerd@1.20260926.1": true,
     "sharp@0.33.5": true
+  },
+  "overrides": {
+    "sharp": "^0.35.5"
   }
 }
