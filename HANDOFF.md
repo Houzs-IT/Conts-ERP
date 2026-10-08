@@ -23,20 +23,18 @@ and the design disagree, the design is right and the React is a bug.
 | `/reservations/calendar` | `CalendarPage` | 14-day grid, channel filters, drag target |
 | `/reservations/bookings` | `BookingsPage` | Reservation list with channel marks |
 | `/reservations/guests` | `GuestsPage` | Derived from reservations |
-| `/properties` | `PropertiesPage` | state → building → unit |
 | `/owners` | `OwnersPage` | Owner list with units and fee |
 | `/finance/statements` | `StatementsPage` | Selection, bulk send, confirmation dialog |
 | `/system/users` | `UsersPage` | Accounts and roles |
 | `/system/integrations` | `IntegrationsPage` | Four distinct connection states |
 | `/system/settings` | `SettingsPage` | Organisation defaults |
 | `/portfolio` | `PortfolioPage` | Every unit with occupancy, ADR, revenue, rating |
-| `/properties/units/:id` | `UnitRecordPage` | Seven tabs: overview, reservations, operations, financials, maintenance, access, activity. One request via `GET /api/units/detail` — seven tabs firing seven round-trips is worse than one query set for a page opened dozens of times a day. Financial tabs are absent from the payload for roles without access, so the tab itself disappears. |
+| `/properties/units[/:id]` | `UnitsPage` | The one Units screen (owner, 8 Oct 2026; replaced Properties, Units and Access and keys, whose old addresses redirect here). Left: state → building → unit tree with search, add/edit building, add unit and sub-unit. Right: the unit record with tabs Overview, Details & owner, Contract & documents, Access & keys, Reservations, Cleaning & maintenance, Financials, Activity (`?tab=`). The record is one request via `GET /api/units/detail`; editable master data comes from `GET /api/properties` and saves with `PATCH /api/units/:id`. Financials is absent from the payload for roles without access, so the tab disappears. |
 | `/operations/housekeeping` | `HousekeepingPage` | Cleaner roster by shift, unassigned work first |
 | `/operations/maintenance` | `MaintenancePage` | Issues by state, owner-approval gate visible |
 | `/operations/tasks` | `TasksPage` | Task list with photo requirement per row |
 | `/operations/inspections` | `InspectionsPage` | Checklists, pass/fail, release gate |
 | `/properties/inventory` | `InventoryPage` | Fit-out register, condition, replacement schedule |
-| `/properties/access` | `AccessPage` | Masked codes with audited reveal |
 | `/finance/expenses` | `ExpensesPage` | Every deduction with category, date, reference |
 | `/finance/payouts` | `PayoutsPage` | Failed payouts surfaced first, masked bank details |
 | `/owners/contracts` | `ContractsPage` | Fee, term, renewal countdown |
@@ -201,7 +199,7 @@ Remove a fallback once that endpoint is reliably seeded.
 | `StatementsPage` | Two mutations, partial failure that names only what did not send |
 | `OperationsTodayPage` | The `409 ASSIGNEE_BUSY` round-trip — warn, confirm, retry with `force` |
 | `InboxPage` | Two queries in one page, and no sent state before the server confirms |
-| `AccessPage` | A read that is itself audited, with the audit stated in the toast |
+| `units/AccessTab` | A read that is itself audited, with the audit stated in the toast |
 | `InventoryPage` | Inline edit that PATCHes and reloads |
 
 ## Decisions worth not relitigating

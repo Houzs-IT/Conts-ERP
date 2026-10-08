@@ -258,26 +258,18 @@
       "groupLabel": "PROPERTIES",
       "items": [
         {
-          "label": "Properties",
-          "path": "/properties",
-          "component": "PropertiesPage",
-          "api": [
-            "GET /api/properties"
-          ],
-          "roles": [
-            "management",
-            "operations_manager"
-          ],
-          "status": "designed",
-          "file": "The Conts Desktop.dc.html",
-          "notes": "State → building → unit tree. Add building at the top level, add unit on each building row. Unit record carries all 34 workbook columns across Details, Monthly expenses and Contract tabs, each field labelled free text / dropdown / date / amount / secret."
-        },
-        {
           "label": "Units",
           "path": "/properties/units",
           "component": "UnitsPage",
           "api": [
-            "GET /api/units"
+            "GET /api/properties",
+            "GET /api/units",
+            "GET /api/units/detail",
+            "PATCH /api/units/:id",
+            "GET /api/access-credentials",
+            "POST /api/access-credentials",
+            "PATCH /api/access-credentials/:id",
+            "DELETE /api/access-credentials/:id"
           ],
           "roles": [
             "management",
@@ -285,7 +277,8 @@
             "operations_staff"
           ],
           "status": "designed",
-          "badge": "unit count"
+          "badge": "unit count",
+          "notes": "One screen for buildings, units and access (owner, 8 Oct 2026). /properties and /properties/access redirect here. State -> building -> unit tree on the left, the unit record on the right."
         }
       ],
       "note": "Inventory and access keys removed at the client’s request."
@@ -517,35 +510,58 @@
   "detailRoutes": [
     {
       "path": "/properties/units/:unitId",
-      "component": "UnitRecordPage",
+      "component": "UnitsPage",
       "status": "designed",
       "tabs": [
         {
           "label": "Overview",
           "path": "/properties/units/:unitId",
           "api": [
-            "GET /api/units/:unitId"
+            "GET /api/units/detail?unitId="
+          ]
+        },
+        {
+          "label": "Details & owner",
+          "path": "/properties/units/:unitId?tab=details",
+          "api": [
+            "GET /api/properties",
+            "PATCH /api/units/:id"
+          ]
+        },
+        {
+          "label": "Contract & documents",
+          "path": "/properties/units/:unitId?tab=contract",
+          "api": [
+            "GET /api/properties",
+            "PATCH /api/units/:id"
+          ]
+        },
+        {
+          "label": "Access & keys",
+          "path": "/properties/units/:unitId?tab=access",
+          "api": [
+            "GET /api/access-credentials?unitId="
           ]
         },
         {
           "label": "Reservations",
-          "path": "/properties/units/:unitId/reservations",
+          "path": "/properties/units/:unitId?tab=reservations",
           "api": [
-            "GET /api/units/:unitId/reservations"
+            "GET /api/units/detail?unitId="
           ]
         },
         {
-          "label": "Operations",
-          "path": "/properties/units/:unitId/operations",
+          "label": "Cleaning & maintenance",
+          "path": "/properties/units/:unitId?tab=operations",
           "api": [
-            "GET /api/units/:unitId/tasks"
+            "GET /api/units/detail?unitId="
           ]
         },
         {
           "label": "Financials",
-          "path": "/properties/units/:unitId/financials",
+          "path": "/properties/units/:unitId?tab=financials",
           "api": [
-            "GET /api/units/:unitId/pnl"
+            "GET /api/units/detail?unitId="
           ],
           "roles": [
             "management",
@@ -554,24 +570,10 @@
           ]
         },
         {
-          "label": "Maintenance",
-          "path": "/properties/units/:unitId/maintenance",
-          "api": [
-            "GET /api/units/:unitId/maintenance"
-          ]
-        },
-        {
-          "label": "Documents",
-          "path": "/properties/units/:unitId/documents",
-          "api": [
-            "GET /api/units/:unitId/documents"
-          ]
-        },
-        {
           "label": "Activity",
-          "path": "/properties/units/:unitId/activity",
+          "path": "/properties/units/:unitId?tab=activity",
           "api": [
-            "GET /api/units/:unitId/activity"
+            "GET /api/units/detail?unitId="
           ]
         }
       ]

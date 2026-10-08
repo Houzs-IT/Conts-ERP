@@ -1,5 +1,6 @@
-import { type Env, all, json, nowIso } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
+import { invalidCredential, mayEditCredentials, type CredentialInput } from '../../_lib/credentials';
 
 /** Bullets with the last three characters shown, e.g. "••••17#". Empty stays empty. */
 function maskOf(clear: string | null): string {
@@ -36,4 +37,31 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       lastRevealedBy: r.revealed_by ?? null, lastRevealedAt: r.revealed_at ? String(r.revealed_at).slice(0, 10) : null,
     })),
   });
+};
+
+/** POST /api/access-credentials { unitId, kind, label, secret?, instruction, rotatesAfterStay } — a new code for a unit.
+ *  Only the people who may reveal a code may set one. The code itself never goes into the audit log. */
+export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return response!;
+  if (!mayEditCredentials(session)) return fail('FORBIDDEN', 'Only operations managers and management can add access codes.', 403);
+
+  const b = await request.json<CredentialInput>().catch(() => null);
+  if (!b) return fail('VALIDATION', 'Nothing to save.', 422);
+  const bad = invalidCredential(b, false);
+  if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
+  const unit = await one<{ unit_number: string }>(env, 'SELECT unit_number FROM units WHERE id = ?', b.unitId);
+  if (!unit) return fail('NOT_FOUND', 'That unit does not exist.', 404);
+
+  const id = crypto.randomUUID();
+  const secret = String(b.secret ?? '').trim() || null;
+  await run(env, `
+    INSERT INTO access_credentials (id, unit_id, kind, label, secret, instruction, rotates_after_stay, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    id, b.unitId, b.kind, String(b.label).trim(), secret, String(b.instruction).trim(), b.rotatesAfterStay ? 1 : 0, nowIso());
+  await audit(env, {
+    actorId: session.userId, actorLabel: session.fullName, action: 'access.create', entityTable: 'access_credentials', entityId: id,
+    after: { unitId: b.unitId, unitNumber: unit.unit_number, kind: b.kind, label: String(b.label).trim(), hasCode: !!secret, rotatesAfterStay: !!b.rotatesAfterStay },
+  });
+  return json({ id }, 201);
 };

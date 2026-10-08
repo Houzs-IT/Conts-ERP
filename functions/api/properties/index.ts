@@ -3,7 +3,7 @@ import { requireSession } from '../../_lib/auth';
 
 const area = (city: string, postcode: string | null) => (postcode ? `${city}, ${postcode}` : city);
 
-/** GET /api/properties — every building and every unit with its owner, package, monthly expenses and contract. */
+/** GET /api/properties — every building and every unit with its owner, package, monthly expenses and contract (the Units screen's tree and forms). */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -13,7 +13,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const buildings = await all<any>(env, 'SELECT id, name, city, state, postcode FROM properties ORDER BY state, name');
   const units = await all<any>(env, `
-    SELECT u.id, u.property_id, u.parent_unit_id, u.unit_number, u.listing_name, u.unit_code, u.address, u.package, u.term, u.split_kind, u.split_value, u.guarantee_period,
+    SELECT u.id, u.property_id, u.parent_unit_id, u.unit_number, u.bedrooms, u.base_rate, u.listing_name, u.unit_code, u.address, u.package, u.term, u.split_kind, u.split_value, u.guarantee_period,
            p.state, p.address_line, o.display_name AS owner_name, o.ic_number, o.bank_name, o.bank_account_number, o.bank_account_holder,
            c.management_fee_pct, c.starts_on, c.renews_on,
            (SELECT COUNT(*) FROM documents d WHERE d.unit_id = u.id AND d.kind = 'contract') AS contract_docs
@@ -34,6 +34,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       ic: banking ? (u.ic_number ?? '') : '', bankName: banking ? (u.bank_name ?? '') : '',
       bankAccount: banking ? (u.bank_account_number ?? '') : '', accountHolder: banking ? (u.bank_account_holder ?? u.owner_name) : '',
       pkg: u.package, term: u.term, split: u.split_kind, splitValue: u.split_value, guaranteePeriod: u.guarantee_period ?? 'month',
+      bedrooms: u.bedrooms, ...(banking ? { baseRate: Number(u.base_rate) } : {}),
       expenses: expenses.filter(e => e.unit_id === u.id).map(e => ({ id: e.id, category: e.category, amount: Number(e.amount), note: e.note })),
       contract: {
         feePct: u.management_fee_pct ?? 25, startedOn: u.starts_on ?? '', renewsOn: u.renews_on ?? '',

@@ -8,6 +8,7 @@ import { Dialog } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { StaleBanner } from '../components/DataState';
 import Icon from '../components/Icon';
+import ChannelMark from '../components/ChannelMark';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
@@ -515,7 +516,7 @@ function MovementStrip({ g, onPrepare, onSendAccess, onCheckIn, onCheckOut }: {
   return (
     <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-[14px]">
       <div className="flex items-center gap-3 flex-wrap">
-        <ChannelMarkStub ch={m.channel} />
+        <ChannelMark ch={m.channel} size={24} />
         <div className="flex flex-col gap-[2px] min-w-0 flex-1">
           <span className="text-[14px] font-semibold">{heading}</span>
           <span className="text-[11.5px] text-muted-ink">
@@ -546,20 +547,6 @@ function MovementStrip({ g, onPrepare, onSendAccess, onCheckIn, onCheckOut }: {
         )}
       </div>
     </div>
-  );
-}
-
-/** Small channel tile matching ChannelMark without importing it (keeps ink rules). */
-function ChannelMarkStub({ ch }: { ch: BookingChannel }) {
-  const c = channel[ch];
-  const two = c.glyph.length > 1;
-  const px = Math.max(11, two ? 9 : 12);
-  return (
-    <span aria-hidden
-      className="w-[24px] h-[24px] flex-none rounded-[7px] grid place-items-center leading-none font-bold"
-      style={{ fontSize: px, letterSpacing: two ? '-0.03em' : 0, background: c.fill, color: c.markInk }}>
-      {c.glyph}
-    </span>
   );
 }
 

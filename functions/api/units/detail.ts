@@ -70,6 +70,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     SELECT id, kind, label, instruction, rotates_after_stay, updated_at
     FROM access_credentials WHERE unit_id = ?`, unitId);
 
+  // Statements, invoices and payout advice carry money, so they follow the same rule as the P and L.
+  // An owner sees only what has been released to them.
+  const documents = await all<any>(env, `
+    SELECT id, kind, file_name, byte_size, created_at
+    FROM documents
+    WHERE unit_id = ?
+      ${money ? '' : "AND kind NOT IN ('statement','invoice','payout_advice')"}
+      ${session.role === 'owner' ? 'AND visible_to_owner = 1' : ''}
+    ORDER BY created_at DESC LIMIT 100`, unitId);
+
   const activity = await all<any>(env, `
     SELECT actor_label, action, before_state, after_state, source, occurred_at
     FROM audit_log WHERE entity_id = ? OR entity_table = 'units' AND entity_id = ?
@@ -178,6 +188,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       suppliedInHouse: !!i.supplied_in_house, installedOn: i.installed_on, lastChecked: i.last_checked,
       ...(money ? { purchaseCost: i.purchase_cost } : {}),
     })),
+    documents: documents.map(d => ({
+      id: d.id, name: d.file_name, kind: d.kind, sizeLabel: sizeLabel(d.file_name, Number(d.byte_size)), updatedAt: d.created_at,
+    })),
     // Secrets are never in this payload. Reveal is a separate, audited request.
     access: access.map(a => ({
       id: a.id, kind: a.kind, label: a.label, instruction: a.instruction,
@@ -191,3 +204,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     })),
   });
 };
+
+function sizeLabel(fileName: string, bytes: number): string {
+  const ext = /\.([a-z0-9]{1,5})$/i.exec(fileName)?.[1];
+  const type = ext ? ext.toUpperCase() : 'File';
+  const size = bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${type} · ${size}`;
+}
