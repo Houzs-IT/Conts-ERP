@@ -123,9 +123,20 @@ if (regalia) {
 }
 
 const numbered = sql => { let i = 0; return sql.replace(/\?/g, () => `$${++i}`); };
+// Queries go through postgres.js over the wire with functions/_lib/db.ts's options, not pg.query():
+// PGlite's own client typed a bare ?::jsonb parameter differently from the production driver, so the
+// first live import failed on a query this check had passed (8 Oct 2026).
+const { PGLiteSocketServer } = await import('@electric-sql/pglite-socket');
+const { default: postgres } = await import('postgres');
+const server = new PGLiteSocketServer({ db: pg, port: 55433 });
+await server.start();
+const wire = postgres('postgres://postgres@127.0.0.1:55433/postgres', {
+  max: 1, prepare: false, fetch_types: false, connection: { search_path: 'pos' },
+  types: { number: { to: 20, from: [20, 1700], serialize: x => String(x), parse: x => Number(x) } },
+});
 const db = {
-  all: async (sql, ...args) => (await pg.query(numbered(sql), args)).rows,
-  run: async (sql, ...args) => { await pg.query(numbered(sql), args); },
+  all: async (sql, ...args) => wire.unsafe(numbered(sql), args),
+  run: async (sql, ...args) => { await wire.unsafe(numbered(sql), args); },
 };
 const chunks = (xs, n) => { const o = []; for (let i = 0; i < xs.length; i += n) o.push(xs.slice(i, i + n)); return o; };
 
