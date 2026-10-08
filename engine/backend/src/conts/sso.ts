@@ -40,8 +40,14 @@ const OFFICE = new Set(["management", "finance_admin", "operations_manager", "op
 async function roleIdFor(env: Env, contsRole: string, access: ContsAccess): Promise<number | null> {
   if (!OFFICE.has(contsRole) || !hasAnyAccess(access)) return null;
   if (isFullEverywhere(access)) {
-    const r = await env.DB.prepare(`SELECT id FROM roles WHERE permissions LIKE '%"*"%' ORDER BY id LIMIT 1`).first<{ id: number }>();
-    return r?.id ?? null;
+    const full = () => env.DB.prepare(`SELECT id FROM roles WHERE permissions LIKE '%"*"%' ORDER BY id LIMIT 1`).first<{ id: number }>();
+    const r = await full();
+    if (r) return r.id;
+    // A new instance has no roles at all (production's first sign-on was refused for this, 8 Oct 2026):
+    // the full-access role is made here, named as Houzs names it.
+    await env.DB.prepare(`INSERT INTO roles (name, description, permissions, is_system, scope_to_pic) VALUES (?, ?, ?, 1, 0)`)
+      .bind("Owner", "Full access, for accounts with Full in every area of Property OS", JSON.stringify(["*"])).run();
+    return (await full())?.id ?? null;
   }
   const name = contsRoleName(contsRole);
   const permissions = JSON.stringify(contsPermissions(access));
