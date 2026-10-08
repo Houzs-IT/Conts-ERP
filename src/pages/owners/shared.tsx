@@ -29,6 +29,8 @@ export interface UnitLine {
 export interface Owner {
   id: string; displayName: string; email: string; phone: string | null; ic: string | null;
   bankName: string | null; bankAccount: string | null; accountHolder: string | null;
+  /** The API sends only the last four characters; the full number needs an audited reveal. */
+  icLast4?: string | null; bankAccountLast4?: string | null;
   portalInvited: boolean;
   /** Owner-level default management fee, applied to units with no per-unit override. Null = none set. */
   defaultManagementFeePct: number | null;
@@ -58,6 +60,11 @@ export const FALLBACK: Payload = {
 
 export const netOf = (o: Owner) => o.units.reduce((s, u) => s + u.net, 0);
 export const grossOf = (o: Owner) => o.units.reduce((s, u) => s + u.gross, 0);
+/** Guaranteed rent (GRR) units pay the owner a fixed amount whatever the bookings brought in, so their "net"
+ *  is the guarantee, not a share of gross. Shown separately so net is never read as a cut of gross. */
+export const guaranteedOf = (o: Owner) => o.units.reduce((s, u) => s + (u.model === 'grr' ? u.net : 0), 0);
+export const managedGrossOf = (o: Owner) => o.units.reduce((s, u) => s + (u.model === 'grr' ? 0 : u.gross), 0);
+export const managedNetOf = (o: Owner) => o.units.reduce((s, u) => s + (u.model === 'grr' ? 0 : u.net), 0);
 export const terms = (u: UnitLine) => u.model === 'grr' ? `GRR ${rm(u.grrAmount ?? 0, { cents: false })}/mo` : `${u.feePct ?? 0}% fee`;
 
 // One statement per past period, combined across all of an owner's units.
@@ -82,13 +89,13 @@ export function statementsFallback(o: Owner): StatementsPayload {
   };
 }
 
-export const linkBtn = 'inline-flex items-center gap-[5px] bg-transparent [border:none] cursor-pointer font-sans text-[12.5px] font-medium text-gold-ink';
+export const linkBtn = 'inline-flex items-center gap-[5px] bg-transparent [border:none] cursor-pointer font-sans text-copy font-medium text-gold-ink';
 
 export function Roll({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <div className="flex flex-col gap-[3px]">
-      <span className={cx('font-semibold tabular-nums', strong ? 'text-[19px]' : 'text-[15px]')}>{value}</span>
-      <span className="text-[11px] text-muted-ink">{label}</span>
+      <span className={cx('font-semibold tabular-nums', strong ? 'text-title' : 'text-heading')}>{value}</span>
+      <span className="text-caption text-muted-ink">{label}</span>
     </div>
   );
 }
@@ -96,7 +103,7 @@ export function Section({ title, action, children }: { title: string; action?: R
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-[12px] font-semibold text-muted-ink">{title}</span>
+        <span className="text-meta font-semibold text-muted-ink">{title}</span>
         {action}
       </div>
       {children}
@@ -112,15 +119,15 @@ export function StatementHistory({ o }: { o: Owner }) {
   return (
     <Section title="Statement history">
       {history.length === 0 ? (
-        <div className="text-[12.5px] text-muted-ink">No statements yet. History appears here once a period is generated for this owner.</div>
+        <div className="text-copy text-muted-ink">No statements yet. History appears here once a period is generated for this owner.</div>
       ) : (
         <div className="border border-solid border-line rounded-card overflow-hidden">
           {history.map(s => (
             <a key={s.id} href={`#/finance/statements/${encodeURIComponent(s.id)}`}
               className="grid grid-cols-[1fr_0.9fr_0.9fr_auto] gap-2.5 items-center py-[11px] px-[13px] [border-bottom:1px_solid_var(--color-line-soft)] no-underline text-inherit!">
-              <div className="text-[12.5px] font-medium">{periodLabel(s.period)}</div>
-              <span className="text-[12px] text-right text-muted-ink tabular-nums">{rm(s.grossBookingValue, { cents: false })}</span>
-              <span className="text-[12.5px] text-right font-semibold tabular-nums">{rm(s.netPayout, { cents: false })}</span>
+              <div className="text-copy font-medium">{periodLabel(s.period)}</div>
+              <span className="text-meta text-right text-muted-ink tabular-nums">{rm(s.grossBookingValue, { cents: false })}</span>
+              <span className="text-copy text-right font-semibold tabular-nums">{rm(s.netPayout, { cents: false })}</span>
               <span className="flex justify-end"><Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} size="sm" /></span>
             </a>
           ))}
@@ -147,8 +154,8 @@ export function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, c
       <div ref={ref} className="relative w-full max-w-[480px] max-h-[88vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
         <form onSubmit={e => { e.preventDefault(); if (canSubmit) onSubmit(); }}>
           <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[5px]">
-            <h2 className="m-0 text-[18px] font-semibold">{title}</h2>
-            {sub && <p className="m-0 text-[13px] text-muted-ink">{sub}</p>}
+            <h2 className="m-0 text-title font-semibold">{title}</h2>
+            {sub && <p className="m-0 text-copy text-muted-ink">{sub}</p>}
           </div>
           <div className="py-4 px-[22px] flex flex-col gap-[14px]">{children}</div>
           <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
@@ -160,11 +167,11 @@ export function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, c
     </div>
   );
 }
-const selectStyle = 'h-[var(--control-height)] w-full box-border py-0 px-3 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none';
+const selectStyle = 'h-[var(--control-height)] w-full box-border py-0 px-3 font-sans text-copy text-ink bg-card border border-solid border-line rounded-control outline-none';
 export function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
     <div className="flex flex-col gap-[7px]">
-      <label className="text-[12px] font-medium text-muted-ink">{label}</label>
+      <label className="text-meta font-medium text-muted-ink">{label}</label>
       <select value={value} onChange={e => onChange(e.target.value)} className={selectStyle}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
     </div>
   );
