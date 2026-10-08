@@ -59,6 +59,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const id = crypto.randomUUID();
   await run(env, `INSERT INTO channex_channels (id, unit_id, ota, channex_channel_id, external_id, external_room, external_rate, title, created_by, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, unit.id, ota, channelId, hotelId, String(b.roomTitle ?? b.roomId), String(b.rateTitle ?? b.rateId), `${OTA_LABEL[ota]} hotel ${hotelId}`, session.userId, nowIso());
+  // A unit sold on a booking site is listed: it counts in occupancy and the dashboard from here on.
+  await run(env, 'UPDATE units SET is_listed = 1, updated_at = ? WHERE id = ? AND is_listed = 0', nowIso(), unit.id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'channel.connect', entityTable: 'units', entityId: unit.id, after: { ota, hotelId, channelId, room: b.roomId, rate: b.rateId, bookingsLoadRequested: load.ok } });
   return json({ id, channelId, bookingsLoadRequested: load.ok }, 201);
 };

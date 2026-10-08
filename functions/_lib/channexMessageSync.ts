@@ -74,6 +74,9 @@ export async function processChannexMessagesAndReviews(env: Env): Promise<{ mess
 
 async function pullMessages(env: Env): Promise<number> {
   const res = await channexMessageThreads(env);
+  // 403: the Messages app is not installed on the Channex account. That is a setting, not a failure, and
+  // this runs on every booking notification, so it must not fill the audit feed.
+  if (res.status === 403) return 0;
   if (!res.ok) { await auditFail(env, 'channex.message_sync_failed', new Error(`status ${res.status}`)); return 0; }
 
   let imported = 0;
@@ -124,6 +127,7 @@ async function pullMessages(env: Env): Promise<number> {
 
 async function pullReviews(env: Env): Promise<number> {
   const res = await channexReviews(env);
+  if (res.status === 403) return 0; // the Reviews app is not installed on the Channex account, as above
   if (!res.ok) { await auditFail(env, 'channex.review_sync_failed', new Error(`status ${res.status}`)); return 0; }
 
   let imported = 0;
