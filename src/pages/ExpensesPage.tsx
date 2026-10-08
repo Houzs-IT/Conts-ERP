@@ -1,15 +1,18 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
-import { rm, monthLabel, dateTime, dateShort, date, todayMyt } from '../lib/format';
+import { api, notifyFailure, ApiFailure } from '../lib/api';
+import { rm, monthLabel, dateShort, date, todayMyt } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
+import {
+  useUrlState, usePhone, ListCard, Pager, SearchBox, FilterSelect, Chip, STICKY_HEAD, shiftMonth,
+  useFinanceFilters, type FinanceFilters,
+} from './finance/listKit';
 
 // Category is a closed list. The monthly-expense dialog only offers the recurring
 // operating categories (internet / electricity / water / cleaning / maintenance /
@@ -32,11 +35,12 @@ const CAT_TONE: Record<Category, Tone> = {
   consumables: 'neutral', furniture: 'info', management_fee: 'neutral',
   channel_fee: 'neutral', other: 'neutral',
 };
+const catLabel = (c: string) => CAT_LABEL[c as Category] ?? c.replace(/_/g, ' ').replace(/^./, x => x.toUpperCase());
+const catTone = (c: string): Tone => CAT_TONE[c as Category] ?? 'neutral';
 
 // The dialog's category set — the monthly deductions an operator adds by hand.
 const ADD_CATEGORIES: Category[] = ['internet', 'electricity', 'water', 'cleaning', 'maintenance', 'other'];
 
-// Charge-to mirrors Maintenance. New monthly expenses land on the owner statement.
 type ChargeTo = 'owner' | 'guest_deposit' | 'the_conts' | 'warranty';
 const CHARGE_LABEL: Record<string, string> = {
   owner: 'Owner', guest_deposit: 'Guest deposit', the_conts: 'The Conts', warranty: 'Warranty',
@@ -47,124 +51,33 @@ interface Expense {
   description: string; amount: number; incurredOn: string; reference: string | null; chargeTo: ChargeTo;
   unitId?: string; locked?: boolean;
   // When set, this row is a line item under another expense (its parent). The
-  // drill-down nests it one level deeper (L3 under an L2 rollup); the parent then
-  // carries no amount of its own — its children hold the money. See api.md.
+  // grouped view nests it under that rollup; the parent then carries no amount of
+  // its own — its children hold the money. See api.md.
   parentExpenseId?: string | null;
+  /** Grouped view only: line items under a rollup header. */
+  childCount?: number; children?: Expense[];
 }
-interface Payload { data: Expense[]; total: number; generatedAt: string; sentPeriods?: string[] }
+interface Payload {
+  data: Expense[]; generatedAt: string; sentPeriods?: string[];
+  filtersApplied: { month: string };
+  page: number; pageSize: number; total: number; totalAmount: number; pageTotal: number;
+  byCategory: { category: string; count: number; amount: number }[];
+  months: { month: string; count: number; amount: number }[];
+}
 
-/** Renders until /api/finance/expenses is seeded. Delete once the endpoint returns rows. */
-const FALLBACK: Payload = {
-  generatedAt: '', total: 476900,
-  data: [
-    { id: 'EXP-0931', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', category: 'housekeeping', description: 'Housekeeping, 11 turnovers', amount: 38500, incurredOn: '2026-08-31', reference: 'HK-2026-08-A1203', chargeTo: 'owner' },
-    { id: 'EXP-0920', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', category: 'maintenance', description: 'Aircon quarterly service', amount: 7800, incurredOn: '2026-08-20', reference: 'INV-2026-0820', chargeTo: 'owner' },
-    // A maintenance rollup: the parent carries no amount, its two line items do.
-    // The drill-down nests them as L3 under the Maintenance (L2) group.
-    { id: 'EXP-0918', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', category: 'maintenance', description: 'Plumbing works, riser replacement', amount: 0, incurredOn: '2026-09-14', reference: 'AQF-4417', chargeTo: 'owner' },
-    { id: 'EXP-0918-L', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', category: 'maintenance', description: 'Labour — riser replacement, 2 days', amount: 240000, incurredOn: '2026-09-14', reference: 'AQF-4417-L', chargeTo: 'owner', parentExpenseId: 'EXP-0918' },
-    { id: 'EXP-0918-P', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', category: 'maintenance', description: 'Parts — PPR piping & fittings', amount: 80000, incurredOn: '2026-09-14', reference: 'AQF-4417-P', chargeTo: 'owner', parentExpenseId: 'EXP-0918' },
-    { id: 'EXP-0915', unitNumber: '#B-08-11', propertyName: 'Arcoris', category: 'consumables', description: 'Coffee pods, toiletries, 3 months', amount: 24000, incurredOn: '2026-09-12', reference: 'PO-2026-0912', chargeTo: 'owner' },
-    { id: 'EXP-0911', unitNumber: '#15-06', propertyName: 'Scarletz', category: 'utilities', description: 'TNB and Indah Water, August', amount: 18600, incurredOn: '2026-09-05', reference: 'TNB-0895512', chargeTo: 'owner' },
-    { id: 'EXP-0908', unitNumber: '#2207', propertyName: 'Tribeca', category: 'furniture', description: 'Replacement dining chairs, 2', amount: 56000, incurredOn: '2026-09-02', reference: 'FRN-2026-114', chargeTo: 'owner' },
-    { id: 'EXP-0902', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', category: 'maintenance', description: 'Sofa cover deep clean', amount: 12000, incurredOn: '2026-08-14', reference: 'HK-2026-08-SOFA', chargeTo: 'guest_deposit' },
-  ],
-};
+const PAGE_SIZE = 50;
+const SORTS = ['date', 'date_asc', 'amount', 'amount_asc', 'unit'] as const;
+type Sort = typeof SORTS[number];
 
-// A period is locked once its owner statement has been sent — its expenses can no
-// longer be edited (BUTTONS.md §10). July and August 2026 have gone out; the
-// current month is still open.
-const SENT_PERIODS = new Set(['2026-07', '2026-08']);
+// Desktop list grid. Every column can shrink, so the table fits the content width
+// without a sideways scrollbar (which would stop the header sticking).
+const COLS_CLASS = 'grid-cols-[minmax(0,2.1fr)_minmax(0,1.3fr)_minmax(0,0.95fr)_minmax(0,0.85fr)_minmax(0,0.9fr)_minmax(92px,0.9fr)_62px]';
 
-// Grid template shared by the table header, each row and the total row. Mirrors
-// the former COLS inline value as a Tailwind arbitrary grid-template-columns.
-const COLS_CLASS = 'grid-cols-[minmax(168px,1.5fr)_minmax(128px,1.1fr)_minmax(116px,1fr)_minmax(104px,0.9fr)_minmax(120px,1fr)_minmax(96px,0.85fr)_74px]';
-
-const periodOf = (iso: string) => iso.slice(0, 7);
 const toSen = (s: string): number | null => {
   const n = parseFloat(s.replace(/[^0-9.]/g, ''));
   return Number.isFinite(n) ? Math.round(n * 100) : null;
 };
 const thisMonth = () => todayMyt().slice(0, 7);
-// Step a YYYY-MM month by whole months, staying in the calendar (Dec -> Jan).
-const stepMonth = (ym: string, delta: number) => {
-  const [y, m] = ym.split('-').map(Number);
-  const d = new Date(Date.UTC(y, (m - 1) + delta, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-};
-
-// ---- Drill-down tree -------------------------------------------------------
-// L1 Total -> L2 category -> L3 line items, built from the parent_expense_id
-// hierarchy. Every amount is a rolled-up sum of the LEAF expenses beneath it, so
-// a parent (container) expense never double-counts: its children carry the money.
-
-type NodeKind = 'total' | 'category' | 'expense';
-interface TreeNode {
-  key: string;
-  kind: NodeKind;
-  label: string;
-  sub?: string;
-  amount: number;          // rolled up over leaf descendants
-  tone?: Tone;
-  expense?: Expense;       // present only on leaf expense rows (enables Edit / lock)
-  count?: number;          // leaf count, for the "· N items" hint
-  children: TreeNode[];
-}
-
-function buildTree(rows: Expense[], month: string): TreeNode {
-  const byId = new Map(rows.map(e => [e.id, e]));
-  const kids = new Map<string, Expense[]>();
-  const roots: Expense[] = [];
-  for (const e of rows) {
-    const parent = e.parentExpenseId && byId.has(e.parentExpenseId) ? e.parentExpenseId : null;
-    if (parent) { const arr = kids.get(parent) ?? []; arr.push(e); kids.set(parent, arr); }
-    else roots.push(e);
-  }
-  const leafSum = (e: Expense): number => {
-    const c = kids.get(e.id);
-    return c && c.length ? c.reduce((s, k) => s + leafSum(k), 0) : e.amount;
-  };
-  const leafCount = (e: Expense): number => {
-    const c = kids.get(e.id);
-    return c && c.length ? c.reduce((s, k) => s + leafCount(k), 0) : 1;
-  };
-  const expenseNode = (e: Expense): TreeNode => {
-    const c = kids.get(e.id) ?? [];
-    return {
-      key: e.id, kind: 'expense', label: e.description || CAT_LABEL[e.category],
-      sub: `${dateShort(e.incurredOn)}${e.reference ? ` · ${e.reference}` : ''}`,
-      amount: leafSum(e), tone: CAT_TONE[e.category],
-      // A container (has children) is a rollup header, not an editable leaf.
-      expense: c.length ? undefined : e,
-      count: c.length ? leafCount(e) : undefined,
-      children: c.map(expenseNode),
-    };
-  };
-
-  const groups = new Map<Category, Expense[]>();
-  for (const e of roots) { const arr = groups.get(e.category) ?? []; arr.push(e); groups.set(e.category, arr); }
-  const categories: TreeNode[] = [...groups.entries()].map(([category, es]): TreeNode => ({
-    key: `cat:${category}`, kind: 'category', label: CAT_LABEL[category], tone: CAT_TONE[category],
-    amount: es.reduce((s, e) => s + leafSum(e), 0),
-    count: es.reduce((s, e) => s + leafCount(e), 0),
-    children: es.map(expenseNode),
-  })).sort((a, b) => b.amount - a.amount);
-
-  return {
-    key: 'total', kind: 'total', label: `Total deductions · ${monthLabel(month)}`,
-    amount: categories.reduce((s, c) => s + c.amount, 0),
-    count: categories.reduce((s, c) => s + (c.count ?? 0), 0),
-    children: categories,
-  };
-}
-
-// Depth-first flatten honouring which node keys are expanded.
-function flatten(node: TreeNode, depth: number, open: Set<string>, out: { node: TreeNode; depth: number }[]) {
-  out.push({ node, depth });
-  if (node.children.length && open.has(node.key)) {
-    for (const c of node.children) flatten(c, depth + 1, open, out);
-  }
-}
 
 // Standard field. The former inputStyle object relied on `font: inherit`, which
 // (applied last) resets the control to the inherited body font — 16px / 400 /
@@ -174,136 +87,117 @@ const field = 'block w-full box-border h-10 px-3 py-0 border border-solid border
 const fieldMono = 'block w-full box-border h-10 px-3 py-0 border border-solid border-line rounded-control outline-none bg-card text-ink font-mono text-[16px] font-normal';
 const labelClass = 'text-[12px] font-medium text-muted-ink';
 
+/** The query string for one request: the page's filters plus the per-request extras. */
+function qs(base: Record<string, string>, extra: Record<string, string | number>) {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries({ ...base, ...extra })) if (v !== '' && v !== undefined) p.set(k, String(v));
+  return p.toString();
+}
+
 export default function ExpensesPage() {
-  const { data, loading, error, reload } = useApi<Payload>('/finance/expenses', FALLBACK);
   const toast = useToast();
+  const phone = usePhone();
+  const url = useUrlState();
+  const filters = useFinanceFilters();
 
-  // Optimistic overlay: added rows live in `added`, every edit lands in `edits`
-  // keyed by id. There is no backend in dev, so the real call is attempted and its
-  // failure swallowed — the interaction still lands.
-  const [added, setAdded] = useState<Expense[]>([]);
+  // Everything that changes what is listed lives in the URL, so a refresh, a
+  // shared link or the back button lands on the same view.
+  const month = url.get('month');                 // '' = the latest month with expenses (server picks)
+  const cat = url.get('category');
+  const building = url.get('building');
+  const unit = url.get('unit');
+  const owner = url.get('owner');
+  const q = url.get('q');
+  const view: 'grouped' | 'list' = url.get('view') === 'list' ? 'list' : 'grouped';
+  const sort: Sort = (SORTS as readonly string[]).includes(url.get('sort')) ? url.get('sort') as Sort : 'date';
+  const page = Math.max(1, Number(url.get('page')) || 1);
+
+  const base = { month, category: cat, building, unit, owner, q };
+  // The grouped view's first paint only needs the totals; each category loads its rows when opened.
+  const path = view === 'list'
+    ? `/finance/expenses?${qs(base, { view: 'list', sort, page, pageSize: PAGE_SIZE })}`
+    : `/finance/expenses?${qs(base, { pageSize: 0 })}`;
+  const { data, loading, error, reload } = useApi<Payload>(path);
   const [edits, setEdits] = useState<Record<string, Partial<Expense>>>({});
-  const fire = (p: Promise<unknown>) => { void p.catch(notifyFailure); };
+  const [nonce, setNonce] = useState(0);
+  const refresh = () => { reload(); setNonce(n => n + 1); };
 
-  const merged = useMemo(
-    () => [...added, ...(data?.data ?? [])].map(e => ({ ...e, ...edits[e.id] })),
-    [added, data, edits],
-  );
+  const shownMonth = month || data?.filtersApplied.month || thisMonth();
+  const monthAll = shownMonth === 'all';
+  const sentPeriods = useMemo(() => new Set(data?.sentPeriods ?? []), [data]);
+  const total = data?.total ?? 0, totalAmount = data?.totalAmount ?? 0;
+  const filtered = !!(cat || building || unit || owner || q);
+  const clearFilters = () => url.set({ category: null, building: null, unit: null, owner: null, q: null, page: null });
+  const setFilter = (patch: Record<string, string | null>) => url.set({ ...patch, page: null });
 
-  // Filters — unit, category and period, all client-side over the loaded set so
-  // added rows and edits survive a filter change.
-  const [cat, setCat] = useState<Category | 'all'>('all');
-  const [unit, setUnit] = useState<string>('all');
-  // The view is scoped to one month, stepped by the switcher; it opens on the
-  // current MYT month.
-  const [month, setMonth] = useState<string>(thisMonth);
-  const [view, setView] = useState<'grouped' | 'list'>('grouped');
-  // Drill-down starts on the Total with its category breakdown open; categories
-  // and their line items expand on demand.
-  const [open, setOpen] = useState<Set<string>>(() => new Set(['total']));
-  const toggle = (key: string) => setOpen(s => {
-    const n = new Set(s);
-    if (n.has(key)) n.delete(key); else n.add(key);
-    return n;
-  });
+  const unitOptions = useMemo(() => (filters?.units ?? [])
+    .filter(u => (!building || u.buildingId === building) && (!owner || u.ownerId === owner))
+    .map(u => ({ value: u.id, label: `${filters?.buildings.find(b => b.id === u.buildingId)?.name ?? ''} ${u.unitNumber}`.trim() })), [filters, building, owner]);
 
-  const cats = useMemo(() => [...new Set(merged.map(e => e.category))], [merged]);
-  const units = useMemo(() => [...new Set(merged.map(e => e.unitNumber))], [merged]);
-  const periods = useMemo(() => [...new Set(merged.map(e => periodOf(e.incurredOn)))].sort().reverse(), [merged]);
+  const monthOptions = useMemo(() => {
+    const list = (data?.months ?? []).map(m => m.month);
+    if (!monthAll && !list.includes(shownMonth)) list.push(shownMonth);
+    return list.sort().reverse();
+  }, [data, shownMonth, monthAll]);
+  const stepMonth = (by: number) => setFilter({ month: shiftMonth(monthAll ? thisMonth() : shownMonth, by) });
 
-  const rows = merged.filter(e =>
-    (cat === 'all' || e.category === cat) &&
-    (unit === 'all' || e.unitNumber === unit) &&
-    periodOf(e.incurredOn) === month);
-
-  // A container is a parent row whose children are present in the current view.
-  // It carries no money of its own (its leaves hold it) and must not read as an
-  // editable expense. The Grouped tree already hides containers via buildTree;
-  // List view and the header count mirror that here so the two views agree.
-  const rowIds = new Set(rows.map(r => r.id));
-  const containerIds = new Set(
-    rows.filter(r => r.parentExpenseId && rowIds.has(r.parentExpenseId)).map(r => r.parentExpenseId as string),
-  );
-  const leafRows = rows.filter(r => !containerIds.has(r.id));
-
-  const total = leafRows.reduce((s, r) => s + r.amount, 0);
-  const tree = buildTree(rows, month);
-  const treeRows: { node: TreeNode; depth: number }[] = [];
-  flatten(tree, 0, open, treeRows);
-  const filtered = cat !== 'all' || unit !== 'all';
-  const clearFilters = () => { setCat('all'); setUnit('all'); };
-  const sentPeriods = useMemo(() => new Set(data?.sentPeriods ?? (import.meta.env.DEV ? [...SENT_PERIODS] : [])), [data]);
-  const isLocked = (e: Expense) => e.locked ?? sentPeriods.has(periodOf(e.incurredOn));
-
-  // Modal state
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
   const [reporting, setReporting] = useState(false);
 
-  // ---- Actions -------------------------------------------------------------
-
-  function createExpense(input: Omit<Expense, 'id' | 'chargeTo'>) {
-    const optimistic: Expense = { ...input, id: `EXP-${Math.floor(1000 + Math.random() * 9000)}`, chargeTo: 'owner' };
-    setAdded(a => [optimistic, ...a]);
-    setCreating(false);
-    toast({
-      tone: 'success', title: 'Expense added.',
-      body: `${CAT_LABEL[optimistic.category]} · ${rm(optimistic.amount)} on ${optimistic.propertyName || 'unit'} ${optimistic.unitNumber}.`,
-    });
-    fire(api.post('/expenses', {
-      unitId: optimistic.unitNumber, propertyName: optimistic.propertyName, category: optimistic.category, amount: optimistic.amount,
-      incurredOn: optimistic.incurredOn, reference: optimistic.reference, description: optimistic.description,
-    }));
+  async function createExpense(input: { unitId: string; category: Category; amount: number; incurredOn: string; reference: string; description: string }) {
+    try {
+      await api.post('/expenses', input);
+      setCreating(false);
+      toast({ tone: 'success', title: 'Expense added.', body: `${catLabel(input.category)} · ${rm(input.amount)} on ${dateShort(input.incurredOn)}.` });
+      refresh();
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Expense was not added.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    }
   }
 
-  function saveEdit(id: string, delta: Partial<Expense>) {
-    setEdits(e => ({ ...e, [id]: { ...e[id], ...delta } }));
-    setEditing(null);
-    toast({ tone: 'success', title: 'Expense updated.', body: 'The change lands on this period’s statement.' });
-    fire(api.patch(`/expenses/${id}`, delta));
+  async function saveEdit(id: string, delta: Partial<Expense>) {
+    try {
+      await api.patch(`/expenses/${id}`, delta);
+      setEdits(e => ({ ...e, [id]: { ...e[id], ...delta } }));
+      setEditing(null);
+      toast({ tone: 'success', title: 'Expense updated.', body: 'The change lands on this period’s statement.' });
+      refresh();
+    } catch (e) {
+      const locked = e instanceof ApiFailure && e.status === 409;
+      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'That period is locked.' : 'Expense was not updated.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    }
   }
 
-  function generateReport(scopeUnit: string, scopePeriod: string) {
-    const reportRows = merged.filter(e =>
-      (scopeUnit === 'all' || e.unitNumber === scopeUnit) &&
-      (scopePeriod === 'all' || periodOf(e.incurredOn) === scopePeriod));
-    const sum = reportRows.reduce((s, r) => s + r.amount, 0);
-    const unitLabel = scopeUnit === 'all' ? 'All units' : scopeUnit;
-    const periodText = scopePeriod === 'all' ? 'All periods' : monthLabel(scopePeriod);
-    const generatedAt = dateTime(new Date().toISOString());
-
-    const q = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
-    const header = [
-      [q('The Conts — Expenses report')],
-      [q('Scope'), q(`${unitLabel} · ${periodText}`)],
-      [q('Filters applied'), q(`Unit: ${unitLabel}; Category: ${cat === 'all' ? 'all' : CAT_LABEL[cat]}; Period: ${periodText}`)],
-      [q('Generated'), q(`${generatedAt} MYT`)],
-      [q('Rows'), q(`${reportRows.length} expenses`)],
-      [''],
-      ['Expense ID', 'Unit', 'Property', 'Category', 'Date', 'Reference', 'Description', 'Amount (RM)', 'Charge to'].map(q),
-    ];
-    const body = reportRows.map(e => [
-      q(e.id), q(e.unitNumber), q(e.propertyName), q(CAT_LABEL[e.category]), q(e.incurredOn),
-      q(e.reference ?? ''), q(e.description), q((e.amount / 100).toFixed(2)), q(CHARGE_LABEL[e.chargeTo] ?? e.chargeTo),
-    ]);
-    const totalRow = [['', '', '', '', '', '', q('Total'), q((sum / 100).toFixed(2)), ''].join(',')];
-    const csv = [...header, ...body].map(r => r.join(',')).concat(totalRow).join('\r\n');
-
-    const namePart = (s: string) => s.replace(/[^0-9A-Za-z]+/g, '').toLowerCase() || 'all';
-    downloadCsv(`expenses-${namePart(unitLabel)}-${scopePeriod === 'all' ? 'all' : scopePeriod}.csv`, csv);
-
-    setReporting(false);
-    toast({
-      tone: 'success', title: 'Report generated.',
-      body: `${reportRows.length} ${reportRows.length === 1 ? 'expense' : 'expenses'} · ${rm(sum)} · ${unitLabel} · ${periodText}.`,
-    });
+  async function downloadReport(scope: { month: string; unit: string }) {
+    const query = qs({ ...base, month: scope.month, unit: scope.unit }, {});
+    try {
+      const res = await fetch(`/api/expenses/report?${query}`, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('The report could not be generated. Try again in a moment.');
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href; a.download = `expenses-${scope.month || 'all'}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 0);
+      setReporting(false);
+      toast({ tone: 'success', title: 'Report downloaded.', body: 'The CSV header prints the filters applied and when it was generated.' });
+    } catch (e) { notifyFailure(e); }
   }
+
+  const withEdits = (e: Expense): Expense => ({ ...e, ...edits[e.id] });
+  const rows = (data?.data ?? []).map(withEdits);
+  const firstLoad = loading && !data;
+  const cats = data?.byCategory ?? [];
+  const catCount = cats.reduce((n, c) => n + c.count, 0);
+
+  const subParts = [monthAll ? 'All months' : monthLabel(shownMonth), `${total.toLocaleString('en-MY')} ${total === 1 ? 'entry' : 'entries'}`, rm(totalAmount)];
 
   return (
     <>
       <PageHeader
         title="Expenses"
-        sub={`${monthLabel(month)} · ${leafRows.length} ${leafRows.length === 1 ? 'entry' : 'entries'} · ${rm(total)}`}
+        sub={data ? subParts.join(' · ') : 'Loading…'}
         right={
           <div className="flex gap-[9px] flex-wrap">
             <Button variant="secondary" onClick={() => setReporting(true)}>Generate report</Button>
@@ -312,148 +206,317 @@ export default function ExpensesPage() {
         }
       />
 
-      {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
+      {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={refresh} />}
 
-      <div className="flex gap-[10px] flex-wrap items-center">
-        <div className="flex gap-[7px] flex-wrap">
-          {(['all', ...cats] as (Category | 'all')[]).map(c => {
-            const on = c === cat;
-            return (
-              <button key={c} onClick={() => setCat(c)}
-                className={cx('h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer whitespace-nowrap font-sans text-[16px] font-normal border border-solid',
-                  on ? 'border-black bg-black text-white' : 'border-line bg-card text-muted-ink')}>
-                {c === 'all' ? 'All categories' : CAT_LABEL[c]}
-              </button>
-            );
-          })}
+      {/* Category chips carry counts for the month and the other filters, so a click never lands on nothing. */}
+      <div className={cx('flex gap-[7px] shrink-0', phone ? 'overflow-x-auto -mx-4 px-4 pb-1 [scrollbar-width:none]' : 'flex-wrap')}>
+        <Chip on={!cat} onClick={() => setFilter({ category: null })} count={data ? catCount : undefined}>All categories</Chip>
+        {cats.map(c => (
+          <Chip key={c.category} on={cat === c.category} onClick={() => setFilter({ category: cat === c.category ? null : c.category })} count={c.count}>
+            {catLabel(c.category)}
+          </Chip>
+        ))}
+        {cat && !cats.some(c => c.category === cat) && <Chip on onClick={() => setFilter({ category: null })} count={0}>{catLabel(cat)}</Chip>}
+      </div>
+
+      <div className="flex flex-wrap gap-2 items-center shrink-0">
+        <SearchBox className="flex-[2_1_220px]" label="Search expenses" placeholder="Search expenses" value={q} onChange={v => setFilter({ q: v || null })} />
+        <FilterSelect className="flex-[1_1_140px]" label="Building" all="All buildings" value={building} onChange={v => setFilter({ building: v || null, unit: null })}
+          options={(filters?.buildings ?? []).map(b => ({ value: b.id, label: b.name }))} />
+        <FilterSelect className="flex-[1_1_140px]" label="Unit" all="All units" value={unit} onChange={v => setFilter({ unit: v || null })} options={unitOptions} />
+        <FilterSelect label="Owner" all="All owners" value={owner} onChange={v => setFilter({ owner: v || null, unit: null })} className="flex-[1_1_160px]"
+          options={(filters?.owners ?? []).map(o => ({ value: o.id, label: o.name }))} />
+
+        {/* View toggle — grouped drill-down (default) or the flat list. */}
+        <div className="flex flex-[1_0_auto] sm:flex-none h-9 rounded-control border border-solid border-line overflow-hidden" role="group" aria-label="Expenses view">
+          {(['grouped', 'list'] as const).map(v => (
+            <button key={v} onClick={() => setFilter({ view: v === 'grouped' ? null : v })} aria-pressed={view === v}
+              className={cx('flex-1 h-full px-[13px] py-0 cursor-pointer whitespace-nowrap font-sans text-[14px] border-none',
+                view === v ? 'bg-black text-white' : 'bg-card text-muted-ink')}>
+              {v === 'grouped' ? 'Grouped' : 'List'}
+            </button>
+          ))}
         </div>
-        <div className="flex gap-2 flex-wrap items-center ml-auto">
-          <select aria-label="Filter by unit" value={unit} onChange={e => setUnit(e.target.value)}
-            className={cx('block box-border w-auto h-8 pl-3 pr-[30px] py-0 border border-solid border-line rounded-control outline-none bg-card font-sans text-[16px] font-normal', unit === 'all' ? 'text-muted-ink' : 'text-ink')}>
-            <option value="all">All units</option>
-            {units.map(u => <option key={u} value={u}>{u}</option>)}
-          </select>
 
-          {/* View toggle — grouped drill-down (default) or the flat list. */}
-          <div className="flex h-8 rounded-control border border-solid border-line overflow-hidden" role="group" aria-label="Expenses view">
-            {(['grouped', 'list'] as const).map(v => (
-              <button key={v} onClick={() => setView(v)} aria-pressed={view === v}
-                className={cx('h-full px-[13px] py-0 cursor-pointer whitespace-nowrap font-sans text-[16px] border-none',
-                  view === v ? 'bg-black text-white' : 'bg-card text-muted-ink')}>
-                {v === 'grouped' ? 'Grouped' : 'List'}
-              </button>
-            ))}
-          </div>
-
-          {/* Month switcher — steps whole months; opens on the current MYT month. */}
-          <div className="flex items-center h-8 rounded-control border border-solid border-line bg-card">
-            <button aria-label="Previous month" onClick={() => setMonth(m => stepMonth(m, -1))}
-              className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">‹</button>
-            <span className="px-2 min-w-[112px] text-center text-[16px] font-medium tabular-nums whitespace-nowrap">
-              {monthLabel(month)}{sentPeriods.has(month) ? ' · sent' : ''}
-            </span>
-            <button aria-label="Next month" onClick={() => setMonth(m => stepMonth(m, 1))}
-              className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">›</button>
-          </div>
+        {/* Month — stepper plus a menu of the months that have expenses. */}
+        <div className="flex flex-[1_0_150px] sm:flex-none sm:w-[168px] items-center h-9 rounded-control border border-solid border-line bg-card min-w-0">
+          <button aria-label="Previous month" onClick={() => stepMonth(-1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">‹</button>
+          <label className="relative flex-1 min-w-0 h-full">
+            <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Month</span>
+            <select value={monthAll ? 'all' : shownMonth} onChange={e => setFilter({ month: e.target.value })}
+              className="w-full h-full appearance-none bg-transparent border-none outline-none text-center font-sans text-[14px] font-medium text-ink cursor-pointer tabular-nums px-1 [text-align-last:center]">
+              {monthOptions.map(m => <option key={m} value={m}>{monthLabel(m)}{sentPeriods.has(m) ? ' · sent' : ''}</option>)}
+              <option value="all">All months</option>
+            </select>
+          </label>
+          <button aria-label="Next month" onClick={() => stepMonth(1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">›</button>
         </div>
       </div>
 
-      <Card>
-        {loading && rows.length === 0 ? (
-          <div className="p-2"><TableSkeleton rows={6} cols={view === 'grouped' ? 3 : 7} /></div>
-        ) : rows.length === 0 ? (
-          <div className="py-[28px] px-[22px] flex flex-col gap-2">
-            <span className="text-[13px]">No expenses in {monthLabel(month)}{filtered ? ' for these filters' : ''}.</span>
-            {filtered && <button onClick={clearFilters} className="self-start font-sans text-[16px] font-normal text-gold-ink bg-transparent border-none cursor-pointer">Clear filters</button>}
+      <ListCard busy={loading && !!data}>
+        {firstLoad ? (
+          <div className="p-2"><TableSkeleton rows={8} cols={view === 'grouped' ? 3 : 6} /></div>
+        ) : total === 0 ? (
+          <div className="py-[40px] px-[22px] flex flex-col items-center gap-2 text-center">
+            <span className="text-[14px] font-medium">No expenses {monthAll ? '' : `in ${monthLabel(shownMonth)}`}{filtered ? ' match these filters' : ''}.</span>
+            {filtered
+              ? <button onClick={clearFilters} className="font-sans text-[14px] text-gold-ink bg-transparent border-none cursor-pointer">Clear filters</button>
+              : <span className="text-[13px] text-muted-ink">Add one, or step to another month.</span>}
           </div>
         ) : view === 'grouped' ? (
-          // ---- Drill-down: Total (L1) -> category (L2) -> line items (L3) ----
-          <div role="tree" aria-label={`Expenses for ${monthLabel(month)}`}>
-            {treeRows.map(({ node, depth }) => (
-              <TreeRowView
-                key={node.key}
-                node={node}
-                depth={depth}
-                expanded={open.has(node.key)}
-                onToggle={() => toggle(node.key)}
-                locked={node.expense ? isLocked(node.expense) : false}
-                onEdit={node.expense ? () => setEditing(node.expense!) : undefined}
-              />
-            ))}
+          <GroupedTree
+            key={`${path}#${nonce}`}
+            title="Total deductions" period={monthAll ? 'All months' : monthLabel(shownMonth)}
+            total={totalAmount} count={total}
+            cats={cat ? cats.filter(c => c.category === cat) : cats}
+            base={base} sort={sort} withEdits={withEdits} onEdit={setEditing}
+            openInList={c => url.set({ view: 'list', category: c, page: null })}
+          />
+        ) : phone ? (
+          <div>
+            {rows.map(r => <ExpenseCard key={r.id} e={r} onEdit={() => setEditing(r)} />)}
+            <TotalBar count={total} amount={totalAmount} />
           </div>
         ) : (
-          // ---- Flat list ----
-          <div className="overflow-x-auto">
-            <div className="min-w-[1000px]">
-              <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-[12px] font-semibold text-muted-ink')}>
-                <div>Description</div><div>Unit</div><div>Category</div><div>Date</div><div>Reference</div><div className="text-right">Amount</div><div />
-              </div>
-
-              {leafRows.map(r => {
-                const locked = isLocked(r);
-                return (
-                  <div key={r.id} className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[52px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]')}>
-                    <div className="flex flex-col gap-px min-w-0">
-                      <span className="text-[13.5px]">{r.description}</span>
-                      {r.chargeTo !== 'owner' && <span className="text-[11.5px] text-muted-ink">Charged to {CHARGE_LABEL[r.chargeTo] ?? r.chargeTo}</span>}
-                    </div>
-                    <div className="flex flex-col gap-px min-w-0">
-                      <span className="text-[13px]">{r.unitNumber}</span>
-                      <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.propertyName}</span>
-                    </div>
-                    <div><Badge tone={CAT_TONE[r.category]} label={CAT_LABEL[r.category]} /></div>
-                    <div className="flex flex-col gap-px">
-                      <span className="text-[12.5px]">{date(r.incurredOn)}</span>
-                      {locked && <span className="text-[11px] text-muted-ink">Statement sent</span>}
-                    </div>
-                    <div className="font-mono text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.reference ?? '—'}</div>
-                    <div className="text-right text-[13px] font-medium">{rm(r.amount)}</div>
-                    <div className="flex justify-end">
-                      <button onClick={() => setEditing(r)} title={locked ? `The ${monthLabel(periodOf(r.incurredOn))} statement has been sent, so this expense is locked.` : 'Edit this expense'}
-                        className={cx('h-[30px] px-[11px] py-0 rounded-control cursor-pointer font-sans text-[16px] font-normal inline-flex items-center gap-[5px] border border-solid border-line bg-card', locked ? 'text-muted-ink' : 'text-ink')}>
-                        {locked ? 'Locked' : 'Edit'}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-
-              <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[13px] px-[22px] bg-page text-[13px] font-semibold')}>
-                <div className="[grid-column:1/6]">Total</div>
-                <div className="text-right">{rm(total)}</div>
-                <div />
-              </div>
+          <div role="table" aria-label="Expenses">
+            <div role="row" className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] px-[22px]', STICKY_HEAD)}>
+              <div>Description</div>
+              <SortHead label="Unit" active={sort === 'unit'} onClick={() => setFilter({ sort: 'unit' })} />
+              <div>Category</div>
+              <SortHead label="Date" active={sort.startsWith('date')} dir={sort === 'date_asc' ? 'asc' : 'desc'} onClick={() => setFilter({ sort: sort === 'date' ? 'date_asc' : null })} />
+              <div>Reference</div>
+              <SortHead label="Amount" right active={sort.startsWith('amount')} dir={sort === 'amount_asc' ? 'asc' : 'desc'} onClick={() => setFilter({ sort: sort === 'amount' ? 'amount_asc' : 'amount' })} />
+              <div />
             </div>
+
+            {rows.map(r => {
+              const locked = !!r.locked;
+              return (
+                <div role="row" key={r.id} className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[50px] py-[7px] px-[22px] leading-[1.35] [border-bottom:1px_solid_var(--color-line-soft)]')}>
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[13.5px] truncate" title={r.description}>{r.description || catLabel(r.category)}</span>
+                    {r.chargeTo !== 'owner' && <span className="text-[11.5px] text-muted-ink">Charged to {CHARGE_LABEL[r.chargeTo] ?? r.chargeTo}</span>}
+                  </div>
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[13px] truncate" title={r.unitNumber}>{r.unitNumber}</span>
+                    <span className="text-[11.5px] text-muted-ink truncate" title={r.propertyName}>{r.propertyName}</span>
+                  </div>
+                  <div className="min-w-0"><Badge tone={catTone(r.category)} label={catLabel(r.category)} /></div>
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[12.5px] tabular-nums whitespace-nowrap">{date(r.incurredOn)}</span>
+                    {locked && <span className="text-[11px] text-muted-ink">Statement final</span>}
+                  </div>
+                  <div className="font-mono text-[11px] text-muted-ink truncate" title={r.reference ?? undefined}>{r.reference ?? '—'}</div>
+                  <div className="text-right text-[13px] font-medium tabular-nums whitespace-nowrap">{rm(r.amount)}</div>
+                  <div className="flex justify-end">
+                    <button onClick={() => setEditing(r)} title={locked ? `The ${monthLabel(r.incurredOn.slice(0, 7))} statement is final, so this expense is locked.` : 'Edit this expense'}
+                      className={cx('h-[30px] px-[10px] py-0 rounded-control cursor-pointer font-sans text-[13px] inline-flex items-center border border-solid border-line bg-card', locked ? 'text-muted-ink' : 'text-ink')}>
+                      {locked ? 'Locked' : 'Edit'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            <TotalBar count={total} amount={totalAmount} />
           </div>
         )}
-      </Card>
+        {view === 'list' && !firstLoad && <Pager page={page} pageSize={PAGE_SIZE} total={total} unit="expenses" onPage={p => url.set({ page: p > 1 ? p : null })} />}
+      </ListCard>
 
       <span className="text-[12px] text-muted-ink">
-        Every deduction carries a category, date, amount and reference.
+        Every deduction carries a category, date and amount. Totals cover everything the filters match, not just this page.
       </span>
 
-      {creating && <ExpenseModal mode="create" onClose={() => setCreating(false)} onSubmit={createExpense} />}
+      {creating && <ExpenseModal mode="create" filters={filters} defaultBuilding={building} defaultUnit={unit} onClose={() => setCreating(false)} onSubmit={createExpense} />}
       {editing && (
         <ExpenseModal
           mode="edit"
           expense={editing}
-          locked={isLocked(editing)}
-          lockReason={`The ${monthLabel(periodOf(editing.incurredOn))} statement has been sent, so this expense can no longer be edited.`}
+          filters={filters}
+          locked={!!editing.locked}
+          lockReason={`The ${monthLabel(editing.incurredOn.slice(0, 7))} statement is final, so this expense can no longer be edited.`}
           onClose={() => setEditing(null)}
           onSave={delta => saveEdit(editing.id, delta)}
         />
       )}
       {reporting && (
         <ReportModal
-          units={units}
-          periods={periods}
+          units={unitOptions}
+          periods={(data?.months ?? []).map(m => m.month)}
           defaultUnit={unit}
-          defaultPeriod={month}
+          defaultPeriod={monthAll ? '' : shownMonth}
+          filterNote={[cat && catLabel(cat), building && filters?.buildings.find(b => b.id === building)?.name, owner && filters?.owners.find(o => o.id === owner)?.name, q && `“${q}”`].filter(Boolean).join(' · ')}
           onClose={() => setReporting(false)}
-          onGenerate={generateReport}
+          onGenerate={(u, m) => downloadReport({ unit: u, month: m })}
         />
       )}
     </>
+  );
+}
+
+function SortHead({ label, active, dir = 'desc', right, onClick }: { label: string; active: boolean; dir?: 'asc' | 'desc'; right?: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}
+      className={cx('p-0 bg-transparent border-none cursor-pointer font-sans text-[12px] font-semibold inline-flex items-center gap-1', right ? 'justify-end' : '', active ? 'text-ink' : 'text-muted-ink')}>
+      {label}{active && <span aria-hidden className="text-[10px]">{dir === 'asc' ? '▲' : '▼'}</span>}
+    </button>
+  );
+}
+
+function TotalBar({ count, amount }: { count: number; amount: number }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-[12px] px-[22px] bg-page text-[13px] font-semibold">
+      <span>Total · {count.toLocaleString('en-MY')} {count === 1 ? 'expense' : 'expenses'}</span>
+      <span className="tabular-nums">{rm(amount)}</span>
+    </div>
+  );
+}
+
+/** Phone row: what, where, when on the left; amount and category on the right. */
+function ExpenseCard({ e, onEdit }: { e: Expense; onEdit: () => void }) {
+  return (
+    <button onClick={onEdit} className="w-full text-left flex gap-3 items-start py-[11px] px-4 bg-card border-none [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer font-sans text-ink">
+      <div className="flex flex-col gap-[3px] min-w-0 flex-1">
+        <span className="text-[13.5px] font-medium truncate">{e.description || catLabel(e.category)}</span>
+        <span className="text-[12px] text-muted-ink truncate">{e.propertyName} {e.unitNumber}</span>
+        <span className="text-[11.5px] text-muted-ink">{dateShort(e.incurredOn)}{e.locked ? ' · locked' : ''}</span>
+      </div>
+      <div className="flex flex-col items-end gap-[5px] shrink-0">
+        <span className="text-[13.5px] font-semibold tabular-nums">{rm(e.amount)}</span>
+        <Badge tone={catTone(e.category)} label={catLabel(e.category)} size="sm" />
+      </div>
+    </button>
+  );
+}
+
+// ---- Grouped drill-down ----------------------------------------------------
+// L1 Total -> L2 category (server totals) -> L3 that category's expenses, loaded
+// a page at a time when the category is opened -> L4 line items under a rollup.
+
+function GroupedTree({ title, period, total, count, cats, base, sort, withEdits, onEdit, openInList }: {
+  title: string; period: string; total: number; count: number;
+  cats: { category: string; count: number; amount: number }[];
+  base: Record<string, string>; sort: Sort;
+  withEdits: (e: Expense) => Expense; onEdit: (e: Expense) => void; openInList: (category: string) => void;
+}) {
+  const [open, setOpen] = useState<Set<string>>(() => new Set(['total']));
+  const toggle = (key: string) => setOpen(s => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  const totalOpen = open.has('total');
+  return (
+    <div role="tree" aria-label={`${title}, ${period}`}>
+      <TreeRow depth={0} kind="total" label={title} sub={`${period} · ${count.toLocaleString('en-MY')} ${count === 1 ? 'item' : 'items'}`} amount={total} expanded={totalOpen} onToggle={() => toggle('total')} />
+      {totalOpen && cats.map(c => {
+        const key = `cat:${c.category}`;
+        return (
+          <div key={key}>
+            <TreeRow depth={1} kind="category" label={catLabel(c.category)} tone={catTone(c.category)} sub={`${c.count.toLocaleString('en-MY')} ${c.count === 1 ? 'item' : 'items'}`} amount={c.amount}
+              expanded={open.has(key)} onToggle={() => toggle(key)} />
+            {open.has(key) && (
+              <CategoryRows base={base} category={c.category} count={c.count} sort={sort} open={open} toggle={toggle}
+                withEdits={withEdits} onEdit={onEdit} openInList={() => openInList(c.category)} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const TREE_PAGE = 50;
+
+function CategoryRows({ base, category, count, sort, open, toggle, withEdits, onEdit, openInList }: {
+  base: Record<string, string>; category: string; count: number; sort: Sort;
+  open: Set<string>; toggle: (k: string) => void;
+  withEdits: (e: Expense) => Expense; onEdit: (e: Expense) => void; openInList: () => void;
+}) {
+  const [page, setPage] = useState(1);
+  const { data, loading } = useApi<Payload>(`/finance/expenses?${qs(base, { category, view: 'tree', sort, page, pageSize: TREE_PAGE })}`);
+  if (!data) return <div className="py-1" style={{ paddingLeft: 54 }}><TableSkeleton rows={Math.min(3, count)} cols={2} /></div>;
+  const pages = Math.ceil(data.pageTotal / TREE_PAGE);
+  return (
+    <div className={cx('transition-opacity duration-150', loading ? 'opacity-60' : '')}>
+      {data.data.map(raw => {
+        const e = withEdits(raw);
+        const kids = e.children ?? [];
+        const key = `exp:${e.id}`;
+        return (
+          <div key={e.id}>
+            <TreeRow depth={2} kind="expense" label={e.description || catLabel(e.category)}
+              sub={`${e.propertyName} ${e.unitNumber} · ${dateShort(e.incurredOn)}${e.reference ? ` · ${e.reference}` : ''}`}
+              amount={e.amount} tone={catTone(e.category)} count={kids.length ? kids.length : undefined}
+              expanded={open.has(key)} onToggle={kids.length ? () => toggle(key) : undefined}
+              locked={!!e.locked} onEdit={kids.length ? undefined : () => onEdit(e)} />
+            {open.has(key) && kids.map(k0 => {
+              const k = withEdits(k0);
+              return (
+                <TreeRow key={k.id} depth={3} kind="expense" label={k.description || catLabel(k.category)}
+                  sub={`${dateShort(k.incurredOn)}${k.reference ? ` · ${k.reference}` : ''}`}
+                  amount={k.amount} tone={catTone(k.category)} locked={!!k.locked} onEdit={() => onEdit(k)} />
+              );
+            })}
+          </div>
+        );
+      })}
+      {pages > 1 && (
+        <div className="flex items-center gap-3 flex-wrap min-h-[42px] py-2 pr-[18px] [border-bottom:1px_solid_var(--color-line-soft)] text-[12.5px] text-muted-ink" style={{ paddingLeft: 54 }}>
+          <span className="tabular-nums">{((page - 1) * TREE_PAGE + 1).toLocaleString('en-MY')}–{Math.min(data.pageTotal, page * TREE_PAGE).toLocaleString('en-MY')} of {data.pageTotal.toLocaleString('en-MY')}</span>
+          <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="bg-transparent border-none p-0 font-sans text-[12.5px] text-gold-ink cursor-pointer disabled:text-faint disabled:cursor-default">Previous</button>
+          <button disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="bg-transparent border-none p-0 font-sans text-[12.5px] text-gold-ink cursor-pointer disabled:text-faint disabled:cursor-default">Next</button>
+          <button onClick={openInList} className="ml-auto bg-transparent border-none p-0 font-sans text-[12.5px] text-gold-ink cursor-pointer">Open all in list</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- One drill-down row ----------------------------------------------------
+// Total / category / expense share this row; the chevron, indent, colour dot and
+// Edit affordance switch on the kind. Leaf expenses carry the Edit button.
+
+function TreeRow({ depth, kind, label, sub, amount, tone, count, expanded, onToggle, locked, onEdit }: {
+  depth: number; kind: 'total' | 'category' | 'expense'; label: string; sub?: string; amount: number; tone?: Tone; count?: number;
+  expanded?: boolean; onToggle?: () => void; locked?: boolean; onEdit?: () => void;
+}) {
+  const isTotal = kind === 'total', isCategory = kind === 'category';
+  const expandable = !!onToggle;
+  return (
+    <div
+      role="treeitem"
+      aria-expanded={expandable ? expanded : undefined}
+      className={cx(
+        'flex items-center gap-[10px] min-h-[46px] py-[8px] pr-[18px] [border-bottom:1px_solid_var(--color-line-soft)]',
+        isTotal ? 'bg-muted font-semibold' : isCategory ? 'font-medium' : '',
+        isCategory && expanded ? 'bg-page' : '',
+        expandable ? 'cursor-pointer' : '',
+      )}
+      style={{ paddingLeft: 14 + depth * 20 }}
+      onClick={expandable ? onToggle : undefined}
+    >
+      {expandable ? (
+        <span aria-hidden className="w-[18px] h-[18px] grid place-items-center shrink-0 text-muted-ink text-[10px] leading-none">{expanded ? '▾' : '▸'}</span>
+      ) : <span className="w-[18px] shrink-0" aria-hidden />}
+
+      {tone && !isTotal && <span className={cx('w-[7px] h-[7px] rounded-full shrink-0', TONE[tone].dot)} aria-hidden />}
+
+      <div className="flex flex-col gap-px min-w-0 flex-1">
+        <span className={cx('truncate', isTotal ? 'text-[13.5px]' : isCategory ? 'text-[13px]' : 'text-[12.5px]')} title={label}>
+          {label}
+          {count != null && count > 0 && kind !== 'expense' && <span className="ml-[6px] text-[11px] font-normal text-muted-ink">· {count.toLocaleString('en-MY')} {count === 1 ? 'item' : 'items'}</span>}
+          {count != null && count > 0 && kind === 'expense' && <span className="ml-[6px] text-[11px] font-normal text-muted-ink">· {count} {count === 1 ? 'line' : 'lines'}</span>}
+        </span>
+        {sub && <span className="text-[11px] text-muted-ink truncate" title={sub}>{sub}{locked ? ' · statement final' : ''}</span>}
+      </div>
+
+      <span className={cx('font-mono shrink-0 text-right tabular-nums', isTotal ? 'text-[13.5px]' : 'text-[12.5px]')}>{rm(amount)}</span>
+
+      {onEdit ? (
+        <button onClick={e => { e.stopPropagation(); onEdit(); }}
+          title={locked ? 'The statement for this month is final, so this expense is locked.' : 'Edit this expense'}
+          className={cx('h-[26px] w-[58px] py-0 rounded-control shrink-0 cursor-pointer font-sans text-[12px] inline-flex items-center justify-center border border-solid border-line bg-card', locked ? 'text-muted-ink' : 'text-ink')}>
+          {locked ? 'Locked' : 'Edit'}
+        </button>
+      ) : <span className="w-[58px] shrink-0 hidden sm:block" aria-hidden />}
+    </div>
   );
 }
 
@@ -489,111 +552,61 @@ function LabeledField({ label, children }: { label: string; children: ReactNode 
   );
 }
 
-// ---- One drill-down row ----------------------------------------------------
-// Total / category / expense share this row; the chevron, indent, colour dot and
-// Edit affordance switch on the node kind. Leaf expenses (no children) carry the
-// Edit button; everything above is a rollup header.
-
-function TreeRowView({ node, depth, expanded, onToggle, locked, onEdit }: {
-  node: TreeNode; depth: number; expanded: boolean;
-  onToggle: () => void; locked: boolean; onEdit?: () => void;
-}) {
-  const expandable = node.children.length > 0;
-  const isTotal = node.kind === 'total';
-  const isCategory = node.kind === 'category';
-  const isLeaf = node.kind === 'expense' && !!node.expense;
-  const showCount = node.count != null && node.count > 0 && (isCategory || (node.kind === 'expense' && !isLeaf));
-
-  return (
-    <div
-      role="treeitem"
-      aria-expanded={expandable ? expanded : undefined}
-      className={cx(
-        'flex items-center gap-[10px] min-h-[46px] py-[9px] pr-[18px] [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]',
-        isTotal ? 'bg-muted font-semibold' : isCategory ? 'font-medium' : '',
-        isCategory && expanded ? 'bg-page' : '',
-      )}
-      style={{ paddingLeft: 14 + depth * 20 }}
-    >
-      {expandable ? (
-        <button onClick={onToggle} aria-expanded={expanded} aria-label={expanded ? 'Collapse' : 'Expand'}
-          className="w-[18px] h-[18px] grid place-items-center shrink-0 cursor-pointer bg-transparent border-none text-muted-ink text-[10px] leading-none">
-          {expanded ? '▾' : '▸'}
-        </button>
-      ) : <span className="w-[18px] shrink-0" aria-hidden />}
-
-      {node.tone && !isTotal && <span className={cx('w-[7px] h-[7px] rounded-full shrink-0', TONE[node.tone].dot)} aria-hidden />}
-
-      <div className="flex flex-col gap-px min-w-0 flex-1">
-        <span className={cx('whitespace-nowrap overflow-hidden text-ellipsis', isTotal ? 'text-[13.5px]' : isCategory ? 'text-[13px]' : 'text-[12.5px]')}>
-          {node.label}
-          {showCount && <span className="ml-[6px] text-[11px] font-normal text-muted-ink">· {node.count} {node.count === 1 ? 'item' : 'items'}</span>}
-        </span>
-        {node.sub && <span className="text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{node.sub}{locked ? ' · statement sent' : ''}</span>}
-      </div>
-
-      <span className={cx('font-mono shrink-0 text-right tabular-nums', isTotal ? 'text-[13.5px]' : 'text-[12.5px]')}>{rm(node.amount)}</span>
-
-      {isLeaf ? (
-        <button onClick={onEdit}
-          title={locked ? 'The statement for this month has been sent, so this expense is locked.' : 'Edit this expense'}
-          className={cx('h-[26px] px-[10px] py-0 rounded-control shrink-0 cursor-pointer font-sans text-[12px] inline-flex items-center border border-solid border-line bg-card', locked ? 'text-muted-ink' : 'text-ink')}>
-          {locked ? 'Locked' : 'Edit'}
-        </button>
-      ) : <span className="w-[54px] shrink-0" aria-hidden />}
-    </div>
-  );
-}
-
 // ---- Add / edit expense ----------------------------------------------------
 
-function ExpenseModal({ mode, expense, locked, lockReason, onClose, onSubmit, onSave }: {
+function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, locked, lockReason, onClose, onSubmit, onSave }: {
   mode: 'create' | 'edit';
   expense?: Expense;
+  filters?: FinanceFilters | null;
+  defaultBuilding?: string;
+  defaultUnit?: string;
   locked?: boolean;
   lockReason?: string;
   onClose: () => void;
-  onSubmit?: (e: Omit<Expense, 'id' | 'chargeTo'>) => void;
-  onSave?: (delta: Partial<Expense>) => void;
+  onSubmit?: (e: { unitId: string; category: Category; amount: number; incurredOn: string; reference: string; description: string }) => Promise<void> | void;
+  onSave?: (delta: Partial<Expense>) => Promise<void> | void;
 }) {
-  const [propertyName, setPropertyName] = useState(expense?.propertyName ?? '');
-  const [unitNumber, setUnitNumber] = useState(expense?.unitNumber ?? '');
+  const startUnit = defaultUnit ? filters?.units.find(u => u.id === defaultUnit) : undefined;
+  const [buildingId, setBuildingId] = useState(startUnit?.buildingId ?? defaultBuilding ?? '');
+  const [unitId, setUnitId] = useState(startUnit?.id ?? '');
   const [category, setCategory] = useState<Category>(expense?.category ?? 'internet');
   const [amount, setAmount] = useState(expense ? (expense.amount / 100).toFixed(2) : '');
   const [incurredOn, setIncurredOn] = useState(expense?.incurredOn ?? todayMyt());
   const [reference, setReference] = useState(expense?.reference ?? '');
   const [description, setDescription] = useState(expense?.description ?? '');
+  const [busy, setBusy] = useState(false);
 
   const sen = toSen(amount);
   const readOnly = mode === 'edit' && !!locked;
-  // Category, date, amount and reference are all mandatory — every deduction must
-  // be explainable (api.md validation rules).
-  const valid = !readOnly && unitNumber.trim() !== '' && !!sen && sen > 0 && incurredOn !== '' && reference.trim() !== '' && description.trim() !== '';
+  // A new deduction needs a reference so the statement line can be traced. Imported
+  // expenses arrived without one, so an edit does not insist on it.
+  const needsRef = mode === 'create';
+  const valid = !readOnly && (mode === 'edit' || unitId !== '') && !!sen && sen > 0 && incurredOn !== ''
+    && (!needsRef || reference.trim() !== '') && description.trim() !== '';
 
   // The dialog's category select must always be able to show the current value,
   // even when it came in from a category outside the add-set.
   const catOptions = ADD_CATEGORIES.includes(category) ? ADD_CATEGORIES : [category, ...ADD_CATEGORIES];
+  const unitChoices = (filters?.units ?? []).filter(u => !buildingId || u.buildingId === buildingId);
+  const buildingName = (id: string) => filters?.buildings.find(b => b.id === id)?.name ?? '';
 
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!valid || !sen) return;
-    if (mode === 'create') {
-      onSubmit?.({
-        propertyName: propertyName.trim(), unitNumber: unitNumber.trim(), category,
-        description: description.trim(), amount: sen, incurredOn, reference: reference.trim(),
-      });
-    } else {
-      onSave?.({
-        propertyName: propertyName.trim(), unitNumber: unitNumber.trim(), category,
-        description: description.trim(), amount: sen, incurredOn, reference: reference.trim(),
-      });
-    }
+  async function submit(e?: FormEvent) {
+    e?.preventDefault();
+    if (!valid || !sen || busy) return;
+    setBusy(true);
+    try {
+      if (mode === 'create') {
+        await onSubmit?.({ unitId, category, description: description.trim(), amount: sen, incurredOn, reference: reference.trim() });
+      } else {
+        await onSave?.({ category, description: description.trim(), amount: sen, incurredOn, ...(reference.trim() ? { reference: reference.trim() } : {}) });
+      }
+    } finally { setBusy(false); }
   }
 
   const disabledReason = readOnly ? 'This expense is locked.'
-    : !unitNumber.trim() ? 'Add the unit first.'
+    : mode === 'create' && !unitId ? 'Pick the unit first.'
     : !sen || sen <= 0 ? 'Enter the amount.'
-    : !reference.trim() ? 'A reference is required on every expense.'
+    : needsRef && !reference.trim() ? 'A reference is required on every new expense.'
     : !description.trim() ? 'Add a short description.'
     : 'Complete the required fields.';
 
@@ -607,7 +620,7 @@ function ExpenseModal({ mode, expense, locked, lockReason, onClose, onSubmit, on
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose}>{readOnly ? 'Close' : 'Cancel'}</Button>
         {!readOnly && (
-          <Button size="sm" variant="primary" onClick={submit} disabled={!valid} disabledReason={disabledReason}>
+          <Button size="sm" variant="primary" onClick={() => submit()} loading={busy} disabled={!valid} disabledReason={disabledReason}>
             {mode === 'create' ? 'Add expense' : 'Save changes'}
           </Button>
         )}
@@ -618,14 +631,26 @@ function ExpenseModal({ mode, expense, locked, lockReason, onClose, onSubmit, on
         </div>
       )}
       <form onSubmit={submit} className="flex flex-col gap-[14px]">
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
-          <LabeledField label="Unit"><input required disabled={readOnly} value={unitNumber} onChange={e => setUnitNumber(e.target.value)} placeholder="#A-12-03" className={field} /></LabeledField>
-          <LabeledField label="Property"><input disabled={readOnly} value={propertyName} onChange={e => setPropertyName(e.target.value)} placeholder="Vista Jaya One" className={field} /></LabeledField>
-        </div>
+        {mode === 'create' && (
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
+            <LabeledField label="Building">
+              <select value={buildingId} onChange={e => { setBuildingId(e.target.value); setUnitId(''); }} className={field}>
+                <option value="">All buildings</option>
+                {(filters?.buildings ?? []).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </LabeledField>
+            <LabeledField label="Unit">
+              <select required value={unitId} onChange={e => setUnitId(e.target.value)} className={field}>
+                <option value="">Pick a unit</option>
+                {unitChoices.map(u => <option key={u.id} value={u.id}>{buildingId ? u.unitNumber : `${buildingName(u.buildingId)} ${u.unitNumber}`}</option>)}
+              </select>
+            </LabeledField>
+          </div>
+        )}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
           <LabeledField label="Category">
             <select disabled={readOnly} value={category} onChange={e => setCategory(e.target.value as Category)} className={field}>
-              {catOptions.map(c => <option key={c} value={c}>{CAT_LABEL[c]}</option>)}
+              {catOptions.map(c => <option key={c} value={c}>{catLabel(c)}</option>)}
             </select>
           </LabeledField>
           <LabeledField label="Amount (RM)">
@@ -635,7 +660,7 @@ function ExpenseModal({ mode, expense, locked, lockReason, onClose, onSubmit, on
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
           <LabeledField label="Date"><input type="date" required disabled={readOnly} value={incurredOn} onChange={e => setIncurredOn(e.target.value)} className={field} /></LabeledField>
-          <LabeledField label="Reference"><input required disabled={readOnly} value={reference} onChange={e => setReference(e.target.value)} placeholder="INV-2026-0912" className={fieldMono} /></LabeledField>
+          <LabeledField label={needsRef ? 'Reference' : 'Reference (optional)'}><input required={needsRef} disabled={readOnly} value={reference} onChange={e => setReference(e.target.value)} placeholder="INV-2026-0912" className={fieldMono} /></LabeledField>
         </div>
         <LabeledField label="Description">
           <textarea disabled={readOnly} value={description} onChange={e => setDescription(e.target.value)} placeholder="Internet, September" rows={2}
@@ -648,57 +673,41 @@ function ExpenseModal({ mode, expense, locked, lockReason, onClose, onSubmit, on
 
 // ---- Generate report -------------------------------------------------------
 
-function ReportModal({ units, periods, defaultUnit, defaultPeriod, onClose, onGenerate }: {
-  units: string[]; periods: string[]; defaultUnit: string; defaultPeriod: string;
+function ReportModal({ units, periods, defaultUnit, defaultPeriod, filterNote, onClose, onGenerate }: {
+  units: { value: string; label: string }[]; periods: string[]; defaultUnit: string; defaultPeriod: string; filterNote: string;
   onClose: () => void; onGenerate: (unit: string, period: string) => void;
 }) {
   const [unit, setUnit] = useState(defaultUnit);
   const [period, setPeriod] = useState(defaultPeriod);
-  const unitLabel = unit === 'all' ? 'All units' : unit;
-  const periodText = period === 'all' ? 'All periods' : monthLabel(period);
-  // The month switcher is unbounded, so defaultPeriod can be a month with no
-  // expenses — one absent from `periods`. Without an option for it the native
-  // <select> would fall back to displaying "All periods" while `period` still
-  // held that month, desyncing the control from the scope line below. Keep the
-  // active value in the option list so the select always matches the scope.
-  const periodOptions = period === 'all' || periods.includes(period) ? periods : [period, ...periods];
+  const unitLabel = unit ? units.find(u => u.value === unit)?.label ?? unit : 'All units';
+  const periodText = period ? monthLabel(period) : 'All months';
+  // Keep the active month in the list even when it has no expenses, so the
+  // select always shows what will be exported.
+  const periodOptions = !period || periods.includes(period) ? periods : [period, ...periods];
 
   return (
-    <Modal title="Generate expenses report" sub="Per unit, per month. Exports a CSV whose header prints the applied filters, the generated time and the data scope." onClose={onClose} width={480}
+    <Modal title="Generate expenses report" sub="Exports a CSV whose header prints the filters applied and the time it was generated." onClose={onClose} width={480}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={() => onGenerate(unit, period)}>Generate report</Button>
+        <Button size="sm" variant="primary" onClick={() => onGenerate(unit, period)}>Download CSV</Button>
       </>}>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-[14px]">
         <LabeledField label="Unit">
           <select value={unit} onChange={e => setUnit(e.target.value)} className={field}>
-            <option value="all">All units</option>
-            {units.map(u => <option key={u} value={u}>{u}</option>)}
+            <option value="">All units</option>
+            {units.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
           </select>
         </LabeledField>
-        <LabeledField label="Period">
+        <LabeledField label="Month">
           <select value={period} onChange={e => setPeriod(e.target.value)} className={field}>
-            <option value="all">All periods</option>
+            <option value="">All months</option>
             {periodOptions.map(p => <option key={p} value={p}>{monthLabel(p)}</option>)}
           </select>
         </LabeledField>
       </div>
       <div className="py-[10px] px-3 rounded-control bg-page border border-solid border-line text-[12.5px] text-muted-ink">
-        Scope: {unitLabel} · {periodText}
+        Scope: {unitLabel} · {periodText}{filterNote ? ` · ${filterNote}` : ''}
       </div>
     </Modal>
   );
-}
-
-// ---- CSV download ----------------------------------------------------------
-
-function downloadCsv(name: string, text: string) {
-  try {
-    const blob = new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = name;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  } catch (e) { notifyFailure(e); }
 }

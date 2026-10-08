@@ -1,29 +1,39 @@
-import { type Env, all, fail, audit } from '../../_lib/db';
+import { type Env, all, one, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { readExpenseFilter, expenseWhere, IS_PARENT_SQL } from '../../_lib/expenses';
 
 const q = (v: string | number | null) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 
-/** GET /api/expenses/report?unitId=&period=YYYY-MM — a CSV download. Filters applied and generation time are printed at the top. */
+/** GET /api/expenses/report?month=YYYY-MM&category=&building=&unit=&owner=&q= (also the older unitId= / period=) — a CSV download. Filters applied and generation time are printed at the top. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (!session.manage) return fail('FORBIDDEN', 'Expense reports are for finance and management roles.', 403);
 
-  const url = new URL(request.url);
-  const unitId = url.searchParams.get('unitId') || null, period = url.searchParams.get('period') || null;
-  if (period && !/^\d{4}-\d{2}$/.test(period)) return fail('VALIDATION', 'Period must be YYYY-MM.', 422);
-
+  const f = readExpenseFilter(new URL(request.url));
+  if (typeof f === 'string') return fail('VALIDATION', f, 422);
+  const where = expenseWhere(f);
+  // Rollup headers carry no money of their own; their line items are listed instead.
   const rows = await all<any>(env, `
     SELECT e.id, e.category, e.description, e.amount, e.incurred_on, e.reference, e.charge_to, u.unit_number, p.name AS property_name
     FROM expenses e JOIN units u ON u.id = e.unit_id JOIN properties p ON p.id = u.property_id
-    WHERE 1 = 1 ${unitId ? 'AND e.unit_id = ?' : ''} ${period ? 'AND substr(e.incurred_on, 1, 7) = ?' : ''}
-    ORDER BY e.incurred_on, p.name, u.unit_number`, ...[unitId, period].filter((v): v is string => !!v));
+    WHERE NOT ${IS_PARENT_SQL} ${where.sql}
+    ORDER BY e.incurred_on, p.name, u.unit_number`, ...where.args);
+  // Print names, not ids, so the header reads on its own.
+  const name = async (sql: string, id: string | null) => id ? ((await one<{ n: string }>(env, sql, id))?.n ?? id) : 'all';
+  const scope = [
+    `Month: ${f.month ?? 'all'}`, `Category: ${f.category ?? 'all'}`,
+    `Building: ${await name('SELECT name AS n FROM properties WHERE id = ?', f.building)}`,
+    `Unit: ${await name("SELECT p.name || ' ' || u.unit_number AS n FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?", f.unit)}`,
+    `Owner: ${await name('SELECT display_name AS n FROM owners WHERE id = ?', f.owner)}`,
+    ...(f.q ? [`Search: ${f.q}`] : []),
+  ].join('; ');
 
   const total = rows.reduce((n, r) => n + Number(r.amount), 0);
   const generated = new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur', hour12: false });
   const lines = [
     [q('Conts ERP - Expenses report')],
-    [q('Filters applied'), q(`Unit: ${unitId ?? 'all'}; Period: ${period ?? 'all'}`)],
+    [q('Filters applied'), q(scope)],
     [q('Generated'), q(`${generated} MYT`)],
     [q('Rows'), q(rows.length)],
     [''],
@@ -32,8 +42,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ['', '', '', '', '', '', q('Total'), q((total / 100).toFixed(2)), ''],
   ].map(l => l.join(','));
 
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.report', entityTable: 'expenses', entityId: 'report', after: { unitId, period, rows: rows.length } });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.report', entityTable: 'expenses', entityId: 'report', after: { ...f, rows: rows.length } });
   return new Response('﻿' + lines.join('\r\n'), {
-    headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="expenses-${period ?? 'all'}.csv"`, 'cache-control': 'no-store' },
+    headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="expenses-${f.month ?? 'all'}.csv"`, 'cache-control': 'no-store' },
   });
 };

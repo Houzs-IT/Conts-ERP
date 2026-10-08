@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo } from 'react';
 import { color } from '../theme';
 import { TONE, CHANNEL_META, cx } from '../lib/design-tokens';
 import { Card, CardHeader } from '../components/Card';
@@ -8,6 +8,7 @@ import ChannelMark, { channelLabel } from '../components/ChannelMark';
 import { useApi } from '../lib/useApi';
 import { rm, monthLabel } from '../lib/format';
 import type { BookingChannel, Tone } from '../lib/types';
+import { useUrlState, usePhone, ListCard, SearchBox, FilterSelect, STICKY_HEAD } from './finance/listKit';
 
 /* -----------------------------------------------------------------------------
  * Analytics / Revenue — `/performance/analytics` and `/finance/revenue`.
@@ -37,7 +38,7 @@ interface Point {
 }
 interface Delta { value: number; unit: 'percent' | 'points'; direction: 'up' | 'down' | 'flat'; tone: Tone; note?: string }
 interface UnitRow {
-  unitId: string; unitNumber: string; propertyName: string;
+  unitId: string; unitNumber: string; propertyName: string; buildingId?: string; nights?: number;
   occupancy: number; adr: number; revpar: number; revenue: number; rating: number | null;
 }
 interface ChannelShare { channel: BookingChannel; revenue: number; share: number } // share is percent
@@ -48,6 +49,8 @@ interface AnalyticsPayload {
   points: Point[];
   deltas: Record<Metric, Delta>;
   totals: Totals;
+  /** The whole window (older payloads lack it; the current month's point stands in). */
+  summary?: { revenue: number; occupancy: number; adr: number; revpar: number; nights: number; listedUnits: number };
   units: UnitRow[];
   channelMix: ChannelShare[];
 }
@@ -186,7 +189,7 @@ const RANGE_SUB: Record<Range, string> = {
 };
 
 const ARROW: Record<'up' | 'down' | 'flat', string> = { up: '↑', down: '↓', flat: '→' };
-const deltaText = (d: Delta) => `${ARROW[d.direction]} ${d.value.toFixed(1)}${d.unit === 'points' ? ' pts' : '%'}`;
+const deltaText = (d: Delta) => d.note && d.value === 0 ? 'no earlier figures' : `${ARROW[d.direction]} ${d.value.toFixed(1)}${d.unit === 'points' ? ' pts' : '%'}`;
 
 /* ------------------------------------------------------------------- page -- */
 
@@ -195,8 +198,11 @@ export default function AnalyticsPage() {
   // does not announce itself as "Analytics".
   const isRevenueView = typeof window !== 'undefined' && window.location.hash.replace(/^#/, '').startsWith('/finance/revenue');
 
-  const [metric, setMetric] = useState<Metric>('revenue');
-  const [range, setRange] = useState<Range>('12m');
+  const url = useUrlState();
+  const metric: Metric = (METRIC_ORDER as string[]).includes(url.get('metric')) ? url.get('metric') as Metric : 'revenue';
+  const range: Range = RANGES.some(r => r.key === url.get('range')) ? url.get('range') as Range : '12m';
+  const setMetric = (k: Metric) => url.set({ metric: k === 'revenue' ? null : k });
+  const setRange = (k: Range) => url.set({ range: k === '12m' ? null : k });
 
   const q = useApi<AnalyticsPayload>(`/analytics?range=${range}`, DATA[range]);
   // No backend in dev: a range change fails to refetch, so fall back to the local
@@ -207,7 +213,7 @@ export default function AnalyticsPage() {
   const delta = d.deltas[metric];
   const points = d.points;
   const current = points.find(p => p.isCurrent) ?? points[points.length - 1];
-  const headline = current ? m.pick(current) : 0;
+  const headline = d.summary ? m.pick(d.summary) : current ? m.pick(current) : 0;
 
   // Best and weakest are ranked by whichever metric is in focus, so the switch
   // drives all three panels at once.
@@ -233,11 +239,10 @@ export default function AnalyticsPage() {
             <div className="flex flex-col gap-1.5 min-w-0">
               <div className="flex items-baseline gap-3 flex-wrap">
                 <span className="text-[30px] font-semibold tracking-[-0.01em] leading-[1.05]">{m.full(headline)}</span>
-                <span className={cx('text-[14px] font-semibold', TONE[delta.tone].text)}>{deltaText(delta)}</span>
+                <span className={cx('text-[14px] font-semibold', delta.note && delta.value === 0 ? 'text-muted-ink font-normal' : TONE[delta.tone].text)}>{deltaText(delta)}</span>
               </div>
               <span className="text-[12px] text-muted-ink [text-wrap:pretty]">
-                {m.label} this period vs {range === 'ytd' ? 'the same period last year' : 'the prior window'}
-                {delta.note ? ` · ${delta.note}` : ''}
+                {m.label}{d.summary ? `, ${RANGE_SUB[range].toLowerCase()}` : ' this period'} vs {range === 'ytd' ? 'the same period last year' : 'the prior window'}
               </span>
             </div>
 
@@ -295,6 +300,9 @@ export default function AnalyticsPage() {
             <Total label="Management fees" value={rm(d.totals.managementFees, { cents: false })} />
             <Total label="Net owner payout" value={rm(d.totals.netOwnerPayout, { cents: false })} />
           </div>
+          <span className="text-[11.5px] text-muted-ink -mt-2 [text-wrap:pretty]">
+            Management fees and net owner payout come from owner statements generated for these months; a month with no statements adds nothing to them yet.
+          </span>
         </div>
       </Card>
 
@@ -321,6 +329,8 @@ export default function AnalyticsPage() {
           </Card>
         ))}
       </div>
+
+      <UnitTable units={d.units} metric={metric} loading={loading} />
 
       {/* Channel mix ------------------------------------------------------- */}
       <Card>
@@ -351,6 +361,118 @@ export default function AnalyticsPage() {
 }
 
 /* --------------------------------------------------------------- pieces -- */
+
+type UnitSort = 'unit' | Metric;
+const UNIT_COLS = 'grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.7fr)]';
+
+/** Every listed unit for the window, sortable by any metric, with a building filter and a total row. */
+function UnitTable({ units, metric, loading }: { units: UnitRow[]; metric: Metric; loading: boolean }) {
+  const url = useUrlState();
+  const phone = usePhone();
+  const q = url.get('uq').toLowerCase();
+  const building = url.get('ub');
+  const raw = url.get('usort');
+  const sortKey: UnitSort = (['unit', ...METRIC_ORDER] as string[]).includes(raw.replace(/^-/, '')) ? raw.replace(/^-/, '') as UnitSort : metric;
+  // `usort` is a key, '-' in front for largest first; none means the focused metric, largest first.
+  const asc = !!raw && !raw.startsWith('-');
+
+  const buildings = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const u of units) m.set(u.buildingId ?? u.propertyName, u.propertyName);
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label }));
+  }, [units]);
+
+  const rows = useMemo(() => {
+    const list = units.filter(u =>
+      (!building || (u.buildingId ?? u.propertyName) === building) &&
+      (!q || `${u.propertyName} ${u.unitNumber}`.toLowerCase().includes(q)));
+    list.sort((a, b) => {
+      if (sortKey === 'unit') return `${a.propertyName} ${a.unitNumber}`.localeCompare(`${b.propertyName} ${b.unitNumber}`) * (asc ? 1 : -1);
+      const m = METRICS[sortKey];
+      return (m.pick(a) - m.pick(b)) * (asc ? 1 : -1) || a.unitNumber.localeCompare(b.unitNumber);
+    });
+    return list;
+  }, [units, building, q, sortKey, asc]);
+
+  const revenue = rows.reduce((n, u) => n + u.revenue, 0);
+  const nights = rows.reduce((n, u) => n + (u.nights ?? 0), 0);
+  const sortBy = (k: UnitSort) => url.set({ usort: sortKey === k ? (asc ? `-${k}` : k) : (k === 'unit' ? k : `-${k}`) });
+  const Head = ({ k, label, right }: { k: UnitSort; label: string; right?: boolean }) => (
+    <button onClick={() => sortBy(k)} aria-sort={sortKey === k ? (asc ? 'ascending' : 'descending') : undefined}
+      className={cx('p-0 bg-transparent border-none cursor-pointer font-sans text-[12px] font-semibold inline-flex items-center gap-1', right ? 'justify-end' : '', sortKey === k ? 'text-ink' : 'text-muted-ink')}>
+      {label}{sortKey === k && <span aria-hidden className="text-[10px]">{asc ? '▲' : '▼'}</span>}
+    </button>
+  );
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div className="flex flex-col gap-[2px]">
+          <span className="text-[15px] font-semibold">All units</span>
+          <span className="text-[12px] text-muted-ink">{rows.length === units.length ? `${units.length} listed units` : `${rows.length} of ${units.length} listed units`}</span>
+        </div>
+        <div className="flex gap-2 flex-wrap flex-[1_1_420px] justify-end">
+          <SearchBox className="flex-[1_1_200px] max-w-[300px]" label="Search units" placeholder="Search unit" value={url.get('uq')} onChange={v => url.set({ uq: v || null })} />
+          <FilterSelect className="flex-[1_1_160px] max-w-[240px]" label="Building" all="All buildings" value={building} onChange={v => url.set({ ub: v || null })} options={buildings} />
+        </div>
+      </div>
+      <ListCard>
+        {loading ? <TableSkeleton rows={8} cols={phone ? 2 : 6} /> : rows.length === 0 ? (
+          <div className="py-[36px] px-5 text-center text-[13px] text-muted-ink">No units match.</div>
+        ) : phone ? (
+          <div>
+            {rows.map(u => (
+              <div key={u.unitId} className="flex items-center gap-3 py-[10px] px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
+                <div className="flex flex-col gap-[2px] min-w-0 flex-1">
+                  <span className="text-[13.5px] font-medium truncate">{u.unitNumber}</span>
+                  <span className="text-[11.5px] text-muted-ink truncate">{u.propertyName} · {u.occupancy.toFixed(1)}% occupied</span>
+                </div>
+                <div className="flex flex-col items-end gap-[2px] shrink-0">
+                  <span className="text-[13.5px] font-semibold tabular-nums">{METRICS[metric].full(METRICS[metric].pick(u))}</span>
+                  <span className="text-[11px] text-muted-ink">{METRICS[metric].label}</span>
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center justify-between py-3 px-4 bg-page text-[13px] font-semibold">
+              <span>Total revenue</span><span className="tabular-nums">{rm(revenue, { cents: false })}</span>
+            </div>
+          </div>
+        ) : (
+          <div role="table" aria-label="Units">
+            <div role="row" className={cx('grid', UNIT_COLS, 'gap-[14px] px-5 py-[9px]', STICKY_HEAD)}>
+              <Head k="unit" label="Unit" />
+              <Head k="revenue" label="Revenue" right />
+              <Head k="occupancy" label="Occupancy" right />
+              <Head k="adr" label="ADR" right />
+              <Head k="revpar" label="RevPAR" right />
+              <div className="text-right">Rating</div>
+            </div>
+            {rows.map(u => (
+              <div role="row" key={u.unitId} className={cx('grid', UNIT_COLS, 'gap-[14px] items-center min-h-[46px] px-5 py-[6px] [border-bottom:1px_solid_var(--color-line-soft)] text-[13px]')}>
+                <div className="flex flex-col gap-px min-w-0">
+                  <span className="font-medium truncate" title={u.unitNumber}>{u.unitNumber}</span>
+                  <span className="text-[11.5px] text-muted-ink truncate" title={u.propertyName}>{u.propertyName}</span>
+                </div>
+                <span className="text-right tabular-nums whitespace-nowrap">{rm(u.revenue, { cents: false })}</span>
+                <span className="text-right tabular-nums whitespace-nowrap">{u.occupancy.toFixed(1)}%</span>
+                <span className="text-right tabular-nums whitespace-nowrap">{rm(u.adr, { cents: false })}</span>
+                <span className="text-right tabular-nums whitespace-nowrap">{rm(u.revpar, { cents: false })}</span>
+                <span className="text-right tabular-nums text-muted-ink">{u.rating === null ? '—' : u.rating.toFixed(2)}</span>
+              </div>
+            ))}
+            <div className={cx('grid', UNIT_COLS, 'gap-[14px] items-center px-5 py-[11px] bg-page text-[13px] font-semibold')}>
+              <span>Total · {rows.length} units</span>
+              <span className="text-right tabular-nums whitespace-nowrap">{rm(revenue, { cents: false })}</span>
+              <span />
+              <span className="text-right tabular-nums whitespace-nowrap" title="Revenue divided by booked nights">{nights ? rm(Math.round(revenue / nights), { cents: false }) : '—'}</span>
+              <span /><span />
+            </div>
+          </div>
+        )}
+      </ListCard>
+    </div>
+  );
+}
 
 function Total({ label, value }: { label: string; value: string }) {
   return (
