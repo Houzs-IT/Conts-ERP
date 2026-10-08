@@ -40,7 +40,7 @@ async function upsert(db: Db, table: string, defs: [string, string][], rows: Rec
   const cols = defs.map(d => d[0]).join(', ');
   const out = await db.all<{ inserted: boolean }>(`
     INSERT INTO ${table} (${cols})
-    SELECT ${cols} FROM jsonb_to_recordset(?::jsonb) AS x(${defs.map(d => `${d[0]} ${d[1]}`).join(', ')})
+    SELECT ${cols} FROM jsonb_to_recordset(?::text::jsonb) AS x(${defs.map(d => `${d[0]} ${d[1]}`).join(', ')})
     ON CONFLICT (id) ${onConflict}
     RETURNING (xmax = 0) AS inserted`, JSON.stringify(rows));
   const created = out.filter(r => r.inserted === true || (r.inserted as unknown) === 't').length;
@@ -162,7 +162,7 @@ export async function importListing(db: Db, plan: ListingPlan, now: string): Pro
     if (parent !== child && isOurs(child)) parents.push({ id: child, parent_unit_id: parent });
   }
   if (parents.length) {
-    await db.run(`UPDATE units u SET parent_unit_id = x.parent_unit_id FROM jsonb_to_recordset(?::jsonb) AS x(id text, parent_unit_id text) WHERE u.id = x.id`, JSON.stringify(parents));
+    await db.run(`UPDATE units u SET parent_unit_id = x.parent_unit_id FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, parent_unit_id text) WHERE u.id = x.id`, JSON.stringify(parents));
   }
 
   // Monthly running costs, only on units this import owns (the pilot unit's own costs stay as they are).
@@ -188,14 +188,14 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
   const ids = plan.reservations.map(r => r.id), refs = plan.reservations.map(r => r.externalRef);
   const existing = plan.reservations.length ? await db.all<{ id: string; external_ref: string | null; unit_id: string }>(`
     SELECT id, external_ref, unit_id FROM reservations
-    WHERE id IN (SELECT jsonb_array_elements_text(?::jsonb)) OR external_ref IN (SELECT jsonb_array_elements_text(?::jsonb))`,
+    WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) OR external_ref IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
     JSON.stringify(ids), JSON.stringify(refs)) : [];
   const byId = new Set(existing.map(e => e.id));
   // A booking the workbook step created first (run out of order) is taken over, by reference or by unit and dates.
   const keyed = plan.reservations.map(r => ({ unit_id: unitOf.get(unitKey(r.building, r.unitNumber)) ?? '', check_in: r.checkIn, check_out: r.checkOut }));
   const workbookStays = plan.reservations.length ? await db.all<{ id: string; unit_id: string; check_in: string; check_out: string; channel: string }>(`
     SELECT r.id, r.unit_id, r.check_in, r.check_out, r.channel FROM reservations r
-    JOIN jsonb_to_recordset(?::jsonb) AS x(unit_id text, check_in text, check_out text)
+    JOIN jsonb_to_recordset(?::text::jsonb) AS x(unit_id text, check_in text, check_out text)
       ON x.unit_id = r.unit_id AND x.check_in = r.check_in AND x.check_out = r.check_out
     WHERE r.id ~ '^hp-res-(ab|bc)-'`, JSON.stringify(keyed)) : [];
   const taken = new Set<string>();
@@ -247,7 +247,7 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
   const facts = [...unitFacts.entries()].map(([id, f]) => ({ id, max_guests: f.max, size_sqft: f.size }));
   if (facts.length) {
     await db.run(`UPDATE units u SET max_guests = COALESCE(x.max_guests, u.max_guests), size_sqft = COALESCE(x.size_sqft, u.size_sqft)
-      FROM jsonb_to_recordset(?::jsonb) AS x(id text, max_guests int, size_sqft int) WHERE u.id = x.id`, JSON.stringify(facts));
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, max_guests int, size_sqft int) WHERE u.id = x.id`, JSON.stringify(facts));
   }
   return finish(res, 'reservations');
 }
@@ -352,7 +352,7 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
         split_value = CASE WHEN x.ours AND x.split_kind IS NOT NULL THEN x.split_value ELSE u.split_value END,
         guarantee_period = CASE WHEN x.ours AND x.split_kind IS NOT NULL THEN 'month' ELSE u.guarantee_period END,
         updated_at = x.updated_at
-      FROM jsonb_to_recordset(?::jsonb) AS x(id text, ours boolean, owner_id text, listing_name text, address text, package text, term text, split_kind text, split_value int, updated_at text)
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, ours boolean, owner_id text, listing_name text, address text, package text, term text, split_kind text, split_value int, updated_at text)
       WHERE u.id = x.id RETURNING u.id`, JSON.stringify(updates));
     add(res, 'units', { created: 0, updated: out.length });
   }
@@ -360,7 +360,7 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
     [['id', 'text'], ['owner_id', 'text'], ['management_fee_pct', 'float8'], ['model', 'text'], ['grr_amount', 'int'], ['starts_on', 'text'], ['ends_on', 'text'], ['created_at', 'text']],
     contracts, `DO UPDATE SET owner_id = EXCLUDED.owner_id, management_fee_pct = EXCLUDED.management_fee_pct, model = EXCLUDED.model,
       grr_amount = EXCLUDED.grr_amount, starts_on = EXCLUDED.starts_on, ends_on = EXCLUDED.ends_on`));
-  if (links.length) await db.run(`UPDATE units u SET contract_id = x.contract_id FROM jsonb_to_recordset(?::jsonb) AS x(id text, contract_id text) WHERE u.id = x.id AND u.contract_id IS NULL`, JSON.stringify(links));
+  if (links.length) await db.run(`UPDATE units u SET contract_id = x.contract_id FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, contract_id text) WHERE u.id = x.id AND u.contract_id IS NULL`, JSON.stringify(links));
 
   const hostPlatformOnly = snap.units.filter(u => u.id.startsWith('hp-unit-') && !matchedIds.has(u.id)).length;
   res.stats = { matched, workbookOnly, hostPlatformOnly };
@@ -377,7 +377,7 @@ export async function importAirbnbEarnings(db: Db, earnings: AirbnbEarningIn[], 
   const codes = [...new Set(earnings.map(e => e.code))];
   const existing = codes.length ? await db.all<{ id: string; external_ref: string; unit_id: string }>(`
     SELECT id, external_ref, unit_id FROM reservations
-    WHERE external_ref IN (SELECT jsonb_array_elements_text(?::jsonb))`, JSON.stringify(codes)) : [];
+    WHERE external_ref IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(codes)) : [];
 
   const match = workbookMatcher(snap.units);
   const resolved = earnings.map(e => ({ e, unit: match(e.workbookId)?.unit ?? null }));
@@ -386,7 +386,7 @@ export async function importAirbnbEarnings(db: Db, earnings: AirbnbEarningIn[], 
   // a few pairs of different Airbnb codes on the same unit and dates, and a date match would merge them.
   const stays = resolved.some(r => r.unit) ? await db.all<{ id: string; unit_id: string; channel: string; check_in: string; check_out: string }>(`
     SELECT r.id, r.unit_id, r.channel, r.check_in, r.check_out FROM reservations r
-    JOIN jsonb_to_recordset(?::jsonb) AS x(unit_id text, check_in text, check_out text)
+    JOIN jsonb_to_recordset(?::text::jsonb) AS x(unit_id text, check_in text, check_out text)
       ON x.unit_id = r.unit_id AND x.check_in = r.check_in AND x.check_out = r.check_out
     WHERE r.state <> 'cancelled'`, JSON.stringify(resolved.filter(r => r.unit).map(r => ({ unit_id: r.unit!.id, check_in: r.e.checkIn, check_out: r.e.checkOut })))) : [];
   const taken = new Set<string>();
@@ -416,7 +416,7 @@ export async function importAirbnbEarnings(db: Db, earnings: AirbnbEarningIn[], 
       UPDATE reservations r SET gross_booking_value = x.gross, channel_fee = x.fee, collected_revenue = x.amount,
         notes = CASE WHEN COALESCE(r.notes, '') LIKE '%${WORKBOOK_MONEY_MARK}%' THEN r.notes ELSE COALESCE(r.notes || ' · ', '') || '${WORKBOOK_MONEY_MARK}' END,
         updated_at = x.updated_at
-      FROM jsonb_to_recordset(?::jsonb) AS x(id text, gross int, fee int, amount int, updated_at text) WHERE r.id = x.id RETURNING r.id`, JSON.stringify(money));
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, gross int, fee int, amount int, updated_at text) WHERE r.id = x.id RETURNING r.id`, JSON.stringify(money));
     add(res, 'reservations', { created: 0, updated: out.length });
   }
   add(res, 'reservations', await upsert(db, 'reservations',
@@ -463,7 +463,7 @@ export async function importCleaning(db: Db, cleanings: CleaningIn[], today: str
     // Tie each clean to the stay that checked out that day, when there is one.
     await db.run(`UPDATE tasks t SET reservation_id = (
         SELECT r.id FROM reservations r WHERE r.unit_id = t.unit_id AND r.check_out = substr(t.due_at, 1, 10) AND r.state <> 'cancelled' ORDER BY r.id LIMIT 1)
-      WHERE t.id IN (SELECT jsonb_array_elements_text(?::jsonb)) AND t.reservation_id IS NULL`, JSON.stringify(tasks.map(t => t.id)));
+      WHERE t.id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND t.reservation_id IS NULL`, JSON.stringify(tasks.map(t => t.id)));
   }
   add(res, 'expenses', await upsertExpenses(db, costs));
   return finish(res, 'tasks');
