@@ -1,0 +1,48 @@
+# The supply chain engine on PRODUCTION, in the Conts ERP Cloudflare account. Deployed only through
+# scripts/engine-production.mjs, which fills the two ids below and checks this file before every deploy.
+# Same rules as wrangler.toml: only Conts resources, no scheduled jobs, no AutoCount, no routes.
+name = "conts-scm-engine"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+AUTOCOUNT_API_URL = "https://autocount.invalid/"
+AUTOCOUNT_SYNC_DISABLED = "true"
+COSTING_DISPLAY_ENABLED = "true"
+SESSION_FALLBACK_ENABLED = "false"
+SESSION_FALLBACK_TTL_MS = "60000"
+HOUZS_OWNS_2990 = "true"
+PUBLIC_APP_URL = "https://erp.theconts.com"
+EMAIL_FROM = "The Conts <noreply@theconts.com>"
+SO_ITEM_PHOTOS_BUCKET_NAME = "theconts-scm"
+SENTRY_ENVIRONMENT = "production"
+
+# conts-scm-engine-prod: the production database as the engine's own role, scm_engine (migration 0047),
+# which owns the engine's tables and has nothing in schema pos. Caching off.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "FILL_HYPERDRIVE_ID"
+
+[[r2_buckets]]
+binding = "POD_BUCKET"
+bucket_name = "theconts-scm"
+
+[[r2_buckets]]
+binding = "SO_ITEM_PHOTOS"
+bucket_name = "theconts-scm"
+
+[[r2_buckets]]
+binding = "PUBLIC_ASSETS"
+bucket_name = "theconts-scm"
+
+[[r2_buckets]]
+binding = "SLIPS"
+bucket_name = "theconts-scm"
+
+[[kv_namespaces]]
+binding = "SESSION_CACHE"
+id = "FILL_KV_ID"
+
+[alias]
+zod = "./node_modules/zod"
