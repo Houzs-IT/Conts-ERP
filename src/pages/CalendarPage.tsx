@@ -1,22 +1,22 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
-import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
-import { Dialog, Drawer, type DialogSpec } from '../components/Dialog';
+import { Dialog, type DialogSpec } from '../components/Dialog';
+import { BookingDrawer } from '../components/booking/BookingDrawer';
+import { channelNote, type ChannelSync } from '../lib/bookingStatus';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { api, notifyFailure } from '../lib/api';
-import { todayMyt, rm, dateRange, dateShort, dateTime, time, timeWithZone } from '../lib/format';
-import { CHANNEL, RESERVATION, TONE } from '../lib/vocabulary';
-import type { BookingChannel, ReservationState, Tone } from '../lib/types';
+import { todayMyt, rm, date, dateRange, dateShort, dateTime, time, timeWithZone } from '../lib/format';
+import { CHANNEL, TONE } from '../lib/vocabulary';
+import type { BookingChannel, Tone } from '../lib/types';
 import { CalendarFilters } from '../components/calendar/CalendarFilters';
-import { ActivityLog } from '../components/calendar/ActivityLog';
-import { BlockWizard, ChangeDatesModal, MessageModal, RateUpdate, SetPriceModal } from '../components/calendar/CalendarModals';
-import { selectCls, type CalendarBlock as Block, type CalendarUnit as Unit } from '../components/calendar/types';
+import { BlockWizard, RateUpdate, SetPriceModal } from '../components/calendar/CalendarModals';
+import { type CalendarBlock as Block, type CalendarUnit as Unit } from '../components/calendar/types';
 
 /** Width of one night column, px. The unit column width is the CSS variable --unit-col (narrower on phones). */
 const COL = 60;
@@ -24,10 +24,6 @@ const SPAN = 30;
 /** Above this many units on the board, the rate rows start hidden: 139 units with three or four rate rows
  *  each is some 15,000 extra cells, and the board is read for occupancy first. */
 const RATES_AUTO_MAX = 8;
-
-/** The quick-status picker in the reservation drawer. Cancellation has its own
- *  destructive Cancel flow (confirm + notify), so it is not offered here. */
-const QUICK_STATES: ReservationState[] = ['inquiry', 'pending', 'confirmed', 'checked_in', 'checked_out', 'no_show'];
 
 // The rate rows: the web (direct) rate, always, plus each booking site the unit is on. The calendar API
 // works that out per unit (a Channex connection, or a booking from that site in the last 180 days) and sends
@@ -153,13 +149,10 @@ export default function CalendarPage() {
   const [blockPrefill, setBlockPrefill] = useState<{ unitId?: string; from?: string; to?: string }>({});
   const [rateUpdate, setRateUpdate] = useState<false | { unitIds?: string[]; from?: string; to?: string }>(false);
   const [openBlock, setOpenBlock] = useState<Block | null>(null);
-  const [editDates, setEditDates] = useState<Block | null>(null);
-  const [chatBlock, setChatBlock] = useState<Block | null>(null);
   const [busy, setBusy] = useState(false);
   const [syncing, setSyncing] = useState(false);
   // Optimistic overlays, rolled back if the API refuses.
   const [dateEdits, setDateEdits] = useState<Record<string, { checkIn: string; checkOut: string }>>({});
-  const [stateEdits, setStateEdits] = useState<Record<string, ReservationState>>({});
   // Which booking is being dragged, and which of its nights the pointer grabbed.
   const dragRef = useRef<{ id: string; grabOffset: number } | null>(null);
 
@@ -180,12 +173,12 @@ export default function CalendarPage() {
   const totalUnits = properties.reduce((n, b) => n + b.units, 0) || allUnits.length;
   const liveBlocks = useMemo(
     () => (data?.blocks ?? []).map(b => ({
-      ...b, ...dateEdits[b.id], ...(stateEdits[b.id] ? { state: stateEdits[b.id] } : null),
+      ...b, ...dateEdits[b.id],
     })),
-    [data, dateEdits, stateEdits],
+    [data, dateEdits],
   );
   const blocks = useMemo(() => liveBlocks.filter(b => {
-    if (b.state === 'cancelled') return false; // a cancelled reservation releases its dates on the board
+    if (b.state === 'cancelled' || b.state === 'no_show') return false; // a cancelled or no-show stay releases its dates on the board
     if (off[b.channel]) return false;
     if (b.channel === 'maintenance_block') return !statusOff.blocked;
     return !statusOff[b.state];
@@ -254,12 +247,12 @@ export default function CalendarPage() {
 
   function emptyNight(unit: Unit, i: number) {
     setDialog({
-      title: `${unit.unitNumber} · ${dayIso(i)}`,
+      title: `${unit.unitNumber} · ${date(dayIso(i))}`,
       body: 'This night is open. Block it, create a reservation, or set a price.',
       confirmLabel: 'Set price',
       extraActions: [
         { label: 'Block dates', onClick: () => { setDialog(null); setBlockPrefill({ unitId: unit.id, from: dayIso(i), to: dayIso(i + 1) }); setBlockWizard(true); } },
-        { label: 'Create reservation', onClick: () => { setDialog(null); window.location.hash = '#/reservations/bookings?create=1'; } },
+        { label: 'Create reservation', onClick: () => { setDialog(null); window.location.hash = `#/reservations/bookings?create=1&forUnit=${encodeURIComponent(unit.id)}&checkIn=${dayIso(i)}&checkOut=${dayIso(i + 1)}`; } },
       ],
       onConfirm: () => { setDialog(null); setPriceModal({ unit, channel: 'web', dayIso: dayIso(i), current: rateFor(unit.id, 'web', i) }); },
     });
@@ -284,15 +277,22 @@ export default function CalendarPage() {
     }
     setDialog({
       title: 'Move this booking?',
-      body: 'Moving the stay re-checks availability, notifies the guest and re-pushes the new dates to every connected channel.',
+      body: "The move is checked against the unit's other bookings. If the unit is linked to Channex the new dates go to the booking sites. The guest is not messaged.",
       meta: `${b.guestName} · ${dateRange(b.checkIn, b.checkOut)} → ${dateRange(newCheckIn, newCheckOut)}`,
       confirmLabel: 'Move booking', busyLabel: 'Moving…',
       onConfirm: async () => {
         setBusy(true);
         setDateEdits(e => ({ ...e, [b.id]: { checkIn: newCheckIn, checkOut: newCheckOut } }));
-        try { await api.patch(`/reservations/${b.id}/dates`, { checkIn: newCheckIn, checkOut: newCheckOut, confirm: true }); } catch (e) { notifyFailure(e); }
-        setBusy(false); setDialog(null); setOpenBlock(null);
-        toast({ tone: 'success', title: 'Booking moved.', body: `${b.guestName} is now ${dateRange(newCheckIn, newCheckOut)}. Guest notified and channels updated.` });
+        try {
+          const res = await api.patch<{ effects?: { channel: ChannelSync } }>(`/reservations/${b.id}/dates`, { checkIn: newCheckIn, checkOut: newCheckOut, confirm: true });
+          toast({ tone: 'success', title: 'Booking moved.', body: `${b.guestName || 'The booking'} is now ${dateRange(newCheckIn, newCheckOut)}. ${channelNote(res?.effects?.channel, 'moved')}`.trim() });
+          reload();
+        } catch (e) {
+          // Put the bar back where it was: the server kept the old dates.
+          setDateEdits(x => { const n = { ...x }; delete n[b.id]; return n; });
+          toast({ tone: 'critical', title: 'Booking not moved.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+        }
+        setBusy(false); setDialog(null);
       },
     });
   }
@@ -327,55 +327,9 @@ export default function CalendarPage() {
     }
   }
 
-  // ---- Reservation drawer: chat with guest (POST /messages) ----
-  function sendGuestMessage(b: Block, body: string) {
-    const thread = b.channel === 'direct' ? 'WhatsApp' : CHANNEL[b.channel].label;
-    api.post('/messages', { reservationId: b.id, body })
-      .then(() => { setChatBlock(null); toast({ tone: 'success', title: `Message sent to ${b.guestName}.`, body: `Thread opened on ${thread}.` }); })
-      .catch(notifyFailure);
-  }
-
-  // ---- Reservation drawer: quick status update (PATCH /reservations/:id); rolled back if refused ----
-  function quickStatus(b: Block, state: ReservationState) {
-    if (state === (stateEdits[b.id] ?? b.state)) return;
-    const prev = stateEdits[b.id];
-    setStateEdits(e => ({ ...e, [b.id]: state }));
-    api.patch(`/reservations/${b.id}`, { state })
-      .then(() => { toast({ tone: 'success', title: 'Status updated.', body: `${b.guestName} is now ${RESERVATION[state].label}.` }); reload(); })
-      .catch(err => { setStateEdits(e => { const n = { ...e }; if (prev) n[b.id] = prev; else delete n[b.id]; return n; }); notifyFailure(err); });
-  }
-
-  // ---- Reservation drawer: duplicate booking (POST /reservations/:id/duplicate); the copy appears once saved ----
-  function duplicateBooking(b: Block) {
-    api.post(`/reservations/${b.id}/duplicate`)
-      .then(() => {
-        setOpenBlock(null);
-        toast({ tone: 'success', title: 'Booking duplicated.', body: `A pending copy for ${b.guestName} was placed after the original — drag it to the dates you want.` });
-        reload();
-      })
-      .catch(notifyFailure);
-  }
-
-  // ---- Reservation drawer: cancel reservation (POST /reservations/:id/cancel) — optimistic release ----
-  function requestCancel(b: Block) {
-    setDialog({
-      title: `Cancel ${b.ref ?? 'this reservation'}?`,
-      body: `This releases the dates on every channel and notifies ${b.guestName}.`,
-      meta: `${b.guestName} · ${dateRange(b.checkIn, b.checkOut)}`,
-      confirmLabel: 'Cancel reservation', busyLabel: 'Cancelling…', danger: true,
-      onConfirm: async () => {
-        setBusy(true);
-        setStateEdits(e => ({ ...e, [b.id]: 'cancelled' }));
-        try { await api.post(`/reservations/${b.id}/cancel`, { reason: 'operator_cancelled' }); } catch (e) { notifyFailure(e); }
-        setBusy(false); setDialog(null); setOpenBlock(null);
-        toast({ tone: 'neutral', title: 'Reservation cancelled.', body: `${b.guestName} has been notified and the dates released.` });
-      },
-    });
-  }
-
   const segBtn = 'h-full min-w-10 md:min-w-0 px-2.5 grid place-items-center bg-transparent hover:bg-muted border-none cursor-pointer font-sans text-[13px] text-ink';
   // Phones drop the year: the month header right under it already says it.
-  const rangeShort = `${utcLabel(start, { day: 'numeric', month: 'short' })} – ${utcLabel(addDays(start, span - 1), { day: 'numeric', month: 'short' })}`;
+  const rangeShort = `${dateShort(iso(start))} – ${dateShort(iso(addDays(start, span - 1)))}`;
   const rangeYear = utcLabel(addDays(start, span - 1), { year: 'numeric' });
   // Icon-only 40px squares on phones; icon and label from md up.
   const toolBtn = 'relative inline-flex items-center justify-center gap-1.5 h-[42px] w-[42px] md:w-auto md:h-9 md:px-3 box-border rounded-control border border-solid border-line bg-card hover:bg-muted cursor-pointer font-sans text-[13px] font-medium text-ink whitespace-nowrap flex-none disabled:cursor-default';
@@ -457,9 +411,9 @@ export default function CalendarPage() {
         <div className="max-h-[72vh] overflow-auto overscroll-x-contain rounded-none md:rounded-b-card [scrollbar-width:thin] [--unit-col:104px] md:[--unit-col:224px]">
           <div style={{ minWidth: `calc(var(--unit-col) + ${span * COL}px)` }} aria-busy={loading}
             className={`transition-opacity duration-150 ${loading && data ? 'opacity-70' : ''}`}>
-            <div className="sticky top-0 z-20 flex bg-card [border-bottom:1px_solid_var(--color-line)]">
-              <div className={`${STICKY_COL} z-30 flex items-end px-2 md:px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-ink`}>
-                {units.length} {units.length === 1 ? 'unit' : 'units'}
+            <div className="sticky top-0 z-20 flex bg-muted [border-bottom:1px_solid_var(--color-line)]">
+              <div className={`${STICKY_COL} bg-muted! z-30 flex items-end px-2 md:px-3 pb-2.5 text-[12px] font-semibold text-muted-ink whitespace-nowrap`}>
+                {units.length.toLocaleString('en-MY')} {units.length === 1 ? 'unit' : 'units'}
               </div>
               <div className="flex flex-col">
                 <div className="flex h-7">
@@ -473,9 +427,9 @@ export default function CalendarPage() {
                   {days.map((d, i) => {
                     const isToday = i === todayIdx;
                     return (
-                      <div key={i} className={`flex-none box-border h-11 flex flex-col items-center justify-center gap-0.5 ${CELL_EDGE} ${colBg(i)} ${todayEdge(i)}`} style={{ width: COL }}
+                      <div key={i} className={`flex-none box-border h-11 flex flex-col items-center justify-center gap-0.5 ${CELL_EDGE} ${i === todayIdx ? BG_TODAY : isWeekendNight(d) ? 'bg-sunken' : 'bg-muted'} ${todayEdge(i)}`} style={{ width: COL }}
                         title={isToday ? 'Today' : undefined}>
-                        <span className={`text-[10.5px] uppercase tracking-[0.04em] ${isToday ? 'font-semibold text-[var(--color-text-accent)]' : 'text-muted-ink'}`}>{utcLabel(d, { weekday: 'short' })}</span>
+                        <span className={`text-[11px] font-medium ${isToday ? 'font-semibold text-[var(--color-text-accent)]' : 'text-muted-ink'}`}>{utcLabel(d, { weekday: 'short' })}</span>
                         <span className={`text-[13px] font-semibold leading-none grid place-items-center ${isToday ? 'w-6 h-6 rounded-full bg-gold text-black' : 'h-6 text-ink'}`}>{d.getUTCDate()}</span>
                       </div>
                     );
@@ -564,13 +518,13 @@ export default function CalendarPage() {
                             const inset = 3;
                             const left = s * COL + (clipL ? 0 : inset), width = (e - s) * COL - (clipL ? 0 : inset) - (clipR ? 0 : inset);
                             const r = (on: boolean) => (on ? 0 : 8);
-                            const fullName = b.guestName || ch.label;
+                            const fullName = b.guestName || (b.channel === 'owner_stay' ? 'Owner stay' : b.channel === 'maintenance_block' ? 'Blocked' : ch.label);
                             const firstName = fullName.split(' ')[0];
                             // A one-night bar is too narrow for logo and name side by side, so they stack.
                             const narrow = width < 100;
                             return (
                               <div key={b.id} draggable onClick={e => { e.stopPropagation(); setOpenBlock(b); }}
-                                title={`${b.guestName} · ${ch.label}${b.ref ? ' · ' + b.ref : ''} · ${dateRange(b.checkIn, b.checkOut)} · drag to move`}
+                                title={`${fullName} · ${ch.label}${b.ref ? ' · ' + b.ref : ''} · ${dateRange(b.checkIn, b.checkOut)}${b.reason ? ' · ' + b.reason : ''} · drag to move`}
                                 onDragStart={ev => {
                                   ev.dataTransfer.effectAllowed = 'move';
                                   const rect = ev.currentTarget.getBoundingClientRect();
@@ -580,21 +534,23 @@ export default function CalendarPage() {
                                 className={`absolute top-2.5 bottom-2.5 z-[2] box-border flex overflow-hidden cursor-grab active:cursor-grabbing select-none hover:brightness-[0.98] ${narrow ? 'flex-col justify-center items-start gap-0.5 px-1.5' : 'items-center gap-1.5 px-2'}`}
                                 style={{
                                   left, width, color: ch.ink,
-                                  background: hold ? `repeating-linear-gradient(135deg, ${ch.tint} 0 6px, var(--color-surface-card) 6px 12px)` : ch.tint,
-                                  border: hold ? `1.5px ${ch.border} ${ch.color}` : `1px solid color-mix(in srgb, ${ch.color} 28%, transparent)`,
+                                  // Holds read as a pale, finely hatched band so a long block does not shout over the bookings around it.
+                                  background: hold ? `repeating-linear-gradient(135deg, color-mix(in srgb, ${ch.tint} 70%, var(--color-surface-card)) 0 2px, var(--color-surface-card) 2px 9px)` : ch.tint,
+                                  border: hold ? `1px ${ch.border} color-mix(in srgb, ${ch.color} 45%, transparent)` : `1px solid color-mix(in srgb, ${ch.color} 28%, transparent)`,
                                   borderLeft: clipL ? undefined : hold ? undefined : `3px solid ${ch.color}`,
                                   borderRadius: `${r(clipL)}px ${r(clipR)}px ${r(clipR)}px ${r(clipL)}px`,
                                 }}>
                                 {width >= 30 && <ChannelMark ch={b.channel} size={narrow ? 14 : 16} />}
+                                {/* The name may wrap onto a second line rather than be cut short; the tooltip has it in full. */}
                                 {narrow
                                   ? <span className="max-w-full text-[11px] leading-[13px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{firstName}</span>
-                                  : <>
-                                      <span className="md:hidden text-[12px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{firstName}</span>
-                                      <span className="hidden md:inline text-[12px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{fullName}</span>
-                                    </>}
-                                {!narrow && b.grossBookingValue > 0 && width > 150 && (
-                                  <span className="hidden md:inline text-[11.5px] whitespace-nowrap opacity-80 [font-variant-numeric:tabular-nums]">{rm(b.grossBookingValue, { cents: false })}</span>
-                                )}
+                                  : <span className="min-w-0 flex flex-col">
+                                      <span className="md:hidden text-[12px] leading-[14px] font-semibold [overflow-wrap:anywhere] line-clamp-2">{fullName}</span>
+                                      <span className="hidden md:[display:-webkit-box] text-[12px] leading-[14px] font-semibold [overflow-wrap:anywhere] line-clamp-2">{fullName}</span>
+                                      {b.grossBookingValue > 0 && width > 150 && (
+                                        <span className="hidden md:block text-[11px] leading-[13px] whitespace-nowrap opacity-75 [font-variant-numeric:tabular-nums]">{rm(b.grossBookingValue, { cents: false })}</span>
+                                      )}
+                                    </span>}
                               </div>
                             );
                           })}
@@ -628,14 +584,16 @@ export default function CalendarPage() {
                             })}
                           </SubRow>
                           {rateRowsFor(u).map(r => {
-                            const sync = r.key === 'web' ? undefined : syncFor(r.key);
+                            // A booking site the unit is not connected to gets no price from us, so none is shown.
+                            const unlinked = r.key !== 'web' && !!u.linked && !u.linked.includes(r.key as BookingChannel);
+                            const sync = r.key === 'web' ? undefined : unlinked ? { state: 'not_connected', lastSyncedAt: null } : syncFor(r.key);
                             const chip = sync ? SYNC_CHIP[sync.state] : undefined;
                             return (
                               <SubRow key={r.key} label={
                                 <>
                                   <ChannelMark ch={r.mark} size={16} />
                                   <span className="md:hidden text-ink font-medium whitespace-nowrap overflow-hidden text-ellipsis">{r.short}</span>
-                                  <span className="hidden md:inline text-ink font-medium whitespace-nowrap overflow-hidden text-ellipsis">{r.label}</span>
+                                  <span className="hidden md:inline text-ink font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={r.label}>{chip ? r.short : r.label}</span>
                                   {chip && (
                                     <span className="hidden md:inline-block text-[10.5px] font-semibold px-1.5 rounded-full leading-[17px] whitespace-nowrap"
                                       style={{ background: TONE[chip.tone].bg, color: TONE[chip.tone].fg }}
@@ -647,12 +605,14 @@ export default function CalendarPage() {
                                 {days.map((_, i) => {
                                   const price = rateFor(u.id, r.key, i);
                                   const custom = rateEdits[`${u.id}:${r.key}:${i}`] != null || data?.rates?.[`${u.id}:${r.key}:${dayIso(i)}`] != null;
+                                  // No price to show: the unit has no base rate yet, or the site is not linked and nothing was set by hand.
+                                  const none = !custom && (price <= 0 || unlinked);
                                   return (
                                     <button key={i} type="button" onClick={() => setPriceModal({ unit: u, channel: r.key, dayIso: dayIso(i), current: price })}
-                                      title={`${r.label} · ${dayIso(i)} · RM ${ringgit(price)}${custom ? ' · set by hand' : ''} · click to change`}
+                                      title={`${r.label} · ${date(dayIso(i))} · ${none ? (unlinked ? `not linked to ${r.label}, so no price is sent` : 'no rate set') : `RM ${ringgit(price)}`}${custom ? ' · set by hand' : ''} · click to set`}
                                       style={{ width: COL }}
-                                      className={`flex-none box-border h-10 md:h-8 p-0 pr-2 border-none bg-transparent hover:bg-sunken/80 cursor-pointer font-sans text-[12px] text-right [font-variant-numeric:tabular-nums] ${custom ? 'font-semibold text-ink' : 'text-ink-2'}`}>
-                                      {ringgit(price)}
+                                      className={`flex-none box-border h-10 md:h-8 p-0 pr-2 border-none bg-transparent hover:bg-sunken/80 cursor-pointer font-sans text-[12px] text-right [font-variant-numeric:tabular-nums] ${none ? 'text-faint' : custom ? 'font-semibold text-ink' : 'text-ink-2'}`}>
+                                      {none ? '—' : ringgit(price)}
                                     </button>
                                   );
                                 })}
@@ -674,76 +634,24 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* Block detail drawer. Maintenance / owner-stay holds keep the light block
-          drawer; actual reservations get the full reservation-drawer actions. */}
-      <Drawer open={!!openBlock} onClose={() => setOpenBlock(null)} width={380}>
-        {openBlock && (() => {
-          const b = openBlock;
-          const isReservation = b.channel !== 'maintenance_block' && b.channel !== 'owner_stay';
-          const liveState = stateEdits[b.id] ?? b.state;
-          return (
-          <div className="p-5 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <ChannelMark ch={b.channel} size={22} />
-                <span className="text-[15px] font-semibold">{b.guestName}</span>
-              </div>
-              <button type="button" onClick={() => setOpenBlock(null)} aria-label="Close"
-                className="w-[30px] h-[30px] grid place-items-center rounded-control bg-page border border-solid border-line cursor-pointer text-muted-ink"><Icon name="X" size="sm" /></button>
-            </div>
-            <div className="text-[12.5px] text-muted-ink leading-[1.8]">
-              <div>{CHANNEL[b.channel].label} · {b.ref ?? '—'}</div>
-              <div>{b.checkIn} → {b.checkOut}</div>
-              {b.grossBookingValue > 0 && <div>Gross {rm(b.grossBookingValue)}</div>}
-              {b.reason && <div>{b.reason}</div>}
-            </div>
-
-            {isReservation && (
-              <div className="flex flex-col gap-[7px]">
-                <label className="text-[12px] font-medium text-muted-ink">Status</label>
-                <select value={liveState} onChange={e => quickStatus(b, e.target.value as ReservationState)} className={`${selectCls} h-[38px] text-[13px]`} aria-label="Reservation status">
-                  {QUICK_STATES.map(s => <option key={s} value={s}>{RESERVATION[s].label}</option>)}
-                </select>
-              </div>
-            )}
-
-            <a href="#/reservations/bookings" onClick={() => setOpenBlock(null)} className="no-underline">
-              <Button variant="primary" style={{ width: '100%' }}>View booking</Button>
-            </a>
-            {isReservation && (
-              <Button variant="secondary" icon={<Icon name="MessageSquare" size="sm" />} style={{ width: '100%' }} onClick={() => setChatBlock(b)}>Chat with guest</Button>
-            )}
-            <Button variant="secondary" style={{ width: '100%' }} onClick={() => { setOpenBlock(null); setEditDates(b); }}>Change dates</Button>
-            {isReservation && (
-              <Button variant="secondary" icon={<Icon name="Copy" size="sm" />} style={{ width: '100%' }} onClick={() => duplicateBooking(b)}>Duplicate booking</Button>
-            )}
-            {isReservation && (
-              <Button variant="danger" style={{ width: '100%' }} onClick={() => requestCancel(b)}>Cancel reservation</Button>
-            )}
-
-            {isReservation && (
-              <div className="pt-4 [border-top:1px_solid_var(--color-line-soft)]">
-                <ActivityLog reservationId={b.id} />
-              </div>
-            )}
-          </div>
-          );
-        })()}
-      </Drawer>
+      {/* One booking drawer for reservations and blocks, the same one the Bookings list uses. */}
+      <BookingDrawer id={openBlock?.id ?? null} onClose={() => setOpenBlock(null)} onChanged={() => reload()}
+        summary={openBlock ? (() => { const u = allUnits.find(x => x.id === openBlock.unitId); return {
+          id: openBlock.id, externalRef: openBlock.ref, guestName: openBlock.guestName, guestsCount: 0, unitNumber: u?.unitNumber ?? '',
+          propertyName: u?.propertyName ?? '', channel: openBlock.channel, state: openBlock.state, checkIn: openBlock.checkIn, checkOut: openBlock.checkOut,
+          grossBookingValue: openBlock.grossBookingValue,
+        }; })() : null} />
 
       <Dialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
       {priceModal && <SetPriceModal m={priceModal} onClose={() => setPriceModal(null)}
         onSave={rmValue => { const i = dayIndex(priceModal.dayIso); setPrice(priceModal.unit.id, priceModal.channel, i, rmValue); setPriceModal(null); }} />}
-      {editDates && <ChangeDatesModal b={editDates} onClose={() => setEditDates(null)}
-        onSave={(ci, co) => { const b = editDates; setEditDates(null); requestMove(b, ci, co); }} />}
-      {chatBlock && <MessageModal b={chatBlock} onClose={() => setChatBlock(null)} onSend={body => sendGuestMessage(chatBlock, body)} />}
       {blockWizard && <BlockWizard units={units} initial={blockPrefill} onClose={() => setBlockWizard(false)}
         onSave={v => {
           const clash = conflictFor(v.unitId, v.from, v.to);
           if (clash) { toast({ tone: 'critical', title: 'Dates unavailable.', body: `${clash.guestName} already holds ${dateRange(clash.checkIn, clash.checkOut)} on this unit.` }); return; }
-          api.post('/blocks', { unitId: v.unitId, from: v.from, to: v.to, reason: v.reason })
-            .then(() => { setBlockWizard(false); toast({ tone: 'success', title: 'Dates blocked.', body: `Held on every channel · ${dateRange(v.from, v.to)}.` }); reload(); })
-            .catch(notifyFailure);
+          api.post<{ effects?: { channel: ChannelSync } }>('/blocks', { unitId: v.unitId, from: v.from, to: v.to, reason: v.reason })
+            .then(res => { setBlockWizard(false); toast({ tone: 'success', title: 'Dates blocked.', body: `${dateRange(v.from, v.to)}. ${channelNote(res?.effects?.channel, 'held')}`.trim() }); reload(); })
+            .catch(e => toast({ tone: 'critical', title: 'Dates not blocked.', body: e instanceof Error ? e.message : 'Try again in a moment.' }));
         }} />}
       {rateUpdate && <RateUpdate units={units} initial={rateUpdate} onClose={() => setRateUpdate(false)}
         onSave={v => {
@@ -803,7 +711,7 @@ function BuildingRowHeader({ name, units, folded, showToggle, onToggle, days, by
       {days.map((_, i) => {
         const free = freeOn(i);
         return (
-          <div key={i} style={{ width: COL }} title={`${name} · ${dayIso(i)} · ${free} of ${n} ${n === 1 ? 'unit' : 'units'} free`}
+          <div key={i} style={{ width: COL }} title={`${name} · ${date(dayIso(i))} · ${free} of ${n} ${n === 1 ? 'unit' : 'units'} free`}
             className={`flex-none box-border h-9 pr-2 flex items-center justify-end text-[11px] whitespace-nowrap [font-variant-numeric:tabular-nums] ${free === 0 ? 'text-faint' : 'text-muted-ink font-medium'}`}>
             {free === 0 ? 'Full' : `${free} free`}
           </div>

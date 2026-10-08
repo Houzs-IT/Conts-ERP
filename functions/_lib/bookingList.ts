@@ -1,7 +1,9 @@
+import { type Env, one } from './db';
+
 /** The Bookings list: one place that turns the screen's URL (view tab, column searches, sort)
  *  into SQL, shared by the paged list, its CSV export and the single-booking read. */
 
-export const VIEWS = ['upcoming', 'arriving', 'inhouse', 'pending', 'past', 'cancelled', 'blocks', 'all'] as const;
+export const VIEWS = ['upcoming', 'arriving', 'inhouse', 'unpaid', 'payout', 'past', 'cancelled', 'blocks', 'all'] as const;
 export type View = typeof VIEWS[number];
 
 export const SEARCH_KEYS = ['q', 'ref', 'guest', 'unit', 'channel', 'stay', 'gross', 'status'] as const;
@@ -14,6 +16,26 @@ const SORTS: Record<string, string> = {
 
 const BLOCK = `r.channel IN ('maintenance_block','owner_stay')`;
 const DEAD = `r.state IN ('cancelled','no_show')`;
+const OTA = `r.channel IN ('airbnb','booking_com','agoda')`;
+
+/** Whether reservations has the payout columns of migration 0052, which say when a booking site paid us. */
+export async function hasPayoutColumns(env: Env): Promise<boolean> {
+  const r = await one<{ n: number }>(env, `
+    SELECT COUNT(*) AS n FROM information_schema.columns
+    WHERE table_name = 'reservations' AND table_schema = ANY(current_schemas(false)) AND column_name IN ('payout_date', 'payout_amount')`);
+  return Number(r?.n ?? 0) === 2;
+}
+/** No payout recorded: the 0052 payout columns when they exist, and collected revenue in every case. */
+const noPayout = (payoutCols: boolean) =>
+  payoutCols ? `(r.collected_revenue <= 0 AND r.payout_date IS NULL AND COALESCE(r.payout_amount, 0) <= 0)` : `r.collected_revenue <= 0`;
+
+/** The amount still owed for the two money tabs: the guest owes a direct booking's value, a booking site owes
+ *  the booking value less its commission. Other tabs have no outstanding figure. */
+export function outstandingExpr(v: View, payoutCols: boolean): string | null {
+  if (v === 'unpaid') return `GREATEST(r.gross_booking_value - r.collected_revenue${payoutCols ? ' - COALESCE(r.payout_amount, 0)' : ''}, 0)`;
+  if (v === 'payout') return `GREATEST(r.gross_booking_value - r.channel_fee, 0)`;
+  return null;
+}
 
 const CHANNEL_LABEL = `CASE r.channel WHEN 'airbnb' THEN 'Airbnb' WHEN 'booking_com' THEN 'Booking.com' WHEN 'agoda' THEN 'Agoda'
   WHEN 'direct' THEN 'Direct' WHEN 'owner_stay' THEN 'Owner stay' ELSE 'Block' END`;
@@ -35,13 +57,16 @@ export function todayMyt() {
 }
 
 /** The WHERE clause of each tab. Upcoming and Past split every live booking between them on check-out day. */
-export function viewWhere(v: View, today: string): string {
+export function viewWhere(v: View, today: string, payoutCols = false): string {
   const t = `'${today}'`;
   switch (v) {
     case 'upcoming': return `NOT ${BLOCK} AND NOT ${DEAD} AND r.state <> 'checked_out' AND r.check_out >= ${t}`;
     case 'arriving': return `NOT ${BLOCK} AND NOT ${DEAD} AND r.check_in = ${t}`;
     case 'inhouse': return `NOT ${BLOCK} AND r.state = 'checked_in'`;
-    case 'pending': return `NOT ${BLOCK} AND NOT ${DEAD} AND r.collected_revenue <= 0`;
+    // Direct bookings the guest has not paid for yet. Booking sites collect from their guests, so they are not here.
+    case 'unpaid': return `r.channel = 'direct' AND NOT ${DEAD} AND ${noPayout(payoutCols)}`;
+    // Booking-site stays that are over and still have no payout recorded.
+    case 'payout': return `${OTA} AND NOT ${DEAD} AND (r.state = 'checked_out' OR r.check_out <= ${t}) AND ${noPayout(payoutCols)}`;
     case 'past': return `NOT ${BLOCK} AND NOT ${DEAD} AND (r.state = 'checked_out' OR r.check_out < ${t})`;
     case 'cancelled': return `NOT ${BLOCK} AND ${DEAD}`;
     case 'blocks': return BLOCK;
@@ -51,7 +76,7 @@ export function viewWhere(v: View, today: string): string {
 
 /** Forward-looking tabs read soonest first; history tabs read newest first. */
 const DEFAULT_ASC: Record<View, boolean> = {
-  upcoming: true, arriving: true, inhouse: true, pending: true, past: false, cancelled: false, blocks: false, all: false,
+  upcoming: true, arriving: true, inhouse: true, unpaid: true, payout: false, past: false, cancelled: false, blocks: false, all: false,
 };
 
 /** An ILIKE pattern that matches the text literally, wildcards included. */
@@ -68,7 +93,8 @@ export interface ListQuery {
 
 export function parseListQuery(url: URL): ListQuery {
   const sp = url.searchParams;
-  const rawView = sp.get('view') ?? '';
+  // "pending" was the single payment tab before it was split; old links land on the direct-unpaid tab.
+  const rawView = sp.get('view') === 'pending' ? 'unpaid' : (sp.get('view') ?? '');
   const view: View = (VIEWS as readonly string[]).includes(rawView) ? rawView as View : 'upcoming';
   const today = todayMyt();
 
@@ -109,7 +135,6 @@ export function parseListQuery(url: URL): ListQuery {
 }
 
 const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 864e5));
-const stamp = (iso: string | null) => (iso ? iso.replace('T', ' ').slice(0, 16) : null);
 
 export function toRow(r: any) {
   return {
@@ -119,6 +144,6 @@ export function toRow(r: any) {
     checkInTime: r.check_in_time, checkOutTime: r.check_out_time,
     nights: nightsBetween(r.check_in, r.check_out), grossBookingValue: Number(r.gross_booking_value),
     channelFee: Number(r.channel_fee),
-    paidAt: Number(r.collected_revenue) > 0 ? stamp(r.created_at) : null, receivedAt: stamp(r.created_at),
+    collectedRevenue: Number(r.collected_revenue), createdAt: r.created_at,
   };
 }

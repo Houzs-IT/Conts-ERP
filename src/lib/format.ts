@@ -5,6 +5,9 @@
 
 const MYT = 'Asia/Kuala_Lumpur';
 
+/** ICU's en-MY prints September as "Sept"; every other month is three letters, so it is put back to "Sep". */
+const sep = (s: string) => s.replace(/\bSept\b/g, 'Sep');
+
 export const rm = (sen: number, opts?: { cents?: boolean }) => {
   const showCents = opts?.cents ?? true;
   const v = sen / 100;
@@ -27,14 +30,14 @@ export const rating = (n: number, detail = false) =>
 
 /** 16 Sep 2026 */
 export const date = (iso: string) =>
-  new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric', timeZone: MYT });
+  sep(new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric', timeZone: MYT }));
 
 /** 16 Sep – 29 Sep 2026. Always disambiguated across months. */
 export const dateRange = (fromIso: string, toIso: string) => {
   const f = new Date(fromIso), t = new Date(toIso);
   const sameYear = f.getFullYear() === t.getFullYear();
   const fmt = (d: Date, withYear: boolean) =>
-    d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}), timeZone: MYT });
+    sep(d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}), timeZone: MYT }));
   return `${fmt(f, !sameYear)} \u2013 ${fmt(t, true)}`;
 };
 
@@ -63,7 +66,7 @@ export const todayMyt = (offsetDays = 0) => {
 /** Aug 2026 (default) / August 2026 (long). Accepts "2026-08" or a full ISO date. */
 export const monthLabel = (iso: string, opts?: { long?: boolean }) => {
   const s = iso.length === 7 ? `${iso}-01` : iso;
-  return new Date(s).toLocaleDateString('en-MY', { month: opts?.long ? 'long' : 'short', year: 'numeric', timeZone: MYT });
+  return sep(new Date(s).toLocaleDateString('en-MY', { month: opts?.long ? 'long' : 'short', year: 'numeric', timeZone: MYT }));
 };
 
 /** 2026 */
@@ -75,7 +78,7 @@ export const dateTime = (iso: string) => `${date(iso)} ${time(iso)}`;
 
 /** 16 Sep — day and short month, no year. */
 export const dateShort = (iso: string) =>
-  new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', timeZone: MYT });
+  sep(new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', timeZone: MYT }));
 
 /** Wed 16 — short weekday and day. */
 export const weekdayDay = (iso: string) => {

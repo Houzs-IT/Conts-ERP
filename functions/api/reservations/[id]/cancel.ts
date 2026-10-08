@@ -1,22 +1,16 @@
-import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
+import { type Env, json, fail } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
-import { syncAvailabilityIfLinked } from '../../../_lib/channexSync';
+import { applyMove, isRefusal } from '../../../_lib/bookingLifecycle';
 
-/** POST /api/reservations/:id/cancel { reason } — releases the dates. */
+/** POST /api/reservations/:id/cancel { reason } — the same move as PATCH { state: 'cancelled' }: checked against the
+ *  allowed map, releases the dates on the channels if the unit is linked, and answers with what actually happened. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot cancel reservations.', 403);
 
-  const id = String(params.id);
   const b = await request.json<any>().catch(() => ({}));
-  const cur = await one<any>(env, 'SELECT id, unit_id, state, check_in, check_out FROM reservations WHERE id = ?', id);
-  if (!cur) return fail('NOT_FOUND', 'That reservation does not exist.', 404);
-  if (cur.state === 'cancelled') return json({ id, state: 'cancelled' });
-  if (cur.state === 'checked_out') return fail('CONFLICT', 'A finished stay cannot be cancelled.', 409);
-
-  await run(env, `UPDATE reservations SET state = 'cancelled', notes = COALESCE(?, notes), updated_at = ? WHERE id = ?`, b.reason ?? null, nowIso(), id);
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.cancel', entityTable: 'reservations', entityId: id, before: { state: cur.state }, after: { state: 'cancelled', reason: b.reason ?? null } });
-  await syncAvailabilityIfLinked(env, cur.unit_id, cur.check_in, cur.check_out, true);
-  return json({ id, state: 'cancelled' });
+  const r = await applyMove(env, session, String(params.id), 'cancelled', typeof b?.reason === 'string' ? b.reason : null);
+  if (isRefusal(r)) return json(r.body, r.status);
+  return json(r);
 };
