@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
@@ -24,18 +24,22 @@ const SPAN = 30;
  *  destructive Cancel flow (confirm + notify), so it is not offered here. */
 const QUICK_STATES: ReservationState[] = ['inquiry', 'pending', 'confirmed', 'checked_in', 'checked_out', 'no_show'];
 
-// The rate rows: the web rate plus each channel the unit is linked to (unit_channels / Channex).
-// If the payload omits `channels` (the current backend), all three OTAs are shown so nothing is hidden.
-// `mark` is the channel whose logo labels the row; the web rate is the direct channel.
-const RATE_ROWS: { key: 'web' | BookingChannel; label: string; mark: BookingChannel }[] = [
-  { key: 'web', label: 'Web', mark: 'direct' },
-  { key: 'airbnb', label: 'Airbnb', mark: 'airbnb' },
-  { key: 'booking_com', label: 'Booking.com', mark: 'booking_com' },
-  { key: 'agoda', label: 'Agoda', mark: 'agoda' },
+// The rate rows: the web (direct) rate, always, plus each booking site the unit is on. The calendar API
+// works that out per unit (a Channex connection, or a booking from that site in the last 180 days) and sends
+// it in the same payload, so the first render already has the right rows. Only a payload without `channels`
+// (an older backend) falls back to all three. `mark` is the channel whose logo labels the row.
+const RATE_ROWS: { key: 'web' | BookingChannel; label: string; short: string; mark: BookingChannel }[] = [
+  { key: 'web', label: 'Web', short: 'Web', mark: 'direct' },
+  { key: 'airbnb', label: 'Airbnb', short: 'Airbnb', mark: 'airbnb' },
+  { key: 'booking_com', label: 'Booking.com', short: 'Booking', mark: 'booking_com' },
+  { key: 'agoda', label: 'Agoda', short: 'Agoda', mark: 'agoda' },
 ];
 const RATE_ROW_BY_KEY = Object.fromEntries(RATE_ROWS.map(r => [r.key, r])) as Record<string, typeof RATE_ROWS[number]>;
 const OTA_CHANNELS: BookingChannel[] = ['airbnb', 'booking_com', 'agoda'];
-const rateRowsFor = (u: Unit) => ['web', ...(u.channels ?? OTA_CHANNELS)].map(k => RATE_ROW_BY_KEY[k]).filter(Boolean);
+/** Channels that are not booking sites: always offered as filters. */
+const OWN_CHANNELS: BookingChannel[] = ['direct', 'maintenance_block', 'owner_stay'];
+const otaChannelsOf = (u: Unit) => u.channels ?? OTA_CHANNELS;
+const rateRowsFor = (u: Unit) => ['web', ...otaChannelsOf(u)].map(k => RATE_ROW_BY_KEY[k]).filter(Boolean);
 
 interface Payload { from: string; to: string; units: Unit[]; blocks: Block[]; baseRate: Record<string, number>; rates?: Record<string, number>; uplifts?: Record<string, number>; weekendMultiplier?: number; restrictions?: Record<string, { minStay: number; stopSell: boolean }>; generatedAt: string }
 
@@ -65,11 +69,11 @@ const FALLBACK: Payload = {
   baseRate: { u1: 28800, u2: 23100, u3: 31800, u4: 26500, u5: 24200, u6: 22800 },
   units: [
     { id: 'u1', unitNumber: '#C-13-13A', propertyName: 'Agile Bukit Bintang, Imbi', channels: ['airbnb', 'booking_com', 'agoda'] },
-    { id: 'u2', unitNumber: '#B-08-11', propertyName: 'Arcoris Mont Kiara', channels: ['booking_com'] },
+    { id: 'u2', unitNumber: '#B-08-11', propertyName: 'Arcoris Mont Kiara', channels: ['airbnb', 'booking_com'] },
     { id: 'u3', unitNumber: '#MK2-09-16', propertyName: 'Arte Mont Kiara', channels: ['airbnb', 'agoda'] },
     { id: 'u4', unitNumber: '#15-06', propertyName: 'Scarletz', channels: ['airbnb'] },
-    { id: 'u5', unitNumber: '#A-21-02', propertyName: 'The Establishment', channels: ['booking_com', 'agoda'] },
-    { id: 'u6', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', channels: ['airbnb', 'booking_com', 'agoda'] },
+    { id: 'u5', unitNumber: '#A-21-02', propertyName: 'The Establishment', channels: [] },
+    { id: 'u6', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', channels: ['booking_com', 'agoda'] },
   ],
   blocks: [
     { id: 'b1', unitId: 'u1', channel: 'airbnb', state: 'checked_in', guestName: 'Nadia Abdullah', checkIn: T(-1), checkOut: T(1), grossBookingValue: 85200, ref: 'ABNB-7741QK', reason: null },
@@ -103,6 +107,7 @@ export default function CalendarPage() {
   // No fallback on purpose: without the real connection status the page shows no sync claims at all.
   const { data: integrations, reload: reloadIntegrations } = useApi<{ data: IntegrationRow[] }>('/integrations');
   const toast = useToast();
+  const phone = usePhone();
 
   const [off, setOff] = useState<Partial<Record<BookingChannel, boolean>>>({});
   const [statusOff, setStatusOff] = useState<Record<string, boolean>>({});
@@ -157,8 +162,14 @@ export default function CalendarPage() {
   const todayEdge = (i: number) => (i === todayIdx ? TODAY_EDGES : '');
 
   const buildingCount = properties.length;
-  const filtersDirty = property !== 'all' || Object.values(off).some(Boolean) || Object.values(statusOff).some(Boolean);
-  const filterCount = (property !== 'all' ? 1 : 0) + Object.values(off).filter(Boolean).length + Object.values(statusOff).filter(Boolean).length;
+  // Booking-site toggles only for sites at least one shown unit is on; direct, block and owner stay always.
+  const filterChannels = useMemo(() => {
+    const on = new Set(units.flatMap(otaChannelsOf));
+    return [...OTA_CHANNELS.filter(c => on.has(c)), ...OWN_CHANNELS];
+  }, [units]);
+  const offCount = filterChannels.filter(c => off[c]).length;
+  const filtersDirty = property !== 'all' || offCount > 0 || Object.values(statusOff).some(Boolean);
+  const filterCount = (property !== 'all' ? 1 : 0) + offCount + Object.values(statusOff).filter(Boolean).length;
 
   // Real connection status, or nothing.
   const otaRows = (integrations?.data ?? []).filter(r => OTA_CHANNELS.includes(r.provider as BookingChannel));
@@ -305,19 +316,29 @@ export default function CalendarPage() {
     });
   }
 
-  const segBtn = 'h-full px-2.5 grid place-items-center bg-transparent hover:bg-muted border-none cursor-pointer font-sans text-[13px] text-ink';
-  const rangeLabel = `${utcLabel(start, { day: 'numeric', month: 'short' })} – ${utcLabel(addDays(start, span - 1), { day: 'numeric', month: 'short', year: 'numeric' })}`;
+  const segBtn = 'h-full min-w-10 md:min-w-0 px-2.5 grid place-items-center bg-transparent hover:bg-muted border-none cursor-pointer font-sans text-[13px] text-ink';
+  // Phones drop the year: the month header right under it already says it.
+  const rangeShort = `${utcLabel(start, { day: 'numeric', month: 'short' })} – ${utcLabel(addDays(start, span - 1), { day: 'numeric', month: 'short' })}`;
+  const rangeYear = utcLabel(addDays(start, span - 1), { year: 'numeric' });
+  // Icon-only 40px squares on phones; icon and label from md up.
+  const toolBtn = 'relative inline-flex items-center justify-center gap-1.5 h-[42px] w-[42px] md:w-auto md:h-9 md:px-3 box-border rounded-control border border-solid border-line bg-card hover:bg-muted cursor-pointer font-sans text-[13px] font-medium text-ink whitespace-nowrap flex-none disabled:cursor-default';
 
   return (
     <>
       <PageHeader
         title="Calendar"
-        sub={`${allUnits.length} ${allUnits.length === 1 ? 'unit' : 'units'} · ${buildingCount} ${buildingCount === 1 ? 'building' : 'buildings'} · Asia/Kuala Lumpur`}
+        sub={`${allUnits.length} ${allUnits.length === 1 ? 'unit' : 'units'} · ${buildingCount} ${buildingCount === 1 ? 'building' : 'buildings'}${phone ? '' : ' · Asia/Kuala Lumpur'}`}
         right={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="secondary" icon={<Icon name="Tag" size="sm" />} onClick={() => setRateUpdate({})}>Rate update</Button>
-            <Button size="sm" variant="secondary" icon={<Icon name="Ban" size="sm" />} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }}>Block wizard</Button>
-            <Button size="sm" variant="secondary" icon={<Icon name="RefreshCw" size="sm" />} loading={syncing} onClick={refresh}>Refresh</Button>
+          <div className="flex items-center gap-2">
+            <button type="button" className={toolBtn} onClick={() => setRateUpdate({})} aria-label="Rate update" title="Rate update">
+              <Icon name="Tag" size="sm" /><span className="hidden md:inline">Rate update</span>
+            </button>
+            <button type="button" className={toolBtn} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }} aria-label="Block wizard" title="Block dates">
+              <Icon name="Ban" size="sm" /><span className="hidden md:inline">Block wizard</span>
+            </button>
+            <button type="button" className={toolBtn} onClick={refresh} disabled={syncing} aria-label="Refresh" title="Pull new bookings from the channels">
+              <span className={`inline-grid ${syncing ? 'animate-spin' : ''}`}><Icon name="RefreshCw" size="sm" /></span><span className="hidden md:inline">Refresh</span>
+            </button>
           </div>
         }
       />
@@ -325,13 +346,16 @@ export default function CalendarPage() {
       {error && <StaleBanner message={`Showing the last board we have. ${error}`} onRetry={reload} />}
 
       {/* Not the shared Card: that clips overflow, which would cut off the status menu. */}
-      <div className="flex-none bg-card border border-solid border-line rounded-card shadow-[var(--shadow-card)] min-w-0">
+      {/* On phones the card runs edge to edge (cancelling main's 16px gutter) so the grid gets the full width. */}
+      <div className="flex-none bg-card border border-solid border-line border-x-0 md:border-x rounded-none md:rounded-card -mx-4 md:mx-0 shadow-[var(--shadow-card)] min-w-0">
         {/* Toolbar + filters */}
-        <div className="px-3 sm:px-4 py-3 flex flex-col gap-3 [border-bottom:1px_solid_var(--color-line)]">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex sm:inline-flex w-full sm:w-auto items-stretch h-9 box-border rounded-control border border-solid border-line bg-card overflow-hidden">
+        <div className="px-3 md:px-4 py-2.5 md:py-3 flex flex-col gap-2.5 md:gap-3 [border-bottom:1px_solid_var(--color-line)]">
+          <div className="flex items-center gap-2">
+            <div className="flex flex-1 md:flex-none min-w-0 items-stretch h-[42px] md:h-9 box-border rounded-control border border-solid border-line bg-card overflow-hidden">
               <button type="button" onClick={() => setWeekOffset(w => w - 1)} className={segBtn} aria-label="Previous 30 days"><Icon name="ChevronLeft" size="sm" /></button>
-              <span className="flex-1 sm:flex-none px-2 sm:px-3 grid place-items-center [border-left:1px_solid_var(--color-line)] [border-right:1px_solid_var(--color-line)] text-[13px] font-medium whitespace-nowrap [font-variant-numeric:tabular-nums] sm:min-w-[156px]">{rangeLabel}</span>
+              <span className="flex-1 md:flex-none min-w-0 px-1.5 md:px-3 grid place-items-center [border-left:1px_solid_var(--color-line)] [border-right:1px_solid_var(--color-line)] text-[13px] font-medium whitespace-nowrap [font-variant-numeric:tabular-nums] md:min-w-[156px]">
+                <span>{rangeShort}<span className="hidden md:inline"> {rangeYear}</span></span>
+              </span>
               <button type="button" onClick={() => setWeekOffset(w => w + 1)} className={segBtn} aria-label="Next 30 days"><Icon name="ChevronRight" size="sm" /></button>
               <button type="button" onClick={() => setWeekOffset(0)} disabled={weekOffset === 0}
                 className={`${segBtn} [border-left:1px_solid_var(--color-line)]! px-3 font-medium disabled:text-faint disabled:cursor-default disabled:hover:bg-transparent`}>Today</button>
@@ -346,28 +370,30 @@ export default function CalendarPage() {
                     : <>Channels updated {iso(new Date(lastSync)) === todayMyt() ? timeWithZone(lastSync) : `${dateShort(lastSync)} ${time(lastSync)}`}</>}
                 </span>
               )}
-              <button type="button" onClick={() => setFiltersOpen(v => !v)} aria-expanded={filtersOpen}
-                className="md:hidden inline-flex items-center gap-1.5 h-9 px-3 box-border rounded-control border border-solid border-line bg-card cursor-pointer font-sans text-[13px] font-medium text-ink">
-                <Icon name="SlidersHorizontal" size="sm" />Filters{filterCount > 0 && <span className="min-w-[18px] h-[18px] px-1 box-border rounded-full bg-black text-white text-[11px] grid place-items-center">{filterCount}</span>}
+              <button type="button" onClick={() => setFiltersOpen(v => !v)} aria-expanded={filtersOpen} aria-label={filterCount ? `Filters, ${filterCount} on` : 'Filters'} title="Filters"
+                className={`${toolBtn} md:hidden ${filtersOpen ? 'bg-muted!' : ''}`}>
+                <Icon name="SlidersHorizontal" size="sm" />
+                {filterCount > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 box-border rounded-full bg-black text-white text-[11px] grid place-items-center">{filterCount}</span>}
               </button>
-              <Button size="sm" variant="secondary" icon={<Icon name={expanded ? 'ChevronsDownUp' : 'ChevronsUpDown'} size="sm" />} onClick={() => { setExpanded(v => !v); setUnitOpen({}); }}>
-                {expanded ? 'Hide rates' : 'Show rates'}
-              </Button>
+              <button type="button" className={toolBtn} onClick={() => { setExpanded(v => !v); setUnitOpen({}); }}
+                aria-label={expanded ? 'Hide rates' : 'Show rates'} title={expanded ? 'Hide rates' : 'Show rates'}>
+                <Icon name={expanded ? 'ChevronsDownUp' : 'ChevronsUpDown'} size="sm" /><span className="hidden md:inline">{expanded ? 'Hide rates' : 'Show rates'}</span>
+              </button>
             </div>
           </div>
 
           <div className={`${filtersOpen ? 'block' : 'hidden'} md:block`}>
-            <CalendarFilters properties={properties} property={property} setProperty={setProperty}
+            <CalendarFilters channels={filterChannels} properties={properties} property={property} setProperty={setProperty}
               off={off} setOff={setOff} statusOff={statusOff} setStatusOff={setStatusOff} dirty={filtersDirty}
               onReset={() => { setOff({}); setStatusOff({}); setProperty('all'); }} />
           </div>
         </div>
 
         {/* Grid: scrolls inside the card both ways; the date header and unit column stay put. */}
-        <div className="max-h-[72vh] overflow-auto rounded-b-card [scrollbar-width:thin] [--unit-col:136px] md:[--unit-col:224px]">
+        <div className="max-h-[72vh] overflow-auto overscroll-x-contain rounded-none md:rounded-b-card [scrollbar-width:thin] [--unit-col:104px] md:[--unit-col:224px]">
           <div style={{ minWidth: `calc(var(--unit-col) + ${span * COL}px)` }}>
             <div className="sticky top-0 z-20 flex bg-card [border-bottom:1px_solid_var(--color-line)]">
-              <div className={`${STICKY_COL} z-30 flex items-end px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-ink`}>
+              <div className={`${STICKY_COL} z-30 flex items-end px-2 md:px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-ink`}>
                 {units.length} {units.length === 1 ? 'unit' : 'units'}
               </div>
               <div className="flex flex-col">
@@ -414,21 +440,27 @@ export default function CalendarPage() {
                 <div key={u.id} className="[border-bottom:1px_solid_var(--color-line)]">
                   {/* Unit row with booking bars */}
                   <div className="flex">
-                    <div className={`${STICKY_COL} z-10 pl-1.5 pr-3 flex items-center gap-1`}>
-                      <button type="button" aria-label={rowOpen ? 'Hide rates for this unit' : 'Show rates for this unit'} aria-expanded={rowOpen}
-                        onClick={() => setUnitOpen(o => ({ ...o, [u.id]: !rowOpen }))}
-                        className="w-6 h-6 flex-none grid place-items-center rounded-[6px] border-none bg-transparent hover:bg-muted cursor-pointer text-muted-ink p-0">
-                        <Icon name={rowOpen ? 'ChevronDown' : 'ChevronRight'} size="sm" />
+                    {/* The whole cell toggles the unit's rates, so phones get a full-size touch target. */}
+                    <div className={`${STICKY_COL} z-10 flex`}>
+                      <button type="button" aria-expanded={rowOpen} onClick={() => setUnitOpen(o => ({ ...o, [u.id]: !rowOpen }))}
+                        title={`${u.unitNumber} · ${u.propertyName}${readiness ? ' · ' + readiness.label : ''} · ${rowOpen ? 'hide' : 'show'} rates`}
+                        className="flex-1 min-w-0 flex items-center gap-1 pl-2 md:pl-1.5 pr-2 md:pr-3 py-0 m-0 border-none bg-transparent hover:bg-muted/60 cursor-pointer text-left font-sans">
+                        <span className="hidden md:grid w-6 h-6 flex-none place-items-center text-muted-ink">
+                          <Icon name={rowOpen ? 'ChevronDown' : 'ChevronRight'} size="sm" />
+                        </span>
+                        <span className="min-w-0 flex flex-col gap-px">
+                          <span className="text-[13px] font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
+                          <span className="flex items-center gap-[5px] min-w-0">
+                            {readiness && <span className="md:hidden w-1.5 h-1.5 rounded-full flex-none" style={{ background: readiness.dot }} role="img" aria-label={readiness.label} />}
+                            <span className="text-[11px] md:text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.propertyName}</span>
+                          </span>
+                          {readiness && (
+                            <span className="hidden md:flex items-center gap-[5px] text-[11px] text-muted-ink whitespace-nowrap">
+                              <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: readiness.dot }} />{readiness.label}
+                            </span>
+                          )}
+                        </span>
                       </button>
-                      <div className="min-w-0 flex flex-col gap-px">
-                        <div className="text-[13px] font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</div>
-                        <div className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={u.propertyName}>{u.propertyName}</div>
-                        {readiness && (
-                          <div className="flex items-center gap-[5px] text-[11px] text-muted-ink whitespace-nowrap">
-                            <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: readiness.dot }} />{readiness.label}
-                          </div>
-                        )}
-                      </div>
                     </div>
 
                     <div className="relative flex"
@@ -451,6 +483,10 @@ export default function CalendarPage() {
                         const inset = 3;
                         const left = s * COL + (clipL ? 0 : inset), width = (e - s) * COL - (clipL ? 0 : inset) - (clipR ? 0 : inset);
                         const r = (on: boolean) => (on ? 0 : 8);
+                        const fullName = b.guestName || ch.label;
+                        const firstName = fullName.split(' ')[0];
+                        // A one-night bar is too narrow for logo and name side by side, so they stack.
+                        const narrow = width < 100;
                         return (
                           <div key={b.id} draggable onClick={() => setOpenBlock(b)}
                             title={`${b.guestName} · ${ch.label}${b.ref ? ' · ' + b.ref : ''} · ${dateRange(b.checkIn, b.checkOut)} · drag to move`}
@@ -460,7 +496,7 @@ export default function CalendarPage() {
                               dragRef.current = { id: b.id, grabOffset: (s - ci) + Math.max(0, Math.floor((ev.clientX - rect.left) / COL)) };
                             }}
                             onDragEnd={() => { dragRef.current = null; }}
-                            className="absolute top-2.5 bottom-2.5 z-[2] box-border flex items-center gap-1.5 px-2 overflow-hidden cursor-grab active:cursor-grabbing select-none hover:brightness-[0.98]"
+                            className={`absolute top-2.5 bottom-2.5 z-[2] box-border flex overflow-hidden cursor-grab active:cursor-grabbing select-none hover:brightness-[0.98] ${narrow ? 'flex-col justify-center items-start gap-0.5 px-1.5' : 'items-center gap-1.5 px-2'}`}
                             style={{
                               left, width, color: ch.ink,
                               background: hold ? `repeating-linear-gradient(135deg, ${ch.tint} 0 6px, var(--color-surface-card) 6px 12px)` : ch.tint,
@@ -468,10 +504,15 @@ export default function CalendarPage() {
                               borderLeft: clipL ? undefined : hold ? undefined : `3px solid ${ch.color}`,
                               borderRadius: `${r(clipL)}px ${r(clipR)}px ${r(clipR)}px ${r(clipL)}px`,
                             }}>
-                            {width > 64 && <ChannelMark ch={b.channel} size={16} />}
-                            <span className="text-[12px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{b.guestName || ch.label}</span>
-                            {b.grossBookingValue > 0 && width > 150 && (
-                              <span className="text-[11.5px] whitespace-nowrap opacity-80 [font-variant-numeric:tabular-nums]">{rm(b.grossBookingValue, { cents: false })}</span>
+                            {width >= 30 && <ChannelMark ch={b.channel} size={narrow ? 14 : 16} />}
+                            {narrow
+                              ? <span className="max-w-full text-[11px] leading-[13px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{firstName}</span>
+                              : <>
+                                  <span className="md:hidden text-[12px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{firstName}</span>
+                                  <span className="hidden md:inline text-[12px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{fullName}</span>
+                                </>}
+                            {!narrow && b.grossBookingValue > 0 && width > 150 && (
+                              <span className="hidden md:inline text-[11.5px] whitespace-nowrap opacity-80 [font-variant-numeric:tabular-nums]">{rm(b.grossBookingValue, { cents: false })}</span>
                             )}
                           </div>
                         );
@@ -481,28 +522,26 @@ export default function CalendarPage() {
 
                   {rowOpen && (
                     <>
+                      {/* Availability, with the night's restriction folded in: a "2n" marker for a minimum stay above
+                          one night, "Closed" for stop sell. Only nights that have one show anything extra, so the
+                          grid keeps one row here. Clicking a night opens Rate update for it to change either. */}
                       <SubRow label="Availability">
                         {days.map((_, i) => {
                           const left = cells[i] ? 0 : 1;
-                          return (
-                            <div key={i} title={`${left} of 1 unit available`} style={{ width: COL }}
-                              className={`flex-none box-border h-8 ${CELL_EDGE} ${colBg(i)} ${todayEdge(i)} flex items-center justify-end pr-2 text-[11.5px] [font-variant-numeric:tabular-nums] ${left ? 'text-ink-2' : 'text-faint'}`}>
-                              {left ? '1 left' : 'Sold'}
-                            </div>
-                          );
-                        })}
-                      </SubRow>
-                      <SubRow label="Min stay · stop sell">
-                        {days.map((_, i) => {
                           const rs = data?.restrictions?.[`${u.id}:${dayIso(i)}`];
+                          const minStay = rs && rs.minStay > 1 ? rs.minStay : 0;
+                          const restriction = rs?.stopSell ? 'Closed for sale' : minStay ? `Minimum ${minStay} nights` : 'No minimum stay, open for sale';
                           return (
                             <button key={i} type="button" onClick={() => setRateUpdate({ unitIds: [u.id], from: dayIso(i), to: dayIso(i) })}
-                              title={rs?.stopSell ? 'Closed for sale · change' : rs && rs.minStay > 1 ? `Minimum ${rs.minStay} nights · change` : 'Set minimum stay or stop sell'}
+                              title={`${left ? '1 of 1 unit available' : 'Sold'} · ${restriction} · click to change`}
                               style={{ width: COL }}
-                              className={`flex-none box-border h-8 p-0 pr-2 border-none ${CELL_EDGE_BTN} ${colBg(i)} ${todayEdge(i)} hover:bg-sunken cursor-pointer font-sans text-[11.5px] flex items-center justify-end [font-variant-numeric:tabular-nums]`}>
+                              className={`flex-none box-border h-10 md:h-8 p-0 pl-1 border-none ${CELL_EDGE_BTN} ${colBg(i)} ${todayEdge(i)} hover:bg-sunken cursor-pointer font-sans text-[11.5px] whitespace-nowrap flex items-center justify-end gap-0.5 [font-variant-numeric:tabular-nums] ${minStay && !rs?.stopSell ? 'pr-1.5' : 'pr-2'} ${left ? 'text-ink-2' : 'text-faint'}`}>
                               {rs?.stopSell
-                                ? <span className="px-1.5 rounded-[4px] text-[11px] font-semibold leading-[18px]" style={{ background: TONE.critical.bg, color: TONE.critical.fg }}>Closed</span>
-                                : rs && rs.minStay > 1 ? <span className="font-semibold text-ink">{rs.minStay}n min</span> : null}
+                                ? <span className="px-1 rounded-[4px] text-[10.5px] font-semibold leading-[16px]" style={{ background: TONE.critical.bg, color: TONE.critical.fg }}>Closed</span>
+                                : <>
+                                    {minStay > 0 && <span className="mr-auto px-[3px] rounded-[4px] text-[10px] font-semibold leading-[16px] bg-muted text-ink">{minStay}n</span>}
+                                    {left ? '1 left' : 'Sold'}
+                                  </>}
                             </button>
                           );
                         })}
@@ -514,13 +553,14 @@ export default function CalendarPage() {
                           <SubRow key={r.key} label={
                             <>
                               <ChannelMark ch={r.mark} size={16} />
-                              <span className="text-ink font-medium whitespace-nowrap overflow-hidden text-ellipsis">{r.label}</span>
+                              <span className="md:hidden text-ink font-medium whitespace-nowrap overflow-hidden text-ellipsis">{r.short}</span>
+                              <span className="hidden md:inline text-ink font-medium whitespace-nowrap overflow-hidden text-ellipsis">{r.label}</span>
                               {chip && (
                                 <span className="hidden md:inline-block text-[10.5px] font-semibold px-1.5 rounded-full leading-[17px] whitespace-nowrap"
                                   style={{ background: TONE[chip.tone].bg, color: TONE[chip.tone].fg }}
                                   title={sync?.lastSyncedAt ? `Last update sent ${dateTime(sync.lastSyncedAt)}` : undefined}>{chip.label}</span>
                               )}
-                              <span className="ml-auto text-[10.5px] font-medium text-faint">RM</span>
+                              <span className="hidden md:inline ml-auto text-[10.5px] font-medium text-faint">RM</span>
                             </>
                           }>
                             {days.map((_, i) => {
@@ -530,7 +570,7 @@ export default function CalendarPage() {
                                 <button key={i} type="button" onClick={() => setPriceModal({ unit: u, channel: r.key, dayIso: dayIso(i), current: price })}
                                   title={`${r.label} · ${dayIso(i)} · RM ${ringgit(price)}${custom ? ' · set by hand' : ''} · click to change`}
                                   style={{ width: COL }}
-                                  className={`flex-none box-border h-8 p-0 pr-2 border-none ${CELL_EDGE_BTN} ${colBg(i)} ${todayEdge(i)} hover:bg-sunken cursor-pointer font-sans text-[12px] text-right [font-variant-numeric:tabular-nums] ${custom ? 'font-semibold text-ink' : 'text-ink-2'}`}>
+                                  className={`flex-none box-border h-10 md:h-8 p-0 pr-2 border-none ${CELL_EDGE_BTN} ${colBg(i)} ${todayEdge(i)} hover:bg-sunken cursor-pointer font-sans text-[12px] text-right [font-variant-numeric:tabular-nums] ${custom ? 'font-semibold text-ink' : 'text-ink-2'}`}>
                                   {ringgit(price)}
                                 </button>
                               );
@@ -641,11 +681,24 @@ export default function CalendarPage() {
   );
 }
 
+/** Below the shell's phone breakpoint. Read synchronously on first render so nothing shifts after mount. */
+const PHONE_QUERY = '(max-width: 767.98px)';
+function usePhone() {
+  const [phone, setPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia(PHONE_QUERY).matches);
+  useEffect(() => {
+    const mql = window.matchMedia(PHONE_QUERY);
+    const onChange = () => setPhone(mql.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
+  return phone;
+}
+
 /** A secondary row under a unit: sticky label on the left, one cell per night. */
 function SubRow({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div className="flex [border-top:1px_solid_var(--color-line-soft)]">
-      <div className={`${STICKY_COL} z-10 pl-3 md:pl-[38px] pr-3 h-8 flex items-center gap-2 text-[12px] text-muted-ink min-w-0`}>{label}</div>
+      <div className={`${STICKY_COL} z-10 pl-2 md:pl-[38px] pr-2 md:pr-3 h-10 md:h-8 flex items-center gap-1.5 md:gap-2 text-[12px] text-muted-ink min-w-0`}>{label}</div>
       {children}
     </div>
   );
