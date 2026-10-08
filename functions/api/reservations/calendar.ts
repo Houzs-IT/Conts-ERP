@@ -14,11 +14,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'The calendar is not available to field roles.', 403);
 
   const url = new URL(request.url);
-  const from = url.searchParams.get('from') ?? new Date().toISOString().slice(0, 10);
+  const from = url.searchParams.get('from') ?? new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
   const to = url.searchParams.get('to') ?? from;
   const property = url.searchParams.get('property') || null;
 
-  const [allUnits, onChannel] = await Promise.all([
+  const [allUnits, onChannel, connected] = await Promise.all([
     all<any>(env, `
       SELECT u.id, u.unit_number, u.base_rate, u.property_id, p.name AS property_name
       FROM units u JOIN properties p ON p.id = u.property_id
@@ -35,7 +35,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       SELECT unit_id, channel FROM reservations
       WHERE channel IN ('airbnb','booking_com','agoda') AND check_out >= ?`,
       new Date(Date.now() - CHANNEL_LOOKBACK_DAYS * 864e5).toISOString().slice(0, 10)),
+    // The booking sites the unit is actually connected to: only these get a price sent, so only these show one.
+    all<{ unit_id: string; ota: string }>(env, 'SELECT unit_id, ota FROM channex_channels'),
   ]);
+  const connectedSet = new Set(connected.map(r => `${r.unit_id}:${r.ota}`));
   const onChannelSet = new Set(onChannel.map(r => `${r.unit_id}:${r.channel}`));
   const channelsOf = (unitId: string) => OTA_CHANNELS.filter(ch => onChannelSet.has(`${unitId}:${ch}`));
 
@@ -53,7 +56,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            r.external_ref, r.notes, COALESCE(g.full_name, '') AS guest_name
     FROM reservations r
     LEFT JOIN guests g ON g.id = r.guest_id
-    WHERE r.check_out > ? AND r.check_in < ? AND r.state != 'cancelled'${scoped('r.unit_id')}
+    WHERE r.check_out > ? AND r.check_in < ? AND r.state NOT IN ('cancelled', 'no_show')${scoped('r.unit_id')}
     ORDER BY r.check_in`, from, to, ...scopeArgs);
 
   const [rates, uplifts, restr] = await Promise.all([
@@ -68,7 +71,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     generatedAt: new Date().toISOString(),
     // channels: the booking sites the unit is on, in a fixed order. The direct (web) rate is always shown.
     buildings: [...buildingMap.values()],
-    units: units.map(u => ({ id: u.id, unitNumber: u.unit_number, propertyId: u.property_id, propertyName: u.property_name, channels: channelsOf(u.id) })),
+    units: units.map(u => ({ id: u.id, unitNumber: u.unit_number, propertyId: u.property_id, propertyName: u.property_name, channels: channelsOf(u.id), linked: OTA_CHANNELS.filter(ch => connectedSet.has(`${u.id}:${ch}`)) })),
     baseRate: Object.fromEntries(units.map(u => [u.id, Number(u.base_rate)])),
     // What a night costs on a channel when it has no price of its own: (base + that channel's uplift), times
     // the weekend multiplier on Friday and Saturday. Same rule as the Pricing page and Channex (channelPrice.ts).

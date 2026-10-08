@@ -1,9 +1,17 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { findClash, clashResponseBody } from '../../../_lib/reservations';
-import { syncAvailabilityIfLinked } from '../../../_lib/channexSync';
+import { syncAvailabilityIfLinked, channexMappingFor } from '../../../_lib/channexSync';
+import { channexConfigured } from '../../../_lib/channex';
+import { dayLabel } from '../../../_lib/bookingLifecycle';
 
-/** PATCH /api/reservations/:id/dates { checkIn, checkOut, confirm } — without confirm: 428 with the consequence. */
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** States whose dates can still move. A finished, cancelled or no-show stay is history. */
+const MOVABLE = ['inquiry', 'pending', 'confirmed', 'checked_in'];
+
+/** PATCH /api/reservations/:id/dates { checkIn, checkOut, confirm, grossBookingValue? } — without confirm: 428 with the
+ *  consequence. A direct booking or a block may carry a new total; a booking site's price is the site's, so it is left alone.
+ *  Nobody is messaged: the answer says only what was saved and whether the channels were updated. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -11,24 +19,49 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);
-  if (!b?.checkIn || !b.checkOut) return fail('VALIDATION', 'Both dates are required.', 422);
+  if (!b?.checkIn || !b.checkOut || !ISO_DAY.test(b.checkIn) || !ISO_DAY.test(b.checkOut)) return fail('VALIDATION', 'Both dates are required.', 422);
   if (b.checkOut <= b.checkIn) return fail('VALIDATION', 'Check-out must be after check-in.', 422, { checkOut: 'Check-out must be after check-in.' });
 
   const cur = await one<any>(env, `
-    SELECT r.id, r.unit_id, r.check_in, r.check_out, COALESCE(g.full_name, 'The guest') AS guest_name
+    SELECT r.id, r.unit_id, r.state, r.channel, r.check_in, r.check_out, r.gross_booking_value, COALESCE(NULLIF(g.full_name, ''), 'The booking') AS guest_name
     FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id WHERE r.id = ?`, id);
   if (!cur) return fail('NOT_FOUND', 'That reservation does not exist.', 404);
+  if (!MOVABLE.includes(cur.state)) return fail('CONFLICT', 'The dates of a finished, cancelled or no-show booking cannot change.', 409);
+  if (cur.state === 'checked_in' && b.checkIn !== cur.check_in) return fail('CONFLICT', 'The guest is already in. Only the check-out date can change.', 409);
+
+  let gross: number | null = null;
+  if (b.grossBookingValue != null) {
+    if (['airbnb', 'booking_com', 'agoda'].includes(cur.channel)) return fail('VALIDATION', 'A booking site sets its own price. Change it on the site.', 422);
+    gross = Math.round(Number(b.grossBookingValue));
+    if (!Number.isFinite(gross) || gross < 0) return fail('VALIDATION', 'The total must be zero or more.', 422, { grossBookingValue: 'Enter an amount.' });
+  }
 
   const clash = await findClash(env, cur.unit_id, b.checkIn, b.checkOut, id);
   if (clash) return json(clashResponseBody(clash), 409);
 
   if (!b.confirm) {
-    return fail('CONFIRMATION_REQUIRED', `${cur.guest_name} moves from ${cur.check_in} - ${cur.check_out} to ${b.checkIn} - ${b.checkOut} and is notified. Confirm to continue.`, 428);
+    return fail('CONFIRMATION_REQUIRED', `${cur.guest_name} moves from ${dayLabel(cur.check_in)} – ${dayLabel(cur.check_out)} to ${dayLabel(b.checkIn)} – ${dayLabel(b.checkOut)}. Confirm to continue.`, 428);
   }
 
-  await run(env, 'UPDATE reservations SET check_in = ?, check_out = ?, updated_at = ? WHERE id = ?', b.checkIn, b.checkOut, nowIso(), id);
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.dates', entityTable: 'reservations', entityId: id, before: { checkIn: cur.check_in, checkOut: cur.check_out }, after: { checkIn: b.checkIn, checkOut: b.checkOut } });
-  await syncAvailabilityIfLinked(env, cur.unit_id, cur.check_in, cur.check_out, true);
-  await syncAvailabilityIfLinked(env, cur.unit_id, b.checkIn, b.checkOut, false);
-  return json({ id, checkIn: b.checkIn, checkOut: b.checkOut });
+  const now = nowIso();
+  await run(env, 'UPDATE reservations SET check_in = ?, check_out = ?, gross_booking_value = COALESCE(?, gross_booking_value), updated_at = ? WHERE id = ?', b.checkIn, b.checkOut, gross, now, id);
+  await audit(env, {
+    actorId: session.userId, actorLabel: session.fullName, action: 'reservation.dates', entityTable: 'reservations', entityId: id,
+    before: { checkIn: cur.check_in, checkOut: cur.check_out, ...(gross != null ? { grossBookingValue: Number(cur.gross_booking_value) } : {}) },
+    after: { checkIn: b.checkIn, checkOut: b.checkOut, ...(gross != null ? { grossBookingValue: gross } : {}) },
+  });
+
+  // A live stay holds its nights on the channels; an inquiry does not hold dates, so there is nothing to move.
+  let channel: 'queued' | 'not_linked' | 'failed' | null = null;
+  if (cur.state !== 'inquiry') {
+    try {
+      if (!channexConfigured(env) || !(await channexMappingFor(env, cur.unit_id))) channel = 'not_linked';
+      else {
+        await syncAvailabilityIfLinked(env, cur.unit_id, cur.check_in, cur.check_out, true);
+        await syncAvailabilityIfLinked(env, cur.unit_id, b.checkIn, b.checkOut, false);
+        channel = 'queued';
+      }
+    } catch { channel = 'failed'; }
+  }
+  return json({ id, checkIn: b.checkIn, checkOut: b.checkOut, grossBookingValue: gross ?? Number(cur.gross_booking_value), effects: { channel } });
 };

@@ -125,3 +125,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Dashboard, Housekeeping, Operations Today and Tasks still print "Sept" through their own toLocaleDateString calls; switch them to lib/format helpers (Calendar: booking agent).
 - Settings: company details, locale, operations defaults and statement settings are saved but not read anywhere (marked "Not used yet"); wire or remove.
 - Pricing: channel commission (15/15/18%) and the 22% weekend uplift are fixed in code; owner to decide whether they become settings.
+
+## Booking lifecycle (fix/booking-lifecycle)
+- Status moves are one map in functions/_lib/bookingLifecycle.ts, enforced on PATCH and cancel; drawer menu built from it. Check: scripts/api-checks/booking-lifecycle.mjs.
+- Owner to confirm: no-show allowed from the check-in day (audit said "after"); undo check-in / check-out only on the same day and only for management; reinstating a cancelled stay is management only.
+- Booking drawer money lines from migration 0052 (room, cleaning paid by guest, SST, tourism tax, payout, payout date ...) show automatically once 0052 is applied and filled; nothing is estimated before that.
+- Not built: guest notification on cancel / date change (the screens now say the guest is not messaged); refunds; repricing rule for date changes (direct bookings take a new total by hand).
