@@ -1,6 +1,6 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { MYT_DATE, hhmm, linenSet, resolveUnit } from '../../_lib/ops';
+import { MYT_DATE, SHEET_CLEANER, hhmm, linenSet, resolveUnit } from '../../_lib/ops';
 
 /** The three cleaning kinds a manual task may be. Inspection/maintenance/delivery
  *  are their own screens; this endpoint only creates cleaning work. */
@@ -12,23 +12,28 @@ const KIND_TITLE: Record<CleanKind, string> = {
 const isHhmm = (v: unknown): v is string => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 const isDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
 
-/** GET /api/housekeeping/tasks?date=YYYY-MM-DD | from..to — the cleaning roster.
- *  When the range starts today, cleaning left over from earlier days is included until it is done. */
+/** GET /api/housekeeping/tasks?date=YYYY-MM-DD | from..to (at most 7 days) — the cleaning roster.
+ *  When the range starts today, cleaning left over from earlier days is included until it is done.
+ *  `checkouts` lists the stays leaving in the range that have no cleaning task yet. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
 
   const today = (await one<{ d: string }>(env, `SELECT to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS d`))!.d;
   const raw = new URL(request.url).searchParams.get('date') ?? today;
-  const [from, to = from] = raw.split('..');
+  let [from, to = from] = raw.split('..');
+  if (!isDate(from)) from = today;
+  if (!isDate(to) || to < from) to = from;
+  const maxTo = new Date(Date.parse(`${from}T00:00:00Z`) + 6 * 864e5).toISOString().slice(0, 10);
+  if (to > maxTo) to = maxTo;
 
   const mine = isFieldRole(session.role);
   const when = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const rows = await all<any>(env, `
-    SELECT t.id, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.next_guest_at, t.requires_photo, t.assignee_id, t.cleaner_id,
-           t.started_at, t.completed_at,
+    SELECT t.id, t.kind, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.next_guest_at, t.requires_photo, t.assignee_id, t.cleaner_id,
+           t.started_at, t.completed_at, ${when} AS day,
            u.unit_number, u.readiness, u.bedrooms, p.id AS property_id, p.name AS property_name,
-           COALESCE(cl.full_name, a.full_name, '') AS assignee_name,
+           COALESCE(cl.full_name, a.full_name, '') AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner,
            cl.employment_type AS employment_type,
            COALESCE(r.external_ref, 'Manual') AS source_ref,
            r.check_out AS checkout_date, r.check_out_time AS checkout_time,
@@ -45,20 +50,48 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ORDER BY COALESCE(t.scheduled_for, t.due_at, t.created_at)`,
     ...[from, to, from, today, from, ...(mine ? [session.userId] : [])]);
 
+  // Stays leaving in the range with no clean on that unit that day. Cancelled stays and
+  // maintenance blocks leave no guest mess behind.
+  const lo = new Date(Date.parse(`${from}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
+  const hi = new Date(Date.parse(`${to}T00:00:00Z`) + 2 * 864e5).toISOString().slice(0, 10);
+  const checkouts = mine ? [] : await all<any>(env, `
+    WITH cleans AS (
+      SELECT t.unit_id, ${when} AS day FROM tasks t
+      WHERE t.kind IN ('turnover','deep_clean','light_clean') AND COALESCE(t.scheduled_for, t.due_at, t.created_at) >= ? AND COALESCE(t.scheduled_for, t.due_at, t.created_at) < ?
+    )
+    SELECT r.id, r.external_ref, r.channel, r.check_out, r.check_out_time, u.id AS unit_id, u.unit_number, u.bedrooms,
+           p.id AS property_id, p.name AS property_name, COALESCE(NULLIF(g.full_name, ''), 'Guest') AS guest_name,
+           (SELECT n.check_in_time FROM reservations n WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id
+              AND n.state NOT IN ('cancelled','no_show','inquiry') AND n.channel != 'maintenance_block' LIMIT 1) AS next_in
+    FROM reservations r
+    JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id
+    LEFT JOIN guests g ON g.id = r.guest_id
+    WHERE r.check_out BETWEEN ? AND ? AND r.state NOT IN ('cancelled','no_show','inquiry') AND r.channel != 'maintenance_block'
+      AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.reservation_id = r.id AND t.kind IN ('turnover','deep_clean','light_clean'))
+      AND NOT EXISTS (SELECT 1 FROM cleans c WHERE c.unit_id = r.unit_id AND c.day = r.check_out)
+    ORDER BY r.check_out, p.name, u.unit_number`, lo, hi, from, to);
+
   return json({
-    generatedAt: nowIso(), date: from,
+    generatedAt: nowIso(), date: from, from, to, today,
     rows: rows.map((r, i) => ({
-      id: r.id, unitNumber: r.unit_number, propertyName: r.property_name, buildingId: r.property_id, sourceRef: r.source_ref,
+      id: r.id, kind: r.kind, unitNumber: r.unit_number, propertyName: r.property_name, buildingId: r.property_id, sourceRef: r.source_ref,
       title: r.title, linenSet: linenSet(Number(r.bedrooms)), instructions: r.instructions,
+      day: r.day, carriedOver: r.day < from,
       scheduledFor: hhmm(r.scheduled_for), dueAt: hhmm(r.due_at), nextGuestAt: hhmm(r.next_guest_at),
       // This stay's checkout (source reservation) and the incoming guest's check-in bracket the SLA.
       checkoutTime: r.checkout_time ?? null, checkoutDate: r.checkout_date ?? null,
       // Full ISO start/end so the client can show how long the clean took.
       startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,
       assigneeId: r.assignee_id, cleanerId: r.cleaner_id ?? null, assigneeName: r.assignee_name || null,
+      sheetCleaner: r.sheet_cleaner ?? null,
       employmentType: r.employment_type ?? null,
       sequence: i + 1, state: r.state, readiness: r.readiness,
       requiresPhoto: !!r.requires_photo, photoCount: Number(r.photo_count),
+    })),
+    checkouts: checkouts.map(c => ({
+      reservationId: c.id, ref: c.external_ref ?? null, channel: c.channel, date: c.check_out, checkoutTime: c.check_out_time ?? null,
+      unitId: c.unit_id, unitNumber: c.unit_number, propertyName: c.property_name, buildingId: c.property_id,
+      guestName: c.guest_name, nextGuestAt: c.next_in ?? null, linenSet: linenSet(Number(c.bedrooms)),
     })),
   });
 };

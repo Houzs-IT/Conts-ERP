@@ -4,6 +4,9 @@ import { notify } from './notify';
 
 export const MYT_DATE = (col: string) => `to_char((${col})::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')`;
 
+/** The cleaner's short code the cleaning workbook recorded ("Cleaner: YJ · ..."), for imported cleans with no roster cleaner. */
+export const SHEET_CLEANER = (alias: string) => `NULLIF(btrim(substring(${alias}.instructions from '^Cleaner: ([^·]+)')), '')`;
+
 /** HH:MM in Malaysia time, or null. */
 export function hhmm(iso: string | null): string | null {
   if (!iso) return null;
