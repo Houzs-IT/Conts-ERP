@@ -91,6 +91,8 @@ export function isSalesStaff(user: AuthUser | null | undefined): boolean {
  */
 export function canCreateEvent(user: AuthUser | null | undefined): boolean {
   if (!user) return false;
+  // Conts: mirrors backend routes/projects.ts — Full on Projects in the Permissions chart may create.
+  if (user.permissions?.includes("*") || user.permissions?.includes("projects.manage")) return true;
   const role = (user.role_name ?? "").toLowerCase();
   const position = (user.position_name ?? "").toLowerCase();
   const email = (user.email ?? "").toLowerCase();
