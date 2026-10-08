@@ -40,7 +40,9 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, next, waitUn
   if (refusal) return fail('WRONG_DOOR', refusal, 403);
 
   const path = new URL(request.url).pathname.replace(/\/+$/, '');
-  if (session.role === 'owner' && !OWNER_ALLOWED.some(([m, re]) => m === request.method && re.test(path))) {
+  // The staging account switcher checks who really signed in itself, so it stays reachable from any account.
+  if (path === '/api/auth/view-as') return next();
+  if (session.role === 'owner' &&!OWNER_ALLOWED.some(([m, re]) => m === request.method && re.test(path))) {
     return fail('FORBIDDEN', 'This is not available on the owner portal.', 403);
   }
   if (isFieldRole(session.role) && SUPPLY_CHAIN.test(path)) {

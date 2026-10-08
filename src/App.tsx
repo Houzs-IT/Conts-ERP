@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { Routes, Route, Outlet, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { SessionProvider, useSession } from './lib/session';
 import { ToastProvider } from './components/Toast';
+import ViewAs from './components/ViewAs';
 import AppShell from './components/AppShell';
 import FieldShell from './components/FieldShell';
 import UpdateNotice from './components/UpdateNotice';
@@ -261,6 +262,7 @@ export default function App() {
       <ToastProvider>
         <Routed />
         <UpdateNotice />
+        <ViewAs />
       </ToastProvider>
     </SessionProvider>
   );
