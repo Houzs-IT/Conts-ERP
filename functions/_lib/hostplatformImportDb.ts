@@ -10,7 +10,7 @@
 import {
   type ListingPlan, type ReservationPlan, type WorkbookUnitIn, type AirbnbEarningIn, type CleaningIn, type ExpenseIn, type CreditIn,
   type PayoutMonthIn, type KnownUnit, type KnownProperty, type RowError,
-  PLACEHOLDER_OWNER, RESERVATION_MONEY_COLUMNS, normaliseLocation, canonicalState, canonicalCity, slug, hash, unitKey, workbookMatcher, matchWorkbookUnitHow, buildingForPrefix, splitWorkbookId, workbookOwnerId, stayState,
+  PLACEHOLDER_OWNER, RESERVATION_MONEY_COLUMNS, normaliseLocation, canonicalState, canonicalCity, slug, hash, unitKey, workbookMatcher, matchWorkbookUnitHow, buildingForPrefix, splitWorkbookId, workbookOwnerId, listingOwnerId, stayState,
 } from './hostplatformImport';
 
 /** The three helpers of db.ts, bound to an environment. Lets the test script run the same SQL on PGlite. */
@@ -120,7 +120,7 @@ export async function importListing(db: Db, plan: ListingPlan, now: string): Pro
   for (const name of plan.owners) {
     if (name === PLACEHOLDER_OWNER) { ownerId.set(name, await placeholderOwner(db, snap.owners, now)); continue; }
     const hit = snap.owners.find(o => o.name.toLowerCase() === name.toLowerCase());
-    const id = hit?.id ?? `hp-owner-${slug(name)}`;
+    const id = hit?.id ?? await listingOwnerId(name);
     ownerId.set(name, id);
     if (!hit) { newOwners.push({ id, display_name: name, email: '', created_at: now, updated_at: now }); snap.owners.push({ id, name, ic: null }); }
   }
@@ -284,7 +284,7 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
     if (w.ownerName || w.ic) {
       const hit = (w.ic ? snap.owners.find(o => o.ic && o.ic === w.ic) : undefined)
         ?? (w.ownerName ? snap.owners.find(o => o.name.toLowerCase() === w.ownerName!.toLowerCase()) : undefined);
-      ownerId = hit ? hit.id : workbookOwnerId(w);
+      ownerId = hit ? hit.id : await workbookOwnerId(w);
       if (!hit) snap.owners.push({ id: ownerId, name: w.ownerName ?? w.ic!, ic: w.ic });
       if (!ownerRows.has(ownerId)) {
         ownerRows.set(ownerId, {

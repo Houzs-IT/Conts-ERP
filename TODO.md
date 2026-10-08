@@ -116,6 +116,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - 3 credits (RM 339.04) on SKYLINE-C1513 wait for that unit's owner to be named; re-run step 6 after.
 - Units screen: the Package dropdown (src/pages/units/shared.tsx PACKAGES) still lists A-C only; the server now accepts D.
 - No screen yet shows unit utility accounts, guarantee pool months, owner adjustments or the new contract fields.
+- Owner ids no longer carry IC numbers: 0052 re-keys 'wb-owner-<IC>' / 'hp-owner-<name>' to opaque hashes (checked by scripts/api-checks/owner-rekey.mjs). Guest ids are an unsalted 64-bit hash of name, phone and email: not readable, but a phone number could be guessed back from one; re-key with a secret if that matters.
 - Owner to check: 7 units still under "Owner to be confirmed"; the listing names owner "sad asd" on 2 units (looks like test data); 'Trion KL (2)' came in as its own building next to 'Trion KL'; 1 Airbnb stay (UNO-1503A, 31 Aug) appears under two codes in the workbook and so twice on the calendar.
 
 ## Units, Calendar, Dashboard at real size (feat/scale-units-calendar)

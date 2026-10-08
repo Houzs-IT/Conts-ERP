@@ -612,7 +612,23 @@ export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[], today 
 }
 
 export interface OwnerIn { id: string; name: string; ic: string | null; bankName: string | null; bankAccount: string | null; bankHolder: string | null }
-export const workbookOwnerId = (u: { ic: string | null; ownerName: string | null }) => `wb-owner-${slug(u.ic ?? u.ownerName ?? 'unknown')}`;
+/* Owner ids are opaque: they once embedded the IC number ('wb-owner-<ic>'), which then showed in URLs and the audit
+ * log. Now 'wb-owner-' / 'hp-owner-' + the first 16 hex characters of sha256('conts-owner:' + key), where the key is
+ * the IC with everything but letters and digits removed, lower-cased, or, with no IC, the name with runs of spaces,
+ * tabs and line breaks made one space, trimmed, lower-cased. Migration 0052 computes exactly this in SQL to re-key
+ * the owners imported before; scripts/api-checks/owner-rekey.mjs checks the two agree. Re-runs still find an owner
+ * by IC or name first, so the id only matters for an owner seen for the first time. */
+export const ownerKeyFromIc = (ic: string | null | undefined) => (ic ?? '').replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+export const ownerKeyFromName = (name: string | null | undefined) => (name ?? '').replace(/[ \t\r\n]+/g, ' ').replace(/^ +| +$/g, '').toLowerCase();
+export async function opaqueOwnerId(prefix: 'wb-owner-' | 'hp-owner-', key: string): Promise<string> {
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`conts-owner:${key}`)));
+  return prefix + [...bytes.slice(0, 8)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+/** A workbook owner: keyed by IC when there is one, else by name. */
+export const workbookOwnerId = (u: { ic: string | null; ownerName: string | null }) =>
+  opaqueOwnerId('wb-owner-', ownerKeyFromIc(u.ic) || ownerKeyFromName(u.ownerName ?? 'unknown'));
+/** An owner named in the HostPlatform listing (a name only). */
+export const listingOwnerId = (name: string) => opaqueOwnerId('hp-owner-', ownerKeyFromName(name));
 
 /* ------------------------------------------------------------------ */
 /* Workbook: Airbnb earnings                                           */

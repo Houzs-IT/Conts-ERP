@@ -24,11 +24,22 @@ const DRY = process.argv.includes('--dry-run');
 // Before anything is applied it prints the target project and asks for that project ref to be typed back.
 const PROMPT = process.argv.includes('--prompt');
 
+// Piped input (not a terminal): one answer per line, read once.
+let piped = null;
+async function pipedLine() {
+  if (!piped) {
+    let text = '';
+    for await (const chunk of process.stdin) text += chunk;
+    piped = text.split(/\r?\n/);
+  }
+  return piped.shift() ?? '';
+}
+
 /** Reads one line from the terminal without echoing it. Never logged, never written anywhere. */
 function askHidden(question) {
   return new Promise((resolve, reject) => {
     const { stdin, stdout } = process;
-    if (!stdin.isTTY) { reject(new Error('--prompt needs an interactive terminal.')); return; }
+    if (!stdin.isTTY) { stdout.write(question + '\n'); pipedLine().then(resolve, reject); return; }
     stdout.write(question);
     stdin.setRawMode(true); stdin.resume(); stdin.setEncoding('utf8');
     let value = '';
@@ -45,6 +56,7 @@ function askHidden(question) {
   });
 }
 async function askLine(question) {
+  if (!process.stdin.isTTY) { process.stdout.write(question + '\n'); return (await pipedLine()).trim(); }
   const { createInterface } = await import('node:readline/promises');
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try { return (await rl.question(question)).trim(); } finally { rl.close(); }
@@ -73,7 +85,8 @@ if (PROMPT && !DRY) {
 
 let sql;
 try {
-  sql = postgres(url, { max: 1, prepare: false, ssl: /localhost|127\.0\.0\.1/.test(url) ? false : 'require' });
+  // Notices print as one line ('owners re-keyed to opaque ids: 104' from 0052), not as the driver's raw object.
+  sql = postgres(url, { max: 1, prepare: false, ssl: /localhost|127\.0\.0\.1/.test(url) ? false : 'require', onnotice: (n) => console.log(`  note: ${n.message}`) });
 } catch {
   // Never let a bad URL reach the default error handler: its message includes the raw
   // connection string (with password), and that would land in whatever captured this output.
