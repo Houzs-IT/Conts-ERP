@@ -22,7 +22,7 @@ SENTRY_ENVIRONMENT = "production"
 # which owns the engine's tables and has nothing in schema pos. Caching off.
 [[hyperdrive]]
 binding = "HYPERDRIVE"
-id = "FILL_HYPERDRIVE_ID"
+id = "ea9ce910c88b4136b644f0d3c395ed66"
 
 [[r2_buckets]]
 binding = "POD_BUCKET"
@@ -42,7 +42,7 @@ bucket_name = "theconts-scm"
 
 [[kv_namespaces]]
 binding = "SESSION_CACHE"
-id = "FILL_KV_ID"
+id = "765cd6ce25f345989a7e6369bb33869b"
 
 [alias]
 zod = "./node_modules/zod"
