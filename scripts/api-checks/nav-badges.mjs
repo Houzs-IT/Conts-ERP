@@ -13,7 +13,7 @@ check('maintenance count matches open jobs', r.json.maintenance === mnt.filter(m
 
 r = await call('GET', '/api/nav/badges', undefined, 'housekeeper');
 check('housekeeper gets zeros', r.status === 200 && r.json.today === 0 && r.json.statements === 0, r.text);
-r = await callAsUser({ userId: '11111111-1111-4111-8111-00000000aa01', email: 'ops-check@theconts.test', role: 'operations_staff' }, 'GET', '/api/nav/badges');
+r = await callAsUser({ userId: '11111111-1111-4111-8111-000000000004', email: 'weiwen@theconts.com', role: 'operations_staff' }, 'GET', '/api/nav/badges');
 check('operations staff are not shown the statements count', r.status === 200 && r.json.statements === 0, r.text);
 
 // The booking-site cards and the header chip come from real connections, never stored sample status.

@@ -12,7 +12,9 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api, notifyFailure } from '../lib/api';
-import { rm, dateRange } from '../lib/format';
+import { rm, dateRange, todayMyt, plural } from '../lib/format';
+import { Select, SearchSelect } from '../components/Select';
+import { usePhone } from './finance/listKit';
 import { SYNC } from '../lib/vocabulary';
 import { TONE, cx } from '../lib/design-tokens';
 import type { BookingChannel, SyncState } from '../lib/types';
@@ -69,11 +71,12 @@ const FALLBACK: Payload = {
   ],
 };
 
-const TODAY = '2026-09-20';
-const DEFAULT_TO = '2026-10-03';
+// The push range starts today (Malaysia) and runs two weeks by default; it used to be fixed dates in the past.
+const TODAY = () => todayMyt();
+const DEFAULT_TO = () => todayMyt(13);
 
 // Grid track template shared by the uplift table header and its rows.
-const COLS = 'grid-cols-[minmax(140px,1.5fr)_minmax(120px,1fr)_minmax(112px,1fr)_minmax(104px,0.9fr)_minmax(120px,1fr)_minmax(118px,1fr)]';
+const COLS = 'grid-cols-[minmax(120px,1.5fr)_minmax(92px,1fr)_minmax(84px,1fr)_minmax(80px,0.9fr)_minmax(90px,1fr)_minmax(104px,1fr)]';
 
 // Money input. The original object's `font:inherit` made font-family AND font-size
 // inherit from context (12px in the date label, 16px in a rate cell). Reproduced
@@ -129,7 +132,7 @@ function EditableMoney({ sen, onCommit, ariaLabel, tone }: {
     <button
       onClick={begin} aria-label={`Edit ${ariaLabel}`}
       className={cx(
-        'inline-flex items-center gap-1.5 ml-auto py-[3px] px-1.5 rounded-[6px] border border-solid border-transparent bg-transparent cursor-pointer [font-family:inherit] text-[13px] font-medium [font-variant-numeric:tabular-nums]',
+        'inline-flex items-center gap-1.5 ml-auto py-[3px] px-1.5 rounded-[6px] border border-solid border-transparent bg-transparent cursor-pointer [font-family:inherit] text-copy font-medium [font-variant-numeric:tabular-nums]',
         tone === 'warn' ? TONE.warning.text : tone === 'floor' ? 'text-muted-ink' : 'text-ink',
       )}
       onMouseEnter={e => { e.currentTarget.style.borderColor = color.border; e.currentTarget.style.background = color.muted; }}
@@ -145,7 +148,7 @@ function Tag({ label, kind }: { label: string; kind: 'internal' | 'external' }) 
   const external = kind === 'external';
   return (
     <span className={cx(
-      'inline-flex items-center h-[18px] px-[7px] py-0 rounded-pill text-[11px] font-semibold tracking-[0.03em] border border-solid',
+      'inline-flex items-center h-[18px] px-[7px] py-0 rounded-pill text-caption font-semibold tracking-[0.03em] border border-solid',
       external ? 'bg-gold-tint text-gold-ink border-[#EADCBD]' : 'bg-muted text-muted-ink border-line',
     )}>{label}</span>
   );
@@ -169,6 +172,9 @@ export default function PricingPage() {
   );
   const [from, setFrom] = useState(TODAY);
   const [to, setTo] = useState(DEFAULT_TO);
+  const phone = usePhone();
+  const [q, setQ] = useState('');
+  const [building, setBuilding] = useState('');
   const [dialog, setDialog] = useState<DialogSpec | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -187,6 +193,11 @@ export default function PricingPage() {
   }), [units, unitEdits, upliftEdits]);
 
   const selected = rows.find(u => u.unitId === selectedId) ?? rows[0] ?? null;
+  const buildings = useMemo(() => [...new Set(rows.map(u => u.propertyName))].sort((a, b) => a.localeCompare(b)), [rows]);
+  const listed = useMemo(() => rows
+    .filter(u => (!building || u.propertyName === building) && (!q.trim() || `${u.propertyName} ${u.unitNumber}`.toLowerCase().includes(q.trim().toLowerCase())))
+    .sort((a, b) => a.propertyName.localeCompare(b.propertyName) || a.unitNumber.localeCompare(b.unitNumber, 'en', { numeric: true })), [rows, building, q]);
+  const noRate = rows.filter(u => u.baseRate <= 0).length;
 
   function setBase(unitId: string, baseRate: number) {
     setUnitEdits(e => ({ ...e, [unitId]: { ...e[unitId], baseRate } }));
@@ -236,7 +247,7 @@ export default function PricingPage() {
     <>
       <PageHeader
         title="Pricing"
-        sub={`Base web rate per unit, then the uplift each channel carries. Weekend adds ${weekendPct}%.`}
+        sub={`${plural(rows.length, 'unit')}${noRate ? ` · ${noRate} with no base rate` : ''} · weekend nights add ${weekendPct}%`}
       />
 
       {error && <StaleBanner message={`Showing the last rates we have. ${error}`} onRetry={reload} />}
@@ -246,17 +257,26 @@ export default function PricingPage() {
       ) : rows.length === 0 ? (
         <Card>
           <div className="py-10 px-[22px] text-center flex flex-col gap-3 items-center">
-            <span className="text-[14px] text-muted-ink">No units to price yet. Add a unit to set its rates.</span>
+            <span className="text-copy text-muted-ink">No units to price yet. Add a unit to set its rates.</span>
           </div>
         </Card>
       ) : (
         <div className="flex gap-4 items-start flex-wrap">
-          {/* Unit selector */}
-          <Card style={{ flex: '1 1 240px', minWidth: 240 }}>
-            <div className="py-[13px] px-4 [border-bottom:1px_solid_var(--color-line)] text-[11px] font-semibold tracking-[0.05em] text-muted-ink">
-              UNITS · {rows.length}
+          {/* Unit selector. On a phone it is a searchable picker above the editor, not 139 cards to scroll past. */}
+          {phone ? (
+            <SearchSelect label="Unit" showLabel className="w-full" placeholder="Search unit or building" value={selected?.unitId ?? ''} onChange={v => v && setSelectedId(v)}
+              options={rows.map(u => ({ value: u.unitId, label: u.unitNumber, group: u.propertyName, hint: u.baseRate > 0 ? rm(u.baseRate, { cents: false }) : 'No base rate' }))} />
+          ) : (
+          <Card style={{ flex: '0 1 280px', minWidth: 240, maxWidth: 320 }}>
+            <div className="py-3 px-3 [border-bottom:1px_solid_var(--color-line)] flex flex-col gap-2">
+              <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit or building" aria-label="Search units"
+                className="h-9 px-3 rounded-control border border-solid border-line bg-card font-sans text-copy text-ink outline-none" />
+              <Select label="Building" value={building} onChange={setBuilding} placeholder={`All buildings · ${buildings.length}`} options={buildings.map(b => ({ value: b, label: b }))} />
+              <span className="text-caption font-semibold tracking-[0.05em] text-muted-ink px-1">UNITS · {listed.length === rows.length ? rows.length : `${listed.length} OF ${rows.length}`}</span>
             </div>
-            {rows.map(u => {
+            <div className="max-h-[70vh] overflow-y-auto [scrollbar-width:thin]">
+            {listed.length === 0 && <div className="p-4 text-meta text-muted-ink">No unit matches.</div>}
+            {listed.map(u => {
               const on = selected?.unitId === u.unitId;
               const failed = u.rates.filter(r => r.sync === 'failed').length;
               const queued = u.rates.filter(r => r.sync === 'queued').length;
@@ -271,21 +291,23 @@ export default function PricingPage() {
                     on ? '[border-left:3px_solid_var(--color-gold)] bg-gold-tint' : '[border-left:3px_solid_transparent] bg-transparent',
                   )}
                 >
-                  <span className="text-[13.5px] font-semibold">{u.propertyName}</span>
-                  <span className="text-[12px] text-muted-ink">{u.unitNumber} · {rm(u.baseRate, { cents: false })}</span>
-                  <span className={cx('text-[11px]', failed ? TONE.critical.text : 'text-faint')}>{syncNote}</span>
+                  <span className="text-copy font-semibold">{u.unitNumber}</span>
+                  <span className="text-meta text-muted-ink">{u.propertyName} · {u.baseRate > 0 ? rm(u.baseRate, { cents: false }) : <span className={TONE.critical.text}>No base rate</span>}</span>
+                  <span className={cx('text-caption', failed ? TONE.critical.text : 'text-faint')}>{syncNote}</span>
                 </button>
               );
             })}
+            </div>
           </Card>
+          )}
 
           {/* Selected unit detail */}
           {selected && (
-            <Card style={{ flex: '3 1 460px', minWidth: 300 }}>
+            <Card style={{ flex: '1 1 420px', minWidth: 300 }}>
               <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line)] flex items-baseline justify-between gap-4 flex-wrap">
                 <div className="flex flex-col gap-0.5 min-w-0">
-                  <span className="text-[15px] font-semibold">{selected.propertyName} {selected.unitNumber}</span>
-                  <span className="text-[12px] text-muted-ink">Tap any rate to edit. Changes stay local until you push.</span>
+                  <span className="text-heading font-semibold">{selected.propertyName} {selected.unitNumber}</span>
+                  <span className="text-meta text-muted-ink">Tap a rate to change it. It is saved straight away; Push rates sends prices for chosen dates to the channels.</span>
                 </div>
               </div>
 
@@ -293,21 +315,22 @@ export default function PricingPage() {
               <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-px bg-line [border-bottom:1px_solid_var(--color-line)]">
                 <div className="bg-card py-[14px] px-5 flex flex-col gap-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-[12px] text-muted-ink">Base web rate</span>
+                    <span className="text-meta text-muted-ink">Base web rate</span>
                     <Tag label="SELL" kind="external" />
                   </div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-faint">Direct · per night</span>
-                    <EditableMoney sen={selected.baseRate} ariaLabel="base web rate" onCommit={s => setBase(selected.unitId, s)} />
+                    <span className="text-caption text-faint">Direct · per night</span>
+                    <EditableMoney sen={selected.baseRate} ariaLabel="base web rate" tone={selected.baseRate <= 0 ? 'warn' : undefined} onCommit={s => setBase(selected.unitId, s)} />
                   </div>
+                  {selected.baseRate <= 0 && <span className={cx('text-meta font-medium', TONE.critical.text)}>No base rate. Channels would be sent RM 0; set one before pushing.</span>}
                 </div>
                 <div className="bg-card py-[14px] px-5 flex flex-col gap-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-[12px] text-muted-ink">Cost floor</span>
+                    <span className="text-meta text-muted-ink">Cost floor</span>
                     <Tag label="INTERNAL" kind="internal" />
                   </div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-faint">Never sent to a channel</span>
+                    <span className="text-caption text-faint">Never sent to a channel</span>
                     <EditableMoney sen={selected.costFloor} ariaLabel="cost floor" tone="floor" onCommit={s => setFloor(selected.unitId, s)} />
                   </div>
                 </div>
@@ -315,8 +338,8 @@ export default function PricingPage() {
 
               {/* Uplift table */}
               <div className="overflow-x-auto">
-                <div className="min-w-[640px]">
-                  <div className={cx(COLS, 'grid gap-3 py-[9px] px-5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-[11px] font-semibold tracking-[0.05em] text-muted-ink')}>
+                <div className="min-w-[580px]">
+                  <div className={cx(COLS, 'grid gap-3 py-[9px] px-5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-caption font-semibold tracking-[0.05em] text-muted-ink')}>
                     <div>CHANNEL</div>
                     <div className="text-right">UPLIFT</div>
                     <div className="text-right">GUEST PAYS</div>
@@ -337,18 +360,18 @@ export default function PricingPage() {
                         <div className="flex items-center gap-2.5 min-w-0">
                           <ChannelMark ch={r.channel} size={20} />
                           <div className="flex flex-col min-w-0">
-                            <span className="text-[13px]">{CH[r.channel].label}</span>
-                            <span className="text-[11px] text-faint">{commission}% fee</span>
+                            <span className="text-copy">{CH[r.channel].label}</span>
+                            <span className="text-caption text-faint">{commission}% fee</span>
                           </div>
                         </div>
                         <div className="text-right">
                           <EditableMoney sen={r.upliftSen} ariaLabel={`${CH[r.channel].label} uplift`} onCommit={s2 => setUplift(selected.unitId, r.channel, s2)} />
                         </div>
-                        <span className="text-[13px] font-semibold text-right [font-variant-numeric:tabular-nums]">{rm(guestPays, { cents: false })}</span>
-                        <span className="text-[13px] text-right text-muted-ink [font-variant-numeric:tabular-nums]">{rm(weekend, { cents: false })}</span>
+                        <span className="text-copy font-semibold text-right [font-variant-numeric:tabular-nums]">{rm(guestPays, { cents: false })}</span>
+                        <span className="text-copy text-right text-muted-ink [font-variant-numeric:tabular-nums]">{rm(weekend, { cents: false })}</span>
                         <div className="flex flex-col items-end gap-0.5">
-                          <span className={cx('text-[13px] text-right [font-variant-numeric:tabular-nums]', belowFloor ? TONE.critical.text : 'text-ink')}>{rm(youKeep, { cents: false })}</span>
-                          {belowFloor && <span className={cx('text-[11px]', TONE.critical.text)}>Below floor</span>}
+                          <span className={cx('text-copy text-right [font-variant-numeric:tabular-nums]', belowFloor ? TONE.critical.text : 'text-ink')}>{rm(youKeep, { cents: false })}</span>
+                          {belowFloor && <span className={cx('text-caption', TONE.critical.text)}>Below floor</span>}
                         </div>
                         <div><Badge tone={s.tone} label={s.label} size="sm" /></div>
                       </div>
@@ -357,14 +380,14 @@ export default function PricingPage() {
                 </div>
               </div>
 
-              <div className="py-[10px] px-5 [border-bottom:1px_solid_var(--color-line)] flex gap-4 flex-wrap text-[11px] text-muted-ink">
+              <div className="py-[10px] px-5 [border-bottom:1px_solid_var(--color-line)] flex gap-4 flex-wrap text-caption text-muted-ink">
                 <span className="inline-flex items-center gap-1.5"><Tag label="SELL" kind="external" /> what the guest pays on the channel</span>
                 <span className="inline-flex items-center gap-1.5"><Tag label="INTERNAL" kind="internal" /> what you keep after the platform fee</span>
               </div>
 
               {/* Push rates */}
               <div className="py-4 px-5 flex flex-col gap-[14px] bg-page">
-                <span className="text-[12px] font-semibold">Push rates</span>
+                <span className="text-meta font-semibold">Push rates</span>
                 <div className="flex gap-2 flex-wrap">
                   {PUSHABLE.map(c => {
                     const on = !!pushSel[c];
@@ -373,7 +396,7 @@ export default function PricingPage() {
                         key={c} onClick={() => setPushSel(p => ({ ...p, [c]: !p[c] }))}
                         aria-pressed={on}
                         className={cx(
-                          'inline-flex items-center gap-[7px] h-[34px] pl-[10px] pr-3 py-0 rounded-pill cursor-pointer [font-family:inherit] text-[12.5px] border border-solid',
+                          'inline-flex items-center gap-[7px] h-[34px] pl-[10px] pr-3 py-0 rounded-pill cursor-pointer [font-family:inherit] text-copy border border-solid',
                           on ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink',
                         )}
                       >
@@ -385,12 +408,12 @@ export default function PricingPage() {
                   })}
                 </div>
                 <div className="flex gap-[14px] flex-wrap items-end">
-                  <label className="flex flex-col gap-[5px] text-[12px] text-muted-ink">
+                  <label className="flex flex-col gap-[5px] text-meta text-muted-ink">
                     From
-                    <input type="date" value={from} min={TODAY} onChange={e => setFrom(e.target.value)}
+                    <input type="date" value={from} min={TODAY()} onChange={e => setFrom(e.target.value)}
                       className={cx(INPUT_CLASS, 'w-[160px] text-left border-line')} />
                   </label>
-                  <label className="flex flex-col gap-[5px] text-[12px] text-muted-ink">
+                  <label className="flex flex-col gap-[5px] text-meta text-muted-ink">
                     To
                     <input type="date" value={to} min={from} onChange={e => setTo(e.target.value)}
                       className={cx(INPUT_CLASS, 'w-[160px] text-left border-line')} />

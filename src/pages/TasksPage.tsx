@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { color } from '../theme';
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { TONE, cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -25,8 +25,7 @@ import type { Task, TaskState, Tone } from '../lib/types';
  * contract in BUTTONS.md section 7: assign, start, add photo, mark complete
  * (blocked without a photo when required), reschedule.
  *
- * There is no backend in dev, so mutations write to a local overlay keyed by
- * id and attempt the real call in a swallowed try/catch (see IMPL-BRIEF).
+ * The list is paged on the server; every filter lives in the URL.
  * ------------------------------------------------------------------ */
 
 type Kind = Task['kind'];
@@ -37,12 +36,16 @@ const KIND_LABEL: Record<Kind, string> = {
 
 const firstName = (name: string) => name.split(' ')[0];
 
-interface Payload { data: Task[]; total: number }
+/** A task as the paged list returns it: the shared Task plus its day and the cleaner the import sheet named. */
+type Row = Task & { date?: string; propertyId?: string; cleanerId?: string | null; sheetCleaner?: string | null; completedAt?: string | null; startedAt?: string | null };
+interface Payload { data: Row[]; total: number; page?: number; pageSize?: number; counts?: Record<string, number> }
+interface Facets { buildings: { id: string; name: string }[]; assignees: { key: string; name: string; count: number }[] }
+const dateTimeShort = (iso: string) => new Date(iso).toLocaleString('en-MY', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuala_Lumpur' });
 
 /** Dev fallback so the screen renders before the endpoint is live. Times are
  *  HH:MM; the live backend returns ISO and owns the SLA object outright. */
 const FALLBACK: Payload = {
-  total: 9,
+  total: 9, counts: { overdue: 1, in_progress: 2, assigned: 4, open: 1, resolved: 1 },
   data: [
     { id: 'TSK-1042', unitId: 'un-a2102', unitNumber: '#A-21-02', propertyName: 'The Establishment', kind: 'turnover', state: 'overdue', title: 'Full turnover, 2BR', instructions: 'No cleaner assigned. Linen set A.', assigneeId: null, assigneeName: null, scheduledFor: '14:00', dueAt: '14:54', nextGuestAt: '15:00', requiresPhoto: true, photoCount: 0, sequence: 1, sync: 'synced', sla: { state: 'overdue', minutes: -12, label: 'Overdue 12 min', tone: 'critical' }, riskRank: 1 },
     { id: 'TSK-1038', unitId: 'un-a1203', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', kind: 'turnover', state: 'in_progress', title: 'Full turnover, 2BR', instructions: 'Late check-out to 13:00. Restock coffee pods.', assigneeId: 'u5', assigneeName: 'Nurul Huda', scheduledFor: '13:00', dueAt: '15:00', nextGuestAt: '15:00', requiresPhoto: true, photoCount: 2, sequence: 2, sync: 'synced', sla: { state: 'escalated', minutes: -3, label: 'Escalated', tone: 'critical' }, riskRank: 2 },
@@ -136,37 +139,90 @@ function Modal({ title, sub, onClose, children, footer, busy }: {
 }
 
 /* ------------------------------- filters -------------------------------- */
-const STATE_FILTERS: (TaskState | 'all')[] = ['all', 'open', 'assigned', 'in_progress', 'overdue', 'resolved'];
-const stateFilterLabel = (s: TaskState | 'all') => (s === 'all' ? 'All tasks' : TASK[s].label);
+type StateFilter = 'active' | 'all' | 'open' | 'assigned' | 'in_progress' | 'overdue' | 'resolved';
+const STATE_FILTERS: [StateFilter, string][] = [
+  ['active', 'Not done'], ['open', 'Open'], ['assigned', 'Assigned'], ['in_progress', 'In progress'],
+  ['overdue', 'Overdue'], ['resolved', 'Done'], ['all', 'Everything'],
+];
+const KIND_FILTERS: [string, string][] = [['all', 'All kinds'], ['cleaning', 'All cleaning'], ...(Object.keys(KIND_LABEL) as Kind[]).map(k => [k, KIND_LABEL[k]] as [string, string])];
+const PAGE_SIZE = 50;
+
+/* Eight-column track shared by the sticky header and every row. */
+const COLS = 'grid-cols-[92px_minmax(150px,1.2fr)_minmax(170px,1.6fr)_minmax(110px,1fr)_118px_minmax(118px,0.9fr)_64px_172px]';
+const dayLabel = (d: string | null | undefined) => (d ? new Date(`${d}T00:00:00+08:00`).toLocaleDateString('en-MY', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' }) : '—');
+const noteOf = (t: Row) => (t.instructions ?? '').replace(/^Cleaner: [^·]+(· )?/, '').trim();
+const whoOf = (t: Row) => t.assigneeName ?? (t.sheetCleaner ? `${t.sheetCleaner} (sheet)` : null);
 
 /* ------------------------------- the page -------------------------------- */
 export default function TasksPage() {
   const CREW = useCrew('all');
-  const [stateFilter, setStateFilter] = useState<TaskState | 'all'>('all');
-  const [kindFilter, setKindFilter] = useState<Kind | 'all'>('all');
-  const { data, loading, error, reload } = useApi<Payload>('/tasks', FALLBACK);
   const toast = useToast();
 
-  // Optimistic overlay: patches merged onto each task by id.
-  const [edits, setEdits] = useState<Record<string, Partial<Task>>>({});
-  const patch = (id: string, p: Partial<Task>) => setEdits(e => ({ ...e, [id]: { ...e[id], ...p } }));
+  // The URL is the state: filters and page survive a refresh and can be shared.
+  const [params, setParams] = useSearchParams();
+  const setParam = (patchP: Record<string, string | null>) => {
+    const next = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(patchP)) { if (v === null || v === '') next.delete(k); else next.set(k, v); }
+    if (!('page' in patchP)) next.delete('page');
+    setParams(next, { replace: true });
+  };
+  const rawState = params.get('state');
+  const stateFilter: StateFilter = STATE_FILTERS.some(([k]) => k === rawState) ? (rawState as StateFilter) : 'active';
+  const kindFilter = params.get('kind') ?? 'all';
+  const building = params.get('building') ?? '';
+  const assignee = params.get('assignee') ?? '';
+  const from = params.get('from') ?? '';
+  const to = params.get('to') ?? '';
+  const q = params.get('q') ?? '';
+  const idFilter = params.get('id') ?? '';
+  const page = Math.max(1, Number(params.get('page')) || 1);
+
+  // Typing updates the box at once and the URL (and the fetch) a moment later.
+  const [qDraft, setQDraft] = useState(q);
+  useEffect(() => { setQDraft(q); }, [q]);
+  useEffect(() => {
+    if (qDraft === q) return;
+    const t = setTimeout(() => setParam({ q: qDraft.trim() || null }), 300);
+    return () => clearTimeout(t);
+  }, [qDraft]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const query = new URLSearchParams({ state: stateFilter, page: String(page), pageSize: String(PAGE_SIZE) });
+  if (kindFilter !== 'all') query.set('kind', kindFilter);
+  for (const [k, v] of [['building', building], ['assignee', assignee], ['from', from], ['to', to], ['q', q], ['id', idFilter]] as const) if (v) query.set(k, v);
+  const { data, loading, error, reload } = useApi<Payload>(`/tasks?${query}`, FALLBACK);
+  const { data: facets } = useApi<Facets>('/tasks/facets');
+
+  // Optimistic overlay: patches merged onto each task by id until the next reload.
+  const [edits, setEdits] = useState<Record<string, Partial<Row>>>({});
+  const patch = (id: string, p: Partial<Row>) => setEdits(e => ({ ...e, [id]: { ...e[id], ...p } }));
+  useEffect(() => { setEdits({}); }, [data]);
 
   // Dialog / modal state.
-  const [assign, setAssign] = useState<{ task: Task; assigneeId: string; force: boolean; warning?: string } | null>(null);
-  const [reschedule, setReschedule] = useState<{ task: Task; start: string; end: string } | null>(null);
-  const [confirm, setConfirm] = useState<null | { kind: 'start' | 'complete'; task: Task }>(null);
+  const [assign, setAssign] = useState<{ task: Row; assigneeId: string; force: boolean; warning?: string } | null>(null);
+  const [reschedule, setReschedule] = useState<{ task: Row; start: string; end: string } | null>(null);
+  const [confirm, setConfirm] = useState<null | { kind: 'start' | 'complete'; task: Row }>(null);
   const [busy, setBusy] = useState(false);
 
-  const all: Task[] = (data?.data ?? []).map(t => ({ ...t, ...edits[t.id] }));
-  const rows = all.filter(t =>
-    (stateFilter === 'all' || t.state === stateFilter) &&
-    (kindFilter === 'all' || t.kind === kindFilter));
-  const openCount = all.filter(t => t.state !== 'resolved').length;
-  const filtersActive = stateFilter !== 'all' || kindFilter !== 'all';
-  const clearFilters = () => { setStateFilter('all'); setKindFilter('all'); };
+  const rows: Row[] = (data?.data ?? []).map(t => ({ ...t, ...edits[t.id] }));
+  const all = rows;
+  const total = data?.total ?? 0;
+  const counts = data?.counts ?? {};
+  const countOf = (k: StateFilter) =>
+    k === 'all' ? Object.values(counts).reduce((s, n) => s + n, 0)
+    : k === 'active' ? Object.entries(counts).filter(([s]) => s !== 'resolved').reduce((s, [, n]) => s + n, 0)
+    : counts[k] ?? 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const firstShown = total ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const lastShown = Math.min(total, page * PAGE_SIZE);
+  const filtersActive = kindFilter !== 'all' || !!building || !!assignee || !!from || !!to || !!q || !!idFilter;
+  const clearFilters = () => { setQDraft(''); setParam({ kind: null, building: null, assignee: null, from: null, to: null, q: null, id: null }); };
+  const goPage = (n: number) => { setParam({ page: n > 1 ? String(n) : null }); document.querySelector('main')?.scrollTo({ top: 0 }); };
+  const [moreFilters, setMoreFilters] = useState(false);
+  const extraCount = [kindFilter !== 'all', building, assignee, from || to].filter(Boolean).length;
+  const doneElsewhere = stateFilter === 'active' && total === 0 && (counts.resolved ?? 0) > 0;
 
   /* -------------------------------- actions ------------------------------- */
-  function openAssign(task: Task) {
+  function openAssign(task: Row) {
     setAssign({ task, assigneeId: task.assigneeId ?? CREW[0]?.id ?? '', force: false });
   }
 
@@ -176,10 +232,10 @@ export default function TasksPage() {
     const who = CREW.find(c => c.id === assigneeId);
     if (!who) return;
 
-    // Simulate the 409 ASSIGNEE_BUSY overlap check the backend would run.
+    // Mirrors the 409 ASSIGNEE_BUSY overlap check the backend runs.
     if (!force) {
       const clash = all.filter(t =>
-        t.id !== task.id && t.assigneeId === assigneeId && t.state !== 'resolved' &&
+        t.id !== task.id && t.assigneeId === assigneeId && t.state !== 'resolved' && t.date === task.date &&
         windowsOverlap(task.scheduledFor, task.dueAt, t.scheduledFor, t.dueAt));
       if (clash.length) {
         const at = clash[0].scheduledFor ?? clash[0].dueAt ?? '';
@@ -195,11 +251,13 @@ export default function TasksPage() {
     // Assigning an unresolved task that is not already underway moves it to assigned.
     const nextState: TaskState = task.state === 'in_progress' || task.state === 'resolved' ? task.state : 'assigned';
     patch(task.id, { assigneeId: who.id, assigneeName: who.name, state: nextState });
-    toast({ tone: 'success', title: 'Cleaner assigned.', body: `${firstName(who.name)} has been notified.` });
     setAssign(null);
-    try { await api.post(`/housekeeping/tasks/${task.id}/assign`, { assigneeId: who.id, force }); }
-    catch (e) { notifyFailure(e); }
+    try {
+      await api.post(`/housekeeping/tasks/${task.id}/assign`, { assigneeId: who.id, force });
+      toast({ tone: 'success', title: 'Assigned.', body: `${firstName(who.name)} has been notified.` });
+    } catch (e) { notifyFailure(e); }
     setBusy(false);
+    reload();
   }
 
   async function doReschedule() {
@@ -207,10 +265,13 @@ export default function TasksPage() {
     const { task, start, end } = reschedule;
     setBusy(true);
     patch(task.id, { scheduledFor: start, dueAt: end });
-    toast({ tone: 'success', title: 'Task rescheduled.', body: `${unitRef(task.propertyName, task.unitNumber)} · ${start} to ${end}.` });
     setReschedule(null);
-    try { await api.patch(`/housekeeping/tasks/${task.id}`, { scheduledFor: start, dueAt: end }); } catch { /* dev */ }
+    try {
+      await api.patch(`/housekeeping/tasks/${task.id}`, { scheduledFor: start, dueAt: end });
+      toast({ tone: 'success', title: 'Task rescheduled.', body: `${unitRef(task.propertyName, task.unitNumber)} · ${start} to ${end}.` });
+    } catch (e) { notifyFailure(e); }
     setBusy(false);
+    reload();
   }
 
   async function doStart() {
@@ -218,16 +279,32 @@ export default function TasksPage() {
     if (!task) return;
     setBusy(true);
     patch(task.id, { state: 'in_progress' });
-    toast({ tone: 'info', title: 'Task started.', body: `${unitRef(task.propertyName, task.unitNumber)} is now in progress.` });
     setConfirm(null);
-    try { await api.post(`/housekeeping/tasks/${task.id}/start`, {}); } catch { /* dev */ }
+    try {
+      await api.post(`/housekeeping/tasks/${task.id}/start`, {});
+      toast({ tone: 'info', title: 'Task started.', body: `${unitRef(task.propertyName, task.unitNumber)} is now in progress.` });
+    } catch (e) { notifyFailure(e); }
     setBusy(false);
+    reload();
   }
 
-  async function addPhoto(task: Task) {
-    patch(task.id, { photoCount: task.photoCount + 1 });
-    toast({ tone: 'success', title: 'Photo added.', body: `${task.photoCount + 1} on ${unitRef(task.propertyName, task.unitNumber)}.` });
-    try { await api.post(`/tasks/${task.id}/photos`, {}); } catch { /* dev */ }
+  // One hidden file input drives photo upload for whichever row asked for it.
+  const fileRef = useRef<HTMLInputElement>(null);
+  const uploadFor = useRef<Row | null>(null);
+  function addPhoto(task: Row) { uploadFor.current = task; fileRef.current?.click(); }
+  async function onPhotoPicked(e: ChangeEvent<HTMLInputElement>) {
+    const task = uploadFor.current;
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (!task || !files.length) return;
+    patch(task.id, { photoCount: task.photoCount + files.length });
+    for (const file of files) {
+      const fd = new FormData();
+      fd.append('file', file);
+      try { await api.post(`/tasks/${task.id}/photos`, fd); } catch (err) { notifyFailure(err); }
+    }
+    toast({ tone: 'success', title: files.length === 1 ? 'Photo added.' : `${files.length} photos added.`, body: `On ${unitRef(task.propertyName, task.unitNumber)}.` });
+    reload();
   }
 
   async function doComplete() {
@@ -241,156 +318,217 @@ export default function TasksPage() {
     }
     setBusy(true);
     patch(task.id, { state: 'resolved' });
-    toast({ tone: 'success', title: 'Task complete.', body: `${unitRef(task.propertyName, task.unitNumber)} · marked resolved.` });
     setConfirm(null);
-    try { await api.post(`/tasks/${task.id}/complete`, { photoIds: [] }); } catch { /* dev */ }
+    try {
+      await api.post(`/tasks/${task.id}/complete`, { photoIds: [] });
+      toast({ tone: 'success', title: 'Task complete.', body: `${unitRef(task.propertyName, task.unitNumber)} · marked done.` });
+    } catch (e) { notifyFailure(e); }
     setBusy(false);
+    reload();
   }
 
-  const baseRows = data?.data ?? [];
+  /** The one or two buttons a row needs right now; the rest wait in the task's state. */
+  function rowActions(t: Row) {
+    const done = t.state === 'resolved';
+    const noPhoto = t.requiresPhoto && t.photoCount < 1;
+    const sz = 'sm';
+    // Imported history carries a made-up finish time (the due time), so only a clean started in the app shows one.
+    if (done) return <span className="text-[12px] text-muted-ink">{t.completedAt && t.startedAt ? `Done ${dateTimeShort(t.completedAt)}` : 'Done'}</span>;
+    return (
+      <div className="flex gap-1.5 flex-wrap items-center">
+        {t.state === 'in_progress' ? (
+          noPhoto
+            ? <Button size={sz} variant="primary" icon={<Icon name="Camera" size="sm" />} onClick={() => addPhoto(t)}>Add photo</Button>
+            : <Button size={sz} variant="primary" icon={<Icon name="Check" size="sm" />} onClick={() => setConfirm({ kind: 'complete', task: t })}>Complete</Button>
+        ) : t.state === 'assigned' || (t.state === 'overdue' && t.assigneeId) ? (
+          <Button size={sz} variant="primary" icon={<Icon name="Play" size="sm" />} onClick={() => setConfirm({ kind: 'start', task: t })}>Start</Button>
+        ) : (
+          <Button size={sz} variant={t.assigneeId ? 'secondary' : 'primary'} icon={<Icon name="UserPlus" size="sm" />} onClick={() => openAssign(t)}>Assign</Button>
+        )}
+        <button type="button" title="Reschedule" aria-label={`Reschedule ${unitRef(t.propertyName, t.unitNumber)}`}
+          onClick={() => setReschedule({ task: t, start: t.scheduledFor ?? '08:00', end: t.dueAt ?? '12:00' })}
+          className="w-8 h-8 grid place-items-center rounded-control text-muted-ink bg-transparent border border-solid border-line cursor-pointer hover:bg-muted">
+          <Icon name="CalendarClock" size="sm" />
+        </button>
+        {(t.assigneeId || t.state === 'in_progress') && (
+          <button type="button" title="Reassign" aria-label={`Reassign ${unitRef(t.propertyName, t.unitNumber)}`} onClick={() => openAssign(t)}
+            className="w-8 h-8 grid place-items-center rounded-control text-muted-ink bg-transparent border border-solid border-line cursor-pointer hover:bg-muted">
+            <Icon name="UserPlus" size="sm" />
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const selectCls = 'h-8 box-border py-0 pl-2.5 pr-7 font-sans text-[12.5px] text-ink bg-white border border-solid border-line rounded-control outline-none cursor-pointer max-w-full';
+  const dateCls = 'h-8 box-border py-0 px-2 font-sans text-[12.5px] text-ink bg-white border border-solid border-line rounded-control outline-none';
 
   return (
     <>
+      <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={onPhotoPicked} />
       <PageHeader
         title="Tasks"
-        sub={`${openCount} open · every task carries its photo requirement`}
+        sub={`${countOf('active').toLocaleString('en-MY')} not done · ${(counts.resolved ?? 0).toLocaleString('en-MY')} done${filtersActive ? ' (filtered)' : ''}`}
       />
 
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
-      {/* Filters — state chips + kind select */}
-      <div className="flex gap-3 flex-wrap items-center justify-between">
-        <div className="flex gap-[7px] flex-wrap">
-          {STATE_FILTERS.map(fl => {
-            const on = fl === stateFilter;
+      <Card style={{ overflow: 'visible' }}>
+        {/* State chips carry their counts under the other filters. */}
+        <div className="flex gap-[7px] flex-nowrap md:flex-wrap overflow-x-auto py-3 px-4 md:px-5 [border-bottom:1px_solid_var(--color-line-soft)] [scrollbar-width:none]">
+          {STATE_FILTERS.map(([k, label]) => {
+            const on = k === stateFilter;
+            const n = countOf(k);
             return (
-              <button key={fl} onClick={() => setStateFilter(fl)}
-                className={`h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border ${on ? 'bg-black text-white border-black' : 'bg-white text-muted-ink border-line'}`}>
-                {stateFilterLabel(fl)}
+              <button key={k} onClick={() => setParam({ state: k === 'active' ? null : k })} aria-pressed={on}
+                className={cx('h-8 flex-none box-border inline-flex items-center gap-1.5 px-3 py-0 rounded-full cursor-pointer whitespace-nowrap font-sans text-[12.5px] border border-solid',
+                  on ? 'bg-black text-white border-black font-semibold' : 'bg-white text-muted-ink border-line font-medium')}>
+                {label}
+                <span className={cx('tabular-nums text-[11.5px]', on ? 'text-white/70' : 'text-faint')}>{n.toLocaleString('en-MY')}</span>
               </button>
             );
           })}
         </div>
-        <div className="flex gap-2 items-center">
-          <label htmlFor="kind-filter" className={`${labelCls} whitespace-nowrap`}>Kind</label>
-          <select id="kind-filter" value={kindFilter}
-            onChange={e => setKindFilter(e.target.value as Kind | 'all')}
-            className="block w-auto box-border h-8 py-0 pr-[30px] pl-3 text-ink bg-white border border-line rounded-control outline-none cursor-pointer [font:inherit]">
-            <option value="all">All kinds</option>
-            {(Object.keys(KIND_LABEL) as Kind[]).map(k => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+
+        <div className="flex gap-2 flex-wrap items-center py-2.5 px-4 md:px-5 [border-bottom:1px_solid_var(--color-line)] bg-page">
+          <div className="relative flex-[1_1_200px] min-w-[160px] max-w-[300px]">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint flex"><Icon name="Search" size="sm" /></span>
+            <input value={qDraft} onChange={e => setQDraft(e.target.value)} placeholder="Unit, building or work" aria-label="Search tasks"
+              className="h-8 w-full box-border pl-8 pr-2.5 py-0 font-sans text-[12.5px] text-ink bg-white border border-solid border-line rounded-control outline-none" />
+          </div>
+          {/* Phones show search plus a toggle; the other filters fold away. */}
+          <button type="button" onClick={() => setMoreFilters(v => !v)} aria-expanded={moreFilters}
+            className="md:hidden h-8 box-border inline-flex items-center gap-1.5 px-3 py-0 rounded-control border border-solid border-line bg-white text-ink font-sans text-[12.5px] cursor-pointer">
+            <Icon name="SlidersHorizontal" size="sm" /> Filters{extraCount ? ` · ${extraCount}` : ''}
+          </button>
+          <div className={cx(moreFilters ? 'flex' : 'hidden', 'md:contents w-full flex-col gap-2')}>
+          <select aria-label="Kind" value={kindFilter} onChange={e => setParam({ kind: e.target.value === 'all' ? null : e.target.value })} className={selectCls}>
+            {KIND_FILTERS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
-        </div>
-      </div>
-
-      <Card>
-        <div className="py-[13px] px-5 flex items-center justify-between gap-3 flex-wrap border-b border-b-line">
-          <span className="text-[16px] font-semibold">All tasks</span>
-          <span className="text-[12px] text-muted-ink">
-            {rows.length} of {all.length} · SLA and risk are computed server-side
+          <select aria-label="Building" value={building} onChange={e => setParam({ building: e.target.value || null })} className={cx(selectCls, 'max-w-[180px]')}>
+            <option value="">All buildings</option>
+            {(facets?.buildings ?? []).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+          <select aria-label="Assignee" value={assignee} onChange={e => setParam({ assignee: e.target.value || null })} className={cx(selectCls, 'max-w-[180px]')}>
+            <option value="">Anyone</option>
+            <option value="none">Unassigned</option>
+            {(facets?.assignees ?? []).map(a => <option key={a.key} value={a.key}>{a.name} · {a.count.toLocaleString('en-MY')}</option>)}
+          </select>
+          <span className="flex items-center gap-1.5">
+            <input type="date" aria-label="From date" value={from} max={to || undefined} onChange={e => setParam({ from: e.target.value || null })} className={dateCls} />
+            <span className="text-[12px] text-muted-ink">to</span>
+            <input type="date" aria-label="To date" value={to} min={from || undefined} onChange={e => setParam({ to: e.target.value || null })} className={dateCls} />
           </span>
+          </div>
+          {filtersActive && (
+            <Button size="sm" variant="tertiary" icon={<Icon name="FilterX" size="sm" />} onClick={clearFilters}>Clear</Button>
+          )}
         </div>
 
-        {loading && baseRows.length === 0 ? (
-          <TableSkeleton rows={5} cols={4} />
+        {/* Thin bar while a new page loads; the previous rows stay put underneath. */}
+        <div className="h-0.5 relative overflow-hidden" aria-hidden>
+          {loading && data && <div className="absolute inset-0 bg-gold [animation:pulse-soft_1s_ease-in-out_infinite]" />}
+        </div>
+
+        {loading && !data ? (
+          <TableSkeleton rows={8} cols={6} />
         ) : rows.length === 0 ? (
-          <div className="py-[30px] px-[22px] flex flex-col gap-3 items-start">
-            <span className="text-[13px] text-muted-ink">No tasks match these filters.</span>
-            {filtersActive && (
-              <Button size="sm" variant="secondary" icon={<Icon name="FilterX" size="sm" />} onClick={clearFilters}>
-                Clear filters
-              </Button>
-            )}
+          <div className="py-[34px] px-[22px] flex flex-col gap-3 items-center text-center">
+            <span className="text-[13.5px] text-muted-ink">
+              {doneElsewhere ? 'Nothing left to do here. Every task under these filters is done.'
+                : filtersActive ? 'No tasks match these filters.' : 'No tasks yet. Check-outs and the Housekeeping planner create them.'}
+            </span>
+            <div className="flex gap-2 flex-wrap justify-center">
+              {doneElsewhere && (
+                <Button size="sm" variant="secondary" icon={<Icon name="History" size="sm" />} onClick={() => setParam({ state: 'resolved' })}>
+                  Show {(counts.resolved ?? 0).toLocaleString('en-MY')} done
+                </Button>
+              )}
+              {filtersActive && (
+                <Button size="sm" variant="secondary" icon={<Icon name="FilterX" size="sm" />} onClick={clearFilters}>Clear filters</Button>
+              )}
+            </div>
           </div>
         ) : (
-          rows.map(t => {
-            const done = t.state === 'resolved';
-            const inProgress = t.state === 'in_progress';
-            const canStart = t.state === 'assigned';
-            const noPhoto = t.requiresPhoto && t.photoCount < 1;
-            const ev = evidenceOf(t);
-            const windowLabel = t.scheduledFor && t.dueAt ? `${t.scheduledFor} → ${t.dueAt}` : '—';
-            const lineTone: Tone = done ? 'success' : t.sla.tone;
-
-            return (
-              <div key={t.id}
-                className={cx('flex gap-[18px] py-[15px] px-5 flex-wrap border-b border-b-line-soft border-l-[3px]', LINE[lineTone], done && 'opacity-[0.72]')}>
-                {/* left: identity + fields */}
-                <div className="flex-1 min-w-[260px] flex flex-col gap-[9px]">
-                  <div className="flex items-center gap-[9px] flex-wrap">
-                    <span className="text-[14px] font-semibold">{unitRef(t.propertyName, t.unitNumber)}</span>
-                    <Badge tone="neutral" label={KIND_LABEL[t.kind]} size="sm" />
-                    <Badge tone={TASK[t.state].tone} label={TASK[t.state].label} size="sm" />
-                    {!done && <Badge tone={t.sla.tone} label={t.sla.label} size="sm" />}
-                  </div>
-
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="text-[13px] text-ink">{t.title}</span>
-                    <span className="font-mono text-[11px] text-muted-ink">{t.id}</span>
-                  </div>
-
-                  <div className="flex gap-[22px] flex-wrap text-[12.5px]">
-                    <FieldPair label="Assignee" value={t.assigneeName ?? 'Unassigned'} muted={!t.assigneeName} />
-                    <FieldPair label="Window" value={windowLabel} />
-                    <FieldPair label="Next guest" value={t.nextGuestAt ?? 'No arrival'} tone={t.sla.tone === 'critical' ? 'critical' : undefined} />
-                    <FieldPair label="Evidence" value={ev.label} tone={ev.warn ? 'warning' : undefined} />
-                  </div>
-
-                  {t.instructions && (
-                    <div className="text-[12.5px] text-muted-ink flex gap-[7px] items-start">
-                      <Icon name="Info" size="sm" color={color.faint} style={{ marginTop: 1 }} />
-                      <span>{t.instructions}</span>
-                    </div>
-                  )}
-
-                  {inProgress && noPhoto && (
-                    <div className="text-[12px] text-[var(--color-warning-fg)] flex gap-1.5 items-center">
-                      <Icon name="Camera" size="sm" color={TONE.warning.hex} />
-                      Add at least one photo before marking this unit ready.
-                    </div>
-                  )}
-                </div>
-
-                {/* right: state-driven actions */}
-                <div className="flex flex-col gap-[7px] items-stretch min-w-[168px]">
-                  {!done && (
-                    <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => openAssign(t)}>
-                      {t.assigneeId ? 'Reassign cleaner' : 'Assign cleaner'}
-                    </Button>
-                  )}
-                  {!done && (
-                    <Button size="sm" variant="tertiary" icon={<Icon name="CalendarClock" size="sm" />} onClick={() => setReschedule({ task: t, start: t.scheduledFor ?? '08:00', end: t.dueAt ?? '12:00' })}>
-                      Reschedule
-                    </Button>
-                  )}
-                  {canStart && (
-                    <Button size="sm" variant="primary" icon={<Icon name="Play" size="sm" />} onClick={() => setConfirm({ kind: 'start', task: t })}>
-                      Start
-                    </Button>
-                  )}
-                  {inProgress && (
-                    <>
-                      <Button size="sm" variant="secondary" icon={<Icon name="Camera" size="sm" />} onClick={() => addPhoto(t)}>
-                        Add photo
-                      </Button>
-                      <Button
-                        size="sm" variant="primary" icon={<Icon name="Check" size="sm" />}
-                        disabled={noPhoto}
-                        disabledReason="Add at least one photo before marking this unit ready."
-                        onClick={() => setConfirm({ kind: 'complete', task: t })}
-                      >
-                        Mark complete
-                      </Button>
-                    </>
-                  )}
-                  {done && (
-                    <span className="text-[12.5px] text-[var(--color-success-fg)] flex items-center gap-1.5 justify-center h-9">
-                      <Icon name="CheckCheck" size="sm" color={TONE.success.hex} /> Resolved
-                    </span>
-                  )}
-                </div>
+          <div className={cx('transition-opacity duration-150', loading && 'opacity-60')}>
+            {/* Wide screens: a table with a header that stays on top while scrolling. */}
+            <div className="hidden xl:block">
+              <div role="row" className={cx('grid', COLS, 'gap-3 py-[9px] px-5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink sticky top-[-24px] z-10')}>
+                <div>Date</div><div>Unit</div><div>Work</div><div>Assignee</div><div>Status</div><div>Due</div><div className="text-right">Photos</div><div>Next step</div>
               </div>
-            );
-          })
+              {rows.map(t => {
+                const done = t.state === 'resolved';
+                const ev = evidenceOf(t);
+                const lineTone: Tone = done ? 'success' : t.sla.tone;
+                const who = whoOf(t);
+                return (
+                  <div key={t.id} className={cx('grid', COLS, 'box-border gap-3 items-center min-h-[52px] py-2 px-5 [border-bottom:1px_solid_var(--color-line-soft)] border-l-[3px] border-solid border-y-0 border-r-0', LINE[lineTone])}>
+                    <div className="text-[12.5px] tabular-nums whitespace-nowrap">{dayLabel(t.date)}</div>
+                    <div className="flex flex-col gap-px min-w-0">
+                      <span className="text-[13px] font-medium truncate" title={t.unitNumber}>{t.unitNumber}</span>
+                      <span className="text-[11.5px] text-muted-ink truncate" title={t.propertyName}>{t.propertyName}</span>
+                    </div>
+                    <div className="flex flex-col gap-px min-w-0">
+                      <span className="text-[13px] truncate" title={t.title}>{t.title}</span>
+                      <span className="text-[11.5px] text-muted-ink truncate" title={noteOf(t) || undefined}>{KIND_LABEL[t.kind]}{noteOf(t) ? ` · ${noteOf(t)}` : ''}</span>
+                    </div>
+                    <div className={cx('text-[12.5px] truncate', who ? 'text-ink' : 'text-muted-ink')} title={who ?? 'Unassigned'}>{who ?? 'Unassigned'}</div>
+                    <div><Badge tone={TASK[t.state].tone} label={done ? 'Done' : TASK[t.state].label} size="sm" /></div>
+                    <div className="flex flex-col gap-px min-w-0">
+                      {done ? null : <span className={cx('text-[12px] font-medium truncate', TONE_FG[t.sla.tone])} title={t.sla.label}>{t.sla.label}</span>}
+                      {!done && (t.dueAt || t.nextGuestAt) && <span className="text-[11.5px] text-muted-ink tabular-nums truncate">{t.dueAt ? `by ${t.dueAt}` : ''}{t.nextGuestAt ? `${t.dueAt ? ' · ' : ''}guest ${t.nextGuestAt}` : ''}</span>}
+                    </div>
+                    <div className={cx('text-right text-[12.5px] tabular-nums', ev.warn ? TONE_FG.warning : 'text-muted-ink')} title={ev.label}>
+                      {t.photoCount || t.requiresPhoto ? `${t.photoCount}${t.requiresPhoto ? ' / 1' : ''}` : '—'}
+                    </div>
+                    <div>{rowActions(t)}</div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Narrow screens: one compact card per task. */}
+            <div className="xl:hidden">
+              {rows.map(t => {
+                const done = t.state === 'resolved';
+                const lineTone: Tone = done ? 'success' : t.sla.tone;
+                const who = whoOf(t);
+                return (
+                  <div key={t.id} className={cx('box-border py-3 px-4 flex flex-col gap-2 [border-bottom:1px_solid_var(--color-line-soft)] border-l-[3px] border-solid border-y-0 border-r-0', LINE[lineTone])}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex flex-col gap-px min-w-0">
+                        <span className="text-[13.5px] font-semibold truncate">{unitRef(t.propertyName, t.unitNumber)}</span>
+                        <span className="text-[12px] text-muted-ink truncate">{dayLabel(t.date)} · {t.title}</span>
+                      </div>
+                      <Badge tone={TASK[t.state].tone} label={done ? 'Done' : TASK[t.state].label} size="sm" />
+                    </div>
+                    <div className="flex gap-x-4 gap-y-1 flex-wrap text-[12px]">
+                      <span className={who ? 'text-ink' : 'text-muted-ink'}>{who ?? 'Unassigned'}</span>
+                      {!done && <span className={TONE_FG[t.sla.tone]}>{t.sla.label}</span>}
+                      {t.nextGuestAt && <span className="text-muted-ink">Guest {t.nextGuestAt}</span>}
+                      {(t.requiresPhoto || t.photoCount > 0) && <span className="text-muted-ink">{t.photoCount} photo{t.photoCount === 1 ? '' : 's'}</span>}
+                    </div>
+                    {!done && <div>{rowActions(t)}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {total > 0 && (
+          <div className="flex items-center justify-between gap-3 flex-wrap py-2.5 px-4 md:px-5 [border-top:1px_solid_var(--color-line)] bg-page">
+            <span className="text-[12.5px] text-muted-ink tabular-nums">
+              {firstShown.toLocaleString('en-MY')}–{lastShown.toLocaleString('en-MY')} of {total.toLocaleString('en-MY')}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Button size="sm" variant="secondary" icon={<Icon name="ChevronLeft" size="sm" />} disabled={page <= 1} disabledReason="This is the first page."
+                onClick={() => goPage(page - 1)}>Previous</Button>
+              <span className="text-[12.5px] text-muted-ink tabular-nums px-1.5">{page} / {pages}</span>
+              <Button size="sm" variant="secondary" disabled={page >= pages} disabledReason="This is the last page."
+                onClick={() => goPage(page + 1)}>Next <Icon name="ChevronRight" size="sm" /></Button>
+            </div>
+          </div>
         )}
       </Card>
 
@@ -488,15 +626,5 @@ export default function TasksPage() {
           }}
       />
     </>
-  );
-}
-
-/** A compact label/value pair used across a task's field row. */
-function FieldPair({ label, value, muted, tone }: { label: string; value: string; muted?: boolean; tone?: Tone }) {
-  return (
-    <div className="flex flex-col gap-0.5 min-w-0">
-      <span className="text-[11px] text-faint font-semibold uppercase tracking-[0.03em]">{label}</span>
-      <span className={cx('text-[12.5px] font-medium whitespace-nowrap', tone ? TONE_FG[tone] : muted ? 'text-muted-ink' : 'text-ink')}>{value}</span>
-    </div>
   );
 }

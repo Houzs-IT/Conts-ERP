@@ -4,7 +4,7 @@
 // Leaves role_access as it found it.
 import { call, callAsUser, check, done } from './harness.mjs';
 
-const staff = { userId: '11111111-1111-4111-8111-00000000aa01', email: 'ops-check@theconts.test', role: 'operations_staff' };
+const staff = { userId: '11111111-1111-4111-8111-000000000004', email: 'weiwen@theconts.com', role: 'operations_staff' };
 const cell = (chart, area, role) => chart?.areas?.find(a => a.key === area)?.roles?.[role];
 const put = (changes, role = 'management') => call('PUT', '/api/users/access', { changes }, role);
 const WAIT = 11_000; // the server keeps the chart for 10 seconds

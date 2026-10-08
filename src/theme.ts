@@ -38,9 +38,12 @@ export const font = {
 } as const;
 
 /** No authored size below 11px. */
+/** The six-step UI scale (caption 11, meta 12, copy 13, heading 15, title 19, headline 26), the same values as
+ *  the text-caption ... text-headline utilities in src/styles/tokens.css. The older names map onto it. */
 export const text = {
-  display: 40, pageTitle: 28, section: 20, cardTitle: 16,
-  body: 14, small: 12, micro: 11,
+  caption: 11, meta: 12, copy: 13, heading: 15, title: 19, headline: 26,
+  display: 40, pageTitle: 26, section: 19, cardTitle: 15,
+  body: 13, small: 12, micro: 11,
 } as const;
 
 export const space = { 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 6: 24, 8: 32, 10: 40, 12: 48 } as const;

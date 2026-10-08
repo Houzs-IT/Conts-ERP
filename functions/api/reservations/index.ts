@@ -1,37 +1,43 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { findClash, clashResponseBody, upsertGuest } from '../../_lib/reservations';
-import { syncAvailabilityIfLinked } from '../../_lib/channexSync';
+import { syncAvailabilityIfLinked, channexMappingFor } from '../../_lib/channexSync';
+import { channexConfigured } from '../../_lib/channex';
+import { VIEWS, FROM, COLUMNS, parseListQuery, viewWhere, toRow, hasPayoutColumns, outstandingExpr } from '../../_lib/bookingList';
 
-const stamp = (iso: string | null) => (iso ? iso.replace('T', ' ').slice(0, 16) : null);
-const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 864e5));
-
-/** GET /api/reservations — guest bookings (blocks and owner stays are not bookings). */
+/** GET /api/reservations?view=&page=&size=&sort=&q=&ref=&guest=&unit=&channel=&stay=&gross=&status=
+ *  One page of the Bookings list, every tab's count under the same searches, and the totals of the
+ *  whole filtered set (not just the page). Blocks and owner stays appear only under view=blocks. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Bookings are not available to field roles.', 403);
 
-  const rows = await all<any>(env, `
-    SELECT r.*, COALESCE(g.full_name, '') AS guest_name, g.phone AS guest_phone, u.unit_number, p.name AS property_name
-    FROM reservations r
-    LEFT JOIN guests g ON g.id = r.guest_id
-    JOIN units u ON u.id = r.unit_id
-    JOIN properties p ON p.id = u.property_id
-    WHERE r.channel NOT IN ('maintenance_block','owner_stay')
-    ORDER BY r.check_in DESC LIMIT 1000`);
-  const total = await one<{ n: number }>(env, `SELECT COUNT(*) AS n FROM reservations WHERE channel NOT IN ('maintenance_block','owner_stay')`);
+  const q = parseListQuery(new URL(request.url));
+  const payoutCols = await hasPayoutColumns(env);
+  const current = viewWhere(q.view, q.today, payoutCols);
+  const owed = outstandingExpr(q.view, payoutCols);
+  const sums = await one<Record<string, number>>(env, `
+    SELECT ${VIEWS.map(v => `COUNT(*) FILTER (WHERE ${viewWhere(v, q.today, payoutCols)}) AS "${v}"`).join(',\n           ')},
+           ${owed ? `COALESCE(SUM(${owed}) FILTER (WHERE ${current}), 0)` : 'NULL'} AS outstanding,
+           COUNT(*) FILTER (WHERE ${current}) AS n,
+           COALESCE(SUM(r.check_out::date - r.check_in::date) FILTER (WHERE ${current}), 0) AS nights,
+           COALESCE(SUM(r.gross_booking_value) FILTER (WHERE ${current}), 0) AS gross,
+           COALESCE(SUM(r.channel_fee) FILTER (WHERE ${current}), 0) AS fees
+    ${FROM} WHERE ${q.where}`, ...q.args);
+
+  const total = Number(sums?.n ?? 0);
+  const page = Math.min(q.page, Math.max(1, Math.ceil(total / q.pageSize)));
+  const rows = total ? await all<any>(env, `
+    SELECT ${COLUMNS} ${FROM} WHERE ${q.where} AND ${current}
+    ORDER BY ${q.orderBy} LIMIT ${q.pageSize} OFFSET ${(page - 1) * q.pageSize}`, ...q.args) : [];
 
   return json({
-    generatedAt: nowIso(), page: 1, total: Number(total?.n ?? 0),
-    data: rows.map(r => ({
-      id: r.id, externalRef: r.external_ref, guestName: r.guest_name, guestsCount: r.guests_count,
-      guestPhone: r.guest_phone, unitNumber: r.unit_number, propertyName: r.property_name,
-      channel: r.channel, state: r.state, checkIn: r.check_in, checkOut: r.check_out,
-      checkInTime: r.check_in_time, checkOutTime: r.check_out_time,
-      nights: nightsBetween(r.check_in, r.check_out), grossBookingValue: r.gross_booking_value,
-      paidAt: Number(r.collected_revenue) > 0 ? stamp(r.created_at) : null, receivedAt: stamp(r.created_at),
-    })),
+    generatedAt: nowIso(), today: q.today, view: q.view, page, pageSize: q.pageSize, total,
+    counts: Object.fromEntries(VIEWS.map(v => [v, Number(sums?.[v] ?? 0)])),
+    totals: { bookings: total, nights: Number(sums?.nights ?? 0), gross: Number(sums?.gross ?? 0), fees: Number(sums?.fees ?? 0),
+      outstanding: sums?.outstanding == null ? null : Number(sums.outstanding) },
+    data: rows.map(toRow),
   });
 };
 
@@ -60,6 +66,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     b.guestsCount ?? 1, b.grossBookingValue ?? 0, now, now);
 
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.create', entityTable: 'reservations', entityId: id, after: { unitId: b.unitId, checkIn: b.checkIn, checkOut: b.checkOut, channel } });
-  await syncAvailabilityIfLinked(env, b.unitId, b.checkIn, b.checkOut, false);
-  return json({ id }, 201);
+  let sync: 'queued' | 'not_linked' | 'failed' = 'not_linked';
+  try {
+    if (channexConfigured(env) && await channexMappingFor(env, b.unitId)) { await syncAvailabilityIfLinked(env, b.unitId, b.checkIn, b.checkOut, false); sync = 'queued'; }
+  } catch { sync = 'failed'; }
+  return json({ id, effects: { channel: sync } }, 201);
 };

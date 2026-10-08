@@ -37,6 +37,8 @@ const PROVIDER_LABEL: Record<string, string> = {
   booking_com: 'Booking.com',
   agoda: 'Agoda',
   whatsapp: 'WhatsApp Business',
+  email: 'Email (Resend)',
+  bank: 'Bank transfers',
   maybank: 'Maybank',
   utilities: 'Utilities',
 };
@@ -55,6 +57,8 @@ interface Row {
   syncInterval: string | null;
   /** Already masked. A raw value needs an audited reveal — not offered here. */
   credentialMasked: string | null;
+  /** Server's plain-English state and next step, where it knows better than the generic line. */
+  detail?: string | null;
 }
 
 interface Payload { data: Row[]; generatedAt: string }
@@ -73,11 +77,13 @@ const FALLBACK: Payload = {
 
 /** The honest business meaning of each state (copy.md §12 system.sync.*). */
 function noteFor(row: Row): string {
+  if (row.detail) return row.detail;
   const label = PROVIDER_LABEL[row.provider] ?? row.provider;
   switch (row.state) {
-    case 'not_connected': return `No unit is connected to ${label} yet. Connect one from the unit's Channels card (Properties, then Units).`;
+    case 'not_connected': return row.viaChannex ? `No unit is connected to ${label} yet. Connect one from the unit's Channels card (Properties, then Units).` : `${label} is not connected.`;
     case 'connected': return row.viaChannex
       ? 'Connected through Channex. Prices and open dates are sent as they change, and bookings arrive automatically.'
+      : row.provider === 'email' || row.provider === 'whatsapp' ? `Set up. Messages go out as they are sent${row.lastSyncedAt ? `; the last one at ${timeWithZone(row.lastSyncedAt)}` : ''}.`
       : row.lastSyncedAt ? `Synced with ${label} · ${timeWithZone(row.lastSyncedAt)}` : `Synced with ${label}.`;
     case 'expired':   return `${label} connection expired. Reconnect to resume syncing.`;
     case 'degraded':  return row.viaChannex ? `Some updates to ${label} were refused.` : `${label} is syncing slowly. Some bookings may be delayed.`;
@@ -87,14 +93,17 @@ function noteFor(row: Row): string {
 }
 
 function syncedLine(row: Row): string {
-  if (row.state === 'manual') return row.lastSyncedAt ? `Last reading ${date(row.lastSyncedAt)}` : 'No readings yet';
+  if (row.state === 'manual') return row.provider === 'bank' ? 'Recorded by hand' : row.lastSyncedAt ? `Last reading ${date(row.lastSyncedAt)}` : 'Entered by hand';
+  if (row.provider === 'email' || row.provider === 'whatsapp') return row.state === 'not_connected' ? 'Key not set' : row.lastSyncedAt ? `Last sent ${date(row.lastSyncedAt)}` : 'Nothing sent yet';
   if (row.state === 'not_connected') return 'Through Channex';
   if (row.viaChannex) return row.lastSyncedAt ? `Last update sent ${date(row.lastSyncedAt)} · ${timeWithZone(row.lastSyncedAt)}` : 'No updates sent yet';
   return row.lastSyncedAt ? `Last synced ${date(row.lastSyncedAt)} · ${timeWithZone(row.lastSyncedAt)}` : 'Never synced';
 }
 
 /** Which recovery actions a state offers. Never tease one that cannot work (13.1). */
-function actionsFor(state: RowState): { reconnect: boolean; retry: boolean } {
+function actionsFor(state: RowState, row?: Row): { reconnect: boolean; retry: boolean } {
+  // Only the booking sites have a sync to retry; email, WhatsApp, bank and utilities do not.
+  if (row && !row.viaChannex) return { reconnect: false, retry: false };
   switch (state) {
     case 'connected': return { reconnect: false, retry: true };
     case 'degraded':  return { reconnect: false, retry: true };
@@ -105,7 +114,6 @@ function actionsFor(state: RowState): { reconnect: boolean; retry: boolean } {
   }
 }
 
-const hex4 = () => Math.floor(Math.random() * 0xffff).toString(16).padStart(4, '0');
 
 export default function IntegrationsPage() {
   const { data, loading, error, reload } = useApi<Payload>('/integrations', FALLBACK);
@@ -142,12 +150,9 @@ export default function IntegrationsPage() {
     setReconnectBusy(true);
     try {
       await api.post(`/integrations/${row.provider}/connect`, {});
-      setEdits(e => ({
-        ...e,
-        [row.id]: { ...e[row.id], state: 'connected', lastError: null, lastSyncedAt: new Date().toISOString(), credentialMasked: masked(hex4()) },
-      }));
       setReconnectId(null);
-      toast({ tone: 'success', title: `${label} reconnected.`, body: 'A new key was issued and syncing resumed from the last successful pull.' });
+      reload();
+      toast({ tone: 'success', title: `${label} reconnect requested.` });
     } catch (e) {
       toast({ tone: 'critical', title: `${label} was not reconnected.`, body: e instanceof Error ? e.message : 'Try again in a moment.' });
     } finally {
@@ -157,7 +162,7 @@ export default function IntegrationsPage() {
 
   return (
     <>
-      <PageHeader title="Integrations" sub={`${rows.filter(r => r.state === 'connected' || r.state === 'degraded').length} connected · ${problems} needing attention`}
+      <PageHeader title="Integrations" sub={`${rows.filter(r => r.state === 'connected' || r.state === 'degraded').length} connected · ${rows.filter(r => r.state === 'not_connected').length} not connected · ${problems} needing attention`}
         right={<Button size="sm" variant="secondary" icon={<Icon name="FileUp" size="sm" />} onClick={() => { window.location.hash = '#/system/integrations/hostplatform'; }}>Import from HostPlatform</Button>} />
 
       {error && <StaleBanner message={`Showing the last status we have. ${error}`} onRetry={reload} />}
@@ -171,28 +176,29 @@ export default function IntegrationsPage() {
           {rows.map(row => {
             const label = PROVIDER_LABEL[row.provider] ?? row.provider;
             const m = META[row.state];
-            const act = actionsFor(row.state);
+            const act = actionsFor(row.state, row);
             return (
               <Card key={row.id} style={{ display: 'flex', flexDirection: 'column' }}>
                 <div className="py-[18px] px-5 flex flex-col gap-3 flex-1">
                   <div className="flex items-center gap-3">
                     <Monogram label={label} />
                     <div className="flex flex-col gap-[3px] flex-1 min-w-0">
-                      <span className="text-[16px] font-semibold">{label}</span>
-                      <span className="text-[12px] text-muted-ink">{syncedLine(row)}</span>
+                      <span className="text-heading font-semibold">{label}</span>
+                      <span className="text-meta text-muted-ink">{syncedLine(row)}</span>
                     </div>
                     <Badge tone={m.tone} label={m.label} />
                   </div>
 
-                  <p className="m-0 text-[13px] leading-[1.5] text-[var(--color-ink-2)] [text-wrap:pretty]">{noteFor(row)}</p>
+                  <p className="m-0 text-copy leading-[1.5] text-[var(--color-ink-2)] [text-wrap:pretty]">{noteFor(row)}</p>
 
                   {row.lastError && (
-                    <div className="text-[12px] text-[var(--color-critical-fg)]">{row.lastError}</div>
+                    <div className="text-meta text-[var(--color-critical-fg)]">{row.lastError}</div>
                   )}
 
-                  <div className="mt-auto pt-1 text-[12px] text-muted-ink">
-                    {row.unitsLinked} {row.unitsLinked === 1 ? 'unit' : 'units'} linked
-                    {row.syncInterval ? ` · ${row.syncInterval}` : ''}
+                  <div className="mt-auto pt-1 text-meta text-muted-ink">
+                    {row.viaChannex || row.provider === 'utilities'
+                      ? `${row.unitsLinked} ${row.unitsLinked === 1 ? 'unit' : 'units'} linked${row.syncInterval ? ` · ${row.syncInterval}` : ''}`
+                      : row.syncInterval ?? ''}
                   </div>
                 </div>
 
@@ -209,7 +215,7 @@ export default function IntegrationsPage() {
                   )}
                   {row.viaChannex
                     ? <Button size="sm" variant="tertiary" icon={<Icon name="Building2" size="sm" />} onClick={() => { window.location.hash = '#/properties/units'; }}>Open units</Button>
-                    : (
+                    : row.provider === 'utilities' && (
                       <Button size="sm" variant="tertiary" icon={<Icon name="SlidersHorizontal" size="sm" />} onClick={() => setManageId(row.id)}>
                         Manage
                       </Button>
@@ -258,7 +264,7 @@ function Monogram({ label }: { label: string }) {
   return (
     <span
       aria-hidden
-      className="w-[38px] h-[38px] flex-none grid place-items-center rounded-[6px] bg-muted border border-solid border-line text-[15px] font-semibold text-ink"
+      className="w-[38px] h-[38px] flex-none grid place-items-center rounded-[6px] bg-muted border border-solid border-line text-heading font-semibold text-ink"
     >
       {label[0]}
     </span>
@@ -272,14 +278,14 @@ function ManagePanel({
   onClose: () => void; onReconnect: () => void; onRetry: () => void;
 }) {
   const m = META[row.state];
-  const act = actionsFor(row.state);
+  const act = actionsFor(row.state, row);
   return (
     <>
       <div className="flex items-center gap-3 py-[18px] px-[22px] [border-bottom:1px_solid_var(--color-line)]">
         <Monogram label={label} />
         <div className="flex flex-col gap-[3px] flex-1 min-w-0">
-          <span className="text-[20px] font-semibold">{label}</span>
-          <span className="text-[12px] text-muted-ink">{syncedLine(row)}</span>
+          <span className="text-title font-semibold">{label}</span>
+          <span className="text-meta text-muted-ink">{syncedLine(row)}</span>
         </div>
         <Badge tone={m.tone} label={m.label} />
         <button onClick={onClose} aria-label="Close" className="flex bg-transparent border-none p-1 cursor-pointer text-muted-ink">
@@ -289,8 +295,8 @@ function ManagePanel({
 
       <div className="py-5 px-[22px] flex flex-col gap-5 flex-1 overflow-y-auto">
         <Section label="Connection">
-          <p className="m-0 text-[13px] leading-[1.5] text-[var(--color-ink-2)] [text-wrap:pretty]">{noteFor(row)}</p>
-          {row.lastError && <div className="mt-2 text-[12px] text-[var(--color-critical-fg)]">{row.lastError}</div>}
+          <p className="m-0 text-copy leading-[1.5] text-[var(--color-ink-2)] [text-wrap:pretty]">{noteFor(row)}</p>
+          {row.lastError && <div className="mt-2 text-meta text-[var(--color-critical-fg)]">{row.lastError}</div>}
         </Section>
 
         <Section label="Units linked">
@@ -305,7 +311,7 @@ function ManagePanel({
           {row.credentialMasked ? (
             <>
               <PanelValue mono>API key {row.credentialMasked}</PanelValue>
-              <div className="mt-[6px] text-[12px] text-muted-ink">
+              <div className="mt-[6px] text-meta text-muted-ink">
                 Masked. Revealing a credential is audited and done from the secrets vault, not here.
               </div>
             </>
@@ -333,7 +339,7 @@ function ManagePanel({
 function Section({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-[12px] font-semibold text-muted-ink uppercase tracking-[0.04em]">{label}</span>
+      <span className="text-meta font-semibold text-muted-ink uppercase tracking-[0.04em]">{label}</span>
       {children}
     </div>
   );
@@ -341,6 +347,6 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
 
 function PanelValue({ children, mono }: { children: ReactNode; mono?: boolean }) {
   return (
-    <span className={cx('text-[14px] text-ink', mono && 'font-mono')}>{children}</span>
+    <span className={cx('text-copy text-ink', mono && 'font-mono')}>{children}</span>
   );
 }

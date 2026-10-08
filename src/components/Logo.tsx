@@ -30,18 +30,20 @@ export function Logo({ variant = 'full', size = 'md', onDark = false }: {
     );
   }
 
+  // Until the approved vector arrives: a TC monogram tile. On the black sidebar a faint gold
+  // hairline keeps the tile from dissolving into the background.
   const mark = (
     <div
       aria-hidden
-      title="Logo placeholder — replace with the approved vector"
       style={{
-        width: height, height, flex: 'none', borderRadius: 8,
-        border: `1px dashed ${onDark ? color.textMuted : color.borderStrong}`,
+        width: height, height, flex: 'none', borderRadius: Math.round(height * 0.24),
+        background: color.black,
+        boxShadow: onDark ? 'inset 0 0 0 1px rgba(200,164,106,0.4)' : 'none',
         display: 'grid', placeItems: 'center',
-        fontSize: Math.max(10, Math.round(height * 0.26)),
-        color: muted, letterSpacing: '0.04em',
+        fontSize: Math.round(height * 0.4), fontWeight: 600, lineHeight: 1,
+        color: color.gold, letterSpacing: '0.04em', userSelect: 'none',
       }}
-    >SVG</div>
+    >TC</div>
   );
 
   if (variant === 'mark') return mark;
@@ -53,7 +55,8 @@ export function Logo({ variant = 'full', size = 'md', onDark = false }: {
         fontWeight: 600, letterSpacing: '0.18em', color: onDark ? '#FFFFFF' : ink,
       }}>THE CONTS</span>
       <span style={{
-        fontSize: 11, letterSpacing: '0.26em', color: muted, whiteSpace: 'nowrap',
+        // The small lockup has to fit beside the sidebar's collapse button (about 136px).
+        fontSize: size === 'sm' ? 8.5 : 11, letterSpacing: size === 'sm' ? '0.17em' : '0.26em', color: muted, whiteSpace: 'nowrap',
       }}>PROPERTY MANAGEMENT</span>
     </div>
   );

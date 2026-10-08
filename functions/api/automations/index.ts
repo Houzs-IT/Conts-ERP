@@ -1,7 +1,7 @@
 import { mayRun } from '../../_lib/access';
 import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { CATALOG, QUIET_HOURS } from '../../_lib/automationCatalog';
+import { CATALOG, QUIET_HOURS, RUNNING, needsToRun } from '../../_lib/automationCatalog';
 
 const MANAGE = ['management', 'operations_manager'];
 
@@ -15,7 +15,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const state = new Map(saved.map(r => [r.id, !!r.is_active]));
   return json({
     generatedAt: nowIso(), quietHours: QUIET_HOURS,
-    data: CATALOG.map(r => ({ ...r, isActive: state.get(r.id) ?? r.isActive })),
+    // `running`: whether any code sends this message today. A switch alone sends nothing, so the screen must
+    // never call a rule Live just because it is switched on.
+    data: CATALOG.map(r => ({ ...r, isActive: state.get(r.id) ?? r.isActive, running: RUNNING.has(r.template), blockedBy: RUNNING.has(r.template) ? null : needsToRun(r) })),
+    mailConfigured: !!(env as unknown as { MAIL_API_KEY?: string }).MAIL_API_KEY,
   });
 };
 

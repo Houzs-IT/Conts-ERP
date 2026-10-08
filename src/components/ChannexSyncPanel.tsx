@@ -50,7 +50,7 @@ export default function ChannexSyncPanel() {
     <Card>
       <div className="pt-[18px] px-[22px] pb-[14px] flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
-          <span className="text-[18px] font-semibold">Channex sync</span>
+          <span className="text-title font-semibold">Channex sync</span>
           <Badge tone={!data.configured ? 'neutral' : data.failed ? 'critical' : data.queued ? 'warning' : 'success'}
             label={!data.configured ? 'Not connected' : data.failed ? `${data.failed} failed` : data.queued ? `${data.queued} waiting` : 'Up to date'} />
         </div>
@@ -59,35 +59,35 @@ export default function ChannexSyncPanel() {
           {canRun && data.configured && <Button size="sm" variant="primary" loading={busy} disabled={!data.linkedUnits} disabledReason="Set a unit up in Channex first" onClick={() => void fullSync()}>Full sync</Button>}
         </div>
       </div>
-      <div className="px-[22px] pb-3 text-[13px] text-muted-ink">
+      <div className="px-[22px] pb-3 text-copy text-muted-ink">
         {data.configured
           ? `${data.linkedUnits} ${data.linkedUnits === 1 ? 'unit' : 'units'} linked. Changes are sent in batches a few seconds after the last edit, and retried if Channex is busy.`
-          : 'Channex is not connected on this environment yet.'}
+          : 'Channex is not connected on this environment yet. Management adds the Channex key (CHANNEX_API_KEY) once in Cloudflare; then units can be connected from their Channels card.'}
       </div>
       {n && n.registered === false && (
-        <div className="mx-[22px] mb-3 p-3 rounded-card border border-solid border-line bg-page flex items-center justify-between gap-3 flex-wrap text-[13px]">
+        <div className="mx-[22px] mb-3 p-3 rounded-card border border-solid border-line bg-page flex items-center justify-between gap-3 flex-wrap text-copy">
           <span>{n.secretSet
             ? 'Booking notifications are off. Channex is not sending bookings to this site yet.'
             : 'Booking notifications cannot be turned on yet: the notification secret (CHANNEX_WEBHOOK_SECRET) is not set on this site.'}</span>
           {n.secretSet && <Button size="sm" variant="primary" loading={hookBusy} onClick={() => void turnOnNotifications()}>Turn on booking notifications</Button>}
         </div>
       )}
-      {n && n.registered === true && <div className="px-[22px] pb-3 text-[12.5px] text-muted-ink">Booking notifications are on.</div>}
+      {n && n.registered === true && <div className="px-[22px] pb-3 text-copy text-muted-ink">Booking notifications are on.</div>}
       {data.recentCalls.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[640px]">
-            <thead><tr className="bg-muted">{['Sent', 'Unit', 'What', 'Changes', 'Result', 'Channex task id'].map(h => <th key={h} className="py-2 px-[22px] text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink">{h}</th>)}</tr></thead>
+            <thead><tr className="bg-muted">{['Sent', 'Unit', 'What', 'Changes', 'Result', 'Channex task id'].map(h => <th key={h} className="py-2 px-[22px] text-left text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink">{h}</th>)}</tr></thead>
             <tbody>
               {data.recentCalls.map((c, i) => {
                 const ok = c.status >= 200 && c.status < 300;
                 return (
                   <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
-                    <td className="py-2 px-[22px] text-[12.5px] whitespace-nowrap">{date(c.calledAt)} · {timeWithZone(c.calledAt)}</td>
-                    <td className="py-2 px-[22px] text-[12.5px]">{c.unit ?? '—'}</td>
-                    <td className="py-2 px-[22px] text-[12.5px]">{c.kind === 'availability' ? 'Availability' : 'Prices and restrictions'}{c.fullSync ? ' (full sync)' : ''}</td>
-                    <td className="py-2 px-[22px] text-[12.5px] tabular-nums">{c.rows}</td>
-                    <td className={cx('py-2 px-[22px] text-[12.5px]', ok ? 'text-[var(--color-ink-2)]' : 'text-[var(--color-text-critical,#B42318)]')}>{ok ? 'Accepted' : c.status === 429 ? 'Busy, retrying' : c.status === 0 ? 'No connection, retrying' : `Refused (${c.status})`}</td>
-                    <td className="py-2 px-[22px] text-[12px] whitespace-nowrap [font-family:var(--font-mono,ui-monospace,monospace)] select-all">{c.taskId ?? '—'}</td>
+                    <td className="py-2 px-[22px] text-copy whitespace-nowrap">{date(c.calledAt)} · {timeWithZone(c.calledAt)}</td>
+                    <td className="py-2 px-[22px] text-copy">{c.unit ?? '—'}</td>
+                    <td className="py-2 px-[22px] text-copy">{c.kind === 'availability' ? 'Availability' : 'Prices and restrictions'}{c.fullSync ? ' (full sync)' : ''}</td>
+                    <td className="py-2 px-[22px] text-copy tabular-nums">{c.rows}</td>
+                    <td className={cx('py-2 px-[22px] text-copy', ok ? 'text-[var(--color-ink-2)]' : 'text-[var(--color-text-critical,#B42318)]')}>{ok ? 'Accepted' : c.status === 429 ? 'Busy, retrying' : c.status === 0 ? 'No connection, retrying' : `Refused (${c.status})`}</td>
+                    <td className="py-2 px-[22px] text-meta whitespace-nowrap [font-family:var(--font-mono,ui-monospace,monospace)] select-all">{c.taskId ?? '—'}</td>
                   </tr>
                 );
               })}

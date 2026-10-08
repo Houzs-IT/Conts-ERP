@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo } from 'react';
 import { color } from '../theme';
 import { TONE, CHANNEL_META, cx } from '../lib/design-tokens';
 import { Card, CardHeader } from '../components/Card';
@@ -6,8 +6,11 @@ import PageHeader from '../components/PageHeader';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import ChannelMark, { channelLabel } from '../components/ChannelMark';
 import { useApi } from '../lib/useApi';
-import { rm, monthLabel } from '../lib/format';
+import { rm, rmCompact, monthLabel, fileStamp, plural, MONTHS } from '../lib/format';
+import { Button } from '../components/Button';
+import Icon from '../components/Icon';
 import type { BookingChannel, Tone } from '../lib/types';
+import { useUrlState, usePhone, ListCard, SearchBox, FilterSelect, STICKY_HEAD } from './finance/listKit';
 
 /* -----------------------------------------------------------------------------
  * Analytics / Revenue — `/performance/analytics` and `/finance/revenue`.
@@ -37,7 +40,7 @@ interface Point {
 }
 interface Delta { value: number; unit: 'percent' | 'points'; direction: 'up' | 'down' | 'flat'; tone: Tone; note?: string }
 interface UnitRow {
-  unitId: string; unitNumber: string; propertyName: string;
+  unitId: string; unitNumber: string; propertyName: string; buildingId?: string; nights?: number;
   occupancy: number; adr: number; revpar: number; revenue: number; rating: number | null;
 }
 interface ChannelShare { channel: BookingChannel; revenue: number; share: number } // share is percent
@@ -48,6 +51,8 @@ interface AnalyticsPayload {
   points: Point[];
   deltas: Record<Metric, Delta>;
   totals: Totals;
+  /** The whole window (older payloads lack it; the current month's point stands in). */
+  summary?: { revenue: number; occupancy: number; adr: number; revpar: number; nights: number; listedUnits: number };
   units: UnitRow[];
   channelMix: ChannelShare[];
 }
@@ -151,12 +156,7 @@ const DATA: Record<Range, AnalyticsPayload> = {
 
 /* ---------------------------------------------------------------- metrics -- */
 
-const compactMoney = (sen: number) => {
-  const v = sen / 100;
-  if (v >= 1_000_000) return 'RM ' + (v / 1_000_000).toFixed(1) + 'M';
-  if (v >= 1_000) return 'RM ' + Math.round(v / 1_000) + 'k';
-  return 'RM ' + Math.round(v);
-};
+const compactMoney = rmCompact;
 
 /** Any row that carries the four metric figures — both a trend Point and a UnitRow do. */
 type MetricBearing = { revenue: number; occupancy: number; adr: number; revpar: number };
@@ -186,17 +186,16 @@ const RANGE_SUB: Record<Range, string> = {
 };
 
 const ARROW: Record<'up' | 'down' | 'flat', string> = { up: '↑', down: '↓', flat: '→' };
-const deltaText = (d: Delta) => `${ARROW[d.direction]} ${d.value.toFixed(1)}${d.unit === 'points' ? ' pts' : '%'}`;
+const deltaText = (d: Delta) => d.note && d.value === 0 ? 'no earlier figures' : `${ARROW[d.direction]} ${d.value.toFixed(1)}${d.unit === 'points' ? ' pts' : '%'}`;
 
 /* ------------------------------------------------------------------- page -- */
 
 export default function AnalyticsPage() {
-  // The same component answers two routes; read the hash so the revenue view
-  // does not announce itself as "Analytics".
-  const isRevenueView = typeof window !== 'undefined' && window.location.hash.replace(/^#/, '').startsWith('/finance/revenue');
-
-  const [metric, setMetric] = useState<Metric>('revenue');
-  const [range, setRange] = useState<Range>('12m');
+  const url = useUrlState();
+  const metric: Metric = (METRIC_ORDER as string[]).includes(url.get('metric')) ? url.get('metric') as Metric : 'revenue';
+  const range: Range = RANGES.some(r => r.key === url.get('range')) ? url.get('range') as Range : '12m';
+  const setMetric = (k: Metric) => url.set({ metric: k === 'revenue' ? null : k });
+  const setRange = (k: Range) => url.set({ range: k === '12m' ? null : k });
 
   const q = useApi<AnalyticsPayload>(`/analytics?range=${range}`, DATA[range]);
   // No backend in dev: a range change fails to refetch, so fall back to the local
@@ -207,21 +206,40 @@ export default function AnalyticsPage() {
   const delta = d.deltas[metric];
   const points = d.points;
   const current = points.find(p => p.isCurrent) ?? points[points.length - 1];
-  const headline = current ? m.pick(current) : 0;
+  const headline = d.summary ? m.pick(d.summary) : current ? m.pick(current) : 0;
 
   // Best and weakest are ranked by whichever metric is in focus, so the switch
   // drives all three panels at once.
   const ranked = [...d.units].sort((a, b) => m.pick(b) - m.pick(a));
   const best = ranked.slice(0, 4);
-  const weakest = ranked.slice(-4).reverse();
+  // Units with no booked nights in the window are not "weak performers", they were not selling (not
+  // connected, blocked or new): they are counted separately rather than filling the weakest list.
+  const idle = d.units.filter(u => (u.nights ?? (u.revenue > 0 ? 1 : 0)) === 0).length;
+  const weakest = ranked.filter(u => (u.nights ?? (u.revenue > 0 ? 1 : 0)) > 0).slice(-4).reverse();
+
+  function exportCsv() {
+    const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    const head = ['Building', 'Unit', 'Revenue (RM)', 'Booked nights', 'Occupancy %', 'ADR (RM)', 'RevPAR (RM)', 'Rating'];
+    const lines = [
+      `# Performance, ${RANGE_SUB[range]}${d.points.length ? ` (${monthLabel(d.points[0].period)} to ${monthLabel(d.points[d.points.length - 1].period)})` : ''}. Revenue = collected revenue on stays that start in the window.`,
+      head.map(esc).join(','),
+      ...d.units.map(u => [u.propertyName, u.unitNumber, (u.revenue / 100).toFixed(2), u.nights ?? '', u.occupancy.toFixed(1), (u.adr / 100).toFixed(2), (u.revpar / 100).toFixed(2), u.rating ?? ''].map(esc).join(',')),
+    ];
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = href; a.download = `performance-${range}-${fileStamp()}.csv`; a.click();
+    URL.revokeObjectURL(href);
+  }
 
   const loading = q.loading && !q.data;
 
   return (
     <>
       <PageHeader
-        title={isRevenueView ? 'Revenue' : 'Analytics'}
-        sub={`${RANGE_SUB[range]} · collected revenue, not gross booking value · Asia/Kuala Lumpur`}
+        title="Performance"
+        sub={`${RANGE_SUB[range]} · revenue collected on stays that start in each month`}
+        actions={<Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportCsv} disabled={d.units.length === 0} disabledReason="Nothing to export for this range yet.">Export CSV</Button>}
       />
 
       {q.error && <StaleBanner message={`Showing the last figures we have. ${q.error}`} onRetry={q.reload} />}
@@ -233,11 +251,10 @@ export default function AnalyticsPage() {
             <div className="flex flex-col gap-1.5 min-w-0">
               <div className="flex items-baseline gap-3 flex-wrap">
                 <span className="text-[30px] font-semibold tracking-[-0.01em] leading-[1.05]">{m.full(headline)}</span>
-                <span className={cx('text-[14px] font-semibold', TONE[delta.tone].text)}>{deltaText(delta)}</span>
+                <span className={cx('text-copy font-semibold', delta.note && delta.value === 0 ? 'text-muted-ink font-normal' : TONE[delta.tone].text)}>{deltaText(delta)}</span>
               </div>
-              <span className="text-[12px] text-muted-ink [text-wrap:pretty]">
-                {m.label} this period vs {range === 'ytd' ? 'the same period last year' : 'the prior window'}
-                {delta.note ? ` · ${delta.note}` : ''}
+              <span className="text-meta text-muted-ink [text-wrap:pretty]">
+                {m.label}{d.summary ? `, ${RANGE_SUB[range].toLowerCase()}` : ' this period'} vs {range === 'ytd' ? 'the same period last year' : 'the prior window'}
               </span>
             </div>
 
@@ -264,7 +281,7 @@ export default function AnalyticsPage() {
           </div>
 
           {/* Metric segmented control */}
-          <div role="group" aria-label="Metric" className="inline-flex self-start border border-solid border-line rounded-control overflow-hidden">
+          <div role="group" aria-label="Metric" className="inline-flex self-start max-w-full overflow-x-auto border border-solid border-line rounded-control">
             {METRIC_ORDER.map((k, i) => {
               const on = k === metric;
               return (
@@ -295,6 +312,9 @@ export default function AnalyticsPage() {
             <Total label="Management fees" value={rm(d.totals.managementFees, { cents: false })} />
             <Total label="Net owner payout" value={rm(d.totals.netOwnerPayout, { cents: false })} />
           </div>
+          <span className="text-meta text-muted-ink -mt-2 [text-wrap:pretty]">
+            Management fees and net owner payout come from owner statements generated for these months; a month with no statements adds nothing to them yet.
+          </span>
         </div>
       </Card>
 
@@ -302,19 +322,20 @@ export default function AnalyticsPage() {
       <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-5">
         {[{ key: 'best', title: 'Best performing', rows: best }, { key: 'weak', title: 'Weakest performing', rows: weakest }].map(g => (
           <Card key={g.key}>
-            <CardHeader title={g.title} right={<span className="text-[12px] text-muted-ink">by {m.label.toLowerCase()}</span>} />
+            <CardHeader title={g.title} right={<span className="text-meta text-muted-ink">by {m.label.toLowerCase()}</span>} />
+            {g.key === 'weak' && idle > 0 && <div className="px-5 pb-2 -mt-1 text-meta text-muted-ink">{plural(idle, 'listed unit')} had no booked nights in this window and {idle === 1 ? 'is' : 'are'} not ranked.</div>}
             {loading ? <TableSkeleton rows={4} cols={2} /> : g.rows.length === 0 ? (
-              <div className="p-5 text-[13px] text-muted-ink">Not enough data for this period.</div>
+              <div className="p-5 text-copy text-muted-ink">Not enough data for this period.</div>
             ) : g.rows.map((u, i) => (
               <div key={u.unitId} className="flex items-center gap-[14px] px-5 py-3 [border-top:1px_solid_var(--color-line-soft)]">
-                <span className="text-[12px] font-semibold text-faint w-4 flex-none">{i + 1}</span>
+                <span className="text-meta font-semibold text-faint w-4 flex-none">{i + 1}</span>
                 <div className="flex flex-col gap-px min-w-0 flex-1">
-                  <span className="text-[13.5px] font-medium">{u.unitNumber}</span>
-                  <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.propertyName}</span>
+                  <span className="text-copy font-medium">{u.unitNumber}</span>
+                  <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.propertyName}</span>
                 </div>
                 <div className="flex flex-col items-end gap-px flex-none">
-                  <span className="text-[14px] font-semibold">{m.full(m.pick(u))}</span>
-                  <span className="text-[11.5px] text-muted-ink">{u.occupancy.toFixed(1)}% occupancy</span>
+                  <span className="text-copy font-semibold">{m.full(m.pick(u))}</span>
+                  <span className="text-meta text-muted-ink">{u.occupancy.toFixed(1)}% occupancy</span>
                 </div>
               </div>
             ))}
@@ -322,17 +343,19 @@ export default function AnalyticsPage() {
         ))}
       </div>
 
+      <UnitTable units={d.units} metric={metric} loading={loading} />
+
       {/* Channel mix ------------------------------------------------------- */}
       <Card>
-        <CardHeader title="Where revenue came from" right={<span className="text-[12px] text-muted-ink">share of collected revenue</span>} />
+        <CardHeader title="Where revenue came from" right={<span className="text-meta text-muted-ink">share of collected revenue</span>} />
         <div className="flex flex-col gap-0">
           {loading ? <TableSkeleton rows={4} cols={2} /> : (d.channelMix ?? []).map(c => (
             <div key={c.channel} className="flex items-center gap-[14px] px-5 py-[13px] [border-top:1px_solid_var(--color-line-soft)]">
               <ChannelMark ch={c.channel} size={22} />
               <div className="flex flex-col gap-1.5 min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-[13.5px] font-medium">{channelLabel(c.channel)}</span>
-                  <span className="text-[13px] text-muted-ink">
+                  <span className="text-copy font-medium">{channelLabel(c.channel)}</span>
+                  <span className="text-copy text-muted-ink">
                     <span className="font-semibold text-ink">{c.share}%</span>
                     {'  ·  '}{rm(c.revenue, { cents: false })}
                   </span>
@@ -352,11 +375,123 @@ export default function AnalyticsPage() {
 
 /* --------------------------------------------------------------- pieces -- */
 
+type UnitSort = 'unit' | Metric;
+const UNIT_COLS = 'grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.7fr)]';
+
+/** Every listed unit for the window, sortable by any metric, with a building filter and a total row. */
+function UnitTable({ units, metric, loading }: { units: UnitRow[]; metric: Metric; loading: boolean }) {
+  const url = useUrlState();
+  const phone = usePhone();
+  const q = url.get('uq').toLowerCase();
+  const building = url.get('ub');
+  const raw = url.get('usort');
+  const sortKey: UnitSort = (['unit', ...METRIC_ORDER] as string[]).includes(raw.replace(/^-/, '')) ? raw.replace(/^-/, '') as UnitSort : metric;
+  // `usort` is a key, '-' in front for largest first; none means the focused metric, largest first.
+  const asc = !!raw && !raw.startsWith('-');
+
+  const buildings = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const u of units) m.set(u.buildingId ?? u.propertyName, u.propertyName);
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label }));
+  }, [units]);
+
+  const rows = useMemo(() => {
+    const list = units.filter(u =>
+      (!building || (u.buildingId ?? u.propertyName) === building) &&
+      (!q || `${u.propertyName} ${u.unitNumber}`.toLowerCase().includes(q)));
+    list.sort((a, b) => {
+      if (sortKey === 'unit') return `${a.propertyName} ${a.unitNumber}`.localeCompare(`${b.propertyName} ${b.unitNumber}`) * (asc ? 1 : -1);
+      const m = METRICS[sortKey];
+      return (m.pick(a) - m.pick(b)) * (asc ? 1 : -1) || a.unitNumber.localeCompare(b.unitNumber);
+    });
+    return list;
+  }, [units, building, q, sortKey, asc]);
+
+  const revenue = rows.reduce((n, u) => n + u.revenue, 0);
+  const nights = rows.reduce((n, u) => n + (u.nights ?? 0), 0);
+  const sortBy = (k: UnitSort) => url.set({ usort: sortKey === k ? (asc ? `-${k}` : k) : (k === 'unit' ? k : `-${k}`) });
+  const Head = ({ k, label, right }: { k: UnitSort; label: string; right?: boolean }) => (
+    <button onClick={() => sortBy(k)} aria-sort={sortKey === k ? (asc ? 'ascending' : 'descending') : undefined}
+      className={cx('p-0 bg-transparent border-none cursor-pointer font-sans text-meta font-semibold inline-flex items-center gap-1', right ? 'justify-end' : '', sortKey === k ? 'text-ink' : 'text-muted-ink')}>
+      {label}{sortKey === k && <span aria-hidden className="text-caption">{asc ? '▲' : '▼'}</span>}
+    </button>
+  );
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div className="flex flex-col gap-[2px]">
+          <span className="text-heading font-semibold">All units</span>
+          <span className="text-meta text-muted-ink">{rows.length === units.length ? `${units.length} listed units` : `${rows.length} of ${units.length} listed units`}</span>
+        </div>
+        <div className="flex gap-2 flex-wrap flex-[1_1_420px] justify-end">
+          <SearchBox className="flex-[1_1_200px] max-w-[300px]" label="Search units" placeholder="Search unit" value={url.get('uq')} onChange={v => url.set({ uq: v || null })} />
+          <FilterSelect className="flex-[1_1_160px] max-w-[240px]" label="Building" all="All buildings" value={building} onChange={v => url.set({ ub: v || null })} options={buildings} />
+        </div>
+      </div>
+      <ListCard>
+        {loading ? <TableSkeleton rows={8} cols={phone ? 2 : 6} /> : rows.length === 0 ? (
+          <div className="py-[36px] px-5 text-center text-copy text-muted-ink">No units match.</div>
+        ) : phone ? (
+          <div>
+            {rows.map(u => (
+              <div key={u.unitId} className="flex items-center gap-3 py-[10px] px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
+                <div className="flex flex-col gap-[2px] min-w-0 flex-1">
+                  <span className="text-copy font-medium truncate">{u.unitNumber}</span>
+                  <span className="text-meta text-muted-ink truncate">{u.propertyName} · {u.occupancy.toFixed(1)}% occupied</span>
+                </div>
+                <div className="flex flex-col items-end gap-[2px] shrink-0">
+                  <span className="text-copy font-semibold tabular-nums">{METRICS[metric].full(METRICS[metric].pick(u))}</span>
+                  <span className="text-caption text-muted-ink">{METRICS[metric].label}</span>
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center justify-between py-3 px-4 bg-page text-copy font-semibold">
+              <span>Total revenue</span><span className="tabular-nums">{rm(revenue, { cents: false })}</span>
+            </div>
+          </div>
+        ) : (
+          <div role="table" aria-label="Units">
+            <div role="row" className={cx('grid', UNIT_COLS, 'gap-[14px] px-5 py-[9px]', STICKY_HEAD)}>
+              <Head k="unit" label="Unit" />
+              <Head k="revenue" label="Revenue" right />
+              <Head k="occupancy" label="Occupancy" right />
+              <Head k="adr" label="ADR" right />
+              <Head k="revpar" label="RevPAR" right />
+              <div className="text-right">Rating</div>
+            </div>
+            {rows.map(u => (
+              <div role="row" key={u.unitId} className={cx('grid', UNIT_COLS, 'gap-[14px] items-center min-h-[46px] px-5 py-[6px] [border-bottom:1px_solid_var(--color-line-soft)] text-copy')}>
+                <div className="flex flex-col gap-px min-w-0">
+                  <span className="font-medium truncate" title={u.unitNumber}>{u.unitNumber}</span>
+                  <span className="text-meta text-muted-ink truncate" title={u.propertyName}>{u.propertyName}</span>
+                </div>
+                <span className="text-right tabular-nums whitespace-nowrap">{rm(u.revenue, { cents: false })}</span>
+                <span className="text-right tabular-nums whitespace-nowrap">{u.occupancy.toFixed(1)}%</span>
+                <span className="text-right tabular-nums whitespace-nowrap">{rm(u.adr, { cents: false })}</span>
+                <span className="text-right tabular-nums whitespace-nowrap">{rm(u.revpar, { cents: false })}</span>
+                <span className="text-right tabular-nums text-muted-ink">{u.rating === null ? '—' : u.rating.toFixed(2)}</span>
+              </div>
+            ))}
+            <div className={cx('grid', UNIT_COLS, 'gap-[14px] items-center px-5 py-[11px] bg-page text-copy font-semibold')}>
+              <span>Total · {rows.length} units</span>
+              <span className="text-right tabular-nums whitespace-nowrap">{rm(revenue, { cents: false })}</span>
+              <span />
+              <span className="text-right tabular-nums whitespace-nowrap" title="Revenue divided by booked nights">{nights ? rm(Math.round(revenue / nights), { cents: false }) : '—'}</span>
+              <span /><span />
+            </div>
+          </div>
+        )}
+      </ListCard>
+    </div>
+  );
+}
+
 function Total({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-[3px]">
-      <span className="text-[11px] text-muted-ink">{label}</span>
-      <span className="text-[15px] font-semibold tracking-[-0.01em]">{value}</span>
+      <span className="text-caption text-muted-ink">{label}</span>
+      <span className="text-heading font-semibold tracking-[-0.01em]">{value}</span>
     </div>
   );
 }
@@ -403,13 +538,13 @@ function TrendChart({ points, metric }: { points: Point[]; metric: Metric }) {
               fill={p.isCurrent ? color.gold : color.charcoal} />
             {/* value label */}
             <text x={cx} y={y - 8} textAnchor="middle"
-              style={{ fontSize: many ? 15 : 17, fontWeight: 600, fill: color.ink, fontFamily: 'var(--font-sans)' }}>
+              style={{ fontSize: many ? 13 : 14, fontWeight: 500, fill: color.textMuted, fontFamily: 'var(--font-sans)' }}>
               {m.bar(v)}
             </text>
             {/* month label */}
             <text x={cx} y={baseline + 22} textAnchor="middle"
-              style={{ fontSize: many ? 15 : 16, fill: color.textMuted, fontFamily: 'var(--font-sans)' }}>
-              {monthLabel(p.period)}
+              style={{ fontSize: many ? 13 : 14, fill: color.textMuted, fontFamily: 'var(--font-sans)' }}>
+              {many ? MONTHS[Number(p.period.slice(5, 7)) - 1] : monthLabel(p.period)}
             </text>
           </g>
         );

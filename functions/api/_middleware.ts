@@ -1,5 +1,5 @@
 import { type Env, fail } from '../_lib/db';
-import { readSession, readCookie, signSession, cookie, sessionLimits, securitySettings, isFieldRole, canSeeFinance } from '../_lib/auth';
+import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimits, sessionState, isFieldRole, canSeeFinance } from '../_lib/auth';
 import { doorFor, doorRefusal } from '../_lib/door';
 import { accessFor, refusalFor } from '../_lib/access';
 import { flushWhenQuiet, FLUSH_DELAY_MS } from '../_lib/channexQueue';
@@ -33,15 +33,35 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, next, waitUn
   const route = `${request.method} ${new URL(request.url).pathname.replace(/\/+$/, '')}`;
   if (request.method === 'OPTIONS' || PUBLIC.has(route)) return next();
 
-  const session = await readSession(env.SESSION_SECRET, readCookie(request));
-  if (!session) return next(); // the endpoint answers 401 itself
+  const signed = await readSession(env.SESSION_SECRET, readCookie(request));
+  if (!signed) return next(); // the endpoint answers 401 itself
+
+  // The cookie only says who signed in. Their role and whether the account is still on are read from
+  // users on every request (one query, shared with the security settings below), so switching someone
+  // off or changing their role on Users and roles takes effect on their very next click.
+  const live = await sessionState(env, signed.userId);
+  if (!live.user?.active) {
+    return new Response(JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: 'This account has been switched off or changed. Sign in again, or ask management.' } }),
+      { status: 401, headers: { 'content-type': 'application/json; charset=utf-8', 'set-cookie': clearCookie(request) } });
+  }
+  const session = live.user.role === signed.role && live.user.fullName === signed.fullName ? signed : { ...signed, role: live.user.role, fullName: live.user.fullName };
+  const limits = sessionLimits(live.settings, session.role);
+  // Endpoints read the session from the cookie themselves (requireSession), so they are handed a cookie
+  // carrying the current role rather than the one signed at sign-in.
+  let forward = request;
+  if (session !== signed) {
+    const token = await signSession(env.SESSION_SECRET, session, limits.ttlHours, limits.absoluteDays, session.iat);
+    const headers = new Headers(request.headers);
+    headers.set('cookie', (request.headers.get('cookie') ?? '').replace(/tc_session=[^;]+/, `tc_session=${token}`));
+    forward = new Request(request, { headers }) as typeof request;
+  }
 
   const refusal = doorRefusal(doorFor(request), session.role);
   if (refusal) return fail('WRONG_DOOR', refusal, 403);
 
   const path = new URL(request.url).pathname.replace(/\/+$/, '');
   // The staging account switcher checks who really signed in itself, so it stays reachable from any account.
-  if (path === '/api/auth/view-as') return next();
+  if (path === '/api/auth/view-as') return next(forward);
   if (session.role === 'owner' &&!OWNER_ALLOWED.some(([m, re]) => m === request.method && re.test(path))) {
     return fail('FORBIDDEN', 'This is not available on the owner portal.', 403);
   }
@@ -56,7 +76,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, next, waitUn
     return fail('FORBIDDEN', 'Only finance and management can see invoices and payments.', 403);
   }
 
-  const response = await next();
+  const response = await next(forward);
   // Any write may have queued Channex updates; send them once the burst of edits has gone quiet.
   if (request.method !== 'GET' && response.status < 400) {
     waitUntil(new Promise(r => setTimeout(r, FLUSH_DELAY_MS)).then(() => flushWhenQuiet(env)).catch(() => {}));
@@ -66,7 +86,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, next, waitUn
   // already set its own cookie (logout clearing it, login/reset-password issuing a
   // fresh one) so this never overwrites that with a stale live session.
   if (response.headers.has('set-cookie')) return response;
-  const { ttlHours, absoluteDays } = sessionLimits(await securitySettings(env), session.role);
+  const { ttlHours, absoluteDays } = limits;
   const refreshed = await signSession(env.SESSION_SECRET, session, ttlHours, absoluteDays, session.iat);
   const headers = new Headers(response.headers);
   headers.append('set-cookie', cookie(request, refreshed, ttlHours * 3600));

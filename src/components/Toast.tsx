@@ -28,13 +28,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div
         aria-live="polite"
-        style={{ position: 'fixed', right: 24, bottom: 24, zIndex: 70, display: 'flex', flexDirection: 'column', gap: 9, alignItems: 'flex-end' }}
+        // Top centre: clear of the right-hand drawers and their action buttons, which a bottom-right toast covered.
+        style={{ position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 80, display: 'flex', flexDirection: 'column', gap: 9, alignItems: 'center', width: 'max-content', maxWidth: 'calc(100vw - 32px)' }}
       >
         {items.map(t => (
           <div
             key={t.id}
             style={{
-              display: 'flex', flexDirection: 'column', gap: 4, minWidth: 290, maxWidth: 390,
+              display: 'flex', flexDirection: 'column', gap: 4, minWidth: 'min(290px, calc(100vw - 32px))', maxWidth: 'min(390px, calc(100vw - 32px))', boxSizing: 'border-box',
               padding: '13px 15px', borderRadius: 'var(--radius-card)',
               background: 'var(--color-surface-card)', border: '1px solid var(--color-border-default)',
               borderLeft: `3px solid ${TONE[t.tone].fg}`, boxShadow: 'var(--shadow-overlay)',
