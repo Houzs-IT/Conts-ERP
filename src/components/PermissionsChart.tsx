@@ -24,7 +24,14 @@ const LEVEL_COLOR: Record<AccessLevel, string> = {
   none: 'var(--color-neutral-fg, #6B6558)', view: 'var(--color-info-fg, #2E6DA4)',
   edit: 'var(--color-warning-fg, #8A5A12)', full: 'var(--color-success-fg, #16845B)',
 };
-const GRID = 'grid grid-cols-[minmax(190px,1.4fr)_110px_repeat(3,minmax(150px,1fr))] gap-2.5 items-center px-5';
+/** The other four of the seven roles: their access is fixed, so they have no column. */
+const FIXED_ROLES = [
+  { name: 'Management', note: 'full access to everything, always.' },
+  { name: 'Housekeeper', note: 'the field app only: their own cleaning jobs.' },
+  { name: 'Technician', note: 'the field app only: their own maintenance jobs.' },
+  { name: 'Owner', note: 'the owner portal only: their own units, statements and documents.' },
+];
+const GRID ='grid grid-cols-[minmax(190px,1.4fr)_110px_repeat(3,minmax(150px,1fr))] gap-2.5 items-center px-5';
 
 /** The editable permissions chart: one row per area, one column per role management can change. */
 export default function PermissionsChart() {
@@ -132,6 +139,12 @@ export default function PermissionsChart() {
             </div>
           ))}
         </div>
+      </div>
+      <div className="px-5 py-3 [border-top:1px_solid_var(--color-line,#DEDAD3)]">
+        <div className="text-[10.5px] font-semibold tracking-[0.08em] uppercase text-muted-ink mb-1.5">Roles not on this chart</div>
+        {FIXED_ROLES.map(r => (
+          <div key={r.name} className="text-[12.5px] leading-[1.7]"><b>{r.name}</b> <span className="text-muted-ink">— {r.note}</span></div>
+        ))}
       </div>
       {data.canEdit && (
         <div className="py-[13px] px-5 flex items-center justify-between gap-3 flex-wrap bg-page">
