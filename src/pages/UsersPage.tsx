@@ -8,7 +8,8 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, ApiFailure } from '../lib/api';
-import { date } from '../lib/format';
+import { date, plural } from '../lib/format';
+import { ROLE_LABEL } from '../lib/vocabulary';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone, UserRole } from '../lib/types';
 
@@ -26,7 +27,7 @@ import type { Tone, UserRole } from '../lib/types';
 // Seven roles the server accepts (functions/api/users ROLES), highest to
 // lowest access so a picker reads top-down.
 const ROLES: UserRole[] = ['management', 'operations_manager', 'operations_staff', 'finance_admin', 'housekeeper', 'technician', 'owner'];
-const roleLabel = (r: string) => r.replace(/_/g, ' ');
+const roleLabel = (r: string) => ROLE_LABEL[r] ?? r;
 const roleTone: Record<UserRole, Tone> = {
   management: 'info', operations_manager: 'info', operations_staff: 'neutral',
   finance_admin: 'success', housekeeper: 'warning', technician: 'warning', owner: 'neutral',
@@ -70,8 +71,8 @@ const initials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).jo
 // so inputs/selects actually render at the inherited 16px / 400 / IBM Plex Sans —
 // reproduced with [font:inherit]. py-0 zeroes the UA vertical padding (no preflight).
 const inputClass = 'block w-full box-border h-10 px-3 py-0 [font:inherit] text-ink bg-card border border-solid border-line rounded-control outline-none';
-const labelClass = 'text-[12px] font-medium text-muted-ink';
-const errClass = cx('text-[12px]', TONE.critical.text);
+const labelClass = 'text-meta font-medium text-muted-ink';
+const errClass = cx('text-meta', TONE.critical.text);
 const LIST_COLS_CLASS = 'grid-cols-[minmax(180px,1.6fr)_minmax(180px,1.4fr)_150px_140px_120px_110px]';
 // Left accent on org cards — the -line tone shade, as a box-shadow inset (kept off
 // the border so it does not change the card geometry). Static per-tone literals so
@@ -100,8 +101,8 @@ function Modal({ title, sub, onClose, children, footer, width = 460 }: {
       <div onClick={onClose} className="absolute inset-0" />
       <div className="relative w-full max-h-[calc(100vh-48px)] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]" style={{ maxWidth: width }}>
         <div className="pt-5 px-[22px] pb-1 flex flex-col gap-[5px]">
-          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold">{title}</h2>
-          {sub && <p className="m-0 text-[13px] leading-[1.5] text-muted-ink">{sub}</p>}
+          <h2 className="m-0 text-title leading-[1.3] font-semibold">{title}</h2>
+          {sub && <p className="m-0 text-copy leading-[1.5] text-muted-ink">{sub}</p>}
         </div>
         <div className="py-4 px-[22px]">{children}</div>
         <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page flex justify-end gap-[9px] flex-wrap sticky bottom-0">{footer}</div>
@@ -219,7 +220,7 @@ export default function UsersPage() {
         tone: 'success',
         title: `${editName.trim()} updated.`,
         body: roleChanged
-          ? `Role changed to ${roleLabel(editRole)}. Their navigation rebuilds on next sign-in.`
+          ? `Role changed to ${roleLabel(editRole)}. It applies straight away, on their next click.`
           : 'Account details saved.',
       });
       reload();
@@ -279,7 +280,7 @@ export default function UsersPage() {
     <>
       <PageHeader
         title="Users and roles"
-        sub={`${rows.length} accounts · ${invitedCount} invited and not yet signed in`}
+        sub={`${plural(rows.length, 'account')} · ${invitedCount} invited and not yet signed in`}
         right={tab === 'users' && (
           <Button variant="primary" size="sm" onClick={() => { setLastTempPassword(null); setInviteOpen(true); }}>
             Invite user
@@ -297,7 +298,7 @@ export default function UsersPage() {
               aria-selected={on}
               onClick={() => setTab(t.key)}
               className={cx(
-                'px-[6px] py-[11px] mr-[18px] bg-transparent border-none cursor-pointer font-sans text-[13.5px] whitespace-nowrap',
+                'px-[6px] py-[11px] mr-[18px] bg-transparent border-none cursor-pointer font-sans text-copy whitespace-nowrap',
                 on ? 'font-semibold text-ink [box-shadow:inset_0_-2px_0_var(--color-gold,#C8A46A)]' : 'font-normal text-muted-ink',
               )}
             >{t.label}</button>
@@ -311,12 +312,11 @@ export default function UsersPage() {
       {tab === 'users' && (
         <Card>
           <div className="py-[13px] px-5 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] flex items-center justify-between gap-[14px] flex-wrap">
-            <span className="text-[12px] text-muted-ink">Role sets what a person can do. The reporting line is separate — see the organisation chart.</span>
-            <Button variant="secondary" size="sm" onClick={() => { setLastTempPassword(null); setInviteOpen(true); }}>Invite user</Button>
+            <span className="text-meta text-muted-ink">Role sets what a person can do. The reporting line is separate — see the organisation chart.</span>
           </div>
           <div className="overflow-x-auto">
             <div className="min-w-[940px]">
-              <div className={cx('grid', LIST_COLS_CLASS, 'gap-[14px] py-[9px] px-5 bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-[12px] font-semibold text-muted-ink')}>
+              <div className={cx('grid', LIST_COLS_CLASS, 'gap-[14px] py-[9px] px-5 bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-meta font-semibold text-muted-ink')}>
                 <div>Name</div><div>Email</div><div>Role</div><div>Reports to</div><div>Last sign-in</div><div>Status</div>
               </div>
               {loading && rows.length === 0 ? <TableSkeleton rows={7} cols={6} /> : rows.map(u => {
@@ -329,18 +329,18 @@ export default function UsersPage() {
                     className={cx('grid', LIST_COLS_CLASS, 'gap-[14px] items-center w-full text-left min-h-[54px] py-[9px] px-5 bg-transparent border-none rounded-none cursor-pointer [font:inherit]')}
                   >
                     <span className="flex items-center gap-2.5 min-w-0">
-                      <span className={cx('w-[30px] h-[30px] flex-none rounded-full grid place-items-center text-[11px] font-semibold', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>
+                      <span className={cx('w-[30px] h-[30px] flex-none rounded-full grid place-items-center text-caption font-semibold', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>
                         {initials(u.fullName)}
                       </span>
                       <span className="flex flex-col gap-px min-w-0">
-                        <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{u.fullName}</span>
-                        <span className="text-[11px] text-muted-ink whitespace-nowrap">{u.phone}</span>
+                        <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{u.fullName}</span>
+                        <span className="text-caption text-muted-ink whitespace-nowrap">{u.phone}</span>
                       </span>
                     </span>
-                    <span className="text-[12.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.email}</span>
-                    <span><span className={cx('inline-flex text-[11px] font-medium py-[3px] px-[9px] rounded-full whitespace-nowrap', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>{roleLabel(u.role)}</span></span>
-                    <span className={cx('text-[12.5px] whitespace-nowrap overflow-hidden text-ellipsis', manager ? 'text-ink' : 'text-faint')}>{manager ?? '—'}</span>
-                    <span className="text-[12.5px] text-muted-ink">{u.lastLoginAt ? date(u.lastLoginAt) : 'Never'}</span>
+                    <span className="text-copy text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.email}</span>
+                    <span><span className={cx('inline-flex text-caption font-medium py-[3px] px-[9px] rounded-full whitespace-nowrap', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>{roleLabel(u.role)}</span></span>
+                    <span className={cx('text-copy whitespace-nowrap overflow-hidden text-ellipsis', manager ? 'text-ink' : 'text-faint')}>{manager ?? '—'}</span>
+                    <span className="text-copy text-muted-ink">{u.lastLoginAt ? date(u.lastLoginAt) : 'Never'}</span>
                     <span><Badge tone={s.tone} label={s.label} /></span>
                   </button>
                 );
@@ -358,7 +358,7 @@ export default function UsersPage() {
         <Card>
           <div className="py-[18px] px-[22px] flex flex-col gap-5">
             <div className="flex items-center justify-between gap-[14px] flex-wrap">
-              <span className="text-[12px] text-muted-ink max-w-[640px] leading-[1.5]">
+              <span className="text-meta text-muted-ink max-w-[640px] leading-[1.5]">
                 Reporting line, not a permission source. It drives escalation and rosters. Permissions come from the role on each account — see the Permissions tab.
               </span>
               <Button variant="secondary" size="sm" onClick={openOrg}>Edit structure</Button>
@@ -396,7 +396,7 @@ export default function UsersPage() {
               <div className="flex flex-col gap-1.5">
                 <label htmlFor="inv-role" className={labelClass}>Role</label>
                 <select id="inv-role" value={role} onChange={e => setRole(e.target.value as UserRole)} className={cx(inputClass, 'capitalize')}>
-                  {ROLES.map(r => <option key={r} value={r} className="capitalize">{roleLabel(r)}</option>)}
+                  {ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
                 </select>
               </div>
               {role !== 'owner' && (
@@ -409,14 +409,14 @@ export default function UsersPage() {
                 </div>
               )}
             </div>
-            <div className="text-[12px] text-muted-ink leading-[1.5]">
+            <div className="text-meta text-muted-ink leading-[1.5]">
               The role sets their permissions and landing screen. The reporting line is for escalation and rosters only.
             </div>
           </form>
           {lastTempPassword && (
             <div className="mt-[14px] py-[11px] px-[13px] rounded-control bg-page border border-solid border-line">
-              <div className="text-[12px] text-muted-ink">Temporary password for {lastTempPassword.name}</div>
-              <div className="text-[15px] font-semibold font-mono mt-[3px]">{lastTempPassword.password}</div>
+              <div className="text-meta text-muted-ink">Temporary password for {lastTempPassword.name}</div>
+              <div className="text-heading font-semibold font-mono mt-[3px]">{lastTempPassword.password}</div>
             </div>
           )}
         </Modal>
@@ -442,12 +442,12 @@ export default function UsersPage() {
             <div className="flex flex-col gap-1.5">
               <label htmlFor="ed-name" className={labelClass}>Full name</label>
               <input id="ed-name" value={editName} onChange={e => setEditName(e.target.value)} className={inputClass} />
-              {editErrors.fullName && <span className={cx('text-[12px]', TONE.critical.text)}>{editErrors.fullName}</span>}
+              {editErrors.fullName && <span className={cx('text-meta', TONE.critical.text)}>{editErrors.fullName}</span>}
             </div>
             <div className="flex flex-col gap-1.5">
               <label htmlFor="ed-email" className={labelClass}>Email</label>
               <input id="ed-email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} className={inputClass} />
-              {editErrors.email && <span className={cx('text-[12px]', TONE.critical.text)}>{editErrors.email}</span>}
+              {editErrors.email && <span className={cx('text-meta', TONE.critical.text)}>{editErrors.email}</span>}
             </div>
             <div className="flex flex-col gap-1.5">
               <label htmlFor="ed-phone" className={labelClass}>Phone</label>
@@ -456,10 +456,10 @@ export default function UsersPage() {
             <div className="flex flex-col gap-1.5">
               <label htmlFor="ed-role" className={labelClass}>Role</label>
               <select id="ed-role" value={editRole} onChange={e => setEditRole(e.target.value as UserRole)} className={cx(inputClass, 'capitalize')}>
-                {ROLES.map(r => <option key={r} value={r} className="capitalize">{roleLabel(r)}</option>)}
+                {ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
               </select>
               {editRole !== editing.role && (
-                <span className={cx('text-[12px]', TONE.warning.text)}>
+                <span className={cx('text-meta', TONE.warning.text)}>
                   Changing the role rebuilds this person’s navigation and permissions on their next sign-in.
                 </span>
               )}
@@ -470,11 +470,11 @@ export default function UsersPage() {
                 <option value="">No manager</option>
                 {staff.filter(s => s.id !== editing.id).map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}
               </select>
-              <span className="text-[12px] text-muted-ink">Reporting line only. It does not grant or remove any access.</span>
+              <span className="text-meta text-muted-ink">Reporting line only. It does not grant or remove any access.</span>
             </div>
             <label htmlFor="ed-active" className="flex items-center gap-[9px] cursor-pointer">
               <input id="ed-active" type="checkbox" checked={editActive} onChange={e => setEditActive(e.target.checked)} className="w-4 h-4" />
-              <span className="text-[14px]">Account is active</span>
+              <span className="text-copy">Account is active</span>
             </label>
           </form>
         </Modal>
@@ -498,8 +498,8 @@ export default function UsersPage() {
             {staff.map(s => (
               <div key={s.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3 items-center">
                 <div className="flex flex-col gap-px min-w-0">
-                  <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{s.fullName}</span>
-                  <span className="text-[11px] text-muted-ink capitalize">{roleLabel(s.role)}</span>
+                  <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{s.fullName}</span>
+                  <span className="text-caption text-muted-ink">{roleLabel(s.role)}</span>
                 </div>
                 <select
                   aria-label={`Manager for ${s.fullName}`}
@@ -550,7 +550,7 @@ function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, 
       {levels.filter(l => l.people.length).map(l => (
         <div key={l.label} className="flex flex-col gap-2.5">
           <div className="flex items-center gap-2.5">
-            <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">{l.label}</span>
+            <span className="text-caption font-semibold tracking-[0.12em] uppercase text-muted-ink">{l.label}</span>
             <span className="flex-1 h-px bg-[var(--color-line-soft,#EDEAE4)]" />
           </div>
           <div className="flex gap-3 flex-wrap">
@@ -563,15 +563,15 @@ function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, 
               return (
                 <div key={p.id} className={cx('min-w-[188px] py-[13px] px-[15px] rounded-card border border-solid border-line bg-card flex flex-col gap-2', ORG_ACCENT[roleTone[p.role]])}>
                   <div className="flex items-center gap-2.5">
-                    <span className={cx('w-8 h-8 flex-none rounded-full grid place-items-center text-[11px] font-semibold', TONE[roleTone[p.role]].bg, TONE[roleTone[p.role]].text)}>
+                    <span className={cx('w-8 h-8 flex-none rounded-full grid place-items-center text-caption font-semibold', TONE[roleTone[p.role]].bg, TONE[roleTone[p.role]].text)}>
                       {initials(p.fullName)}
                     </span>
                     <div className="flex flex-col gap-px min-w-0">
-                      <span className="text-[13px] font-semibold whitespace-nowrap">{p.fullName}</span>
-                      <span className="text-[11px] text-muted-ink whitespace-nowrap capitalize">{roleLabel(p.role)}</span>
+                      <span className="text-copy font-semibold whitespace-nowrap">{p.fullName}</span>
+                      <span className="text-caption text-muted-ink whitespace-nowrap">{roleLabel(p.role)}</span>
                     </div>
                   </div>
-                  {meta && <span className="text-[11px] text-muted-ink">{meta}</span>}
+                  {meta && <span className="text-caption text-muted-ink">{meta}</span>}
                 </div>
               );
             })}

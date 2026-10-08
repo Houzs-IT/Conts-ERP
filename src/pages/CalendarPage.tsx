@@ -1,28 +1,29 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
-import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
-import { Dialog, Drawer, type DialogSpec } from '../components/Dialog';
+import { Dialog, type DialogSpec } from '../components/Dialog';
+import { BookingDrawer } from '../components/booking/BookingDrawer';
+import { channelNote, type ChannelSync } from '../lib/bookingStatus';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
+import { useSession } from '../lib/session';
 import { api, notifyFailure } from '../lib/api';
-import { todayMyt, rm, dateRange, dateShort, dateTime, time, timeWithZone } from '../lib/format';
-import { CHANNEL, RESERVATION, TONE } from '../lib/vocabulary';
-import type { BookingChannel, ReservationState, Tone } from '../lib/types';
+import { todayMyt, rm, date, dateRange, dateShort, dateTime, time, timeWithZone } from '../lib/format';
+import { CHANNEL, TONE } from '../lib/vocabulary';
+import type { BookingChannel, Tone } from '../lib/types';
 import { CalendarFilters } from '../components/calendar/CalendarFilters';
-import { ActivityLog } from '../components/calendar/ActivityLog';
-import { BlockWizard, ChangeDatesModal, MessageModal, RateUpdate, SetPriceModal } from '../components/calendar/CalendarModals';
-import { selectCls, type CalendarBlock as Block, type CalendarUnit as Unit } from '../components/calendar/types';
+import { BlockWizard, RateUpdate, SetPriceModal } from '../components/calendar/CalendarModals';
+import { type CalendarBlock as Block, type CalendarUnit as Unit } from '../components/calendar/types';
 
 /** Width of one night column, px. The unit column width is the CSS variable --unit-col (narrower on phones). */
 const COL = 60;
 const SPAN = 30;
-
-/** The quick-status picker in the reservation drawer. Cancellation has its own
- *  destructive Cancel flow (confirm + notify), so it is not offered here. */
-const QUICK_STATES: ReservationState[] = ['inquiry', 'pending', 'confirmed', 'checked_in', 'checked_out', 'no_show'];
+/** Above this many units on the board, the rate rows start hidden: 139 units with three or four rate rows
+ *  each is some 15,000 extra cells, and the board is read for occupancy first. */
+const RATES_AUTO_MAX = 8;
 
 // The rate rows: the web (direct) rate, always, plus each booking site the unit is on. The calendar API
 // works that out per unit (a Channex connection, or a booking from that site in the last 180 days) and sends
@@ -41,7 +42,8 @@ const OWN_CHANNELS: BookingChannel[] = ['direct', 'maintenance_block', 'owner_st
 const otaChannelsOf = (u: Unit) => u.channels ?? OTA_CHANNELS;
 const rateRowsFor = (u: Unit) => ['web', ...otaChannelsOf(u)].map(k => RATE_ROW_BY_KEY[k]).filter(Boolean);
 
-interface Payload { from: string; to: string; units: Unit[]; blocks: Block[]; baseRate: Record<string, number>; rates?: Record<string, number>; uplifts?: Record<string, number>; weekendMultiplier?: number; restrictions?: Record<string, { minStay: number; stopSell: boolean }>; generatedAt: string }
+interface BuildingRow { id: string; name: string; units: number }
+interface Payload { from: string; to: string; buildings?: BuildingRow[]; units: Unit[]; blocks: Block[]; baseRate: Record<string, number>; rates?: Record<string, number>; uplifts?: Record<string, number>; weekendMultiplier?: number; restrictions?: Record<string, { minStay: number; stopSell: boolean }>; generatedAt: string }
 
 /** GET /api/integrations — the OTA rows are worked out from the real Channex connections. */
 interface IntegrationRow { provider: string; state: string; lastSyncedAt: string | null; unitsLinked: number }
@@ -68,12 +70,12 @@ const FALLBACK: Payload = {
   from: T(0), to: T(SPAN - 1), generatedAt: '',
   baseRate: { u1: 28800, u2: 23100, u3: 31800, u4: 26500, u5: 24200, u6: 22800 },
   units: [
-    { id: 'u1', unitNumber: '#C-13-13A', propertyName: 'Agile Bukit Bintang, Imbi', channels: ['airbnb', 'booking_com', 'agoda'] },
-    { id: 'u2', unitNumber: '#B-08-11', propertyName: 'Arcoris Mont Kiara', channels: ['airbnb', 'booking_com'] },
-    { id: 'u3', unitNumber: '#MK2-09-16', propertyName: 'Arte Mont Kiara', channels: ['airbnb', 'agoda'] },
-    { id: 'u4', unitNumber: '#15-06', propertyName: 'Scarletz', channels: ['airbnb'] },
-    { id: 'u5', unitNumber: '#A-21-02', propertyName: 'The Establishment', channels: [] },
-    { id: 'u6', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', channels: ['booking_com', 'agoda'] },
+    { id: 'u1', unitNumber: '#C-13-13A', propertyId: 'p1', propertyName: 'Agile Bukit Bintang, Imbi', channels: ['airbnb', 'booking_com', 'agoda'] },
+    { id: 'u2', unitNumber: '#B-08-11', propertyId: 'p2', propertyName: 'Arcoris Mont Kiara', channels: ['airbnb', 'booking_com'] },
+    { id: 'u3', unitNumber: '#MK2-09-16', propertyId: 'p3', propertyName: 'Arte Mont Kiara', channels: ['airbnb', 'agoda'] },
+    { id: 'u4', unitNumber: '#15-06', propertyId: 'p4', propertyName: 'Scarletz', channels: ['airbnb'] },
+    { id: 'u5', unitNumber: '#A-21-02', propertyId: 'p5', propertyName: 'The Establishment', channels: [] },
+    { id: 'u6', unitNumber: '#C-31-14', propertyId: 'p6', propertyName: 'Sentral Suites', channels: ['booking_com', 'agoda'] },
   ],
   blocks: [
     { id: 'b1', unitId: 'u1', channel: 'airbnb', state: 'checked_in', guestName: 'Nadia Abdullah', checkIn: T(-1), checkOut: T(1), grossBookingValue: 85200, ref: 'ABNB-7741QK', reason: null },
@@ -93,17 +95,43 @@ const BG_TODAY = 'bg-gold-tint';
 const BG_WEEKEND = 'bg-muted/70';
 const TODAY_EDGES = 'shadow-[inset_1px_0_0_var(--color-gold),inset_-1px_0_0_var(--color-gold)]';
 const CELL_EDGE = '[border-left:1px_solid_var(--color-line-soft)]';
-// Buttons carry a UA border; border-none clears it, and the important left edge puts the divider back.
-const CELL_EDGE_BTN = '[border-left:1px_solid_var(--color-line-soft)]!';
 const STICKY_COL = 'w-[var(--unit-col)] flex-none box-border sticky left-0 bg-card [border-right:1px_solid_var(--color-line)]';
+const buildingOf = (u: Unit) => u.propertyId ?? u.propertyName;
+
+/** Folded buildings, remembered per person in this browser. Storage can be missing or refuse; the board works without it. */
+function useFolded(userId: string | undefined) {
+  const key = `tc.calendar.folded.${userId ?? 'anon'}`;
+  const [folded, setFolded] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem(key) ?? '{}') ?? {}; } catch { return {}; }
+  });
+  useEffect(() => {
+    try {
+      const on = Object.fromEntries(Object.entries(folded).filter(([, v]) => v));
+      if (Object.keys(on).length) localStorage.setItem(key, JSON.stringify(on)); else localStorage.removeItem(key);
+    } catch { /* storage unavailable: folding just isn't remembered */ }
+  }, [key, folded]);
+  return [folded, setFolded] as const;
+}
 
 export default function CalendarPage() {
   // Fixed 30-day window; scroll the grid sideways, or jump a window with the arrows.
   const span = SPAN;
-  const [weekOffset, setWeekOffset] = useState(0);
+  // The window and the building live in the address (?w=, ?b=), so a link or a reload shows the same board.
+  const [params, setParams] = useSearchParams();
+  const setParam = (k: string, v: string | null) => setParams(p => { const n = new URLSearchParams(p); if (v == null) n.delete(k); else n.set(k, v); return n; }, { replace: true });
+  const weekOffset = Math.trunc(Number(params.get('w'))) || 0;
+  const setWeekOffset = (next: number | ((w: number) => number)) => {
+    const v = typeof next === 'function' ? next(weekOffset) : next;
+    setParam('w', v ? String(v) : null);
+  };
+  const property = params.get('b') || 'all';
+  const setProperty = (b: string) => setParam('b', b === 'all' ? null : b);
   const start = addDays(today, weekOffset * span);
   const from = iso(start), to = iso(addDays(start, span - 1));
-  const { data, error, reload } = useApi<Payload>(`/reservations/calendar?from=${from}&to=${to}`, FALLBACK);
+  // One building asks the server for just that building: a few KB instead of about 150.
+  const { data, loading, error, reload } = useApi<Payload>(`/reservations/calendar?from=${from}&to=${to}${property !== 'all' ? `&property=${encodeURIComponent(property)}` : ''}`, FALLBACK);
+  const { user } = useSession();
+  const [folded, setFolded] = useFolded(user?.id);
   // No fallback on purpose: without the real connection status the page shows no sync claims at all.
   const { data: integrations, reload: reloadIntegrations } = useApi<{ data: IntegrationRow[] }>('/integrations');
   const toast = useToast();
@@ -111,9 +139,8 @@ export default function CalendarPage() {
 
   const [off, setOff] = useState<Partial<Record<BookingChannel, boolean>>>({});
   const [statusOff, setStatusOff] = useState<Record<string, boolean>>({});
-  const [property, setProperty] = useState('all');
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [expanded, setExpanded] = useState(true);
+  const [ratesPref, setRatesPref] = useState<boolean | null>(null);
   const [unitOpen, setUnitOpen] = useState<Record<string, boolean>>({});
   const [rateEdits, setRateEdits] = useState<Record<string, number>>({});
   const [dialog, setDialog] = useState<DialogSpec | null>(null);
@@ -122,31 +149,40 @@ export default function CalendarPage() {
   const [blockPrefill, setBlockPrefill] = useState<{ unitId?: string; from?: string; to?: string }>({});
   const [rateUpdate, setRateUpdate] = useState<false | { unitIds?: string[]; from?: string; to?: string }>(false);
   const [openBlock, setOpenBlock] = useState<Block | null>(null);
-  const [editDates, setEditDates] = useState<Block | null>(null);
-  const [chatBlock, setChatBlock] = useState<Block | null>(null);
   const [busy, setBusy] = useState(false);
   const [syncing, setSyncing] = useState(false);
   // Optimistic overlays, rolled back if the API refuses.
   const [dateEdits, setDateEdits] = useState<Record<string, { checkIn: string; checkOut: string }>>({});
-  const [stateEdits, setStateEdits] = useState<Record<string, ReservationState>>({});
   // Which booking is being dragged, and which of its nights the pointer grabbed.
   const dragRef = useRef<{ id: string; grabOffset: number } | null>(null);
 
-  const allUnits = data?.units ?? [];
-  const properties = useMemo(() => Array.from(new Set(allUnits.map(u => u.propertyName))), [allUnits]);
-  const units = property === 'all' ? allUnits : allUnits.filter(u => u.propertyName === property);
+  const allUnits = useMemo(() => data?.units ?? [], [data]);
+  const properties = useMemo<BuildingRow[]>(() => data?.buildings ?? Array.from(
+    allUnits.reduce((m, u) => m.set(buildingOf(u), { id: buildingOf(u), name: u.propertyName, units: (m.get(buildingOf(u))?.units ?? 0) + 1 }), new Map<string, BuildingRow>()).values(),
+  ), [data, allUnits]);
+  const units = useMemo(() => (property === 'all' ? allUnits : allUnits.filter(u => buildingOf(u) === property)), [allUnits, property]);
+  const groups = useMemo(() => {
+    const m = new Map<string, { id: string; name: string; units: Unit[] }>();
+    for (const u of units) {
+      const g = m.get(buildingOf(u)) ?? { id: buildingOf(u), name: u.propertyName, units: [] };
+      g.units.push(u); m.set(g.id, g);
+    }
+    return [...m.values()];
+  }, [units]);
+  const expanded = ratesPref ?? units.length <= RATES_AUTO_MAX;
+  const totalUnits = properties.reduce((n, b) => n + b.units, 0) || allUnits.length;
   const liveBlocks = useMemo(
     () => (data?.blocks ?? []).map(b => ({
-      ...b, ...dateEdits[b.id], ...(stateEdits[b.id] ? { state: stateEdits[b.id] } : null),
+      ...b, ...dateEdits[b.id],
     })),
-    [data, dateEdits, stateEdits],
+    [data, dateEdits],
   );
-  const blocks = liveBlocks.filter(b => {
-    if (b.state === 'cancelled') return false; // a cancelled reservation releases its dates on the board
+  const blocks = useMemo(() => liveBlocks.filter(b => {
+    if (b.state === 'cancelled' || b.state === 'no_show') return false; // a cancelled or no-show stay releases its dates on the board
     if (off[b.channel]) return false;
     if (b.channel === 'maintenance_block') return !statusOff.blocked;
     return !statusOff[b.state];
-  });
+  }), [liveBlocks, off, statusOff]);
   const gridStart = new Date(data?.from ?? from);
   const dayIndex = (d: string) => Math.round((new Date(d).getTime() - gridStart.getTime()) / 864e5);
   const dayIso = (i: number) => iso(addDays(gridStart, i));
@@ -162,6 +198,20 @@ export default function CalendarPage() {
   const todayEdge = (i: number) => (i === todayIdx ? TODAY_EDGES : '');
 
   const buildingCount = properties.length;
+  // Per unit: its bars, and which booking holds each night of the window. Worked out once per change,
+  // not once per row per render.
+  const byUnit = useMemo(() => {
+    const m = new Map<string, { bars: Block[]; cells: (Block | null)[] }>();
+    for (const u of units) m.set(u.id, { bars: [], cells: Array(span).fill(null) });
+    for (const b of blocks) {
+      const row = m.get(b.unitId);
+      if (!row) continue;
+      row.bars.push(b);
+      for (let i = Math.max(0, dayIndex(b.checkIn)); i < Math.min(span, dayIndex(b.checkOut)); i++) row.cells[i] = b;
+    }
+    return m;
+  }, [units, blocks, data?.from]); // eslint-disable-line react-hooks/exhaustive-deps
+  const allFolded = groups.length > 1 && groups.every(g => folded[g.id]);
   // Booking-site toggles only for sites at least one shown unit is on; direct, block and owner stay always.
   const filterChannels = useMemo(() => {
     const on = new Set(units.flatMap(otaChannelsOf));
@@ -197,12 +247,12 @@ export default function CalendarPage() {
 
   function emptyNight(unit: Unit, i: number) {
     setDialog({
-      title: `${unit.unitNumber} · ${dayIso(i)}`,
+      title: `${unit.unitNumber} · ${date(dayIso(i))}`,
       body: 'This night is open. Block it, create a reservation, or set a price.',
       confirmLabel: 'Set price',
       extraActions: [
         { label: 'Block dates', onClick: () => { setDialog(null); setBlockPrefill({ unitId: unit.id, from: dayIso(i), to: dayIso(i + 1) }); setBlockWizard(true); } },
-        { label: 'Create reservation', onClick: () => { setDialog(null); window.location.hash = '#/reservations/bookings?create=1'; } },
+        { label: 'Create reservation', onClick: () => { setDialog(null); window.location.hash = `#/reservations/bookings?create=1&forUnit=${encodeURIComponent(unit.id)}&checkIn=${dayIso(i)}&checkOut=${dayIso(i + 1)}`; } },
       ],
       onConfirm: () => { setDialog(null); setPriceModal({ unit, channel: 'web', dayIso: dayIso(i), current: rateFor(unit.id, 'web', i) }); },
     });
@@ -227,15 +277,22 @@ export default function CalendarPage() {
     }
     setDialog({
       title: 'Move this booking?',
-      body: 'Moving the stay re-checks availability, notifies the guest and re-pushes the new dates to every connected channel.',
+      body: "The move is checked against the unit's other bookings. If the unit is linked to Channex the new dates go to the booking sites. The guest is not messaged.",
       meta: `${b.guestName} · ${dateRange(b.checkIn, b.checkOut)} → ${dateRange(newCheckIn, newCheckOut)}`,
       confirmLabel: 'Move booking', busyLabel: 'Moving…',
       onConfirm: async () => {
         setBusy(true);
         setDateEdits(e => ({ ...e, [b.id]: { checkIn: newCheckIn, checkOut: newCheckOut } }));
-        try { await api.patch(`/reservations/${b.id}/dates`, { checkIn: newCheckIn, checkOut: newCheckOut, confirm: true }); } catch (e) { notifyFailure(e); }
-        setBusy(false); setDialog(null); setOpenBlock(null);
-        toast({ tone: 'success', title: 'Booking moved.', body: `${b.guestName} is now ${dateRange(newCheckIn, newCheckOut)}. Guest notified and channels updated.` });
+        try {
+          const res = await api.patch<{ effects?: { channel: ChannelSync } }>(`/reservations/${b.id}/dates`, { checkIn: newCheckIn, checkOut: newCheckOut, confirm: true });
+          toast({ tone: 'success', title: 'Booking moved.', body: `${b.guestName || 'The booking'} is now ${dateRange(newCheckIn, newCheckOut)}. ${channelNote(res?.effects?.channel, 'moved')}`.trim() });
+          reload();
+        } catch (e) {
+          // Put the bar back where it was: the server kept the old dates.
+          setDateEdits(x => { const n = { ...x }; delete n[b.id]; return n; });
+          toast({ tone: 'critical', title: 'Booking not moved.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+        }
+        setBusy(false); setDialog(null);
       },
     });
   }
@@ -270,55 +327,9 @@ export default function CalendarPage() {
     }
   }
 
-  // ---- Reservation drawer: chat with guest (POST /messages) ----
-  function sendGuestMessage(b: Block, body: string) {
-    const thread = b.channel === 'direct' ? 'WhatsApp' : CHANNEL[b.channel].label;
-    api.post('/messages', { reservationId: b.id, body })
-      .then(() => { setChatBlock(null); toast({ tone: 'success', title: `Message sent to ${b.guestName}.`, body: `Thread opened on ${thread}.` }); })
-      .catch(notifyFailure);
-  }
-
-  // ---- Reservation drawer: quick status update (PATCH /reservations/:id); rolled back if refused ----
-  function quickStatus(b: Block, state: ReservationState) {
-    if (state === (stateEdits[b.id] ?? b.state)) return;
-    const prev = stateEdits[b.id];
-    setStateEdits(e => ({ ...e, [b.id]: state }));
-    api.patch(`/reservations/${b.id}`, { state })
-      .then(() => { toast({ tone: 'success', title: 'Status updated.', body: `${b.guestName} is now ${RESERVATION[state].label}.` }); reload(); })
-      .catch(err => { setStateEdits(e => { const n = { ...e }; if (prev) n[b.id] = prev; else delete n[b.id]; return n; }); notifyFailure(err); });
-  }
-
-  // ---- Reservation drawer: duplicate booking (POST /reservations/:id/duplicate); the copy appears once saved ----
-  function duplicateBooking(b: Block) {
-    api.post(`/reservations/${b.id}/duplicate`)
-      .then(() => {
-        setOpenBlock(null);
-        toast({ tone: 'success', title: 'Booking duplicated.', body: `A pending copy for ${b.guestName} was placed after the original — drag it to the dates you want.` });
-        reload();
-      })
-      .catch(notifyFailure);
-  }
-
-  // ---- Reservation drawer: cancel reservation (POST /reservations/:id/cancel) — optimistic release ----
-  function requestCancel(b: Block) {
-    setDialog({
-      title: `Cancel ${b.ref ?? 'this reservation'}?`,
-      body: `This releases the dates on every channel and notifies ${b.guestName}.`,
-      meta: `${b.guestName} · ${dateRange(b.checkIn, b.checkOut)}`,
-      confirmLabel: 'Cancel reservation', busyLabel: 'Cancelling…', danger: true,
-      onConfirm: async () => {
-        setBusy(true);
-        setStateEdits(e => ({ ...e, [b.id]: 'cancelled' }));
-        try { await api.post(`/reservations/${b.id}/cancel`, { reason: 'operator_cancelled' }); } catch (e) { notifyFailure(e); }
-        setBusy(false); setDialog(null); setOpenBlock(null);
-        toast({ tone: 'neutral', title: 'Reservation cancelled.', body: `${b.guestName} has been notified and the dates released.` });
-      },
-    });
-  }
-
   const segBtn = 'h-full min-w-10 md:min-w-0 px-2.5 grid place-items-center bg-transparent hover:bg-muted border-none cursor-pointer font-sans text-[13px] text-ink';
   // Phones drop the year: the month header right under it already says it.
-  const rangeShort = `${utcLabel(start, { day: 'numeric', month: 'short' })} – ${utcLabel(addDays(start, span - 1), { day: 'numeric', month: 'short' })}`;
+  const rangeShort = `${dateShort(iso(start))} – ${dateShort(iso(addDays(start, span - 1)))}`;
   const rangeYear = utcLabel(addDays(start, span - 1), { year: 'numeric' });
   // Icon-only 40px squares on phones; icon and label from md up.
   const toolBtn = 'relative inline-flex items-center justify-center gap-1.5 h-[42px] w-[42px] md:w-auto md:h-9 md:px-3 box-border rounded-control border border-solid border-line bg-card hover:bg-muted cursor-pointer font-sans text-[13px] font-medium text-ink whitespace-nowrap flex-none disabled:cursor-default';
@@ -327,7 +338,7 @@ export default function CalendarPage() {
     <>
       <PageHeader
         title="Calendar"
-        sub={`${allUnits.length} ${allUnits.length === 1 ? 'unit' : 'units'} · ${buildingCount} ${buildingCount === 1 ? 'building' : 'buildings'}${phone ? '' : ' · Asia/Kuala Lumpur'}`}
+        sub={`${totalUnits} ${totalUnits === 1 ? 'unit' : 'units'} · ${buildingCount} ${buildingCount === 1 ? 'building' : 'buildings'}${phone ? '' : ' · Asia/Kuala Lumpur'}`}
         right={
           <div className="flex items-center gap-2">
             <button type="button" className={toolBtn} onClick={() => setRateUpdate({})} aria-label="Rate update" title="Rate update">
@@ -375,8 +386,15 @@ export default function CalendarPage() {
                 <Icon name="SlidersHorizontal" size="sm" />
                 {filterCount > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 box-border rounded-full bg-black text-white text-[11px] grid place-items-center">{filterCount}</span>}
               </button>
-              <button type="button" className={toolBtn} onClick={() => { setExpanded(v => !v); setUnitOpen({}); }}
-                aria-label={expanded ? 'Hide rates' : 'Show rates'} title={expanded ? 'Hide rates' : 'Show rates'}>
+              {groups.length > 1 && (
+                // Phones fold one building at a time from its header; the toolbar there has no room for a third button.
+                <button type="button" className={`${toolBtn} hidden! md:inline-flex!`} onClick={() => setFolded(allFolded ? {} : Object.fromEntries(groups.map(g => [g.id, true])))}
+                  aria-label={allFolded ? 'Expand all buildings' : 'Collapse all buildings'} title={allFolded ? 'Expand all buildings' : 'Collapse all buildings'}>
+                  <Icon name={allFolded ? 'UnfoldVertical' : 'FoldVertical'} size="sm" /><span className="hidden md:inline">{allFolded ? 'Expand all' : 'Collapse all'}</span>
+                </button>
+              )}
+              <button type="button" className={toolBtn} onClick={() => { setRatesPref(!expanded); setUnitOpen({}); }}
+                aria-label={expanded ? 'Hide rates' : 'Show rates'} title={expanded ? 'Hide the rate rows' : 'Show the availability and rate rows under every unit'}>
                 <Icon name={expanded ? 'ChevronsDownUp' : 'ChevronsUpDown'} size="sm" /><span className="hidden md:inline">{expanded ? 'Hide rates' : 'Show rates'}</span>
               </button>
             </div>
@@ -391,10 +409,11 @@ export default function CalendarPage() {
 
         {/* Grid: scrolls inside the card both ways; the date header and unit column stay put. */}
         <div className="max-h-[72vh] overflow-auto overscroll-x-contain rounded-none md:rounded-b-card [scrollbar-width:thin] [--unit-col:104px] md:[--unit-col:224px]">
-          <div style={{ minWidth: `calc(var(--unit-col) + ${span * COL}px)` }}>
-            <div className="sticky top-0 z-20 flex bg-card [border-bottom:1px_solid_var(--color-line)]">
-              <div className={`${STICKY_COL} z-30 flex items-end px-2 md:px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-ink`}>
-                {units.length} {units.length === 1 ? 'unit' : 'units'}
+          <div style={{ minWidth: `calc(var(--unit-col) + ${span * COL}px)` }} aria-busy={loading}
+            className={`transition-opacity duration-150 ${loading && data ? 'opacity-70' : ''}`}>
+            <div className="sticky top-0 z-20 flex bg-muted [border-bottom:1px_solid_var(--color-line)]">
+              <div className={`${STICKY_COL} bg-muted! z-30 flex items-end px-2 md:px-3 pb-2.5 text-[12px] font-semibold text-muted-ink whitespace-nowrap`}>
+                {units.length.toLocaleString('en-MY')} {units.length === 1 ? 'unit' : 'units'}
               </div>
               <div className="flex flex-col">
                 <div className="flex h-7">
@@ -408,9 +427,9 @@ export default function CalendarPage() {
                   {days.map((d, i) => {
                     const isToday = i === todayIdx;
                     return (
-                      <div key={i} className={`flex-none box-border h-11 flex flex-col items-center justify-center gap-0.5 ${CELL_EDGE} ${colBg(i)} ${todayEdge(i)}`} style={{ width: COL }}
+                      <div key={i} className={`flex-none box-border h-11 flex flex-col items-center justify-center gap-0.5 ${CELL_EDGE} ${i === todayIdx ? BG_TODAY : isWeekendNight(d) ? 'bg-sunken' : 'bg-muted'} ${todayEdge(i)}`} style={{ width: COL }}
                         title={isToday ? 'Today' : undefined}>
-                        <span className={`text-[10.5px] uppercase tracking-[0.04em] ${isToday ? 'font-semibold text-[var(--color-text-accent)]' : 'text-muted-ink'}`}>{utcLabel(d, { weekday: 'short' })}</span>
+                        <span className={`text-[11px] font-medium ${isToday ? 'font-semibold text-[var(--color-text-accent)]' : 'text-muted-ink'}`}>{utcLabel(d, { weekday: 'short' })}</span>
                         <span className={`text-[13px] font-semibold leading-none grid place-items-center ${isToday ? 'w-6 h-6 rounded-full bg-gold text-black' : 'h-6 text-ink'}`}>{d.getUTCDate()}</span>
                       </div>
                     );
@@ -420,243 +439,219 @@ export default function CalendarPage() {
             </div>
 
             {units.length === 0 && (
-              <div className="px-4 py-10 text-center text-[13px] text-muted-ink">No units match these filters.</div>
+              <div className="px-4 py-10 text-center text-[13px] text-muted-ink">{loading ? 'Loading the board…' : 'No units match these filters.'}</div>
             )}
 
-            {units.map(u => {
-              const unitBlocks = blocks.filter(b => b.unitId === u.id);
-              const cells: (Block | null)[] = Array(span).fill(null);
-              unitBlocks.forEach(b => {
-                for (let i = Math.max(0, dayIndex(b.checkIn)); i < Math.min(span, dayIndex(b.checkOut)); i++) cells[i] = b;
-              });
-              const rowOpen = unitOpen[u.id] ?? expanded;
-              const now = todayIdx >= 0 && todayIdx < span ? cells[todayIdx] : undefined;
-              const readiness = now === undefined ? null
-                : !now ? { label: 'Available today', dot: TONE.neutral.line }
-                : now.channel === 'maintenance_block' ? { label: 'Blocked today', dot: TONE.critical.line }
-                : now.channel === 'owner_stay' ? { label: 'Owner stay', dot: TONE.neutral.line }
-                : { label: 'Occupied', dot: TONE.success.line };
-              return (
-                <div key={u.id} className="[border-bottom:1px_solid_var(--color-line)]">
-                  {/* Unit row with booking bars */}
-                  <div className="flex">
-                    {/* The whole cell toggles the unit's rates, so phones get a full-size touch target. */}
-                    <div className={`${STICKY_COL} z-10 flex`}>
-                      <button type="button" aria-expanded={rowOpen} onClick={() => setUnitOpen(o => ({ ...o, [u.id]: !rowOpen }))}
-                        title={`${u.unitNumber} · ${u.propertyName}${readiness ? ' · ' + readiness.label : ''} · ${rowOpen ? 'hide' : 'show'} rates`}
-                        className="flex-1 min-w-0 flex items-center gap-1 pl-2 md:pl-1.5 pr-2 md:pr-3 py-0 m-0 border-none bg-transparent hover:bg-muted/60 cursor-pointer text-left font-sans">
-                        <span className="hidden md:grid w-6 h-6 flex-none place-items-center text-muted-ink">
-                          <Icon name={rowOpen ? 'ChevronDown' : 'ChevronRight'} size="sm" />
-                        </span>
-                        <span className="min-w-0 flex flex-col gap-px">
-                          <span className="text-[13px] font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
-                          <span className="flex items-center gap-[5px] min-w-0">
-                            {readiness && <span className="md:hidden w-1.5 h-1.5 rounded-full flex-none" style={{ background: readiness.dot }} role="img" aria-label={readiness.label} />}
-                            <span className="text-[11px] md:text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.propertyName}</span>
-                          </span>
-                          {readiness && (
-                            <span className="hidden md:flex items-center gap-[5px] text-[11px] text-muted-ink whitespace-nowrap">
-                              <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: readiness.dot }} />{readiness.label}
+            <div className="relative">
+              {/* Weekend and today shading plus the night dividers, drawn once behind every row rather than in
+                  every cell. Rows above it are transparent apart from their sticky unit column. */}
+              <div aria-hidden className="absolute top-0 bottom-0 z-0 pointer-events-none" style={{ left: 'var(--unit-col)', width: span * COL }}>
+                {days.map((d, i) => (i === todayIdx || isWeekendNight(d)) && (
+                  <div key={i} className={`absolute top-0 bottom-0 ${colBg(i)} ${todayEdge(i)}`} style={{ left: i * COL, width: COL }} />
+                ))}
+                <div className="absolute inset-0" style={{ backgroundImage: `repeating-linear-gradient(to right, var(--color-line-soft) 0 1px, transparent 1px ${COL}px)` }} />
+              </div>
+
+              {groups.map(g => {
+                const isFolded = !!folded[g.id] && groups.length > 1;
+                return (
+                  <div key={g.id}>
+                    <BuildingRowHeader name={g.name} units={g.units} folded={isFolded} showToggle={groups.length > 1}
+                      onToggle={() => setFolded(f => ({ ...f, [g.id]: !isFolded }))}
+                      days={days} byUnit={byUnit} dayIso={dayIso} />
+                    {!isFolded && (
+                      <div>
+                {g.units.map(u => {
+                  const { bars: unitBlocks, cells } = byUnit.get(u.id) ?? { bars: [], cells: Array(span).fill(null) };
+                  const rowOpen = unitOpen[u.id] ?? expanded;
+                  const now = todayIdx >= 0 && todayIdx < span ? cells[todayIdx] : undefined;
+                  const readiness = now === undefined ? null
+                    : !now ? { label: 'Available today', dot: TONE.neutral.line }
+                    : now.channel === 'maintenance_block' ? { label: 'Blocked today', dot: TONE.critical.line }
+                    : now.channel === 'owner_stay' ? { label: 'Owner stay', dot: TONE.neutral.line }
+                    : { label: 'Occupied', dot: TONE.success.line };
+                  return (
+                    <div key={u.id} className="relative z-[1] [border-bottom:1px_solid_var(--color-line)] [content-visibility:auto] [contain-intrinsic-size:auto_64px]">
+                      {/* Unit row with booking bars */}
+                      <div className="flex">
+                        {/* The whole cell toggles the unit's rates, so phones get a full-size touch target. */}
+                        <div className={`${STICKY_COL} z-10 flex`}>
+                          <button type="button" aria-expanded={rowOpen} onClick={() => setUnitOpen(o => ({ ...o, [u.id]: !rowOpen }))}
+                            title={`${u.unitNumber} · ${u.propertyName}${readiness ? ' · ' + readiness.label : ''} · ${rowOpen ? 'hide' : 'show'} rates`}
+                            className="flex-1 min-w-0 flex items-center gap-1 pl-2 md:pl-1.5 pr-2 md:pr-3 py-0 m-0 border-none bg-transparent hover:bg-muted/60 cursor-pointer text-left font-sans">
+                            <span className="hidden md:grid w-6 h-6 flex-none place-items-center text-muted-ink">
+                              <Icon name={rowOpen ? 'ChevronDown' : 'ChevronRight'} size="sm" />
                             </span>
-                          )}
-                        </span>
-                      </button>
-                    </div>
-
-                    <div className="relative flex"
-                      onDragOver={e => { if (dragRef.current) e.preventDefault(); }}
-                      onDrop={e => { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); dropOnDay(u.id, Math.floor((e.clientX - r.left) / COL)); }}>
-                      {days.map((_, i) => {
-                        const booked = cells[i];
-                        return (
-                          <div key={i} onClick={() => (booked ? setOpenBlock(booked) : emptyNight(u, i))}
-                            className={`flex-none box-border h-16 ${CELL_EDGE} ${colBg(i)} ${todayEdge(i)} ${booked ? '' : 'hover:bg-sunken cursor-pointer'}`}
-                            style={{ width: COL }} title={booked ? undefined : `${u.unitNumber} · ${dayIso(i)} · open`} />
-                        );
-                      })}
-                      {unitBlocks.map(b => {
-                        const ci = dayIndex(b.checkIn), co = dayIndex(b.checkOut);
-                        const s = Math.max(0, ci), e = Math.min(span, co);
-                        if (e <= s) return null;
-                        const ch = CHANNEL[b.channel]; const hold = ch.border !== 'solid';
-                        const clipL = ci < 0, clipR = co > span;
-                        const inset = 3;
-                        const left = s * COL + (clipL ? 0 : inset), width = (e - s) * COL - (clipL ? 0 : inset) - (clipR ? 0 : inset);
-                        const r = (on: boolean) => (on ? 0 : 8);
-                        const fullName = b.guestName || ch.label;
-                        const firstName = fullName.split(' ')[0];
-                        // A one-night bar is too narrow for logo and name side by side, so they stack.
-                        const narrow = width < 100;
-                        return (
-                          <div key={b.id} draggable onClick={() => setOpenBlock(b)}
-                            title={`${b.guestName} · ${ch.label}${b.ref ? ' · ' + b.ref : ''} · ${dateRange(b.checkIn, b.checkOut)} · drag to move`}
-                            onDragStart={ev => {
-                              ev.dataTransfer.effectAllowed = 'move';
-                              const rect = ev.currentTarget.getBoundingClientRect();
-                              dragRef.current = { id: b.id, grabOffset: (s - ci) + Math.max(0, Math.floor((ev.clientX - rect.left) / COL)) };
-                            }}
-                            onDragEnd={() => { dragRef.current = null; }}
-                            className={`absolute top-2.5 bottom-2.5 z-[2] box-border flex overflow-hidden cursor-grab active:cursor-grabbing select-none hover:brightness-[0.98] ${narrow ? 'flex-col justify-center items-start gap-0.5 px-1.5' : 'items-center gap-1.5 px-2'}`}
-                            style={{
-                              left, width, color: ch.ink,
-                              background: hold ? `repeating-linear-gradient(135deg, ${ch.tint} 0 6px, var(--color-surface-card) 6px 12px)` : ch.tint,
-                              border: hold ? `1.5px ${ch.border} ${ch.color}` : `1px solid color-mix(in srgb, ${ch.color} 28%, transparent)`,
-                              borderLeft: clipL ? undefined : hold ? undefined : `3px solid ${ch.color}`,
-                              borderRadius: `${r(clipL)}px ${r(clipR)}px ${r(clipR)}px ${r(clipL)}px`,
-                            }}>
-                            {width >= 30 && <ChannelMark ch={b.channel} size={narrow ? 14 : 16} />}
-                            {narrow
-                              ? <span className="max-w-full text-[11px] leading-[13px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{firstName}</span>
-                              : <>
-                                  <span className="md:hidden text-[12px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{firstName}</span>
-                                  <span className="hidden md:inline text-[12px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{fullName}</span>
-                                </>}
-                            {!narrow && b.grossBookingValue > 0 && width > 150 && (
-                              <span className="hidden md:inline text-[11.5px] whitespace-nowrap opacity-80 [font-variant-numeric:tabular-nums]">{rm(b.grossBookingValue, { cents: false })}</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {rowOpen && (
-                    <>
-                      {/* Availability, with the night's restriction folded in: a "2n" marker for a minimum stay above
-                          one night, "Closed" for stop sell. Only nights that have one show anything extra, so the
-                          grid keeps one row here. Clicking a night opens Rate update for it to change either. */}
-                      <SubRow label="Availability">
-                        {days.map((_, i) => {
-                          const left = cells[i] ? 0 : 1;
-                          const rs = data?.restrictions?.[`${u.id}:${dayIso(i)}`];
-                          const minStay = rs && rs.minStay > 1 ? rs.minStay : 0;
-                          const restriction = rs?.stopSell ? 'Closed for sale' : minStay ? `Minimum ${minStay} nights` : 'No minimum stay, open for sale';
-                          return (
-                            <button key={i} type="button" onClick={() => setRateUpdate({ unitIds: [u.id], from: dayIso(i), to: dayIso(i) })}
-                              title={`${left ? '1 of 1 unit available' : 'Sold'} · ${restriction} · click to change`}
-                              style={{ width: COL }}
-                              className={`flex-none box-border h-10 md:h-8 p-0 pl-1 border-none ${CELL_EDGE_BTN} ${colBg(i)} ${todayEdge(i)} hover:bg-sunken cursor-pointer font-sans text-[11.5px] whitespace-nowrap flex items-center justify-end gap-0.5 [font-variant-numeric:tabular-nums] ${minStay && !rs?.stopSell ? 'pr-1.5' : 'pr-2'} ${left ? 'text-ink-2' : 'text-faint'}`}>
-                              {rs?.stopSell
-                                ? <span className="px-1 rounded-[4px] text-[10.5px] font-semibold leading-[16px]" style={{ background: TONE.critical.bg, color: TONE.critical.fg }}>Closed</span>
-                                : <>
-                                    {minStay > 0 && <span className="mr-auto px-[3px] rounded-[4px] text-[10px] font-semibold leading-[16px] bg-muted text-ink">{minStay}n</span>}
-                                    {left ? '1 left' : 'Sold'}
-                                  </>}
-                            </button>
-                          );
-                        })}
-                      </SubRow>
-                      {rateRowsFor(u).map(r => {
-                        const sync = r.key === 'web' ? undefined : syncFor(r.key);
-                        const chip = sync ? SYNC_CHIP[sync.state] : undefined;
-                        return (
-                          <SubRow key={r.key} label={
-                            <>
-                              <ChannelMark ch={r.mark} size={16} />
-                              <span className="md:hidden text-ink font-medium whitespace-nowrap overflow-hidden text-ellipsis">{r.short}</span>
-                              <span className="hidden md:inline text-ink font-medium whitespace-nowrap overflow-hidden text-ellipsis">{r.label}</span>
-                              {chip && (
-                                <span className="hidden md:inline-block text-[10.5px] font-semibold px-1.5 rounded-full leading-[17px] whitespace-nowrap"
-                                  style={{ background: TONE[chip.tone].bg, color: TONE[chip.tone].fg }}
-                                  title={sync?.lastSyncedAt ? `Last update sent ${dateTime(sync.lastSyncedAt)}` : undefined}>{chip.label}</span>
+                            <span className="min-w-0 flex flex-col gap-px">
+                              <span className="text-[13px] font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
+                              {/* The building is the group header above, so the second line is just today's state. */}
+                              {readiness && (
+                                <span className="flex items-center gap-[5px] min-w-0 text-[11px] text-muted-ink whitespace-nowrap">
+                                  <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: readiness.dot }} />
+                                  <span className="overflow-hidden text-ellipsis">{readiness.label}</span>
+                                </span>
                               )}
-                              <span className="hidden md:inline ml-auto text-[10.5px] font-medium text-faint">RM</span>
-                            </>
-                          }>
+                            </span>
+                          </button>
+                        </div>
+    
+                        {/* One track per unit instead of 30 cells: the night under the pointer is worked out from where
+                            it is. The column shading comes from the layer behind the rows. */}
+                        <div className="group relative flex-none h-16 cursor-pointer" style={{ width: span * COL }}
+                          aria-label={`${u.unitNumber} nights`}
+                          onMouseMove={e => { const r = e.currentTarget.getBoundingClientRect(); e.currentTarget.style.setProperty('--hx', `${Math.floor((e.clientX - r.left) / COL) * COL}px`); }}
+                          onClick={e => {
+                            const r = e.currentTarget.getBoundingClientRect(), i = Math.floor((e.clientX - r.left) / COL);
+                            if (i < 0 || i >= span) return;
+                            const booked = cells[i];
+                            if (booked) setOpenBlock(booked); else emptyNight(u, i);
+                          }}
+                          onDragOver={e => { if (dragRef.current) e.preventDefault(); }}
+                          onDrop={e => { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); dropOnDay(u.id, Math.floor((e.clientX - r.left) / COL)); }}>
+                          <div aria-hidden className="absolute top-0 bottom-0 hidden group-hover:block bg-sunken/80 pointer-events-none" style={{ left: 'var(--hx, -100px)', width: COL }} />
+                          {unitBlocks.map(b => {
+                            const ci = dayIndex(b.checkIn), co = dayIndex(b.checkOut);
+                            const s = Math.max(0, ci), e = Math.min(span, co);
+                            if (e <= s) return null;
+                            const ch = CHANNEL[b.channel]; const hold = ch.border !== 'solid';
+                            const clipL = ci < 0, clipR = co > span;
+                            const inset = 3;
+                            const left = s * COL + (clipL ? 0 : inset), width = (e - s) * COL - (clipL ? 0 : inset) - (clipR ? 0 : inset);
+                            const r = (on: boolean) => (on ? 0 : 8);
+                            const fullName = b.guestName || (b.channel === 'owner_stay' ? 'Owner stay' : b.channel === 'maintenance_block' ? 'Blocked' : ch.label);
+                            const firstName = fullName.split(' ')[0];
+                            // A one-night bar is too narrow for logo and name side by side, so they stack.
+                            const narrow = width < 100;
+                            return (
+                              <div key={b.id} draggable onClick={e => { e.stopPropagation(); setOpenBlock(b); }}
+                                title={`${fullName} · ${ch.label}${b.ref ? ' · ' + b.ref : ''} · ${dateRange(b.checkIn, b.checkOut)}${b.reason ? ' · ' + b.reason : ''} · drag to move`}
+                                onDragStart={ev => {
+                                  ev.dataTransfer.effectAllowed = 'move';
+                                  const rect = ev.currentTarget.getBoundingClientRect();
+                                  dragRef.current = { id: b.id, grabOffset: (s - ci) + Math.max(0, Math.floor((ev.clientX - rect.left) / COL)) };
+                                }}
+                                onDragEnd={() => { dragRef.current = null; }}
+                                className={`absolute top-2.5 bottom-2.5 z-[2] box-border flex overflow-hidden cursor-grab active:cursor-grabbing select-none hover:brightness-[0.98] ${narrow ? 'flex-col justify-center items-start gap-0.5 px-1.5' : 'items-center gap-1.5 px-2'}`}
+                                style={{
+                                  left, width, color: ch.ink,
+                                  // Holds read as a pale, finely hatched band so a long block does not shout over the bookings around it.
+                                  background: hold ? `repeating-linear-gradient(135deg, color-mix(in srgb, ${ch.tint} 70%, var(--color-surface-card)) 0 2px, var(--color-surface-card) 2px 9px)` : ch.tint,
+                                  border: hold ? `1px ${ch.border} color-mix(in srgb, ${ch.color} 45%, transparent)` : `1px solid color-mix(in srgb, ${ch.color} 28%, transparent)`,
+                                  borderLeft: clipL ? undefined : hold ? undefined : `3px solid ${ch.color}`,
+                                  borderRadius: `${r(clipL)}px ${r(clipR)}px ${r(clipR)}px ${r(clipL)}px`,
+                                }}>
+                                {width >= 30 && <ChannelMark ch={b.channel} size={narrow ? 14 : 16} />}
+                                {/* The name may wrap onto a second line rather than be cut short; the tooltip has it in full. */}
+                                {narrow
+                                  ? <span className="max-w-full text-[11px] leading-[13px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{firstName}</span>
+                                  : <span className="min-w-0 flex flex-col">
+                                      <span className="md:hidden text-[12px] leading-[14px] font-semibold [overflow-wrap:anywhere] line-clamp-2">{fullName}</span>
+                                      <span className="hidden md:[display:-webkit-box] text-[12px] leading-[14px] font-semibold [overflow-wrap:anywhere] line-clamp-2">{fullName}</span>
+                                      {b.grossBookingValue > 0 && width > 150 && (
+                                        <span className="hidden md:block text-[11px] leading-[13px] whitespace-nowrap opacity-75 [font-variant-numeric:tabular-nums]">{rm(b.grossBookingValue, { cents: false })}</span>
+                                      )}
+                                    </span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+    
+                      {rowOpen && (
+                        <>
+                          {/* Availability, with the night's restriction folded in: a "2n" marker for a minimum stay above
+                              one night, "Closed" for stop sell. Only nights that have one show anything extra, so the
+                              grid keeps one row here. Clicking a night opens Rate update for it to change either. */}
+                          <SubRow label="Availability">
                             {days.map((_, i) => {
-                              const price = rateFor(u.id, r.key, i);
-                              const custom = rateEdits[`${u.id}:${r.key}:${i}`] != null || data?.rates?.[`${u.id}:${r.key}:${dayIso(i)}`] != null;
+                              const left = cells[i] ? 0 : 1;
+                              const rs = data?.restrictions?.[`${u.id}:${dayIso(i)}`];
+                              const minStay = rs && rs.minStay > 1 ? rs.minStay : 0;
+                              const restriction = rs?.stopSell ? 'Closed for sale' : minStay ? `Minimum ${minStay} nights` : 'No minimum stay, open for sale';
                               return (
-                                <button key={i} type="button" onClick={() => setPriceModal({ unit: u, channel: r.key, dayIso: dayIso(i), current: price })}
-                                  title={`${r.label} · ${dayIso(i)} · RM ${ringgit(price)}${custom ? ' · set by hand' : ''} · click to change`}
+                                <button key={i} type="button" onClick={() => setRateUpdate({ unitIds: [u.id], from: dayIso(i), to: dayIso(i) })}
+                                  title={`${left ? '1 of 1 unit available' : 'Sold'} · ${restriction} · click to change`}
                                   style={{ width: COL }}
-                                  className={`flex-none box-border h-10 md:h-8 p-0 pr-2 border-none ${CELL_EDGE_BTN} ${colBg(i)} ${todayEdge(i)} hover:bg-sunken cursor-pointer font-sans text-[12px] text-right [font-variant-numeric:tabular-nums] ${custom ? 'font-semibold text-ink' : 'text-ink-2'}`}>
-                                  {ringgit(price)}
+                                  className={`flex-none box-border h-10 md:h-8 p-0 pl-1 border-none bg-transparent hover:bg-sunken/80 cursor-pointer font-sans text-[11.5px] whitespace-nowrap flex items-center justify-end gap-0.5 [font-variant-numeric:tabular-nums] ${minStay && !rs?.stopSell ? 'pr-1.5' : 'pr-2'} ${left ? 'text-ink-2' : 'text-faint'}`}>
+                                  {rs?.stopSell
+                                    ? <span className="px-1 rounded-[4px] text-[10.5px] font-semibold leading-[16px]" style={{ background: TONE.critical.bg, color: TONE.critical.fg }}>Closed</span>
+                                    : <>
+                                        {minStay > 0 && <span className="mr-auto px-[3px] rounded-[4px] text-[10px] font-semibold leading-[16px] bg-muted text-ink">{minStay}n</span>}
+                                        {left ? '1 left' : 'Sold'}
+                                      </>}
                                 </button>
                               );
                             })}
                           </SubRow>
-                        );
-                      })}
-                    </>
-                  )}
-                </div>
-              );
-            })}
+                          {rateRowsFor(u).map(r => {
+                            // A booking site the unit is not connected to gets no price from us, so none is shown.
+                            const unlinked = r.key !== 'web' && !!u.linked && !u.linked.includes(r.key as BookingChannel);
+                            const sync = r.key === 'web' ? undefined : unlinked ? { state: 'not_connected', lastSyncedAt: null } : syncFor(r.key);
+                            const chip = sync ? SYNC_CHIP[sync.state] : undefined;
+                            return (
+                              <SubRow key={r.key} label={
+                                <>
+                                  <ChannelMark ch={r.mark} size={16} />
+                                  <span className="md:hidden text-ink font-medium whitespace-nowrap overflow-hidden text-ellipsis">{r.short}</span>
+                                  <span className="hidden md:inline text-ink font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={r.label}>{chip ? r.short : r.label}</span>
+                                  {chip && (
+                                    <span className="hidden md:inline-block text-[10.5px] font-semibold px-1.5 rounded-full leading-[17px] whitespace-nowrap"
+                                      style={{ background: TONE[chip.tone].bg, color: TONE[chip.tone].fg }}
+                                      title={sync?.lastSyncedAt ? `Last update sent ${dateTime(sync.lastSyncedAt)}` : undefined}>{chip.label}</span>
+                                  )}
+                                  <span className="hidden md:inline ml-auto text-[10.5px] font-medium text-faint">RM</span>
+                                </>
+                              }>
+                                {days.map((_, i) => {
+                                  const price = rateFor(u.id, r.key, i);
+                                  const custom = rateEdits[`${u.id}:${r.key}:${i}`] != null || data?.rates?.[`${u.id}:${r.key}:${dayIso(i)}`] != null;
+                                  // No price to show: the unit has no base rate yet, or the site is not linked and nothing was set by hand.
+                                  const none = !custom && (price <= 0 || unlinked);
+                                  return (
+                                    <button key={i} type="button" onClick={() => setPriceModal({ unit: u, channel: r.key, dayIso: dayIso(i), current: price })}
+                                      title={`${r.label} · ${date(dayIso(i))} · ${none ? (unlinked ? `not linked to ${r.label}, so no price is sent` : 'no rate set') : `RM ${ringgit(price)}`}${custom ? ' · set by hand' : ''} · click to set`}
+                                      style={{ width: COL }}
+                                      className={`flex-none box-border h-10 md:h-8 p-0 pr-2 border-none bg-transparent hover:bg-sunken/80 cursor-pointer font-sans text-[12px] text-right [font-variant-numeric:tabular-nums] ${none ? 'text-faint' : custom ? 'font-semibold text-ink' : 'text-ink-2'}`}>
+                                      {none ? '—' : ringgit(price)}
+                                    </button>
+                                  );
+                                })}
+                              </SubRow>
+                            );
+                          })}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Block detail drawer. Maintenance / owner-stay holds keep the light block
-          drawer; actual reservations get the full reservation-drawer actions. */}
-      <Drawer open={!!openBlock} onClose={() => setOpenBlock(null)} width={380}>
-        {openBlock && (() => {
-          const b = openBlock;
-          const isReservation = b.channel !== 'maintenance_block' && b.channel !== 'owner_stay';
-          const liveState = stateEdits[b.id] ?? b.state;
-          return (
-          <div className="p-5 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <ChannelMark ch={b.channel} size={22} />
-                <span className="text-[15px] font-semibold">{b.guestName}</span>
-              </div>
-              <button type="button" onClick={() => setOpenBlock(null)} aria-label="Close"
-                className="w-[30px] h-[30px] grid place-items-center rounded-control bg-page border border-solid border-line cursor-pointer text-muted-ink"><Icon name="X" size="sm" /></button>
-            </div>
-            <div className="text-[12.5px] text-muted-ink leading-[1.8]">
-              <div>{CHANNEL[b.channel].label} · {b.ref ?? '—'}</div>
-              <div>{b.checkIn} → {b.checkOut}</div>
-              {b.grossBookingValue > 0 && <div>Gross {rm(b.grossBookingValue)}</div>}
-              {b.reason && <div>{b.reason}</div>}
-            </div>
-
-            {isReservation && (
-              <div className="flex flex-col gap-[7px]">
-                <label className="text-[12px] font-medium text-muted-ink">Status</label>
-                <select value={liveState} onChange={e => quickStatus(b, e.target.value as ReservationState)} className={`${selectCls} h-[38px] text-[13px]`} aria-label="Reservation status">
-                  {QUICK_STATES.map(s => <option key={s} value={s}>{RESERVATION[s].label}</option>)}
-                </select>
-              </div>
-            )}
-
-            <a href="#/reservations/bookings" onClick={() => setOpenBlock(null)} className="no-underline">
-              <Button variant="primary" style={{ width: '100%' }}>View booking</Button>
-            </a>
-            {isReservation && (
-              <Button variant="secondary" icon={<Icon name="MessageSquare" size="sm" />} style={{ width: '100%' }} onClick={() => setChatBlock(b)}>Chat with guest</Button>
-            )}
-            <Button variant="secondary" style={{ width: '100%' }} onClick={() => { setOpenBlock(null); setEditDates(b); }}>Change dates</Button>
-            {isReservation && (
-              <Button variant="secondary" icon={<Icon name="Copy" size="sm" />} style={{ width: '100%' }} onClick={() => duplicateBooking(b)}>Duplicate booking</Button>
-            )}
-            {isReservation && (
-              <Button variant="danger" style={{ width: '100%' }} onClick={() => requestCancel(b)}>Cancel reservation</Button>
-            )}
-
-            {isReservation && (
-              <div className="pt-4 [border-top:1px_solid_var(--color-line-soft)]">
-                <ActivityLog reservationId={b.id} />
-              </div>
-            )}
-          </div>
-          );
-        })()}
-      </Drawer>
+      {/* One booking drawer for reservations and blocks, the same one the Bookings list uses. */}
+      <BookingDrawer id={openBlock?.id ?? null} onClose={() => setOpenBlock(null)} onChanged={() => reload()}
+        summary={openBlock ? (() => { const u = allUnits.find(x => x.id === openBlock.unitId); return {
+          id: openBlock.id, externalRef: openBlock.ref, guestName: openBlock.guestName, guestsCount: 0, unitNumber: u?.unitNumber ?? '',
+          propertyName: u?.propertyName ?? '', channel: openBlock.channel, state: openBlock.state, checkIn: openBlock.checkIn, checkOut: openBlock.checkOut,
+          grossBookingValue: openBlock.grossBookingValue,
+        }; })() : null} />
 
       <Dialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
       {priceModal && <SetPriceModal m={priceModal} onClose={() => setPriceModal(null)}
         onSave={rmValue => { const i = dayIndex(priceModal.dayIso); setPrice(priceModal.unit.id, priceModal.channel, i, rmValue); setPriceModal(null); }} />}
-      {editDates && <ChangeDatesModal b={editDates} onClose={() => setEditDates(null)}
-        onSave={(ci, co) => { const b = editDates; setEditDates(null); requestMove(b, ci, co); }} />}
-      {chatBlock && <MessageModal b={chatBlock} onClose={() => setChatBlock(null)} onSend={body => sendGuestMessage(chatBlock, body)} />}
       {blockWizard && <BlockWizard units={units} initial={blockPrefill} onClose={() => setBlockWizard(false)}
         onSave={v => {
           const clash = conflictFor(v.unitId, v.from, v.to);
           if (clash) { toast({ tone: 'critical', title: 'Dates unavailable.', body: `${clash.guestName} already holds ${dateRange(clash.checkIn, clash.checkOut)} on this unit.` }); return; }
-          api.post('/blocks', { unitId: v.unitId, from: v.from, to: v.to, reason: v.reason })
-            .then(() => { setBlockWizard(false); toast({ tone: 'success', title: 'Dates blocked.', body: `Held on every channel · ${dateRange(v.from, v.to)}.` }); reload(); })
-            .catch(notifyFailure);
+          api.post<{ effects?: { channel: ChannelSync } }>('/blocks', { unitId: v.unitId, from: v.from, to: v.to, reason: v.reason })
+            .then(res => { setBlockWizard(false); toast({ tone: 'success', title: 'Dates blocked.', body: `${dateRange(v.from, v.to)}. ${channelNote(res?.effects?.channel, 'held')}`.trim() }); reload(); })
+            .catch(e => toast({ tone: 'critical', title: 'Dates not blocked.', body: e instanceof Error ? e.message : 'Try again in a moment.' }));
         }} />}
       {rateUpdate && <RateUpdate units={units} initial={rateUpdate} onClose={() => setRateUpdate(false)}
         onSave={v => {
@@ -692,6 +687,38 @@ function usePhone() {
     return () => mql.removeEventListener('change', onChange);
   }, []);
   return phone;
+}
+
+/** A building's row on the board: fold toggle on the left, and for each night how many of its units are
+ *  still free, so a folded building still says where there is room. */
+function BuildingRowHeader({ name, units, folded, showToggle, onToggle, days, byUnit, dayIso }: {
+  name: string; units: Unit[]; folded: boolean; showToggle: boolean; onToggle: () => void;
+  days: Date[]; byUnit: Map<string, { cells: (Block | null)[] }>; dayIso: (i: number) => string;
+}) {
+  const n = units.length;
+  const freeOn = (i: number) => units.reduce((k, u) => k + (byUnit.get(u.id)?.cells[i] ? 0 : 1), 0);
+  return (
+    <div className="relative z-[1] flex bg-page/85 [border-bottom:1px_solid_var(--color-line)]">
+      <div className={`${STICKY_COL} bg-page! z-10 flex`}>
+        <button type="button" onClick={onToggle} disabled={!showToggle} aria-expanded={!folded}
+          title={`${name} · ${n} ${n === 1 ? 'unit' : 'units'}${showToggle ? (folded ? ' · show its units' : ' · fold it away') : ''}`}
+          className="flex-1 min-w-0 flex items-center gap-1 pl-1.5 pr-2 md:pr-3 h-9 m-0 border-none bg-transparent enabled:hover:bg-muted/60 enabled:cursor-pointer text-left font-sans text-ink">
+          {showToggle && <span className="w-5 h-5 flex-none grid place-items-center text-muted-ink"><Icon name={folded ? 'ChevronRight' : 'ChevronDown'} size="sm" /></span>}
+          <span className="min-w-0 flex-1 text-[12px] md:text-[12.5px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{name}</span>
+          <span className="flex-none text-[11px] font-medium text-muted-ink [font-variant-numeric:tabular-nums]">{n}</span>
+        </button>
+      </div>
+      {days.map((_, i) => {
+        const free = freeOn(i);
+        return (
+          <div key={i} style={{ width: COL }} title={`${name} · ${date(dayIso(i))} · ${free} of ${n} ${n === 1 ? 'unit' : 'units'} free`}
+            className={`flex-none box-border h-9 pr-2 flex items-center justify-end text-[11px] whitespace-nowrap [font-variant-numeric:tabular-nums] ${free === 0 ? 'text-faint' : 'text-muted-ink font-medium'}`}>
+            {free === 0 ? 'Full' : `${free} free`}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 /** A secondary row under a unit: sticky label on the left, one cell per night. */

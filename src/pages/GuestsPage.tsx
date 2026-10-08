@@ -1,20 +1,22 @@
-import { useNavigate } from 'react-router-dom';
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { color, channel } from '../theme';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Dialog } from '../components/Dialog';
 import { useToast } from '../components/Toast';
-import { StaleBanner } from '../components/DataState';
+import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { PageControls } from '../components/PageControls';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
+import { useUnitRoster } from '../lib/useUnitRoster';
 import { api, notifyFailure } from '../lib/api';
 import { useSession } from '../lib/session';
 import { RESERVATION, READINESS } from '../lib/vocabulary';
-import { rm, dateRange, time, nights as fmtNights, guests as fmtGuests } from '../lib/format';
+import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests } from '../lib/format';
 import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } from '../lib/types';
 
 /* ------------------------------------------------------------------ */
@@ -23,6 +25,7 @@ import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } 
 
 /** One past or current stay in a guest's history. */
 interface Stay {
+  reservationId?: string;
   checkIn: string; checkOut: string; unitNumber: string; propertyName: string;
   nights: number; channel: BookingChannel; value: number; state: ReservationState;
 }
@@ -39,20 +42,30 @@ interface GuestMovement {
   preparedAt: string | null; accessSentAt: string | null;
 }
 
-/** A directory guest. Contact is null-masked away from operations roles. */
-interface Guest {
+/** A directory row: lifetime figures only. Contact is null-masked away from operations roles. */
+interface GuestSummary {
   id: string; fullName: string; email: string | null; phone: string | null;
   channel: BookingChannel;
   tag: { label: string; tone: Tone };
   since: string;
-  stays: number; nights: number; lifetimeValue: number; ratingScore: number | null;
+  stays: number; nights: number; lifetimeValue: number;
+  lastCheckIn?: string | null;
+}
+
+/** The full profile, read from GET /guests/:id when a guest is selected. */
+interface Guest extends GuestSummary {
+  ratingScore: number | null;
   history: Stay[];
   movement?: GuestMovement;
   /** Internal operations notes, when the payload carries them. Ops roles only. */
   notes?: string | null;
 }
 
-interface Payload { data: Guest[]; total: number; generatedAt: string }
+type Filter = 'all' | 'arriving_today' | 'departing_today' | 'tomorrow';
+interface ListPayload {
+  data: GuestSummary[]; total: number; page: number; pageSize: number; generatedAt: string;
+  counts: Record<Filter, number>;
+}
 
 // Times are anchored at load so the two-hour access window is genuinely live in dev.
 const NOW = Date.now();
@@ -66,8 +79,6 @@ const GUESTS: Guest[] = [
     history: [
       { checkIn: '2026-09-13', checkOut: '2026-09-16', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', nights: 3, channel: 'airbnb', value: 85200, state: 'checked_in' },
       { checkIn: '2026-08-02', checkOut: '2026-08-05', unitNumber: '#2207', propertyName: 'The Establishment', nights: 3, channel: 'direct', value: 95400, state: 'checked_out' },
-      { checkIn: '2026-05-18', checkOut: '2026-05-22', unitNumber: '#B-08-11', propertyName: 'Arcoris Mont Kiara', nights: 4, channel: 'airbnb', value: 92400, state: 'checked_out' },
-      { checkIn: '2026-03-06', checkOut: '2026-03-09', unitNumber: '#15-06', propertyName: 'Scarletz KLCC', nights: 3, channel: 'booking_com', value: 79500, state: 'checked_out' },
     ],
     movement: { reservationId: 'r1', kind: 'arrival', day: 'today', checkInAt: at(95), checkOutAt: '', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', channel: 'airbnb', nights: 3, guestsCount: 2, state: 'confirmed', readiness: 'ready', preparedAt: null, accessSentAt: null },
   },
@@ -77,81 +88,33 @@ const GUESTS: Guest[] = [
     stays: 3, nights: 11, lifetimeValue: 486000, ratingScore: 4.8,
     history: [
       { checkIn: '2026-05-09', checkOut: '2026-05-11', unitNumber: '#B-08-11', propertyName: 'Arcoris Mont Kiara', nights: 2, channel: 'direct', value: 262000, state: 'checked_out' },
-      { checkIn: '2026-01-18', checkOut: '2026-01-21', unitNumber: '#15-06', propertyName: 'Scarletz KLCC', nights: 3, channel: 'direct', value: 224000, state: 'checked_out' },
     ],
-    movement: { reservationId: 'r2', kind: 'arrival', day: 'today', checkInAt: at(320), checkOutAt: '', unitNumber: '#B-08-11', propertyName: 'Arcoris Mont Kiara', channel: 'direct', nights: 2, guestsCount: 1, state: 'confirmed', readiness: 'ready', preparedAt: null, accessSentAt: null },
-  },
-  {
-    id: 'g3', fullName: 'Priya Sundaram', email: 'priya@example.com', phone: '+65 8111 0003',
-    channel: 'booking_com', tag: { label: 'Payment pending', tone: 'warning' }, since: 'First booking',
-    stays: 1, nights: 4, lifetimeValue: 168000, ratingScore: null,
-    history: [],
-    movement: { reservationId: 'r3', kind: 'arrival', day: 'today', checkInAt: at(40), checkOutAt: '', unitNumber: '#15-06', propertyName: 'Scarletz KLCC', channel: 'booking_com', nights: 4, guestsCount: 2, state: 'confirmed', readiness: 'cleaning', preparedAt: null, accessSentAt: null },
-  },
-  {
-    id: 'g4', fullName: 'Chen Yu', email: 'chen@example.com', phone: '+86 131 110 004',
-    channel: 'agoda', tag: { label: 'Repeat guest', tone: 'success' }, since: 'Guest since Jan 2026',
-    stays: 2, nights: 5, lifetimeValue: 96000, ratingScore: 4.9,
-    history: [
-      { checkIn: '2026-06-20', checkOut: '2026-06-23', unitNumber: '#2207', propertyName: 'The Establishment', nights: 3, channel: 'agoda', value: 51000, state: 'checked_out' },
-    ],
-    movement: { reservationId: 'r4', kind: 'departure', day: 'today', checkInAt: '', checkOutAt: at(-45), unitNumber: '#2207', propertyName: 'The Establishment', channel: 'agoda', nights: 2, guestsCount: 3, state: 'checked_in', readiness: 'occupied', preparedAt: at(-2000), accessSentAt: at(-2000) },
-  },
-  {
-    id: 'g5', fullName: 'Marcus Wong', email: 'marcus@example.com', phone: '+60 12-111 0005',
-    channel: 'direct', tag: { label: 'Corporate', tone: 'info' }, since: 'Guest since Sep 2024',
-    stays: 6, nights: 28, lifetimeValue: 1892000, ratingScore: 4.7,
-    history: [
-      { checkIn: '2026-07-01', checkOut: '2026-07-06', unitNumber: '#A-21-02', propertyName: 'The Establishment', nights: 5, channel: 'direct', value: 640000, state: 'checked_out' },
-      { checkIn: '2026-04-14', checkOut: '2026-04-18', unitNumber: '#A-21-02', propertyName: 'The Establishment', nights: 4, channel: 'direct', value: 512000, state: 'checked_out' },
-    ],
-    movement: { reservationId: 'r5', kind: 'departure', day: 'today', checkInAt: '', checkOutAt: at(60), unitNumber: '#A-21-02', propertyName: 'The Establishment', channel: 'direct', nights: 5, guestsCount: 2, state: 'checked_in', readiness: 'occupied', preparedAt: at(-6000), accessSentAt: at(-6000) },
-  },
-  {
-    id: 'g6', fullName: 'Siti Rahmah', email: 'siti@example.com', phone: '+60 12-111 0006',
-    channel: 'direct', tag: { label: 'New', tone: 'neutral' }, since: 'First booking',
-    stays: 1, nights: 2, lifetimeValue: 138000, ratingScore: null,
-    history: [],
-  },
-  {
-    id: 'g7', fullName: 'Sofia Reyes', email: 'sofia@example.com', phone: '+63 917 100 0006',
-    channel: 'airbnb', tag: { label: 'New', tone: 'neutral' }, since: 'First booking',
-    stays: 1, nights: 3, lifetimeValue: 0, ratingScore: null,
-    history: [],
-    movement: { reservationId: 'r6', kind: 'arrival', day: 'tomorrow', checkInAt: at(1440 + 60), checkOutAt: '', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', channel: 'airbnb', nights: 3, guestsCount: 2, state: 'confirmed', readiness: 'ready', preparedAt: null, accessSentAt: null },
-  },
-  {
-    id: 'g8', fullName: 'Ben Carter', email: 'ben@example.com', phone: '+44 7700 900006',
-    channel: 'agoda', tag: { label: 'Repeat guest', tone: 'success' }, since: 'Guest since Feb 2026',
-    stays: 2, nights: 9, lifetimeValue: 742000, ratingScore: 4.7,
-    history: [
-      { checkIn: '2026-02-11', checkOut: '2026-02-17', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', nights: 6, channel: 'agoda', value: 742000, state: 'checked_out' },
-    ],
-    movement: { reservationId: 'r7', kind: 'arrival', day: 'tomorrow', checkInAt: at(1440 + 260), checkOutAt: '', unitNumber: '#C-31-14', propertyName: 'Sentral Suites', channel: 'agoda', nights: 6, guestsCount: 4, state: 'confirmed', readiness: 'dirty', preparedAt: null, accessSentAt: null },
-  },
-  {
-    id: 'g9', fullName: 'Yuki Tanaka', email: 'yuki@example.com', phone: '+81 90 1000 0007',
-    channel: 'booking_com', tag: { label: 'Direct', tone: 'info' }, since: 'Guest since Nov 2025',
-    stays: 1, nights: 3, lifetimeValue: 210000, ratingScore: null,
-    history: [],
-    movement: { reservationId: 'r8', kind: 'departure', day: 'tomorrow', checkInAt: '', checkOutAt: at(1440 + 30), unitNumber: '#15-06', propertyName: 'Scarletz KLCC', channel: 'booking_com', nights: 3, guestsCount: 1, state: 'checked_in', readiness: 'occupied', preparedAt: at(-2800), accessSentAt: at(-2800) },
   },
 ];
 
-const FALLBACK: Payload = { data: GUESTS, total: 312, generatedAt: '' };
+const LIST_FALLBACK: ListPayload = {
+  data: GUESTS, total: GUESTS.length, page: 1, pageSize: 50, generatedAt: '',
+  counts: { all: GUESTS.length, arriving_today: 1, departing_today: 0, tomorrow: 0 },
+};
 
 const OPS_ROLES: UserRole[] = ['management', 'operations_manager', 'operations_staff'];
 const TWO_HOURS = 2 * 60 * 60 * 1000;
-const initials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('');
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
 const threadName = (ch: BookingChannel) => (ch === 'direct' ? 'WhatsApp' : channel[ch].label);
+const num = (v: number) => v.toLocaleString('en-MY');
 
-type Filter = 'all' | 'arriving_today' | 'departing_today' | 'tomorrow';
-const FILTERS: { key: Filter; label: string; match: (g: Guest) => boolean }[] = [
-  { key: 'all', label: 'All guests', match: () => true },
-  { key: 'arriving_today', label: 'Arriving today', match: g => g.movement?.kind === 'arrival' && g.movement.day === 'today' },
-  { key: 'departing_today', label: 'Departing today', match: g => g.movement?.kind === 'departure' && g.movement.day === 'today' },
-  { key: 'tomorrow', label: 'Tomorrow', match: g => g.movement?.day === 'tomorrow' },
+const FILTERS: { key: Filter; label: string; empty: string }[] = [
+  { key: 'all', label: 'All guests', empty: 'No guests yet.' },
+  { key: 'arriving_today', label: 'Arriving today', empty: 'Nobody arrives today.' },
+  { key: 'departing_today', label: 'Departing today', empty: 'Nobody departs today.' },
+  { key: 'tomorrow', label: 'Tomorrow', empty: 'No arrivals or departures tomorrow.' },
 ];
+const SORTS = [
+  { key: 'name', label: 'Name A to Z' },
+  { key: 'recent', label: 'Latest stay' },
+  { key: 'value', label: 'Lifetime value' },
+  { key: 'stays', label: 'Most stays' },
+] as const;
 
 /** null → allowed. A string → the reason "Send access" is disabled. */
 function accessGuard(m: GuestMovement): string | null {
@@ -170,21 +133,51 @@ function accessGuard(m: GuestMovement): string | null {
 export default function GuestsPage() {
   const { user } = useSession();
   const canSeeContact = user ? OPS_ROLES.includes(user.role) : false;
-
-  const { data, error, reload } = useApi<Payload>('/guests', FALLBACK);
   const navigate = useNavigate();
+  const toast = useToast();
 
-  // Optimistic overlays — no backend in dev.
+  // URL-as-state: search, filter, sort, page and the selected guest survive a refresh or a shared link.
+  const [params, setParams] = useSearchParams();
+  function updateParams(mut: (p: URLSearchParams) => void) {
+    setParams(prev => { const next = new URLSearchParams(prev); mut(next); return next; }, { replace: true });
+  }
+  const rawFilter = params.get('filter');
+  const filter: Filter = FILTERS.some(f => f.key === rawFilter) ? rawFilter as Filter : 'all';
+  const sort = SORTS.some(s => s.key === params.get('sort')) ? params.get('sort')! : 'name';
+
+  const listQuery = useMemo(() => {
+    const p = new URLSearchParams();
+    for (const k of ['q', 'filter', 'sort', 'page']) { const v = params.get(k); if (v) p.set(k, v); }
+    return p.toString();
+  }, [params]);
+  const list = useApi<ListPayload>(`/guests${listQuery ? `?${listQuery}` : ''}`, LIST_FALLBACK);
+  const rows = list.data?.data ?? [];
+  const counts = list.data?.counts;
+  const total = list.data?.total ?? 0;
+
+  // Phones show the list or a profile, never both: only an explicit pick (g in the URL) opens a profile there.
+  const pickedId = params.get('g');
+  const selectedId = pickedId ?? rows[0]?.id ?? null;
+  const detail = useApi<Guest>(selectedId ? `/guests/${selectedId}` : null, GUESTS.find(g => g.id === selectedId) ?? GUESTS[0]);
+
+  const [draft, setDraft] = useState(params.get('q') ?? '');
+  const timer = useRef<number | undefined>(undefined);
+  function setSearch(value: string) {
+    setDraft(value);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => updateParams(p => {
+      if (value.trim()) p.set('q', value); else p.delete('q');
+      p.delete('page'); p.delete('g');
+    }), 300);
+  }
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  // Optimistic overlays on today's movement, rolled back if the server refuses.
   const [mEdits, setMEdits] = useState<Record<string, Partial<GuestMovement>>>({});
   const [busy, setBusy] = useState(false);
-
-  // Overlay / selection state.
-  const [filter, setFilter] = useState<Filter>('all');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [message, setMessage] = useState<Guest | null>(null);
   const [checkout, setCheckout] = useState<Guest | null>(null);
   const [adding, setAdding] = useState(false);
-  const toast = useToast();
 
   const mergeGuest = (g: Guest): Guest =>
     g.movement && mEdits[g.movement.reservationId]
@@ -193,29 +186,25 @@ export default function GuestsPage() {
   const mPatch = (rid: string, p: Partial<GuestMovement>) =>
     setMEdits(e => ({ ...e, [rid]: { ...e[rid], ...p } }));
 
-  const allGuests = useMemo(
-    () => (data?.data ?? []).map(mergeGuest),
-    [data, mEdits],
-  );
-  const rows = useMemo(() => {
-    const m = FILTERS.find(f => f.key === filter)!.match;
-    return allGuests.filter(m);
-  }, [allGuests, filter]);
+  // While the next profile loads the previous one stays, dimmed, instead of blanking the panel.
+  const selected = detail.data ? mergeGuest(detail.data) : null;
+  const profileStale = !!selected && selected.id !== selectedId;
 
-  const selected = rows.find(g => g.id === selectedId) ?? rows[0] ?? allGuests[0] ?? null;
-  const total = data?.total ?? allGuests.length;
-
-  const counts = useMemo(() => {
-    const c: Record<Filter, number> = { all: allGuests.length, arriving_today: 0, departing_today: 0, tomorrow: 0 };
-    for (const g of allGuests) for (const f of FILTERS) if (f.key !== 'all' && f.match(g)) c[f.key]++;
-    return c;
-  }, [allGuests]);
+  function reloadAll() { list.reload(); detail.reload(); }
+  function select(id: string) {
+    updateParams(p => p.set('g', id));
+    // On a phone the profile replaces the list, so it should open at its top, not at the list's scroll position.
+    if (window.matchMedia('(max-width: 767.98px)').matches) document.querySelector('main')?.scrollTo({ top: 0 });
+  }
+  function setFilter(key: Filter) { updateParams(p => { if (key === 'all') p.delete('filter'); else p.set('filter', key); p.delete('page'); p.delete('g'); }); }
+  function setSort(key: string) { updateParams(p => { if (key === 'name') p.delete('sort'); else p.set('sort', key); p.delete('page'); p.delete('g'); }); }
+  function goPage(n: number) { updateParams(p => { if (n <= 1) p.delete('page'); else p.set('page', String(n)); p.delete('g'); }); }
 
   // ---- actions: a change shows at once and is rolled back if the server refuses it ----
   function tryMove(rid: string, p: Partial<GuestMovement>, call: () => Promise<unknown>, ok: () => void) {
     const prev = mEdits[rid];
     mPatch(rid, p);
-    call().then(() => { ok(); reload(); }).catch(err => { setMEdits(e => ({ ...e, [rid]: prev ?? {} })); notifyFailure(err); });
+    call().then(() => { ok(); reloadAll(); }).catch(err => { setMEdits(e => ({ ...e, [rid]: prev ?? {} })); notifyFailure(err); });
   }
   function prepareEarly(g: Guest) {
     const m = g.movement; if (!m) return;
@@ -244,7 +233,7 @@ export default function GuestsPage() {
       mPatch(m.reservationId, { state: 'checked_out', readiness: 'dirty' });
       toast({ tone: 'success', title: `${g.fullName} checked out.`, body: `A cleaning task was created for ${m.propertyName} ${m.unitNumber}.` });
       setCheckout(null);
-      reload();
+      reloadAll();
     } catch (e) { notifyFailure(e); } finally { setBusy(false); }
   }
   async function sendMessage(body: string) {
@@ -263,81 +252,108 @@ export default function GuestsPage() {
   async function addWalkIn(input: { fullName: string; phone: string; email: string; unitNumber: string; propertyName: string; guestsCount: number }) {
     try {
       const r = await api.post<{ id: string; reservationId: string }>('/guests', input);
-      setFilter('all');
-      setSelectedId(r.id);
       setAdding(false);
+      setDraft('');
+      updateParams(p => { ['q', 'filter', 'page'].forEach(k => p.delete(k)); p.set('g', r.id); });
       toast({ tone: 'success', title: `${input.fullName} added.`, body: 'Walk-in placed in today’s arrivals.' });
-      reload();
+      reloadAll();
     } catch (e) { notifyFailure(e); }
   }
+
+  const searching = !!params.get('q');
+  const emptyText = searching ? 'No guests match this search.' : FILTERS.find(f => f.key === filter)!.empty;
 
   return (
     <>
       <PageHeader
         title="Guests"
-        sub={`${total.toLocaleString('en-MY')} guests · contact details restricted to operations roles`}
+        sub={counts ? `${num(counts.all)} guests${searching ? ' match your search' : ''} · contact details restricted to operations roles` : 'Loading guests'}
         right={<Button variant="primary" size="md" onClick={() => setAdding(true)}>Add guest</Button>}
       />
 
-      {error && <StaleBanner message={`Showing the last guest list we have. ${error}`} onRetry={reload} />}
+      {list.error && <StaleBanner message={`Showing the last guest list we have. ${list.error}`} onRetry={list.reload} />}
 
-      <div className="flex gap-5 items-start flex-wrap max-w-[1600px]">
+      <div className="flex gap-5 items-start max-w-[1600px] max-md:flex-col max-md:items-stretch">
         {/* -------- left: directory list -------- */}
-        <div className="flex-[1_1_320px] min-w-[280px] max-w-[440px] bg-card border border-solid border-line rounded-card overflow-hidden">
-          <div className="py-[14px] px-[18px] [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-[11px]">
-            <span className="text-[12px] text-muted-ink">
-              {total.toLocaleString('en-MY')} guests · {rows.length} shown
-            </span>
+        <div className={cx('md:flex-[0_1_400px] md:min-w-[320px] md:max-w-[440px] w-full bg-card border border-solid border-line rounded-card overflow-hidden', pickedId && 'max-md:hidden')}>
+          <div className="py-[14px] px-4 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-[11px]">
+            <div className="flex gap-2">
+              <label className="relative flex-1 min-w-0">
+                <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid"><Icon name="Search" size="sm" /></span>
+                <input value={draft} onChange={e => setSearch(e.target.value)} aria-label="Search guests"
+                  placeholder={canSeeContact ? 'Name, phone or email' : 'Guest name'}
+                  className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-[13px] pl-[32px] pr-3 py-0 outline-none" />
+              </label>
+              <select value={sort} onChange={e => setSort(e.target.value)} aria-label="Sort guests"
+                className="h-9 flex-none max-w-[140px] px-2 rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-[12.5px] cursor-pointer">
+                {SORTS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+            </div>
             <div role="tablist" aria-label="Filter guests" className="flex gap-[6px] flex-wrap">
               {FILTERS.map(f => {
                 const on = f.key === filter;
-                const n = counts[f.key];
+                const n = counts?.[f.key];
                 return (
                   <button
                     key={f.key} role="tab" aria-selected={on}
-                    onClick={() => { setFilter(f.key); setSelectedId(null); }}
+                    onClick={() => setFilter(f.key)}
                     className={cx(
-                      'h-7 inline-flex items-center gap-[5px] px-[11px] py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border border-solid',
+                      'h-7 inline-flex items-center gap-[5px] px-[11px] py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] text-[12.5px] border border-solid',
                       on ? 'border-black bg-black text-white' : 'border-line bg-card text-muted-ink',
                     )}
                   >
                     {f.label}
-                    {f.key !== 'all' && <span className="[font-variant-numeric:tabular-nums] opacity-85">{n}</span>}
+                    <span className="[font-variant-numeric:tabular-nums] opacity-85">{n === undefined ? '' : num(n)}</span>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          <div className="max-h-[640px] overflow-y-auto">
-            {rows.length === 0 ? (
-              <div className="py-6 px-[18px] text-[13px] text-muted-ink">No guests match this filter.</div>
+          <div className="md:max-h-[calc(100dvh-380px)] md:min-h-[320px] overflow-y-auto" aria-busy={list.loading}>
+            {!list.data ? <TableSkeleton rows={8} cols={2} /> : rows.length === 0 ? (
+              <div className="py-8 px-[18px] flex flex-col items-center gap-3 text-center text-[13px] text-muted-ink">
+                {emptyText}
+                {searching && <Button size="sm" variant="secondary" onClick={() => setSearch('')}>Clear search</Button>}
+              </div>
             ) : (
-              rows.map(g => (
-                <GuestRow
-                  key={g.id} g={g} selected={selected?.id === g.id} canSeeContact={canSeeContact}
-                  onSelect={() => setSelectedId(g.id)}
-                />
-              ))
+              <div className={cx('transition-opacity duration-150', list.loading && 'opacity-55')}>
+                {rows.map(g => (
+                  <GuestRow
+                    key={g.id} g={g} selected={selectedId === g.id} canSeeContact={canSeeContact}
+                    onSelect={() => select(g.id)}
+                  />
+                ))}
+              </div>
             )}
           </div>
+          {list.data && total > 0 && (
+            <PageControls page={list.data.page} pageSize={list.data.pageSize} total={total} onPage={goPage}
+              noun={total === 1 ? 'guest' : 'guests'} className="[border-top:1px_solid_var(--color-line-soft)] px-4!" />
+          )}
         </div>
 
         {/* -------- right: guest profile -------- */}
-        <div className="flex-[1.6_1_460px] min-w-0 flex flex-col gap-[18px]">
+        <div className={cx('md:flex-[1.6_1_460px] min-w-0 flex flex-col gap-[18px]', !pickedId && 'max-md:hidden')}>
+          <button type="button" onClick={() => updateParams(p => p.delete('g'))}
+            className="md:hidden self-start h-9 inline-flex items-center gap-1 px-2 -ml-2 rounded-control border-none bg-transparent text-ink [font:inherit] text-[13.5px] font-medium cursor-pointer">
+            <Icon name="ChevronLeft" size="sm" /> All guests
+          </button>
           {selected ? (
-            <ProfilePanel
-              g={selected} canSeeContact={canSeeContact}
-              onMessage={() => setMessage(selected)}
-              onBookAgain={() => bookAgain(selected)}
-              onPrepare={() => prepareEarly(selected)}
-              onSendAccess={() => sendAccess(selected)}
-              onCheckIn={() => markCheckedIn(selected)}
-              onCheckOut={() => setCheckout(selected)}
-            />
+            <div className={cx('flex flex-col gap-[18px] transition-opacity duration-150', profileStale && 'opacity-55')} aria-busy={profileStale}>
+              <ProfilePanel
+                g={selected} canSeeContact={canSeeContact}
+                onMessage={() => setMessage(selected)}
+                onBookAgain={() => bookAgain(selected)}
+                onPrepare={() => prepareEarly(selected)}
+                onSendAccess={() => sendAccess(selected)}
+                onCheckIn={() => markCheckedIn(selected)}
+                onCheckOut={() => setCheckout(selected)}
+              />
+            </div>
           ) : (
             <div className="py-10 px-[22px] bg-card border border-solid border-line rounded-card text-[13px] text-muted-ink">
-              Select a guest to see their profile.
+              {detail.error ?? (list.data && rows.length === 0 ? 'No guest to show.' : selectedId ? 'Loading profile…' : 'Select a guest to see their profile.')}
             </div>
           )}
         </div>
@@ -368,11 +384,10 @@ export default function GuestsPage() {
 /* ------------------------------------------------------------------ */
 
 function GuestRow({ g, selected, canSeeContact, onSelect }: {
-  g: Guest; selected: boolean; canSeeContact: boolean; onSelect: () => void;
+  g: GuestSummary; selected: boolean; canSeeContact: boolean; onSelect: () => void;
 }) {
-  const meta = canSeeContact
-    ? [g.email, g.phone].filter(Boolean).join(' · ') || '—'
-    : 'Contact limited to operations roles';
+  const lastStay = g.lastCheckIn ? `Last stay ${fmtDate(g.lastCheckIn)}` : 'No stays yet';
+  const meta = canSeeContact ? [g.phone, g.email].filter(Boolean).join(' · ') || lastStay : lastStay;
   return (
     <button
       onClick={onSelect}
@@ -386,12 +401,12 @@ function GuestRow({ g, selected, canSeeContact, onSelect }: {
         {initials(g.fullName)}
       </span>
       <span className="flex flex-col gap-[2px] min-w-0 flex-1">
-        <span className="text-[13.5px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{g.fullName}</span>
-        <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{meta}</span>
+        <span className="text-[13.5px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={g.fullName}>{g.fullName}</span>
+        <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={meta}>{meta}</span>
       </span>
       <span className="flex flex-col items-end gap-1 flex-none">
         <Badge tone={g.tag.tone} label={g.tag.label} size="sm" />
-        <span className="text-[11.5px] text-muted-ink">{g.stays} {g.stays === 1 ? 'stay' : 'stays'}</span>
+        <span className="text-[11.5px] text-muted-ink [font-variant-numeric:tabular-nums]">{g.stays} {g.stays === 1 ? 'stay' : 'stays'}</span>
       </span>
     </button>
   );
@@ -448,7 +463,7 @@ function ProfilePanel({ g, canSeeContact, onMessage, onBookAgain, onPrepare, onS
       <div className="bg-card border border-solid border-line rounded-card overflow-hidden">
         <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-[16px] font-semibold">Stay history</div>
         {g.history.length === 0 ? (
-          <div className="py-[18px] px-5 text-[12.5px] text-muted-ink">This is their first stay.</div>
+          <div className="py-[18px] px-5 text-[12.5px] text-muted-ink">No stays on record. Cancelled bookings are not listed here.</div>
         ) : (
           g.history.map((s, i) => (
             <div key={i} className={cx('flex items-center gap-[14px] py-[13px] px-5 flex-wrap', i < g.history.length - 1 ? '[border-bottom:1px_solid_var(--color-line-soft)]' : '')}>
@@ -632,21 +647,17 @@ function AddGuestModal({ onClose, onAdd }: {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [unitNumber, setUnitNumber] = useState('#A-12-03');
   const [guestsCount, setGuestsCount] = useState(1);
 
-  const UNITS = [
-    { unitNumber: '#A-12-03', propertyName: 'Vista Jaya One' },
-    { unitNumber: '#B-08-11', propertyName: 'Arcoris Mont Kiara' },
-    { unitNumber: '#15-06', propertyName: 'Scarletz KLCC' },
-    { unitNumber: '#2207', propertyName: 'The Establishment' },
-    { unitNumber: '#C-31-14', propertyName: 'Sentral Suites' },
-  ];
+  // The real unit list, sorted by building so a portfolio of 100+ units stays findable.
+  const roster = useUnitRoster();
+  const UNITS = useMemo(() => [...roster].sort((a, b) => a.propertyName.localeCompare(b.propertyName) || a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true })), [roster]);
+  const [unitId, setUnitId] = useState('');
+  const unit = UNITS.find(u => u.id === unitId) ?? UNITS[0];
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (!fullName.trim()) return;
-    const unit = UNITS.find(u => u.unitNumber === unitNumber) ?? UNITS[0];
+    if (!fullName.trim() || !unit) return;
     onAdd({ fullName: fullName.trim(), phone, email, unitNumber: unit.unitNumber, propertyName: unit.propertyName, guestsCount });
   }
 
@@ -670,8 +681,9 @@ function AddGuestModal({ onClose, onAdd }: {
         <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
           <div className="flex flex-col gap-[6px]">
             <label htmlFor="ag-unit" className={labelClass}>Unit</label>
-            <select id="ag-unit" value={unitNumber} onChange={e => setUnitNumber(e.target.value)} className={inputClass}>
-              {UNITS.map(u => <option key={u.unitNumber} value={u.unitNumber}>{u.propertyName} {u.unitNumber}</option>)}
+            <select id="ag-unit" value={unit?.id ?? ''} onChange={e => setUnitId(e.target.value)} className={inputClass} disabled={!UNITS.length}>
+              {UNITS.length === 0 && <option value="">Loading units…</option>}
+              {UNITS.map(u => <option key={u.id} value={u.id}>{u.propertyName} {u.unitNumber}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-[6px]">
@@ -682,7 +694,7 @@ function AddGuestModal({ onClose, onAdd }: {
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" size="sm" variant="primary" disabled={!fullName.trim()} disabledReason="A name is required.">Add guest</Button>
+          <Button type="submit" size="sm" variant="primary" disabled={!fullName.trim() || !unit} disabledReason={unit ? 'A name is required.' : 'The unit list is still loading.'}>Add guest</Button>
         </div>
       </form>
     </ModalShell>

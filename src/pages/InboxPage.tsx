@@ -2,9 +2,9 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { cx, TONE } from '../lib/design-tokens';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
+import { EmptyState } from '../components/States';
 import ChannelMark, { channelLabel } from '../components/ChannelMark';
 import { Badge } from '../components/Badge';
-import { Button } from '../components/Button';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
@@ -164,7 +164,7 @@ export default function InboxPage() {
     <>
       <PageHeader
         title="Inbox"
-        sub={`${unreadCount} unread · every channel in one thread list`}
+        sub={`${unreadCount} unread · Airbnb, Booking.com, Agoda and WhatsApp messages together`}
       />
 
       {error && <StaleBanner message={`Showing the last threads we have. ${error}`} onRetry={reload} />}
@@ -189,14 +189,9 @@ export default function InboxPage() {
           {loading && threads.length === 0 ? (
             <TableSkeleton rows={4} cols={2} />
           ) : visible.length === 0 ? (
-            <div className="py-[28px] px-[22px] flex flex-col gap-3 items-start">
-              <span className="text-[13px] text-muted-ink">
-                {filter === 'unread' ? 'No unread conversations.' : 'No conversations yet.'}
-              </span>
-              {filter === 'unread' && (
-                <Button size="sm" variant="secondary" onClick={() => setFilter('all')}>Clear filter</Button>
-              )}
-            </div>
+            filter === 'unread'
+              ? <EmptyState bare kind="filtered" title="No unread conversations." action={{ label: 'Show all', onClick: () => setFilter('all') }} />
+              : <EmptyState bare icon="MessageCircle" title="No conversations yet" body="Guest messages arrive here from Airbnb and Booking.com once units are connected through Channex (Integrations), and from WhatsApp for direct bookings." />
           ) : (
             visible.map(t => {
               const on = t.id === activeId;
@@ -208,11 +203,11 @@ export default function InboxPage() {
                   {t.channel && <ChannelMark ch={t.channel} size={22} />}
                   <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className={cx('text-[13.5px] whitespace-nowrap overflow-hidden text-ellipsis', t.isRead ? 'font-medium' : 'font-semibold')}>{t.guestName ?? 'Unknown guest'}</span>
-                      <span className="text-[11px] text-muted-ink flex-none">{relative(t.lastMessageAt)}</span>
+                      <span className={cx('text-copy whitespace-nowrap overflow-hidden text-ellipsis', t.isRead ? 'font-medium' : 'font-semibold')}>{t.guestName ?? 'Unknown guest'}</span>
+                      <span className="text-caption text-muted-ink flex-none">{relative(t.lastMessageAt)}</span>
                     </div>
-                    <span className="text-[12px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{t.subject ?? t.preview}</span>
-                    <span className="text-[11.5px] text-faint whitespace-nowrap overflow-hidden text-ellipsis">{t.propertyName} {t.unitNumber}</span>
+                    <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{t.subject ?? t.preview}</span>
+                    <span className="text-meta text-faint whitespace-nowrap overflow-hidden text-ellipsis">{t.propertyName} {t.unitNumber}</span>
                   </div>
                   {!t.isRead && <span aria-label="Unread" className={cx('w-[7px] h-[7px] flex-none mt-[5px] rounded-full', TONE.critical.dot)} />}
                 </button>
@@ -227,13 +222,13 @@ export default function InboxPage() {
             <div className="py-[15px] px-5 [border-bottom:1px_solid_var(--color-line)] flex items-center gap-[11px] flex-wrap">
               {open.channel && <ChannelMark ch={open.channel} size={22} />}
               <div className="flex flex-col gap-px flex-1 min-w-0">
-                <span className="text-[14px] font-semibold">{open.guestName ?? 'Unknown guest'}</span>
-                <span className="text-[12px] text-muted-ink">{open.propertyName} {open.unitNumber}{open.subject ? ` · ${open.subject}` : ''}</span>
+                <span className="text-copy font-semibold">{open.guestName ?? 'Unknown guest'}</span>
+                <span className="text-meta text-muted-ink">{open.propertyName} {open.unitNumber}{open.subject ? ` · ${open.subject}` : ''}</span>
               </div>
               <Badge tone="neutral" label={threadChannelLabel(open.channel)} size="sm" />
             </div>
           ) : (
-            <div className="py-[15px] px-5 [border-bottom:1px_solid_var(--color-line)] text-[12px] text-muted-ink">
+            <div className="py-[15px] px-5 [border-bottom:1px_solid_var(--color-line)] text-meta text-muted-ink">
               No conversation selected
             </div>
           )}
@@ -242,22 +237,22 @@ export default function InboxPage() {
             {loading && messages.length === 0 ? (
               <TableSkeleton rows={2} cols={1} />
             ) : !open ? (
-              <span className="text-[13px] text-muted-ink">Select a conversation to read and reply.</span>
+              <span className="text-copy text-muted-ink">Select a conversation to read and reply.</span>
             ) : messages.length === 0 ? (
-              <span className="text-[13px] text-muted-ink">No messages in this conversation yet.</span>
+              <span className="text-copy text-muted-ink">No messages in this conversation yet.</span>
             ) : (
               messages.map(m => {
                 const out = m.direction === 'outbound';
                 const sending = m.status === 'sending';
                 return (
                   <div key={m.id} className={cx('flex flex-col gap-1', out ? 'items-end' : 'items-start')}>
-                    <div className={cx('max-w-[78%] py-[11px] px-[14px] rounded-card text-[13px] leading-[1.55] [text-wrap:pretty]',
+                    <div className={cx('max-w-[78%] py-[11px] px-[14px] rounded-card text-copy leading-[1.55] [text-wrap:pretty]',
                       sending ? 'opacity-70' : 'opacity-100',
                       out ? 'bg-black text-white' : 'bg-muted text-ink')}>
                       {m.body}
                     </div>
                     <div className="flex items-center gap-[7px]">
-                      <span className="text-[11px] text-muted-ink">
+                      <span className="text-caption text-muted-ink">
                         {sending ? 'Sending…' : time(m.sentAt)}
                       </span>
                       {m.isAutomated && <Badge tone="neutral" label="Automated" size="sm" />}
@@ -268,7 +263,7 @@ export default function InboxPage() {
             )}
           </div>
 
-          <form onSubmit={send} className="py-[14px] px-5 [border-top:1px_solid_var(--color-line)] flex gap-2.5 items-center">
+          {open && <form onSubmit={send} className="py-[14px] px-5 [border-top:1px_solid_var(--color-line)] flex gap-2.5 items-center">
             <input value={draft} onChange={e => setDraft(e.target.value)}
               placeholder={open ? `Reply to ${open.guestName ?? 'guest'} on ${threadChannelLabel(open.channel)}` : 'Select a conversation'}
               disabled={!open}
@@ -279,7 +274,7 @@ export default function InboxPage() {
                 (draft.trim() && open) ? 'bg-black text-white cursor-pointer' : 'bg-muted text-faint cursor-not-allowed')}>
               Send
             </button>
-          </form>
+          </form>}
         </Card>
       </div>
     </>

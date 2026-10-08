@@ -268,13 +268,13 @@ if (wb) {
   const credits = await one(`select count(*)::int n, coalesce(sum(amount), 0)::bigint total, count(*) filter (where state = 'settled')::int settled,
     coalesce(sum(amount) filter (where state = 'settled'), 0)::bigint settled_total,
     count(*) filter (where state = 'settled' and statement_id is not null)::int on_stmt, count(*) filter (where state = 'open')::int open,
-    coalesce(sum(amount) filter (where state = 'open'), 0)::bigint open_total from owner_adjustments where kind = 'credit'`);
+    coalesce(sum(amount) filter (where state = 'open'), 0)::bigint open_total from owner_adjustments where kind in ('credit','charge') and source = 'owner_workbook'`);
   const wantCredits = WE.credits.reduce((n, c) => n + c.amount, 0);
-  console.log(`  owner credits ${credits.n} = ${rm(Number(credits.total))}; settled in workbook payouts ${credits.settled} = ${rm(Number(credits.settled_total))} (${credits.on_stmt} linked to that month's statement); open for the next statement ${credits.open} = ${rm(Number(credits.open_total))}`);
-  const inDb = new Set((await q(`select id from owner_adjustments where kind = 'credit'`)).map(r => r.id));
+  console.log(`  owner adjustments (credits and charges) ${credits.n} = ${rm(Number(credits.total))}; settled in workbook payouts ${credits.settled} = ${rm(Number(credits.settled_total))} (${credits.on_stmt} linked to that month's statement); open for the next statement ${credits.open} = ${rm(Number(credits.open_total))}`);
+  const inDb = new Set((await q(`select id from owner_adjustments where kind in ('credit','charge')`)).map(r => r.id));
   const refused = WE.credits.filter(c => !inDb.has(c.id));
-  console.log(`  credits in the workbook ${WE.credits.length} = ${rm(wantCredits)}; refused ${refused.length} = ${rm(refused.reduce((n, c) => n + c.amount, 0))} on ${[...new Set(refused.map(c => c.workbookId))].join(', ') || 'none'} (no named owner)`);
-  check(`owner credits: imported + refused = ${WE.credits.length} lines, ${rm(wantCredits)} back to owners`, Number(credits.total) + refused.reduce((n, c) => n + c.amount, 0) === wantCredits && credits.n + refused.length === WE.credits.length, `${credits.n} imported, ${refused.length} refused`);
+  console.log(`  adjustments in the workbook ${WE.credits.length} = ${rm(wantCredits)}; refused ${refused.length} = ${rm(refused.reduce((n, c) => n + c.amount, 0))} on ${[...new Set(refused.map(c => c.workbookId))].join(', ') || 'none'} (no named owner)`);
+  check(`owner adjustments: imported + refused = ${WE.credits.length} lines, ${rm(wantCredits)} net to owners`, Number(credits.total) + refused.reduce((n, c) => n + c.amount, 0) === wantCredits && credits.n + refused.length === WE.credits.length, `${credits.n} imported, ${refused.length} refused`);
   const debt = await one(`select count(*)::int n, coalesce(sum(amount), 0)::bigint total, count(*) filter (where state = 'held')::int held from owner_adjustments where kind = 'opening_debt'`);
   console.log(`  debts carried over ${debt.n} = ${rm(-Number(debt.total))}, held ${debt.held}`);
   check('every DEBT AMOUNT recorded and held', debt.n === WU.units.filter(u => u.debt).length && debt.held === debt.n, `${debt.n}`);

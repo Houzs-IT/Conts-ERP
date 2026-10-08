@@ -507,3 +507,24 @@ export const QUIET_HOURS = {
   "timezone": "Asia/Kuala_Lumpur",
   "note": "Non-urgent guest and owner messages queue until 08:00. Check-in risk and payout failure override."
 };
+
+/** The rules some code really sends today (grep the template name in functions/ to check). Everything else
+ *  in the catalog is "Not running yet": no code reads its on/off switch or sends its message. Keep this list
+ *  honest: add a template only together with the code that sends it. */
+export const RUNNING = new Set([
+  'owner.statement_ready', 'owner.payout_paid', 'owner.payout_failed', 'owner.unit_blocked',
+  'ops.damage_reported', 'field.task_assigned',
+  'account.invited', 'account.password_reset', 'account.password_changed',
+]);
+
+/** What a rule that is not running would need before it could. */
+export function needsToRun(rule: CatalogRule): string {
+  if (rule.template === 'finance.statements_unsent') return 'Written, but it runs from the timed background job (theconts-cron), which is not deployed yet.';
+  const timed = /before|after|approaching|outstanding|period close|1st of the month|within|unassigned/i.test(`${rule.trigger} ${rule.timing}`);
+  const toGuest = rule.group === 'new_booking' || rule.group === 'before_arrival' || rule.group === 'stay_departure';
+  return [
+    'No code sends this message yet.',
+    timed ? 'It needs the timed background job (theconts-cron) to check the time.' : 'It needs the event to call the message sender.',
+    toGuest ? 'Guest messages also need the email and WhatsApp keys.' : '',
+  ].filter(Boolean).join(' ');
+}

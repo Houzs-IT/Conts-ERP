@@ -56,13 +56,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   return json({
     generatedAt: new Date().toISOString(),
-    period,
+    period, days, from: dateFrom, toExclusive: dateToExclusive,
     units: rows.length,
     buildings: new Set(rows.map(r => r.property_id)).size,
     rows: rows.map(r => {
       const m = metrics(byUnit.get(r.id) ?? [], days);
       return {
-        unitId: r.id, unitNumber: r.unit_number, propertyName: r.property_name, ownerName: r.owner_name,
+        unitId: r.id, unitNumber: r.unit_number, propertyId: r.property_id, propertyName: r.property_name, ownerName: r.owner_name,
+        nights: m.nights,
         occupancy: m.occupancy,
         adr: finance ? m.adr : 0,
         revpar: finance ? m.revpar : 0,

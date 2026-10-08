@@ -2,7 +2,8 @@ import { type Env, run, json, fail, audit, nowIso } from '../_lib/db';
 import { requireSession, isFieldRole } from '../_lib/auth';
 import { findClash, clashResponseBody } from '../_lib/reservations';
 import { resolveUnit } from '../_lib/ops';
-import { syncAvailabilityIfLinked } from '../_lib/channexSync';
+import { syncAvailabilityIfLinked, channexMappingFor } from '../_lib/channexSync';
+import { channexConfigured } from '../_lib/channex';
 
 /** POST /api/blocks { unitId, from, to, reason, issueId? } — takes a unit off sale.
  *  With dates it also holds them on the calendar (`to` is the check-out day). With only an issueId (from a
@@ -38,6 +39,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await run(env, `UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?`, now, unit.id);
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'unit.block', entityTable: 'units', entityId: unit.id, after: { from: b.from ?? null, to: b.to ?? null, reason: b.reason ?? null, issueId: b.issueId ?? null } });
-  if (b.from && b.to) await syncAvailabilityIfLinked(env, unit.id, b.from, b.to, false);
-  return json({ id, unitId: unit.id }, 201);
+  // Says whether the channels were told, so the screen does not claim it when the unit is not linked.
+  let channel: 'queued' | 'not_linked' | 'failed' | null = null;
+  if (b.from && b.to) {
+    try {
+      if (!channexConfigured(env) || !(await channexMappingFor(env, unit.id))) channel = 'not_linked';
+      else { await syncAvailabilityIfLinked(env, unit.id, b.from, b.to, false); channel = 'queued'; }
+    } catch { channel = 'failed'; }
+  }
+  return json({ id, unitId: unit.id, effects: { channel } }, 201);
 };

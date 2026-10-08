@@ -43,7 +43,7 @@ export const TASK: Entry<TaskState> = {
 export const STATEMENT: Entry<StatementState> = {
   provisional: { label: 'Provisional', tone: 'neutral' },
   finalised:   { label: 'Finalised',   tone: 'info' },
-  sent:        { label: 'Not sent',    tone: 'warning' },
+  sent:        { label: 'Sent',        tone: 'warning' },
   paid:        { label: 'Paid',        tone: 'success' },
 };
 
@@ -87,4 +87,29 @@ export const TONE: Record<Tone, { bg: string; fg: string; line: string }> = {
   critical: { bg: 'var(--color-critical)', fg: 'var(--color-critical-fg)', line: 'var(--color-critical-line)' },
   info:     { bg: 'var(--color-info)',     fg: 'var(--color-info-fg)',     line: 'var(--color-info-line)' },
   neutral:  { bg: 'var(--color-neutral)',  fg: 'var(--color-neutral-fg)',  line: 'var(--color-neutral-line)' },
+};
+
+/** Role names as people read them. Never print the raw code ("operations_staff"). */
+export const ROLE_LABEL: Record<string, string> = {
+  management: 'Management', operations_manager: 'Operations manager', operations_staff: 'Operations staff',
+  finance_admin: 'Finance admin', housekeeper: 'Housekeeper', technician: 'Technician', owner: 'Owner',
+};
+
+/** Malaysian bank codes as imported (SWIFT-style) -> the name people know. Unknown codes print as given. */
+export const BANK_NAME: Record<string, string> = {
+  MBBB: 'Maybank', MBBE: 'Maybank', MBBEMYKL: 'Maybank', PBBB: 'Public Bank', PBBE: 'Public Bank', CIBB: 'CIMB', CIBBMYKL: 'CIMB',
+  HLBB: 'Hong Leong Bank', RHBB: 'RHB', AMBB: 'AmBank', BIMB: 'Bank Islam', BKRM: 'Bank Rakyat', BSNA: 'BSN',
+  OCBC: 'OCBC', UOVB: 'UOB', HSBC: 'HSBC', SCBL: 'Standard Chartered', AFBQ: 'Affin Bank', ALSR: 'Alliance Bank',
+  AGOB: 'Agrobank', MFBB: 'Alliance Bank', CTBB: 'Citibank', BMMB: 'Bank Muamalat', RJHI: 'Al Rajhi',
+};
+export const bankName = (code: string | null | undefined) => {
+  if (!code) return null;
+  const k = code.trim().toUpperCase();
+  return BANK_NAME[k] ?? BANK_NAME[k.slice(0, 4)] ?? code;
+};
+
+/** One state label per status the search and lists show, so nothing prints a raw lower-case code. */
+export const stateLabel = (domain: 'reservation' | 'readiness' | 'task', state: string) => {
+  const map: Record<string, { label: string }> = domain === 'reservation' ? RESERVATION : domain === 'readiness' ? READINESS : TASK;
+  return map[state]?.label ?? state.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 };

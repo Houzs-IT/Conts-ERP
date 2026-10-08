@@ -37,7 +37,7 @@ r = await call('PATCH', `/api/users/${uid3}`, { isActive: false }); check('the l
 
 // case 6: statement history blocks delete
 r = await call('POST', '/api/statements/generate', { period: '2026-09' });
-r = await call('GET', '/api/statements?pageSize=500'); const stmt = r.json.data.find(s => s.period === '2026-09');
+r = await call('GET', '/api/statements?period=all&pageSize=500'); const stmt = r.json.data.find(s => s.period === '2026-09');
 if (stmt) {
   const ownerId = (await call('GET', '/api/owners')).json.data.find(o => o.displayName.includes(stmt.ownerName))?.id;
   if (ownerId) { r = await call('DELETE', `/api/owners/${ownerId}`); check('delete refused: owner with real history (units or statements)', r.status === 409 && ['HAS_UNITS','HAS_STATEMENTS'].includes(r.json.error.code), r.text); }

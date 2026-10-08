@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -11,7 +11,7 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useCleaners, type Cleaner, type Employment } from '../lib/useCleaners';
 import { api, notifyFailure } from '../lib/api';
-import { todayMyt, rm, unitRef, dateTime } from '../lib/format';
+import { todayMyt, rm, unitRef, dateTime, time } from '../lib/format';
 import { READINESS, TASK } from '../lib/vocabulary';
 import { TONE } from '../lib/design-tokens';
 import type { TaskState, Tone, UnitReadiness } from '../lib/types';
@@ -21,8 +21,8 @@ import type { TaskState, Tone, UnitReadiness } from '../lib/types';
  * Every checkout creates a cleaning task; the window is computed from the
  * next arrival. This screen is the full interactive roster: assign, auto-
  * assign by rule, reschedule, start, add photo, complete, report damage.
- * There is no backend in dev, so mutations update a local overlay and
- * attempt the real call in a swallowed try/catch (see IMPL-BRIEF).
+ * The day (or week) is in the URL. Check-outs that have no clean yet are
+ * listed above the roster so they can be planned in one go.
  * ------------------------------------------------------------------ */
 
 type OrderingRule = 'earliest_checkin' | 'building' | 'manual';
@@ -38,7 +38,6 @@ type AssignPrefer = 'any' | 'internal' | 'outsourced';
 const STRATEGY_LABEL: Record<AssignStrategy, string> = { least_loaded: 'Least loaded', round_robin: 'Round robin' };
 const PREFER_LABEL: Record<AssignPrefer, string> = { any: 'Any cleaner', internal: 'Internal staff first', outsourced: 'Outsourced first' };
 const EMPLOYMENT_LABEL: Record<Employment, string> = { internal: 'Internal staff', outsourced: 'Outsourced' };
-const SEQ_PHRASE: Record<OrderingRule, string> = { earliest_checkin: 'by earliest check-in', building: 'by building', manual: 'in manual order' };
 interface RulesDraft { rule: OrderingRule; strategy: AssignStrategy; prefer: AssignPrefer }
 
 // The three cleaning kinds a manual task may be. Inspection/maintenance are
@@ -77,8 +76,17 @@ interface Task {
   requiresPhoto: boolean;
   photoCount: number;
   kind?: CleanKind;            // carried on manual tasks for the edit form
+  day?: string;                // YYYY-MM-DD the clean falls on (Malaysia)
+  carriedOver?: boolean;       // from an earlier day and still not done
+  sheetCleaner?: string | null; // cleaner code from the imported workbook
 }
-interface Payload { rows: Task[]; date: string; generatedAt: string }
+/** A stay leaving in the range with no clean planned for its unit that day. */
+interface Checkout {
+  reservationId: string; ref: string | null; channel: string; date: string; checkoutTime: string | null;
+  unitId: string; unitNumber: string; propertyName: string; buildingId: string; guestName: string;
+  nextGuestAt: string | null; linenSet: string;
+}
+interface Payload { rows: Task[]; checkouts?: Checkout[]; date: string; from?: string; to?: string; generatedAt: string }
 
 /** Dev-only sample timestamps, anchored to load time so duration/elapsed read live. */
 const isoAgo = (mins: number) => new Date(Date.now() - mins * 60000).toISOString();
@@ -188,13 +196,44 @@ function Modal({ title, sub, onClose, children, footer, busy }: {
 
 /* ------------------------------- the page -------------------------------- */
 type Tab = 'today' | 'tomorrow' | 'week';
-const TABS: [Tab, string][] = [['today', 'Today'], ['tomorrow', 'Tomorrow'], ['week', 'This week']];
-const TAB_DATE: Record<Tab, string> = { today: todayMyt(), tomorrow: todayMyt(1), week: `${todayMyt()}..${todayMyt(6)}` };
+const TABS: [Tab, string][] = [['today', 'Today'], ['tomorrow', 'Tomorrow'], ['week', 'Next 7 days']];
+const tabRange = (t: Tab) => (t === 'today' ? todayMyt() : t === 'tomorrow' ? todayMyt(1) : `${todayMyt()}..${todayMyt(6)}`);
+const isDay = (v: string | undefined): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
+const dayName = (d: string, opts: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short' }) =>
+  new Date(`${d}T12:00:00+08:00`).toLocaleDateString('en-MY', { ...opts, timeZone: 'Asia/Kuala_Lumpur' });
+type Show = 'all' | 'pending' | 'done';
 
 export default function HousekeepingPage() {
   const { cleaners: CREW } = useCleaners();
-  const [tab, setTab] = useState<Tab>('today');
-  const { data, loading, error, reload } = useApi<Payload>(`/housekeeping/tasks?date=${TAB_DATE[tab]}`, FALLBACK);
+  // The URL is the state: ?date=YYYY-MM-DD or a FROM..TO range, &show=pending|done, &group=0.
+  const [params, setParams] = useSearchParams();
+  const setParam = (p: Record<string, string | null>) => {
+    const next = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(p)) { if (v === null) next.delete(k); else next.set(k, v); }
+    setParams(next, { replace: true });
+  };
+  const today = todayMyt();
+  const [rawFrom, rawTo] = (params.get('date') ?? today).split('..');
+  const from = isDay(rawFrom) ? rawFrom : today;
+  const to = isDay(rawTo) && rawTo > from ? (rawTo > addDays(from, 6) ? addDays(from, 6) : rawTo) : from;
+  const range = to === from ? from : `${from}..${to}`;
+  const tab: Tab | null = TABS.map(([t]) => t).find(t => tabRange(t) === range) ?? null;
+  const multiDay = to !== from;
+  const span = to === from ? 1 : Math.round((Date.parse(to) - Date.parse(from)) / 864e5) + 1;
+  const shiftRange = (n: number) => {
+    const next = multiDay ? `${addDays(from, n * span)}..${addDays(to, n * span)}` : addDays(from, n);
+    setParam({ date: next === today ? null : next });
+  };
+  const rangeLabel = multiDay ? `${dayName(from)} – ${dayName(to)}`
+    : from === today ? `Today, ${dayName(from, { day: 'numeric', month: 'short' })}`
+    : dayName(from, { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+  const rawShow = params.get('show');
+  const show: Show = rawShow === 'pending' || rawShow === 'done' ? rawShow : 'all';
+  const groupByBuilding = params.get('group') !== '0';
+  const setGroupByBuilding = (on: boolean) => setParam({ group: on ? null : '0' });
+
+  const { data, loading, error, reload } = useApi<Payload>(`/housekeeping/tasks?date=${range}`, FALLBACK);
   const toast = useToast();
   const navigate = useNavigate();
 
@@ -219,9 +258,10 @@ export default function HousekeepingPage() {
   const [editRule, setEditRule] = useState<RulesDraft | null>(null);
   const [creating, setCreating] = useState(false);
   const [editTask, setEditTask] = useState<Task | null>(null);
-  const [confirm, setConfirm] = useState<null | { kind: 'start' | 'complete' | 'autoassign'; task?: Task }>(null);
+  const [confirm, setConfirm] = useState<null | { kind: 'start' | 'complete' | 'autoassign' | 'plan'; task?: Task }>(null);
   const [gallery, setGallery] = useState<Task | null>(null);
-  const [groupByBuilding, setGroupByBuilding] = useState(false);
+  const [planning, setPlanning] = useState<Set<string>>(new Set());
+  const [showAllCheckouts, setShowAllCheckouts] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Real POD photo upload: one hidden file input, driven per task. The chosen files
@@ -245,11 +285,18 @@ export default function HousekeepingPage() {
   }
 
   const merged = [...added, ...(data?.rows ?? [])].map(t => ({ ...t, ...edits[t.id] }));
-  const unassigned = merged.filter(t => !t.cleanerId && !t.assigneeId);
+  const unassigned = merged.filter(t => !t.cleanerId && !t.assigneeId && !t.sheetCleaner && t.state !== 'resolved');
+  const doneCount = merged.filter(t => t.state === 'resolved').length;
+  const carriedCount = merged.filter(t => t.carriedOver && t.state !== 'resolved').length;
+  const checkouts = data?.checkouts ?? [];
+  const visible = merged.filter(t => show === 'all' || (show === 'done') === (t.state === 'resolved'));
 
   // Ordering rule drives the displayed order; the sequence number shown is the
   // position in that order, so changing the rule visibly re-sequences the list.
-  const ordered = [...merged].sort((a, b) => {
+  const ordered = [...visible].sort((a, b) => {
+    // Work left over from earlier days leads; within a multi-day view the days run in order.
+    if (!!a.carriedOver !== !!b.carriedOver) return a.carriedOver ? -1 : 1;
+    if (multiDay && a.day && b.day && a.day !== b.day) return a.day < b.day ? -1 : 1;
     if (rule === 'building') return (a.propertyName + a.unitNumber).localeCompare(b.propertyName + b.unitNumber);
     if (rule === 'manual') return a.sequence - b.sequence;
     const an = toMin(a.nextGuestAt), bn = toMin(b.nextGuestAt);
@@ -267,7 +314,7 @@ export default function HousekeepingPage() {
   async function doCreate(draft: CreateDraft) {
     const cleaner = CREW.find(c => c.id === draft.assigneeId);
     const optimistic: Task = {
-      id: `local-${crypto.randomUUID()}`,
+      id: `local-${crypto.randomUUID()}`, day: draft.date,
       unitNumber: draft.unitNumber.trim(), propertyName: draft.propertyName.trim(),
       sourceRef: 'Manual', title: KIND_LABEL[draft.kind], linenSet: draft.linenSet,
       buildingId: null,
@@ -289,10 +336,12 @@ export default function HousekeepingPage() {
         unitNumber: optimistic.unitNumber, propertyName: optimistic.propertyName, kind: draft.kind,
         title: KIND_LABEL[draft.kind], instructions: optimistic.instructions,
         scheduledFor: draft.scheduledFor || null, dueAt: draft.dueAt || null, nextGuestAt: draft.nextGuestAt || null,
-        cleanerId: cleaner?.id ?? null, requiresPhoto: draft.requiresPhoto,
+        cleanerId: cleaner?.id ?? null, requiresPhoto: draft.requiresPhoto, date: draft.date,
       });
     } catch (e) { notifyFailure(e); }
     setBusy(false);
+    setAdded([]);
+    reload();
   }
 
   async function doEditDetails(task: Task, next: { kind: CleanKind; instructions: string }) {
@@ -420,30 +469,70 @@ export default function HousekeepingPage() {
     setDamage(null);
     try {
       await api.post('/maintenance/issues', {
-        unitId: task.id, title, detail: damage.detail, blocksUnit, quotedAmount: sen, chargeTo, photoIds: [],
+        unitNumber: task.unitNumber, propertyName: task.propertyName, title, detail: damage.detail, blocksUnit, quotedAmount: sen, chargeTo, photoIds: [],
       });
     } catch { /* dev */ }
     setBusy(false);
   }
 
-  const rows = data?.rows ?? [];
+
+  /** One turnover clean per departing stay; the server skips any that already have one. */
+  async function plan(ids: string[]) {
+    if (!ids.length) return;
+    setPlanning(p => new Set([...p, ...ids]));
+    setConfirm(null);
+    try {
+      const r = await api.post<{ created: number; skipped: number }>('/housekeeping/plan', { reservationIds: ids });
+      toast({
+        tone: 'success',
+        title: r.created === 1 ? 'Cleaning task created.' : `${r.created} cleaning tasks created.`,
+        body: r.skipped ? `${r.skipped} already had a clean and were left alone.` : 'Assign cleaners from the roster below.',
+      });
+    } catch (e) { notifyFailure(e); }
+    reload();
+    setPlanning(p => { const n = new Set(p); ids.forEach(i => n.delete(i)); return n; });
+  }
 
   // Group the ordered list by building (property), preserving the ordering-rule
   // sequence so a whole-building clean can be worked and photographed together.
   const groups: { id: string; name: string; tasks: Task[] }[] = [];
   for (const t of ordered) {
-    const key = t.buildingId ?? t.propertyName;
+    const key = t.carriedOver ? 'earlier' : multiDay ? (t.day ?? '') : groupByBuilding ? (t.buildingId ?? t.propertyName) : 'all';
     let g = groups.find(x => x.id === key);
-    if (!g) { g = { id: key, name: t.propertyName, tasks: [] }; groups.push(g); }
+    if (!g) {
+      const name = key === 'earlier' ? 'Not done from earlier days'
+        : multiDay ? (t.day ? dayName(t.day, { weekday: 'long', day: 'numeric', month: 'short' }) : 'No date')
+        : groupByBuilding ? t.propertyName : rangeLabel;
+      g = { id: key, name, tasks: [] }; groups.push(g);
+    }
     g.tasks.push(t);
   }
+  const grouped = multiDay || groupByBuilding || carriedCount > 0;
 
   /** One cleaning task card. `idx` is its position in the current sequence. */
   const renderRow = (t: Task, idx: number) => {
+    const who = t.assigneeName ?? (t.sheetCleaner ? `${t.sheetCleaner} (from sheet)` : null);
+    if (t.state === 'resolved') {
+      const mins = elapsedMin(t.startedAt, t.completedAt, now);
+      return (
+        <div key={t.id} className="grid grid-cols-[18px_minmax(0,1fr)_auto] md:grid-cols-[18px_minmax(160px,1.3fr)_minmax(120px,1.2fr)_minmax(90px,0.8fr)_minmax(110px,0.8fr)_72px] box-border gap-x-3 items-center min-h-[40px] py-1.5 px-5 [border-bottom:1px_solid_var(--color-line-soft)] [border-left:3px_solid_var(--color-success-line)] text-[12.5px]">
+          <span className={`${TONE.success.text} flex`}><Icon name="Check" size="sm" /></span>
+          <span className="font-medium truncate" title={unitRef(t.propertyName, t.unitNumber)}>{unitRef(t.propertyName, t.unitNumber)}</span>
+          <span className="text-muted-ink truncate hidden md:block" title={t.title}>{t.title}</span>
+          <span className={`truncate hidden md:block ${who ? '' : 'text-muted-ink'}`} title={who ?? 'No cleaner recorded'}>{who ?? 'No cleaner'}</span>
+          <span className="text-muted-ink tabular-nums truncate hidden md:block">{t.completedAt && t.startedAt ? `Done ${time(t.completedAt)}` : 'Done'}{mins !== null ? ` · ${fmtDur(mins)}` : ''}</span>
+          <span className="flex justify-end min-w-0">
+            {t.photoCount > 0
+              ? <Button size="sm" variant="tertiary" icon={<Icon name="Images" size="sm" />} onClick={() => setGallery(t)}>{t.photoCount}</Button>
+              : <span className="text-muted-ink text-[12px] truncate md:hidden">{who ?? 'Done'}</span>}
+          </span>
+        </div>
+      );
+    }
     const sla = slaOf(t, now);
     const canStart = t.state === 'assigned';
     const inProgress = t.state === 'in_progress';
-    const done = t.state === 'resolved';
+    const done = false; // finished cleans render as the compact row above
     const noPhoto = t.requiresPhoto && t.photoCount < 1;
     const hasCleaner = !!(t.cleanerId || t.assigneeId);
     const windowLabel = t.scheduledFor && t.dueAt ? `${t.scheduledFor} → ${t.dueAt}` : '—';
@@ -467,10 +556,11 @@ export default function HousekeepingPage() {
           <div className="text-[13px] text-ink">{t.title} · {t.linenSet}</div>
 
           <div className="flex gap-[22px] flex-wrap text-[12.5px]">
+            {(multiDay || t.carriedOver) && t.day && <Field2 label="Day" value={dayName(t.day)} tone={t.carriedOver ? 'critical' : undefined} />}
             <Field2 label="Window" value={windowLabel} />
             <Field2 label="Checkout" value={t.checkoutTime ?? '—'} />
             <Field2 label="Next check-in" value={t.nextGuestAt ?? 'No arrival'} tone={sla.tone === 'critical' ? 'critical' : undefined} />
-            <Field2 label="Assignee" value={t.assigneeName ?? 'Unassigned'} muted={!t.assigneeName} />
+            <Field2 label="Assignee" value={who ?? 'Unassigned'} muted={!who} />
             {durLabel && <Field2 label="Duration" value={durLabel} tone={inProgress ? 'info' : 'success'} />}
             <Field2 label="Source" value={t.sourceRef} />
             <Field2 label="Unit" value={READINESS[t.readiness].label} />
@@ -561,9 +651,12 @@ export default function HousekeepingPage() {
       <input ref={fileInputRef} type="file" accept="image/*" multiple hidden onChange={onPhotoPicked} />
       <PageHeader
         title="Housekeeping"
-        sub={`${merged.length} cleaning tasks · ${unassigned.length} unassigned · sequenced ${SEQ_PHRASE[rule]}`}
+        sub={`${rangeLabel} · ${merged.length} clean${merged.length === 1 ? '' : 's'} · ${doneCount} done · ${unassigned.length} unassigned`}
         right={
           <div className="flex gap-[9px] flex-wrap">
+            <Button variant="secondary" icon={<Icon name="History" size="sm" />} onClick={() => navigate('/operations/tasks?state=resolved&kind=cleaning')}>
+              History
+            </Button>
             <Button variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/operations/cleaners')}>
               Cleaners
             </Button>
@@ -588,51 +681,148 @@ export default function HousekeepingPage() {
 
       {error && <StaleBanner message={`Showing the last roster we have. ${error}`} onRetry={reload} />}
 
-      {/* Date tabs — Today / Tomorrow / This week.
-          flex-none/self-start keep the control at its intrinsic height: without it
-          the toggle is a flex item in the page column and gets shrunk to a sliver,
-          clipping the pills' padding under overflow-hidden (matches Inspections). */}
-      <div className="inline-flex flex-none self-start border border-solid border-line rounded-control overflow-hidden w-fit">
-        {TABS.map(([v, label]) => (
-          <button key={v} onClick={() => setTab(v)}
-            className={`px-[15px] py-2 cursor-pointer [border:none] [font:inherit] ${v === tab ? 'bg-black text-white' : 'bg-white text-muted-ink'}`}>
-            {label}
+      {/* Date controls. flex-none keeps them at their intrinsic height in the page column. */}
+      <div className="flex flex-none items-center gap-2 flex-wrap">
+        <div className="inline-flex flex-none border border-solid border-line rounded-control overflow-hidden w-fit">
+          {TABS.map(([v, label]) => (
+            <button key={v} onClick={() => setParam({ date: v === 'today' ? null : tabRange(v) })} aria-pressed={v === tab}
+              className={`px-[13px] md:px-[15px] py-2 cursor-pointer [border:none] [font:inherit] text-[14px] whitespace-nowrap ${v === tab ? 'bg-black text-white' : 'bg-white text-muted-ink'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="inline-flex flex-none items-center gap-1">
+          <button type="button" onClick={() => shiftRange(-1)} aria-label={multiDay ? 'Previous period' : 'Previous day'} title={multiDay ? 'Previous period' : 'Previous day'}
+            className="w-9 h-9 grid place-items-center rounded-control border border-solid border-line bg-white text-ink cursor-pointer hover:bg-muted">
+            <Icon name="ChevronLeft" size="sm" />
           </button>
-        ))}
+          <input type="date" aria-label="Pick a day" value={from}
+            onChange={e => { if (isDay(e.target.value)) setParam({ date: e.target.value === today ? null : e.target.value }); }}
+            className="h-9 box-border px-2.5 py-0 text-[13px] text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit]" />
+          <button type="button" onClick={() => shiftRange(1)} aria-label={multiDay ? 'Next period' : 'Next day'} title={multiDay ? 'Next period' : 'Next day'}
+            className="w-9 h-9 grid place-items-center rounded-control border border-solid border-line bg-white text-ink cursor-pointer hover:bg-muted">
+            <Icon name="ChevronRight" size="sm" />
+          </button>
+        </div>
       </div>
+
+      {/* At-a-glance counts for the range. */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5 flex-none">
+        {([
+          ['Cleans', merged.length, 'neutral', 'all'],
+          ['Done', doneCount, 'success', 'done'],
+          ['Still to do', merged.length - doneCount, merged.length - doneCount ? 'info' : 'neutral', 'pending'],
+          ['Unassigned', unassigned.length, unassigned.length ? 'warning' : 'neutral', null],
+          ['No clean planned', checkouts.length, checkouts.length ? 'critical' : 'neutral', null],
+        ] as [string, number, Tone, Show | null][]).map(([label, n, tone, target]) => {
+          const on = target !== null && target === show && target !== 'all';
+          const Tag = target ? 'button' : 'div';
+          return (
+            <Tag key={label} {...(target ? { type: 'button' as const, onClick: () => setParam({ show: target === 'all' || target === show ? null : target }), 'aria-pressed': on } : {})}
+              className={`text-left flex flex-col gap-0.5 py-2.5 px-3.5 rounded-card border border-solid bg-card [font:inherit] ${on ? 'border-ink' : 'border-line'} ${target ? 'cursor-pointer hover:bg-page' : ''} ${label === 'No clean planned' ? 'col-span-2 md:col-span-1' : ''}`}>
+              <span className="text-[11.5px] font-semibold uppercase tracking-[0.03em] text-faint">{label}</span>
+              <span className={`text-[22px] leading-[1.15] font-semibold tabular-nums ${n && tone !== 'neutral' ? TONE[tone].text : 'text-ink'}`}>
+                {loading && !data ? '–' : n.toLocaleString('en-MY')}
+              </span>
+            </Tag>
+          );
+        })}
+      </div>
+
+      {/* Stays leaving with nothing planned: the cleans that would otherwise be missed. */}
+      {checkouts.length > 0 && (
+        <Card>
+          <div className="py-[13px] px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line)]">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[16px] font-semibold">Check-outs with no clean planned · {checkouts.length}</span>
+              <span className="text-[12px] text-muted-ink">Each one leaves a unit dirty. Create the turnover now; the window closes at the next guest's check-in.</span>
+            </div>
+            <Button size="sm" variant="primary" icon={<Icon name="ListPlus" size="sm" />} disabled={planning.size > 0}
+              disabledReason="Already creating tasks." onClick={() => setConfirm({ kind: 'plan' })}>
+              Create {checkouts.length === 1 ? 'the task' : `all ${checkouts.length} tasks`}
+            </Button>
+          </div>
+          {(showAllCheckouts ? checkouts : checkouts.slice(0, 10)).map(c => {
+            const busyRow = planning.has(c.reservationId);
+            return (
+              <div key={c.reservationId} className="grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(170px,1.3fr)_minmax(130px,1fr)_minmax(150px,1fr)_auto] box-border gap-x-3 gap-y-0.5 items-center min-h-[52px] py-2 px-5 [border-bottom:1px_solid_var(--color-line-soft)] [border-left:3px_solid_var(--color-critical-line)]">
+                <div className="flex flex-col gap-px min-w-0">
+                  <span className="text-[13px] font-medium truncate" title={unitRef(c.propertyName, c.unitNumber)}>{unitRef(c.propertyName, c.unitNumber)}</span>
+                  <span className="text-[11.5px] text-muted-ink truncate md:hidden">
+                    {multiDay ? `${dayName(c.date)} · ` : ''}Out {c.checkoutTime ?? '—'} · {c.nextGuestAt ? `next guest ${c.nextGuestAt}` : 'no arrival'}
+                  </span>
+                </div>
+                <span className="text-[12.5px] text-muted-ink truncate hidden md:block" title={`${c.guestName}${c.ref ? ` · ${c.ref}` : ''}`}>{c.guestName}</span>
+                <span className="text-[12.5px] tabular-nums hidden md:block whitespace-nowrap">
+                  {multiDay ? <span className="text-muted-ink">{dayName(c.date)} · </span> : null}
+                  Out {c.checkoutTime ?? '—'} <span className="text-muted-ink">→</span>{' '}
+                  {c.nextGuestAt ? <span className={TONE.warning.text}>in {c.nextGuestAt}</span> : <span className="text-muted-ink">no arrival</span>}
+                </span>
+                <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} loading={busyRow} onClick={() => plan([c.reservationId])}>
+                  Create task
+                </Button>
+              </div>
+            );
+          })}
+          {checkouts.length > 10 && (
+            <button type="button" onClick={() => setShowAllCheckouts(v => !v)}
+              className="w-full py-2.5 px-5 text-[12.5px] font-semibold text-muted-ink bg-page border-none cursor-pointer [font:inherit] hover:text-ink">
+              {showAllCheckouts ? 'Show fewer' : `Show all ${checkouts.length}`}
+            </button>
+          )}
+        </Card>
+      )}
 
       <Card>
         <div className="py-[13px] px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line)]">
-          <span className="text-[16px] font-semibold">Cleaning tasks</span>
+          <span className="text-[16px] font-semibold">
+            Cleaning tasks{show !== 'all' ? ` · ${show === 'done' ? 'done' : 'still to do'}` : ''}
+          </span>
           <div className="flex items-center gap-[14px] flex-wrap">
-            <label className="flex gap-[7px] items-center cursor-pointer text-[12.5px] text-muted-ink select-none">
-              <input type="checkbox" checked={groupByBuilding} onChange={e => setGroupByBuilding(e.target.checked)} />
-              Group by building
-            </label>
-            <span className="text-[12px] text-muted-ink">SLA counts down to the next guest check-in</span>
+            {show !== 'all' && (
+              <button type="button" onClick={() => setParam({ show: null })}
+                className="text-[12.5px] font-semibold text-muted-ink bg-transparent border-none cursor-pointer p-0 [font:inherit] hover:text-ink">Show all</button>
+            )}
+            {!multiDay && (
+              <label className="flex gap-[7px] items-center cursor-pointer text-[12.5px] text-muted-ink select-none">
+                <input type="checkbox" checked={groupByBuilding} onChange={e => setGroupByBuilding(e.target.checked)} />
+                Group by building
+              </label>
+            )}
+            <span className="text-[12px] text-muted-ink hidden md:inline">SLA counts down to the next guest check-in</span>
           </div>
         </div>
 
-        {loading && rows.length === 0 ? (
-          <TableSkeleton rows={4} cols={4} />
-        ) : ordered.length === 0 ? (
-          <div className="py-[30px] px-[22px] text-[13px] text-muted-ink">
-            No cleaning tasks for {TABS.find(t => t[0] === tab)![1].toLowerCase()}. New checkouts create tasks automatically.
-          </div>
-        ) : groupByBuilding ? (
-          (() => { let seq = -1; return groups.map(g => (
-            <div key={g.id}>
-              <div className="py-[9px] px-5 bg-page flex items-center gap-[9px] [border-bottom:1px_solid_var(--color-line-soft)]">
-                <Icon name="Building2" size="sm" color="var(--color-faint)" />
-                <span className="text-[13px] font-semibold">{g.name}</span>
-                <span className="text-[12px] text-muted-ink">{g.tasks.length} clean{g.tasks.length === 1 ? '' : 's'} — do the building together</span>
-              </div>
-              {g.tasks.map(t => renderRow(t, ++seq))}
+        <div className={`transition-opacity duration-150 ${loading && data ? 'opacity-60' : ''}`}>
+          {loading && !data ? (
+            <TableSkeleton rows={4} cols={4} />
+          ) : ordered.length === 0 ? (
+            <div className="py-[30px] px-[22px] text-[13px] text-muted-ink text-center">
+              {merged.length > 0 ? 'Nothing here under this filter.'
+                : checkouts.length > 0 ? `No cleaning tasks yet for ${multiDay ? 'these days' : 'this day'}. Create them from the check-outs above.`
+                : `No check-outs and no cleaning on ${multiDay ? 'these days' : 'this day'}.`}
             </div>
-          )); })()
-        ) : (
-          ordered.map((t, idx) => renderRow(t, idx))
-        )}
+          ) : grouped ? (
+            (() => { let seq = -1; return groups.map(g => {
+              const done = g.tasks.filter(t => t.state === 'resolved').length;
+              const late = g.id === 'earlier';
+              return (
+                <div key={g.id}>
+                  <div className={`py-[9px] px-5 flex items-center gap-[9px] flex-wrap [border-bottom:1px_solid_var(--color-line-soft)] ${late ? TONE.critical.bg : 'bg-page'}`}>
+                    <Icon name={late ? 'TriangleAlert' : multiDay ? 'CalendarDays' : 'Building2'} size="sm" color={late ? undefined : 'var(--color-faint)'} />
+                    <span className={`text-[13px] font-semibold ${late ? TONE.critical.text : ''}`}>{g.name}</span>
+                    <span className="text-[12px] text-muted-ink tabular-nums">
+                      {g.tasks.length} clean{g.tasks.length === 1 ? '' : 's'}{done ? ` · ${done} done` : ''}
+                    </span>
+                  </div>
+                  {g.tasks.map(t => renderRow(t, ++seq))}
+                </div>
+              );
+            }); })()
+          ) : (
+            ordered.map((t, idx) => renderRow(t, idx))
+          )}
+        </div>
       </Card>
 
       {/* ---------------- Assign cleaner (with 409 override) ---------------- */}
@@ -813,7 +1003,7 @@ export default function HousekeepingPage() {
       {creating && (
         <CreateCleaningModal
           crew={CREW}
-          defaultDate={tab === 'tomorrow' ? todayMyt(1) : todayMyt()}
+          defaultDate={from < today ? today : from}
           busy={busy}
           onClose={() => setCreating(false)}
           onCreate={doCreate}
@@ -846,6 +1036,12 @@ export default function HousekeepingPage() {
             body: `${confirm.task.photoCount} photo${confirm.task.photoCount === 1 ? '' : 's'} attached. The unit is released as ready.`,
             meta: confirm.task.nextGuestAt ? `Next check-in is ${confirm.task.nextGuestAt}.` : undefined,
             confirmLabel: 'Mark complete', busyLabel: 'Completing…', onConfirm: doComplete,
+          }
+          : confirm.kind === 'plan' ? {
+            title: `Create ${checkouts.length} cleaning task${checkouts.length === 1 ? '' : 's'}?`,
+            body: 'One turnover per check-out listed, unassigned. Each window opens at check-out and closes at the next guest’s check-in that day. Check-outs that already have a clean are skipped.',
+            meta: multiDay ? rangeLabel : undefined,
+            confirmLabel: 'Create tasks', busyLabel: 'Creating…', onConfirm: () => plan(checkouts.map(c => c.reservationId)),
           }
           : {
             title: `Auto-assign ${unassigned.length} unassigned task${unassigned.length === 1 ? '' : 's'}?`,
@@ -968,7 +1164,7 @@ function PhotoGalleryModal({ task, onClose }: { task: Task; onClose: () => void 
 interface CreateDraft {
   propertyName: string; unitNumber: string; kind: CleanKind; linenSet: string;
   scheduledFor: string; dueAt: string; nextGuestAt: string; assigneeId: string;
-  instructions: string; requiresPhoto: boolean;
+  instructions: string; requiresPhoto: boolean; date: string;
 }
 
 /** New cleaning task by hand — the manual equivalent of the one-clean-per-checkout
@@ -979,10 +1175,10 @@ function CreateCleaningModal({ crew, defaultDate, busy, onClose, onCreate }: {
   const [d, setD] = useState<CreateDraft>({
     propertyName: '', unitNumber: '', kind: 'turnover', linenSet: 'Set A',
     scheduledFor: '08:00', dueAt: '14:00', nextGuestAt: '', assigneeId: '',
-    instructions: '', requiresPhoto: true,
+    instructions: '', requiresPhoto: true, date: defaultDate,
   });
   const set = (p: Partial<CreateDraft>) => setD(v => ({ ...v, ...p }));
-  const valid = d.propertyName.trim() && d.unitNumber.trim() &&
+  const valid = d.propertyName.trim() && d.unitNumber.trim() && /^d{4}-d{2}-d{2}$/.test(d.date) &&
     (!d.scheduledFor || !d.dueAt || d.dueAt > d.scheduledFor);
   const endsAfter = !!d.nextGuestAt && !!d.dueAt && d.dueAt > d.nextGuestAt;
 
@@ -1076,7 +1272,11 @@ function CreateCleaningModal({ crew, defaultDate, busy, onClose, onCreate }: {
           onChange={e => set({ requiresPhoto: e.target.checked })} />
         Require a photo before the unit can be marked ready
       </label>
-      <div className="text-[12px] text-muted-ink">Scheduled for {defaultDate}. New checkouts still create their own turnover automatically.</div>
+      <div className="flex flex-col gap-[7px]">
+        <label htmlFor="ck-date" className={labelCls}>Day</label>
+        <input id="ck-date" type="date" value={d.date} min={todayMyt()} disabled={busy}
+          onChange={e => set({ date: e.target.value })} className={inputCls} />
+      </div>
     </Modal>
   );
 }

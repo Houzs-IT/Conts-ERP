@@ -5,6 +5,7 @@
 
 const MYT = 'Asia/Kuala_Lumpur';
 
+
 export const rm = (sen: number, opts?: { cents?: boolean }) => {
   const showCents = opts?.cents ?? true;
   const v = sen / 100;
@@ -18,24 +19,45 @@ export const rm = (sen: number, opts?: { cents?: boolean }) => {
 export const rmShort = (sen: number) => rm(sen, { cents: false });
 
 /** Deductions carry a real minus sign, not a hyphen. − RM 2,315.00 */
-export const rmDeduction = (sen: number) => '\u2212 ' + rm(Math.abs(sen));
+export const rmDeduction = (sen: number) => '− ' + rm(Math.abs(sen));
+
+/** Charts only: RM 14k, RM 1.2M. */
+export const rmCompact = (sen: number) => {
+  const v = Math.abs(sen) / 100, sign = sen < 0 ? '− ' : '';
+  if (v >= 1e6) return `${sign}RM ${(v / 1e6).toFixed(v >= 1e7 ? 0 : 1)}M`;
+  if (v >= 1e3) return `${sign}RM ${(v / 1e3).toFixed(v >= 1e4 ? 0 : 1)}k`;
+  return `${sign}RM ${Math.round(v)}`;
+};
 
 export const percent = (n: number) => `${n.toFixed(1)}%`;
 
 export const rating = (n: number, detail = false) =>
   detail ? `${n.toFixed(2)} / 5` : n.toFixed(2);
 
+/** Month names are fixed here, not taken from Intl: the en-MY locale prints "Sept", which
+ *  docs/DATE-FORMAT.md does not allow. */
+export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+/** Year, month (0-11) and day of an instant on the Malaysian calendar. A bare YYYY-MM-DD is that calendar day. */
+const mytParts = (iso: string) => {
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (ymd) return { y: Number(ymd[1]), m: Number(ymd[2]) - 1, d: Number(ymd[3]) };
+  const [y, m, d] = new Date(iso).toLocaleDateString('en-CA', { timeZone: MYT }).split('-').map(Number);
+  return { y, m: m - 1, d };
+};
+
 /** 16 Sep 2026 */
-export const date = (iso: string) =>
-  new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric', timeZone: MYT });
+export const date = (iso: string) => {
+  const p = mytParts(iso);
+  return `${p.d} ${MONTHS[p.m]} ${p.y}`;
+};
 
 /** 16 Sep – 29 Sep 2026. Always disambiguated across months. */
 export const dateRange = (fromIso: string, toIso: string) => {
-  const f = new Date(fromIso), t = new Date(toIso);
-  const sameYear = f.getFullYear() === t.getFullYear();
-  const fmt = (d: Date, withYear: boolean) =>
-    d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}), timeZone: MYT });
-  return `${fmt(f, !sameYear)} \u2013 ${fmt(t, true)}`;
+  const f = mytParts(fromIso), t = mytParts(toIso);
+  return `${f.d} ${MONTHS[f.m]}${f.y === t.y ? '' : ` ${f.y}`} – ${t.d} ${MONTHS[t.m]} ${t.y}`;
 };
 
 /** 15:00 — 24-hour, MYT */
@@ -49,7 +71,7 @@ export const timeWithZone = (iso: string) => `${time(iso)} MYT`;
 export const unitRef = (propertyName: string, unitNumber: string) => `${propertyName} ${unitNumber}`;
 
 /** Masked secret. The raw value needs an audited reveal. */
-export const masked = (tail: string) => `\u2022\u2022\u2022\u2022${tail}`;
+export const masked = (tail: string) => `••••${tail}`;
 
 export const nights = (n: number) => `${n} ${n === 1 ? 'night' : 'nights'}`;
 export const guests = (n: number) => `${n} ${n === 1 ? 'guest' : 'guests'}`;
@@ -62,27 +84,26 @@ export const todayMyt = (offsetDays = 0) => {
 
 /** Aug 2026 (default) / August 2026 (long). Accepts "2026-08" or a full ISO date. */
 export const monthLabel = (iso: string, opts?: { long?: boolean }) => {
-  const s = iso.length === 7 ? `${iso}-01` : iso;
-  return new Date(s).toLocaleDateString('en-MY', { month: opts?.long ? 'long' : 'short', year: 'numeric', timeZone: MYT });
+  const p = mytParts(iso.length === 7 ? `${iso}-01` : iso);
+  return `${(opts?.long ? MONTHS_LONG : MONTHS)[p.m]} ${p.y}`;
 };
 
 /** 2026 */
-export const year = (iso: string) =>
-  new Date(iso).toLocaleDateString('en-MY', { year: 'numeric', timeZone: MYT });
+export const year = (iso: string) => String(mytParts(iso).y);
 
 /** 16 Sep 2026 14:06 */
 export const dateTime = (iso: string) => `${date(iso)} ${time(iso)}`;
 
 /** 16 Sep — day and short month, no year. */
-export const dateShort = (iso: string) =>
-  new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', timeZone: MYT });
+export const dateShort = (iso: string) => {
+  const p = mytParts(iso);
+  return `${p.d} ${MONTHS[p.m]}`;
+};
 
 /** Wed 16 — short weekday and day. */
 export const weekdayDay = (iso: string) => {
-  const d = new Date(iso);
-  const weekday = d.toLocaleDateString('en-MY', { weekday: 'short', timeZone: MYT });
-  const day = d.toLocaleDateString('en-MY', { day: 'numeric', timeZone: MYT });
-  return `${weekday} ${day}`;
+  const p = mytParts(iso);
+  return `${WEEKDAYS[new Date(Date.UTC(p.y, p.m, p.d)).getUTCDay()]} ${p.d}`;
 };
 
 /** Just now / N min ago / N hours ago / Yesterday, then falls back to date(). */
@@ -105,3 +126,20 @@ export const dateInputValue = (iso: string) =>
 /** yyyy-mm-dd MYT stamp for filenames and exports; defaults to now. */
 export const fileStamp = (iso?: string) =>
   (iso ? new Date(iso) : new Date()).toLocaleDateString('en-CA', { timeZone: MYT });
+
+/** 4,150 — every count shown to a person gets thousands separators. */
+export const count = (n: number) => n.toLocaleString('en-MY');
+
+/** "1 item", "2 items", "4,150 reservations". Pass the plural form when it is not just +s. */
+export const plural = (n: number, one: string, many = `${one}s`) => `${count(n)} ${n === 1 ? one : many}`;
+
+/** "operations_staff" -> "Operations staff". For raw codes only, never for names. */
+export const humanize = (code: string) => code.replace(/[_.]+/g, ' ').trim().toLowerCase().replace(/^./, c => c.toUpperCase());
+
+/** ALL-CAPS names from imports read in Title Case; company suffixes stay upper case. The stored value is unchanged. */
+export const titleCase = (name: string) => {
+  if (!name || name !== name.toUpperCase() || !/[A-Z]/.test(name)) return name;
+  const KEEP = new Set(['SDN', 'BHD', 'PLT', 'LLP', 'A/L', 'A/P', 'B/L', 'S/O', 'D/O']);
+  return name.split(/(\s+)/).map(w => KEEP.has(w.replace(/[.,]/g, '')) ? w
+    : w.toLowerCase().replace(/(^|[-'(/])([a-z])/g, (_, a: string, b: string) => a + b.toUpperCase())).join('');
+};

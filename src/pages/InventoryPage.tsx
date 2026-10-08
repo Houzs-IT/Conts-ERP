@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
+import { SearchSelect } from '../components/Select';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { Field } from '../components/Field';
@@ -9,7 +10,7 @@ import { useApi } from '../lib/useApi';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
-import { rm, date, todayMyt } from '../lib/format';
+import { rm, date, todayMyt, plural } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
@@ -93,7 +94,7 @@ export default function InventoryPage() {
   const unitCount = useMemo(() => new Set(all.map(i => i.unitNumber)).size, [all]);
 
   const rows = all.filter(i =>
-    (unitFilter === 'all' || i.unitNumber === unitFilter) &&
+    (unitFilter === 'all' || `${i.propertyName}|${i.unitNumber}` === unitFilter) &&
     (condFilter === 'all' || (condFilter === 'attention' ? isAttention(i) : i.condition === condFilter)) &&
     (!dueOnly || isDue(i)),
   );
@@ -130,9 +131,9 @@ export default function InventoryPage() {
   return (
     <>
       <PageHeader
-        title="Inventory"
-        sub={`${all.length} items across ${unitCount} ${unitCount === 1 ? 'unit' : 'units'} · fit-out register`}
-        right={<Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Add item</Button>}
+        title="Fit-out register"
+        sub={`${plural(all.length, 'item')} across ${plural(unitCount, 'unit')} · furniture and fittings supplied to units`}
+        primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Add item</Button>}
       />
 
       {error && <StaleBanner message={`Showing the last register we have. ${error}`} onRetry={reload} />}
@@ -147,17 +148,12 @@ export default function InventoryPage() {
       </div>
 
       <div className="flex gap-[14px] items-end flex-wrap">
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="inv-unit" className="text-[12px] font-medium text-muted-ink">Unit</label>
-          <select id="inv-unit" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}
-            className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none min-w-[220px] cursor-pointer">
-            <option value="all">All units</option>
-            {units.map(u => <option key={u.unitNumber} value={u.unitNumber}>{u.label}</option>)}
-          </select>
-        </div>
+        <SearchSelect label="Unit" showLabel className="w-[260px] max-w-full" allLabel="All units" placeholder="Search unit or building"
+          value={unitFilter === 'all' ? '' : unitFilter} onChange={v => setUnitFilter(v || 'all')}
+          options={units.map(u => ({ value: `${u.propertyName}|${u.unitNumber}`, label: u.unitNumber, group: u.propertyName }))} />
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-medium text-muted-ink">Condition</span>
+          <span className="text-meta font-medium text-muted-ink">Condition</span>
           <div className="flex gap-[7px] flex-wrap">
             <Chip label="All" active={condFilter === 'all'} onClick={() => setCondFilter('all')} />
             <Chip label="Needs attention" active={condFilter === 'attention'} onClick={() => setCondFilter('attention')} />
@@ -167,7 +163,7 @@ export default function InventoryPage() {
 
         {filtersOn && (
           <button onClick={clearFilters}
-            className="h-8 flex items-center px-3 py-0 rounded-full cursor-pointer font-sans text-[16px] font-normal border border-solid border-line bg-transparent text-muted-ink">
+            className="h-8 flex items-center px-3 py-0 rounded-full cursor-pointer font-sans text-copy font-normal border border-solid border-line bg-transparent text-muted-ink">
             Clear filters
           </button>
         )}
@@ -176,7 +172,7 @@ export default function InventoryPage() {
       <Card>
         <div className="overflow-x-auto">
           <div className="min-w-[1060px]">
-            <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-[12px] font-semibold text-muted-ink')}>
+            <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-meta font-semibold text-muted-ink')}>
               <div>Item</div><div>Unit</div><div>Category</div><div>Condition</div><div className="text-right">Value</div><div>Replace by</div><div>Notes</div>
             </div>
 
@@ -184,12 +180,12 @@ export default function InventoryPage() {
               <TableSkeleton rows={6} cols={7} />
             ) : rows.length === 0 ? (
               <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
-                <span className="text-[14px] font-semibold">{filtersOn ? 'No items match these filters.' : 'No fit-out items recorded yet.'}</span>
-                <span className="text-[12.5px] text-muted-ink max-w-[380px]">
+                <span className="text-copy font-semibold">{filtersOn ? 'No items match these filters.' : 'No fit-out items recorded yet.'}</span>
+                <span className="text-copy text-muted-ink max-w-[380px]">
                   {filtersOn ? 'Adjust the unit or condition filter to see more of the register.' : 'Add the furniture, appliances, linen and electronics supplied for each unit to track their condition and replacement.'}
                 </span>
                 {filtersOn
-                  ? <button onClick={clearFilters} className="bg-transparent border-none cursor-pointer font-sans text-[12.5px] font-semibold text-gold-ink">Clear filters</button>
+                  ? <button onClick={clearFilters} className="bg-transparent border-none cursor-pointer font-sans text-copy font-semibold text-gold-ink">Clear filters</button>
                   : <div className="mt-1.5"><Button variant="secondary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Add item</Button></div>}
               </div>
             ) : rows.map(i => {
@@ -197,25 +193,25 @@ export default function InventoryPage() {
               return (
                 <div key={i.id} className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[54px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]')}>
                   <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-[13.5px]">{i.name}</span>
-                    <span className="text-[11.5px] text-muted-ink">
+                    <span className="text-copy">{i.name}</span>
+                    <span className="text-meta text-muted-ink">
                       {i.quantity}{i.suppliedInHouse ? ' · Supplied by The Conts' : ''}{i.installedOn ? ` · installed ${date(i.installedOn)}` : ''}
                     </span>
                   </div>
                   <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-[13px]">{i.unitNumber}</span>
-                    <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{i.propertyName}</span>
+                    <span className="text-copy">{i.unitNumber}</span>
+                    <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{i.propertyName}</span>
                   </div>
-                  <span className="text-[12.5px] text-[var(--color-ink-2)]">{CAT_LABEL[i.category]}</span>
+                  <span className="text-copy text-[var(--color-ink-2)]">{CAT_LABEL[i.category]}</span>
                   <div>
                     <select value={i.condition} onChange={e => setCondition(i, e.target.value as Condition)}
                       aria-label={`Condition of ${i.name}`}
-                      className={cx('h-[30px] px-2 py-0 font-sans text-[16px] font-normal cursor-pointer rounded-full border-none appearance-none text-center', condPill(i.condition))}>
+                      className={cx('h-[30px] px-2 py-0 font-sans text-heading font-normal cursor-pointer rounded-full border-none appearance-none text-center', condPill(i.condition))}>
                       {CONDITIONS.map(c => <option key={c} value={c}>{COND_LABEL[c]}</option>)}
                     </select>
                   </div>
-                  <span className="text-[13px] text-right tabular-nums">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span>
-                  <span className={cx('text-[12.5px]', sTone ? cx(TONE[sTone].text, 'font-semibold') : 'text-muted-ink font-normal')}>
+                  <span className="text-copy text-right tabular-nums">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span>
+                  <span className={cx('text-copy', sTone ? cx(TONE[sTone].text, 'font-semibold') : 'text-muted-ink font-normal')}>
                     {i.replaceBy ? date(i.replaceBy) : '—'}
                   </span>
                   <NoteCell value={i.notes} onSave={v => saveNote(i, v)} label={i.name} />
@@ -237,7 +233,7 @@ export default function InventoryPage() {
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} aria-pressed={active}
-      className={cx('h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer font-sans text-[16px] font-normal border border-solid',
+      className={cx('h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer font-sans text-heading font-normal border border-solid',
         active ? 'border-black bg-black text-white' : 'border-line bg-card text-muted-ink')}>
       {label}
     </button>
@@ -256,9 +252,9 @@ function Stat({ label, value, hint, tone, active, onClick }: { label: string; va
       className={cx('flex flex-col gap-[3px] py-[13px] px-[15px] rounded-card bg-card border border-solid',
         active ? 'border-black' : 'border-line',
         interactive ? 'cursor-pointer' : 'cursor-default')}>
-      <span className={cx('text-[19px] font-semibold tabular-nums', tone ? TONE[tone].text : 'text-ink')}>{value}</span>
-      <span className="text-[12px] font-medium">{label}</span>
-      {hint && <span className="text-[11px] text-muted-ink">{hint}</span>}
+      <span className={cx('text-title font-semibold tabular-nums', tone ? TONE[tone].text : 'text-ink')}>{value}</span>
+      <span className="text-meta font-medium">{label}</span>
+      {hint && <span className="text-caption text-muted-ink">{hint}</span>}
     </div>
   );
 }
@@ -278,12 +274,12 @@ function NoteCell({ value, onSave, label }: { value: string; onSave: (v: string)
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
           if (e.key === 'Escape') { setV(value); setEditing(false); }
         }}
-        className="h-[30px] w-full box-border px-3 py-0 font-sans text-[12px] text-ink bg-card border border-solid border-line rounded-control outline-none" />
+        className="h-[30px] w-full box-border px-3 py-0 font-sans text-meta text-ink bg-card border border-solid border-line rounded-control outline-none" />
     );
   }
   return (
     <button onClick={() => setEditing(true)} title="Edit note"
-      className={cx('text-left w-full min-h-[30px] py-[5px] px-2 rounded-[6px] border border-solid bg-transparent cursor-text font-sans text-[12px] font-normal whitespace-nowrap overflow-hidden text-ellipsis',
+      className={cx('text-left w-full min-h-[30px] py-[5px] px-2 rounded-[6px] border border-solid bg-transparent cursor-text font-sans text-meta font-normal whitespace-nowrap overflow-hidden text-ellipsis',
         value ? 'border-transparent text-[var(--color-ink-2)]' : 'border-line-soft text-faint')}>
       {value || 'Add note'}
     </button>
@@ -338,8 +334,8 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
       <div ref={ref} className="relative w-full max-w-[500px] max-h-[88vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
         <form onSubmit={e => { e.preventDefault(); if (canSubmit) submit(); }}>
           <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[5px]">
-            <h2 className="m-0 text-[18px] font-semibold">Add inventory item</h2>
-            <p className="m-0 text-[13px] text-muted-ink">Record a piece of fit-out supplied for a unit, its condition and when it is due for replacement.</p>
+            <h2 className="m-0 text-title font-semibold">Add fit-out item</h2>
+            <p className="m-0 text-copy text-muted-ink">Record a piece of fit-out supplied for a unit, its condition and when it is due for replacement.</p>
           </div>
           <div className="py-4 px-[22px] flex flex-col gap-[14px]">
             <Field label="Item" placeholder="e.g. Queen bed frame and mattress" value={f.name} onChange={set('name')} />
@@ -383,9 +379,9 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
 function Sel({ label, value, onChange, options }: { label: string; value: string; onChange: (e: { target: { value: string } }) => void; options: { value: string; label: string }[] }) {
   return (
     <div className="flex flex-col gap-[7px]">
-      <label className="text-[12px] font-medium text-muted-ink">{label}</label>
+      <label className="text-meta font-medium text-muted-ink">{label}</label>
       <select value={value} onChange={onChange}
-        className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
+        className="h-10 w-full box-border px-3 py-0 font-sans text-copy text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </div>

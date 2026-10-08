@@ -15,8 +15,9 @@ import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, dateRange, date, dateShort, dateTime, monthLabel } from '../lib/format';
 import type { UnitReadiness } from '../lib/types';
-import UnitTree from './units/UnitTree';
+import UnitTree, { firstUnitId } from './units/UnitTree';
 import AccessTab from './units/AccessTab';
+import BookingsTab from './units/BookingsTab';
 import { SaveBar, DetailsForm, ContractFields, DocumentsCard, ExpensesEditor, BuildingModal, ConfirmAdd } from './units/UnitForms';
 import { PROPERTIES_FALLBACK, DETAIL_FALLBACK, mkUnit } from './units/fallback';
 import {
@@ -27,11 +28,11 @@ import {
 /** The unit lifecycle states an operator can set by hand, in the order they read on the record. */
 const READINESS_OPTIONS: UnitReadiness[] = ['ready', 'occupied', 'cleaning', 'dirty', 'inspection', 'maintenance', 'blocked'];
 
-const RES_COLS = 'grid-cols-[minmax(150px,1.3fr)_minmax(160px,1.4fr)_minmax(150px,1.3fr)_minmax(110px,0.9fr)_minmax(110px,1fr)]';
-
+// Short labels so the eight tabs sit on one row; the title carries the full name.
 const TABS = [
-  ['overview', 'Overview'], ['details', 'Details & owner'], ['contract', 'Contract & documents'], ['access', 'Access & keys'],
-  ['reservations', 'Reservations'], ['operations', 'Cleaning & maintenance'], ['financials', 'Financials'], ['activity', 'Activity'],
+  ['overview', 'Overview', 'Overview'], ['details', 'Details', 'Details and owner'], ['contract', 'Contract', 'Contract and documents'],
+  ['access', 'Access', 'Access and keys'], ['reservations', 'Bookings', 'Bookings'], ['operations', 'Housekeeping', 'Cleaning, maintenance and fit-out'],
+  ['financials', 'Financials', 'Financials'], ['activity', 'Activity', 'Activity'],
 ] as const;
 type Tab = typeof TABS[number][0];
 const isTab = (t: string | null): t is Tab => TABS.some(([k]) => k === t);
@@ -57,7 +58,13 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   // The open tab lives in the address (?tab=), so a link or a reload lands on the same tab.
   const tabParam = params.get('tab');
   const tab: Tab = isTab(tabParam) ? tabParam : 'overview';
-  const setTab = (t: Tab) => setParams(p => { const n = new URLSearchParams(p); if (t === 'overview') n.delete('tab'); else n.set('tab', t); return n; }, { replace: true });
+  const setTab = (t: Tab) => setParams(p => {
+    const n = new URLSearchParams(p);
+    if (t === 'overview') n.delete('tab'); else n.set('tab', t);
+    // The Bookings tab's own filter and page do not carry over to another tab.
+    n.delete('when'); n.delete('page');
+    return n;
+  }, { replace: true });
 
   const buildings = props.data?.buildings ?? [];
   const units = useMemo(() => (props.data?.units ?? []).map(u => ({ ...u, ...edits[u.id] })), [props.data, edits]);
@@ -69,14 +76,20 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   }, [roster.data, readinessEdits]);
 
   // An address with no unit (or one that no longer exists) opens the first unit in the tree.
-  const openId = unitId && (!props.data || units.some(u => u.id === unitId)) ? unitId : (units[0]?.id ?? unitId);
+  const openId = unitId && (!props.data || units.some(u => u.id === unitId)) ? unitId : (firstUnitId(buildings, units) ?? unitId);
   const form = units.find(u => u.id === openId) ?? null;
   const detail = useApi<UnitDetail>(openId ? `/units/detail?unitId=${encodeURIComponent(openId)}` : null, DETAIL_FALLBACK);
   const d = detail.data;
 
   function select(id: string) {
     setTreeOpen(false);
-    navigate({ pathname: `/properties/units/${encodeURIComponent(id)}`, search: tab === 'overview' ? '' : `?tab=${tab}` });
+    // The tab and the tree search carry over to the next unit; the Bookings filter and page do not.
+    const next = new URLSearchParams();
+    if (tab !== 'overview') next.set('tab', tab);
+    const q = params.get('q');
+    if (q) next.set('q', q);
+    const search = next.toString();
+    navigate({ pathname: `/properties/units/${encodeURIComponent(id)}`, search: search ? `?${search}` : '' });
   }
 
   const reloadAll = () => { props.reload(); detail.reload(); roster.reload(); };
@@ -160,7 +173,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       onSubmit={b => void saveBuilding(modal.building.id, b)}
       onDelete={units.every(u => u.buildingId !== modal.building.id) ? () => void deleteBuilding(modal.building) : undefined} />}
     {modal?.kind === 'unit' && <ConfirmAdd title={`Add a unit to ${buildings.find(b => b.id === modal.buildingId)?.name ?? 'this building'}`}
-      sub="A blank unit opens for you to fill in." body="You will set the listing name, code, owner, package and GRR on its Details & owner tab." confirm="Add unit"
+      sub="A blank unit opens for you to fill in." body="You will set the listing name, code, owner, package and GRR on its Details tab." confirm="Add unit"
       onClose={() => setModal(null)} onConfirm={() => addUnit(modal.buildingId)} />}
     {modal?.kind === 'subunit' && <ConfirmAdd title={`Add a sub-unit under ${modal.parent.unitCode || 'this unit'}`}
       sub="A room or floor let separately inside this unit." body="The sub-unit inherits the owner and bank details of its parent. You can give it its own code, revenue split and expenses." confirm="Add sub-unit"
@@ -196,7 +209,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       {header}
       {(props.error || detail.error) && <StaleBanner message={`Showing the last record we have. ${props.error ?? detail.error}`} onRetry={reloadAll} />}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,320px)_minmax(0,1fr)] gap-5 items-start min-w-0">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,300px)_minmax(0,1fr)] gap-5 items-start min-w-0">
         <div className="flex flex-col gap-2 min-w-0">
           {/* Below the wide-desktop breakpoint the tree folds away behind a picker once a unit is open. */}
           <button onClick={() => setTreeOpen(o => !o)} aria-expanded={treeOpen}
@@ -245,6 +258,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   // Matches MASTER_ROLES on the server's channex-setup / channex-connect.
   const canManageChannels = !!user && MASTER_ROLES.includes(user.role);
   const fileRef = useRef<HTMLInputElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   useEffect(() => { setPhoto(null); }, [d.unit.id]);
@@ -256,6 +270,13 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   // Financial sections are absent from the payload for roles without access, so that tab is not offered.
   const tabs = TABS.filter(([k]) => k !== 'financials' || money);
   const shown: Tab = tabs.some(([k]) => k === tab) ? tab : 'overview';
+  // On a phone the strip scrolls sideways; keep the open tab in view (a link can land on the last one).
+  useEffect(() => {
+    const strip = tabsRef.current, el = strip?.querySelector<HTMLElement>(`[data-tab="${shown}"]`);
+    if (strip && el && (el.offsetLeft < strip.scrollLeft || el.offsetLeft + el.offsetWidth > strip.scrollLeft + strip.clientWidth)) {
+      strip.scrollLeft = el.offsetLeft - 20;
+    }
+  }, [shown]);
   // The P and L and the stats are both the current calendar month to date (units/detail.ts).
   const periodLabel = `${monthLabel(p.period)} to date`;
 
@@ -351,10 +372,10 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           ))}
         </div>
 
-        <div role="tablist" aria-label="Unit record" className="flex gap-x-0.5 px-5 sm:px-6 [border-top:1px_solid_var(--color-line)] overflow-x-auto xl:flex-wrap xl:overflow-visible">
-          {tabs.map(([k, label]) => (
-            <button key={k} role="tab" aria-selected={k === shown} onClick={() => setTab(k)}
-              className={cx('py-[13px] px-1 mr-4 last:mr-0 [border:none] bg-transparent cursor-pointer [font:inherit] whitespace-nowrap text-[13px]! flex-none',
+        <div ref={tabsRef} role="tablist" aria-label="Unit record" className="flex flex-nowrap px-5 sm:px-6 [border-top:1px_solid_var(--color-line)] overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {tabs.map(([k, label, full]) => (
+            <button key={k} role="tab" aria-selected={k === shown} onClick={() => setTab(k)} title={full !== label ? full : undefined} data-tab={k}
+              className={cx('py-[13px] px-0.5 mr-4 last:mr-0 [border:none] bg-transparent cursor-pointer [font:inherit] whitespace-nowrap text-[13px]! flex-none',
                 k === shown ? 'font-semibold! text-ink [box-shadow:inset_0_-2px_0_var(--color-gold)]' : 'text-muted-ink')}>
               {label}
             </button>
@@ -365,9 +386,12 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       {shown === 'overview' && (
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(300px,100%),1fr))] gap-5 [align-items:start]">
           <Card>
-            <div className="pt-[18px] px-5 pb-[14px]"><span className="text-[18px] font-semibold">Stays</span></div>
-            {d.stays.length === 0 && <div className="py-4 px-5 text-[13px] text-muted-ink [border-top:1px_solid_var(--color-line-soft)]">No stays yet.</div>}
-            {d.stays.slice(0, 3).map(s => (
+            <div className="pt-[18px] px-5 pb-[14px] flex items-baseline justify-between gap-3">
+              <span className="text-[18px] font-semibold">Current and next stays</span>
+              <button type="button" onClick={() => setTab('reservations')} className="bg-transparent [border:none] p-0 cursor-pointer [font:inherit] text-[12.5px]! font-semibold text-gold-ink whitespace-nowrap">All bookings</button>
+            </div>
+            {d.stays.length === 0 && <div className="py-4 px-5 text-[13px] text-muted-ink [border-top:1px_solid_var(--color-line-soft)]">Nothing booked from today on.</div>}
+            {d.stays.slice(0, 4).map(s => (
               <div key={s.id} className="flex items-center gap-3 py-[13px] px-5 [border-top:1px_solid_var(--color-line-soft)]">
                 <span title={CH[s.channel].label} className="flex"><ChannelMark ch={s.channel} size={28} /></span>
                 <div className="flex flex-col gap-[3px] flex-1 min-w-0">
@@ -419,39 +443,16 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 
       {shown === 'access' && <AccessTab key={u.id} unitId={u.id} unitLabel={unitLabel} />}
 
-      {shown === 'reservations' && (
-        <Card>
-          {d.stays.length === 0 ? <div className="py-6 px-5 text-[13px] text-muted-ink">No reservations for this unit.</div> : (
-            <div className="overflow-x-auto">
-              <div className="min-w-[760px]">
-                <div className={cx(RES_COLS, 'grid gap-[14px] py-[9px] px-5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink')}>
-                  <div>Reference</div><div>Guest</div><div>Dates</div><div className="text-right">Gross</div><div>Status</div>
-                </div>
-                {d.stays.map(s => (
-                  <div key={s.id} className={cx(RES_COLS, 'grid gap-[14px] items-center min-h-[52px] py-[9px] px-5 [border-bottom:1px_solid_var(--color-line-soft)]')}>
-                    <div className="flex items-center gap-[9px] min-w-0">
-                      <span title={CH[s.channel].label} className="flex"><ChannelMark ch={s.channel} size={20} /></span><span className="sr-only">{CH[s.channel].label}</span>
-                      <span className="font-mono text-[12px] whitespace-nowrap overflow-hidden text-ellipsis">{s.externalRef ?? '—'}</span>
-                    </div>
-                    <div className="flex flex-col gap-px min-w-0">
-                      <span className="text-[13.5px]">{s.guestName ?? 'No guest'}</span>
-                      <span className="text-[11.5px] text-muted-ink">{s.guestsCount} guests</span>
-                    </div>
-                    <span className="text-[12.5px]">{dateRange(s.checkIn, s.checkOut)}</span>
-                    <span className="text-[13px] text-right font-medium">{s.grossBookingValue != null && s.grossBookingValue > 0 ? rm(s.grossBookingValue, { cents: false }) : '—'}</span>
-                    <div><Badge tone={RES_TONE[s.state]} label={cap(s.state)} /></div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </Card>
-      )}
+      {shown === 'reservations' && <BookingsTab key={u.id} unitId={u.id} />}
 
       {shown === 'operations' && (
         <>
           <Card>
-            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-[16px] font-semibold">Cleaning and tasks</div>
+            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
+              <span className="text-[16px] font-semibold">Cleaning and tasks</span>
+              {/* units/detail.ts sends the latest 12; the full list is on the Housekeeping board. */}
+              {d.tasks.length >= 12 && <span className="text-[12px] text-muted-ink">Latest 12</span>}
+            </div>
             {d.tasks.length === 0 && <div className="py-4 px-5 text-[13px] text-muted-ink">No tasks for this unit.</div>}
             {d.tasks.map(t => (
               <div key={t.id} className="flex items-center gap-[14px] py-[14px] px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex-wrap" style={{ borderLeft: `3px solid ${T[TASK_TONE[t.state]].line}` }}>
@@ -466,7 +467,10 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
             ))}
           </Card>
           <Card>
-            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-[16px] font-semibold">Maintenance</div>
+            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
+              <span className="text-[16px] font-semibold">Maintenance</span>
+              {d.maintenance.length >= 12 && <span className="text-[12px] text-muted-ink">Latest 12</span>}
+            </div>
             {d.maintenance.length === 0 && <div className="py-4 px-5 text-[13px] text-muted-ink">No maintenance issues reported.</div>}
             {d.maintenance.map(m => (
               <div key={m.id} className="py-[14px] px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-start gap-4 flex-wrap">

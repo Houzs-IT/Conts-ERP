@@ -23,19 +23,21 @@ export type FeeSource = 'unit' | 'owner-default' | 'fallback';
 
 export interface UnitLine {
   unitId: string; unitLabel: string; model: FeeModel; feePct?: number; grrAmount?: number;
-  feeSource?: FeeSource;
+  feeSource?: FeeSource; buildingId?: string;
   occupancy: number; adr: number; gross: number; net: number;
 }
 export interface Owner {
   id: string; displayName: string; email: string; phone: string | null; ic: string | null;
   bankName: string | null; bankAccount: string | null; accountHolder: string | null;
+  /** The API sends only the last four characters; the full number needs an audited reveal. */
+  icLast4?: string | null; bankAccountLast4?: string | null;
   portalInvited: boolean;
   /** Owner-level default management fee, applied to units with no per-unit override. Null = none set. */
   defaultManagementFeePct: number | null;
-  contract: { feePct: number; startedOn: string; renewsOn: string | null } | null;
+  contract: { feePct: number; startedOn: string; renewsOn: string | null; endsOn?: string | null } | null;
   units: UnitLine[];
 }
-export interface Payload { data: Owner[]; generatedAt: string }
+export interface Payload { data: Owner[]; generatedAt: string; month?: string }
 
 export const line = (unitId: string, unitLabel: string, model: FeeModel, feePct: number | undefined, grrAmount: number | undefined, occupancy: number, adr: number, gross: number, net: number): UnitLine =>
   ({ unitId, unitLabel, model, feePct, grrAmount, occupancy, adr, gross, net });
@@ -43,12 +45,12 @@ export const line = (unitId: string, unitLabel: string, model: FeeModel, feePct:
 export const FALLBACK: Payload = {
   generatedAt: '',
   data: [
-    { id: 'o1', displayName: 'Lim Chee Keong', email: 'limck@example.com', phone: '+60 12-333 0001', ic: '680606-08-5101', bankName: 'PBBB', bankAccount: '4605371109', accountHolder: 'LIANG WOOI KEE', portalInvited: true, defaultManagementFeePct: 25, contract: { feePct: 25, startedOn: '2025-03-01', renewsOn: '2027-03-01' }, units: [line('u1', 'Vista Jaya One #A-12-03', 'management', 25, undefined, 86, 28400, 812000, 609000)] },
-    { id: 'o2', displayName: 'Wong Mei Ling', email: 'wongml@example.com', phone: '+60 12-333 0002', ic: '710214-14-5220', bankName: 'MBBE', bankAccount: '1512988771', accountHolder: 'Wong Mei Ling', portalInvited: true, defaultManagementFeePct: 25, contract: { feePct: 25, startedOn: '2025-06-01', renewsOn: '2027-06-01' }, units: [line('u2', 'Arcoris #B-08-11', 'management', 25, undefined, 79, 23100, 634000, 475500)] },
-    { id: 'o3', displayName: 'Rajesh Kumar', email: 'rajesh@example.com', phone: '+60 12-333 0003', ic: '650930-10-5333', bankName: 'CIBB', bankAccount: '7024551200', accountHolder: 'Rajesh A/L Kumar', portalInvited: false, defaultManagementFeePct: null, contract: { feePct: 0, startedOn: '2025-11-01', renewsOn: '2026-11-01' }, units: [line('u3', 'Tribeca #2207', 'grr', undefined, 350000, 88, 31800, 901000, 350000)] },
-    { id: 'o4', displayName: 'Chong Wei Han', email: 'chongwh@example.com', phone: '+60 12-333 0004', ic: '730118-08-5019', bankName: 'PBBB', bankAccount: '3388120945', accountHolder: 'Chong Wei Han', portalInvited: false, defaultManagementFeePct: 20, contract: { feePct: 25, startedOn: '2025-08-01', renewsOn: '2027-08-01' }, units: [line('u4', 'Scarletz #15-06', 'management', 25, undefined, 74, 26500, 588000, 441000)] },
+    { id: 'o1', displayName: 'Lim Chee Keong', email: 'limck@example.com', phone: '+60 12-333 0001', ic: '900101-14-0017', bankName: 'PBBB', bankAccount: '0000000021', accountHolder: 'LIANG WOOI KEE', portalInvited: true, defaultManagementFeePct: 25, contract: { feePct: 25, startedOn: '2025-03-01', renewsOn: '2027-03-01' }, units: [line('u1', 'Vista Jaya One #A-12-03', 'management', 25, undefined, 86, 28400, 812000, 609000)] },
+    { id: 'o2', displayName: 'Wong Mei Ling', email: 'wongml@example.com', phone: '+60 12-333 0002', ic: '900101-14-0018', bankName: 'MBBE', bankAccount: '0000000022', accountHolder: 'Wong Mei Ling', portalInvited: true, defaultManagementFeePct: 25, contract: { feePct: 25, startedOn: '2025-06-01', renewsOn: '2027-06-01' }, units: [line('u2', 'Arcoris #B-08-11', 'management', 25, undefined, 79, 23100, 634000, 475500)] },
+    { id: 'o3', displayName: 'Rajesh Kumar', email: 'rajesh@example.com', phone: '+60 12-333 0003', ic: '900101-14-0019', bankName: 'CIBB', bankAccount: '0000000023', accountHolder: 'Rajesh A/L Kumar', portalInvited: false, defaultManagementFeePct: null, contract: { feePct: 0, startedOn: '2025-11-01', renewsOn: '2026-11-01' }, units: [line('u3', 'Tribeca #2207', 'grr', undefined, 350000, 88, 31800, 901000, 350000)] },
+    { id: 'o4', displayName: 'Chong Wei Han', email: 'chongwh@example.com', phone: '+60 12-333 0004', ic: '900101-14-0020', bankName: 'PBBB', bankAccount: '0000000024', accountHolder: 'Chong Wei Han', portalInvited: false, defaultManagementFeePct: 20, contract: { feePct: 25, startedOn: '2025-08-01', renewsOn: '2027-08-01' }, units: [line('u4', 'Scarletz #15-06', 'management', 25, undefined, 74, 26500, 588000, 441000)] },
     // A multi-unit owner: the record rolls all three units into one combined net payout and one combined statement history.
-    { id: 'o5', displayName: 'Goh Family Trust', email: 'gohtrust@example.com', phone: '+60 12-333 0005', ic: null, bankName: 'HLBB', bankAccount: '2299013848', accountHolder: 'Goh Family Trust', portalInvited: true, defaultManagementFeePct: 22, contract: { feePct: 25, startedOn: '2025-02-01', renewsOn: '2027-02-01' }, units: [
+    { id: 'o5', displayName: 'Goh Family Trust', email: 'gohtrust@example.com', phone: '+60 12-333 0005', ic: null, bankName: 'HLBB', bankAccount: '0000000025', accountHolder: 'Goh Family Trust', portalInvited: true, defaultManagementFeePct: 22, contract: { feePct: 25, startedOn: '2025-02-01', renewsOn: '2027-02-01' }, units: [
       line('u5', 'Sunway Velocity #V-18-07', 'management', 25, undefined, 91, 30200, 742000, 556500),
       line('u6', 'Sunway Velocity #V-22-03', 'management', 25, undefined, 84, 27800, 681000, 510750),
       line('u7', 'Sunway Velocity #V-09-11', 'management', 25, undefined, 88, 26100, 711000, 533250),
@@ -58,6 +60,11 @@ export const FALLBACK: Payload = {
 
 export const netOf = (o: Owner) => o.units.reduce((s, u) => s + u.net, 0);
 export const grossOf = (o: Owner) => o.units.reduce((s, u) => s + u.gross, 0);
+/** Guaranteed rent (GRR) units pay the owner a fixed amount whatever the bookings brought in, so their "net"
+ *  is the guarantee, not a share of gross. Shown separately so net is never read as a cut of gross. */
+export const guaranteedOf = (o: Owner) => o.units.reduce((s, u) => s + (u.model === 'grr' ? u.net : 0), 0);
+export const managedGrossOf = (o: Owner) => o.units.reduce((s, u) => s + (u.model === 'grr' ? 0 : u.gross), 0);
+export const managedNetOf = (o: Owner) => o.units.reduce((s, u) => s + (u.model === 'grr' ? 0 : u.net), 0);
 export const terms = (u: UnitLine) => u.model === 'grr' ? `GRR ${rm(u.grrAmount ?? 0, { cents: false })}/mo` : `${u.feePct ?? 0}% fee`;
 
 // One statement per past period, combined across all of an owner's units.
@@ -82,13 +89,13 @@ export function statementsFallback(o: Owner): StatementsPayload {
   };
 }
 
-export const linkBtn = 'inline-flex items-center gap-[5px] bg-transparent [border:none] cursor-pointer font-sans text-[12.5px] font-medium text-gold-ink';
+export const linkBtn = 'inline-flex items-center gap-[5px] bg-transparent [border:none] cursor-pointer font-sans text-copy font-medium text-gold-ink';
 
 export function Roll({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <div className="flex flex-col gap-[3px]">
-      <span className={cx('font-semibold tabular-nums', strong ? 'text-[19px]' : 'text-[15px]')}>{value}</span>
-      <span className="text-[11px] text-muted-ink">{label}</span>
+      <span className={cx('font-semibold tabular-nums', strong ? 'text-title' : 'text-heading')}>{value}</span>
+      <span className="text-caption text-muted-ink">{label}</span>
     </div>
   );
 }
@@ -96,7 +103,7 @@ export function Section({ title, action, children }: { title: string; action?: R
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-[12px] font-semibold text-muted-ink">{title}</span>
+        <span className="text-meta font-semibold text-muted-ink">{title}</span>
         {action}
       </div>
       {children}
@@ -112,15 +119,15 @@ export function StatementHistory({ o }: { o: Owner }) {
   return (
     <Section title="Statement history">
       {history.length === 0 ? (
-        <div className="text-[12.5px] text-muted-ink">No statements yet. History appears here once a period is generated for this owner.</div>
+        <div className="text-copy text-muted-ink">No statements yet. History appears here once a period is generated for this owner.</div>
       ) : (
         <div className="border border-solid border-line rounded-card overflow-hidden">
           {history.map(s => (
             <a key={s.id} href={`#/finance/statements/${encodeURIComponent(s.id)}`}
               className="grid grid-cols-[1fr_0.9fr_0.9fr_auto] gap-2.5 items-center py-[11px] px-[13px] [border-bottom:1px_solid_var(--color-line-soft)] no-underline text-inherit!">
-              <div className="text-[12.5px] font-medium">{periodLabel(s.period)}</div>
-              <span className="text-[12px] text-right text-muted-ink tabular-nums">{rm(s.grossBookingValue, { cents: false })}</span>
-              <span className="text-[12.5px] text-right font-semibold tabular-nums">{rm(s.netPayout, { cents: false })}</span>
+              <div className="text-copy font-medium">{periodLabel(s.period)}</div>
+              <span className="text-meta text-right text-muted-ink tabular-nums">{rm(s.grossBookingValue, { cents: false })}</span>
+              <span className="text-copy text-right font-semibold tabular-nums">{rm(s.netPayout, { cents: false })}</span>
               <span className="flex justify-end"><Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} size="sm" /></span>
             </a>
           ))}
@@ -147,8 +154,8 @@ export function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, c
       <div ref={ref} className="relative w-full max-w-[480px] max-h-[88vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
         <form onSubmit={e => { e.preventDefault(); if (canSubmit) onSubmit(); }}>
           <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[5px]">
-            <h2 className="m-0 text-[18px] font-semibold">{title}</h2>
-            {sub && <p className="m-0 text-[13px] text-muted-ink">{sub}</p>}
+            <h2 className="m-0 text-title font-semibold">{title}</h2>
+            {sub && <p className="m-0 text-copy text-muted-ink">{sub}</p>}
           </div>
           <div className="py-4 px-[22px] flex flex-col gap-[14px]">{children}</div>
           <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
@@ -160,11 +167,11 @@ export function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, c
     </div>
   );
 }
-const selectStyle = 'h-[var(--control-height)] w-full box-border py-0 px-3 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none';
+const selectStyle = 'h-[var(--control-height)] w-full box-border py-0 px-3 font-sans text-copy text-ink bg-card border border-solid border-line rounded-control outline-none';
 export function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
     <div className="flex flex-col gap-[7px]">
-      <label className="text-[12px] font-medium text-muted-ink">{label}</label>
+      <label className="text-meta font-medium text-muted-ink">{label}</label>
       <select value={value} onChange={e => onChange(e.target.value)} className={selectStyle}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
     </div>
   );

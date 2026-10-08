@@ -35,8 +35,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     FROM owner_statements WHERE substr(period_start, 1, 7) BETWEEN ? AND ?`, periods[0], current);
 
   const sum = (k: 'gross' | 'collected') => Math.round(rows.reduce((n, r) => n + r[k], 0));
-  const last = points[points.length - 1]?.revenue ?? 0;
-  const prev = points.length > 1 ? points[points.length - 2].revenue : 0;
+  // The month in progress is only part-way, so set against a whole month it always reads as a fall. The
+  // change compares the last two complete months instead, and says which.
+  const complete = points.filter(p => !p.isCurrent);
+  const lastP = complete[complete.length - 1], prevP = complete[complete.length - 2];
+  const last = lastP?.revenue ?? 0, prev = prevP?.revenue ?? 0;
   const pct = prev > 0 ? Number((((last - prev) / prev) * 100).toFixed(1)) : 0;
 
   return json({
@@ -46,6 +49,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     totals: finance
       ? { grossBookingValue: sum('gross'), collectedRevenue: sum('collected'), managementFees: Number(fees?.fee ?? 0), netOwnerPayout: Number(fees?.net ?? 0) }
       : { grossBookingValue: 0, collectedRevenue: 0, managementFees: 0, netOwnerPayout: 0 },
-    delta: { value: Math.abs(pct), direction: pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat', tone: pct > 0 ? 'success' : 'neutral' },
+    delta: {
+      value: Math.abs(pct), direction: pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat', tone: pct > 0 ? 'success' : 'neutral',
+      ...(lastP && prevP ? { period: lastP.period, against: prevP.period } : {}),
+    },
   });
 };

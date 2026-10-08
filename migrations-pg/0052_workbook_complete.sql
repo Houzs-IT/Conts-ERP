@@ -10,11 +10,13 @@
 --                          to the owner (negative 杂费扣款 lines) and debt carried over (DEBT AMOUNT).
 --                          Statement generation picks up the open ones (functions/api/statements/generate.ts)
 --   reservations           the parts of a booking's money (room, cleaning fee, taxes, payout ...)
+--   owners                 ids that embedded an IC number, passport number or name are re-keyed to opaque ids
+--                          (data step at the end; references follow)
 --   guarantee_pool_months  the Package D guarantee pool per unit and month (水池 sheet, three month tables)
 --   owner_statements.source, payouts.source   'owner_workbook' marks the paid history imported from
 --                          the OWNER PAYOUT sheet, so it is never mistaken for a generated statement
 --
--- REVERSAL:
+-- REVERSAL (the owner re-key is not reversed: the old ids were the leak):
 --   DROP TABLE guarantee_pool_months; DROP TABLE owner_adjustments; DROP TABLE unit_utility_accounts;
 --   ALTER TABLE reservations DROP COLUMN room_revenue, DROP COLUMN guest_cleaning_fee, DROP COLUMN extra_fees, DROP COLUMN sst_amount,
 --     DROP COLUMN tourism_tax, DROP COLUMN ota_tax, DROP COLUMN payment_processing_fee, DROP COLUMN deposit_collected, DROP COLUMN deposit_refunded,
@@ -127,6 +129,53 @@ ALTER TABLE reservations ADD COLUMN guest_nationality      TEXT;
 
 ALTER TABLE owner_statements ADD COLUMN source TEXT NOT NULL DEFAULT 'generated' CHECK (source IN ('generated','owner_workbook'));
 ALTER TABLE payouts          ADD COLUMN source TEXT NOT NULL DEFAULT 'generated' CHECK (source IN ('generated','owner_workbook'));
+
+-- REKEY-BEGIN
+-- Owner ids the import made before this migration embedded personal data: 'wb-owner-<IC number>' (or passport
+-- number, or name) and 'hp-owner-<name>'. Each such owner moves to the opaque id the import now makes
+-- (functions/_lib/hostplatformImport.ts, opaqueOwnerId): prefix + first 16 hex of sha256('conts-owner:' + key),
+-- key = IC with only letters and digits, lower-cased (workbook owners with an IC), else the name with whitespace
+-- runs made one space, trimmed, lower-cased. Steps per owner: copy the row under the new id, point every foreign
+-- key at owners(id) to it (found from the catalogue, so a table added later is not missed), move audit_log and
+-- notification_log references and the id inside their recorded before/after text, delete the old row, then give
+-- the copy its portal login back (user_id is unique, so the copy starts without it). Rows already on an opaque id
+-- are skipped, so running this block again changes nothing. The placeholder owner keeps its id.
+do $$
+declare
+  r record; fk record; nid text; k text; moved int := 0;
+begin
+  for r in
+    select * from pos.owners
+    where (id like 'wb-owner-%' or id like 'hp-owner-%') and id <> 'hp-owner-to-be-confirmed'
+      and id !~ '^(wb|hp)-owner-[0-9a-f]{16}$'
+  loop
+    k := lower(regexp_replace(coalesce(r.ic_number, ''), '[^A-Za-z0-9]', '', 'g'));
+    if r.id like 'hp-owner-%' or k = '' then
+      k := lower(btrim(regexp_replace(coalesce(r.display_name, ''), '[ \t\r\n]+', ' ', 'g')));
+    end if;
+    nid := substr(r.id, 1, 9) || substr(encode(sha256(convert_to('conts-owner:' || k, 'UTF8')), 'hex'), 1, 16);
+    if nid = r.id then continue; end if;
+    if not exists (select 1 from pos.owners where id = nid) then
+      insert into pos.owners select (jsonb_populate_record(null::pos.owners, to_jsonb(r) || jsonb_build_object('id', nid, 'user_id', null))).*;
+    end if;
+    for fk in
+      select c.conrelid::regclass as tbl, a.attname as col
+      from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+      where c.contype = 'f' and c.confrelid = 'pos.owners'::regclass
+    loop
+      execute format('update %s set %I = $1 where %I = $2', fk.tbl, fk.col, fk.col) using nid, r.id;
+    end loop;
+    update pos.audit_log set entity_id = nid where entity_table = 'owners' and entity_id = r.id;
+    update pos.audit_log set before_state = replace(before_state, r.id, nid), after_state = replace(after_state, r.id, nid)
+      where before_state like '%' || r.id || '%' or after_state like '%' || r.id || '%';
+    update pos.notification_log set entity_id = nid where entity_table = 'owners' and entity_id = r.id;
+    delete from pos.owners where id = r.id;
+    if r.user_id is not null then update pos.owners set user_id = r.user_id where id = nid and user_id is null; end if;
+    moved := moved + 1;
+  end loop;
+  raise notice 'owners re-keyed to opaque ids: %', moved;
+end $$;
+-- REKEY-END
 
 do $$ declare t text; begin
   for t in select tablename from pg_tables where schemaname = 'pos' loop

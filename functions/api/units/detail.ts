@@ -42,77 +42,83 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const money = session.manage;
   const month = new Date().toISOString().slice(0, 7);
 
-  const channels = await all<{ channel: string }>(env,
-    'SELECT channel FROM unit_channels WHERE unit_id = ? AND is_active = 1', unitId);
-
-  const stays = await all<any>(env, `
-    SELECT r.id, r.channel, r.state, r.check_in, r.check_out, r.guests_count,
-           r.external_ref, r.gross_booking_value, COALESCE(g.full_name,'') AS guest_name
-    FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id
-    WHERE r.unit_id = ? AND r.state NOT IN ('cancelled')
-    ORDER BY r.check_in DESC LIMIT 12`, unitId);
-
-  const tasks = await all<any>(env, `
-    SELECT t.id, t.title, t.kind, t.state, t.due_at, t.completed_at,
-           COALESCE(a.full_name,'') AS assignee_name
-    FROM tasks t LEFT JOIN users a ON a.id = t.assignee_id
-    WHERE t.unit_id = ? ORDER BY COALESCE(t.due_at, t.created_at) DESC LIMIT 12`, unitId);
-
-  const maintenance = await all<any>(env, `
-    SELECT id, title, detail, state, vendor_name, quoted_amount, final_amount,
-           owner_approval_required, blocks_unit, charge_to, reported_at, resolved_at
-    FROM maintenance_issues WHERE unit_id = ?
-    ORDER BY reported_at DESC LIMIT 12`, unitId);
-
-  const inventory = await all<any>(env, `
-    SELECT id, name, quantity, condition, supplied_in_house, purchase_cost, installed_on, last_checked
-    FROM inventory_items WHERE unit_id = ? ORDER BY name`, unitId);
-
-  const access = await all<any>(env, `
-    SELECT id, kind, label, instruction, rotates_after_stay, updated_at
-    FROM access_credentials WHERE unit_id = ?`, unitId);
-
-  // Statements, invoices and payout advice carry money, so they follow the same rule as the P and L.
-  // An owner sees only what has been released to them.
-  const documents = await all<any>(env, `
-    SELECT id, kind, file_name, byte_size, created_at
-    FROM documents
-    WHERE unit_id = ?
-      ${money ? '' : "AND kind NOT IN ('statement','invoice','payout_advice')"}
-      ${session.role === 'owner' ? 'AND visible_to_owner = 1' : ''}
-    ORDER BY created_at DESC LIMIT 100`, unitId);
-
-  const activity = await all<any>(env, `
-    SELECT actor_label, action, before_state, after_state, source, occurred_at
-    FROM audit_log WHERE entity_id = ? OR entity_table = 'units' AND entity_id = ?
-    ORDER BY occurred_at DESC LIMIT 20`, unitId, unitId);
-
-  // Occupancy, ADR and RevPAR as everywhere else (functions/_lib/revenue.ts): gross value and nights split by night into the month.
+  // Independent reads, so they go out together: each one is its own connection (db.ts).
+  // Occupancy, ADR and RevPAR as everywhere else (functions/_lib/revenue.ts): gross value and nights split by night
+  // into the month. The money chain is the month so far worked out the way the owner statement will be.
   const monthEndEx = monthEndExclusive(month), daysInMonth = daysInMonthOf(month);
-  const perf = metrics(await stayMonths(env, `${month}-01`, monthEndEx, { unitId }), daysInMonth);
+  const q: Query = (sql, ...args) => all(env, sql, ...args);
+  const [channels, stays, tasks, maintenance, inventory, access, documents, activity, perfRows, rating, statement] = await Promise.all([
+    all<{ channel: string }>(env,
+      'SELECT channel FROM unit_channels WHERE unit_id = ? AND is_active = 1', unitId),
 
-  const rating = await one<{ avg: number | null; n: number }>(env,
-    'SELECT AVG(rating) AS avg, COUNT(*) AS n FROM reviews WHERE unit_id = ?', unitId);
+    // The stay in the unit now and the next few. The full history is paged by /api/units/stays.
+    all<any>(env, `
+      SELECT r.id, r.channel, r.state, r.check_in, r.check_out, r.guests_count,
+             r.external_ref, r.gross_booking_value, COALESCE(g.full_name,'') AS guest_name
+      FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id
+      WHERE r.unit_id = ? AND r.state NOT IN ('cancelled')
+        AND r.check_out >= to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')
+      ORDER BY r.check_in ASC LIMIT 6`, unitId),
 
-  // The month so far, worked out the way the owner statement will be (functions/_lib/ownerStatement.ts),
-  // only for finance-permitted roles.
+    all<any>(env, `
+      SELECT t.id, t.title, t.kind, t.state, t.due_at, t.completed_at,
+             COALESCE(a.full_name,'') AS assignee_name
+      FROM tasks t LEFT JOIN users a ON a.id = t.assignee_id
+      WHERE t.unit_id = ? ORDER BY COALESCE(t.due_at, t.created_at) DESC LIMIT 12`, unitId),
+
+    all<any>(env, `
+      SELECT id, title, detail, state, vendor_name, quoted_amount, final_amount,
+             owner_approval_required, blocks_unit, charge_to, reported_at, resolved_at
+      FROM maintenance_issues WHERE unit_id = ?
+      ORDER BY reported_at DESC LIMIT 12`, unitId),
+
+    all<any>(env, `
+      SELECT id, name, quantity, condition, supplied_in_house, purchase_cost, installed_on, last_checked
+      FROM inventory_items WHERE unit_id = ? ORDER BY name`, unitId),
+
+    all<any>(env, `
+      SELECT id, kind, label, instruction, rotates_after_stay, updated_at
+      FROM access_credentials WHERE unit_id = ?`, unitId),
+
+    // Statements, invoices and payout advice carry money, so they follow the same rule as the P and L.
+    // An owner sees only what has been released to them.
+    all<any>(env, `
+      SELECT id, kind, file_name, byte_size, created_at
+      FROM documents
+      WHERE unit_id = ?
+        ${money ? '' : "AND kind NOT IN ('statement','invoice','payout_advice')"}
+        ${session.role === 'owner' ? 'AND visible_to_owner = 1' : ''}
+      ORDER BY created_at DESC LIMIT 100`, unitId),
+
+    all<any>(env, `
+      SELECT actor_label, action, before_state, after_state, source, occurred_at
+      FROM audit_log WHERE entity_id = ? OR entity_table = 'units' AND entity_id = ?
+      ORDER BY occurred_at DESC LIMIT 20`, unitId, unitId),
+
+    stayMonths(env, `${month}-01`, monthEndEx, { unitId }),
+
+    one<{ avg: number | null; n: number }>(env,
+      'SELECT AVG(rating) AS avg, COUNT(*) AS n FROM reviews WHERE unit_id = ?', unitId),
+
+    money ? Promise.all([statementSettings(q), loadInputs(q, `${month}-01`, monthEndEx, { unitId })])
+      .then(([settings, inputs]) => computeMonth(month, inputs, settings, 'dated').find(x => x.unitId === unitId) ?? null)
+      : Promise.resolve(null),
+  ]);
+  const perf = metrics(perfRows, daysInMonth);
+
   let pnl: { label: string; amount: number; type: string }[] | undefined;
-  if (money) {
-    const q: Query = (sql, ...args) => all(env, sql, ...args);
-    const [settings, inputs] = await Promise.all([statementSettings(q), loadInputs(q, `${month}-01`, monthEndEx, { unitId })]);
-    const m = computeMonth(month, inputs, settings, 'dated').find(x => x.unitId === unitId);
-    if (m) {
-      pnl = m.terms.basis === 'fixed_rent'
-        ? [{ label: 'Fixed monthly rent', amount: m.fixedRent, type: 'gross' }]
-        : [
-          { label: 'Hospitality income', amount: m.gross, type: 'gross' },
-          ...m.deductionGroups.filter(g => g.amount).map(g => ({ label: g.label, amount: -g.amount, type: 'expense' })),
-          { label: `${fmtPct(100 - (m.ownerPct ?? 0))} to operator`, amount: -m.operatorShare, type: 'fee' },
-          ...(m.topUp ? [{ label: 'Minimum guarantee top-up', amount: m.topUp, type: 'adjustment' }] : []),
-        ];
-      if (m.adjustmentsTotal) pnl.push({ label: 'Owner adjustments', amount: m.adjustmentsTotal, type: 'adjustment' });
-      pnl.push({ label: 'Net payout', amount: m.netPayout, type: 'net' });
-    }
+  const m = statement;
+  if (m) {
+    pnl = m.terms.basis === 'fixed_rent'
+      ? [{ label: 'Fixed monthly rent', amount: m.fixedRent, type: 'gross' }]
+      : [
+        { label: 'Hospitality income', amount: m.gross, type: 'gross' },
+        ...m.deductionGroups.filter(g => g.amount).map(g => ({ label: g.label, amount: -g.amount, type: 'expense' })),
+        { label: `${fmtPct(100 - (m.ownerPct ?? 0))} to operator`, amount: -m.operatorShare, type: 'fee' },
+        ...(m.topUp ? [{ label: 'Minimum guarantee top-up', amount: m.topUp, type: 'adjustment' }] : []),
+      ];
+    if (m.adjustmentsTotal) pnl.push({ label: 'Owner adjustments', amount: m.adjustmentsTotal, type: 'adjustment' });
+    pnl.push({ label: 'Net payout', amount: m.netPayout, type: 'net' });
   }
 
   return json({

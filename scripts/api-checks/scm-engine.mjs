@@ -11,7 +11,7 @@ r = await call('GET', '/api/supply-chain/engine', undefined, 'housekeeper');
 check('not offered to a housekeeper', r.status === 200 && r.json?.enabled === false, r.text);
 r = await call('POST', '/api/supply-chain/engine-session', {}, 'housekeeper');
 check('housekeeper refused a session (403)', r.status === 403, r.text);
-r = await callAsUser({ userId: 'x', email: 'owner-check@theconts.test', role: 'owner' }, 'POST', '/api/supply-chain/engine-session', {});
+r = await callAsUser({ userId: '11111111-1111-4111-8111-000000000008', email: 'limck@example.com', role: 'owner' }, 'POST', '/api/supply-chain/engine-session', {});
 check('owner refused a session (403)', r.status === 403, r.text);
 
 r = await call('POST', '/api/supply-chain/engine-session', {});

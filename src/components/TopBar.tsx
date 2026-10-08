@@ -1,93 +1,96 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { color, radius, text, shell, motion, shadow } from '../theme';
 import { findNav } from '../lib/navigation';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
+import { useNavCounts } from '../lib/navBadges';
+import { dateRange, relative, titleCase } from '../lib/format';
+import { stateLabel } from '../lib/vocabulary';
+import type { BookingChannel } from '../lib/types';
 import Icon from './Icon';
+import ChannelMark from './ChannelMark';
 
 /* ------------------------------------------------------------------ *
  * Application shell top bar (BUTTONS.md §2).
- *  - Global search: opens on `/`, queries GET /api/search?q= through
- *    useApi (with a dev fallback), navigates to the chosen result,
- *    escape-to-close, arrow-key + Enter selection.
- *  - Notification bell: dropdown fed by GET /api/notifications, unread
- *    dot, each item navigates to its durable target, "Mark all read"
- *    posts /notifications/read optimistically.
- * No backend runs in dev, so reads fall back to the constants below and
- * writes are fired into a swallowed try/catch — the same idiom the pages
- * use. Round-trips are therefore UNTESTED.
+ *  - Breadcrumbs: group / menu entry / page.
+ *  - Global search: `/` opens it; GET /api/search?q= finds units, bookings (by Airbnb, Booking.com or
+ *    Agoda reference, guest name, phone or email), guests and owners, grouped by kind.
+ *  - Bell: the live alerts from /api/nav/badges (the same counts the menu shows) plus in-app notices.
  * ------------------------------------------------------------------ */
 
 type SearchKind = 'unit' | 'guest' | 'reservation' | 'owner';
-interface SearchResult { id: string; label: string; sub: string; kind: SearchKind; target: string }
+interface SearchResult {
+  id: string; label: string; sub: string; kind: SearchKind; target: string;
+  channel?: BookingChannel; state?: string; checkIn?: string; checkOut?: string; ref?: string | null;
+}
 
 interface Notif { id: string; title: string; body: string; target: string; at: string; readAt: string | null }
-
 /** GET /api/notifications answers { data: notification_log rows }, not a bare list. */
-interface NotifPayload { data?: { id: string; template: string; queued_at: string; sent_at: string | null }[] }
+interface NotifPayload { data?: { id: string; template: string; queued_at: string; sent_at: string | null; subject?: string | null }[] }
 
-function toNotifs(raw: Notif[] | NotifPayload | null): Notif[] | null {
-  if (Array.isArray(raw)) return raw;
-  if (!raw || !Array.isArray(raw.data)) return null;
+function toNotifs(raw: NotifPayload | null): Notif[] {
+  if (!raw || !Array.isArray(raw.data)) return [];
   return raw.data.map(r => ({
     id: String(r.id),
-    title: r.template.replace(/[._]/g, ' ').replace(/^./, c => c.toUpperCase()),
-    body: '', target: '/', at: (r.queued_at ?? '').slice(11, 16), readAt: r.sent_at,
+    title: r.subject || r.template.replace(/[._]/g, ' ').replace(/^./, c => c.toUpperCase()),
+    body: '', target: '/', at: r.queued_at ? relative(r.queued_at) : '', readAt: r.sent_at,
   }));
 }
 
-/** Dev fallback so the palette renders without a backend; a live API returns
- *  the same shape already scoped to the signed-in role. */
+/** Dev fallback so the palette renders without a backend. */
 const SEARCH_FALLBACK: SearchResult[] = [
-  { id: 'u1', kind: 'unit', label: 'The Establishment #A-21-02', sub: 'Unit · 2BR · occupied', target: '/properties/units/A-21-02' },
-  { id: 'u2', kind: 'unit', label: 'Vista Jaya One #A-12-03', sub: 'Unit · 1BR · ready', target: '/properties/units/A-12-03' },
-  { id: 'g1', kind: 'guest', label: 'Nadia Abdullah', sub: 'Guest · checked in · Airbnb', target: '/reservations/guests' },
-  { id: 'g2', kind: 'guest', label: 'Aaron Lee', sub: 'Guest · arriving today · direct', target: '/reservations/guests' },
-  { id: 'r1', kind: 'reservation', label: 'HMX-4471 · Nadia Abdullah', sub: 'Reservation · 13–16 Sep', target: '/reservations/bookings' },
-  { id: 'o1', kind: 'owner', label: 'Lim Chee Keong', sub: 'Owner · 3 units', target: '/owners' },
+  { id: 'u1', kind: 'unit', label: 'The Establishment #A-21-02', sub: '2 bedrooms', state: 'occupied', target: '/properties/units/A-21-02' },
+  { id: 'r1', kind: 'reservation', label: 'Nadia Abdullah', sub: 'Vista Jaya One #A-12-03', channel: 'airbnb', state: 'confirmed', checkIn: '2026-09-13', checkOut: '2026-09-16', ref: 'HMX4471', target: '/reservations/bookings' },
 ];
 
-const NOTIF_FALLBACK: Notif[] = [
-  { id: 'n1', title: 'Check-in at risk', body: 'The Establishment #A-21-02 is dirty with no cleaner. Guest arrives 15:00.', target: '/operations/today', at: '14:12', readAt: null },
-  { id: 'n2', title: 'Airbnb sync complete', body: '3 new reservations pulled, 1 changed.', target: '/reservations/calendar', at: '14:06', readAt: null },
-  { id: 'n3', title: 'Statement ready to send', body: 'August statements finalised for 2 owners.', target: '/finance/statements', at: '09:40', readAt: '2026-09-20T01:40:00Z' },
-];
-
-const KIND_ICON: Record<SearchKind, string> = {
-  unit: 'Building2', guest: 'User', reservation: 'CalendarDays', owner: 'Users',
+const KIND: Record<SearchKind, { icon: string; heading: string }> = {
+  reservation: { icon: 'CalendarDays', heading: 'Bookings' },
+  unit: { icon: 'Building2', heading: 'Units' },
+  guest: { icon: 'User', heading: 'Guests' },
+  owner: { icon: 'UserRound', heading: 'Owners' },
 };
+const KIND_ORDER: SearchKind[] = ['reservation', 'unit', 'guest', 'owner'];
+
+const TONE_DOT = { critical: '#C2413B', warning: '#B7791F', info: '#2E6DA4' } as const;
+
+/** The second line of a result, with dates and states in words ("13 Sep – 16 Sep 2026 · Confirmed"). */
+function subline(r: SearchResult) {
+  if (r.kind === 'reservation') {
+    const parts = [r.checkIn && r.checkOut ? dateRange(r.checkIn, r.checkOut) : null, r.state ? stateLabel('reservation', r.state) : null, r.sub];
+    return parts.filter(Boolean).join(' · ');
+  }
+  if (r.kind === 'unit' && r.state) return `${r.sub} · ${stateLabel('readiness', r.state)}`;
+  return r.sub;
+}
 
 export default function TopBar({
   path, navigate, action, compact = false,
 }: { path: string; navigate?: (p: string) => void; action?: { label: string; onClick: () => void };
-  /** Phone: only the controls, as 40px squares, for the shell's mobile header row. The crumbs are
-   *  left out there because the page's own title sits right below. */
+  /** Phone: only the controls, as 40px squares, for the shell's mobile header row. */
   compact?: boolean }) {
   const nav = findNav(path);
-  // Phone controls are 40px squares (touch); the desk bar keeps its 36px ones.
   const ctl = compact ? 40 : shell.controlSm;
   const go = (p: string) => navigate?.(p);
 
   /* --------------------------- search --------------------------- */
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [debounced, setDebounced] = useState('');
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Reads GET /api/search?q=; the fallback keeps the palette populated in dev.
-  // Only asked once the palette is open: it used to run an empty search on every page load.
-  const { data: searchData } = useApi<SearchResult[]>(searchOpen ? `/search?q=${encodeURIComponent(query.trim())}` : null, SEARCH_FALLBACK);
+  useEffect(() => { const t = window.setTimeout(() => setDebounced(query.trim()), 200); return () => window.clearTimeout(t); }, [query]);
+  const { data: searchData, loading: searching } = useApi<SearchResult[]>(searchOpen ? `/search?q=${encodeURIComponent(debounced)}` : null, SEARCH_FALLBACK);
 
+  // The server has already matched; results are only grouped here (filtering again by label used to drop
+  // every booking found by its reference, because the reference is not in the label).
   const results = useMemo(() => {
-    const source = searchData ?? (import.meta.env.DEV ? SEARCH_FALLBACK : []);
-    const q = query.trim().toLowerCase();
-    if (!q) return source;
-    return source.filter(r => `${r.label} ${r.sub}`.toLowerCase().includes(q));
-  }, [searchData, query]);
+    const list = searchData ?? (import.meta.env.DEV ? SEARCH_FALLBACK : []);
+    return KIND_ORDER.flatMap(k => list.filter(r => r.kind === k));
+  }, [searchData]);
 
-  useEffect(() => { setActive(0); }, [query, searchOpen]);
+  useEffect(() => { setActive(0); }, [debounced, searchOpen]);
 
-  // `/` focuses search from anywhere, unless the user is already typing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== '/' || searchOpen) return;
@@ -103,7 +106,7 @@ export default function TopBar({
 
   useEffect(() => { if (searchOpen) inputRef.current?.focus(); }, [searchOpen]);
 
-  const closeSearch = () => { setSearchOpen(false); setQuery(''); };
+  const closeSearch = () => { setSearchOpen(false); setQuery(''); setDebounced(''); };
   const chooseResult = (r: SearchResult | undefined) => { if (!r) return; closeSearch(); go(r.target); };
 
   const onSearchKeyDown = (e: React.KeyboardEvent) => {
@@ -116,53 +119,58 @@ export default function TopBar({
   /* ------------------------ notifications ------------------------ */
   const [bellOpen, setBellOpen] = useState(false);
   const [readIds, setReadIds] = useState<Record<string, boolean>>({});
+  const counts = useNavCounts(path);
+  const alerts = counts?.alerts ?? [];
+  const channelSync = counts?.channels;
 
-  const { data: notifRaw } = useApi<Notif[] | NotifPayload>('/notifications', NOTIF_FALLBACK);
-  const channelSync = useApi<{ channels?: { units: number; lastSentAt: string | null; failed: number } }>('/nav/badges').data?.channels;
-  const notifData = useMemo(() => toNotifs(notifRaw), [notifRaw]);
-  const notifs = useMemo(() => (notifData ?? (import.meta.env.DEV ? NOTIF_FALLBACK : [])).map(n => ({
-    ...n, read: readIds[n.id] ?? !!n.readAt,
-  })), [notifData, readIds]);
-  const unread = notifs.filter(n => !n.read).length;
+  const { data: notifRaw } = useApi<NotifPayload>(bellOpen ? '/notifications' : null);
+  const notifs = useMemo(() => toNotifs(notifRaw).map(n => ({ ...n, read: readIds[n.id] ?? !!n.readAt })), [notifRaw, readIds]);
+  const unreadNotifs = notifs.filter(n => !n.read);
+  const attention = alerts.filter(a => a.tone !== 'info').length;
+
+  useEffect(() => {
+    if (!bellOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setBellOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [bellOpen]);
 
   const markAllRead = () => {
-    setReadIds(prev => {
-      const next = { ...prev };
-      for (const n of notifs) next[n.id] = true;
-      return next;
-    });
-    api.post('/notifications/read').catch(() => { /* dev: no backend */ });
+    const ids = unreadNotifs.map(n => n.id);
+    if (!ids.length) return;
+    setReadIds(prev => ({ ...prev, ...Object.fromEntries(ids.map(id => [id, true])) }));
+    api.patch('/notifications', { ids }).catch(() => { setReadIds(prev => { const next = { ...prev }; ids.forEach(id => delete next[id]); return next; }); });
   };
 
-  const openNotif = (n: Notif) => {
-    setReadIds(prev => ({ ...prev, [n.id]: true }));
-    setBellOpen(false);
-    go(n.target);
-  };
+  const goAlert = (target: string) => { setBellOpen(false); go(target); };
 
   return (
-    <div style={compact
-      ? { flex: 'none', display: 'flex', alignItems: 'center' }
-      : { flex: 'none', background: '#FFFFFF', borderBottom: `1px solid ${color.border}`, padding: '16px 28px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
-      {/* Crumbs truncate inside their own box; the actions cluster never shrinks. */}
-      {!compact && <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: '0 1 auto', overflow: 'hidden' }}>
-        <span style={{ fontSize: text.small, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nav?.group ?? 'Workspace'}</span>
-        <span style={{ fontSize: text.small, color: color.borderStrong, flex: 'none' }}>/</span>
-        <span style={{ fontSize: text.small, fontWeight: 600, color: color.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nav?.label ?? 'Dashboard'}</span>
-      </div>}
+    <div data-print-hide style={compact
+      ? { flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }
+      : { flex: 'none', background: '#FFFFFF', borderBottom: `1px solid ${color.border}`, padding: '14px 28px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+      {!compact && <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '0 1 auto', overflow: 'hidden' }}>
+        {(() => {
+          const crumbs = nav ? [nav.group, ...(nav.group !== nav.item ? [nav.item] : []), ...(nav.label !== nav.item ? [nav.label] : []), ...(nav.page ? [nav.page] : [])] : ['Home'];
+          return crumbs.map((c, i) => (
+            <Fragment key={`${c}-${i}`}>
+              {i > 0 && <span aria-hidden style={{ fontSize: text.meta, color: color.borderStrong, flex: 'none' }}>/</span>}
+              <span style={{ fontSize: text.meta, fontWeight: i === crumbs.length - 1 ? 600 : 400, color: i === crumbs.length - 1 ? color.ink : color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c}</span>
+            </Fragment>
+          ));
+        })()}
+      </nav>}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: compact ? 'none' : '1 1 auto', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
         <button type="button" onClick={() => setSearchOpen(true)} aria-label="Search" aria-keyshortcuts="/"
           style={compact
             ? { width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', padding: 0, border: `1px solid ${color.border}`, borderRadius: radius.control, background: '#FFFFFF', color: color.ink, cursor: 'pointer' }
-            : { display: 'flex', alignItems: 'center', gap: 8, height: shell.controlSm, padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: radius.control, background: '#FFFFFF', color: color.textMuted, flex: '0 1 210px', minWidth: 44, overflow: 'hidden', cursor: 'text', font: 'inherit', textAlign: 'left' }}>
+            : { display: 'flex', alignItems: 'center', gap: 8, height: shell.controlSm, padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: radius.control, background: '#FFFFFF', color: color.textMuted, flex: '0 1 260px', minWidth: 44, overflow: 'hidden', cursor: 'text', font: 'inherit', textAlign: 'left' }}>
           <Icon name="Search" size={compact ? 'nav' : 'sm'} />
-          {!compact && <span style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Search</span>}
+          {!compact && <span style={{ fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Search booking ref, guest, unit</span>}
           {!compact && <span style={{ marginLeft: 'auto', fontSize: text.micro, color: color.faint, flex: 'none' }}>/</span>}
         </button>
 
-        {/* Shown only when units are really connected to a booking site; never a fixed figure. On a phone
-            it is just the status dot in a 40px square, still a link to Integrations. */}
+        {/* Shown only when units are really connected to a booking site; never a fixed figure. */}
         {channelSync && channelSync.units > 0 && (
           <a href="#/system/integrations" title={channelSync.failed ? 'Channel sync needs attention' : 'Channels connected · open Integrations'}
             aria-label={compact ? (channelSync.failed ? 'Channel sync needs attention' : 'Channels connected') : undefined}
@@ -172,44 +180,59 @@ export default function TopBar({
             <span className={channelSync.failed ? undefined : 'animate-live'} style={{ width: compact ? 8 : 6, height: compact ? 8 : 6, borderRadius: radius.pill, background: channelSync.failed ? '#B7791F' : '#16845B' }} />
             {!compact && <span>{channelSync.failed
               ? 'Channel sync needs attention'
-              : channelSync.lastSentAt ? `Channels synced ${new Date(channelSync.lastSentAt).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuala_Lumpur' })}` : 'Channels connected'}</span>}
+              : channelSync.lastSentAt ? `Channels synced ${relative(channelSync.lastSentAt)}` : 'Channels connected'}</span>}
           </a>
         )}
 
         <div style={{ position: 'relative', flex: 'none' }}>
-          <button aria-label="Notifications" aria-expanded={bellOpen} onClick={() => setBellOpen(v => !v)}
+          <button aria-label={attention ? `Notifications, ${attention} need attention` : 'Notifications'} aria-expanded={bellOpen} onClick={() => setBellOpen(v => !v)}
             style={{ position: 'relative', width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', border: `1px solid ${color.border}`, borderRadius: radius.control, background: '#FFFFFF', color: color.ink, cursor: 'pointer' }}>
             <Icon name="Bell" size="nav" />
-            {unread > 0 && <span style={{ position: 'absolute', top: 6, right: 7, width: 6, height: 6, borderRadius: radius.pill, background: '#C2413B' }} />}
+            {(attention > 0 || unreadNotifs.length > 0) && <span style={{ position: 'absolute', top: 6, right: 7, width: 7, height: 7, borderRadius: radius.pill, background: '#C2413B' }} />}
           </button>
 
           {bellOpen && (
             <>
               <div onClick={() => setBellOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-              <div role="menu" style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 41, width: 340, maxWidth: '90vw', background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: shadow.overlay, overflow: 'hidden' }}>
+              <div role="dialog" aria-label="Notifications" style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 41, width: 360, maxWidth: 'calc(100vw - 32px)', background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: shadow.overlay, overflow: 'hidden' }}>
                 <div style={{ padding: '12px 16px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                  <span style={{ fontSize: text.body, fontWeight: 600, color: color.ink }}>Notifications</span>
-                  <button type="button" onClick={markAllRead} disabled={unread === 0}
-                    style={{ fontSize: text.small, color: unread === 0 ? color.faint : color.inkSecondary, background: 'none', border: 'none', cursor: unread === 0 ? 'default' : 'pointer', font: 'inherit', padding: 0 }}>
+                  <span style={{ fontSize: text.copy, fontWeight: 600, color: color.ink }}>Notifications</span>
+                  <button type="button" onClick={markAllRead} disabled={unreadNotifs.length === 0} title={unreadNotifs.length === 0 ? 'Nothing unread' : undefined}
+                    style={{ fontSize: text.small, color: unreadNotifs.length === 0 ? color.faint : color.inkSecondary, background: 'none', border: 'none', cursor: unreadNotifs.length === 0 ? 'default' : 'pointer', font: 'inherit', padding: 0 }}>
                     Mark all read
                   </button>
                 </div>
-                <div style={{ maxHeight: 380, overflowY: 'auto' }}>
-                  {notifs.length === 0 ? (
-                    <div style={{ padding: '20px 16px', fontSize: text.small, color: color.textMuted }}>You are all caught up.</div>
-                  ) : notifs.map(n => (
-                    <button key={n.id} type="button" role="menuitem" onClick={() => openNotif(n)}
-                      style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 16px', width: '100%', border: 'none', borderBottom: `1px solid ${color.borderMuted}`, background: n.read ? '#FFFFFF' : color.goldTint, cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
-                      <span style={{ marginTop: 5, width: 6, height: 6, flex: 'none', borderRadius: radius.pill, background: n.read ? 'transparent' : '#C2413B' }} />
+                <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+                  {alerts.length > 0 && (
+                    <div style={{ padding: '8px 16px 4px', fontSize: text.caption, fontWeight: 600, letterSpacing: '0.06em', color: color.textMuted }}>NEEDS ATTENTION</div>
+                  )}
+                  {alerts.map(a => (
+                    <button key={a.key} type="button" onClick={() => goAlert(a.target)}
+                      style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 16px', width: '100%', border: 'none', borderBottom: `1px solid ${color.borderMuted}`, background: '#FFFFFF', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
+                      <span style={{ marginTop: 5, width: 7, height: 7, flex: 'none', borderRadius: radius.pill, background: TONE_DOT[a.tone] }} />
                       <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
-                        <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                          <span style={{ fontSize: 13, fontWeight: n.read ? 500 : 600, color: color.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.title}</span>
-                          <span style={{ fontSize: text.micro, color: color.faint, flex: 'none' }}>{n.at}</span>
-                        </span>
-                        <span style={{ fontSize: text.small, color: color.textMuted, lineHeight: 1.45, whiteSpace: 'normal' }}>{n.body}</span>
+                        <span style={{ fontSize: text.copy, fontWeight: 600, color: color.ink }}>{a.title}</span>
+                        <span style={{ fontSize: text.meta, color: color.textMuted, lineHeight: 1.45, whiteSpace: 'normal' }}>{a.body}</span>
                       </span>
+                      <Icon name="ChevronRight" size="sm" color={color.faint} style={{ marginTop: 3 }} />
                     </button>
                   ))}
+                  {notifs.length > 0 && (
+                    <div style={{ padding: '8px 16px 4px', fontSize: text.caption, fontWeight: 600, letterSpacing: '0.06em', color: color.textMuted }}>RECENT</div>
+                  )}
+                  {notifs.map(n => (
+                    <div key={n.id}
+                      style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 16px', borderBottom: `1px solid ${color.borderMuted}`, background: n.read ? '#FFFFFF' : color.goldTint }}>
+                      <span style={{ marginTop: 5, width: 6, height: 6, flex: 'none', borderRadius: radius.pill, background: n.read ? 'transparent' : '#C2413B' }} />
+                      <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, minWidth: 0, flex: 1 }}>
+                        <span style={{ fontSize: text.copy, fontWeight: n.read ? 400 : 600, color: color.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.title}</span>
+                        <span style={{ fontSize: text.micro, color: color.faint, flex: 'none' }}>{n.at}</span>
+                      </span>
+                    </div>
+                  ))}
+                  {alerts.length === 0 && notifs.length === 0 && (
+                    <div style={{ padding: '22px 16px', fontSize: text.small, color: color.textMuted }}>Nothing needs attention right now.</div>
+                  )}
                 </div>
               </div>
             </>
@@ -218,7 +241,7 @@ export default function TopBar({
 
         {action && (
           <button onClick={action.onClick} aria-label={compact ? action.label : undefined} title={compact ? action.label : undefined}
-            style={{ height: ctl, width: compact ? ctl : undefined, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: compact ? 0 : '0 14px', borderRadius: radius.control, background: color.black, color: '#FFFFFF', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', transition: `background ${motion.fast} ease-out` }}>
+            style={{ height: ctl, width: compact ? ctl : undefined, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: compact ? 0 : '0 14px', borderRadius: radius.control, background: color.black, color: '#FFFFFF', fontSize: text.copy, fontWeight: 500, whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', transition: `background ${motion.fast} ease-out` }}>
             <Icon name="Plus" size="sm" />
             {!compact && <span style={{ whiteSpace: 'nowrap' }}>{action.label}</span>}
           </button>
@@ -230,28 +253,36 @@ export default function TopBar({
         <div onClick={closeSearch}
           style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(21,21,21,0.24)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '12vh 16px 16px' }}>
           <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Search"
-            style={{ width: 560, maxWidth: '100%', background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: shadow.overlay, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            style={{ width: 600, maxWidth: '100%', background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: shadow.overlay, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: `1px solid ${color.borderMuted}` }}>
               <Icon name="Search" size="nav" color={color.textMuted} />
               <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)} onKeyDown={onSearchKeyDown}
-                placeholder="Search units, guests, reservations, owners"
-                style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', fontSize: text.body, color: color.ink, font: 'inherit' }} />
-              <span style={{ fontSize: text.micro, color: color.faint, flex: 'none' }}>Esc</span>
+                placeholder="Booking reference, guest, phone, unit or owner" aria-label="Search"
+                style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', fontSize: 15, color: color.ink, font: 'inherit' }} />
+              <button type="button" onClick={closeSearch} style={{ fontSize: text.micro, color: color.textMuted, flex: 'none', border: `1px solid ${color.border}`, borderRadius: 4, background: 'none', padding: '2px 6px', cursor: 'pointer', font: 'inherit' }}>Esc</button>
             </div>
-            <div style={{ maxHeight: 360, overflowY: 'auto', padding: 6 }}>
+            <div style={{ maxHeight: 420, overflowY: 'auto', padding: 6 }}>
               {results.length === 0 ? (
-                <div style={{ padding: '20px 12px', fontSize: text.small, color: color.textMuted }}>No matches for “{query.trim()}”.</div>
+                <div style={{ padding: '20px 12px', fontSize: text.small, color: color.textMuted }}>
+                  {searching || query.trim() !== debounced ? 'Searching...' : debounced ? `No matches for "${debounced}". Try the booking reference from Airbnb or Booking.com, a guest name or a phone number.` : 'Type to search.'}
+                </div>
               ) : results.map((r, i) => (
-                <button key={r.id} type="button" onClick={() => chooseResult(r)} onMouseEnter={() => setActive(i)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 12px', width: '100%', border: 'none', borderRadius: radius.control, background: i === active ? color.muted : 'transparent', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
-                  <span style={{ width: 30, height: 30, flex: 'none', borderRadius: radius.sm, background: color.sunken, color: color.inkSecondary, display: 'grid', placeItems: 'center' }}>
-                    <Icon name={KIND_ICON[r.kind]} size="sm" />
-                  </span>
-                  <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: color.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.label}</span>
-                    <span style={{ fontSize: text.micro, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.sub}</span>
-                  </span>
-                </button>
+                <Fragment key={`${r.kind}-${r.id}`}>
+                  {(i === 0 || results[i - 1].kind !== r.kind) && (
+                    <div style={{ padding: '10px 12px 4px', fontSize: text.caption, fontWeight: 600, letterSpacing: '0.06em', color: color.textMuted, textTransform: 'uppercase' }}>{KIND[r.kind].heading}</div>
+                  )}
+                  <button type="button" onClick={() => chooseResult(r)} onMouseEnter={() => setActive(i)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 12px', width: '100%', border: 'none', borderRadius: radius.control, background: i === active ? color.muted : 'transparent', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
+                    {r.kind === 'reservation' && r.channel
+                      ? <ChannelMark ch={r.channel} size={30} />
+                      : <span style={{ width: 30, height: 30, flex: 'none', borderRadius: radius.sm, background: color.sunken, color: color.inkSecondary, display: 'grid', placeItems: 'center' }}><Icon name={KIND[r.kind].icon} size="sm" /></span>}
+                    <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
+                      <span style={{ fontSize: text.copy, fontWeight: 500, color: color.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.kind === 'owner' ? titleCase(r.label) : r.label}</span>
+                      <span style={{ fontSize: text.meta, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subline(r)}</span>
+                    </span>
+                    {r.ref && <span style={{ flex: 'none', fontFamily: 'var(--font-mono)', fontSize: text.caption, color: color.inkSecondary, background: color.muted, borderRadius: 4, padding: '2px 6px' }}>{r.ref}</span>}
+                  </button>
+                </Fragment>
               ))}
             </div>
           </div>

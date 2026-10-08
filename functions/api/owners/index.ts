@@ -5,19 +5,27 @@ import { MASTER_ROLES } from '../../_lib/properties';
 import { daysIn, todayMyt } from '../../_lib/ops';
 
 const READ_ROLES = [...MASTER_ROLES, 'operations_staff'];
+/** Last four characters, ignoring spaces and dashes ("680606-08-5101" -> "5101"). */
+const tail = (v: unknown) => String(v).replace(/[\s-]/g, '').slice(-4);
 
-/** GET /api/owners — every owner with their units, contract and this month's figures.
- *  Identity and bank numbers are shown only to roles that manage them. */
+/** GET /api/owners?month=YYYY-MM&id= — every owner (or one, with `id`) with their units, contract and that
+ *  month's figures (default: this month). Identity and bank numbers are shown only to roles that manage them. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (!maySee(session, READ_ROLES)) return fail('FORBIDDEN', 'Owner records are visible to operations and finance roles.', 403);
   const banking = session.manage;
 
-  const month = todayMyt().slice(0, 7), days = daysIn(month);
-  const owners = await all<any>(env, 'SELECT * FROM owners ORDER BY display_name');
+  const url = new URL(request.url);
+  const month = url.searchParams.get('month') || todayMyt().slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(month)) return fail('VALIDATION', 'Month must look like 2026-08.', 422);
+  const days = daysIn(month);
+  const id = url.searchParams.get('id');
+  const owners = id
+    ? await all<any>(env, 'SELECT * FROM owners WHERE id = ?', id)
+    : await all<any>(env, 'SELECT * FROM owners ORDER BY display_name');
   const units = await all<any>(env, `
-    SELECT u.id, u.owner_id, u.unit_number, u.split_kind, u.split_value, p.name AS property_name,
+    SELECT u.id, u.owner_id, u.unit_number, u.split_kind, u.split_value, u.property_id, p.name AS property_name,
            c.model, c.management_fee_pct, c.grr_amount,
            COALESCE(SUM(r.collected_revenue), 0) AS revenue, COALESCE(SUM(r.check_out::date - r.check_in::date), 0) AS nights,
            (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.unit_id = u.id AND e.charge_to = 'owner' AND substr(e.incurred_on, 1, 7) = ?) AS costs
@@ -25,23 +33,28 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     LEFT JOIN owner_contracts c ON c.id = u.contract_id
     LEFT JOIN reservations r ON r.unit_id = u.id AND r.state IN ('confirmed','checked_in','checked_out')
       AND r.channel NOT IN ('maintenance_block','owner_stay') AND substr(r.check_in, 1, 7) = ?
-    GROUP BY u.id, p.name, c.model, c.management_fee_pct, c.grr_amount
-    ORDER BY p.name, u.unit_number`, month, month);
-  const contracts = await all<any>(env, 'SELECT * FROM owner_contracts ORDER BY starts_on DESC');
+    ${id ? 'WHERE u.owner_id = ?' : ''}
+    GROUP BY u.id, p.id, p.name, c.model, c.management_fee_pct, c.grr_amount
+    ORDER BY p.name, u.unit_number`, month, month, ...(id ? [id] : []));
+  const contracts = await all<any>(env, `SELECT * FROM owner_contracts ${id ? 'WHERE owner_id = ?' : ''} ORDER BY starts_on DESC`, ...(id ? [id] : []));
 
   return json({
-    generatedAt: nowIso(),
+    generatedAt: nowIso(), month,
     data: owners.map(o => {
       const mine = contracts.find(c => c.owner_id === o.id) ?? null;
       // Owner-level default management fee (migration 0009). Absent until applied → null.
       const ownerDefault = o.default_management_fee_pct != null ? Number(o.default_management_fee_pct) : null;
       return {
         id: o.id, displayName: o.display_name, email: o.email, phone: o.phone,
-        ic: banking ? o.ic_number : null, bankName: banking ? o.bank_name : null,
-        bankAccount: banking ? o.bank_account_number : null, accountHolder: banking ? (o.bank_account_holder ?? o.display_name) : null,
+        // Identity and bank numbers leave the server only as their last four characters; the full value needs an
+        // audited reveal (GET /api/owners/:id/reveal), the same rule as access codes and the Payouts screen.
+        ic: null, bankAccount: null,
+        icLast4: banking && o.ic_number ? tail(o.ic_number) : null,
+        bankAccountLast4: banking ? (o.bank_account_last4 ?? (o.bank_account_number ? tail(o.bank_account_number) : null)) : null,
+        bankName: banking ? o.bank_name : null, accountHolder: banking ? (o.bank_account_holder ?? o.display_name) : null,
         portalInvited: !!o.user_id,
         defaultManagementFeePct: ownerDefault,
-        contract: mine ? { feePct: Number(mine.management_fee_pct), startedOn: mine.starts_on, renewsOn: mine.renews_on } : null,
+        contract: mine ? { feePct: Number(mine.management_fee_pct), startedOn: mine.starts_on, renewsOn: mine.renews_on, endsOn: mine.ends_on ?? null } : null,
         units: units.filter(u => u.owner_id === o.id).map(u => {
           const grr = (u.model ?? (mine?.model ?? 'management')) === 'grr';
           // Fee resolution: the unit's own contract fee wins, then the owner default, then 25%.
@@ -51,7 +64,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           const revenue = Number(u.revenue), nights = Number(u.nights);
           const grrAmount = Number(u.grr_amount ?? mine?.grr_amount ?? 0);
           return {
-            unitId: u.id, unitLabel: `${u.property_name} ${u.unit_number}`, model: grr ? 'grr' : 'management',
+            unitId: u.id, unitLabel: `${u.property_name} ${u.unit_number}`, buildingId: u.property_id, model: grr ? 'grr' : 'management',
             ...(grr ? { grrAmount } : { feePct }), feeSource,
             occupancy: Math.min(100, Math.round((nights / days) * 100)), adr: nights ? Math.round(revenue / nights) : 0,
             gross: revenue, net: grr ? grrAmount : revenue - Math.round(revenue * (feePct / 100)) - Number(u.costs),

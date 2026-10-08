@@ -15,7 +15,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            (SELECT COUNT(*) FROM unit_channels c WHERE c.channel = i.provider AND c.is_active = 1) AS units_linked
     FROM integrations i ORDER BY i.provider`);
 
-  const INTERVAL: Record<string, string | null> = { whatsapp: 'Real time', maybank: 'Daily', utilities: null };
 
   // Airbnb, Booking.com and Agoda are connected per unit through Channex, so their cards are worked out from
   // the real connections (channex_channels) and the outbox, never from the stored sample status.
@@ -35,17 +34,42 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     };
   };
 
-  // Credentials are never serialised, at any role: only a masked tail.
+  // Email and WhatsApp: whether the key is set on this environment, and what the message log says, never the
+  // seeded "connected" rows (UI audit A21). The bank has no connection at all: payouts are made at the bank by hand.
+  const e = env as unknown as Record<string, string | undefined>;
+  const sends = await all<{ channel: string; last_sent: string | null; failed: number; last_error: string | null }>(env, `
+    SELECT channel, max(sent_at) FILTER (WHERE state = 'sent') AS last_sent,
+           count(*) FILTER (WHERE state = 'failed' AND queued_at >= ?)::int AS failed,
+           (SELECT n.error FROM notification_log n WHERE n.channel = l.channel AND n.state = 'failed' ORDER BY n.queued_at DESC LIMIT 1) AS last_error
+    FROM notification_log l WHERE channel IN ('email', 'whatsapp') GROUP BY channel`, new Date(Date.now() - 7 * 864e5).toISOString());
+  const messaging = (channel: 'email' | 'whatsapp', configured: boolean) => {
+    const x = sends.find(r => r.channel === channel);
+    const failedN = Number(x?.failed ?? 0);
+    return {
+      state: !configured ? 'not_connected' : failedN ? 'degraded' : 'connected',
+      lastSyncedAt: x?.last_sent ?? null,
+      lastError: failedN ? `${failedN} ${failedN === 1 ? 'message' : 'messages'} failed in the last 7 days${x?.last_error ? `: ${x.last_error}` : '.'}` : null,
+      unitsLinked: 0, syncInterval: 'As messages are sent', credentialMasked: null,
+      detail: configured ? null : channel === 'email'
+        ? 'The email key (MAIL_API_KEY, Resend) is not set on this environment, so statement, payout and invite emails are not delivered. Management adds it once in Cloudflare.'
+        : 'The WhatsApp Business keys (WHATSAPP_TOKEN and WHATSAPP_PHONE_ID) are not set, so WhatsApp messages to direct-booking guests wait in the queue. Management adds them once in Cloudflare.',
+    };
+  };
+
+  // Credentials are never serialised, at any role.
+  const out = rows.filter(r => r.provider !== 'whatsapp' && r.provider !== 'maybank').map(r => OTA_PROVIDERS.includes(r.provider) ? { id: r.id, provider: r.provider, ...ota(r.provider) } : {
+    id: r.id, provider: r.provider, state: 'manual',
+    lastSyncedAt: null, lastError: null, unitsLinked: Number(r.units_linked), syncInterval: null, credentialMasked: null,
+  });
   return json({
     generatedAt: new Date().toISOString(),
-    data: rows.map(r => OTA_PROVIDERS.includes(r.provider) ? { id: r.id, provider: r.provider, ...ota(r.provider) } : {
-      id: r.id, provider: r.provider,
-      state: r.provider === 'utilities' ? 'manual' : r.state,
-      lastSyncedAt: r.last_synced_at, lastError: r.last_error,
-      unitsLinked: Number(r.units_linked),
-      syncInterval: INTERVAL[r.provider] ?? 'Every 15 min',
-      credentialMasked: r.credentials ? `••••${String(r.credentials).slice(-4)}` : null,
-    }),
+    data: [
+      ...out,
+      { id: 'email', provider: 'email', ...messaging('email', !!e.MAIL_API_KEY) },
+      { id: 'whatsapp', provider: 'whatsapp', ...messaging('whatsapp', !!(e.WHATSAPP_TOKEN && e.WHATSAPP_PHONE_ID)) },
+      { id: 'bank', provider: 'bank', state: 'manual', lastSyncedAt: null, lastError: null, unitsLinked: 0, syncInterval: null, credentialMasked: null,
+        detail: 'Not connected to a bank. Owner payouts are transferred in the bank’s own system, then recorded on Payouts (Start payout run, then Mark paid).' },
+    ],
   });
 };
 

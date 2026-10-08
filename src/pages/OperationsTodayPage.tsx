@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { TONE, cx } from '../lib/design-tokens';
 import { Card, CardHeader } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -38,8 +39,11 @@ interface Row {
   guest: { name: string; channel: BookingChannel; request: string } | null;
   /** Present on blocked or maintenance work — drives Update owner. */
   owner: { id: string; name: string; revenueAtRisk: number } | null;
+  /** YYYY-MM-DD the work falls on; carriedOver when that is before the day shown. */
+  day?: string | null;
+  carriedOver?: boolean;
 }
-interface Payload { rows: Row[]; date: string; generatedAt: string }
+interface Payload { rows: Row[]; date: string; generatedAt: string; checkoutsWithoutClean?: number }
 
 const FALLBACK: Payload = {
   date: '2026-09-16', generatedAt: '',
@@ -99,6 +103,7 @@ const FILTERS = [
   { key: 'housekeeping', label: 'Housekeeping' },
   { key: 'maintenance', label: 'Maintenance' },
   { key: 'unassigned', label: 'Unassigned' },
+  { key: 'earlier', label: 'From earlier days' },
 ] as const;
 type FilterKey = typeof FILTERS[number]['key'];
 
@@ -125,11 +130,18 @@ const matchesFilter = (r: Row, f: FilterKey) =>
   : f === 'checkin_risk' ? isCheckinRisk(r)
   : f === 'housekeeping' ? isHousekeeping(r.kind)
   : f === 'maintenance' ? r.kind === 'maintenance' || r.readiness === 'maintenance'
+  : f === 'earlier' ? !!r.carriedOver
   : /* unassigned */ !r.assigneeId;
+
+const shortDay = (d: string) => new Date(`${d}T12:00:00+08:00`).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' });
 
 export default function OperationsTodayPage() {
   const CREW = useCrew('housekeeping');
-  const [filter, setFilter] = useState<FilterKey>('all');
+  // The chosen filter lives in the URL so a refresh or a shared link keeps it.
+  const [params, setParams] = useSearchParams();
+  const rawFilter = params.get('filter');
+  const filter: FilterKey = FILTERS.some(f => f.key === rawFilter) ? (rawFilter as FilterKey) : 'all';
+  const setFilter = (k: FilterKey) => { const next = new URLSearchParams(params); if (k === 'all') next.delete('filter'); else next.set('filter', k); setParams(next, { replace: true }); };
   const { data, loading, error, reload } = useApi<Payload>('/operations/today', FALLBACK);
 
   // Overlay for changes already confirmed or in flight (assignments, answered guest requests).
@@ -150,8 +162,8 @@ export default function OperationsTodayPage() {
 
   // --- Actions ---------------------------------------------------------------
 
-  function openTask(id: string) {
-    window.location.hash = `#/operations/tasks/${id}`;
+  function openTask(r: Row) {
+    window.location.hash = r.kind === 'maintenance' ? '#/operations/maintenance' : `#/operations/tasks?state=all&id=${encodeURIComponent(r.id)}`;
   }
 
   // Each action waits for the server before confirming; an assignment shows at once but is
@@ -220,7 +232,7 @@ export default function OperationsTodayPage() {
     if (r.guest) {
       list.push({ key: 'guest', label: 'Confirm with guest', run: () => setMessage({ row: r, body: guestPrefill(r) }) });
     }
-    list.push({ key: 'open', label: 'Open task', run: () => openTask(r.id) });
+    list.push({ key: 'open', label: 'Open task', run: () => openTask(r) });
     return list;
   }
 
@@ -246,20 +258,31 @@ export default function OperationsTodayPage() {
 
       {error && <StaleBanner message={`Showing the last roster we have. ${error}`} onRetry={reload} />}
 
+      {(data?.checkoutsWithoutClean ?? 0) > 0 && (
+        <div role="status" className={cx('flex items-center gap-3 flex-wrap py-[11px] px-3.5 rounded-control [border-left:2px_solid_var(--color-critical-line)]', TONE.critical.bg)}>
+          <span className={cx('text-[13px] flex-1 min-w-[200px]', TONE.critical.text)}>
+            {data!.checkoutsWithoutClean} check-out{data!.checkoutsWithoutClean === 1 ? '' : 's'} today {data!.checkoutsWithoutClean === 1 ? 'has' : 'have'} no cleaning task yet. Those units will not be turned over unless one is created.
+          </span>
+          <Button size="sm" variant="secondary" onClick={() => { window.location.hash = '#/operations/housekeeping'; }}>Plan cleaning</Button>
+        </div>
+      )}
+
       <div className="flex gap-[7px] flex-wrap">
-        {FILTERS.map(fl => {
+        {FILTERS.filter(fl => fl.key !== 'earlier' || allRows.some(r => r.carriedOver)).map(fl => {
           const on = fl.key === filter;
+          const n = allRows.filter(r => matchesFilter(r, fl.key)).length;
           return (
             <button
               key={fl.key}
               onClick={() => setFilter(fl.key)}
               aria-pressed={on}
               className={cx(
-                'h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border border-solid',
+                'h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer whitespace-nowrap font-sans text-[13px] box-border border border-solid',
                 on ? 'bg-black text-white border-black' : 'bg-white text-muted-ink border-line',
               )}
             >
               {fl.label}
+              <span className={cx('ml-1.5 tabular-nums text-[11.5px]', on ? 'text-white/70' : 'text-faint')}>{n}</span>
             </button>
           );
         })}
@@ -271,7 +294,7 @@ export default function OperationsTodayPage() {
           Sorted by risk, then time{lastUpdated ? ` · last updated ${lastUpdated}` : ''}
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto hidden md:block">
           <div className="min-w-[1040px]">
             <div className={cx('grid', COLS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink')}>
               <div>Unit</div><div>Work</div><div>Readiness</div><div>Next guest</div><div>SLA</div><div>Assignee</div><div>Actions</div>
@@ -281,13 +304,13 @@ export default function OperationsTodayPage() {
               <TableSkeleton rows={5} cols={7} />
             ) : rows.length === 0 ? (
               <div className="py-[30px] px-[22px] flex flex-col gap-2.5 items-start">
-                <span className="text-[13px] text-[#4A4844]">No work matches these filters.</span>
-                <Button variant="secondary" size="sm" onClick={() => setFilter('all')}>Clear filters</Button>
+                <span className="text-[13px] text-[#4A4844]">{allRows.length === 0 ? 'Nothing open needs action today.' : 'No work matches this filter.'}</span>
+                {allRows.length > 0 && <Button variant="secondary" size="sm" onClick={() => setFilter('all')}>Show all work</Button>}
               </div>
             ) : rows.map(r => {
               const actions = actionsFor(r);
               return (
-                <div key={r.id} className={cx('grid', COLS, 'gap-[14px] items-center min-h-[56px] py-[11px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] border-l-[3px]', LINE[r.sla.tone])}>
+                <div key={r.id} className={cx('grid', COLS, 'box-border gap-[14px] items-center min-h-[56px] py-[11px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] border-l-[3px]', LINE[r.sla.tone])}>
                   <div className="flex flex-col gap-px min-w-0">
                     <span className="text-[13.5px] font-medium">{r.unitNumber}</span>
                     <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.propertyName}</span>
@@ -298,7 +321,10 @@ export default function OperationsTodayPage() {
                   </div>
                   <div><Badge tone={READINESS[r.readiness].tone} label={READINESS[r.readiness].label} /></div>
                   <div className="text-[13px]">{r.nextGuestAt ?? '—'}</div>
-                  <div><Badge tone={r.sla.tone} label={r.sla.label} /></div>
+                  <div className="flex flex-col gap-1 items-start">
+                    <Badge tone={r.sla.tone} label={r.sla.label} />
+                    {r.carriedOver && r.day && <span className={cx('text-[11.5px]', TONE.critical.text)}>From {shortDay(r.day)}</span>}
+                  </div>
                   <div className={cx('text-[13px] min-w-0 whitespace-nowrap overflow-hidden text-ellipsis', r.assigneeName ? 'text-ink' : 'text-muted-ink')}>
                     {r.assigneeName ?? 'Unassigned'}
                   </div>
@@ -308,7 +334,7 @@ export default function OperationsTodayPage() {
                         key={a.key}
                         onClick={a.run}
                         className={cx(
-                          'h-7 inline-flex items-center px-[11px] py-0 rounded-control cursor-pointer whitespace-nowrap [font:inherit] border border-solid',
+                          'h-7 inline-flex items-center px-[11px] py-0 rounded-control cursor-pointer whitespace-nowrap font-sans text-[12.5px] box-border border border-solid',
                           a.primary ? 'bg-black text-white border-black' : 'bg-white text-[#4A4844] border-line',
                         )}
                       >
@@ -320,6 +346,39 @@ export default function OperationsTodayPage() {
               );
             })}
           </div>
+        </div>
+
+        {/* Phones: one card per job, the same order and actions. */}
+        <div className="md:hidden [border-top:1px_solid_var(--color-line)]">
+          {loading && base.length === 0 ? <TableSkeleton rows={4} cols={2} />
+            : rows.length === 0 ? (
+              <div className="py-6 px-4 text-[13px] text-muted-ink">{allRows.length === 0 ? 'Nothing open needs action today.' : 'No work matches this filter.'}</div>
+            ) : rows.map(r => (
+              <div key={r.id} className={cx('py-3 px-4 flex flex-col gap-2 [border-bottom:1px_solid_var(--color-line-soft)] border-l-[3px] border-solid border-y-0 border-r-0', LINE[r.sla.tone])}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex flex-col gap-px min-w-0">
+                    <span className="text-[13.5px] font-semibold truncate">{unitRef(r.propertyName, r.unitNumber)}</span>
+                    <span className="text-[12px] text-muted-ink truncate">{r.work}</span>
+                  </div>
+                  <Badge tone={r.sla.tone} label={r.sla.label} size="sm" />
+                </div>
+                <div className="flex gap-x-4 gap-y-1 flex-wrap text-[12px]">
+                  <span className={r.assigneeName ? 'text-ink' : 'text-muted-ink'}>{r.assigneeName ?? 'Unassigned'}</span>
+                  <span className="text-muted-ink">{READINESS[r.readiness].label}</span>
+                  {r.nextGuestAt && <span className="text-muted-ink">Guest {r.nextGuestAt}</span>}
+                  {r.carriedOver && r.day && <span className={TONE.critical.text}>From {shortDay(r.day)}</span>}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {actionsFor(r).map(a => (
+                    <button key={a.key} onClick={a.run}
+                      className={cx('h-8 inline-flex items-center px-[11px] py-0 rounded-control cursor-pointer whitespace-nowrap font-sans text-[12.5px] box-border border border-solid',
+                        a.primary ? 'bg-black text-white border-black' : 'bg-white text-[#4A4844] border-line')}>
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
         </div>
       </Card>
 

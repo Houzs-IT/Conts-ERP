@@ -1,6 +1,6 @@
 import { type Env, one, run, json, fail, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { invalidUnit, saveExpenses, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
+import { invalidUnit, typed, saveExpenses, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
 
 /** PATCH /api/units/:id — the Units screen's Save. Sends the whole unit; only what is present is changed.
  *  Owner name, ID number and bank details belong to the owner, so they change for every unit that owner has.
@@ -58,21 +58,23 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     b.splitValue === undefined ? null : b.splitValue, b.guaranteePeriod ?? null, b.bedrooms ?? null, now, id);
   if (target) await run(env, 'UPDATE units SET property_id = ?, updated_at = ? WHERE parent_unit_id = ?', propertyId, now, id);
 
-  if (b.ownerName !== undefined || b.ic !== undefined || b.bankName !== undefined || b.bankAccount !== undefined || b.accountHolder !== undefined) {
+  // The form shows IC and bank number masked; sent back unchanged they keep the stored value.
+  const ic = typed(b.ic), bankAccount = typed(b.bankAccount);
+  if (b.ownerName !== undefined || ic !== undefined || b.bankName !== undefined || bankAccount !== undefined || b.accountHolder !== undefined) {
     await run(env, `
       UPDATE owners SET display_name = COALESCE(NULLIF(?, ''), display_name), ic_number = COALESCE(?, ic_number), bank_name = COALESCE(?, bank_name),
                         bank_account_holder = COALESCE(?, bank_account_holder), bank_account_number = COALESCE(?, bank_account_number),
                         bank_account_last4 = COALESCE(?, bank_account_last4), updated_at = ?
       WHERE id = ?`,
-      b.ownerName?.trim() ?? '', b.ic ?? null, b.bankName ?? null, b.accountHolder ?? null, b.bankAccount ?? null,
-      typeof b.bankAccount === 'string' ? (b.bankAccount.slice(-4) || null) : null, now, cur.owner_id);
+      b.ownerName?.trim() ?? '', ic ?? null, b.bankName ?? null, b.accountHolder ?? null, bankAccount ?? null,
+      typeof bankAccount === 'string' ? (bankAccount.slice(-4) || null) : null, now, cur.owner_id);
   }
   if (b.expenses) await saveExpenses(env, id, b.expenses);
   if (b.contract) await saveContract(env, id, cur.owner_id, b.contract);
 
   // Banking details are recorded as changed, never copied into the audit trail.
   await auditUnit(env, session, 'unit.update', id, {
-    fields: Object.keys(b).filter(k => !['bankAccount', 'ic', 'accountHolder'].includes(k)), ownerDetailsChanged: b.bankAccount !== undefined || b.ic !== undefined,
+    fields: Object.keys(b).filter(k => !['bankAccount', 'ic', 'accountHolder'].includes(k)), ownerDetailsChanged: bankAccount !== undefined || ic !== undefined,
     ...(target ? { movedFrom: cur.property_id, movedTo: target } : {}),
   });
   return json({ ok: true });

@@ -55,7 +55,7 @@ interface TrendPayload {
   points: TrendPoint[];
   totals: TrendTotals;
   /** Server-supplied. `tone` is authoritative; `direction` is display only. */
-  delta: { value: number; direction: 'up' | 'down' | 'flat'; tone: Tone };
+  delta: { value: number; direction: 'up' | 'down' | 'flat'; tone: Tone; period?: string; against?: string };
 }
 
 const RANGES: { key: Range; label: string }[] = [
@@ -110,6 +110,17 @@ const TREND: Record<Range, TrendPayload> = {
 };
 
 const ARROW: Record<'up' | 'down' | 'flat', string> = { up: '↑', down: '↓', flat: '→' };
+
+/** Axis-sized money: RM 437k, RM 1.2M. The exact figure is in each bar's tooltip. */
+function rmCompact(sen: number) {
+  const v = sen / 100;
+  if (v >= 1e6) return `RM ${(v / 1e6).toFixed(v >= 1e7 ? 0 : 1)}M`;
+  if (v >= 1e3) return `RM ${Math.round(v / 1e3)}k`;
+  return `RM ${Math.round(v)}`;
+}
+const shortMonth = (period: string) => new Date(`${period}-01T00:00:00Z`).toLocaleDateString('en-MY', { month: 'short', timeZone: 'UTC' });
+/** How many units the dashboard lists; the Portfolio page has every one. */
+const TOP_UNITS = 8;
 
 /* ----------------------------------------------------------------- Today -- */
 
@@ -256,8 +267,10 @@ export default function DashboardPage() {
 
   const kpis = kpi.data?.kpis ?? [];
   const maxRev = Math.max(1, ...tp.points.map(s => s.revenue));
-  const exceptions = (exc.data?.exceptions ?? []).filter(e => !handled.has(e.id));
-  const rows = portfolio.data?.rows ?? [];
+  const allExceptions = (exc.data?.exceptions ?? []).filter(e => !handled.has(e.id));
+  const exceptions = allExceptions.slice(0, 5);
+  const allRows = portfolio.data?.rows ?? [];
+  const rows = [...allRows].sort((a, b) => b.revenue - a.revenue || b.occupancy - a.occupancy).slice(0, TOP_UNITS);
 
   const failure = kpi.error ?? today.error ?? exc.error ?? portfolio.error;
   const lastUpdated = kpi.data?.generatedAt ? time(kpi.data.generatedAt) : null;
@@ -308,14 +321,14 @@ export default function DashboardPage() {
     <>
       <PageHeader
         title="Dashboard"
-        sub={`${period} to date · Asia/Kuala Lumpur${lastUpdated ? ` · last updated ${lastUpdated}` : ''}`}
+        sub={`${period ? `${monthLabel(period)} to date · ` : ''}Asia/Kuala Lumpur${lastUpdated ? ` · last updated ${lastUpdated}` : ''}`}
         right={<Button variant="primary" size="sm" onClick={() => go('#/properties/units')}>Add property</Button>}
       />
 
       {failure && <StaleBanner message={`Showing the last figures we have. ${failure}`} onRetry={() => { kpi.reload(); trend.reload(); today.reload(); exc.reload(); portfolio.reload(); }} />}
 
       {/* KPI row — kept as the existing read-only summary. */}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-[14px]">
+      <div className="grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-[10px] sm:gap-[14px]">
         {kpi.loading && kpis.length === 0
           ? Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="bg-card border border-solid border-line rounded-card p-[18px] flex flex-col gap-2.5">
@@ -324,26 +337,30 @@ export default function DashboardPage() {
               </div>
             ))
           : kpis.map(k => (
-              <div key={k.key} className="bg-card border border-solid border-line rounded-card p-[18px] flex flex-col gap-2">
+              <div key={k.key} className="bg-card border border-solid border-line rounded-card p-[14px] sm:p-[18px] flex flex-col gap-2 min-w-0">
                 <div className="text-[12px] text-muted-ink">{KPI_LABEL[k.key] ?? k.key}</div>
-                <div className="text-[26px] leading-[1.15] font-semibold tracking-[-0.01em]">{kpiValue(k)}</div>
+                <div className="text-[20px] sm:text-[26px] leading-[1.15] font-semibold tracking-[-0.01em] [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis" title={kpiValue(k)}>{kpiValue(k)}</div>
               </div>
             ))}
       </div>
 
       {/* Trend chart + exceptions */}
-      <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-5 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-5 items-start">
         <Card style={{ padding: 20 }}>
           <div className="flex flex-col gap-4">
             <div className="flex items-start justify-between gap-[14px] flex-wrap">
               <div className="flex flex-col gap-[3px] min-w-0">
                 <div className="flex items-center gap-2.5 flex-wrap">
                   <span className="text-[16px] font-semibold">Revenue and occupancy trend</span>
-                  <span className={cx('text-[12px] font-semibold', TONE[tp.delta.tone].text)}>
-                    {ARROW[tp.delta.direction]} {tp.delta.value.toFixed(1)}%
-                  </span>
+                  {tp.delta.period && tp.delta.against && (
+                    <span className={cx('text-[12px] font-semibold whitespace-nowrap', TONE[tp.delta.tone].text)}
+                      title={`Revenue in ${monthLabel(tp.delta.period)} against ${monthLabel(tp.delta.against)}, the last two complete months`}>
+                      {ARROW[tp.delta.direction]} {tp.delta.value.toFixed(1)}%
+                      <span className="font-normal text-muted-ink"> {shortMonth(tp.delta.period)} vs {shortMonth(tp.delta.against)}</span>
+                    </span>
+                  )}
                 </div>
-                <span className="text-[12px] text-muted-ink">Accommodation revenue, RM · occupancy, % of available nights</span>
+                <span className="text-[12px] text-muted-ink">Accommodation revenue by check-in month · occupancy under each month</span>
               </div>
 
               {/* 3M / 12M / YTD — re-reads the chart from /dashboard/trend?range= */}
@@ -369,21 +386,39 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className={cx('flex items-end h-[190px]', tp.points.length > 6 ? 'gap-1.5' : 'gap-3')}>
-              {tp.points.map(s => (
-                <div key={s.period} className="flex-1 min-w-0 flex flex-col justify-end items-center gap-[7px] h-full">
-                  <span className="text-[11px] text-muted-ink whitespace-nowrap">{rm(s.revenue, { cents: false }).replace('RM ', '')}</span>
-                  <div title={`${monthLabel(s.period)} · ${rm(s.revenue, { cents: false })} · ${percent(s.occupancy)}`}
-                    className={cx('w-full rounded-t-[6px]', s.isCurrent ? 'bg-gold' : 'bg-charcoal')}
-                    style={{ height: Math.max(4, Math.round((s.revenue / maxRev) * 132)) }} />
-                  <span className="text-[11px] text-muted-ink">{monthLabel(s.period)}</span>
-                  <span className="text-[11px] text-faint">{s.occupancy.toFixed(0)}%</span>
-                </div>
-              ))}
+            <div className="flex flex-col gap-1.5">
+              <div className={cx('flex items-end h-[176px] [border-bottom:1px_solid_var(--color-line)]', tp.points.length > 6 ? 'gap-1 sm:gap-1.5' : 'gap-3')}>
+                {tp.points.map(s => {
+                  // With twelve bars there is room for every figure from a small tablet up; a phone keeps the
+                  // current month and the peak, the rest are in each bar's tooltip.
+                  const keyBar = s.isCurrent || s.revenue === maxRev;
+                  return (
+                    <div key={s.period} className="flex-1 min-w-0 flex flex-col justify-end items-center gap-[6px] h-full">
+                      <span className={cx('text-[10.5px] sm:text-[11px] text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]',
+                        !keyBar && tp.points.length > 6 && 'hidden sm:block')}>
+                        {s.revenue > 0 ? rmCompact(s.revenue).replace('RM ', '') : ''}
+                      </span>
+                      <div title={`${monthLabel(s.period)} · ${rm(s.revenue, { cents: false })} · ${percent(s.occupancy)} occupancy`}
+                        className={cx('w-full max-w-[44px] rounded-t-[5px]', s.isCurrent ? 'bg-gold' : 'bg-charcoal')}
+                        style={{ height: s.revenue > 0 ? Math.max(3, Math.round((s.revenue / maxRev) * 132)) : 1 }} />
+                    </div>
+                  );
+                })}
+              </div>
+              <div className={cx('flex', tp.points.length > 6 ? 'gap-1 sm:gap-1.5' : 'gap-3')}>
+                {tp.points.map((s, i) => (
+                  <div key={s.period} className="flex-1 min-w-0 flex flex-col items-center gap-px">
+                    <span className={cx('text-[10.5px] sm:text-[11px] whitespace-nowrap', s.isCurrent ? 'font-semibold text-ink' : 'text-muted-ink')}>{shortMonth(s.period)}</span>
+                    {/* The year only where it changes, so twelve labels do not repeat it twelve times. */}
+                    <span className="text-[10px] text-faint whitespace-nowrap h-[13px]">{i === 0 || s.period.endsWith('-01') ? s.period.slice(0, 4) : ''}</span>
+                    <span className="hidden sm:block text-[10.5px] text-faint whitespace-nowrap [font-variant-numeric:tabular-nums]">{s.occupancy.toFixed(0)}%</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* The three totals are distinct definitions and are never merged. */}
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3 pt-[14px] [border-top:1px_solid_var(--color-line-soft)]">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-[14px] [border-top:1px_solid_var(--color-line-soft)]">
               <Total label="Gross booking value" value={rm(tp.totals.grossBookingValue, { cents: false })} />
               <Total label="Collected revenue" value={rm(tp.totals.collectedRevenue, { cents: false })} />
               <Total label="Management fees" value={rm(tp.totals.managementFees, { cents: false })} />
@@ -415,35 +450,55 @@ export default function DashboardPage() {
               </div>
             </div>
           ))}
+          {allExceptions.length > exceptions.length && (
+            <div className="py-3 px-5 [border-top:1px_solid_var(--color-line-soft)] text-[12.5px] text-muted-ink">
+              {allExceptions.length - exceptions.length} more in <a href="#/operations/today" className="text-gold-ink! no-underline font-semibold">Operations</a>
+            </div>
+          )}
         </Card>
       </div>
 
       {/* Today */}
       <Card>
         <CardHeader title="Today" right={<LinkAction onClick={() => go('#/operations/today')}>Open operations →</LinkAction>} />
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-0 [border-top:1px_solid_var(--color-line)]">
-          {(today.data?.rows ?? []).map((r, i) => (
-            <div key={r.key} className={cx('flex flex-col gap-1.5 py-[15px] px-5', i === 0 ? '' : '[border-left:1px_solid_var(--color-line-soft)]')}>
+        <div className="[border-top:1px_solid_var(--color-line)]">
+         <div className="-ml-px -mt-px grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
+          {(today.data?.rows ?? []).map(r => (
+            <div key={r.key} className="flex flex-col gap-1.5 py-[15px] px-4 sm:px-5 [border-left:1px_solid_var(--color-line-soft)] [border-top:1px_solid_var(--color-line-soft)]">
               <div className="flex items-center gap-2">
                 <span className={cx('w-[7px] h-[7px] rounded-full flex-none', TONE[r.tone].dot)} aria-hidden />
                 <span className="text-[12px] text-muted-ink">{TODAY_LABEL[r.key] ?? r.key}</span>
               </div>
-              <span className="text-[24px] font-semibold tracking-[-0.01em]">{r.count}</span>
+              <span className="text-[24px] font-semibold tracking-[-0.01em] [font-variant-numeric:tabular-nums]">{r.count}</span>
             </div>
           ))}
+         </div>
         </div>
       </Card>
 
       {/* Portfolio performance */}
       <Card>
         <CardHeader
-          title="Portfolio performance"
-          right={<LinkAction onClick={() => go('#/properties/units')}>View all units →</LinkAction>}
+          title="Top units this month"
+          right={<LinkAction onClick={() => go('#/portfolio')}>{portfolio.data ? `All ${portfolio.data.units} units →` : 'All units →'}</LinkAction>}
         />
-        <div className="pt-0 px-5 pb-3 -mt-2 text-[12px] text-muted-ink">
-          {portfolio.data ? `${portfolio.data.units} units · ${portfolio.data.buildings} buildings · ${period} to date` : ''}
+        <div className="pt-0 px-5 pb-3 -mt-2 text-[12px] text-muted-ink min-h-[18px]">
+          {portfolio.data ? `The ${Math.min(TOP_UNITS, allRows.length)} highest by revenue of ${portfolio.data.units} listed units in ${portfolio.data.buildings} buildings${period ? ` · ${monthLabel(period)} to date` : ''}` : ''}
         </div>
-        <div className="overflow-x-auto">
+        {/* Phone: compact rows. */}
+        <div className="md:hidden [border-top:1px_solid_var(--color-line)]">
+          {portfolio.loading && rows.length === 0 ? <TableSkeleton rows={4} cols={2} /> : rows.map(u => (
+            <a key={u.unitId} href={`#/properties/units/${encodeURIComponent(u.unitId)}`}
+              className="flex items-center justify-between gap-3 py-3 px-4 [border-bottom:1px_solid_var(--color-line-soft)] no-underline text-inherit hover:text-inherit">
+              <span className="flex flex-col gap-px min-w-0">
+                <span className="text-[13.5px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber} <span className="font-normal text-[12px] text-muted-ink">· {u.propertyName}</span></span>
+                <span className="text-[12px] text-muted-ink [font-variant-numeric:tabular-nums]">{u.occupancy.toFixed(1)}% occupied · ADR {rm(u.adr, { cents: false })}</span>
+              </span>
+              <span className="flex-none text-[13.5px] font-semibold [font-variant-numeric:tabular-nums]">{rm(u.revenue, { cents: false })}</span>
+            </a>
+          ))}
+        </div>
+        <div className="hidden md:block overflow-x-auto">
           <div className="min-w-[760px]">
             <div className={cx(PCOLS, 'grid gap-[14px] py-[9px] px-[22px] bg-muted [border-top:1px_solid_var(--color-line)] [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink')}>
               <div>Unit</div>
@@ -463,13 +518,13 @@ export default function DashboardPage() {
                 className={cx(PCOLS, 'grid gap-[14px] items-center min-h-[52px] py-[7px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer')}
               >
                 <div className="flex flex-col gap-px min-w-0">
-                  <span className="text-[13.5px] font-medium">{u.unitNumber}</span>
-                  <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.propertyName}</span>
+                  <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
+                  <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={u.propertyName}>{u.propertyName}</span>
                 </div>
-                <div className="text-right text-[13px]">{u.occupancy.toFixed(1)}%</div>
-                <div className="text-right text-[13px]">{rm(u.adr, { cents: false })}</div>
-                <div className="text-right text-[13px]">{rm(u.revpar, { cents: false })}</div>
-                <div className="text-right text-[13px] font-medium">{rm(u.revenue, { cents: false })}</div>
+                <div className="text-right text-[13px] [font-variant-numeric:tabular-nums]">{u.occupancy.toFixed(1)}%</div>
+                <div className="text-right text-[13px] [font-variant-numeric:tabular-nums]">{rm(u.adr, { cents: false })}</div>
+                <div className="text-right text-[13px] [font-variant-numeric:tabular-nums]">{rm(u.revpar, { cents: false })}</div>
+                <div className="text-right text-[13px] font-medium [font-variant-numeric:tabular-nums]">{rm(u.revenue, { cents: false })}</div>
                 <div className="text-right">
                   {u.exception ? <Badge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-[12px] text-faint">None</span>}
                 </div>

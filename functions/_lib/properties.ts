@@ -17,6 +17,16 @@ export interface UnitInput {
   contract?: { feePct: number; startedOn: string; renewsOn: string };
 }
 
+/** IC and bank numbers leave the server as '••••' + the last four (like the owner profile). The Units form sends
+ *  back whatever it shows, so a value still carrying the mask means "unchanged" and must never be stored. */
+export const MASK = '••••';
+export const masked = (v: string | null | undefined) => {
+  const s = (v ?? '').trim();
+  return s ? (s.length > 4 ? MASK + s.slice(-4) : MASK) : '';
+};
+/** The value to store: undefined when the form sent the masked value back (keep what is stored). */
+export const typed = (v: string | undefined) => (typeof v === 'string' && v.includes(MASK.charAt(0)) ? undefined : v);
+
 /** The first problem with the input, or null. Field name matches the form so the screen can mark it. */
 export function invalidUnit(b: UnitInput): { field: string; message: string } | null {
   if (b.pkg !== undefined && !PACKAGES.includes(b.pkg)) return { field: 'pkg', message: 'Pick a package.' };
@@ -39,7 +49,9 @@ export function invalidUnit(b: UnitInput): { field: string; message: string } | 
 /** The owner a unit belongs to: reuse the one with the same ID number or name, otherwise create. */
 export async function ownerFor(env: Env, b: UnitInput): Promise<string> {
   const name = (b.ownerName ?? '').trim() || 'New owner';
-  const ic = (b.ic ?? '').trim() || null;
+  // A masked IC (copied from another unit's form) cannot be matched; fall back to the name.
+  const ic = (typed(b.ic) ?? '').trim() || null;
+  const bankAccount = typed(b.bankAccount);
   const found = ic
     ? await one<{ id: string }>(env, 'SELECT id FROM owners WHERE ic_number = ? LIMIT 1', ic)
     : await one<{ id: string }>(env, 'SELECT id FROM owners WHERE lower(display_name) = lower(?) LIMIT 1', name);
@@ -48,7 +60,7 @@ export async function ownerFor(env: Env, b: UnitInput): Promise<string> {
   await run(env, `
     INSERT INTO owners (id, display_name, email, ic_number, bank_name, bank_account_holder, bank_account_number, bank_account_last4, created_at, updated_at)
     VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?)`,
-    id, name, ic, b.bankName ?? null, b.accountHolder ?? null, b.bankAccount ?? null, (b.bankAccount ?? '').slice(-4) || null, now, now);
+    id, name, ic, b.bankName ?? null, b.accountHolder ?? null, bankAccount ?? null, (bankAccount ?? '').slice(-4) || null, now, now);
   return id;
 }
 

@@ -12,7 +12,10 @@ const SECURITY_DEFAULTS: SecuritySettings = { staffTtlHours: 168, ownerTtlHours:
  *  session middleware re-signs the idle deadline (see functions/api/_middleware.ts) using
  *  whatever this returns each time. */
 export async function securitySettings(env: Env): Promise<SecuritySettings> {
-  const rows = await all<{ key: string; value: string }>(env, `SELECT key, value FROM settings WHERE key LIKE 'security.%'`);
+  return parseSecurity(await all<{ key: string; value: string }>(env, `SELECT key, value FROM settings WHERE key LIKE 'security.%'`));
+}
+
+function parseSecurity(rows: { key: string; value: string }[]): SecuritySettings {
   const map = new Map(rows.map(r => [r.key, r.value]));
   const num = (key: string, def: number) => { const n = Number(map.get(key)); return map.has(key) && Number.isFinite(n) ? n : def; };
   return {
@@ -21,6 +24,22 @@ export async function securitySettings(env: Env): Promise<SecuritySettings> {
     absoluteDays: num('security.absoluteTimeoutHours', SECURITY_DEFAULTS.absoluteDays * 24) / 24,
     maxAttempts: num('security.lockoutAttempts', SECURITY_DEFAULTS.maxAttempts),
     lockoutMinutes: num('security.lockoutMinutes', SECURITY_DEFAULTS.lockoutMinutes),
+  };
+}
+
+/** The security settings and the signed-in user's current role and active flag, in one query (one
+ *  connection), for the session middleware. The cookie only says who signed in; what they may do is read
+ *  from users on every request, so deactivating someone or changing their role takes effect at once. */
+export async function sessionState(env: Env, userId: string): Promise<{ settings: SecuritySettings; user: { role: string; active: boolean; fullName: string } | null }> {
+  const rows = await all<{ key: string; value: string }>(env, `
+    SELECT key, value FROM settings WHERE key LIKE 'security.%'
+    UNION ALL
+    SELECT '~user', role || '|' || is_active::text || '|' || full_name FROM users WHERE id = ?`, userId);
+  const u = rows.find(r => r.key === '~user');
+  const [role, active, ...name] = (u?.value ?? '').split('|');
+  return {
+    settings: parseSecurity(rows.filter(r => r.key !== '~user')),
+    user: u ? { role, active: active === '1', fullName: name.join('|') } : null,
   };
 }
 
