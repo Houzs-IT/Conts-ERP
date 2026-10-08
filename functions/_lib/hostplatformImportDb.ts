@@ -8,9 +8,9 @@
  *  by hand) are only filled where empty, and their Channex mapping, listing flag and contract are never
  *  touched. Nothing here calls Channex: these bookings already live on the booking sites. */
 import {
-  type ListingPlan, type ReservationPlan, type WorkbookUnitIn, type AirbnbEarningIn, type CleaningIn, type ExpenseIn,
-  type KnownUnit, type KnownProperty, type RowError,
-  PLACEHOLDER_OWNER, slug, unitKey, workbookMatcher, matchWorkbookUnitHow, buildingForPrefix, splitWorkbookId, workbookOwnerId, stayState,
+  type ListingPlan, type ReservationPlan, type WorkbookUnitIn, type AirbnbEarningIn, type CleaningIn, type ExpenseIn, type CreditIn,
+  type PayoutMonthIn, type KnownUnit, type KnownProperty, type RowError,
+  PLACEHOLDER_OWNER, RESERVATION_MONEY_COLUMNS, normaliseLocation, canonicalState, canonicalCity, slug, hash, unitKey, workbookMatcher, matchWorkbookUnitHow, buildingForPrefix, splitWorkbookId, workbookOwnerId, stayState,
 } from './hostplatformImport';
 
 /** The three helpers of db.ts, bound to an environment. Lets the test script run the same SQL on PGlite. */
@@ -28,6 +28,8 @@ export interface ImportResult {
 export const WORKBOOK_MONEY_MARK = 'amounts from owner workbook';
 /** Bookings the workbook created because HostPlatform did not have them: 'hp-res-ab-<HM code>', 'hp-res-bc-<Booking.com number>'. */
 const FROM_WORKBOOK = /^hp-res-(ab|bc)-/;
+const MONEY_TEXT = new Set<string>(['payment_method', 'rate_plan', 'guest_nationality']);
+const WORKBOOK_OWNED = new Set<string>(['guest_cleaning_fee', 'ota_tax']);
 const ours = (t: string) => `(${t}.id LIKE 'hp-%' OR ${t}.id LIKE 'wb-%')`;
 const isOurs = (id: string) => id.startsWith('hp-') || id.startsWith('wb-');
 
@@ -217,7 +219,7 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
     keep.push({
       id, unit_id: unitId, guest_id: r.guestId, channel: r.channel, external_ref: r.externalRef, state: r.state, check_in: r.checkIn, check_out: r.checkOut,
       guests_count: r.guestsCount, gross_booking_value: r.gross, channel_fee: r.fee, collected_revenue: r.collected, currency: r.currency,
-      notes: r.notes, created_at: r.createdAt ?? now, updated_at: now,
+      notes: r.notes, created_at: r.createdAt ?? now, updated_at: now, ...r.money,
     });
     if (isOurs(unitId) && (r.maxGuests || r.sizeSqft)) {
       const cur = unitFacts.get(unitId);
@@ -234,8 +236,13 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
   const wb = `reservations.notes LIKE '%${WORKBOOK_MONEY_MARK}%'`;
   add(res, 'reservations', await upsert(db, 'reservations',
     [['id', 'text'], ['unit_id', 'text'], ['guest_id', 'text'], ['channel', 'text'], ['external_ref', 'text'], ['state', 'text'], ['check_in', 'text'], ['check_out', 'text'],
-     ['guests_count', 'int'], ['gross_booking_value', 'int'], ['channel_fee', 'int'], ['collected_revenue', 'int'], ['currency', 'text'], ['notes', 'text'], ['created_at', 'text'], ['updated_at', 'text']],
+     ['guests_count', 'int'], ['gross_booking_value', 'int'], ['channel_fee', 'int'], ['collected_revenue', 'int'], ['currency', 'text'], ['notes', 'text'], ['created_at', 'text'], ['updated_at', 'text'],
+     ...RESERVATION_MONEY_COLUMNS.map(c => [c, MONEY_TEXT.has(c) ? 'text' : 'int'] as [string, string])],
     keep, `DO UPDATE SET unit_id = EXCLUDED.unit_id, guest_id = EXCLUDED.guest_id, channel = EXCLUDED.channel, external_ref = EXCLUDED.external_ref,
+      ${RESERVATION_MONEY_COLUMNS.map(c => WORKBOOK_OWNED.has(c)
+        // The Airbnb earnings report is the better source for these two; once it has set a booking's money, HostPlatform does not overwrite them.
+        ? `${c} = CASE WHEN ${wb} THEN reservations.${c} ELSE EXCLUDED.${c} END`
+        : `${c} = EXCLUDED.${c}`).join(', ')},
       state = EXCLUDED.state, check_in = EXCLUDED.check_in, check_out = EXCLUDED.check_out, guests_count = EXCLUDED.guests_count,
       gross_booking_value = CASE WHEN ${wb} THEN reservations.gross_booking_value ELSE EXCLUDED.gross_booking_value END,
       channel_fee = CASE WHEN ${wb} THEN reservations.channel_fee ELSE EXCLUDED.channel_fee END,
@@ -256,13 +263,15 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
 /* Workbook: units, owners, contracts                                  */
 /* ------------------------------------------------------------------ */
 
-export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: string): Promise<ImportResult> {
+export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: string, today = now.slice(0, 10)): Promise<ImportResult> {
   const res = empty();
   const snap = await snapshot(db);
   const placeholder = await placeholderOwner(db, snap.owners, now);
   const newProps: Record<string, unknown>[] = [], ownerRows = new Map<string, Record<string, unknown>>();
   const newUnits: Record<string, unknown>[] = [], updates: Record<string, unknown>[] = [], contracts: Record<string, unknown>[] = [], links: Record<string, unknown>[] = [];
   const matchedIds = new Set<string>(), contractIds = new Set<string>();
+  const accounts: Record<string, unknown>[] = [], debts: Record<string, unknown>[] = [], poolMonths: Record<string, unknown>[] = [];
+  const accountIds = new Set<string>(), poolIds = new Set<string>();
   let matched = 0, workbookOnly = 0;
   // A unit matched by its own code is taken first; the whole-unit row of a split unit ('TRION-B6106' next to
   // 'TRION-B6106(A)' and '(B)') then does not borrow room (A), and becomes a unit of its own.
@@ -304,7 +313,8 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
       const b = buildingForPrefix(prefix || w.workbookId, snap.properties);
       if (b.isNew) {
         snap.properties.push({ id: b.id, name: b.name });
-        newProps.push({ id: b.id, name: b.name, address_line: w.address ?? '', city: '', state: '', country_code: 'MY', created_at: now, updated_at: now });
+        const loc = normaliseLocation({ address: w.address });
+        newProps.push({ id: b.id, name: b.name, address_line: w.address ?? '', city: loc.city ?? '', state: loc.state ?? '', postcode: loc.postcode, country_code: 'MY', created_at: now, updated_at: now });
       }
       unitId = `wb-unit-${slug(w.workbookId)}`; unitOurs = true; contractId = null;
       newUnits.push({
@@ -315,6 +325,26 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
       snap.units.push({ id: unitId, unitNumber: code || w.workbookId, propertyId: b.id, propertyName: b.name, ownerName: '' });
     }
 
+    // Utility accounts and pool months belong to the unit; the first workbook row that lands on a unit wins.
+    for (const a of w.utilityAccounts) {
+      const id = `wb-uacct-${slug(unitId)}-${a.kind}`;
+      if (accountIds.has(id)) continue;
+      accountIds.add(id);
+      accounts.push({ id, unit_id: unitId, kind: a.kind, account_no: a.accountNo, provider: a.provider, note: 'From owner workbook (Unit资料)', created_at: now, updated_at: now });
+    }
+    for (const m of w.poolMonths) {
+      const id = `wb-pool-${slug(unitId)}-${m.month.replace('-', '')}`;
+      if (poolIds.has(id)) continue;
+      poolIds.add(id);
+      poolMonths.push({ id, unit_id: unitId, month: m.month, pool_balance: m.poolBalance, paid_from_pool: m.paidFromPool, company_top_up: m.companyTopUp, created_at: now, updated_at: now });
+    }
+    // Debt the owner carries over: recorded against the owner, held until someone decides when to deduct it.
+    const debtOwner = ownerId ?? hit?.ownerId ?? null;
+    if (w.debt && debtOwner && debtOwner !== placeholder) {
+      debts.push({ id: `wb-debt-${slug(w.workbookId)}`, owner_id: debtOwner, unit_id: unitId, kind: 'opening_debt', amount: -w.debt,
+        description: `Debt carried over from the owner workbook (${w.workbookId})`, occurred_on: today, reference: null, state: 'held', source: 'owner_workbook', created_at: now, updated_at: now });
+    } else if (w.debt) res.skippedRows.push({ row: w.row, reason: `${w.workbookId}: DEBT AMOUNT not recorded because the unit has no named owner.` });
+
     // Contract: created or refreshed by the import, unless the unit already has one made in Property OS.
     if (w.contract && (!contractId || contractId.startsWith('wb-'))) {
       const id = contractId ?? `wb-contract-${slug(w.workbookId)}`;
@@ -323,13 +353,16 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
       contracts.push({
         id, owner_id: ownerId ?? (hit?.ownerId || placeholder), management_fee_pct: w.contract.feePct, model: w.contract.model, grr_amount: w.contract.grrAmount,
         starts_on: w.contract.startsOn, ends_on: w.contract.endsOn, created_at: now,
+        agent_fee_pct: w.contract.agentPct, minimum_guarantee: w.contract.minimumGuarantee, minimum_guarantee_annual: w.contract.minimumGuaranteeAnnual,
+        guarantee_starts_on: w.contract.guaranteeStartsOn, guarantee_ends_on: w.contract.guaranteeEndsOn,
+        agreement_file: w.contract.agreementFile, misc_charges: w.contract.miscCharges ? 1 : 0,
       });
       if (!contractId) links.push({ id: unitId, contract_id: id });
     }
   }
 
   add(res, 'properties', await upsert(db, 'properties',
-    [['id', 'text'], ['name', 'text'], ['address_line', 'text'], ['city', 'text'], ['state', 'text'], ['country_code', 'text'], ['created_at', 'text'], ['updated_at', 'text']],
+    [['id', 'text'], ['name', 'text'], ['address_line', 'text'], ['city', 'text'], ['state', 'text'], ['postcode', 'text'], ['country_code', 'text'], ['created_at', 'text'], ['updated_at', 'text']],
     newProps, 'DO NOTHING'));
   add(res, 'owners', await upsert(db, 'owners',
     [['id', 'text'], ['display_name', 'text'], ['email', 'text'], ['ic_number', 'text'], ['bank_name', 'text'], ['bank_account_number', 'text'], ['bank_account_last4', 'text'], ['bank_account_holder', 'text'], ['created_at', 'text'], ['updated_at', 'text']],
@@ -357,10 +390,23 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
     add(res, 'units', { created: 0, updated: out.length });
   }
   add(res, 'owner_contracts', await upsert(db, 'owner_contracts',
-    [['id', 'text'], ['owner_id', 'text'], ['management_fee_pct', 'float8'], ['model', 'text'], ['grr_amount', 'int'], ['starts_on', 'text'], ['ends_on', 'text'], ['created_at', 'text']],
+    [['id', 'text'], ['owner_id', 'text'], ['management_fee_pct', 'float8'], ['model', 'text'], ['grr_amount', 'int'], ['starts_on', 'text'], ['ends_on', 'text'], ['created_at', 'text'],
+     ['agent_fee_pct', 'float8'], ['minimum_guarantee', 'int'], ['minimum_guarantee_annual', 'int'], ['guarantee_starts_on', 'text'], ['guarantee_ends_on', 'text'],
+     ['agreement_file', 'text'], ['misc_charges', 'int']],
     contracts, `DO UPDATE SET owner_id = EXCLUDED.owner_id, management_fee_pct = EXCLUDED.management_fee_pct, model = EXCLUDED.model,
-      grr_amount = EXCLUDED.grr_amount, starts_on = EXCLUDED.starts_on, ends_on = EXCLUDED.ends_on`));
+      grr_amount = EXCLUDED.grr_amount, starts_on = EXCLUDED.starts_on, ends_on = EXCLUDED.ends_on,
+      agent_fee_pct = EXCLUDED.agent_fee_pct, minimum_guarantee = EXCLUDED.minimum_guarantee, minimum_guarantee_annual = EXCLUDED.minimum_guarantee_annual,
+      guarantee_starts_on = EXCLUDED.guarantee_starts_on, guarantee_ends_on = EXCLUDED.guarantee_ends_on,
+      agreement_file = EXCLUDED.agreement_file, misc_charges = EXCLUDED.misc_charges`));
   if (links.length) await db.run(`UPDATE units u SET contract_id = x.contract_id FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, contract_id text) WHERE u.id = x.id AND u.contract_id IS NULL`, JSON.stringify(links));
+
+  add(res, 'unit_utility_accounts', await upsert(db, 'unit_utility_accounts',
+    [['id', 'text'], ['unit_id', 'text'], ['kind', 'text'], ['account_no', 'text'], ['provider', 'text'], ['note', 'text'], ['created_at', 'text'], ['updated_at', 'text']],
+    accounts, 'DO UPDATE SET unit_id = EXCLUDED.unit_id, account_no = EXCLUDED.account_no, provider = EXCLUDED.provider, updated_at = EXCLUDED.updated_at'));
+  add(res, 'guarantee_pool_months', await upsert(db, 'guarantee_pool_months',
+    [['id', 'text'], ['unit_id', 'text'], ['month', 'text'], ['pool_balance', 'int'], ['paid_from_pool', 'int'], ['company_top_up', 'int'], ['created_at', 'text'], ['updated_at', 'text']],
+    poolMonths, 'DO UPDATE SET pool_balance = EXCLUDED.pool_balance, paid_from_pool = EXCLUDED.paid_from_pool, company_top_up = EXCLUDED.company_top_up, updated_at = EXCLUDED.updated_at'));
+  add(res, 'owner_adjustments', await upsertAdjustments(db, debts));
 
   const hostPlatformOnly = snap.units.filter(u => u.id.startsWith('hp-unit-') && !matchedIds.has(u.id)).length;
   res.stats = { matched, workbookOnly, hostPlatformOnly };
@@ -401,7 +447,8 @@ export async function importAirbnbEarnings(db: Db, earnings: AirbnbEarningIn[], 
     if (match) {
       if (!match.id.startsWith('hp-res-')) { res.skippedRows.push({ row: e.row, reason: `${e.code} is managed by Channex; its amounts were left as they are.` }); continue; }
       if (e.gross === null && e.amount === null) { res.skippedRows.push({ row: e.row, reason: `${e.code}: no amounts in the workbook; HostPlatform amounts kept.` }); continue; }
-      money.push({ id: match.id, gross: e.gross ?? 0, fee: e.fee ?? 0, amount: e.amount ?? 0, updated_at: now });
+      money.push({ id: match.id, gross: e.gross ?? 0, fee: e.fee ?? 0, amount: e.amount ?? 0, updated_at: now,
+        cleaning: e.cleaningFee, tax: e.tax, fast_pay: e.fastPay, payout: e.amount, paid_on: e.paidOutOn });
       continue;
     }
     // Not on HostPlatform (e.g. stays before May): recorded as a booking from the workbook.
@@ -409,21 +456,28 @@ export async function importAirbnbEarnings(db: Db, earnings: AirbnbEarningIn[], 
       id: `hp-res-${e.site === 'airbnb' ? 'ab' : 'bc'}-${e.code}${e.idSuffix}`, unit_id: unit.id, channel: e.site, external_ref: e.code, state: stayState(e.checkIn, e.checkOut, today),
       check_in: e.checkIn, check_out: e.checkOut, guests_count: 1, gross_booking_value: e.gross ?? 0, channel_fee: e.fee ?? 0, collected_revenue: e.amount ?? 0,
       currency: 'MYR', notes: `Imported from owner workbook (earnings sheet, ${WORKBOOK_MONEY_MARK})`, created_at: now, updated_at: now,
+      guest_cleaning_fee: e.cleaningFee, ota_tax: e.tax, payment_processing_fee: e.fastPay, payout_amount: e.amount, payout_date: e.paidOutOn,
     });
   }
   if (money.length) {
     const out = await db.all(`
       UPDATE reservations r SET gross_booking_value = x.gross, channel_fee = x.fee, collected_revenue = x.amount,
+        guest_cleaning_fee = COALESCE(x.cleaning, r.guest_cleaning_fee), ota_tax = COALESCE(x.tax, r.ota_tax),
+        payment_processing_fee = x.fast_pay, payout_amount = x.payout, payout_date = x.paid_on,
         notes = CASE WHEN COALESCE(r.notes, '') LIKE '%${WORKBOOK_MONEY_MARK}%' THEN r.notes ELSE COALESCE(r.notes || ' · ', '') || '${WORKBOOK_MONEY_MARK}' END,
         updated_at = x.updated_at
-      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, gross int, fee int, amount int, updated_at text) WHERE r.id = x.id RETURNING r.id`, JSON.stringify(money));
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, gross int, fee int, amount int, updated_at text, cleaning int, tax int, fast_pay int, payout int, paid_on text)
+      WHERE r.id = x.id RETURNING r.id`, JSON.stringify(money));
     add(res, 'reservations', { created: 0, updated: out.length });
   }
   add(res, 'reservations', await upsert(db, 'reservations',
     [['id', 'text'], ['unit_id', 'text'], ['channel', 'text'], ['external_ref', 'text'], ['state', 'text'], ['check_in', 'text'], ['check_out', 'text'], ['guests_count', 'int'],
-     ['gross_booking_value', 'int'], ['channel_fee', 'int'], ['collected_revenue', 'int'], ['currency', 'text'], ['notes', 'text'], ['created_at', 'text'], ['updated_at', 'text']],
+     ['gross_booking_value', 'int'], ['channel_fee', 'int'], ['collected_revenue', 'int'], ['currency', 'text'], ['notes', 'text'], ['created_at', 'text'], ['updated_at', 'text'],
+     ['guest_cleaning_fee', 'int'], ['ota_tax', 'int'], ['payment_processing_fee', 'int'], ['payout_amount', 'int'], ['payout_date', 'text']],
     fresh, `DO UPDATE SET unit_id = EXCLUDED.unit_id, state = EXCLUDED.state, check_in = EXCLUDED.check_in, check_out = EXCLUDED.check_out,
-      gross_booking_value = EXCLUDED.gross_booking_value, channel_fee = EXCLUDED.channel_fee, collected_revenue = EXCLUDED.collected_revenue, updated_at = EXCLUDED.updated_at`));
+      gross_booking_value = EXCLUDED.gross_booking_value, channel_fee = EXCLUDED.channel_fee, collected_revenue = EXCLUDED.collected_revenue,
+      guest_cleaning_fee = EXCLUDED.guest_cleaning_fee, ota_tax = EXCLUDED.ota_tax, payment_processing_fee = EXCLUDED.payment_processing_fee,
+      payout_amount = EXCLUDED.payout_amount, payout_date = EXCLUDED.payout_date, updated_at = EXCLUDED.updated_at`));
   res.stats = { matchedHostPlatform: money.length, createdFromWorkbook: fresh.length };
   return finish(res, 'reservations');
 }
@@ -437,6 +491,24 @@ export async function importCleaning(db: Db, cleanings: CleaningIn[], today: str
   const snap = await snapshot(db);
   const tasks: Record<string, unknown>[] = [], costs: Record<string, unknown>[] = [];
   const match = workbookMatcher(snap.units);
+
+  // The person in 负责人 joins the cleaner roster (an entry with the same name is reused). The workbook does not
+  // say whether they are staff or a contractor: a name that reads like a company is 'outsourced', the rest 'internal'.
+  const names = [...new Set(cleanings.map(c => c.cleaner).filter((x): x is string => !!x))];
+  const roster = names.length ? await db.all<{ id: string; full_name: string }>('SELECT id, full_name FROM cleaners') : [];
+  const cleanerId = new Map<string, string>(), newCleaners: Record<string, unknown>[] = [];
+  for (const name of names) {
+    const hit = roster.find(c => c.full_name.trim().toLowerCase() === name.toLowerCase());
+    const id = hit?.id ?? `wb-cleaner-${slug(name)}`;
+    cleanerId.set(name, id);
+    if (hit) continue;
+    const company = /\b(sdn\.?\s*bhd|bhd|enterprise|services?|plt|company|trading|cleaning)\b/i.test(name);
+    newCleaners.push({ id, full_name: name, employment_type: company ? 'outsourced' : 'internal', vendor_name: company ? name : null, is_active: 1, created_at: now, updated_at: now });
+  }
+  add(res, 'cleaners', await upsert(db, 'cleaners',
+    [['id', 'text'], ['full_name', 'text'], ['employment_type', 'text'], ['vendor_name', 'text'], ['is_active', 'int'], ['created_at', 'text'], ['updated_at', 'text']],
+    newCleaners, 'DO NOTHING'));
+
   for (const c of cleanings) {
     const unit = match(c.workbookId)?.unit;
     if (!unit) { res.errors.push({ row: c.row, reason: `Unit ${c.workbookId} is not in Property OS.` }); continue; }
@@ -445,7 +517,7 @@ export async function importCleaning(db: Db, cleanings: CleaningIn[], today: str
     tasks.push({
       id: c.id, unit_id: unit.id, kind: c.kind, state: done ? 'resolved' : 'open', title: c.title, instructions: c.instructions || null,
       scheduled_for: due, due_at: due, next_guest_at: c.nextGuestTime ? `${c.date}T${c.nextGuestTime}:00+08:00` : null,
-      completed_at: done ? due : null, requires_photo: 0, created_at: now, updated_at: now,
+      completed_at: done ? due : null, requires_photo: 0, cleaner_id: c.cleaner ? cleanerId.get(c.cleaner) ?? null : null, created_at: now, updated_at: now,
     });
     // The owner is charged the unit's cleaning price unless the sheet says the tenant or the company pays.
     if (c.price && c.price > 0 && !c.payer) {
@@ -454,9 +526,10 @@ export async function importCleaning(db: Db, cleanings: CleaningIn[], today: str
   }
   add(res, 'tasks', await upsert(db, 'tasks',
     [['id', 'text'], ['unit_id', 'text'], ['kind', 'text'], ['state', 'text'], ['title', 'text'], ['instructions', 'text'], ['scheduled_for', 'text'], ['due_at', 'text'],
-     ['next_guest_at', 'text'], ['completed_at', 'text'], ['requires_photo', 'int'], ['created_at', 'text'], ['updated_at', 'text']],
+     ['next_guest_at', 'text'], ['completed_at', 'text'], ['requires_photo', 'int'], ['cleaner_id', 'text'], ['created_at', 'text'], ['updated_at', 'text']],
     tasks, `DO UPDATE SET unit_id = EXCLUDED.unit_id, kind = EXCLUDED.kind, title = EXCLUDED.title, instructions = EXCLUDED.instructions, scheduled_for = EXCLUDED.scheduled_for,
       due_at = EXCLUDED.due_at, next_guest_at = EXCLUDED.next_guest_at,
+      cleaner_id = COALESCE(tasks.cleaner_id, EXCLUDED.cleaner_id),
       state = CASE WHEN tasks.state = 'resolved' THEN tasks.state ELSE EXCLUDED.state END,
       completed_at = COALESCE(tasks.completed_at, EXCLUDED.completed_at), updated_at = EXCLUDED.updated_at`));
   if (tasks.length) {
@@ -476,16 +549,193 @@ async function upsertExpenses(db: Db, rows: Record<string, unknown>[]) {
       amount = EXCLUDED.amount, incurred_on = EXCLUDED.incurred_on, reference = EXCLUDED.reference`);
 }
 
-export async function importExpenses(db: Db, expenses: ExpenseIn[], now: string): Promise<ImportResult> {
+export async function importExpenses(db: Db, expenses: ExpenseIn[], now: string, credits: CreditIn[] = []): Promise<ImportResult> {
   const res = empty();
   const snap = await snapshot(db);
-  const rows: Record<string, unknown>[] = [];
+  const rows: Record<string, unknown>[] = [], adjustments: Record<string, unknown>[] = [];
   const match = workbookMatcher(snap.units);
   for (const e of expenses) {
     const unit = match(e.workbookId)?.unit;
     if (!unit) { res.errors.push({ row: e.row, reason: `Unit ${e.workbookId} is not in Property OS.` }); continue; }
     rows.push({ id: e.id, unit_id: unit.id, category: e.category, description: e.description, amount: e.amount, incurred_on: e.incurredOn, reference: e.reference, created_at: now });
   }
+  const placeholder = snap.owners.find(o => o.name.toLowerCase() === PLACEHOLDER_OWNER.toLowerCase())?.id;
+  for (const c of credits) {
+    const unit = match(c.workbookId)?.unit;
+    if (!unit) { res.errors.push({ row: c.row, reason: `Unit ${c.workbookId} is not in Property OS.` }); continue; }
+    if (!unit.ownerId || unit.ownerId === placeholder) { res.errors.push({ row: c.row, reason: `${c.workbookId}: credit not recorded because the unit has no named owner. Import the workbook units first.` }); continue; }
+    adjustments.push({ id: c.id, owner_id: unit.ownerId, unit_id: unit.id, kind: 'credit', amount: c.amount, description: c.description, occurred_on: c.occurredOn,
+      reference: c.reference, state: 'open', source: 'owner_workbook', created_at: now, updated_at: now });
+  }
   add(res, 'expenses', await upsertExpenses(db, rows));
+  add(res, 'owner_adjustments', await upsertAdjustments(db, adjustments));
   return finish(res, 'expenses');
+}
+
+/** Owner credits and debts from the workbook. Re-running refreshes what the file says but never undoes what has
+ *  happened since: the state, the statement the row went on, and a debt's first-recorded date. Once a row is on a
+ *  statement or settled, its owner and amount stay as they were paid. */
+async function upsertAdjustments(db: Db, rows: Record<string, unknown>[]) {
+  const frozen = `(owner_adjustments.statement_id IS NOT NULL OR owner_adjustments.state = 'settled')`;
+  return upsert(db, 'owner_adjustments',
+    [['id', 'text'], ['owner_id', 'text'], ['unit_id', 'text'], ['kind', 'text'], ['amount', 'int'], ['description', 'text'], ['occurred_on', 'text'], ['reference', 'text'],
+     ['state', 'text'], ['source', 'text'], ['created_at', 'text'], ['updated_at', 'text']],
+    rows, `DO UPDATE SET
+      owner_id = CASE WHEN ${frozen} THEN owner_adjustments.owner_id ELSE EXCLUDED.owner_id END,
+      amount = CASE WHEN ${frozen} THEN owner_adjustments.amount ELSE EXCLUDED.amount END,
+      unit_id = EXCLUDED.unit_id, description = EXCLUDED.description, reference = EXCLUDED.reference,
+      occurred_on = CASE WHEN owner_adjustments.kind = 'opening_debt' THEN owner_adjustments.occurred_on ELSE EXCLUDED.occurred_on END,
+      updated_at = EXCLUDED.updated_at`);
+}
+
+/* ------------------------------------------------------------------ */
+/* Workbook: owner payout history                                      */
+/* ------------------------------------------------------------------ */
+
+export const HISTORY_STATEMENT = 'wb-stmt-';
+
+/** One paid statement per owner and past month from OWNER PAYOUT, with a paid payout when the month's net is
+ *  above zero. Lines are per unit: the 整体报告 month gets revenue, deductions and the company's share; other
+ *  months get the payout as one line, because that is all the workbook says. They are marked source
+ *  'owner_workbook'. A period that already has a statement made in Property OS for that owner is left alone.
+ *  Statement generation refuses periods holding a paid statement, so these months are never regenerated.
+ *  All rows of the sheet must come in one request: an owner's units are summed into one statement.
+ *
+ *  Workbook credits (negative 杂费扣款 lines) dated in or before the last month of this history were already in
+ *  those payouts (the report's O2 column), so they are marked settled, never paid a second time; later ones stay
+ *  open for the next generated statement. */
+export async function importPayoutHistory(db: Db, months: PayoutMonthIn[], now: string): Promise<ImportResult> {
+  const res = empty();
+  const snap = await snapshot(db);
+  const match = workbookMatcher(snap.units);
+  const placeholder = snap.owners.find(o => o.name.toLowerCase() === PLACEHOLDER_OWNER.toLowerCase())?.id;
+  const label = new Map(snap.units.map(u => [u.id, `${u.propertyName} ${u.unitNumber}`]));
+
+  type Group = { ownerId: string; month: string; lines: { unitId: string; m: PayoutMonthIn }[] };
+  const groups = new Map<string, Group>(), usedUnitMonth = new Set<string>();
+  for (const m of months) {
+    const unit = match(m.workbookId)?.unit;
+    if (!unit) { res.errors.push({ row: m.row, reason: `${m.workbookId}: unit is not in Property OS. Import the workbook units first.` }); continue; }
+    if (!unit.ownerId || unit.ownerId === placeholder) { res.errors.push({ row: m.row, reason: `${m.workbookId} ${m.month}: the unit has no named owner, so there is no statement to put this payout on.` }); continue; }
+    const um = `${unit.id}|${m.month}`;
+    if (usedUnitMonth.has(um)) { res.skippedRows.push({ row: m.row, reason: `${m.workbookId} ${m.month}: another workbook row already gave this unit's payout for the month.` }); continue; }
+    usedUnitMonth.add(um);
+    const k = `${unit.ownerId}|${m.month}`;
+    if (!groups.has(k)) groups.set(k, { ownerId: unit.ownerId, month: m.month, lines: [] });
+    groups.get(k)!.lines.push({ unitId: unit.id, m });
+  }
+
+  const periods = [...new Set([...groups.values()].map(g => `${g.month}-01`))];
+  const existing = periods.length ? await db.all<{ id: string; owner_id: string; period_start: string }>(
+    'SELECT id, owner_id, period_start FROM owner_statements WHERE period_start IN (SELECT jsonb_array_elements_text(?::text::jsonb))', JSON.stringify(periods)) : [];
+  const bank = new Map((await db.all<{ id: string; bank_account_last4: string | null }>('SELECT id, bank_account_last4 FROM owners')).map(o => [o.id, o.bank_account_last4]));
+
+  const statements: Record<string, unknown>[] = [], lines: Record<string, unknown>[] = [], payouts: Record<string, unknown>[] = [];
+  for (const g of groups.values()) {
+    const start = `${g.month}-01`;
+    const end = new Date(Date.UTC(Number(g.month.slice(0, 4)), Number(g.month.slice(5, 7)), 0)).toISOString().slice(0, 10);
+    const id = `${HISTORY_STATEMENT}${hash(g.ownerId)}-${g.month.replace('-', '')}`;
+    const clash = existing.find(e => e.owner_id === g.ownerId && e.period_start === start && e.id !== id);
+    if (clash) { res.skippedRows.push({ row: g.month, reason: `An owner already has a ${g.month} statement made in Property OS; the workbook payout for that month was left out.` }); continue; }
+    let gross = 0, fee = 0, costs = 0, adjust = 0, net = 0, order = 0;
+    const line = (unitId: string, type: string, category: string | null, description: string, amount: number) => {
+      lines.push({ id: `${id}-${order}`, statement_id: id, unit_id: unitId, line_type: type, category, description, occurred_on: end, amount, reference: 'Owner workbook', sort_order: order });
+      order++;
+    };
+    for (const { unitId, m } of g.lines.sort((a, b) => (label.get(a.unitId) ?? '').localeCompare(label.get(b.unitId) ?? ''))) {
+      const name = label.get(unitId) ?? m.workbookId;
+      net += m.amount;
+      const b = m.breakdown;
+      if (!b) { adjust += m.amount; line(unitId, 'adjustment', 'workbook_payout', `${name}: owner payout for ${g.month} (owner workbook, no breakdown)`, m.amount); continue; }
+      gross += b.revenue;
+      line(unitId, 'gross', null, `${name}: total revenue for ${g.month} (owner workbook)`, b.revenue);
+      const deductions: [string, string, number][] = [['cleaning', 'Cleaning', b.cleaning], ['utilities', 'Utilities', b.utilities], ['other', 'Additional deductions', b.additional], ['other', 'Miscellaneous charges', b.misc]];
+      for (const [cat, what, amt] of deductions) if (amt) { costs += amt; line(unitId, 'expense', cat, `${name}: ${what} (owner workbook)`, -amt); }
+      // What is left between the unit's profit and what the owner was paid: the company's (and agent's) share,
+      // or, on a guaranteed rent, what the company added to reach it.
+      const rest = m.amount - (b.revenue - b.cleaning - b.utilities - b.additional - b.misc);
+      if (rest < 0) { fee += -rest; line(unitId, 'management_fee', null, `${name}: company and agent share (owner workbook)`, rest); }
+      if (rest > 0) { adjust += rest; line(unitId, 'adjustment', 'workbook_payout', `${name}: guaranteed rent top-up (owner workbook)`, rest); }
+    }
+    statements.push({ id, owner_id: g.ownerId, period_start: start, period_end: end, state: 'paid', gross_booking_value: gross, management_fee: fee, expenses_total: costs,
+      adjustments_total: adjust, net_payout: net, currency: 'MYR', generated_at: now, created_at: now, source: 'owner_workbook' });
+    // The workbook says what was paid, not when: paid_at stays empty; created_at is the end of the month so the history sorts by month.
+    if (net > 0) payouts.push({ id: id.replace(HISTORY_STATEMENT, 'wb-payout-'), statement_id: id, owner_id: g.ownerId, amount: net, currency: 'MYR', state: 'paid', method: 'bank_transfer',
+      bank_last4: bank.get(g.ownerId) ?? null, created_at: `${end}T15:59:59.000Z`, source: 'owner_workbook' });
+  }
+
+  add(res, 'owner_statements', await upsert(db, 'owner_statements',
+    [['id', 'text'], ['owner_id', 'text'], ['period_start', 'text'], ['period_end', 'text'], ['state', 'text'], ['gross_booking_value', 'int'], ['management_fee', 'int'], ['expenses_total', 'int'],
+     ['adjustments_total', 'int'], ['net_payout', 'int'], ['currency', 'text'], ['generated_at', 'text'], ['created_at', 'text'], ['source', 'text']],
+    statements, `DO UPDATE SET gross_booking_value = EXCLUDED.gross_booking_value, management_fee = EXCLUDED.management_fee, expenses_total = EXCLUDED.expenses_total,
+      adjustments_total = EXCLUDED.adjustments_total, net_payout = EXCLUDED.net_payout`));
+  if (statements.length) {
+    // Lines from an earlier run that this run no longer writes (a unit moved owner, a breakdown changed).
+    await db.run(`DELETE FROM statement_lines WHERE statement_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND id NOT IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
+      JSON.stringify(statements.map(s => s.id)), JSON.stringify(lines.map(l => l.id)));
+  }
+  add(res, 'statement_lines', await upsert(db, 'statement_lines',
+    [['id', 'text'], ['statement_id', 'text'], ['unit_id', 'text'], ['line_type', 'text'], ['category', 'text'], ['description', 'text'], ['occurred_on', 'text'], ['amount', 'int'], ['reference', 'text'], ['sort_order', 'int']],
+    lines, `DO UPDATE SET unit_id = EXCLUDED.unit_id, line_type = EXCLUDED.line_type, category = EXCLUDED.category, description = EXCLUDED.description,
+      occurred_on = EXCLUDED.occurred_on, amount = EXCLUDED.amount, sort_order = EXCLUDED.sort_order`));
+  add(res, 'payouts', await upsert(db, 'payouts',
+    [['id', 'text'], ['statement_id', 'text'], ['owner_id', 'text'], ['amount', 'int'], ['currency', 'text'], ['state', 'text'], ['method', 'text'], ['bank_last4', 'text'], ['created_at', 'text'], ['source', 'text']],
+    payouts, `DO UPDATE SET amount = EXCLUDED.amount, bank_last4 = COALESCE(EXCLUDED.bank_last4, payouts.bank_last4)`));
+
+  // Credits up to the last month of this history were inside those payouts.
+  const last = [...groups.values()].reduce((m, g) => (g.month > m ? g.month : m), '');
+  let settled = 0;
+  if (last) {
+    const lastDay = new Date(Date.UTC(Number(last.slice(0, 4)), Number(last.slice(5, 7)), 0)).toISOString().slice(0, 10);
+    const out = await db.all(`
+      UPDATE owner_adjustments a SET state = 'settled', updated_at = ?,
+        statement_id = (SELECT s.id FROM owner_statements s WHERE s.owner_id = a.owner_id AND s.period_start = substr(a.occurred_on, 1, 7) || '-01' AND s.id LIKE '${HISTORY_STATEMENT}%'),
+        settled_note = 'Included in the owner workbook payout for ' || substr(a.occurred_on, 1, 7)
+      WHERE a.source = 'owner_workbook' AND a.kind = 'credit' AND a.state = 'open' AND a.statement_id IS NULL AND a.occurred_on <= ?
+      RETURNING a.id`, now, lastDay);
+    settled = out.length;
+    add(res, 'owner_adjustments', { created: 0, updated: settled });
+  }
+  res.stats = { statements: statements.length, unitMonths: usedUnitMonth.size, payouts: payouts.length, creditsSettled: settled };
+  return finish(res, 'owner_statements');
+}
+
+/* ------------------------------------------------------------------ */
+/* One-off fix: building state and city                                */
+/* ------------------------------------------------------------------ */
+
+/** Rewrites the state and city of existing buildings to their canonical names ('W.P Kuala Lumpur' and 'WP' ->
+ *  'Kuala Lumpur', 'KUALA LUMPUR' -> 'Kuala Lumpur'), and fills a blank one from the postcode or the address
+ *  (the building's own, else one of its units'). Only a blank or a recognised variant is changed: a state the
+ *  list does not know is left as typed. Running it again changes nothing. */
+export async function fixLocations(db: Db, now: string): Promise<ImportResult> {
+  const res = empty();
+  const rows = await db.all<{ id: string; name: string; state: string | null; city: string | null; postcode: string | null; address_line: string | null; unit_address: string | null }>(`
+    SELECT p.id, p.name, p.state, p.city, p.postcode, p.address_line,
+      (SELECT u.address FROM units u WHERE u.property_id = p.id AND COALESCE(u.address, '') <> '' ORDER BY u.id LIMIT 1) AS unit_address
+    FROM properties p`);
+  const distinct = (xs: (string | null)[]) => new Set(xs.map(x => (x ?? '').trim())).size;
+  const before = { states: distinct(rows.map(r => r.state)), cities: distinct(rows.map(r => r.city)) };
+  const changes: Record<string, unknown>[] = [];
+  const after = rows.map(r => {
+    const state = (r.state ?? '').trim(), city = (r.city ?? '').trim();
+    const knownState = canonicalState(state), knownCity = canonicalCity(city);
+    const loc = normaliseLocation({ state: knownState, city: knownCity, postcode: r.postcode, address: [r.address_line, r.unit_address].filter(Boolean).join(', ') });
+    // A state is only replaced when blank or a recognised spelling; a city only when blank or differing in case / short form.
+    const nextState = !state || knownState ? loc.state ?? state : state;
+    const nextCity = !city || knownCity ? loc.city ?? city : city;
+    const nextPostcode = (r.postcode ?? '').trim() || loc.postcode;
+    if (nextState !== state || nextCity !== city || (nextPostcode ?? '') !== (r.postcode ?? '').trim()) {
+      changes.push({ id: r.id, state: nextState, city: nextCity, postcode: nextPostcode, updated_at: now });
+    }
+    if (!nextState) res.skippedRows.push({ row: r.name, reason: 'No state, and none could be worked out from its postcode or address.' });
+    return { state: nextState, city: nextCity };
+  });
+  if (changes.length) {
+    const out = await db.all(`UPDATE properties p SET state = x.state, city = x.city, postcode = x.postcode, updated_at = x.updated_at
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, state text, city text, postcode text, updated_at text) WHERE p.id = x.id RETURNING p.id`, JSON.stringify(changes));
+    add(res, 'properties', { created: 0, updated: out.length });
+  } else add(res, 'properties', { created: 0, updated: 0 });
+  res.stats = { statesBefore: before.states, statesAfter: distinct(after.map(a => a.state)), citiesBefore: before.cities, citiesAfter: distinct(after.map(a => a.city)) };
+  return finish(res, 'properties');
 }

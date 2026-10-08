@@ -11,8 +11,8 @@ import { csvObjects, readXlsx, sheetObjects, type SheetRow } from '../lib/sheets
 import {
   type Row, type RowError, type KnownUnit, type ImportKind,
   LISTING_COLUMNS, RESERVATION_COLUMNS, WORKBOOK_SHEETS, WORKBOOK_COLUMNS, WORKBOOK_HEADER_ROW,
-  mapListing, mapReservations, mapWorkbookUnits, mapAirbnbEarnings, mapCleaning, mapWorkbookExpenses,
-  matchWorkbookUnit, unitKey, todayInKL, chunkByKey, pick,
+  mapListing, mapReservations, mapWorkbookUnits, mapAirbnbEarnings, mapCleaning, mapWorkbookExpenses, mapPayoutHistory,
+  matchWorkbookUnit, unitKey, todayInKL, chunkByKey, pick, poolSheetRows,
 } from '../../functions/_lib/hostplatformImport';
 
 /**
@@ -85,7 +85,7 @@ export default function HostPlatformImportPage() {
       const wanted = Object.values(WORKBOOK_SHEETS) as string[];
       const { sheets, names } = await readXlsx(await f.arrayBuffer(), wanted);
       const out: Record<string, SheetRow[]> = {};
-      for (const s of wanted) out[s] = pick(sheetObjects(sheets[s] ?? [], WORKBOOK_HEADER_ROW[s] ?? 1, s), WORKBOOK_COLUMNS[s]) as SheetRow[];
+      for (const s of wanted) out[s] = pick(s === WORKBOOK_SHEETS.pool ? poolSheetRows(sheets[s] ?? []) : sheetObjects(sheets[s] ?? [], WORKBOOK_HEADER_ROW[s] ?? 1, s), WORKBOOK_COLUMNS[s]) as SheetRow[];
       setWorkbook({ name: f.name, sheets: out, missing: wanted.filter(s => !names.includes(s)) });
     } catch (e) { setReadError(e instanceof Error ? e.message : `${f.name} could not be read.`); }
   }
@@ -94,11 +94,12 @@ export default function HostPlatformImportPage() {
   const listingPlan = useMemo(() => listing ? mapListing(pick(listing.rows, LISTING_COLUMNS)) : null, [listing]);
   const resPlan = useMemo(() => reservations ? mapReservations(pick(reservations.rows, RESERVATION_COLUMNS), today) : null, [reservations, today]);
   const wb = workbook?.sheets;
-  const wbUnits = useMemo(() => wb ? mapWorkbookUnits(wb[WORKBOOK_SHEETS.units], wb[WORKBOOK_SHEETS.splits], wb[WORKBOOK_SHEETS.pool]) : null, [wb]);
+  const wbUnits = useMemo(() => wb ? mapWorkbookUnits(wb[WORKBOOK_SHEETS.units], wb[WORKBOOK_SHEETS.splits], wb[WORKBOOK_SHEETS.pool], today) : null, [wb, today]);
   const wbAirbnb = useMemo(() => wb ? mapAirbnbEarnings(wb[WORKBOOK_SHEETS.airbnb]) : null, [wb]);
   const wbCleaning = useMemo(() => wb ? mapCleaning(wb[WORKBOOK_SHEETS.cleaning], wb[WORKBOOK_SHEETS.cleaningPrices]) : null, [wb]);
   const expenseRows = useMemo(() => wb ? [WORKBOOK_SHEETS.water, WORKBOOK_SHEETS.electricity, WORKBOOK_SHEETS.internet, WORKBOOK_SHEETS.sewerage, WORKBOOK_SHEETS.misc].flatMap(s => wb[s]) : [], [wb]);
   const wbExpenses = useMemo(() => wb ? mapWorkbookExpenses(expenseRows) : null, [wb, expenseRows]);
+  const wbPayouts = useMemo(() => wb ? mapPayoutHistory(wb[WORKBOOK_SHEETS.payouts], wb[WORKBOOK_SHEETS.report], today) : null, [wb, today]);
 
   // Units the screen can see: those already in Property OS plus, before step 1 runs, the ones the listing will add.
   const visibleUnits = useMemo(() => {
@@ -168,7 +169,7 @@ export default function HostPlatformImportPage() {
         action={listingPlan && <Button variant="primary" loading={runs.listing?.busy} disabled={!listingPlan.units.length} disabledReason="The file has no units."
           onClick={() => send('listing', [pick(listing!.rows, LISTING_COLUMNS)])}>Import {n(listingPlan.units.length)} units</Button>} />
 
-      <Step no={2} title="Owner workbook: units, owners and contracts" hint="The owner's operations workbook (.xlsx). Names the real owners, bank details, splits and contract dates. Also feeds steps 4 to 6." run={runs.workbook_units}
+      <Step no={2} title="Owner workbook: units, owners and contracts" hint="The owner's operations workbook (.xlsx). Names the real owners, bank details, splits, packages (A to D), contract terms, utility account numbers, debts and the Package D guarantee pool. Also feeds steps 4 to 7." run={runs.workbook_units}
         waitFor={!done('listing') && !known.length ? 'Run step 1 first.' : null}
         picker={<FilePick label={workbook ? workbook.name : 'Choose workbook (.xlsx)'} accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onPick={pickWorkbook} />}
         preview={wbUnits && match && (
@@ -206,7 +207,7 @@ export default function HostPlatformImportPage() {
         action={wbAirbnb && <Button variant="primary" loading={runs.workbook_airbnb?.busy} disabled={!wbAirbnb.earnings.length} disabledReason="No earnings lines."
           onClick={() => send('workbook_airbnb', chunkByKey(wb![WORKBOOK_SHEETS.airbnb], r => String(r['确认码'] ?? ''), CHUNK))}>Import {n(wbAirbnb.earnings.length)} lines</Button>} />
 
-      <Step no={5} title="Owner workbook: cleaning records" hint="Sheets 清洁记录 and 清洁单价. Each clean becomes a housekeeping task (done if the date has passed) and, when the owner pays, a cleaning expense at the unit's price." run={runs.workbook_cleaning}
+      <Step no={5} title="Owner workbook: cleaning records" hint="Sheets 清洁记录 and 清洁单价. Each clean becomes a housekeeping task (done if the date has passed) given to the cleaner named in 负责人, who joins the cleaner roster, and, when the owner pays, a cleaning expense at the unit's price." run={runs.workbook_cleaning}
         waitFor={!wb ? 'Choose the workbook in step 2.' : null}
         preview={wbCleaning && (
           <Stats items={[
@@ -218,17 +219,33 @@ export default function HostPlatformImportPage() {
         action={wbCleaning && <Button variant="primary" loading={runs.workbook_cleaning?.busy} disabled={!wbCleaning.cleanings.length} disabledReason="No cleaning records."
           onClick={() => send('workbook_cleaning', chunks(wb![WORKBOOK_SHEETS.cleaning]), { prices: wb![WORKBOOK_SHEETS.cleaningPrices] })}>Import {n(wbCleaning.cleanings.length)} cleans</Button>} />
 
-      <Step no={6} title="Owner workbook: utilities and charges" hint="Sheets 水费, 电费, 网络费, INDAH WATER and 杂费扣款. Each month's bill becomes an expense dated the 1st of that month." run={runs.workbook_expenses}
+      <Step no={6} title="Owner workbook: utilities and charges" hint="Sheets 水费, 电费, 网络费, INDAH WATER and 杂费扣款. Each month's bill becomes an expense dated the 1st of that month. Negative 杂费扣款 lines are money back to the owner and become owner credits." run={runs.workbook_expenses}
         waitFor={!wb ? 'Choose the workbook in step 2.' : null}
         preview={wbExpenses && (
           <Stats items={[
             ['Expenses', n(wbExpenses.expenses.length)], ['Total', rm(wbExpenses.expenses.reduce((s, e) => s + e.amount, 0))],
+            ['Owner credits', n(wbExpenses.credits.length)], ['Credited back', rm(wbExpenses.credits.reduce((s, c) => s + c.amount, 0))],
             ...Object.entries(tally(wbExpenses.expenses, e => e.category)).map(([k, v]) => [k[0].toUpperCase() + k.slice(1), n(v)] as [string, string]),
             ['Skipped', n(wbExpenses.skipped.length)],
-          ]} errors={wbExpenses.errors} notes={wbExpenses.skipped.length ? [`${n(wbExpenses.skipped.length)} lines are negative (money back to the owner). Expenses cannot be negative, so they are not imported; record them as statement adjustments.`] : []} />
+          ]} errors={wbExpenses.errors} notes={wbExpenses.credits.length ? [`${n(wbExpenses.credits.length)} lines are money back to the owner. They are kept as owner credits: credits dated in a month step 7 covers were already in that month's payout; later ones go on the next statement.`] : []} />
         )}
         action={wbExpenses && <Button variant="primary" loading={runs.workbook_expenses?.busy} disabled={!wbExpenses.expenses.length} disabledReason="No expenses."
           onClick={() => send('workbook_expenses', chunks(expenseRows))}>Import {n(wbExpenses.expenses.length)} expenses</Button>} />
+
+      <Step no={7} title="Owner workbook: payout history" hint="Sheets OWNER PAYOUT and 整体报告. Each past month becomes a paid owner statement and payout, marked as from the workbook, so owners and finance see the history. The current month and later are never touched. Run after step 6." run={runs.workbook_payouts}
+        waitFor={!wb ? 'Choose the workbook in step 2.' : null}
+        preview={wbPayouts && (
+          <Stats items={[
+            ['Unit-months', n(wbPayouts.months.length)], ['Months', n(new Set(wbPayouts.months.map(m => m.month)).size)],
+            ['Paid to owners', rm(wbPayouts.months.reduce((s, m) => s + m.amount, 0))],
+            ['With breakdown', n(wbPayouts.months.filter(m => m.breakdown).length)],
+          ]} errors={wbPayouts.errors} notes={[...wbPayouts.notes, ...wbPayouts.skipped.map(s => s.reason)]} />
+        )}
+        action={wbPayouts && <Button variant="primary" loading={runs.workbook_payouts?.busy} disabled={!wbPayouts.months.length} disabledReason="No past payouts in the sheet."
+          onClick={() => send('workbook_payouts', [wb![WORKBOOK_SHEETS.payouts]], { report: wb![WORKBOOK_SHEETS.report] })}>Import {n(wbPayouts.months.length)} unit-months</Button>} />
+
+      <Step no={8} title="Tidy building states and cities" hint="One-off clean-up of buildings already in Property OS: writes each state and city one way ('W.P Kuala Lumpur' and 'WP' become 'Kuala Lumpur', 'KUALA LUMPUR' becomes 'Kuala Lumpur') and fills a blank one from the postcode or address. A state it does not recognise is left as typed. Needs no file; running it again changes nothing." run={runs.fix_locations}
+        action={<Button variant="primary" loading={runs.fix_locations?.busy} onClick={() => send('fix_locations', [[]])}>Tidy buildings</Button>} />
     </>
   );
 }
@@ -320,13 +337,17 @@ function RowList({ title, rows }: { title: string; rows: RowError[] }) {
 }
 
 function ResultView({ r }: { r: Result }) {
-  const TABLE: Record<string, string> = { properties: 'Buildings', owners: 'Owners', owner_contracts: 'Contracts', units: 'Units', unit_expenses: 'Monthly costs', guests: 'Guests', reservations: 'Bookings', tasks: 'Cleaning tasks', expenses: 'Expenses' };
+  const TABLE: Record<string, string> = { properties: 'Buildings', owners: 'Owners', owner_contracts: 'Contracts', units: 'Units', unit_expenses: 'Monthly costs', guests: 'Guests', reservations: 'Bookings', tasks: 'Cleaning tasks', expenses: 'Expenses',
+    cleaners: 'Cleaners', unit_utility_accounts: 'Utility accounts', guarantee_pool_months: 'Guarantee pool months', owner_adjustments: 'Owner credits and debts',
+    owner_statements: 'Statements', statement_lines: 'Statement lines', payouts: 'Payouts' };
   return (
     <div className="flex flex-col gap-2 py-3 px-3 rounded-control [border:1px_solid_var(--color-line-soft)]">
       <span className="text-[13px] font-semibold">{n(r.created)} added · {n(r.updated)} updated · {n(r.skipped)} not imported</span>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-[var(--color-ink-2)]">
         {Object.entries(r.tables).map(([t, v]) => <span key={t}>{TABLE[t] ?? t}: {n(v.created)} new, {n(v.updated)} updated</span>)}
         {r.stats && 'matched' in r.stats && <span>Matched {n(r.stats.matched)}, workbook only {n(r.stats.workbookOnly)}, HostPlatform only {n(r.stats.hostPlatformOnly)}</span>}
+        {r.stats && 'statesBefore' in r.stats && <span>States written {n(r.stats.statesBefore)} ways before, {n(r.stats.statesAfter)} after; cities {n(r.stats.citiesBefore)} before, {n(r.stats.citiesAfter)} after</span>}
+        {r.stats && 'statements' in r.stats && <span>{n(r.stats.statements)} statements for {n(r.stats.unitMonths)} unit-months, {n(r.stats.payouts)} paid payouts; {n(r.stats.creditsSettled)} credits marked as already paid in them</span>}
         {r.stats && 'matchedHostPlatform' in r.stats && <span>Amounts set on {n(r.stats.matchedHostPlatform)} HostPlatform bookings, {n(r.stats.createdFromWorkbook)} added from the workbook</span>}
       </div>
       {r.notes.map(t => <p key={t} className="m-0 text-[12.5px] text-[var(--color-ink-2)]">{t}</p>)}

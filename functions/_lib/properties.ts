@@ -2,7 +2,7 @@ import { type Env, one, all, run, audit, nowIso } from './db';
 import type { Session } from './auth';
 
 export const MASTER_ROLES = ['management', 'operations_manager', 'finance_admin'];
-export const PACKAGES = ['Package A', 'Package B', 'Package C'];
+export const PACKAGES = ['Package A', 'Package B', 'Package C', 'Package D'];
 export const TERMS = ['Long term', 'Short term'];
 export const SPLITS = ['Not set', 'Profit share', 'GRR — guaranteed rent'];
 

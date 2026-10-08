@@ -2,7 +2,8 @@ import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 
 /** POST /api/statements/generate { period: "2026-08" }
- *  Builds a provisional statement per owner from settled bookings and owner-charged expenses, with every line kept.
+ *  Builds a provisional statement per owner from settled bookings, owner-charged expenses and open owner adjustments
+ *  (credits and charges outside bookings, e.g. imported from the owner workbook), with every line kept.
  *  Only provisional statements are rebuilt: one that is finalised is left exactly as it is. A period already sent is refused. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -38,23 +39,37 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       FROM expenses e JOIN units u ON u.id = e.unit_id
       WHERE u.owner_id = ? AND e.charge_to = 'owner' AND e.incurred_on BETWEEN ? AND ? ORDER BY e.incurred_on`, o.id, start, end);
 
+    // Owner credits and charges not yet paid (owner_adjustments, e.g. bills the owner paid himself): every open one
+    // dated up to this period's end, unless an earlier statement already carries it. A late one rolls into the next statement.
+    const adjustments = await all<any>(env, `
+      SELECT a.id, a.unit_id, a.kind, a.amount, a.description, a.occurred_on, a.reference
+      FROM owner_adjustments a
+      WHERE a.owner_id = ? AND a.state = 'open' AND a.occurred_on <= ?
+        AND (a.statement_id IS NULL OR a.statement_id = ?) ORDER BY a.occurred_on, a.id`, o.id, end, existing?.id ?? '');
+
     const gross = stays.reduce((n, r) => n + Number(r.collected_revenue), 0);
     const expenses = costs.reduce((n, e) => n + Number(e.amount), 0);
-    if (gross === 0 && expenses === 0) continue;
+    const adjustTotal = adjustments.reduce((n, a) => n + Number(a.amount), 0);
+    if (gross === 0 && expenses === 0 && adjustments.length === 0) continue;
 
     // Integer sen throughout. The fee is rounded once, at the end.
     const fee = Math.round(gross * (Number(o.fee_pct) / 100));
-    const net = gross - fee - expenses;
+    const net = gross - fee - expenses + adjustTotal;
     const now = nowIso();
 
     const id = existing?.id ?? crypto.randomUUID();
     await run(env, `
-      INSERT INTO owner_statements (id, owner_id, period_start, period_end, state, gross_booking_value, management_fee, expenses_total, net_payout, currency, generated_at, created_at)
-      VALUES (?, ?, ?, ?, 'provisional', ?, ?, ?, ?, 'MYR', ?, ?)
+      INSERT INTO owner_statements (id, owner_id, period_start, period_end, state, gross_booking_value, management_fee, expenses_total, adjustments_total, net_payout, currency, generated_at, created_at)
+      VALUES (?, ?, ?, ?, 'provisional', ?, ?, ?, ?, ?, 'MYR', ?, ?)
       ON CONFLICT (owner_id, period_start, period_end) DO UPDATE SET
         gross_booking_value = excluded.gross_booking_value, management_fee = excluded.management_fee,
-        expenses_total = excluded.expenses_total, net_payout = excluded.net_payout, generated_at = excluded.generated_at
-      WHERE owner_statements.state = 'provisional'`, id, o.id, start, end, gross, fee, expenses, net, now, now);
+        expenses_total = excluded.expenses_total, adjustments_total = excluded.adjustments_total, net_payout = excluded.net_payout, generated_at = excluded.generated_at
+      WHERE owner_statements.state = 'provisional'`, id, o.id, start, end, gross, fee, expenses, adjustTotal, net, now, now);
+    // Rebuilding releases what this statement carried before; whatever is still due is attached again below.
+    await run(env, "UPDATE owner_adjustments SET statement_id = NULL WHERE statement_id = ? AND state = 'open'", id);
+    if (adjustments.length) {
+      await run(env, 'UPDATE owner_adjustments SET statement_id = ?, updated_at = ? WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', id, now, JSON.stringify(adjustments.map(a => a.id)));
+    }
 
     await run(env, 'DELETE FROM statement_lines WHERE statement_id = ?', id);
     let order = 0;
@@ -66,6 +81,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     for (const r of stays) await line('gross', null, `${r.property_name} ${r.unit_number} · ${r.guest_name} · ${r.check_in} to ${r.check_out}`, r.check_in, Number(r.collected_revenue), { reservation: r.id });
     await line('management_fee', null, `Management fee ${Number(o.fee_pct)}%`, end, -fee);
     for (const e of costs) await line('expense', e.category, e.description || e.category, e.incurred_on, -Number(e.amount), { unit: e.unit_id, expense: e.id, ref: e.reference });
+    for (const a of adjustments) await line('adjustment', a.kind, a.description, a.occurred_on, Number(a.amount), { unit: a.unit_id ?? undefined, ref: a.reference });
     count++;
   }
 
