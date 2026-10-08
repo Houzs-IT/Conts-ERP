@@ -9,6 +9,9 @@ export const OTA_CHANNELS = ['airbnb', 'booking_com', 'agoda'] as const;
 /** Until someone sets an uplift by hand, each OTA adds this share of the base rate. */
 const DEFAULT_UPLIFT: Record<string, number> = { airbnb: 0.12, booking_com: 0.18, agoda: 0.16 };
 
+/** The share of the base rate a channel adds while nobody has set its uplift by hand. */
+export const defaultUpliftShare = (channel: string) => DEFAULT_UPLIFT[channel] ?? 0;
+
 /** A channel's uplift in sen: the one saved for the unit, else the default share of its base rate. Direct has none. */
 export function upliftFor(channel: string, baseSen: number, saved: number | null | undefined): number {
   if (channel === 'web') return 0;
