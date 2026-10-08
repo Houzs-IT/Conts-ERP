@@ -21,7 +21,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const payout = await one<{ net: number }>(env, `SELECT COALESCE(SUM(net_payout), 0) AS net FROM owner_statements WHERE substr(period_start, 1, 7) = ?`, period);
   const units = await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM units WHERE is_listed = 1');
-  const available = (units?.n ?? 0) * 30;
+  const daysInMonth = new Date(Date.UTC(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0)).getUTCDate();
+  const available = (units?.n ?? 0) * daysInMonth;
   const nights = rev?.nights ?? 0;
   const collected = rev?.collected ?? 0;
 

@@ -1,6 +1,6 @@
 import type { BookingChannel, ReservationState } from '../../lib/types';
 
-export interface CalendarUnit { id: string; unitNumber: string; propertyName: string; channels?: BookingChannel[] }
+export interface CalendarUnit { id: string; unitNumber: string; propertyId?: string; propertyName: string; channels?: BookingChannel[] }
 
 export interface CalendarBlock {
   id: string; unitId: string; channel: BookingChannel; state: ReservationState;

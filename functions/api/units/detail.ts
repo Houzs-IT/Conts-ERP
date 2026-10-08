@@ -40,62 +40,72 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const money = session.manage;
   const month = new Date().toISOString().slice(0, 7);
 
-  const channels = await all<{ channel: string }>(env,
-    'SELECT channel FROM unit_channels WHERE unit_id = ? AND is_active = 1', unitId);
+  // Independent reads, so they go out together: each one is its own connection (db.ts).
+  const [channels, stays, tasks, maintenance, inventory, access, documents, activity, perf, rating, expenses] = await Promise.all([
+    all<{ channel: string }>(env,
+      'SELECT channel FROM unit_channels WHERE unit_id = ? AND is_active = 1', unitId),
 
-  const stays = await all<any>(env, `
-    SELECT r.id, r.channel, r.state, r.check_in, r.check_out, r.guests_count,
-           r.external_ref, r.gross_booking_value, COALESCE(g.full_name,'') AS guest_name
-    FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id
-    WHERE r.unit_id = ? AND r.state NOT IN ('cancelled')
-    ORDER BY r.check_in DESC LIMIT 12`, unitId);
+    // The stay in the unit now and the next few. The full history is paged by /api/units/stays.
+    all<any>(env, `
+      SELECT r.id, r.channel, r.state, r.check_in, r.check_out, r.guests_count,
+             r.external_ref, r.gross_booking_value, COALESCE(g.full_name,'') AS guest_name
+      FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id
+      WHERE r.unit_id = ? AND r.state NOT IN ('cancelled')
+        AND r.check_out >= to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')
+      ORDER BY r.check_in ASC LIMIT 6`, unitId),
 
-  const tasks = await all<any>(env, `
-    SELECT t.id, t.title, t.kind, t.state, t.due_at, t.completed_at,
-           COALESCE(a.full_name,'') AS assignee_name
-    FROM tasks t LEFT JOIN users a ON a.id = t.assignee_id
-    WHERE t.unit_id = ? ORDER BY COALESCE(t.due_at, t.created_at) DESC LIMIT 12`, unitId);
+    all<any>(env, `
+      SELECT t.id, t.title, t.kind, t.state, t.due_at, t.completed_at,
+             COALESCE(a.full_name,'') AS assignee_name
+      FROM tasks t LEFT JOIN users a ON a.id = t.assignee_id
+      WHERE t.unit_id = ? ORDER BY COALESCE(t.due_at, t.created_at) DESC LIMIT 12`, unitId),
 
-  const maintenance = await all<any>(env, `
-    SELECT id, title, detail, state, vendor_name, quoted_amount, final_amount,
-           owner_approval_required, blocks_unit, charge_to, reported_at, resolved_at
-    FROM maintenance_issues WHERE unit_id = ?
-    ORDER BY reported_at DESC LIMIT 12`, unitId);
+    all<any>(env, `
+      SELECT id, title, detail, state, vendor_name, quoted_amount, final_amount,
+             owner_approval_required, blocks_unit, charge_to, reported_at, resolved_at
+      FROM maintenance_issues WHERE unit_id = ?
+      ORDER BY reported_at DESC LIMIT 12`, unitId),
 
-  const inventory = await all<any>(env, `
-    SELECT id, name, quantity, condition, supplied_in_house, purchase_cost, installed_on, last_checked
-    FROM inventory_items WHERE unit_id = ? ORDER BY name`, unitId);
+    all<any>(env, `
+      SELECT id, name, quantity, condition, supplied_in_house, purchase_cost, installed_on, last_checked
+      FROM inventory_items WHERE unit_id = ? ORDER BY name`, unitId),
 
-  const access = await all<any>(env, `
-    SELECT id, kind, label, instruction, rotates_after_stay, updated_at
-    FROM access_credentials WHERE unit_id = ?`, unitId);
+    all<any>(env, `
+      SELECT id, kind, label, instruction, rotates_after_stay, updated_at
+      FROM access_credentials WHERE unit_id = ?`, unitId),
 
-  // Statements, invoices and payout advice carry money, so they follow the same rule as the P and L.
-  // An owner sees only what has been released to them.
-  const documents = await all<any>(env, `
-    SELECT id, kind, file_name, byte_size, created_at
-    FROM documents
-    WHERE unit_id = ?
-      ${money ? '' : "AND kind NOT IN ('statement','invoice','payout_advice')"}
-      ${session.role === 'owner' ? 'AND visible_to_owner = 1' : ''}
-    ORDER BY created_at DESC LIMIT 100`, unitId);
+    // Statements, invoices and payout advice carry money, so they follow the same rule as the P and L.
+    // An owner sees only what has been released to them.
+    all<any>(env, `
+      SELECT id, kind, file_name, byte_size, created_at
+      FROM documents
+      WHERE unit_id = ?
+        ${money ? '' : "AND kind NOT IN ('statement','invoice','payout_advice')"}
+        ${session.role === 'owner' ? 'AND visible_to_owner = 1' : ''}
+      ORDER BY created_at DESC LIMIT 100`, unitId),
 
-  const activity = await all<any>(env, `
-    SELECT actor_label, action, before_state, after_state, source, occurred_at
-    FROM audit_log WHERE entity_id = ? OR entity_table = 'units' AND entity_id = ?
-    ORDER BY occurred_at DESC LIMIT 20`, unitId, unitId);
+    all<any>(env, `
+      SELECT actor_label, action, before_state, after_state, source, occurred_at
+      FROM audit_log WHERE entity_id = ? OR entity_table = 'units' AND entity_id = ?
+      ORDER BY occurred_at DESC LIMIT 20`, unitId, unitId),
 
-  const perf = await one<any>(env, `
-    SELECT COALESCE(SUM(check_out::date - check_in::date),0) AS nights,
-           COALESCE(SUM(collected_revenue),0) AS revenue,
-           COALESCE(SUM(gross_booking_value),0) AS gross
-    FROM reservations
-    WHERE unit_id = ? AND state IN ('confirmed','checked_in','checked_out')
-      AND channel NOT IN ('maintenance_block','owner_stay')
-      AND substr(check_in, 1, 7) = ?`, unitId, month);
+    one<any>(env, `
+      SELECT COALESCE(SUM(check_out::date - check_in::date),0) AS nights,
+             COALESCE(SUM(collected_revenue),0) AS revenue,
+             COALESCE(SUM(gross_booking_value),0) AS gross
+      FROM reservations
+      WHERE unit_id = ? AND state IN ('confirmed','checked_in','checked_out')
+        AND channel NOT IN ('maintenance_block','owner_stay')
+        AND substr(check_in, 1, 7) = ?`, unitId, month),
 
-  const rating = await one<{ avg: number | null; n: number }>(env,
-    'SELECT AVG(rating) AS avg, COUNT(*) AS n FROM reviews WHERE unit_id = ?', unitId);
+    one<{ avg: number | null; n: number }>(env,
+      'SELECT AVG(rating) AS avg, COUNT(*) AS n FROM reviews WHERE unit_id = ?', unitId),
+
+    money ? all<{ category: string; total: number }>(env, `
+      SELECT category, SUM(amount) AS total FROM expenses
+      WHERE unit_id = ? AND substr(incurred_on, 1, 7) = ?
+      GROUP BY category`, unitId, month) : Promise.resolve([]),
+  ]);
 
   const nights = perf?.nights ?? 0;
   const revenue = perf?.revenue ?? 0;
@@ -104,10 +114,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // The gross-to-net chain, only for finance-permitted roles.
   let pnl: { label: string; amount: number; type: string }[] | undefined;
   if (money) {
-    const expenses = await all<{ category: string; total: number }>(env, `
-      SELECT category, SUM(amount) AS total FROM expenses
-      WHERE unit_id = ? AND substr(incurred_on, 1, 7) = ?
-      GROUP BY category`, unitId, month);
     const feePct = unit.management_fee_pct ?? 25;
     const fee = Math.round(revenue * (feePct / 100));
     const expTotal = expenses.reduce((s, e) => s + e.total, 0);
