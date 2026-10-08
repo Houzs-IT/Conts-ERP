@@ -2,8 +2,9 @@ import { type Env, one, run, json, fail, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { invalidUnit, saveExpenses, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
 
-/** PATCH /api/units/:id — the Properties screen's Save. Sends the whole unit; only what is present is changed.
- *  Owner name, ID number and bank details belong to the owner, so they change for every unit that owner has. */
+/** PATCH /api/units/:id — the Units screen's Save. Sends the whole unit; only what is present is changed.
+ *  Owner name, ID number and bank details belong to the owner, so they change for every unit that owner has.
+ *  A unit moved to another building takes its sub-units with it; a sub-unit cannot leave its parent's building. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -15,8 +16,15 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const bad = invalidUnit(b);
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
 
-  const cur = await one<any>(env, 'SELECT id, property_id, owner_id, unit_number, unit_code FROM units WHERE id = ?', id);
+  const cur = await one<any>(env, 'SELECT id, property_id, parent_unit_id, owner_id, unit_number, unit_code FROM units WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
+
+  const target = typeof b.buildingId === 'string' && b.buildingId && b.buildingId !== cur.property_id ? b.buildingId : null;
+  if (target) {
+    if (cur.parent_unit_id) return fail('VALIDATION', "A sub-unit stays in its parent unit's building. Move the parent unit instead.", 422, { buildingId: 'Move the parent unit instead.' });
+    if (!(await one(env, 'SELECT 1 AS x FROM properties WHERE id = ?', target))) return fail('NOT_FOUND', 'That building does not exist.', 404, { buildingId: 'Pick a building.' });
+  }
+  const propertyId: string = target ?? cur.property_id;
 
   const now = nowIso();
   if (typeof (b as { ownerId?: string }).ownerId === 'string') {
@@ -31,20 +39,24 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   let number = cur.unit_number as string;
   const code = typeof b.unitCode === 'string' ? b.unitCode.trim() : undefined;
   // A unit still carrying a placeholder number takes its code as its number; an established number is never renamed here.
-  if (code && number.startsWith('NEW-')) {
-    if (await one(env, 'SELECT 1 AS x FROM units WHERE property_id = ? AND lower(unit_number) = lower(?) AND id != ?', cur.property_id, code, id)) {
-      return fail('CONFLICT', 'That building already has a unit with this code.', 409, { unitCode: 'This code is already used in the building.' });
-    }
-    number = code;
+  if (code && number.startsWith('NEW-')) number = code;
+  if ((number !== cur.unit_number || target) && await one(env, 'SELECT 1 AS x FROM units WHERE property_id = ? AND lower(unit_number) = lower(?) AND id != ?', propertyId, number, id)) {
+    return fail('CONFLICT', 'That building already has a unit with this code.', 409, { unitCode: 'This code is already used in the building.' });
+  }
+  if (target && await one(env, `
+    SELECT 1 AS x FROM units s JOIN units t ON t.property_id = ? AND lower(t.unit_number) = lower(s.unit_number) AND t.id != s.id
+    WHERE s.parent_unit_id = ?`, propertyId, id)) {
+    return fail('CONFLICT', 'A sub-unit of this unit has the same code as a unit already in that building.', 409, { buildingId: 'A sub-unit code is already used there.' });
   }
 
   await run(env, `
-    UPDATE units SET unit_number = ?, unit_code = COALESCE(?, unit_code), listing_name = COALESCE(?, listing_name), address = COALESCE(?, address),
+    UPDATE units SET property_id = ?, unit_number = ?, unit_code = COALESCE(?, unit_code), listing_name = COALESCE(?, listing_name), address = COALESCE(?, address),
                      package = COALESCE(?, package), term = COALESCE(?, term), split_kind = COALESCE(?, split_kind), split_value = ?,
-                     guarantee_period = COALESCE(?, guarantee_period), updated_at = ?
+                     guarantee_period = COALESCE(?, guarantee_period), bedrooms = COALESCE(?, bedrooms), updated_at = ?
     WHERE id = ?`,
-    number, code ?? null, b.listingName ?? null, b.address ?? null, b.pkg ?? null, b.term ?? null, b.split ?? null,
-    b.splitValue === undefined ? null : b.splitValue, b.guaranteePeriod ?? null, now, id);
+    propertyId, number, code ?? null, b.listingName ?? null, b.address ?? null, b.pkg ?? null, b.term ?? null, b.split ?? null,
+    b.splitValue === undefined ? null : b.splitValue, b.guaranteePeriod ?? null, b.bedrooms ?? null, now, id);
+  if (target) await run(env, 'UPDATE units SET property_id = ?, updated_at = ? WHERE parent_unit_id = ?', propertyId, now, id);
 
   if (b.ownerName !== undefined || b.ic !== undefined || b.bankName !== undefined || b.bankAccount !== undefined || b.accountHolder !== undefined) {
     await run(env, `
@@ -59,6 +71,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b.contract) await saveContract(env, id, cur.owner_id, b.contract);
 
   // Banking details are recorded as changed, never copied into the audit trail.
-  await auditUnit(env, session, 'unit.update', id, { fields: Object.keys(b).filter(k => !['bankAccount', 'ic', 'accountHolder'].includes(k)), ownerDetailsChanged: b.bankAccount !== undefined || b.ic !== undefined });
+  await auditUnit(env, session, 'unit.update', id, {
+    fields: Object.keys(b).filter(k => !['bankAccount', 'ic', 'accountHolder'].includes(k)), ownerDetailsChanged: b.bankAccount !== undefined || b.ic !== undefined,
+    ...(target ? { movedFrom: cur.property_id, movedTo: target } : {}),
+  });
   return json({ ok: true });
 };

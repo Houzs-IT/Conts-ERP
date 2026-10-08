@@ -29,10 +29,9 @@ export const NAV: NavGroup[] = [
       { key: 'inspections', label: 'Inspections', path: '/operations/inspections', designed: true },
     ] },
     { key: 'properties', label: 'Properties', icon: 'building-2', children: [
-      { key: 'propertyList', label: 'Properties', path: '/properties', designed: true },
+      // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).
       { key: 'units', label: 'Units', path: '/properties/units', designed: true },
       { key: 'inventory', label: 'Inventory', path: '/properties/inventory', designed: true },
-      { key: 'access', label: 'Access and keys', path: '/properties/access', designed: true },
     ] },
   ] },
   // Service cases and Projects are groups of their own, between Operations and Supply chain (owner, 8 Oct).
@@ -187,5 +186,7 @@ export function findNav(path: string): { group: string; item: string; label: str
     if (it.path === path) return { group: g.label, item: it.label, label: it.label };
     for (const c of it.children ?? []) if (c.path === path) return { group: g.label, item: it.label, label: c.label };
   }
-  return null;
+  // A record address (/properties/units/:id) reads as the screen it belongs to.
+  const parent = path.replace(/\/[^/]+$/, '');
+  return parent && parent !== path ? findNav(parent) : null;
 }

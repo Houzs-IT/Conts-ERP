@@ -28,8 +28,7 @@ const InspectionsPage = lazy(() => import('./pages/InspectionsPage'));
 import SupplyChainEngine from './components/SupplyChainEngine';
 import { ENGINE_PATH } from './lib/scmEngine';
 import { useApi } from './lib/useApi';
-const PropertiesPage = lazy(() => import('./pages/PropertiesPage'));
-const UnitRecordPage = lazy(() => import('./pages/UnitRecordPage'));
+const UnitsPage = lazy(() => import('./pages/UnitsPage'));
 const InventoryPage = lazy(() => import('./pages/InventoryPage'));
 const ProductsPage = lazy(() => import('./pages/ProductsPage'));
 const SuppliersPage = lazy(() => import('./pages/SuppliersPage'));
@@ -75,7 +74,6 @@ const AirbnbReturnPage = lazy(() => import('./pages/AirbnbReturnPage'));
 const ConsignmentNotesPage = lazy(() => import('./pages/ConsignmentNotesPage'));
 const StockTransfersPage = lazy(() => import('./pages/StockTransfersPage'));
 const StockTakesPage = lazy(() => import('./pages/StockTakesPage'));
-const AccessPage = lazy(() => import('./pages/AccessPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
 const StatementsPage = lazy(() => import('./pages/StatementsPage'));
@@ -129,9 +127,17 @@ function NoAccess() {
   );
 }
 
-function UnitRecordRoute() {
+function UnitsRoute() {
   const { id = '' } = useParams();
-  return <UnitRecordPage unitId={decodeURIComponent(id)} />;
+  return <UnitsPage unitId={decodeURIComponent(id)} />;
+}
+
+/** Properties and Access and keys became tabs of Units. Old links keep working: `?unit=` opens that unit. */
+function ToUnits({ tab }: { tab?: string }) {
+  const q = new URLSearchParams(useLocation().search);
+  const unit = q.get('unit') ?? q.get('unitId');
+  const t = tab ?? q.get('tab');
+  return <Navigate replace to={`/properties/units${unit ? `/${encodeURIComponent(unit)}` : ''}${t ? `?tab=${encodeURIComponent(t)}` : ''}`} />;
 }
 
 function OwnerProfileRoute() {
@@ -177,11 +183,11 @@ function Routed() {
         <Route path="/operations/maintenance" element={<MaintenancePage />} />
         <Route path="/operations/tasks" element={<TasksPage />} />
         <Route path="/operations/inspections" element={<InspectionsPage />} />
-        <Route path="/properties" element={<PropertiesPage />} />
-        <Route path="/properties/units" element={<UnitRecordPage unitId="" />} />
-        <Route path="/properties/units/:id" element={<UnitRecordRoute />} />
+        <Route path="/properties" element={<ToUnits />} />
+        <Route path="/properties/units" element={<UnitsPage unitId="" />} />
+        <Route path="/properties/units/:id" element={<UnitsRoute />} />
         <Route path="/properties/inventory" element={<InventoryPage />} />
-        <Route path="/properties/access" element={<AccessPage />} />
+        <Route path="/properties/access" element={<ToUnits tab="access" />} />
         <Route path="/procurement/products" element={<ProductsPage />} />
         <Route path="/procurement/suppliers" element={<SuppliersPage />} />
         <Route path="/procurement/product-models" element={<ProductModelsPage />} />

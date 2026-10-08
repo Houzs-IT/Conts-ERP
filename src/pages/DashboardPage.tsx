@@ -309,7 +309,7 @@ export default function DashboardPage() {
       <PageHeader
         title="Dashboard"
         sub={`${period} to date · Asia/Kuala Lumpur${lastUpdated ? ` · last updated ${lastUpdated}` : ''}`}
-        right={<Button variant="primary" size="sm" onClick={() => go('#/properties/new')}>Add property</Button>}
+        right={<Button variant="primary" size="sm" onClick={() => go('#/properties/units')}>Add property</Button>}
       />
 
       {failure && <StaleBanner message={`Showing the last figures we have. ${failure}`} onRetry={() => { kpi.reload(); trend.reload(); today.reload(); exc.reload(); portfolio.reload(); }} />}
