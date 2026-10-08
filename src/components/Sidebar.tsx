@@ -1,17 +1,35 @@
-import { type CSSProperties, useEffect, useState } from 'react';
+import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import { color, shell, radius, motion, text } from '../theme';
-import { navFor, NAV, type BadgeKey } from '../lib/navigation';
+import { navFor, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type NavGroup, type Workspace } from '../lib/navigation';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
+import { useNavCounts } from '../lib/navBadges';
+import { ROLE_LABEL } from '../lib/vocabulary';
 import Icon, { toPascal } from './Icon';
 import { Logo } from './Logo';
 
 interface Props { path: string; navigate: (p: string) => void; open: boolean; onToggle: () => void }
 
-function parentOf(path: string) {
-  for (const g of NAV) for (const it of g.items)
+/** The chosen workspace survives a reload. Storage can throw (private mode), so every access is guarded. */
+const WS_KEY = 'conts.shell.workspace';
+const readWs = (): Workspace => { try { return localStorage.getItem(WS_KEY) === 'supply' ? 'supply' : 'rental'; } catch { return 'rental'; } };
+const saveWs = (w: Workspace) => { try { localStorage.setItem(WS_KEY, w); } catch { /* not kept */ } };
+
+function parentOf(groups: NavGroup[], path: string) {
+  for (const g of groups) for (const it of g.items)
     if (it.children?.some(c => c.path === path)) return it.key;
   return null;
+}
+
+/** The item a path belongs to: exact match, or the deepest menu path it sits under (records, sub-pages). */
+function activeKey(groups: NavGroup[], path: string) {
+  let best: { key: string; len: number } | null = null;
+  for (const g of groups) for (const it of g.items) {
+    if (!it.path) continue;
+    if (it.path === path) return it.key;
+    if (it.path !== '/' && path.startsWith(it.path + '/') && (!best || it.path.length > best.len)) best = { key: it.key, len: it.path.length };
+  }
+  return best?.key ?? null;
 }
 
 export default function Sidebar({ path, navigate, open, onToggle }: Props) {
@@ -19,14 +37,25 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [profileOpen, setProfileOpen] = useState(false);
-  const activeParent = parentOf(path);
   const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
-  const groups = navFor(user!.role, !!engine.data?.enabled, user!.access);
-  // Refetched on every page change so a count drops as soon as the work is done.
-  const counts = useApi<Record<BadgeKey, number>>('/nav/badges');
-  const reloadCounts = counts.reload;
-  useEffect(() => { reloadCounts(); }, [path]); // eslint-disable-line react-hooks/exhaustive-deps
-  const countOf = (k?: BadgeKey) => (k && counts.data?.[k]) || 0;
+  const all = useMemo(() => navFor(user!.role, !!engine.data?.enabled, user!.access), [user, engine.data?.enabled]);
+  const hasSupply = all.some(g => g.workspace === 'supply');
+
+  // Opening a supply chain address (a link, the back button) shows its workspace; otherwise the last choice stands.
+  const [ws, setWs] = useState<Workspace>(() => workspaceOf(path) ?? readWs());
+  useEffect(() => { const w = workspaceOf(path); if (w) { setWs(w); saveWs(w); } }, [path]);
+  const pick = (w: Workspace) => {
+    setWs(w); saveWs(w);
+    const first = all.find(g => g.workspace === w)?.items[0];
+    const target = first?.path ?? first?.children?.[0]?.path;
+    if (target && workspaceOf(path) !== w) navigate(target);
+  };
+  const groups = all.filter(g => g.workspace === (hasSupply ? ws : 'rental'));
+  const activeParent = parentOf(groups, path);
+  const selected = activeKey(groups, path);
+
+  const counts = useNavCounts(path);
+  const countOf = (k?: BadgeKey) => (k && counts?.[k]) || 0;
 
   const badge = (on: boolean): CSSProperties => ({
     fontSize: text.micro, fontWeight: 600, padding: '1px 6px', borderRadius: radius.pill, flex: 'none',
@@ -35,28 +64,54 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   });
 
   return (
-    <div style={{
+    <div data-print-hide style={{
       width: open ? shell.sidebar : shell.sidebarCollapsed, flex: 'none', height: '100vh',
       display: 'flex', flexDirection: 'column', background: color.black, color: '#FFFFFF',
       transition: `width ${motion.standard} ${motion.ease}`,
     }}>
-      <div style={{ padding: '18px 16px', display: 'flex', alignItems: 'center', gap: 11, borderBottom: `1px solid ${color.charcoal}` }}>
-{open
-          ? <div style={{ flex: 1, minWidth: 0 }}><Logo variant="full" size="sm" onDark /></div>
-          : <Logo variant="mark" size="sm" onDark />}
-        <button onClick={onToggle} aria-label={open ? 'Collapse navigation' : 'Expand navigation'}
-          style={{ width: 26, height: 26, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.sm, color: color.dim, background: 'none', border: 'none', cursor: 'pointer' }}>
-          <Icon name={open ? 'ChevronsLeft' : 'ChevronsRight'} size="sm" />
+      {/* Expanded: logo then the collapse control on the right. Collapsed: the mark, and the expand control
+          centred under it, both inside the 68px rail (it used to sit outside the rail and be clipped). */}
+      <div style={{
+        padding: open ? '18px 12px 18px 16px' : '14px 0 10px', display: 'flex', flexDirection: open ? 'row' : 'column',
+        alignItems: 'center', gap: open ? 8 : 10, borderBottom: `1px solid ${color.charcoal}`,
+      }}>
+        <div style={{ flex: open ? 1 : 'none', minWidth: 0, overflow: 'hidden' }}>
+          {open ? <Logo variant="full" size="sm" onDark /> : <Logo variant="mark" size="sm" onDark />}
+        </div>
+        <button onClick={onToggle} aria-label={open ? 'Collapse navigation' : 'Expand navigation'} title={open ? 'Collapse navigation' : 'Expand navigation'}
+          style={{ width: 30, height: 30, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.sm, color: color.onDark, background: open ? 'none' : 'rgba(255,255,255,0.06)', border: 'none', cursor: 'pointer' }}>
+          <Icon name={open ? 'PanelLeftClose' : 'PanelLeftOpen'} size="sm" />
         </button>
       </div>
 
+      {hasSupply && (
+        open ? (
+          <div role="tablist" aria-label="Workspace" style={{ margin: '12px 10px 0', padding: 3, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3, borderRadius: radius.control, background: color.charcoal }}>
+            {(['rental', 'supply'] as Workspace[]).map(w => (
+              <button key={w} role="tab" aria-selected={ws === w} onClick={() => pick(w)}
+                style={{ height: 28, borderRadius: 6, border: 'none', cursor: 'pointer', font: 'inherit', fontSize: text.meta, fontWeight: 500,
+                  background: ws === w ? color.black : 'transparent', color: ws === w ? '#FFFFFF' : color.dim,
+                  boxShadow: ws === w ? `inset 0 0 0 1px rgba(200,164,106,0.35)` : 'none' }}>
+                {WORKSPACE_LABEL[w]}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <button onClick={() => pick(ws === 'rental' ? 'supply' : 'rental')} title={`Switch to ${WORKSPACE_LABEL[ws === 'rental' ? 'supply' : 'rental']}`}
+            aria-label={`Workspace: ${WORKSPACE_LABEL[ws]}. Switch to ${WORKSPACE_LABEL[ws === 'rental' ? 'supply' : 'rental']}`}
+            style={{ margin: '10px auto 0', width: 40, height: 28, display: 'grid', placeItems: 'center', borderRadius: radius.sm, border: 'none', cursor: 'pointer', background: color.charcoal, color: color.gold }}>
+            <Icon name={ws === 'rental' ? 'House' : 'Boxes'} size="sm" />
+          </button>
+        )
+      )}
+
       {/* Own scroller: the sidebar never rides the page scroll. */}
-      <nav style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin', padding: '12px 10px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {groups.map(g => {
+      <nav aria-label={hasSupply ? WORKSPACE_LABEL[ws] : 'Main'} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin', padding: open ? '12px 10px 20px' : '10px 10px 20px', display: 'flex', flexDirection: 'column', gap: open ? 14 : 6 }}>
+        {groups.map((g, gi) => {
           const sectionCollapsed = open && !!collapsedSections[g.label];
           return (
           <div key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {open && (
+            {open ? (
               <button
                 onClick={() => setCollapsedSections(s => ({ ...s, [g.label]: !s[g.label] }))}
                 aria-expanded={!sectionCollapsed}
@@ -71,23 +126,30 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                   <Icon name="ChevronDown" size="sm" />
                 </span>
               </button>
+            ) : gi > 0 && (
+              // The rail keeps the group boundaries as hairlines.
+              <div aria-hidden style={{ height: 1, margin: '4px 8px 6px', background: 'rgba(255,255,255,0.1)' }} />
             )}
             {!sectionCollapsed && g.items.map(it => {
               const isOpen = open && (expanded[it.key] ?? activeParent === it.key);
-              const selfActive = it.path === path || (!!it.children && activeParent === it.key && !isOpen);
+              const selfActive = it.key === selected || (!!it.children && activeParent === it.key && !isOpen);
+              const n = countOf(it.badge) || (it.children ?? []).reduce((s, c) => s + countOf(c.badge), 0);
               return (
                 <div key={it.key} style={{ display: 'flex', flexDirection: 'column' }}>
                   <button
-                    title={it.label}
+                    title={open ? undefined : (n > 0 ? `${it.label} (${n})` : it.label)}
+                    aria-label={open ? undefined : it.label}
+                    aria-current={selfActive && !it.children ? 'page' : undefined}
                     onClick={() => {
                       if (it.children) {
+                        if (!open) { navigate(it.children[0].path); return; }
                         const willOpen = !(expanded[it.key] ?? activeParent === it.key);
                         setExpanded(e => ({ ...e, [it.key]: willOpen }));
                         if (willOpen && activeParent !== it.key) navigate(it.children[0].path);
                       } else if (it.path) navigate(it.path);
                     }}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 10, height: shell.navItem,
+                      position: 'relative', display: 'flex', alignItems: 'center', gap: 10, height: shell.navItem,
                       padding: open ? '0 9px' : 0, justifyContent: open ? 'flex-start' : 'center',
                       borderRadius: radius.control, cursor: 'pointer', border: 'none', width: '100%',
                       font: 'inherit', textAlign: 'left',
@@ -98,8 +160,10 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                     }}
                   >
                     <Icon name={toPascal(it.icon)} size="nav" />
-                    {open && <span style={{ flex: 1, minWidth: 0, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.label}</span>}
-                    {open && countOf(it.badge) > 0 && <span style={badge(selfActive)}>{countOf(it.badge)}</span>}
+                    {open && <span style={{ flex: 1, minWidth: 0, fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.label}</span>}
+                    {open && !it.children && n > 0 && <span style={badge(selfActive)}>{n.toLocaleString('en-MY')}</span>}
+                    {/* The rail shows a dot where the full menu shows a count. */}
+                    {!open && n > 0 && <span aria-hidden style={{ position: 'absolute', top: 6, right: 10, width: 7, height: 7, borderRadius: 999, background: color.gold, boxShadow: `0 0 0 2px ${color.black}` }} />}
                     {open && it.children && (
                       <span style={{ display: 'flex', opacity: 0.6, transition: `transform 180ms ${motion.ease}`, transform: `rotate(${isOpen ? 90 : 0}deg)` }}>
                         <Icon name="ChevronRight" size="sm" />
@@ -112,7 +176,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                       {it.children.map(c => {
                         const on = c.path === path;
                         return (
-                          <button key={c.key} onClick={() => navigate(c.path)}
+                          <button key={c.key} onClick={() => navigate(c.path)} aria-current={on ? 'page' : undefined}
                             style={{
                               display: 'flex', alignItems: 'center', gap: 8, height: shell.navItemL3,
                               padding: '0 9px', borderRadius: 7, cursor: 'pointer', border: 'none', width: '100%',
@@ -121,7 +185,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                               background: on ? 'rgba(200,164,106,0.14)' : 'transparent',
                               fontWeight: on ? 500 : 400,
                             }}>
-                            <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</span>
+                            <span style={{ flex: 1, minWidth: 0, fontSize: text.meta, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</span>
                             {countOf(c.badge) > 0 && <span style={badge(on)}>{countOf(c.badge)}</span>}
                           </button>
                         );
@@ -138,39 +202,34 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
 
       <div style={{ padding: 10, borderTop: `1px solid ${color.charcoal}`, position: 'relative' }}>
         {profileOpen && (
-          <div style={{ position: 'absolute', left: 10, right: 10, bottom: 62, zIndex: 30, background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: '0 12px 32px rgba(21,21,21,0.24)', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', left: 10, bottom: 62, width: Math.max(224, open ? shell.sidebar - 20 : 224), zIndex: 30, background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: '0 12px 32px rgba(21,21,21,0.24)', overflow: 'hidden' }}>
             <div style={{ padding: '14px 16px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <span style={{ fontSize: text.body, fontWeight: 600, color: color.ink }}>{user!.fullName}</span>
+              <span style={{ fontSize: text.copy, fontWeight: 600, color: color.ink }}>{user!.fullName}</span>
               <span style={{ fontSize: text.small, color: color.textMuted }}>{user!.email}</span>
             </div>
             {[
-              // BUTTONS §2: each routes to its destination. /profile and
-              // /profile/notifications are the spec routes (rendered by the
-              // catch-all NotDesignedPage until built); Security and sessions
-              // has no dedicated page, so it lands on the Settings → Security
-              // section per the task's fallback ruling.
-              { label: 'Personal profile', icon: 'User', go: () => { setProfileOpen(false); navigate('/profile'); } },
-              { label: 'Notification settings', icon: 'Bell', go: () => { setProfileOpen(false); navigate('/profile/notifications'); } },
+              // BUTTONS §2: Personal profile and Notification settings have no screen yet, so they are not offered;
+              // Security and sessions is the Settings > Security section.
               { label: 'Security and sessions', icon: 'ShieldCheck', go: () => { setProfileOpen(false); navigate('/system/settings'); } },
               { label: 'Log out', icon: 'LogOut', danger: true, go: logout },
             ].map(m => (
               <button key={m.label} onClick={m.go}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', width: '100%', border: 'none', borderBottom: `1px solid ${color.borderMuted}`, background: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left', color: m.danger ? '#A8352F' : color.ink }}>
                 <Icon name={m.icon} size="sm" />
-                <span style={{ fontSize: 13 }}>{m.label}</span>
+                <span style={{ fontSize: text.copy }}>{m.label}</span>
               </button>
             ))}
           </div>
         )}
-        <button onClick={() => setProfileOpen(v => !v)}
+        <button onClick={() => setProfileOpen(v => !v)} aria-label={open ? undefined : `${user!.fullName}, account menu`}
           style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8, borderRadius: radius.control, cursor: 'pointer', width: '100%', border: 'none', font: 'inherit', textAlign: 'left', justifyContent: open ? 'flex-start' : 'center', background: profileOpen ? 'rgba(255,255,255,0.06)' : 'transparent', color: '#FFFFFF' }}>
           <span style={{ width: 30, height: 30, flex: 'none', borderRadius: radius.pill, background: color.charcoal, color: color.gold, display: 'grid', placeItems: 'center', fontSize: text.micro, fontWeight: 600 }}>
             {user!.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')}
           </span>
           {open && (
             <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user!.fullName}</span>
-              <span style={{ fontSize: text.micro, color: color.dim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user!.role.replace(/_/g, ' ')}</span>
+              <span style={{ fontSize: text.copy, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user!.fullName}</span>
+              <span style={{ fontSize: text.micro, color: color.dim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ROLE_LABEL[user!.role] ?? user!.role}</span>
             </span>
           )}
           {open && <Icon name="ChevronUp" size="sm" color={color.dim} />}

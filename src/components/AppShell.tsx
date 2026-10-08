@@ -79,7 +79,7 @@ export default function AppShell({
   const drawerNavigate = (p: string) => { navigate(p); setDrawerOpen(false); };
 
   return (
-    <div style={{ flex: 1, minWidth: 0, height: '100vh', display: 'flex', overflow: 'hidden' }}>
+    <div data-print-root style={{ flex: 1, minWidth: 0, height: '100vh', display: 'flex', overflow: 'hidden' }}>
       {isNarrow ? (
         <>
           {/* Scrim behind the open drawer. */}
@@ -113,11 +113,11 @@ export default function AppShell({
         <Sidebar path={path} navigate={navigate} open={navOpen} onToggle={toggleNav} />
       )}
 
-      <div style={{ flex: 1, minWidth: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div data-print-root style={{ flex: 1, minWidth: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {isNarrow && (
           // One row on phones: menu, logo, then search / bell / page action. The desk top bar's crumbs are
           // dropped here because each page's own title sits right below.
-          <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', background: '#FFFFFF', borderBottom: `1px solid ${color.border}` }}>
+          <div data-print-hide style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', background: '#FFFFFF', borderBottom: `1px solid ${color.border}` }}>
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
