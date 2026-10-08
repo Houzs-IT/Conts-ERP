@@ -43,7 +43,7 @@ export const TASK: Entry<TaskState> = {
 export const STATEMENT: Entry<StatementState> = {
   provisional: { label: 'Provisional', tone: 'neutral' },
   finalised:   { label: 'Finalised',   tone: 'info' },
-  sent:        { label: 'Not sent',    tone: 'warning' },
+  sent:        { label: 'Sent',        tone: 'warning' },
   paid:        { label: 'Paid',        tone: 'success' },
 };
 

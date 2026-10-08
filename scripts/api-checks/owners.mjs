@@ -23,7 +23,7 @@ r = await call('PATCH', `/api/contracts/${cid}`, { renewsOn: '2020-01-01' }); ch
 r = await call('GET', '/api/owners'); const mine = r.json.data.find(o => o.id === oid); check('owner shows unit under GRR + portal invited', mine.portalInvited && mine.units.length === 1 && mine.units[0].model === 'grr' && mine.units[0].grrAmount === 350000 && mine.contract, JSON.stringify(mine));
 r = await call('POST', `/api/owners/${WONG}/notify`, { unitLabel: 'Arcoris #B-08-11', reason: 'Plumbing', datesBlocked: '14 - 22 Sep', revenueAtRisk: 500000, expectedReturn: '22 Sep' }); check('notify owner', r.status === 200 && r.json.delivery, r.text);
 // statements + owner portal
-r = await call('POST', '/api/statements/generate', { period: '2026-09' }); r = await call('GET', '/api/statements?pageSize=500'); const ids = r.json.data.filter(s => s.period === '2026-09').map(s => s.id);
+r = await call('POST', '/api/statements/generate', { period: '2026-09' }); r = await call('GET', '/api/statements?period=all&pageSize=500'); const ids = r.json.data.filter(s => s.period === '2026-09').map(s => s.id);
 await call('POST', '/api/statements/finalise', { statementIds: ids }); await call('POST', '/api/statements/send', { statementIds: ids });
 r = await call('POST', `/api/owners/${LIM}/invite`, {}); const limUser = r.json?.userId; check('invite Lim', !!limUser, r.text);
 const lim = { userId: limUser, email: 'limck@example.com', role: 'owner', fullName: 'Lim Chee Keong' };

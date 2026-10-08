@@ -16,15 +16,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     SELECT c.*, o.display_name,
            (SELECT string_agg(p.name || ' ' || u.unit_number, ', ')
             FROM units u JOIN properties p ON p.id = u.property_id
-            WHERE u.contract_id = c.id OR (u.owner_id = c.owner_id AND u.contract_id IS NULL)) AS units_label
+            WHERE u.contract_id = c.id OR (u.owner_id = c.owner_id AND u.contract_id IS NULL)) AS units_label,
+           (SELECT COUNT(*) FROM units u WHERE u.contract_id = c.id OR (u.owner_id = c.owner_id AND u.contract_id IS NULL)) AS unit_count
     FROM owner_contracts c JOIN owners o ON o.id = c.owner_id
     WHERE 1 = 1 ${ownerScoped ? 'AND o.user_id = ?' : ''}
-    ORDER BY c.renews_on NULLS LAST, o.display_name`, ...(ownerScoped ? [session.userId] : []));
+    ORDER BY COALESCE(c.ends_on, c.renews_on) NULLS LAST, o.display_name`, ...(ownerScoped ? [session.userId] : []));
 
   return json({
     generatedAt: nowIso(),
     data: rows.map(r => ({
-      id: r.id, ownerName: r.display_name, unitsLabel: r.units_label ?? '—', model: r.model,
+      id: r.id, ownerId: r.owner_id, ownerName: r.display_name, unitsLabel: r.units_label ?? '—', unitCount: Number(r.unit_count), model: r.model,
       managementFeePct: Number(r.management_fee_pct), grrAmount: Number(r.grr_amount),
       startsOn: r.starts_on, renewsOn: r.renews_on, endsOn: r.ends_on, offerLetter: r.offer_letter,
     })),

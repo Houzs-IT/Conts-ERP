@@ -5,9 +5,10 @@ import { monthsBack, daysIn, todayMyt } from '../../_lib/ops';
 const RANGES = ['3m', '12m', 'ytd'];
 const COUNTED = `r.state IN ('confirmed','checked_in','checked_out') AND r.channel NOT IN ('maintenance_block','owner_stay')`;
 
-type Delta = { value: number; unit: 'percent' | 'points'; direction: 'up' | 'down' | 'flat'; tone: 'success' | 'warning' | 'neutral' };
+type Delta = { value: number; unit: 'percent' | 'points'; direction: 'up' | 'down' | 'flat'; tone: 'success' | 'warning' | 'neutral'; note?: string };
+const NO_EARLIER = 'no figures for the earlier window to compare with';
 const pctDelta = (now: number, before: number): Delta => {
-  if (before <= 0) return { value: 0, unit: 'percent', direction: 'flat', tone: 'neutral' };
+  if (before <= 0) return { value: 0, unit: 'percent', direction: 'flat', tone: 'neutral', note: NO_EARLIER };
   const v = Number((((now - before) / before) * 100).toFixed(1));
   return { value: Math.abs(v), unit: 'percent', direction: v > 0 ? 'up' : v < 0 ? 'down' : 'flat', tone: v > 0 ? 'success' : v < 0 ? 'warning' : 'neutral' };
 };
@@ -59,17 +60,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   });
 
   const now = summarise(periods), prev = summarise(before);
+  const prevEmpty = prev.nights === 0 && prev.revenue === 0;
 
   const fees = (await all<any>(env, `SELECT COALESCE(SUM(management_fee), 0) AS fee, COALESCE(SUM(net_payout), 0) AS net FROM owner_statements WHERE substr(period_start, 1, 7) BETWEEN ? AND ?`, periods[0], periods[periods.length - 1]))[0];
 
   const days = periods.reduce((n, p) => n + daysIn(p), 0);
   const unitRows = await all<any>(env, `
-    SELECT u.id, u.unit_number, p.name AS property_name,
+    SELECT u.id, u.unit_number, u.property_id, p.name AS property_name,
            COALESCE(SUM(r.collected_revenue), 0) AS revenue, COALESCE(SUM(r.check_out::date - r.check_in::date), 0) AS nights,
            (SELECT ROUND(AVG(v.rating)::numeric, 2) FROM reviews v WHERE v.unit_id = u.id) AS rating
     FROM units u JOIN properties p ON p.id = u.property_id
     LEFT JOIN reservations r ON r.unit_id = u.id AND ${COUNTED} AND substr(r.check_in, 1, 7) BETWEEN ? AND ?
-    WHERE u.is_listed = 1 GROUP BY u.id, p.name`, periods[0], periods[periods.length - 1]);
+    WHERE u.is_listed = 1 GROUP BY u.id, p.id, p.name`, periods[0], periods[periods.length - 1]);
 
   const channels = await all<any>(env, `
     SELECT r.channel, COALESCE(SUM(r.collected_revenue), 0) AS revenue FROM reservations r
@@ -80,9 +82,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     generatedAt: new Date().toISOString(), currency: 'MYR', range, points,
     deltas: {
       revenue: pctDelta(now.revenue, prev.revenue),
-      occupancy: pointDelta(now.occupancy, prev.occupancy),
+      occupancy: prevEmpty ? { ...pointDelta(0, 0), note: NO_EARLIER } : pointDelta(now.occupancy, prev.occupancy),
       adr: pctDelta(now.adr, prev.adr),
       revpar: pctDelta(now.revpar, prev.revpar),
+    },
+    // The whole window, so the headline matches what the range buttons say.
+    summary: {
+      revenue: now.revenue, occupancy: Number(Math.min(100, now.occupancy).toFixed(1)),
+      adr: Math.round(now.adr), revpar: Math.round(now.revpar), nights: now.nights, listedUnits: Number(listed),
     },
     totals: {
       grossBookingValue: periods.reduce((n, p) => n + Number(by.get(p)?.gross ?? 0), 0),
@@ -91,7 +98,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     units: unitRows.map(u => {
       const revenue = Number(u.revenue), nights = Number(u.nights);
       return {
-        unitId: u.id, unitNumber: u.unit_number, propertyName: u.property_name,
+        unitId: u.id, unitNumber: u.unit_number, propertyName: u.property_name, buildingId: u.property_id, nights,
         occupancy: Math.min(100, Number(((nights / days) * 100).toFixed(1))),
         adr: nights ? Math.round(revenue / nights) : 0, revpar: Math.round(revenue / days), revenue,
         rating: u.rating === null ? null : Number(u.rating),

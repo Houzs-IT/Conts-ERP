@@ -9,15 +9,21 @@ import { EmptyState } from '../components/States';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
-import { rm, masked, date as fmtDate, todayMyt } from '../lib/format';
+import { rm, masked, date as fmtDate, todayMyt, monthLabel } from '../lib/format';
+import { cx } from '../lib/design-tokens';
 import { PAYOUT } from '../lib/vocabulary';
 import type { PayoutState } from '../lib/types';
+import { useUrlState, usePhone, ListCard, Pager, SearchBox, FilterSelect, STICKY_HEAD } from './finance/listKit';
 
 interface Payout {
-  id: string; ref?: string; ownerName: string; amount: number; state: PayoutState; method: string;
+  id: string; ref?: string; period?: string | null; ownerName: string; amount: number; state: PayoutState; method: string;
   bankName: string | null; bankLast4: string | null; paidAt: string | null; failureReason: string | null;
 }
-interface Payload { data: Payout[]; generatedAt: string }
+interface Payload {
+  data: Payout[]; generatedAt: string;
+  total?: number; page?: number; pageSize?: number; counts?: Record<PayoutState, number>; outstanding?: number; periods?: string[];
+}
+const PAGE_SIZE = 100;
 
 const FALLBACK: Payload = {
   generatedAt: '2026-09-20T02:00:00Z',
@@ -38,7 +44,7 @@ const RANK: Record<PayoutState, number> = { failed: 0, pending: 1, processing: 2
 type Filter = 'all' | PayoutState;
 
 // COLS as an arbitrary grid-template-columns utility (underscores == spaces).
-const gridCols = 'grid-cols-[minmax(150px,1.4fr)_minmax(86px,0.7fr)_minmax(140px,1.1fr)_minmax(104px,0.9fr)_minmax(104px,0.9fr)_minmax(92px,0.8fr)_minmax(120px,1fr)]';
+const gridCols = 'grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(92px,0.8fr)_minmax(118px,1fr)]';
 const today = () => todayMyt();
 
 /** Bank never shows more than the tail — the raw number would need an audited reveal. */
@@ -50,11 +56,17 @@ const valueDate = (p: Payout) =>
     : 'Scheduled';
 
 export default function PayoutsPage() {
-  const { data, loading, error, reload } = useApi<Payload>('/payouts', FALLBACK);
+  const url = useUrlState();
+  const phone = usePhone();
+  const filter: Filter = (GROUP_ORDER as string[]).includes(url.get('state')) ? url.get('state') as PayoutState : 'all';
+  const setFilter = (f: Filter) => url.set({ state: f === 'all' ? null : f, page: null });
+  const period = url.get('period'), q = url.get('q');
+  const page = Math.max(1, Number(url.get('page')) || 1);
+  const query = new URLSearchParams({ pageSize: String(PAGE_SIZE), ...(filter !== 'all' ? { state: filter } : {}), ...(period ? { period } : {}), ...(q ? { q } : {}), ...(page > 1 ? { page: String(page) } : {}) });
+  const { data, loading, error, reload } = useApi<Payload>(`/payouts?${query}`, FALLBACK);
   const toast = useToast();
 
   const [edits, setEdits] = useState<Record<string, Partial<Payout>>>({});
-  const [filter, setFilter] = useState<Filter>('all');
   const [confirm, setConfirm] = useState<{ payout: Payout; kind: 'retry' | 'paid' } | null>(null);
 
   const allRows = useMemo(
@@ -62,14 +74,17 @@ export default function PayoutsPage() {
     [data, edits],
   );
 
+  // Counts and the outstanding amount come from the server, so they cover every payout, not just this page.
   const counts = useMemo(() => {
+    if (data?.counts) return data.counts;
     const c: Record<PayoutState, number> = { failed: 0, pending: 0, processing: 0, paid: 0 };
     allRows.forEach(r => { c[r.state] += 1; });
     return c;
-  }, [allRows]);
+  }, [allRows, data]);
+  const allCount = GROUP_ORDER.reduce((n, st) => n + counts[st], 0);
 
   const failed = allRows.filter(r => r.state === 'failed');
-  const due = allRows.filter(r => r.state !== 'paid').reduce((s, r) => s + r.amount, 0);
+  const due = data?.outstanding ?? allRows.filter(r => r.state !== 'paid').reduce((s, r) => s + r.amount, 0);
 
   const visible = useMemo(() => {
     const rows = filter === 'all' ? allRows : allRows.filter(r => r.state === filter);
@@ -123,7 +138,7 @@ export default function PayoutsPage() {
     <>
       <PageHeader
         title="Payouts"
-        sub={`${rm(due)} outstanding · ${failed.length} ${failed.length === 1 ? 'payout' : 'payouts'} failed and needing attention`}
+        sub={`${rm(due)} outstanding · ${counts.failed} ${counts.failed === 1 ? 'payout' : 'payouts'} failed and needing attention`}
         right={
           <label className="relative flex items-center">
             <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Filter by status</span>
@@ -132,7 +147,7 @@ export default function PayoutsPage() {
               onChange={e => setFilter(e.target.value as Filter)}
               className="h-9 py-0 pr-[30px] pl-3 rounded-control border border-solid border-line bg-card text-ink font-sans text-[16px] font-normal cursor-pointer appearance-none"
             >
-              <option value="all">{`All statuses · ${allRows.length}`}</option>
+              <option value="all">{`All statuses · ${allCount}`}</option>
               {GROUP_ORDER.map(s => <option key={s} value={s}>{`${PAYOUT[s].label} · ${counts[s]}`}</option>)}
             </select>
             <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" style={{ position: 'absolute', right: 9, pointerEvents: 'none' }} />
@@ -141,6 +156,12 @@ export default function PayoutsPage() {
       />
 
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
+
+      <div className="flex flex-wrap gap-2">
+        <SearchBox className="flex-[2_1_240px]" label="Search payouts" placeholder="Search owner" value={q} onChange={v => url.set({ q: v || null, page: null })} />
+        <FilterSelect className="flex-[1_1_180px]" label="Statement month" all="All statement months" value={period} onChange={v => url.set({ period: v || null, page: null })}
+          options={(data?.periods ?? []).map(p => ({ value: p, label: monthLabel(p) }))} />
+      </div>
 
       {/* Failed payouts are surfaced first, with the reason and the one-tap fix. */}
       {(filter === 'all' || filter === 'failed') && failed.map(p => (
@@ -164,13 +185,30 @@ export default function PayoutsPage() {
         <EmptyState
           title={`No ${filter === 'all' ? '' : PAYOUT[filter].label.toLowerCase() + ' '}payouts to show.`}
           body="No payouts match this filter. Clear it to see every owner transfer for the cycle."
-          action={{ label: 'Clear filter', onClick: () => setFilter('all') }}
+          action={{ label: 'Clear filters', onClick: () => url.set({ state: null, period: null, q: null, page: null }) }}
         />
       ) : (
-        <Card>
-          <div className="overflow-x-auto">
-            <div className="min-w-[900px]">
-              <div className={`grid ${gridCols} gap-[14px] px-[22px] py-[9px] bg-muted border-b border-solid border-line text-[12px] font-semibold text-muted-ink`}>
+        <ListCard busy={loading && !!data}>
+          {phone ? (
+            <div>
+              {visible.map(r => (
+                <div key={r.id} className="flex items-start gap-3 py-[11px] px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
+                  <div className="flex flex-col gap-[3px] min-w-0 flex-1">
+                    <span className="text-[13.5px] font-medium truncate">{r.ownerName}</span>
+                    <span className="text-[12px] text-muted-ink truncate">{destination(r)} · {r.method}</span>
+                    <span className="text-[11.5px] text-muted-ink">{r.period ? `${monthLabel(r.period)} statement · ` : ''}{valueDate(r)}</span>
+                    {r.state === 'processing' && <button onClick={() => setConfirm({ payout: r, kind: 'paid' })} className={cx(ghostBtn, 'self-start mt-1')}>Mark paid</button>}
+                  </div>
+                  <div className="flex flex-col items-end gap-[5px] shrink-0">
+                    <span className="text-[13.5px] font-semibold tabular-nums">{rm(r.amount)}</span>
+                    <Badge tone={PAYOUT[r.state].tone} label={PAYOUT[r.state].label} size="sm" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div role="table" aria-label="Payouts">
+              <div role="row" className={`grid ${gridCols} gap-[14px] px-[22px] py-[9px] ${STICKY_HEAD}`}>
                 <div>Owner</div>
                 <div>Method</div>
                 <div>Destination</div>
@@ -182,19 +220,19 @@ export default function PayoutsPage() {
 
               {loading && allRows.length === 0 ? <TableSkeleton rows={6} cols={7} /> : groups.map(g => (
                 <div key={g.state}>
-                  <div className="flex items-center gap-2 px-[22px] py-[7px] bg-page border-b border-solid border-line-soft">
+                  <div className="flex items-center gap-2 px-[22px] py-[7px] bg-page [border-bottom:1px_solid_var(--color-line-soft)]">
                     <span className="text-[11px] font-semibold tracking-[0.04em] uppercase text-muted-ink">{PAYOUT[g.state].label}</span>
                     <span className="text-[11px] text-faint">{g.items.length}</span>
                   </div>
                   {g.items.map(r => (
-                    <div key={r.id} className={`grid ${gridCols} gap-[14px] items-center min-h-[52px] px-[22px] py-[9px] border-b border-solid border-line-soft`}>
+                    <div role="row" key={r.id} className={`grid ${gridCols} gap-[14px] items-center min-h-[50px] px-[22px] py-[7px] [border-bottom:1px_solid_var(--color-line-soft)]`}>
                       <div className="flex flex-col gap-px min-w-0">
-                        <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{r.ownerName}</span>
-                        <span className="font-mono text-[11px] text-muted-ink">{r.ref ?? r.id}</span>
+                        <span className="text-[13.5px] font-medium truncate" title={r.ownerName}>{r.ownerName}</span>
+                        <span className="font-mono text-[11px] text-muted-ink truncate">{r.ref ?? r.id}{r.period ? ` · ${monthLabel(r.period)}` : ''}</span>
                       </div>
                       <div className="text-[12.5px]">{r.method}</div>
                       {/* Only ever the tail of the account number is rendered. */}
-                      <div className="text-[12.5px] whitespace-nowrap overflow-hidden text-ellipsis">{destination(r)}</div>
+                      <div className="text-[12.5px] truncate" title={destination(r)}>{destination(r)}</div>
                       <div className="text-[12.5px] text-muted-ink">{valueDate(r)}</div>
                       <div className="text-right text-[13px] font-semibold tabular-nums">{rm(r.amount)}</div>
                       <div><Badge tone={PAYOUT[r.state].tone} label={PAYOUT[r.state].label} /></div>
@@ -208,13 +246,14 @@ export default function PayoutsPage() {
                 </div>
               ))}
             </div>
-          </div>
+          )}
 
-          <div className="flex items-center justify-between gap-3 flex-wrap px-[22px] py-[11px] border-t border-solid border-line bg-page text-[12px] text-muted-ink">
-            <span>{visible.length} of {allRows.length} payouts</span>
+          <Pager page={page} pageSize={PAGE_SIZE} total={data?.total ?? visible.length} unit="payouts" onPage={p => url.set({ page: p > 1 ? p : null })} />
+          <div className="flex items-center justify-between gap-3 flex-wrap px-[22px] py-[11px] [border-top:1px_solid_var(--color-line)] bg-page text-[12px] text-muted-ink">
+            <span>{(data?.total ?? visible.length).toLocaleString('en-MY')} of {allCount.toLocaleString('en-MY')} payouts</span>
             <span>Only the last four digits of any account are ever shown.</span>
           </div>
-        </Card>
+        </ListCard>
       )}
 
       <Dialog spec={spec} busy={false} onClose={() => setConfirm(null)} />

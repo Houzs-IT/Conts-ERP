@@ -102,7 +102,8 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
   const navigate = useNavigate();
   const toast = useToast();
   const rosterUnits = useUnitRoster();
-  const { data, loading, error, reload } = useApi<Payload>('/owners', FALLBACK);
+  // Only this owner, not the whole book: the list screen holds all of them.
+  const { data, loading, error, reload } = useApi<Payload>(`/owners?id=${encodeURIComponent(ownerId)}`, FALLBACK);
   const [edits, setEdits] = useState<Partial<Owner>>({});
   const [modal, setModal] = useState<null | 'link' | 'contract' | 'defaultFee'>(null);
   const [dialog, setDialog] = useState<DialogSpec | null>(null);
