@@ -3,6 +3,10 @@
 // (never a guest, owner or bank detail).
 //
 // Run: node scripts/api-checks/hostplatform-import.mjs <folder with listing.csv, res-*.csv, airbnb-orders.xlsx> [--map-only]
+//      ... --serve        import once, then keep this database running on 127.0.0.1:55433 (or BIGDATA_PORT) as a local backend
+//                         full of real-sized data: in another terminal,
+//                         WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://postgres:local@127.0.0.1:55433/postgres npm run dev
+//                         and sign in as dev@local.test with DEV_PASSWORD (default LocalTest1). Local only.
 // The export files hold personal data: keep them outside the repository.
 import { readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -14,6 +18,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const dir = process.argv[2];
 if (!dir) { console.error('Usage: node scripts/api-checks/hostplatform-import.mjs <data folder> [--map-only]'); process.exit(2); }
 const mapOnly = process.argv.includes('--map-only');
+const serve = process.argv.includes('--serve');
+const PORT = Number(process.env.BIGDATA_PORT ?? 55433);
 
 // The Worker code imports without file extensions; bundle it once so Node can load it.
 const out = await build({
@@ -128,9 +134,9 @@ const numbered = sql => { let i = 0; return sql.replace(/\?/g, () => `$${++i}`);
 // first live import failed on a query this check had passed (8 Oct 2026).
 const { PGLiteSocketServer } = await import('@electric-sql/pglite-socket');
 const { default: postgres } = await import('postgres');
-const server = new PGLiteSocketServer({ db: pg, port: 55433 });
+const server = new PGLiteSocketServer({ db: pg, port: PORT });
 await server.start();
-const wire = postgres('postgres://postgres@127.0.0.1:55433/postgres', {
+const wire = postgres(`postgres://postgres@127.0.0.1:${PORT}/postgres`, {
   max: 1, prepare: false, fetch_types: false, connection: { search_path: 'pos' },
   types: { number: { to: 20, from: [20, 1700], serialize: x => String(x), parse: x => Number(x) } },
 });
@@ -179,6 +185,23 @@ async function runAll(label) {
 }
 
 const first = await runAll('run 1');
+if (serve) {
+  // The app's role has search_path = pos; the wire connection here is the superuser, so set it on the database.
+  await pg.exec(`alter database postgres set search_path = pos, public`);
+  // PGlite serves one wire connection at a time; free ours or the app's connections queue forever.
+  await wire.end();
+  const { webcrypto: wc } = await import('node:crypto');
+  const hex = b => [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+  const salt = wc.getRandomValues(new Uint8Array(16));
+  const key = await wc.subtle.importKey('raw', new TextEncoder().encode(process.env.DEV_PASSWORD ?? 'LocalTest1'), 'PBKDF2', false, ['deriveBits']);
+  const bits = await wc.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, key, 256);
+  const now = new Date().toISOString();
+  await pg.query(`insert into users (id, email, full_name, password_hash, role, must_change_password, created_at, updated_at)
+    values ('dev-admin', 'dev@local.test', 'Dev Admin', $1, 'management', 0, $2, $2) on conflict (id) do nothing`,
+    [`pbkdf2$100000$${hex(salt)}$${hex(new Uint8Array(bits))}`, now]);
+  console.log(`\nserving on postgres://postgres@127.0.0.1:${PORT}/postgres  (sign in: dev@local.test). Ctrl+C to stop.`);
+  await new Promise(() => {});
+}
 const second = await runAll('run 2 (same files again)');
 
 const q = async sql => (await pg.query(sql)).rows;
