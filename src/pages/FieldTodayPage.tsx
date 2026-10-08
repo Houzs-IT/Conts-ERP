@@ -7,8 +7,8 @@ import Icon from '../components/Icon';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
-import { time, date, unitRef } from '../lib/format';
+import { api, ApiFailure } from '../lib/api';
+import { time, date, unitRef, plural } from '../lib/format';
 import { READINESS, SYNC } from '../lib/vocabulary';
 import type { SyncState, Tone, UnitReadiness } from '../lib/types';
 
@@ -74,6 +74,10 @@ export default function FieldTodayPage() {
   const [confirm, setConfirm] = useState<FieldTask | null>(null);
   const [damage, setDamage] = useState<{ task: FieldTask; title: string; detail: string; blocksUnit: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  // Photos the server has not accepted yet, per task, so Retry sends the same files again.
+  const pendingFiles = useRef(new Map<string, File[]>());
+  // Where photo storage is not set up the server accepts "ready" without a photo (and records that).
+  const [noStorage, setNoStorage] = useState<Record<string, boolean>>({});
 
   const rows = data?.rows ?? [];
   const photoCountOf = (t: FieldTask) => t.photoCount + (photos[t.id] ?? 0);
@@ -91,20 +95,39 @@ export default function FieldTodayPage() {
   const whenLabel = (iso: string | null) => (iso ? time(iso) : '—');
 
   /* ------------------------------ actions ------------------------------ */
-  function addPhotos(t: FieldTask, count: number) {
-    if (count <= 0) return;
-    setPhotos(p => ({ ...p, [t.id]: (p[t.id] ?? 0) + count }));
+  /** Sends each chosen photo to the server (multipart, field "file"). The count goes up only for photos the
+   *  server stored (201). Photos that did not go through are kept here so "Retry" can send them again. It used
+   *  to post an empty body, which the server always refused, so cleaners could never mark a unit ready. */
+  async function addPhotos(t: FieldTask, files: File[]) {
+    if (files.length === 0) return;
     setQueue(q => ({ ...q, [t.id]: { kind: 'photo', state: 'queued', at: new Date().toISOString() } }));
-    // Not "uploaded" — queued. The upload flips to synced only on the server's 201.
-    toast({ tone: 'info', title: `${count} photo${count > 1 ? 's' : ''} added.`, body: 'Queued · will upload when you are back online.' });
-    void trySync(t.id, 'photo', () => api.post(`/tasks/${t.id}/photos`, {}));
+    let ok = 0;
+    const failed: File[] = [];
+    let reason = '';
+    for (const f of files) {
+      const form = new FormData();
+      form.append('file', f, f.name || 'photo.jpg');
+      try {
+        await api.post(`/tasks/${t.id}/photos`, form);
+        ok += 1;
+      } catch (e) {
+        failed.push(f);
+        if (e instanceof ApiFailure && e.code === 'NOT_CONFIGURED') setNoStorage(n => ({ ...n, [t.id]: true }));
+        reason = e instanceof Error ? e.message : 'Check your signal and try again.';
+      }
+    }
+    if (ok) setPhotos(p => ({ ...p, [t.id]: (p[t.id] ?? 0) + ok }));
+    pendingFiles.current.set(t.id, failed);
+    setQueue(q => ({ ...q, [t.id]: { kind: 'photo', state: failed.length ? 'failed' : 'synced', at: new Date().toISOString() } }));
+    if (failed.length) toast({ tone: 'critical', title: ok ? `${ok} uploaded, ${failed.length} not.` : `Photo${failed.length > 1 ? 's' : ''} not uploaded.`, body: reason });
+    else toast({ tone: 'success', title: `${ok} photo${ok > 1 ? 's' : ''} uploaded.` });
   }
 
   async function markReady() {
     const t = confirm;
     if (!t) return;
     // Client mirror of the 422 PHOTO_REQUIRED contract; the button also guards this.
-    if (t.requiresPhoto && photoCountOf(t) < 1) {
+    if (t.requiresPhoto && photoCountOf(t) < 1 && !noStorage[t.id]) {
       toast({ tone: 'critical', title: 'Not marked ready.', body: 'Add at least one photo before marking this unit ready.' });
       setConfirm(null);
       return;
@@ -118,10 +141,10 @@ export default function FieldTodayPage() {
       setDone(d => ({ ...d, [t.id]: true }));
       setQueue(q => ({ ...q, [t.id]: { kind: 'ready', state: 'synced', at: new Date().toISOString() } }));
       toast({ tone: 'success', title: 'Marked ready.', body: `${unitRef(t.unit.propertyName, t.unit.unitNumber)} is ready for the guest.` });
-    } catch {
-      // Dev: no backend. Stay honest — the row is queued/failed, never "ready".
+    } catch (e) {
+      // Stay honest: the row is failed, never "ready", and says why.
       setQueue(q => ({ ...q, [t.id]: { kind: 'ready', state: 'failed', at: new Date().toISOString() } }));
-      toast({ tone: 'critical', title: 'Not synced yet.', body: 'Mark ready is queued. Tap the failed row to retry when you have signal.' });
+      toast({ tone: 'critical', title: 'Not marked ready.', body: e instanceof Error ? e.message : 'Check your signal, then tap the failed row to retry.' });
     } finally { setBusy(false); }
   }
 
@@ -146,11 +169,9 @@ export default function FieldTodayPage() {
     const q = queue[t.id];
     const kind = q?.kind ?? 'ready';
     setQueue(prev => ({ ...prev, [t.id]: { kind, state: 'queued', at: new Date().toISOString() } }));
-    toast({ tone: 'info', title: 'Retrying…', body: 'Sending the queued update again.' });
-    const call = kind === 'photo'
-      ? () => api.post(`/tasks/${t.id}/photos`, {})
-      : () => api.post(`/tasks/${t.id}/complete`, { photoIds: [] });
-    void trySync(t.id, kind, call);
+    toast({ tone: 'info', title: 'Trying again...' });
+    if (kind === 'photo') { void addPhotos(t, pendingFiles.current.get(t.id) ?? []); return; }
+    void trySync(t.id, kind, () => api.post(`/tasks/${t.id}/complete`, { photoIds: [] }));
   }
 
   async function submitDamage() {
@@ -173,13 +194,13 @@ export default function FieldTodayPage() {
 
   return (
     <>
-      <PageHeader title="My tasks" sub={`${date(data?.date ?? FALLBACK.date)} · ${rows.length} tasks assigned · offline queue supported`} />
+      <PageHeader title="My tasks" sub={loading && !data?.date ? 'Today' : `${data?.date ? date(data.date) : 'Today'} · ${plural(rows.length, 'task')} assigned`} />
 
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       {/* progress — gold is a brand accent here, not a status tone */}
       <div className="flex flex-col gap-1.5">
-        <div className="flex justify-between text-[12px] text-muted-ink">
+        <div className="flex justify-between text-meta text-muted-ink">
           <span>{completed} of {rows.length} tasks done</span>
           {pending > 0 && <span>{pending} waiting to sync</span>}
         </div>
@@ -192,7 +213,7 @@ export default function FieldTodayPage() {
         const shots = photoCountOf(t);
         const complete = isComplete(t);
         const sync = syncOf(t);
-        const needsPhoto = t.requiresPhoto && shots < 1;
+        const needsPhoto = t.requiresPhoto && shots < 1 && !noStorage[t.id];
         const ready = READINESS[readinessOf(t)];
 
         return (
@@ -204,60 +225,60 @@ export default function FieldTodayPage() {
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="flex flex-col gap-[3px] min-w-0 flex-1">
                 <span className={cx(
-                  'text-[15px] font-semibold',
+                  'text-heading font-semibold',
                   complete ? 'line-through text-muted-ink' : 'no-underline text-ink',
                 )}>
                   {unitRef(t.unit.propertyName, t.unit.unitNumber)}
                 </span>
-                <span className="text-[12px] text-muted-ink [text-wrap:pretty]">{t.addressLine}</span>
+                <span className="text-meta text-muted-ink [text-wrap:pretty]">{t.addressLine}</span>
               </div>
-              <span className="text-[12px] text-muted-ink whitespace-nowrap">Due {whenLabel(t.dueAt)}</span>
+              <span className="text-meta text-muted-ink whitespace-nowrap">Due {whenLabel(t.dueAt)}</span>
             </div>
 
             {/* status row: readiness + optional server flag + job */}
             <div className="flex items-center gap-2 flex-wrap">
               <Badge tone={ready.tone} label={ready.label} />
               {t.flag && !complete && (
-                <span className={cx('text-[11px] font-semibold py-[3px] px-[9px] rounded-[999px]', TONE.warning.text, TONE.warning.bg)}>
+                <span className={cx('text-caption font-semibold py-[3px] px-[9px] rounded-[999px]', TONE.warning.text, TONE.warning.bg)}>
                   {t.flag}
                 </span>
               )}
-              <span className="text-[12px] text-muted-ink">{t.work}</span>
+              <span className="text-meta text-muted-ink">{t.work}</span>
             </div>
 
             {/* access instruction */}
             {t.accessInstruction && (
               <div className="flex items-start gap-[9px] py-[11px] px-3 rounded-control bg-muted">
                 <Icon name="KeyRound" size="sm" color="var(--color-muted-ink)" style={{ marginTop: 1 }} />
-                <span className="text-[12.5px] [text-wrap:pretty]">{`Access · ${t.accessInstruction}`}</span>
+                <span className="text-copy [text-wrap:pretty]">{`Access · ${t.accessInstruction}`}</span>
               </div>
             )}
 
             {/* photo requirement hint */}
             {needsPhoto && !complete && (
-              <span className={cx('text-[12.5px] font-medium', TONE.warning.text)}>
+              <span className={cx('text-copy font-medium', TONE.warning.text)}>
                 Add at least one photo before marking this unit ready.
               </span>
             )}
 
             {/* offline queue status — the server response is the only thing that
                 advances it to synced; a failure stays visibly failed (guide 19) */}
-            {sync && <SyncLine state={sync.state} at={sync.at} onRetry={sync.state === 'failed' ? () => retry(t) : undefined} />}
+            {sync && <SyncLine state={sync.state} at={sync.at} kind={queue[t.id]?.kind} onRetry={sync.state === 'failed' ? () => retry(t) : undefined} />}
 
             {/* actions */}
             {complete ? (
-              <span className={cx('text-[12.5px] flex items-center gap-[7px] min-h-[24px]', TONE.success.text)}>
+              <span className={cx('text-copy flex items-center gap-[7px] min-h-[24px]', TONE.success.text)}>
                 <Icon name="CheckCheck" size="sm" color="var(--color-success-fg)" /> Ready for the guest
               </span>
             ) : (
               <div className="flex gap-[9px]">
-                <PhotoButton count={shots} onFiles={n => addPhotos(t, n)} />
+                <PhotoButton count={shots} busy={syncOf(t)?.state === 'queued' && queue[t.id]?.kind === 'photo'} onFiles={files => void addPhotos(t, files)} />
                 <button
                   onClick={() => setConfirm(t)}
                   disabled={needsPhoto}
                   title={needsPhoto ? 'Add at least one photo first.' : undefined}
                   className={cx(
-                    'flex-1 min-h-[44px] flex items-center justify-center gap-[7px] rounded-control border-none font-sans text-[13px] font-medium',
+                    'flex-1 min-h-[44px] flex items-center justify-center gap-[7px] rounded-control border-none font-sans text-copy font-medium',
                     needsPhoto ? 'bg-sunken text-faint cursor-not-allowed' : 'bg-black text-white cursor-pointer',
                   )}>
                   <Icon name="Check" size="sm" />
@@ -283,11 +304,11 @@ export default function FieldTodayPage() {
       {/* page-level: call operations */}
       <div className="flex flex-col gap-[9px] pt-1">
         <a href={`tel:${OPS_TEL}`}
-          className="min-h-[44px] flex items-center justify-center gap-[7px] border border-solid border-line rounded-control bg-card text-[13px] font-medium no-underline text-ink">
+          className="min-h-[44px] flex items-center justify-center gap-[7px] border border-solid border-line rounded-control bg-card text-copy font-medium no-underline text-ink">
           <Icon name="Phone" size="sm" />
           <span>Call operations</span>
         </a>
-        <span className="text-[11px] text-muted-ink text-center">
+        <span className="text-caption text-muted-ink text-center">
           Financial data is not available to field roles.
         </span>
       </div>
@@ -296,9 +317,9 @@ export default function FieldTodayPage() {
       <Dialog busy={busy} onClose={() => setConfirm(null)}
         spec={!confirm ? null : {
           title: `Mark ${unitRef(confirm.unit.propertyName, confirm.unit.unitNumber)} ready for guest?`,
-          body: 'The unit is released as Ready and operations sees it without a message. It stays queued until the server confirms.',
+          body: 'The unit is released as Ready and operations sees it straight away.',
           meta: confirm.nextGuestAt ? `Next check-in is ${time(confirm.nextGuestAt)}.` : 'No check-in scheduled next.',
-          confirmLabel: 'Mark ready', busyLabel: 'Queueing…', onConfirm: markReady,
+          confirmLabel: 'Mark ready', busyLabel: 'Saving...', onConfirm: markReady,
         }} />
 
       {/* Report damage — local modal (title + detail + blocks unit) */}
@@ -317,13 +338,13 @@ export default function FieldTodayPage() {
 }
 
 /* ----------------------------- sync status line ---------------------------- */
-function SyncLine({ state, at, onRetry }: { state: SyncState; at: string | null; onRetry?: () => void }) {
+function SyncLine({ state, at, kind, onRetry }: { state: SyncState; at: string | null; kind?: 'photo' | 'ready'; onRetry?: () => void }) {
   const tone: Tone = SYNC[state].tone;
   const label = state === 'queued'
-    ? 'Queued · will sync when you are back online'
+    ? (kind === 'photo' ? 'Uploading photos...' : 'Sending...')
     : state === 'synced'
-      ? `Synced${at ? ` ${time(at)}` : ''}`
-      : 'Failed to sync. Tap to retry.';
+      ? `${kind === 'photo' ? 'Photos uploaded' : 'Saved'}${at ? ` ${time(at)}` : ''}`
+      : (kind === 'photo' ? 'Photo not uploaded. Tap to try again.' : 'Not saved. Tap to try again.');
   const icon = state === 'synced' ? 'CloudUpload' : state === 'queued' ? 'CloudOff' : 'RefreshCw';
 
   const inner = (
@@ -337,26 +358,26 @@ function SyncLine({ state, at, onRetry }: { state: SyncState; at: string | null;
   const base = 'flex items-center gap-[7px] w-full py-[9px] px-[11px] rounded-control text-left';
   return onRetry
     ? <button onClick={onRetry} className={cx(base, 'min-h-[40px] border-none [font:inherit] cursor-pointer', TONE[tone].bg, TONE[tone].text)}>{inner}</button>
-    : <div role="status" className={cx(base, 'text-[12.5px] font-medium', TONE[tone].bg, TONE[tone].text)}>{inner}</div>;
+    : <div role="status" className={cx(base, 'text-copy font-medium', TONE[tone].bg, TONE[tone].text)}>{inner}</div>;
 }
 
 /* ------------------------------- photo button ------------------------------ */
 /** A real camera / file picker (multipart on the live backend). On mobile,
  *  `capture` opens the camera; on desktop it is a file chooser. */
-function PhotoButton({ count, onFiles }: { count: number; onFiles: (n: number) => void }) {
+function PhotoButton({ count, busy, onFiles }: { count: number; busy?: boolean; onFiles: (files: File[]) => void }) {
   const ref = useRef<HTMLInputElement>(null);
   return (
     <>
       <input
         ref={ref} type="file" accept="image/*" capture="environment" multiple
         className="hidden"
-        onChange={e => { const n = e.target.files?.length ?? 0; onFiles(n); if (ref.current) ref.current.value = ''; }}
+        onChange={e => { const files = Array.from(e.target.files ?? []); onFiles(files); if (ref.current) ref.current.value = ''; }}
       />
       <button
-        onClick={() => ref.current?.click()}
-        className="flex-1 min-h-[44px] flex items-center justify-center gap-[7px] border border-solid border-line rounded-control bg-card cursor-pointer [font:inherit] text-ink">
+        onClick={() => ref.current?.click()} disabled={busy}
+        className="flex-1 min-h-[44px] flex items-center justify-center gap-[7px] border border-solid border-line rounded-control bg-card cursor-pointer font-sans text-copy font-medium text-ink disabled:cursor-default disabled:text-muted-ink">
         <Icon name="Camera" size="sm" />
-        <span>{count > 0 ? `${count} photo${count > 1 ? 's' : ''} · add` : 'Add photo'}</span>
+        <span>{busy ? 'Uploading...' : count > 0 ? `${count} photo${count > 1 ? 's' : ''} · add` : 'Add photo'}</span>
       </button>
     </>
   );
@@ -364,7 +385,7 @@ function PhotoButton({ count, onFiles }: { count: number; onFiles: (n: number) =
 
 /* ------------------------------- report modal ------------------------------ */
 const INPUT_BASE = 'block w-full box-border text-ink bg-card border border-solid border-line rounded-control outline-none [font:inherit]';
-const LABEL_CLS = 'text-[12px] font-medium text-muted-ink';
+const LABEL_CLS = 'text-meta font-medium text-muted-ink';
 
 interface DamageState { task: unknown; title: string; detail: string; blocksUnit: boolean }
 function ReportModal({ task, value, busy, onChange, onClose, onSubmit }: {
@@ -391,8 +412,8 @@ function ReportModal({ task, value, busy, onChange, onClose, onSubmit }: {
       <div ref={ref}
         className="relative w-full max-w-[560px] max-h-[92vh] overflow-y-auto bg-card rounded-t-card shadow-[var(--shadow-overlay)] flex flex-col [animation:rise_var(--motion-slow)_var(--ease-out)_both]">
         <div className="pt-[18px] px-[18px] pb-1 flex flex-col gap-[5px]">
-          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold">Report damage or missing item</h2>
-          <p className="m-0 text-[13px] leading-[1.5] text-muted-ink">
+          <h2 className="m-0 text-title leading-[1.3] font-semibold">Report damage or missing item</h2>
+          <p className="m-0 text-copy leading-[1.5] text-muted-ink">
             Opens a maintenance issue on {unitRef(task.unit.propertyName, task.unit.unitNumber)}. The office adds any cost.
           </p>
         </div>
@@ -409,7 +430,7 @@ function ReportModal({ task, value, busy, onChange, onClose, onSubmit }: {
               onChange={e => set({ detail: e.target.value })}
               className={cx(INPUT_BASE, 'min-h-[88px] py-[10px] px-3 resize-y')} />
           </div>
-          <label className={cx('flex gap-2.5 items-center text-[13px] min-h-[44px]', busy ? 'cursor-default' : 'cursor-pointer')}>
+          <label className={cx('flex gap-2.5 items-center text-copy min-h-[44px]', busy ? 'cursor-default' : 'cursor-pointer')}>
             <input type="checkbox" checked={value.blocksUnit} disabled={busy} className="w-5 h-5"
               onChange={e => set({ blocksUnit: e.target.checked })} />
             Block the unit — it is not safe to let the next guest in
@@ -421,7 +442,7 @@ function ReportModal({ task, value, busy, onChange, onClose, onSubmit }: {
             className={cx('flex-1 min-h-[44px] rounded-control border border-solid border-line bg-card [font:inherit] text-ink', busy ? 'cursor-default' : 'cursor-pointer')}>Cancel</button>
           <button onClick={onSubmit} disabled={!canSubmit}
             className={cx(
-              'flex-1 min-h-[44px] flex items-center justify-center gap-[7px] rounded-control border-none font-sans text-[13px] font-medium',
+              'flex-1 min-h-[44px] flex items-center justify-center gap-[7px] rounded-control border-none font-sans text-copy font-medium',
               canSubmit ? 'bg-[var(--color-critical-line)] text-white cursor-pointer' : 'bg-sunken text-faint cursor-not-allowed',
             )}>
             <Icon name="TriangleAlert" size="sm" />

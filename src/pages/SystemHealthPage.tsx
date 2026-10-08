@@ -44,13 +44,13 @@ function StatCard({ icon, label, value, sub, tone = 'neutral', title, onClick }:
   return (
     <div title={title} onClick={onClick} className={cx('relative overflow-hidden rounded-card border border-solid border-line bg-card px-4 py-3', onClick && 'cursor-pointer hover:border-line-strong')}>
       <span aria-hidden className="absolute left-0 top-0 h-full w-[3px]" style={{ background: BAR[tone] }} />
-      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-ink">
+      <div className="flex items-center gap-1.5 text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink">
         <span style={{ color: tone === 'neutral' ? undefined : INK[tone] }} className="flex">{icon}</span><span>{label}</span>
       </div>
-      <div className="mt-1.5 text-[22px] font-bold leading-none tracking-[-0.01em] [font-variant-numeric:tabular-nums]" style={{ color: INK[tone] }}>
+      <div className="mt-1.5 text-headline font-bold leading-none tracking-[-0.01em] [font-variant-numeric:tabular-nums]" style={{ color: INK[tone] }}>
         {typeof value === 'number' ? value.toLocaleString() : value}
       </div>
-      {sub && <div className="mt-1 text-[11px] text-muted-ink">{sub}</div>}
+      {sub && <div className="mt-1 text-caption text-muted-ink">{sub}</div>}
     </div>
   );
 }
@@ -68,8 +68,8 @@ function HealthBanner({ tone, label, detail }: { tone: BannerTone; label: string
     <div className="flex items-center gap-3 rounded-card border border-solid p-3" style={{ borderColor: c.border, background: c.bg, color: c.fg }}>
       <span className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: c.fg, animation: tone === 'loading' ? undefined : 'pulse-soft 2.4s ease-in-out infinite' }} />
       <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-semibold">{label}</div>
-        {detail && <div className="mt-0.5 text-[11.5px] opacity-90">{detail}</div>}
+        <div className="text-copy font-semibold">{label}</div>
+        {detail && <div className="mt-0.5 text-meta opacity-90">{detail}</div>}
       </div>
     </div>
   );
@@ -79,10 +79,10 @@ function Breakdown({ title, items }: { title: string; items: { label: string; co
   const max = Math.max(1, ...items.map(i => i.count));
   return (
     <div className="rounded-card border border-solid border-line-soft p-3">
-      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-ink">{title}</div>
+      <div className="mb-2 text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink">{title}</div>
       <div className="flex flex-col gap-1.5">
         {items.map(i => (
-          <div key={i.label} className="flex items-center gap-2 text-[12px]">
+          <div key={i.label} className="flex items-center gap-2 text-meta">
             <span className="w-[42%] truncate" title={i.label}>{i.label}</span>
             <span className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden"><span className="block h-full rounded-full bg-gold" style={{ width: `${(i.count / max) * 100}%` }} /></span>
             <span className="w-8 text-right [font-variant-numeric:tabular-nums] text-muted-ink">{i.count}</span>
@@ -95,7 +95,7 @@ function Breakdown({ title, items }: { title: string; items: { label: string; co
 
 /** What an audit entry changed: each field's value before and after. */
 function AuditDiff({ before, after }: { before: Detail; after: Detail }) {
-  if (!before && !after) return <div className="py-2 text-[12px] text-muted-ink">No before/after detail was recorded for this entry.</div>;
+  if (!before && !after) return <div className="py-2 text-meta text-muted-ink">No before/after detail was recorded for this entry.</div>;
   const keys = Array.from(new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])).sort();
   const show = (v: unknown) => (v === undefined ? '—' : v === null ? 'empty' : typeof v === 'object' ? JSON.stringify(v) : String(v));
   return (
@@ -105,8 +105,8 @@ function AuditDiff({ before, after }: { before: Detail; after: Detail }) {
         const changed = before && after && show(b) !== show(a);
         return (
           <div key={k} className={cx('grid grid-cols-[160px_1fr] gap-3 py-[7px] px-[13px]', i < keys.length - 1 && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
-            <span className="text-[11.5px] font-medium text-muted-ink">{words(k)}</span>
-            <span className="text-[12px] font-mono break-all">
+            <span className="text-meta font-medium text-muted-ink">{words(k)}</span>
+            <span className="text-meta font-mono break-all">
               {before && after ? (changed ? <>{show(b)} <span className="text-muted-ink">→</span> {show(a)}</> : show(a)) : show(a ?? b)}
             </span>
           </div>
@@ -117,7 +117,7 @@ function AuditDiff({ before, after }: { before: Detail; after: Detail }) {
 }
 
 const panel = 'rounded-card border border-solid border-line bg-card px-5 py-5';
-const panelTitle = 'text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-ink';
+const panelTitle = 'text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink';
 
 export default function SystemHealthPage() {
   const [range, setRange] = useState<Range>('7d');
@@ -179,7 +179,7 @@ export default function SystemHealthPage() {
               <div className={cx(panelTitle, 'mb-3')}>What needs attention</div>
               <div className="flex flex-col gap-2.5">
                 {attention.map(c => (
-                  <div key={c.key} className="flex items-start gap-3 text-[13px] flex-wrap">
+                  <div key={c.key} className="flex items-start gap-3 text-copy flex-wrap">
                     <span className="w-[170px] flex-none font-semibold" style={{ color: INK[CHECK_TONE[c.status]] }}>{c.label}</span>
                     <span className="flex-1 min-w-[240px] text-ink-2">{c.detail}</span>
                     {c.link && <Button size="sm" variant="tertiary" onClick={() => navigate(c.link!.path)}>{c.link.label}</Button>}
@@ -191,23 +191,23 @@ export default function SystemHealthPage() {
 
           <div className={panel}>
             <div className={cx(panelTitle, 'mb-2 flex items-center gap-2')}><Icon name="Gauge" size="sm" color="var(--color-gold-ink)" /> Database / connection</div>
-            <div className="text-[26px] font-bold leading-none tracking-[-0.01em]">
+            <div className="text-headline font-bold leading-none tracking-[-0.01em]">
               {fmtMs(d.db.latency_ms)}
-              <span className="ml-2 text-[12px] font-normal text-muted-ink">this check{d.counts.last_event_at ? ` · last change ${relative(d.counts.last_event_at)}` : ''}</span>
+              <span className="ml-2 text-meta font-normal text-muted-ink">this check{d.counts.last_event_at ? ` · last change ${relative(d.counts.last_event_at)}` : ''}</span>
             </div>
-            <p className="mt-3 mb-0 text-[12px] leading-relaxed text-muted-ink">
-              A warm ping is well under a second. Anything over about {SLOW_MS / 1000} seconds means the pooled database connection went cold and is
-              re-establishing, which is what makes a screen hang for a moment after a quiet period.
+            <p className="mt-3 mb-0 text-meta leading-relaxed text-muted-ink">
+              Normally well under a second. Over about {SLOW_MS / 1000} seconds usually means the system was idle and is waking up,
+              which is why the first screen after a quiet period can pause for a moment.
             </p>
           </div>
 
           <div className={panel}>
             <div className={cx(panelTitle, 'mb-3 flex items-center gap-2')}><Icon name="Bug" size="sm" /> Problems in the last 7 days</div>
             {d.problems.length === 0
-              ? <div className="py-3 text-center text-[12.5px] text-muted-ink">Nothing has failed.</div>
+              ? <div className="py-3 text-center text-copy text-muted-ink">Nothing has failed.</div>
               : (
-                <table className="w-full border-collapse text-[12.5px]">
-                  <thead><tr className="text-left text-[11px] text-muted-ink">{['When', 'What happened', 'Unit', 'Reason given'].map(h => <th key={h} className="font-medium py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{h}</th>)}</tr></thead>
+                <table className="w-full border-collapse text-copy">
+                  <thead><tr className="text-left text-caption text-muted-ink">{['When', 'What happened', 'Unit', 'Reason given'].map(h => <th key={h} className="font-medium py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{h}</th>)}</tr></thead>
                   <tbody>
                     {d.problems.map((p, i) => (
                       <tr key={i} className="align-top">
@@ -229,14 +229,14 @@ export default function SystemHealthPage() {
           <div className={panelTitle}>Audit feed: recent changes</div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => { setSensitiveOnly(v => !v); setLimit(100); }} title="Only accounts and passwords, settings, payouts, deletions and failures"
-              className={cx('inline-flex h-7 items-center gap-1.5 rounded-control border border-solid px-2.5 text-[11px] font-semibold cursor-pointer [font-family:inherit]',
+              className={cx('inline-flex h-7 items-center gap-1.5 rounded-control border border-solid px-2.5 text-caption font-semibold cursor-pointer [font-family:inherit]',
                 sensitiveOnly ? 'border-[var(--color-warning-line)] bg-[var(--color-warning)] text-[var(--color-warning-fg)]' : 'border-line bg-card text-muted-ink')}>
               <Icon name="ShieldAlert" size="sm" /> Sensitive only
             </button>
             <div className="inline-flex rounded-control border border-solid border-line bg-card p-0.5">
               {RANGES.map(r => (
                 <button key={r} type="button" onClick={() => { setRange(r); setLimit(100); }}
-                  className={cx('h-6 rounded-[4px] border-none px-2 text-[11px] font-semibold cursor-pointer [font-family:inherit]', range === r ? 'bg-ink text-white' : 'bg-transparent text-muted-ink')}>
+                  className={cx('h-6 rounded-[4px] border-none px-2 text-caption font-semibold cursor-pointer [font-family:inherit]', range === r ? 'bg-ink text-white' : 'bg-transparent text-muted-ink')}>
                   {r}
                 </button>
               ))}
@@ -250,13 +250,13 @@ export default function SystemHealthPage() {
           </div>
         )}
         {feed.loading && rows.length === 0 ? <TableSkeleton rows={4} cols={4} />
-          : feed.error && rows.length === 0 ? <div className="py-6 text-center text-[12.5px] text-[var(--color-critical-fg)]">{feed.error}</div>
-          : rows.length === 0 ? <div className="py-6 text-center text-[12.5px] text-muted-ink">No {sensitiveOnly ? 'sensitive ' : ''}events in the last {range}.</div>
+          : feed.error && rows.length === 0 ? <div className="py-6 text-center text-copy text-[var(--color-critical-fg)]">{feed.error}</div>
+          : rows.length === 0 ? <div className="py-6 text-center text-copy text-muted-ink">No {sensitiveOnly ? 'sensitive ' : ''}events in the last {range}.</div>
           : (
             <>
             <div className="max-h-[520px] overflow-y-auto">
-              <table className="w-full border-collapse text-[12.5px]">
-                <thead><tr className="text-left text-[11px] text-muted-ink">{['When', 'Who', 'Action', 'Resource'].map(h => <th key={h} className="sticky top-0 bg-card font-medium py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{h}</th>)}</tr></thead>
+              <table className="w-full border-collapse text-copy">
+                <thead><tr className="text-left text-caption text-muted-ink">{['When', 'Who', 'Action', 'Resource'].map(h => <th key={h} className="sticky top-0 bg-card font-medium py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{h}</th>)}</tr></thead>
                 <tbody>
                   {rows.map(r => (
                     <Fragment key={r.id}>
@@ -270,7 +270,7 @@ export default function SystemHealthPage() {
                       </tr>
                       {openRow === r.id && (
                         <tr><td colSpan={4} className="px-5 py-2 bg-page [border-bottom:1px_solid_var(--color-line-soft)]">
-                          <div className="text-[11.5px] text-muted-ink">{dateTime(r.created_at)} · record {r.entity_id}</div>
+                          <div className="text-meta text-muted-ink">{dateTime(r.created_at)} · record {r.entity_id}</div>
                           <AuditDiff before={r.before} after={r.after} />
                         </td></tr>
                       )}
@@ -279,7 +279,7 @@ export default function SystemHealthPage() {
                 </tbody>
               </table>
             </div>
-            <div className="mt-3 flex items-center justify-between gap-3 text-[12px] text-muted-ink">
+            <div className="mt-3 flex items-center justify-between gap-3 text-meta text-muted-ink">
               <span>Showing {rows.length} of {(feed.data?.total ?? rows.length).toLocaleString()} in the last {range}. Click a row to see what changed.</span>
               {rows.length < (feed.data?.total ?? 0) && limit < 1000 && <Button size="sm" variant="secondary" loading={feed.loading} onClick={() => setLimit(l => Math.min(1000, l + 200))}>Show more</Button>}
             </div>

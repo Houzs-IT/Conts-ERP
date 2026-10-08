@@ -51,8 +51,8 @@ export default function PermissionsChart() {
     return out;
   }, [data]);
 
-  if (error) return <Card><div className="p-5 text-[13px] text-muted-ink">{error}</div></Card>;
-  if (loading || !data) return <Card><div className="p-5 text-[13px] text-muted-ink">Loading the permissions chart…</div></Card>;
+  if (error) return <Card><div className="p-5 text-copy text-muted-ink">{error}</div></Card>;
+  if (loading || !data) return <Card><div className="p-5 text-copy text-muted-ink">Loading the permissions chart…</div></Card>;
 
   const pending = Object.keys(draft).length;
   const shown = (a: AreaRow, role: string): AccessLevel => {
@@ -90,31 +90,31 @@ export default function PermissionsChart() {
 
   return (
     <Card>
-      <div className="py-[13px] px-5 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-[12px] text-muted-ink leading-[1.5]">
+      <div className="py-[13px] px-5 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-meta text-muted-ink leading-[1.5]">
         What each role can do in each part of the system. {data.canEdit ? 'Pick a level, then save.' : 'Only management can change this.'} Management
         always has full access and is not listed, so nobody can be locked out. Housekeepers, technicians and owners use their own apps and are fixed.
       </div>
       <div className="flex gap-x-5 gap-y-1.5 flex-wrap py-[11px] px-5 [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
         {data.levels.map(l => (
-          <span key={l} className="text-[11px] text-muted-ink">
+          <span key={l} className="text-caption text-muted-ink">
             <b style={{ color: LEVEL_COLOR[l] }}>{LEVEL_LABEL[l]}</b> — {LEVEL_NOTE[l]}
           </span>
         ))}
       </div>
       <div className="overflow-x-auto">
         <div className="min-w-[820px]">
-          <div className={`${GRID} py-2.5 bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-[11px] font-semibold text-muted-ink`}>
+          <div className={`${GRID} py-2.5 bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-caption font-semibold text-muted-ink`}>
             <div>Area</div>
             <div>Management</div>
             {data.roles.map(r => <div key={r}>{ROLE_LABEL[r] ?? r}</div>)}
           </div>
           {groups.map(g => (
             <div key={g.group}>
-              <div className="px-5 pt-3 pb-1.5 text-[10.5px] font-semibold tracking-[0.08em] uppercase text-muted-ink">{g.group}</div>
+              <div className="px-5 pt-3 pb-1.5 text-caption font-semibold tracking-[0.08em] uppercase text-muted-ink">{g.group}</div>
               {g.areas.map(a => (
                 <div key={a.key} className={`${GRID} py-[7px] [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]`}>
-                  <div className="text-[13px] font-medium">{a.label}</div>
-                  <div className="text-[12px] font-semibold" style={{ color: LEVEL_COLOR.full }}>Full</div>
+                  <div className="text-copy font-medium">{a.label}</div>
+                  <div className="text-meta font-semibold" style={{ color: LEVEL_COLOR.full }}>Full</div>
                   {data.roles.map(r => {
                     const level = shown(a, r);
                     const changed = draft[`${r}:${a.key}`] !== undefined;
@@ -124,7 +124,7 @@ export default function PermissionsChart() {
                           aria-label={`${ROLE_LABEL[r] ?? r} access to ${a.label}`}
                           value={level} disabled={!data.canEdit || saving}
                           onChange={e => pick(a, r, e.target.value as AccessLevel)}
-                          className="h-8 w-full max-w-[150px] px-2 py-0 [font:inherit] text-[12.5px] font-semibold bg-card border border-solid rounded-control outline-none"
+                          className="h-8 w-full max-w-[150px] px-2 py-0 [font:inherit] text-copy font-semibold bg-card border border-solid rounded-control outline-none"
                           style={{ color: LEVEL_COLOR[level], borderColor: changed ? 'var(--color-gold, #B08D57)' : 'var(--color-line, #DEDAD3)' }}
                         >
                           {data.levels.map(l => (
@@ -141,14 +141,14 @@ export default function PermissionsChart() {
         </div>
       </div>
       <div className="px-5 py-3 [border-top:1px_solid_var(--color-line,#DEDAD3)]">
-        <div className="text-[10.5px] font-semibold tracking-[0.08em] uppercase text-muted-ink mb-1.5">Roles not on this chart</div>
+        <div className="text-caption font-semibold tracking-[0.08em] uppercase text-muted-ink mb-1.5">Roles not on this chart</div>
         {FIXED_ROLES.map(r => (
-          <div key={r.name} className="text-[12.5px] leading-[1.7]"><b>{r.name}</b> <span className="text-muted-ink">— {r.note}</span></div>
+          <div key={r.name} className="text-copy leading-[1.7]"><b>{r.name}</b> <span className="text-muted-ink">— {r.note}</span></div>
         ))}
       </div>
       {data.canEdit && (
         <div className="py-[13px] px-5 flex items-center justify-between gap-3 flex-wrap bg-page">
-          <span className="text-[12px] text-muted-ink">
+          <span className="text-meta text-muted-ink">
             {pending === 0 ? 'No unsaved changes. “(standard)” marks the level a role has when nothing is chosen.' : `${pending} unsaved ${pending === 1 ? 'change' : 'changes'}.`}
           </span>
           <span className="flex gap-2">

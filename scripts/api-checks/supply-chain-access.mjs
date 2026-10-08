@@ -2,8 +2,8 @@
 // operations staff get the stock and order screens but not invoices, payments or accounting;
 // management and finance get everything. Read-only: writes nothing.
 import { call, callAsUser, check, done } from './harness.mjs';
-const staff = { userId: '11111111-1111-4111-8111-00000000aa01', email: 'ops-check@theconts.test', role: 'operations_staff' };
-const tech = { userId: '11111111-1111-4111-8111-00000000aa02', email: 'tech-check@theconts.test', role: 'technician' };
+const staff = { userId: '11111111-1111-4111-8111-000000000004', email: 'weiwen@theconts.com', role: 'operations_staff' };
+const tech = { userId: '11111111-1111-4111-8111-000000000007', email: 'hafiz@theconts.com', role: 'technician' };
 
 const ordersAndStock = ['/api/products', '/api/suppliers', '/api/purchase-orders', '/api/sales-orders', '/api/stock', '/api/delivery-orders', '/api/goods-receipts'];
 const money = ['/api/sales-invoices', '/api/purchase-invoices', '/api/payment-vouchers', '/api/unbilled-deliveries', '/api/accounting'];

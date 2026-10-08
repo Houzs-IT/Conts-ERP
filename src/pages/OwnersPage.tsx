@@ -9,11 +9,11 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
-import { rm, monthLabel, todayMyt } from '../lib/format';
+import { rm, rmShort, monthLabel, todayMyt, titleCase } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import {
   type Owner, type Payload,
-  FALLBACK, netOf, grossOf, terms,
+  FALLBACK, netOf, grossOf, guaranteedOf, managedNetOf, managedGrossOf, terms,
   Roll, AddOwnerModal,
 } from './owners/shared';
 import { useUrlState, usePhone, ListCard, SearchBox, FilterSelect, Chip, MonthStepper, STICKY_HEAD, shiftMonth, useFinanceFilters } from './finance/listKit';
@@ -89,7 +89,9 @@ export default function OwnersPage() {
   const unitCount = all.reduce((s, o) => s + o.units.length, 0);
   // Portfolio rollup — pure client compute over loaded owners, reusing the same per-owner net the profile shows.
   const portfolioNet = all.reduce((s, o) => s + netOf(o), 0);
-  const portfolioGross = all.reduce((s, o) => s + grossOf(o), 0);
+  const portfolioGuaranteed = all.reduce((s, o) => s + guaranteedOf(o), 0);
+  const portfolioManagedNet = all.reduce((s, o) => s + managedNetOf(o), 0);
+  const portfolioManagedGross = all.reduce((s, o) => s + managedGrossOf(o), 0);
   const shownNet = rows.reduce((s, o) => s + netOf(o), 0);
   const shownGross = rows.reduce((s, o) => s + grossOf(o), 0);
   const filtered = !!(q || building || model);
@@ -112,8 +114,8 @@ export default function OwnersPage() {
 
   const Head = ({ k, label, right }: { k: SortKey; label: string; right?: boolean }) => (
     <button onClick={() => sortBy(k)} aria-sort={sortKey === k ? (desc ? 'descending' : 'ascending') : undefined}
-      className={cx('p-0 bg-transparent border-none cursor-pointer font-sans text-[12px] font-semibold inline-flex items-center gap-1', right ? 'justify-end' : '', sortKey === k ? 'text-ink' : 'text-muted-ink')}>
-      {label}{sortKey === k && <span aria-hidden className="text-[10px]">{desc ? '▼' : '▲'}</span>}
+      className={cx('p-0 bg-transparent border-none cursor-pointer font-sans text-meta font-semibold inline-flex items-center gap-1', right ? 'justify-end' : '', sortKey === k ? 'text-ink' : 'text-muted-ink')}>
+      {label}{sortKey === k && <span aria-hidden className="text-caption">{desc ? '▼' : '▲'}</span>}
     </button>
   );
 
@@ -126,12 +128,14 @@ export default function OwnersPage() {
 
       <Card>
         <div className="flex gap-[30px] gap-y-3 flex-wrap items-center py-4 px-[22px]">
-          <Roll label={`Net payout, ${monthText}`} value={rm(portfolioNet)} strong />
-          <Roll label={`Gross, ${monthText}`} value={rm(portfolioGross)} />
+          <Roll label={`Owner payouts, ${monthText} (estimate)`} value={rmShort(portfolioNet)} strong />
+          <Roll label="from managed units" value={rmShort(portfolioManagedNet)} />
+          <Roll label="guaranteed rent (GRR units)" value={rmShort(portfolioGuaranteed)} />
+          <Roll label={`Booking revenue, managed units`} value={rmShort(portfolioManagedGross)} />
           <div className="ml-auto"><MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} /></div>
         </div>
-        <div className="px-[22px] pb-3 -mt-1 text-[11.5px] text-muted-ink">
-          Estimate from bookings that start in the month (collected revenue), less the fee and owner-charged expenses. The owner statement is the figure that is paid.
+        <div className="px-[22px] pb-3 -mt-1 text-meta text-muted-ink text-pretty">
+          Managed units: revenue collected on bookings that start in the month, less the fee and owner-charged expenses. Guaranteed-rent units pay the owner their fixed monthly amount whatever the bookings bring in, so it is counted on its own and not as a share of revenue. The owner statement is the figure that is paid.
         </div>
       </Card>
 
@@ -159,26 +163,26 @@ export default function OwnersPage() {
       <ListCard busy={loading && !!data}>
         {loading && !data ? <TableSkeleton rows={8} cols={phone ? 2 : 6} /> : rows.length === 0 ? (
           <div className="py-[44px] px-[22px] text-center flex flex-col items-center gap-2">
-            <span className="text-[14px] font-medium">{all.length === 0 ? 'No owners yet.' : 'No owners match these filters.'}</span>
-            {filtered && <button onClick={() => url.set({ q: null, building: null, model: null })} className="font-sans text-[14px] text-gold-ink bg-transparent border-none cursor-pointer">Clear filters</button>}
+            <span className="text-copy font-medium">{all.length === 0 ? 'No owners yet.' : 'No owners match these filters.'}</span>
+            {filtered && <button onClick={() => url.set({ q: null, building: null, model: null })} className="font-sans text-copy text-gold-ink bg-transparent border-none cursor-pointer">Clear filters</button>}
           </div>
         ) : phone ? (
           <div>
             {rows.map(o => (
               <button key={o.id} onClick={() => openProfile(o.id)}
                 className="w-full text-left flex items-center gap-3 py-[11px] px-4 bg-card border-none [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer font-sans text-ink">
-                <span className="w-[32px] h-[32px] flex-none rounded-full bg-black text-gold grid place-items-center text-[11px] font-semibold">{initials(o.displayName)}</span>
+                <span className="w-[32px] h-[32px] flex-none rounded-full bg-black text-gold grid place-items-center text-caption font-semibold">{initials(o.displayName)}</span>
                 <div className="flex flex-col gap-[2px] min-w-0 flex-1">
-                  <span className="text-[13.5px] font-medium truncate">{o.displayName}</span>
-                  <span className="text-[12px] text-muted-ink truncate">{unitsText(o)} · {ownerTerms(o)}</span>
+                  <span className="text-copy font-medium truncate">{titleCase(o.displayName)}</span>
+                  <span className="text-meta text-muted-ink truncate">{unitsText(o)} · {ownerTerms(o)}</span>
                 </div>
                 <div className="flex flex-col items-end gap-[2px] shrink-0">
-                  <span className="text-[13.5px] font-semibold tabular-nums">{rm(netOf(o), { cents: false })}</span>
-                  <span className="text-[11px] text-muted-ink">net</span>
+                  <span className="text-copy font-semibold tabular-nums">{rm(netOf(o), { cents: false })}</span>
+                  <span className="text-caption text-muted-ink">net</span>
                 </div>
               </button>
             ))}
-            <div className="flex items-center justify-between py-3 px-4 bg-page text-[13px] font-semibold">
+            <div className="flex items-center justify-between py-3 px-4 bg-page text-copy font-semibold">
               <span>{rows.length} {rows.length === 1 ? 'owner' : 'owners'}</span>
               <span className="tabular-nums">{rm(shownNet, { cents: false })}</span>
             </div>
@@ -187,31 +191,31 @@ export default function OwnersPage() {
           <div role="table" aria-label="Owners">
             <div role="row" className={cx(COLS, 'grid gap-[14px] py-[9px] px-[22px]', STICKY_HEAD)}>
               <Head k="name" label="Owner" /><Head k="units" label="Units" /><div>Terms</div>
-              <Head k="gross" label={`Gross, ${month === thisMonth ? 'month' : monthLabel(month)}`} right />
-              <Head k="net" label={`Net, ${month === thisMonth ? 'month' : monthLabel(month)}`} right />
+              <Head k="gross" label={`Booking revenue, ${month === thisMonth ? 'month' : monthLabel(month)}`} right />
+              <Head k="net" label={`Owner payout, ${month === thisMonth ? 'month' : monthLabel(month)}`} right />
               <div>Portal</div>
             </div>
             {rows.map(o => (
               <div key={o.id} role="row" tabIndex={0} onClick={() => openProfile(o.id)} onKeyDown={e => { if (e.key === 'Enter') openProfile(o.id); }}
                 className={cx(COLS, 'grid gap-[14px] items-center min-h-[52px] py-[7px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-page')}>
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-[30px] h-[30px] flex-none rounded-full bg-black text-gold grid place-items-center text-[11px] font-semibold">{initials(o.displayName)}</span>
+                  <span className="w-[30px] h-[30px] flex-none rounded-full bg-black text-gold grid place-items-center text-caption font-semibold">{initials(o.displayName)}</span>
                   <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-[13.5px] font-medium truncate" title={o.displayName}>{o.displayName}</span>
-                    {o.email && <span className="text-[11.5px] text-muted-ink truncate" title={o.email}>{o.email}</span>}
+                    <span className="text-copy font-medium truncate" title={o.displayName}>{titleCase(o.displayName)}</span>
+                    {o.email && <span className="text-meta text-muted-ink truncate" title={o.email}>{o.email}</span>}
                   </div>
                 </div>
-                <span className="text-[12.5px] text-muted-ink truncate" title={o.units.map(u => u.unitLabel).join(', ')}>{unitsText(o)}</span>
-                <span className="text-[12.5px] text-muted-ink truncate">{ownerTerms(o)}</span>
-                <span className="text-[12.5px] text-right text-muted-ink tabular-nums whitespace-nowrap">{rm(grossOf(o), { cents: false })}</span>
-                <span className={cx('text-[13px] text-right font-medium tabular-nums whitespace-nowrap', netOf(o) < 0 ? TONE.critical.text : '')}>{rm(netOf(o), { cents: false })}</span>
+                <span className="text-copy text-muted-ink truncate" title={o.units.map(u => u.unitLabel).join(', ')}>{unitsText(o)}</span>
+                <span className="text-copy text-muted-ink truncate">{ownerTerms(o)}</span>
+                <span className="text-copy text-right text-muted-ink tabular-nums whitespace-nowrap">{rm(grossOf(o), { cents: false })}</span>
+                <span className={cx('text-copy text-right font-medium tabular-nums whitespace-nowrap', netOf(o) < 0 ? TONE.critical.text : '')}>{rm(netOf(o), { cents: false })}</span>
                 <div className="flex items-center justify-between gap-2 min-w-0">
                   {o.portalInvited ? <Badge tone="success" label="Active" /> : <Badge tone="neutral" label="Not invited" />}
                   <Icon name="ChevronRight" size="sm" color="var(--color-muted-ink)" />
                 </div>
               </div>
             ))}
-            <div className={cx(COLS, 'grid gap-[14px] items-center py-[12px] px-[22px] bg-page text-[13px] font-semibold')}>
+            <div className={cx(COLS, 'grid gap-[14px] items-center py-[12px] px-[22px] bg-page text-copy font-semibold')}>
               <span>{filtered ? `${rows.length} of ${all.length} owners` : `${rows.length} owners`}</span><span /><span />
               <span className="text-right tabular-nums whitespace-nowrap">{rm(shownGross, { cents: false })}</span>
               <span className="text-right tabular-nums whitespace-nowrap">{rm(shownNet, { cents: false })}</span>

@@ -240,7 +240,9 @@ function Routed() {
         <Route path="/sales/consignment-notes" element={<ConsignmentNotesPage />} />
         <Route path="/procurement/stock-transfers" element={<StockTransfersPage />} />
         <Route path="/procurement/stock-takes" element={<StockTakesPage />} />
-        <Route path="/finance/revenue" element={<AnalyticsPage />} />
+        {/* Revenue was the same screen as Performance > Analytics (UI audit); one route, the old address redirects. */}
+        <Route path="/finance/revenue" element={<Navigate to="/performance/analytics" replace />} />
+        <Route path="/performance" element={<Navigate to="/performance/analytics" replace />} />
         <Route path="/finance/expenses" element={<ExpensesPage />} />
         <Route path="/finance/statements" element={<StatementsPage />} />
         <Route path="/finance/payouts" element={<PayoutsPage />} />

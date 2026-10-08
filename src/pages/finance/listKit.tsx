@@ -63,7 +63,7 @@ export function BusyBar({ on }: { on: boolean }) {
 /** Classes for a header row that sticks to the top of the scrolling page. The page (AppShell's main) has
  *  24px top padding on desktop, and sticky offsets start inside it, so -24px puts the header flush with
  *  the top edge instead of letting rows show through above it. Phones use cards, not this header. */
-export const STICKY_HEAD = 'sticky -top-6 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink';
+export const STICKY_HEAD = 'sticky -top-6 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink';
 
 /** "51-100 of 977" with previous / next. Hidden when everything fits on one page. */
 export function Pager({ page, pageSize, total, onPage, unit = 'rows' }: {
@@ -74,13 +74,13 @@ export function Pager({ page, pageSize, total, onPage, unit = 'rows' }: {
   const from = (page - 1) * pageSize + 1, to = Math.min(total, page * pageSize);
   // The pager sits under the last row; bring the new page's first rows into view.
   const go = (p: number) => { onPage(p); document.querySelector('main')?.scrollTo({ top: 0 }); };
-  const btn = 'h-8 px-3 rounded-control border border-solid border-line bg-card font-sans text-[13px] text-ink cursor-pointer disabled:cursor-default disabled:text-faint';
+  const btn = 'h-8 px-3 rounded-control border border-solid border-line bg-card font-sans text-copy text-ink cursor-pointer disabled:cursor-default disabled:text-faint';
   return (
     <div className="flex items-center justify-between gap-3 flex-wrap px-[22px] py-[11px] [border-top:1px_solid_var(--color-line)] bg-page">
-      <span className="text-[12.5px] text-muted-ink tabular-nums">{from.toLocaleString('en-MY')}–{to.toLocaleString('en-MY')} of {total.toLocaleString('en-MY')} {unit}</span>
+      <span className="text-copy text-muted-ink tabular-nums">{from.toLocaleString('en-MY')}–{to.toLocaleString('en-MY')} of {total.toLocaleString('en-MY')} {unit}</span>
       <div className="flex items-center gap-2">
         <button className={btn} disabled={page <= 1} onClick={() => go(page - 1)} aria-label="Previous page">Previous</button>
-        <span className="text-[12.5px] text-muted-ink tabular-nums whitespace-nowrap">Page {page} of {pages}</span>
+        <span className="text-copy text-muted-ink tabular-nums whitespace-nowrap">Page {page} of {pages}</span>
         <button className={btn} disabled={page >= pages} onClick={() => go(page + 1)} aria-label="Next page">Next</button>
       </div>
     </div>
@@ -106,7 +106,7 @@ export function SearchBox({ value, onChange, placeholder, label, className }: {
         <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
       </svg>
       <input type="search" value={text} onChange={e => setText(e.target.value)} placeholder={placeholder}
-        className="block w-full box-border h-9 pl-[33px] pr-3 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-[14px]" />
+        className="block w-full box-border h-9 pl-[33px] pr-3 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy" />
     </label>
   );
 }
@@ -119,7 +119,7 @@ export function FilterSelect({ label, value, onChange, all, options, className }
     <label className={cx('relative flex items-center min-w-0', className)}>
       <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">{label}</span>
       <select value={value} onChange={e => onChange(e.target.value)} title={label}
-        className={cx('block w-full box-border h-9 pl-3 pr-7 border border-solid border-line rounded-control outline-none bg-card font-sans text-[14px] cursor-pointer min-w-0 text-ellipsis',
+        className={cx('block w-full box-border h-9 pl-3 pr-7 border border-solid border-line rounded-control outline-none bg-card font-sans text-copy cursor-pointer min-w-0 text-ellipsis',
           value ? 'text-ink' : 'text-muted-ink')}>
         <option value="">{all}</option>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -132,11 +132,11 @@ export function FilterSelect({ label, value, onChange, all, options, className }
 export function Chip({ on, onClick, children, count }: { on: boolean; onClick: () => void; children: ReactNode; count?: number }) {
   return (
     <button onClick={onClick} aria-pressed={on}
-      className={cx('inline-flex shrink-0 items-center gap-[7px] h-8 px-[12px] rounded-full cursor-pointer whitespace-nowrap font-sans text-[13px] font-medium border border-solid',
+      className={cx('inline-flex shrink-0 items-center gap-[7px] h-8 px-[12px] rounded-full cursor-pointer whitespace-nowrap font-sans text-copy font-medium border border-solid',
         on ? 'border-black bg-black text-white' : 'border-line bg-card text-muted-ink')}>
       {children}
       {count !== undefined && (
-        <span className={cx('text-[11px] font-semibold py-px px-[6px] rounded-full tabular-nums', on ? 'bg-[rgba(255,255,255,0.18)] text-white' : 'bg-muted text-muted-ink')}>
+        <span className={cx('text-caption font-semibold py-px px-[6px] rounded-full tabular-nums', on ? 'bg-[rgba(255,255,255,0.18)] text-white' : 'bg-muted text-muted-ink')}>
           {count.toLocaleString('en-MY')}
         </span>
       )}
@@ -148,9 +148,9 @@ export function Chip({ on, onClick, children, count }: { on: boolean; onClick: (
 export function MonthStepper({ label, onStep, note }: { label: string; onStep: (by: number) => void; note?: string }) {
   return (
     <div className="flex items-center h-9 rounded-control border border-solid border-line bg-card shrink-0">
-      <button aria-label="Previous month" onClick={() => onStep(-1)} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">‹</button>
-      <span className="px-1 min-w-[96px] text-center text-[14px] font-medium tabular-nums whitespace-nowrap">{label}{note ? <span className="text-muted-ink font-normal"> · {note}</span> : null}</span>
-      <button aria-label="Next month" onClick={() => onStep(1)} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">›</button>
+      <button aria-label="Previous month" onClick={() => onStep(-1)} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-heading">‹</button>
+      <span className="px-1 min-w-[96px] text-center text-copy font-medium tabular-nums whitespace-nowrap">{label}{note ? <span className="text-muted-ink font-normal"> · {note}</span> : null}</span>
+      <button aria-label="Next month" onClick={() => onStep(1)} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-heading">›</button>
     </div>
   );
 }

@@ -1,0 +1,174 @@
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import Icon from './Icon';
+import { cx } from '../lib/design-tokens';
+
+export interface SelectOption { value: string; label: string; group?: string; hint?: string; disabled?: boolean }
+
+const CONTROL = 'h-9 rounded-control border border-solid border-line bg-card text-ink font-sans text-copy cursor-pointer';
+
+/**
+ * The styled dropdown every filter bar uses. It stays a native <select> underneath, so phones get their
+ * own picker and keyboards work, but it looks the same everywhere: 36px, 13px text, one chevron.
+ * `label` is always given; `showLabel` prints it above, otherwise it is for screen readers only.
+ */
+export function Select({ value, onChange, options, label, showLabel, placeholder, className, disabled, size = 'sm' }: {
+  value: string; onChange: (v: string) => void; options: SelectOption[]; label: string;
+  showLabel?: boolean; placeholder?: string; className?: string; disabled?: boolean; size?: 'sm' | 'md';
+}) {
+  const id = useId();
+  const groups = useMemo(() => {
+    const m = new Map<string, SelectOption[]>();
+    for (const o of options) { const k = o.group ?? ''; if (!m.has(k)) m.set(k, []); m.get(k)!.push(o); }
+    return [...m.entries()];
+  }, [options]);
+  return (
+    <div className={cx('flex flex-col gap-1.5 min-w-0', className)}>
+      <label htmlFor={id} className={showLabel ? 'text-meta font-medium text-muted-ink' : 'absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]'}>{label}</label>
+      <div className="relative flex items-center min-w-0">
+        <select id={id} value={value} disabled={disabled} onChange={e => onChange(e.target.value)}
+          className={cx(CONTROL, 'w-full appearance-none pl-3 pr-8 truncate disabled:cursor-not-allowed disabled:text-faint', size === 'md' && 'h-10')}>
+          {placeholder !== undefined && <option value="">{placeholder}</option>}
+          {groups.map(([g, opts]) => g
+            ? <optgroup key={g} label={g}>{opts.map(o => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>)}</optgroup>
+            : opts.map(o => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>))}
+        </select>
+        <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" style={{ position: 'absolute', right: 10, pointerEvents: 'none' }} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A searchable picker for long lists (139 units): type to filter, options grouped (by building) and
+ * sorted A to Z, arrow keys and Enter to choose, Escape to close. `allLabel` adds a first "All ..." row.
+ */
+export function SearchSelect({ value, onChange, options, label, showLabel, allLabel, placeholder = 'Search', className, renderOption }: {
+  value: string; onChange: (v: string) => void; options: SelectOption[]; label: string;
+  showLabel?: boolean; allLabel?: string; placeholder?: string; className?: string;
+  renderOption?: (o: SelectOption) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [active, setActive] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const listId = useId();
+
+  const sorted = useMemo(() => [...options].sort((a, b) =>
+    (a.group ?? '').localeCompare(b.group ?? '', 'en', { numeric: true }) || a.label.localeCompare(b.label, 'en', { numeric: true })), [options]);
+  const shown = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    const hits = t ? sorted.filter(o => `${o.group ?? ''} ${o.label} ${o.hint ?? ''}`.toLowerCase().includes(t)) : sorted;
+    return allLabel && !t ? [{ value: '', label: allLabel }, ...hits] : hits;
+  }, [sorted, q, allLabel]);
+  const current = options.find(o => o.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+    setActive(Math.max(0, shown.findIndex(o => o.value === value)));
+    input.current?.focus();
+    const onDoc = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setActive(0); }, [q]);
+
+  const choose = (o?: SelectOption) => { if (!o || o.disabled) return; onChange(o.value); setOpen(false); setQ(''); };
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { e.preventDefault(); setOpen(false); setQ(''); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => Math.min(a + 1, shown.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(a - 1, 0)); }
+    else if (e.key === 'Enter') { e.preventDefault(); choose(shown[active]); }
+  };
+
+  let lastGroup: string | undefined;
+  return (
+    <div ref={box} className={cx('relative flex flex-col gap-1.5 min-w-0', className)}>
+      <span className={showLabel ? 'text-meta font-medium text-muted-ink' : 'absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]'}>{label}</span>
+      <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${label}: ${current?.label ?? allLabel ?? 'none'}`}
+        onClick={() => setOpen(v => !v)}
+        className={cx(CONTROL, 'w-full flex items-center gap-2 pl-3 pr-2 text-left')}>
+        <span className={cx('flex-1 min-w-0 truncate', !current && 'text-muted-ink')}>{current ? (current.group ? `${current.label}` : current.label) : (allLabel ?? 'Choose')}</span>
+        <Icon name="ChevronsUpDown" size="sm" color="var(--color-muted-ink)" />
+      </button>
+      {open && (
+        <div className="absolute z-30 top-[calc(100%+4px)] left-0 w-full min-w-[260px] max-w-[calc(100vw-32px)] bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] overflow-hidden">
+          <div className="flex items-center gap-2 px-3 h-10 [border-bottom:1px_solid_var(--color-line-soft)]">
+            <Icon name="Search" size="sm" color="var(--color-muted-ink)" />
+            <input ref={input} value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey} placeholder={placeholder}
+              role="combobox" aria-controls={listId} aria-expanded aria-activedescendant={shown[active] ? `${listId}-${active}` : undefined}
+              className="flex-1 min-w-0 border-none outline-none bg-transparent font-sans text-copy text-ink" />
+          </div>
+          <div id={listId} role="listbox" aria-label={label} className="max-h-[300px] overflow-y-auto py-1">
+            {shown.length === 0 && <div className="px-3 py-3 text-meta text-muted-ink">No match for "{q.trim()}".</div>}
+            {shown.map((o, i) => {
+              const head = o.group && o.group !== lastGroup ? o.group : null;
+              lastGroup = o.group;
+              return (
+                <div key={`${o.value}-${i}`}>
+                  {head && <div className="px-3 pt-2 pb-1 text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">{head}</div>}
+                  <div id={`${listId}-${i}`} role="option" aria-selected={o.value === value} aria-disabled={o.disabled}
+                    onMouseEnter={() => setActive(i)} onMouseDown={e => { e.preventDefault(); choose(o); }}
+                    className={cx('mx-1 px-2.5 py-[7px] rounded-control flex items-center gap-2 text-copy cursor-pointer',
+                      i === active ? 'bg-muted' : '', o.value === value ? 'font-semibold' : '', o.disabled && 'text-faint cursor-not-allowed')}>
+                    <span className="flex-1 min-w-0 truncate">{renderOption ? renderOption(o) : o.label}</span>
+                    {o.hint && <span className="text-caption text-muted-ink flex-none">{o.hint}</span>}
+                    {o.value === value && <Icon name="Check" size="sm" />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export interface MenuItem { key: string; label: string; hint?: string; icon?: string; danger?: boolean; disabledReason?: string; onSelect: () => void }
+
+/**
+ * A button that opens a short list of actions, each with a one-line consequence. Items that cannot run
+ * stay visible, greyed, with the reason (never silently missing). The trigger is whatever you pass, e.g.
+ * a status pill, so this doubles as the status menu: show only the allowed next states.
+ */
+export function Menu({ trigger, items, label, align = 'right' }: { trigger: ReactNode; items: MenuItem[]; label: string; align?: 'left' | 'right' }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  return (
+    <div ref={box} className="relative inline-flex">
+      <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label={label} onClick={() => setOpen(v => !v)}
+        className="inline-flex items-center gap-1 p-0 bg-transparent border-none cursor-pointer font-sans">
+        {trigger}
+      </button>
+      {open && (
+        <div role="menu" aria-label={label}
+          className={cx('absolute z-30 top-[calc(100%+6px)] min-w-[240px] max-w-[calc(100vw-32px)] bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] py-1', align === 'right' ? 'right-0' : 'left-0')}>
+          {items.map(it => {
+            const off = !!it.disabledReason;
+            return (
+              <button key={it.key} type="button" role="menuitem" aria-disabled={off} title={it.disabledReason}
+                onClick={() => { if (off) return; setOpen(false); it.onSelect(); }}
+                className={cx('w-full flex items-start gap-2.5 px-3 py-2 bg-transparent border-none text-left font-sans',
+                  off ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-muted')}>
+                {it.icon && <span className={cx('mt-px', off ? 'text-faint' : it.danger ? 'text-[var(--color-critical-fg)]' : 'text-ink-2')}><Icon name={it.icon} size="sm" /></span>}
+                <span className="flex flex-col gap-px min-w-0">
+                  <span className={cx('text-copy font-medium', off ? 'text-faint' : it.danger ? 'text-[var(--color-critical-fg)]' : 'text-ink')}>{it.label}</span>
+                  {(it.disabledReason || it.hint) && <span className="text-meta text-muted-ink">{it.disabledReason ?? it.hint}</span>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

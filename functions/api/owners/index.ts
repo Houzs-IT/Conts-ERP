@@ -5,6 +5,8 @@ import { MASTER_ROLES } from '../../_lib/properties';
 import { daysIn, todayMyt } from '../../_lib/ops';
 
 const READ_ROLES = [...MASTER_ROLES, 'operations_staff'];
+/** Last four characters, ignoring spaces and dashes ("680606-08-5101" -> "5101"). */
+const tail = (v: unknown) => String(v).replace(/[\s-]/g, '').slice(-4);
 
 /** GET /api/owners?month=YYYY-MM&id= — every owner (or one, with `id`) with their units, contract and that
  *  month's figures (default: this month). Identity and bank numbers are shown only to roles that manage them. */
@@ -44,8 +46,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       const ownerDefault = o.default_management_fee_pct != null ? Number(o.default_management_fee_pct) : null;
       return {
         id: o.id, displayName: o.display_name, email: o.email, phone: o.phone,
-        ic: banking ? o.ic_number : null, bankName: banking ? o.bank_name : null,
-        bankAccount: banking ? o.bank_account_number : null, accountHolder: banking ? (o.bank_account_holder ?? o.display_name) : null,
+        // Identity and bank numbers leave the server only as their last four characters; the full value needs an
+        // audited reveal (GET /api/owners/:id/reveal), the same rule as access codes and the Payouts screen.
+        ic: null, bankAccount: null,
+        icLast4: banking && o.ic_number ? tail(o.ic_number) : null,
+        bankAccountLast4: banking ? (o.bank_account_last4 ?? (o.bank_account_number ? tail(o.bank_account_number) : null)) : null,
+        bankName: banking ? o.bank_name : null, accountHolder: banking ? (o.bank_account_holder ?? o.display_name) : null,
         portalInvited: !!o.user_id,
         defaultManagementFeePct: ownerDefault,
         contract: mine ? { feePct: Number(mine.management_fee_pct), startedOn: mine.starts_on, renewsOn: mine.renews_on, endsOn: mine.ends_on ?? null } : null,
