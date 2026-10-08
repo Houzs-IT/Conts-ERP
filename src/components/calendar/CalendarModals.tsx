@@ -77,7 +77,11 @@ export function BlockWizard({ units, initial, onClose, onSave }: {
     <CentreModal title="Block wizard" sub="Hold nights so no channel can sell them." onClose={onClose} saveLabel="Block dates" canSave={valid} onSave={() => onSave({ unitId: unit, from: fromD, to: toD, reason: reason.trim() })}>
       <div className="flex flex-col gap-[7px]">
         <label className="text-[12px] font-medium text-muted-ink">Unit</label>
-        <select value={unit} onChange={e => setUnit(e.target.value)} className={`${selectCls} h-11 w-full text-[13px]`}>{units.map(u => <option key={u.id} value={u.id}>{u.unitNumber} — {u.propertyName}</option>)}</select>
+        <select value={unit} onChange={e => setUnit(e.target.value)} className={`${selectCls} h-11 w-full text-[13px]`}>
+          {groupByBuilding(units).map(([name, us]) => (
+            <optgroup key={name} label={name}>{us.map(u => <option key={u.id} value={u.id}>{u.unitNumber}</option>)}</optgroup>
+          ))}
+        </select>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="From" type="date" value={fromD} onChange={e => setFromD(e.target.value)} />
@@ -88,6 +92,14 @@ export function BlockWizard({ units, initial, onClose, onSave }: {
   );
 }
 
+/** Up to this many units on the board, Rate update starts with all of them ticked. */
+const PRESELECT_MAX = 12;
+const groupByBuilding = (units: CalendarUnit[]) => {
+  const m = new Map<string, CalendarUnit[]>();
+  for (const u of units) { const l = m.get(u.propertyName) ?? []; l.push(u); m.set(u.propertyName, l); }
+  return [...m.entries()];
+};
+
 interface RateLine { from: string; to: string; price: string; minStay: string; stop: 'same' | 'close' | 'open' }
 export interface RateUpdateValue { unitIds: string[]; channels: BookingChannel[]; lines: { from: string; to: string; priceSen?: number; minStay?: number; stopSell?: boolean }[] }
 
@@ -97,7 +109,11 @@ export function RateUpdate({ units, initial, onClose, onSave }: {
   units: CalendarUnit[]; initial: { unitIds?: string[]; from?: string; to?: string }; onClose: () => void;
   onSave: (v: RateUpdateValue) => void;
 }) {
-  const [unitSel, setUnitSel] = useState<Record<string, boolean>>(Object.fromEntries(units.map(u => [u.id, initial.unitIds ? initial.unitIds.includes(u.id) : true])));
+  // Opened from the toolbar with a long board, nothing starts ticked: a price meant for one building must not
+  // reach all 139 units because the operator did not untick the rest.
+  const startAll = units.length <= PRESELECT_MAX;
+  const [unitSel, setUnitSel] = useState<Record<string, boolean>>(Object.fromEntries(units.map(u => [u.id, initial.unitIds ? initial.unitIds.includes(u.id) : startAll])));
+  const groups = groupByBuilding(units);
   const [chanSel, setChanSel] = useState<Record<string, boolean>>({ direct: true, airbnb: true, booking_com: true, agoda: true });
   const blank = (from = '', to = ''): RateLine => ({ from, to, price: '', minStay: '', stop: 'same' });
   const [lines, setLines] = useState<RateLine[]>([blank(initial.from ?? '', initial.to ?? '')]);
@@ -124,11 +140,37 @@ export function RateUpdate({ units, initial, onClose, onSave }: {
         })),
       })}>
       <div className="flex flex-col gap-[7px]">
-        <label className="text-[12px] font-medium text-muted-ink">Units · {unitIds.length}/{units.length}</label>
-        <div className="flex gap-2 flex-wrap">
-          {units.map(u => { const on = !!unitSel[u.id]; return (
-            <button key={u.id} type="button" aria-pressed={on} onClick={() => setUnitSel(s => ({ ...s, [u.id]: !on }))} className={pill(on)}>{u.unitNumber}</button>
-          ); })}
+        <div className="flex items-baseline justify-between gap-3">
+          <label className="text-[12px] font-medium text-muted-ink">Units · {unitIds.length} of {units.length}</label>
+          {units.length > 1 && (
+            <button type="button" onClick={() => setUnitSel(Object.fromEntries(units.map(u => [u.id, unitIds.length !== units.length])))}
+              className="bg-transparent border-none p-0 cursor-pointer font-sans text-[12px] font-medium text-[var(--color-text-accent)]">
+              {unitIds.length === units.length ? 'Clear all' : 'Select all'}
+            </button>
+          )}
+        </div>
+        <div className={`flex flex-col gap-2.5 ${units.length > 12 ? 'max-h-[30vh] overflow-y-auto pr-1 [scrollbar-width:thin]' : ''}`}>
+          {groups.map(([name, us]) => {
+            const allOn = us.every(u => unitSel[u.id]);
+            return (
+              <div key={name} className="flex flex-col gap-1.5">
+                {groups.length > 1 && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11.5px] font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">{name}</span>
+                    <button type="button" onClick={() => setUnitSel(s => ({ ...s, ...Object.fromEntries(us.map(u => [u.id, !allOn])) }))}
+                      className="flex-none bg-transparent border-none p-0 cursor-pointer font-sans text-[11.5px] font-medium text-muted-ink hover:text-ink">
+                      {allOn ? 'None' : `All ${us.length}`}
+                    </button>
+                  </div>
+                )}
+                <div className="flex gap-2 flex-wrap">
+                  {us.map(u => { const on = !!unitSel[u.id]; return (
+                    <button key={u.id} type="button" aria-pressed={on} onClick={() => setUnitSel(s => ({ ...s, [u.id]: !on }))} className={pill(on)}>{u.unitNumber}</button>
+                  ); })}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

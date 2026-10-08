@@ -112,3 +112,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Not imported (no field yet): Package D on 38 units (schema allows A-C; the monthly minimum is on the contract instead), 331 utility account numbers, DEBT AMOUNT on 5 units, HostPlatform weekend price (equal to weekday on all 114 today) and per-booking cleaning cost, OWNER PAYOUT history (157 rows, 540 unit-months).
 - Not imported: 187 negative 杂费扣款 lines (RM 38,406.81 back to owners); expenses cannot be negative. Decide: statement adjustments, or a credit type.
 - Owner to check: 7 units still under "Owner to be confirmed"; the listing names owner "sad asd" on 2 units (looks like test data); 'Trion KL (2)' came in as its own building next to 'Trion KL'; 1 Airbnb stay (UNO-1503A, 31 Aug) appears under two codes in the workbook and so twice on the calendar.
+
+## Units, Calendar, Dashboard at real size (feat/scale-units-calendar)
+- Owner to check: building states are written three ways (13 "W.P Kuala Lumpur", 1 "WP", 6 blank), so the Units tree shows three groups for one state. Fix on each building (Units, pencil on the building).
+- ADR on Dashboard and Portfolio is collected revenue over booked nights; bookings later this month count their nights before their money is collected, so the month-to-date ADR reads low (RM 70 against RM 112-187 per unit on the import). Decide: gross booking value instead, or count only nights already stayed.
+- Calendar rate rows for all 139 units are about 20,000 cells (0.6 s to draw); they start hidden above 8 units. If people want them on for the whole board, virtualise the rows.

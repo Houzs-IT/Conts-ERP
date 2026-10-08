@@ -23,7 +23,7 @@ type Off = Partial<Record<BookingChannel, boolean>>;
  *  (booking sites some shown unit is on, plus direct, block and owner stay); all six if omitted. */
 export function CalendarFilters({ channels = ALL_CHANNELS, properties, property, setProperty, off, setOff, statusOff, setStatusOff, onReset, dirty }: {
   channels?: BookingChannel[];
-  properties: string[]; property: string; setProperty: (p: string) => void;
+  properties: { id: string; name: string; units: number }[]; property: string; setProperty: (p: string) => void;
   off: Off; setOff: (fn: (o: Off) => Off) => void;
   statusOff: Record<string, boolean>; setStatusOff: (fn: (o: Record<string, boolean>) => Record<string, boolean>) => void;
   onReset: () => void; dirty: boolean;
@@ -31,10 +31,10 @@ export function CalendarFilters({ channels = ALL_CHANNELS, properties, property,
   const anyOff = channels.some(k => off[k]);
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
-      <select value={property} onChange={e => setProperty(e.target.value)} aria-label="Property"
-        className={`${selectCls} h-10 md:h-8 text-[13px] w-full sm:w-auto sm:max-w-[220px]`}>
-        <option value="all">All properties</option>
-        {properties.map(p => <option key={p} value={p}>{p}</option>)}
+      <select value={property} onChange={e => setProperty(e.target.value)} aria-label="Building"
+        className={`${selectCls} h-10 md:h-8 text-[13px] w-full sm:w-auto sm:max-w-[240px]`}>
+        <option value="all">All buildings ({properties.reduce((n, p) => n + p.units, 0)} units)</option>
+        {properties.map(p => <option key={p.id} value={p.id}>{p.name} ({p.units})</option>)}
       </select>
 
       <div role="group" aria-label="Channels" className="flex flex-wrap items-center gap-1.5">

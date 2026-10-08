@@ -60,13 +60,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   return json({
     generatedAt: new Date().toISOString(),
-    period,
+    period, days, from: dateFrom, toExclusive: dateToExclusive,
     units: rows.length,
     buildings: new Set(rows.map(r => r.property_id)).size,
     rows: rows.map(r => {
       const revenue = Number(r.revenue), nights = Number(r.nights);
       return {
-        unitId: r.id, unitNumber: r.unit_number, propertyName: r.property_name, ownerName: r.owner_name,
+        unitId: r.id, unitNumber: r.unit_number, propertyId: r.property_id, propertyName: r.property_name, ownerName: r.owner_name,
+        nights,
         occupancy: Math.min(100, Number(((nights / days) * 100).toFixed(1))),
         adr: finance && nights ? Math.round(revenue / nights) : 0,
         revpar: finance ? Math.round(revenue / days) : 0,
