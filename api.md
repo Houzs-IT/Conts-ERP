@@ -193,6 +193,9 @@ Tab payloads. `activity` is chronological, attributable and filterable: `{ actor
 ### GET /api/access-credentials?unitId=
 `secret` is returned **masked** (`"••••17#"`) unless `?reveal=true` with an operations or management role; a reveal writes `audit_log` (`access.reveal`).
 
+### POST /api/access-credentials · PATCH / DELETE /api/access-credentials/:id
+Add, change or remove a unit's code (Units > Access & keys). Body `{ unitId, kind, label, secret?, instruction, rotatesAfterStay }`; `kind` ∈ `smart_lock | key_box | guard_desk | lift_card | wifi`. On PATCH only what is present changes: `secret` absent keeps the code, `''` removes it. Same roles as a reveal (management, operations manager). Each write is audited (`access.create | access.update | access.delete`) with whether the code changed, **never the code**.
+
 ---
 
 ## 6. Maintenance
