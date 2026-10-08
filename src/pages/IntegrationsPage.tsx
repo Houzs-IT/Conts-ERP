@@ -157,7 +157,8 @@ export default function IntegrationsPage() {
 
   return (
     <>
-      <PageHeader title="Integrations" sub={`${rows.filter(r => r.state === 'connected' || r.state === 'degraded').length} connected · ${problems} needing attention`} />
+      <PageHeader title="Integrations" sub={`${rows.filter(r => r.state === 'connected' || r.state === 'degraded').length} connected · ${problems} needing attention`}
+        right={<Button size="sm" variant="secondary" icon={<Icon name="FileUp" size="sm" />} onClick={() => { window.location.hash = '#/system/integrations/hostplatform'; }}>Import from HostPlatform</Button>} />
 
       {error && <StaleBanner message={`Showing the last status we have. ${error}`} onRetry={reload} />}
 

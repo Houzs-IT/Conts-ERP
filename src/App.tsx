@@ -87,6 +87,7 @@ const InboxPage = lazy(() => import('./pages/InboxPage'));
 const AutomationsPage = lazy(() => import('./pages/AutomationsPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
 const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'));
+const HostPlatformImportPage = lazy(() => import('./pages/HostPlatformImportPage'));
 const SystemHealthPage = lazy(() => import('./pages/SystemHealthPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
@@ -253,6 +254,7 @@ function Routed() {
         <Route path="/communication/automations" element={<AutomationsPage />} />
         <Route path="/system/users" element={<UsersPage />} />
         <Route path="/system/integrations" element={<IntegrationsPage />} />
+        <Route path="/system/integrations/hostplatform" element={<HostPlatformImportPage />} />
         <Route path="/system/settings" element={<SettingsPage />} />
         <Route path="/system/audit" element={<Navigate to="/system/health" replace />} />
         <Route path="/system/health" element={<SystemHealthPage />} />
