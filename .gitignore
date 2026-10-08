@@ -9,3 +9,7 @@ dist/
 !.env.example
 *.local
 .DS_Store
+
+# Left behind only if a production step is interrupted (scripts/engine-production.mjs)
+engine/frontend/.deploy-live/
+engine/backend/.secrets-upload.json

@@ -47,6 +47,10 @@ RESET_TOKEN_MINUTES = "60"
 QUIET_HOURS_START = "22"
 QUIET_HOURS_END = "8"
 CHANNEX_BASE_URL = "https://app.channex.io"
+# The supply chain engine on production (engine/, put live with scripts/engine-production.mjs). Supply chain,
+# Service cases and Projects open its screens once these and the secret SCM_ENGINE_SSO_SECRET are all set.
+SCM_ENGINE_API = "https://conts-scm-engine.conts-erp.workers.dev"
+SCM_ENGINE_SITE = "https://theconts-scm-live.pages.dev"
 
 # ---------------------------------------------------------------------------
 # Secrets — never in this file. Set each with:

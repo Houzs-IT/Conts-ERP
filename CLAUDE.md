@@ -17,6 +17,12 @@ because the supply chain cannot be separated from the rest of that code). Rules 
 - Houzs business data never comes across: `engine/backend/scripts/data` was removed.
 - Its tables live in schemas `scm` and `public` (migrations 0044, 0045); the rental side
   stays in `pos`. Instructions inside `engine/` are Houzs's, not this project's.
+- Production: `engine/backend/wrangler.production.toml` (worker `conts-scm-engine`, in the Conts ERP
+  Cloudflare account) is deployed only through `node scripts/engine-production.mjs <step>`, run by the
+  owner; it checks the file names nothing but Conts's production resources before it sends anything.
+  The account is on the free Workers plan (owner's decision, 8 Oct 2026): a request may make 50 outside
+  calls, so delivery orders, goods receipts and delivery returns can answer slowly and skip their
+  stock step until the plan is upgraded.
 
 ## What this app is
 - Property OS: short-term rental management (owners, units, bookings, rates, payouts)
