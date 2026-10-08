@@ -1,3 +1,4 @@
+import { bookingAmounts } from './channexAmounts';
 import { type Env, one, run, audit, nowIso } from './db';
 import { channexConfigured, channexBookingFeed, channexAckBookingRevision, channexChannelFor } from './channex';
 import { findClash, upsertGuest } from './reservations';
@@ -77,11 +78,12 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
   const guestsCount = Math.max(1, Number(occupancy.adults ?? 1) + Number(occupancy.children ?? 0));
   const guestName = [a.customer?.name, a.customer?.surname].filter(Boolean).join(' ').trim() || `${a.ota_name ?? 'OTA'} guest`;
   const guestId = await upsertGuest(env, { fullName: guestName, email: a.customer?.mail ?? null, phone: a.customer?.phone ?? null });
-  const amountSen = Math.round(Number(a.amount ?? room.amount ?? 0) * 100);
+  // Booking value and the site's fee: Channex's amount is the payout on Airbnb (channexAmounts.ts).
+  const { grossSen: amountSen, feeSen, source: amountSource } = bookingAmounts(a, room.amount);
 
   if (existing) {
-    await run(env, `UPDATE reservations SET guest_id = ?, check_in = ?, check_out = ?, guests_count = ?, gross_booking_value = ?, currency = ?, state = 'confirmed', updated_at = ? WHERE id = ?`,
-      guestId, checkIn, checkOut, guestsCount, amountSen, a.currency ?? 'MYR', now, existing.id);
+    await run(env, `UPDATE reservations SET guest_id = ?, check_in = ?, check_out = ?, guests_count = ?, gross_booking_value = ?, channel_fee = ?, currency = ?, state = 'confirmed', updated_at = ? WHERE id = ?`,
+      guestId, checkIn, checkOut, guestsCount, amountSen, feeSen, a.currency ?? 'MYR', now, existing.id);
     const clash = await findClash(env, unit.id, checkIn, checkOut, existing.id);
     if (clash) await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_clash', entityTable: 'reservations', entityId: existing.id, after: { checkIn, checkOut, clashingReservationId: clash.id, otaBookingId: a.booking_id } });
     await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_updated', entityTable: 'reservations', entityId: existing.id, after: { channexBookingId: a.booking_id } });
@@ -90,13 +92,13 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
 
   const id = crypto.randomUUID();
   await run(env, `
-    INSERT INTO reservations (id, unit_id, guest_id, channel, external_ref, channex_booking_id, state, check_in, check_out, guests_count, gross_booking_value, currency, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, ?)`,
+    INSERT INTO reservations (id, unit_id, guest_id, channel, external_ref, channex_booking_id, state, check_in, check_out, guests_count, gross_booking_value, channel_fee, currency, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, ?, ?)`,
     id, unit.id, guestId, channel, a.ota_reservation_code ?? a.unique_id ?? null, a.booking_id,
-    checkIn, checkOut, guestsCount, amountSen, a.currency ?? 'MYR', now, now);
+    checkIn, checkOut, guestsCount, amountSen, feeSen, a.currency ?? 'MYR', now, now);
   const clash = await findClash(env, unit.id, checkIn, checkOut, id);
   if (clash) await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_clash', entityTable: 'reservations', entityId: id, after: { checkIn, checkOut, clashingReservationId: clash.id, otaBookingId: a.booking_id } });
-  await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_created', entityTable: 'reservations', entityId: id, after: { channexBookingId: a.booking_id, otaName: a.ota_name, unitId: unit.id, checkIn, checkOut } });
+  await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_created', entityTable: 'reservations', entityId: id, after: { channexBookingId: a.booking_id, otaName: a.ota_name, grossSen: amountSen, feeSen, amountSource, unitId: unit.id, checkIn, checkOut } });
   return true;
 }
 
