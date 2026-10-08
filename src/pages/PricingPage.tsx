@@ -33,6 +33,8 @@ interface ChannelRate {
   channel: OtaChannel;
   /** Sen added on top of the base web rate before the guest sees it. Editable. */
   upliftSen: number;
+  /** The share of the base rate this uplift follows while nobody has set it by hand; null once set. */
+  upliftShare?: number | null;
   sync: SyncState | 'not_connected';
 }
 interface Unit {
@@ -177,7 +179,10 @@ export default function PricingPage() {
       ...u,
       baseRate: ue?.baseRate ?? u.baseRate,
       costFloor: ue?.costFloor ?? u.costFloor,
-      rates: u.rates.map(r => ({ ...r, upliftSen: upliftEdits[`${u.unitId}:${r.channel}`] ?? r.upliftSen })),
+      // An uplift nobody set by hand is a share of the base rate, so an edited base rate moves it too: the
+      // server prices the other nights that way, and a push must send the same figure.
+      rates: u.rates.map(r => ({ ...r, upliftSen: upliftEdits[`${u.unitId}:${r.channel}`]
+        ?? (r.upliftShare != null && ue?.baseRate !== undefined ? Math.round(ue.baseRate * r.upliftShare) : r.upliftSen) })),
     };
   }), [units, unitEdits, upliftEdits]);
 

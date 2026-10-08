@@ -1,7 +1,7 @@
 import { type Env, all, json, fail, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 
-import { WEEKEND_MULTIPLIER, upliftFor } from '../../_lib/channelPrice';
+import { WEEKEND_MULTIPLIER, upliftFor, defaultUpliftShare } from '../../_lib/channelPrice';
 const CHANNELS = ['airbnb', 'booking_com', 'agoda'];
 
 /** GET /api/pricing/rules — per unit: base web rate, cost floor and each channel's uplift with its sync state. */
@@ -39,6 +39,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         return {
           channel: ch,
           upliftSen: upliftFor(ch, Number(u.base_rate), set?.uplift),
+          // Not set by hand: the uplift is this share of the base rate, so it moves when the base rate does.
+          upliftShare: set ? null : defaultUpliftShare(ch),
           sync: syncOf(u, ch),
         };
       }),
