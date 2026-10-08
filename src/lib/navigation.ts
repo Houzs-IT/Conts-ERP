@@ -34,20 +34,21 @@ export const NAV: NavGroup[] = [
       { key: 'inventory', label: 'Inventory', path: '/properties/inventory', designed: true },
       { key: 'access', label: 'Access and keys', path: '/properties/access', designed: true },
     ] },
-    // Service cases and Projects sit here as they do in Houzs. They come from the supply chain engine and
-    // have no built-in screens, so they open only where the engine is set up (src/lib/scmEngine.ts).
-    { key: 'serviceCases', label: 'Service cases', icon: 'zap', children: [
-      { key: 'serviceCaseList', label: 'Service cases', path: '/service/cases', designed: true },
-      { key: 'serviceMetrics', label: 'Quality metrics', path: '/service/metrics', designed: true },
-      { key: 'serviceMaintenance', label: 'Service maintenance', path: '/service/maintenance', designed: true },
-      { key: 'myCases', label: 'My cases', path: '/service/my-cases', designed: true },
-    ] },
-    { key: 'projects', label: 'Projects', icon: 'folder-kanban', children: [
-      { key: 'projectList', label: 'Project list', path: '/projects/list', designed: true },
-      { key: 'projectCalendar', label: 'Calendar', path: '/projects/calendar', designed: true },
-      { key: 'projectFinances', label: 'Finances', path: '/projects/finances', designed: true },
-      { key: 'projectMaintenance', label: 'Project maintenance', path: '/projects/maintenance', designed: true },
-    ] },
+  ] },
+  // Service cases and Projects are groups of their own, between Operations and Supply chain (owner, 8 Oct).
+  // Their screens come from the supply chain engine and have no built-in ones, so both groups show only
+  // where the engine is set up (ENGINE_ONLY below, src/lib/scmEngine.ts).
+  { label: 'SERVICE CASES', items: [
+    { key: 'serviceCaseList', label: 'Service cases', icon: 'zap', path: '/service/cases', designed: true },
+    { key: 'serviceMetrics', label: 'Quality metrics', icon: 'trending-up', path: '/service/metrics', designed: true },
+    { key: 'serviceMaintenance', label: 'Service maintenance', icon: 'settings', path: '/service/maintenance', designed: true },
+    { key: 'myCases', label: 'My cases', icon: 'inbox', path: '/service/my-cases', designed: true },
+  ] },
+  { label: 'PROJECTS', items: [
+    { key: 'projectList', label: 'Project list', icon: 'folder-kanban', path: '/projects/list', designed: true },
+    { key: 'projectCalendar', label: 'Calendar', icon: 'calendar-days', path: '/projects/calendar', designed: true },
+    { key: 'projectFinances', label: 'Finances', icon: 'wallet', path: '/projects/finances', designed: true },
+    { key: 'projectMaintenance', label: 'Project maintenance', icon: 'settings', path: '/projects/maintenance', designed: true },
   ] },
   // Supply Chain — mirrors Houzs's nav hierarchy: L1 group (Supply Chain) → L2 collapsible
   // sections (Procurement / Warehouse / Sales / Transportation / Furniture) → L3 pages.
@@ -140,10 +141,12 @@ const DENY: Partial<Record<UserRole, string[]>> = {
 };
 
 /** Menu items whose screens exist only in the supply chain engine: hidden where it is not set up. */
-const ENGINE_ONLY = ['serviceCases', 'projects'];
+const SERVICE_KEYS = ['serviceCaseList', 'serviceMetrics', 'serviceMaintenance', 'myCases'];
+const PROJECT_KEYS = ['projectList', 'projectCalendar', 'projectFinances', 'projectMaintenance'];
+const ENGINE_ONLY = [...SERVICE_KEYS, ...PROJECT_KEYS];
 
 /** Menu keys an area covers where they are not simply the area's own key. */
-const AREA_NAV: Record<string, string[]> = { scInvoices: ['salesInvoices', 'purchaseInvoices'] };
+const AREA_NAV: Record<string, string[]> = { scInvoices: ['salesInvoices', 'purchaseInvoices'], serviceCases: SERVICE_KEYS, projects: PROJECT_KEYS };
 const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'owner'];
 
 /** Menu keys closed to a role: from its permission levels where the session carries them, else the built-in list. */
