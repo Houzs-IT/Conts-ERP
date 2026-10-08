@@ -82,3 +82,11 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## Staging tools
 - View as (feat/view-as, stacked on feat/role-permissions): on staging only, a management account switches to any active account from the "View as" button (bottom right) and back, without signing out. functions/api/auth/view-as.ts; off unless VIEW_AS = "staging" (preview vars in wrangler.toml only), the address is not erp./ops./owner., and the person who really signed in (signed tc_origin cookie) is management. Each switch is audited as user.view_as. Tested: scripts/api-checks/view-as.mjs (off: 3, on: 11). Never add VIEW_AS to the production [vars].
+
+## Supply chain engine: screen-by-screen test (8 Oct, staging, owner's browser)
+- All 41 menu screens open with no failed request (local engine against staging data).
+- Saved for real on staging: stock adjustment, stock transfer HC-ST-2610-001, stock take HC-STK-2610-001 (counted and posted), service case ASSR/2610-001, consignment order HC-CS-2610-001.
+- Delivery return from a DO: the save froze for 30s on staging then reported "already being processed": the free-plan 50-call limit again (third save type after delivery orders and goods receipts). Re-test after the plan upgrade.
+- Fixed (fix/engine-project-create): nobody at Conts could create a project, Houzs's rule names its own staff (BD role, Owner title, one email). Now Full on Projects in the Permissions chart may create (engine/backend/src/routes/projects.ts, engine/frontend/src/auth/salesAccess.ts). Needs the engine worker and screens redeployed.
+- Projects cannot be created until Project Maintenance has at least a Brand and an Event Type (both lists are empty on staging; the Create button stays disabled). One more Houzs-only rule remains: only BD or one Houzs email may edit a project's schedule reference (frontend/src/pages/Projects.tsx, canEditSchedule); full-access accounts are unaffected.
+- Not yet saved for real: sales order amendment, PO amendment, cancellation request, purchase invoice, purchase return, consignment note and return, the three purchase consignment screens, delivery planning and trips, racks, a project.

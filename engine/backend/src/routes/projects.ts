@@ -2515,9 +2515,12 @@ app.get("/:id", requirePageAccess("projects.list"), async (c) => {
 // 2026-07-24). This is the authority; the FE hides the New Project button for
 // everyone else. Mirrors frontend auth/salesAccess.canCreateEvent.
 function canCreateEvent(
-  user: { role_name?: string | null; position_name?: string | null; email?: string | null } | null | undefined,
+  user: { role_name?: string | null; position_name?: string | null; email?: string | null; permissions?: string[] } | null | undefined,
 ): boolean {
   if (!user) return false;
+  // Conts: Houzs names its own people below, which nobody at Conts matches. Here creating a project
+  // goes with Full on Projects in the Permissions chart (projects.manage, or the full-access role).
+  if (user.permissions?.includes("*") || user.permissions?.includes("projects.manage")) return true;
   const role = (user.role_name ?? "").toLowerCase();
   const position = (user.position_name ?? "").toLowerCase();
   const email = (user.email ?? "").toLowerCase();
