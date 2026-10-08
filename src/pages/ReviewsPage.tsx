@@ -3,6 +3,7 @@ import { color } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
+import { EmptyState } from '../components/States';
 import ChannelMark from '../components/ChannelMark';
 import Icon from '../components/Icon';
 import { Badge } from '../components/Badge';
@@ -49,8 +50,8 @@ function Stars({ n }: { n: number }) {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-[3px] px-4 py-[14px]">
-      <span className="text-[12px] text-muted-ink">{label}</span>
-      <span className="text-[22px] font-semibold tabular-nums tracking-[-0.01em]">{value}</span>
+      <span className="text-meta text-muted-ink">{label}</span>
+      <span className="text-headline font-semibold tabular-nums tracking-[-0.01em]">{value}</span>
     </div>
   );
 }
@@ -156,7 +157,7 @@ export default function ReviewsPage() {
       {/* Filters */}
       <div className="flex gap-[18px] flex-wrap items-center">
         <div role="group" aria-label="Filter by rating" className="flex gap-[7px] flex-wrap items-center">
-          <span className="text-[12px] font-semibold text-muted-ink">Rating</span>
+          <span className="text-meta font-semibold text-muted-ink">Rating</span>
           <Pill on={ratingFilter === 'all'} onClick={() => setRatingFilter('all')}>All</Pill>
           {([5, 4, 3, 2, 1] as const).map(n => (
             <Pill key={n} on={ratingFilter === n} onClick={() => setRatingFilter(n)}>
@@ -165,7 +166,7 @@ export default function ReviewsPage() {
           ))}
         </div>
         <div role="group" aria-label="Filter by reply state" className="flex gap-[7px] flex-wrap items-center">
-          <span className="text-[12px] font-semibold text-muted-ink">Status</span>
+          <span className="text-meta font-semibold text-muted-ink">Status</span>
           <Pill on={replyFilter === 'all'} onClick={() => setReplyFilter('all')}>All</Pill>
           <Pill on={replyFilter === 'needs_reply'} onClick={() => setReplyFilter('needs_reply')}>
             Needs reply{needsReplyCount ? ` (${needsReplyCount})` : ''}
@@ -178,14 +179,11 @@ export default function ReviewsPage() {
       {loading && rows.length === 0 ? (
         <Card><TableSkeleton rows={4} cols={3} /></Card>
       ) : visible.length === 0 ? (
-        <Card>
-          <div className="flex flex-col gap-3 items-start px-[22px] py-[28px]">
-            <span className="text-[13px] text-muted-ink">
-              {filtered ? 'No reviews match these filters.' : 'No reviews yet.'}
-            </span>
-            {filtered && <Button size="sm" variant="secondary" onClick={clearFilters}>Clear filters</Button>}
-          </div>
-        </Card>
+        filtered
+          ? <EmptyState kind="filtered" title="No reviews match these filters." action={{ label: 'Clear filters', onClick: clearFilters }} />
+          : <EmptyState icon="Star" title="No reviews yet"
+              body="Reviews arrive from Airbnb and Booking.com once units are connected through Channex. Connect a unit from its Channels card, or see Integrations."
+              action={{ label: 'Open Integrations', onClick: () => { window.location.hash = '#/system/integrations'; } }} />
       ) : (
         visible.map(r => {
           const replied = r.reply != null;
@@ -197,8 +195,8 @@ export default function ReviewsPage() {
                   <div className="flex items-center gap-[11px] min-w-0">
                     <ChannelMark ch={r.channel} size={22} />
                     <div className="flex flex-col gap-px min-w-0">
-                      <span className="text-[13.5px] font-semibold">{r.guestName}</span>
-                      <span className="text-[11.5px] text-muted-ink">{r.propertyName} {r.unitNumber} · {fmtDate(r.reviewedAt)}</span>
+                      <span className="text-copy font-semibold">{r.guestName}</span>
+                      <span className="text-meta text-muted-ink">{r.propertyName} {r.unitNumber} · {fmtDate(r.reviewedAt)}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -207,15 +205,15 @@ export default function ReviewsPage() {
                   </div>
                 </div>
 
-                {r.comment && <p className="m-0 text-[13px] leading-[1.55] [text-wrap:pretty]">{r.comment}</p>}
+                {r.comment && <p className="m-0 text-copy leading-[1.55] [text-wrap:pretty]">{r.comment}</p>}
 
                 {/* Existing / just-posted reply */}
                 {replied && r.reply && (
                   <div className="flex flex-col gap-1 bg-muted rounded-control px-[13px] py-[11px]">
-                    <span className="text-[11px] font-semibold text-muted-ink uppercase tracking-[0.04em]">
+                    <span className="text-caption font-semibold text-muted-ink uppercase tracking-[0.04em]">
                       Your reply{r.repliedAt ? ` · ${fmtDate(r.repliedAt)}` : ''}
                     </span>
-                    <p className="m-0 text-[12.5px] leading-[1.55] [text-wrap:pretty]">{r.reply}</p>
+                    <p className="m-0 text-copy leading-[1.55] [text-wrap:pretty]">{r.reply}</p>
                   </div>
                 )}
 

@@ -10,7 +10,10 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { TONE } from '../lib/design-tokens';
-import { dateTime } from '../lib/format';
+import { dateTime, plural } from '../lib/format';
+import { EmptyState } from '../components/States';
+import { SearchSelect } from '../components/Select';
+import { useUnitRoster } from '../lib/useUnitRoster';
 import { TASK } from '../lib/vocabulary';
 import type { TaskState } from '../lib/types';
 
@@ -101,6 +104,7 @@ export default function InspectionsPage() {
   const [edits, setEdits] = useState<Record<string, Partial<Inspection>>>({});
   const [filter, setFilter] = useState<Filter>('All');
   const [openId, setOpenId] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
   const [confirm, setConfirm] = useState<{ kind: 'pass' | 'fail'; id: string } | null>(null);
 
   const rows = useMemo(
@@ -216,7 +220,8 @@ export default function InspectionsPage() {
     <>
       <PageHeader
         title="Inspections"
-        sub={`${rows.length} inspections · ${released} released · ${gated} awaiting a pass`}
+        sub={`${plural(rows.length, 'inspection')} · ${released} released · ${gated} awaiting a pass`}
+        primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setStarting(true)}>Start inspection</Button>}
       />
 
       {error && <StaleBanner message={`Showing the last inspections we have. ${error}`} onRetry={reload} />}
@@ -233,26 +238,25 @@ export default function InspectionsPage() {
         })}
       </div>
 
-      <span className="text-[12px] text-muted-ink">
+      <span className="text-meta text-muted-ink">
         A unit is released for check-in only after a pass. Every failed item needs a note and a maintenance issue.
       </span>
 
       {loading && rows.length === 0 ? (
         <Card><TableSkeleton rows={4} cols={2} /></Card>
+      ) : rows.length === 0 ? (
+        <EmptyState icon="ClipboardList" title="No inspections yet"
+          body="An inspection checks a unit after cleaning, item by item, before it is released for the next guest. Start one for any unit."
+          action={{ label: 'Start inspection', onClick: () => setStarting(true) }} />
       ) : filtered.length === 0 ? (
-        <Card>
-          <div className="py-[28px] px-[22px] flex flex-col gap-2">
-            <span className="text-[13px]">No inspections match these filters.</span>
-            <button onClick={() => setFilter('All')} className="self-start text-gold-ink bg-transparent border-none cursor-pointer [font:inherit]">Clear filters</button>
-          </div>
-        </Card>
+        <EmptyState kind="filtered" title={`No inspections are ${filter.toLowerCase()}.`} action={{ label: 'Show all', onClick: () => setFilter('All') }} />
       ) : (
         <div className="flex flex-col gap-4">
           {groups.map(g => (
             <div key={g.state} className="flex flex-col gap-2">
               <div className="flex items-center gap-[9px] pl-[2px]">
                 <Badge tone={TASK[g.state].tone} label={TASK[g.state].label} />
-                <span className="text-[12px] text-muted-ink">{g.items.length}</span>
+                <span className="text-meta text-muted-ink">{g.items.length}</span>
               </div>
               <div className="flex flex-col gap-3">
                 {g.items.map(i => (
@@ -279,7 +283,44 @@ export default function InspectionsPage() {
       </Drawer>
 
       <Dialog busy={false} onClose={() => setConfirm(null)} spec={dialogSpec} />
+      {starting && <StartDialog onClose={() => setStarting(false)} onStarted={id => { setStarting(false); reload(); setOpenId(id); }} />}
     </>
+  );
+}
+
+/** Pick a unit and start an inspection from the standard checklist. If one is already open for that unit,
+ *  the server hands that one back instead of starting a second. */
+function StartDialog({ onClose, onStarted }: { onClose: () => void; onStarted: (id: string) => void }) {
+  const units = useUnitRoster();
+  const toast = useToast();
+  const [unitId, setUnitId] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function start() {
+    setBusy(true);
+    try {
+      const r = await api.post<{ id: string; existing?: boolean }>('/inspections', { unitId });
+      toast(r.existing ? { tone: 'info', title: 'This unit already has an inspection open.', body: 'Opened it instead of starting a second.' } : { tone: 'success', title: 'Inspection started.' });
+      onStarted(r.id);
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Inspection was not started.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+    } finally { setBusy(false); }
+  }
+  return (
+    <div role="dialog" aria-modal="true" aria-label="Start inspection" className="fixed inset-0 z-[60] grid place-items-center p-4 bg-[var(--color-surface-scrim)]">
+      <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
+      <div className="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)]">
+        <div className="px-[22px] pt-[22px] pb-4 flex flex-col gap-3">
+          <h2 className="m-0 text-title font-semibold">Start inspection</h2>
+          <p className="m-0 text-copy text-muted-ink">Checks linen, bathroom, supplies, aircon and wifi. The unit is released for check-in only after a pass.</p>
+          <SearchSelect label="Unit" showLabel value={unitId} onChange={setUnitId} placeholder="Search unit or building"
+            options={units.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName }))} />
+        </div>
+        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-2 rounded-b-card">
+          <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button size="sm" variant="primary" loading={busy} disabled={!unitId} disabledReason="Choose a unit first." onClick={start}>Start</Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -305,12 +346,12 @@ function InspectionRow({ inspection: i, onOpen }: { inspection: Inspection; onOp
       <div className="py-[15px] px-5 border-b border-line-soft flex items-center justify-between gap-4 flex-wrap">
         <div className="flex flex-col gap-[3px] min-w-[220px] flex-1">
           <div className="flex items-center gap-[9px] flex-wrap">
-            <span className="font-mono text-[11px] text-muted-ink">{i.ref ?? i.id}</span>
-            <span className="text-[14px] font-semibold">{unitRef(i)}</span>
+            <span className="font-mono text-caption text-muted-ink">{i.ref ?? i.id}</span>
+            <span className="text-copy font-semibold">{unitRef(i)}</span>
             <Badge tone={TASK[i.state].tone} label={TASK[i.state].label} />
             <ReleaseBadge passed={i.passed} />
           </div>
-          <span className="text-[12px] text-muted-ink">
+          <span className="text-meta text-muted-ink">
             {i.inspector ?? 'Unassigned'}{i.inspectedAt ? ` · ${dateTime(i.inspectedAt)}` : ''} · {c.passed} passed · {c.failed} failed
             {c.pending > 0 ? ` · ${c.pending} to check` : ''}
           </span>
@@ -321,14 +362,14 @@ function InspectionRow({ inspection: i, onOpen }: { inspection: Inspection; onOp
         <div key={item.item} className="flex items-start gap-[11px] py-[11px] px-5 border-b border-line-soft">
           <StatusBox ok={item.ok} />
           <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-            <span className={`text-[13px] ${item.ok === false ? 'text-[var(--color-critical-fg)]' : 'text-ink'}`}>
+            <span className={`text-copy ${item.ok === false ? 'text-[var(--color-critical-fg)]' : 'text-ink'}`}>
               {item.item}
               {item.required === false && <span className="text-muted-ink font-normal"> · optional</span>}
             </span>
-            {item.note && <span className="text-[12px] text-[var(--color-critical-fg)] text-pretty">{item.note}</span>}
+            {item.note && <span className="text-meta text-[var(--color-critical-fg)] text-pretty">{item.note}</span>}
           </div>
           {item.linkedIssue && (
-            <span className="font-mono text-[11px] text-muted-ink flex-none mt-0.5">{item.linkedIssue}</span>
+            <span className="font-mono text-caption text-muted-ink flex-none mt-0.5">{item.linkedIssue}</span>
           )}
         </div>
       ))}
@@ -375,10 +416,10 @@ function ChecklistPanel({
         <div className="flex items-start justify-between gap-3">
           <div className="flex flex-col gap-1 min-w-0">
             <div className="flex items-center gap-[9px] flex-wrap">
-              <span className="font-mono text-[11px] text-muted-ink">{i.ref ?? i.id}</span>
-              <h2 className="m-0 text-[18px] font-semibold">{unitRef(i)}</h2>
+              <span className="font-mono text-caption text-muted-ink">{i.ref ?? i.id}</span>
+              <h2 className="m-0 text-title font-semibold">{unitRef(i)}</h2>
             </div>
-            <span className="text-[12px] text-muted-ink">
+            <span className="text-meta text-muted-ink">
               {i.inspector ?? 'Unassigned'}{i.inspectedAt ? ` · ${dateTime(i.inspectedAt)}` : ''}
             </span>
           </div>
@@ -389,7 +430,7 @@ function ChecklistPanel({
         <div className="flex items-center gap-[9px] flex-wrap">
           <Badge tone={TASK[i.state].tone} label={TASK[i.state].label} />
           <ReleaseBadge passed={i.passed} />
-          <span className="text-[12px] text-muted-ink">
+          <span className="text-meta text-muted-ink">
             {c.passed} of {c.total} passed{c.failed > 0 ? ` · ${c.failed} failed` : ''}{c.pending > 0 ? ` · ${c.pending} to check` : ''}
           </span>
         </div>
@@ -400,8 +441,8 @@ function ChecklistPanel({
           <div key={item.item} className="py-[14px] border-b border-line-soft flex flex-col gap-2.5">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                <span className="text-[13.5px] font-medium">{item.item}</span>
-                <span className="text-[11px] text-muted-ink">{item.required === false ? 'Optional' : 'Required for release'}</span>
+                <span className="text-copy font-medium">{item.item}</span>
+                <span className="text-caption text-muted-ink">{item.required === false ? 'Optional' : 'Required for release'}</span>
               </div>
               <PassFail value={item.ok} onPass={() => onToggle(idx, true)} onFail={() => onToggle(idx, false)} />
             </div>
@@ -416,7 +457,7 @@ function ChecklistPanel({
                 />
                 <div className="flex items-center gap-2.5 flex-wrap">
                   {item.linkedIssue ? (
-                    <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-critical-fg)]">
+                    <span className="inline-flex items-center gap-1.5 text-meta text-[var(--color-critical-fg)]">
                       <Icon name="Wrench" size="sm" />
                       Tracked as {item.linkedIssue}
                     </span>
@@ -426,7 +467,7 @@ function ChecklistPanel({
                       Raise maintenance issue
                     </button>
                   )}
-                  <span className="text-[11px] text-muted-ink">A failed item holds the unit off check-in.</span>
+                  <span className="text-caption text-muted-ink">A failed item holds the unit off check-in.</span>
                 </div>
               </div>
             )}
@@ -435,7 +476,7 @@ function ChecklistPanel({
       </div>
 
       <div className="py-[14px] px-[22px] border-t border-line bg-page flex flex-col gap-2.5">
-        <div className={`flex items-center gap-[9px] text-[12.5px] ${canPass ? 'text-[var(--color-success-fg)]' : g.hasRequiredFail && g.allRequiredDecided ? 'text-[var(--color-critical-fg)]' : 'text-muted-ink'}`}>
+        <div className={`flex items-center gap-[9px] text-copy ${canPass ? 'text-[var(--color-success-fg)]' : g.hasRequiredFail && g.allRequiredDecided ? 'text-[var(--color-critical-fg)]' : 'text-muted-ink'}`}>
           <Icon name={canPass ? 'CircleCheck' : 'Lock'} size="sm" />
           <span className="flex-1">
             {canPass

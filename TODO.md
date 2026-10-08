@@ -117,3 +117,11 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner to check: building states are written three ways (13 "W.P Kuala Lumpur", 1 "WP", 6 blank), so the Units tree shows three groups for one state. Fix on each building (Units, pencil on the building).
 - ADR on Dashboard and Portfolio is collected revenue over booked nights; bookings later this month count their nights before their money is collected, so the month-to-date ADR reads low (RM 70 against RM 112-187 per unit on the import). Decide: gross booking value instead, or count only nights already stayed.
 - Calendar rate rows for all 139 units are about 20,000 cells (0.6 s to draw); they start hidden above 8 units. If people want them on for the whole board, virtualise the rows.
+
+## UI audit follow-ups: shell, system and growth pages (fix/system-growth)
+- Automations: 9 of 30 rules are sent by code today; the other 21 (every guest message) need a sender in the cron worker (theconts-cron, not deployed) plus email/WhatsApp keys. The page says so; the on/off switch is stored only. Owner decision: build the sender.
+- Units > owner details form (functions/api/properties) still returns the full IC and bank number for editing; mask it like the owner profile.
+- Imported owner ids embed the IC number (e.g. wb-owner-940413-13-6097, functions/_lib/hostplatformImport*), so it shows in URLs and the audit log. Data agent to switch to opaque ids.
+- Dashboard, Housekeeping, Operations Today and Tasks still print "Sept" through their own toLocaleDateString calls; switch them to lib/format helpers (Calendar: booking agent).
+- Settings: company details, locale, operations defaults and statement settings are saved but not read anywhere (marked "Not used yet"); wire or remove.
+- Pricing: channel commission (15/15/18%) and the 22% weekend uplift are fixed in code; owner to decide whether they become settings.

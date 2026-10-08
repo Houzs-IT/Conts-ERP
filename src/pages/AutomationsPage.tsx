@@ -39,7 +39,62 @@ interface Rule {
   delivery: Delivery;
   quietHours: QuietHours;
   isActive: boolean;
+  /** Whether any code sends this message today (functions/_lib/automationCatalog.ts RUNNING). */
+  running?: boolean;
+  /** For a rule that is not running: what it still needs. */
+  blockedBy?: string | null;
 }
+
+/** What starts each rule, in words a person reads (the catalog's trigger is the developer's version). */
+const WHEN: Record<string, string> = {
+  'guest.booking_confirmed': 'When a booking is confirmed',
+  'guest.cancellation': 'When a booking is cancelled',
+  'guest.pre_arrival': '48 hours before check-in',
+  'guest.access_details': '2 hours before check-in, once the unit is ready',
+  'guest.checkin_delayed': 'When cleaning runs past the check-in time',
+  'guest.checkout_reminder': '12 hours before check-out',
+  'guest.review_request': '24 hours after check-out',
+  'owner.statement_ready': 'When a statement is sent to the owner',
+  'owner.payout_paid': 'When a payout is marked paid',
+  'owner.payout_failed': 'When a payout is marked failed',
+  'owner.monthly_summary': 'On the 1st of each month',
+  'owner.approval_required': 'When a repair needs the owner to approve a quote',
+  'owner.approval_reminder': '48 hours, then 5 days, after a quote is still waiting',
+  'owner.unit_blocked': 'When a unit is taken off sale for repairs',
+  'ops.checkin_at_risk': '60 minutes before check-in, if cleaning is not finished',
+  'ops.task_unassigned': '3 hours before a task is due with nobody on it',
+  'ops.damage_reported': 'When a cleaner reports damage in the field app',
+  'ops.guest_message': 'When a guest sends a message',
+  'ops.channel_sync_failed': 'When a booking-site connection fails',
+  'finance.statements_unsent': '3 days after month end, if statements are still not sent',
+  'finance.payout_failed': 'When a payout is marked failed',
+  'field.task_assigned': 'When a task is given to someone',
+  'field.task_reassigned': 'When a task is moved to someone else',
+  'field.schedule_changed': 'When a task time changes',
+  'field.sync_failed': 'When a change from the field app could not be saved',
+  'account.invited': 'When a new user is invited',
+  'account.password_reset': 'When someone asks to reset their password',
+  'account.password_changed': 'When a password is changed',
+  'account.locked': 'After 5 wrong passwords in a row',
+  'account.new_device': 'When someone signs in from a new device',
+};
+const whenOf = (r: Rule) => WHEN[r.id] ?? r.timing;
+
+/** Sample values so the preview reads like a real message, not {placeholders}. */
+const SAMPLE: Record<string, string> = {
+  guest: 'Aisyah', property: 'Skyline KL', unit: 'A12-06', checkIn: '12 Oct', checkOut: '14 Oct', nights: '2 nights', total: 'RM 480.00',
+  dates: '12 Oct – 14 Oct', refundPosition: 'Your full payment will be refunded.', checkInTime: '15:00', checkOutTime: '11:00',
+  address: '12 Jalan Sultan Ismail, KL', parkingNote: 'Level P2, bay 41', doorCode: '4471', wifiName: 'Skyline-A12', wifiPass: 'stay4471',
+  accessInstruction: 'Lockbox by the lift lobby.', newTime: '16:30', contact: '+60 17-465 8868', reviewLink: 'airbnb.com/r/...',
+  period: 'Sep 2026', netPayout: 'RM 4,364.86', portalLink: 'owner.theconts.com', amount: 'RM 4,364.86', bank: 'Maybank', last4: '8212',
+  valueDate: '3 Oct 2026', reason: 'the account name does not match', occupancy: '78%', adr: 'RM 240', rating: '4.8', upcomingCount: '9',
+  title: 'an aircon repair', consequence: 'the unit stays off sale', revenueAtRisk: 'RM 1,200', expectedReturn: '20 Oct',
+  arrivalTime: '15:00', dueTime: '13:00', dueDate: '12 Oct', crew: 'Nurul', issue: 'a cracked mirror', snippet: 'Hi, is early check-in possible?',
+  provider: 'Channex', time: '14:06', owner: 'Tan Boon Huat', count: '4', days: '3', oldTime: '13:00', signInLink: 'erp.theconts.com',
+  tempPassword: '(temporary password)', resetLink: '(reset link)', device: 'Chrome on Windows', securityLink: '(security link)',
+  unlockTime: '14:21', location: 'Kuala Lumpur',
+};
+const sample = (text: string) => text.replace(/\{(\w+)\}/g, (_, k: string) => SAMPLE[k] ?? '...');
 
 interface Payload {
   data: Rule[];
@@ -276,7 +331,7 @@ export default function AutomationsPage() {
   );
 
   const total = rules.length;
-  const active = rules.filter(r => r.isActive).length;
+  const running = rules.filter(r => r.running).length;
   const qh = data?.quietHours;
   const open = rules.find(r => r.id === openId) ?? null;
 
@@ -285,9 +340,7 @@ export default function AutomationsPage() {
     try {
       await api.patch('/automations', { id: r.id, isActive: next });
       setOverrides(o => ({ ...o, [r.id]: next }));
-      toast(next
-        ? { tone: 'success', title: `${r.name} is live.`, body: 'It will send on the next matching trigger.' }
-        : { tone: 'warning', title: `${r.name} moved to draft.`, body: 'No further messages will be sent from this rule.' });
+      toast({ tone: 'success', title: next ? `${r.name}: wanted.` : `${r.name}: not wanted.`, body: 'Your choice is saved. This rule is not running yet, so nothing is sent either way.' });
     } catch (e) {
       toast({ tone: 'critical', title: `${r.name} was not changed.`, body: e instanceof Error ? e.message : 'Try again in a moment.' });
     }
@@ -299,15 +352,24 @@ export default function AutomationsPage() {
     <>
       <PageHeader
         title="Automations"
-        sub={qh ? `${active} of ${total} active · quiet hours ${qh.from}–${qh.to} MYT` : `${active} of ${total} active`}
+        sub={`${running} of ${total} run today · ${total - running} not running yet${qh ? ` · quiet hours ${qh.from}–${qh.to} MYT` : ''}`}
       />
+
+      <div className="flex items-start gap-2.5 py-[12px] px-[14px] rounded-control bg-[var(--color-warning)] text-[var(--color-warning-fg)] text-pretty" style={{ borderLeft: '2px solid var(--color-warning-line)' }}>
+        <Icon name="CircleAlert" size="sm" style={{ marginTop: 1 }} />
+        <span className="text-meta">
+          <strong className="font-semibold">Most rules do not run yet.</strong> {running} are sent by the system when they happen (owner statements and payouts, staff and account emails).
+          The other {total - running}, including every guest message, are written but nothing sends them: they need the timed background job (theconts-cron) and, for guests, the email and WhatsApp keys.
+          Until then, guests get only the messages staff send from the Inbox and Bookings.
+        </span>
+      </div>
 
       {error && <StaleBanner message={`Showing the last rules we have. ${error}`} onRetry={reload} />}
 
       {qh && (
         <div className="flex items-start gap-2.5 py-[11px] px-[14px] rounded-control bg-gold-tint border border-solid border-[var(--color-gold-200)] text-gold-ink text-pretty">
           <Icon name="MoonStar" size="sm" style={{ marginTop: 1 }} />
-          <span className="text-[12px]">{qh.note}</span>
+          <span className="text-meta">{qh.note}</span>
         </div>
       )}
 
@@ -330,7 +392,7 @@ export default function AutomationsPage() {
         {visibleGroups.map(g => {
           const groupRules = rules.filter(r => r.group === g.key);
           if (groupRules.length === 0) return null;
-          const groupActive = groupRules.filter(r => r.isActive).length;
+          const groupRunning = groupRules.filter(r => r.running).length;
           return (
             <Card key={g.key}>
               <div className="flex items-center gap-3 py-[15px] px-5 [border-bottom:1px_solid_var(--color-line)]">
@@ -338,11 +400,11 @@ export default function AutomationsPage() {
                   <Icon name={g.icon} size="sm" />
                 </span>
                 <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-                  <span className="text-[16px] font-semibold">{g.label}</span>
-                  <span className="text-[12px] text-muted-ink">{g.desc}</span>
+                  <span className="text-heading font-semibold">{g.label}</span>
+                  <span className="text-meta text-muted-ink">{g.desc}</span>
                 </div>
-                <span className="text-[12px] font-medium text-muted-ink whitespace-nowrap">
-                  {groupActive} of {groupRules.length} live
+                <span className="text-meta font-medium text-muted-ink whitespace-nowrap">
+                  {groupRunning} of {groupRules.length} running
                 </span>
               </div>
 
@@ -355,7 +417,7 @@ export default function AutomationsPage() {
 
         {visibleGroups.every(g => rules.filter(r => r.group === g.key).length === 0) && (
           <Card>
-            <div className="py-[34px] px-[22px] text-center text-[13.5px] text-muted-ink">
+            <div className="py-[34px] px-[22px] text-center text-copy text-muted-ink">
               No automations match this filter.
             </div>
           </Card>
@@ -373,7 +435,7 @@ export default function AutomationsPage() {
 
 function ChannelChip({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center h-5 px-2 rounded-full bg-muted text-ink-2 text-[11px] font-medium whitespace-nowrap">{label}</span>
+    <span className="inline-flex items-center h-5 px-2 rounded-full bg-muted text-ink-2 text-caption font-medium whitespace-nowrap">{label}</span>
   );
 }
 
@@ -391,28 +453,35 @@ function Switch({ on, label, onToggle }: { on: boolean; label: string; onToggle:
   );
 }
 
+function StatusBadge({ r }: { r: Rule }) {
+  return r.running
+    ? <Badge tone="success" label="Running" size="sm" />
+    : <Badge tone="neutral" label="Not running yet" size="sm" />;
+}
+
 function RuleRow({ r, onOpen, onToggle }: { r: Rule; onOpen: () => void; onToggle: () => void }) {
   return (
     <div
       role="button" tabIndex={0}
       onClick={onOpen}
       onKeyDown={e => { if (e.key === 'Enter') onOpen(); }}
-      className="flex items-start gap-4 py-[15px] px-5 [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer flex-wrap">
-      <div className="flex flex-col gap-1.5 flex-1 min-w-[240px]">
+      className="flex items-start gap-3 sm:gap-4 py-[14px] px-4 sm:px-5 [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer">
+      <div className="flex flex-col gap-1.5 flex-1 min-w-0">
         <div className="flex items-center gap-[9px] flex-wrap">
-          <span className="text-[14px] font-semibold">{r.name}</span>
-          <Badge tone={r.isActive ? 'success' : 'neutral'} label={r.isActive ? 'Live' : 'Draft'} size="sm" />
+          <span className="text-copy font-semibold">{r.name}</span>
+          <StatusBadge r={r} />
           {r.quietHours === 'override' && <Badge tone="warning" label="Overrides quiet hours" size="sm" />}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[12.5px] text-muted-ink">{r.timing}</span>
+          <span className="text-meta text-ink-2">{whenOf(r)}</span>
           <span className="text-faint">&middot;</span>
           {r.channels.map(c => <ChannelChip key={c} label={c} />)}
         </div>
-        <span className="font-mono text-[11px] text-muted-ink">{r.trigger}</span>
-        <span className="text-[12.5px] text-ink-2 text-pretty line-clamp-2">{r.preview}</span>
+        <span className="text-meta text-muted-ink text-pretty line-clamp-2">{sample(r.preview)}</span>
       </div>
-      <Switch on={r.isActive} label={`${r.isActive ? 'Move to draft' : 'Set live'}: ${r.name}`} onToggle={onToggle} />
+      {r.running
+        ? <span className="text-caption text-muted-ink whitespace-nowrap pt-1 hidden sm:inline">Always sent</span>
+        : <Switch on={r.isActive} label={`${r.isActive ? 'Mark not wanted' : 'Mark wanted'}: ${r.name}`} onToggle={onToggle} />}
     </div>
   );
 }
@@ -421,11 +490,10 @@ function RulePanel({ r, onClose, onToggle }: { r: Rule; onClose: () => void; onT
   const groupMeta = GROUPS.find(g => g.key === r.group)!;
   const qh = QH_LABEL[r.quietHours];
   const rows: { label: string; value: string; mono?: boolean }[] = [
-    { label: 'Trigger', value: r.trigger, mono: true },
-    { label: 'Timing', value: r.timing },
+    { label: 'Status', value: r.running ? 'Running: the system sends it when this happens.' : (r.blockedBy ?? 'Not running yet.') },
+    { label: 'When', value: whenOf(r) },
     { label: 'Audience', value: AUDIENCE_LABEL[groupMeta.audience] },
     { label: 'Group', value: groupMeta.label },
-    { label: 'Template key', value: r.template, mono: true },
     { label: 'Data it needs', value: r.needs },
     { label: 'Quiet hours', value: qh.label },
     { label: 'Delivery', value: DELIVERY_LABEL[r.delivery] },
@@ -438,9 +506,9 @@ function RulePanel({ r, onClose, onToggle }: { r: Rule; onClose: () => void; onT
           <Icon name={groupMeta.icon} size="sm" />
         </span>
         <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-          <span className="text-[17px] font-semibold text-pretty">{r.name}</span>
+          <span className="text-heading font-semibold text-pretty">{r.name}</span>
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge tone={r.isActive ? 'success' : 'neutral'} label={r.isActive ? 'Live' : 'Draft'} size="sm" />
+            <StatusBadge r={r} />
             {r.quietHours === 'override' && <Badge tone="warning" label="Overrides quiet hours" size="sm" />}
           </div>
         </div>
@@ -451,7 +519,7 @@ function RulePanel({ r, onClose, onToggle }: { r: Rule; onClose: () => void; onT
 
       <div className="p-5 flex flex-col gap-5 flex-1">
         <div>
-          <div className="text-[12px] font-semibold text-muted-ink mb-2">Channels</div>
+          <div className="text-meta font-semibold text-muted-ink mb-2">Channels</div>
           <div className="flex gap-1.5 flex-wrap">
             {r.channels.map(c => <ChannelChip key={c} label={c} />)}
           </div>
@@ -460,31 +528,31 @@ function RulePanel({ r, onClose, onToggle }: { r: Rule; onClose: () => void; onT
         <div className="border border-solid border-line rounded-card overflow-hidden">
           {rows.map((row, i) => (
             <div key={row.label} className={cx('flex gap-3 py-2.5 px-[14px]', i < rows.length - 1 && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
-              <span className="text-[12.5px] text-muted-ink w-[116px] flex-none">{row.label}</span>
-              <span className={cx('text-[12.5px] text-ink text-pretty', row.mono && 'font-mono')}>{row.value}</span>
+              <span className="text-copy text-muted-ink w-[116px] flex-none">{row.label}</span>
+              <span className={cx('text-copy text-ink text-pretty', row.mono && 'font-mono')}>{row.value}</span>
             </div>
           ))}
         </div>
 
         <div>
-          <div className="text-[12px] font-semibold text-muted-ink mb-2">Template preview</div>
-          <div className="py-[13px] px-[15px] rounded-card bg-page border border-solid border-line text-[13px] leading-[1.55] text-ink text-pretty">
-            {r.preview}
+          <div className="text-meta font-semibold text-muted-ink mb-2">Template preview</div>
+          <div className="py-[13px] px-[15px] rounded-card bg-page border border-solid border-line text-copy leading-[1.55] text-ink text-pretty">
+            {sample(r.preview)}
           </div>
-          <span className="block mt-2 text-[11.5px] text-faint text-pretty">
-            Braced values are filled per send from the record. Editing templates is a backend-owned step.
+          <span className="block mt-2 text-meta text-faint text-pretty">
+            Example with sample details. Each real message uses the booking's or owner's own details.
           </span>
         </div>
       </div>
 
       <div className="p-4 [border-top:1px_solid_var(--color-line)] bg-page flex-none flex items-center justify-between gap-3">
         <div className="flex flex-col gap-px min-w-0">
-          <span className="text-[13px] font-semibold">{r.isActive ? 'Live' : 'Draft'}</span>
-          <span className="text-[11.5px] text-muted-ink">
-            {r.isActive ? 'Sending on matching triggers.' : 'Paused. No messages are sent.'}
+          <span className="text-copy font-semibold">{r.running ? 'Running' : r.isActive ? 'Wanted, not running yet' : 'Not wanted'}</span>
+          <span className="text-meta text-muted-ink text-pretty">
+            {r.running ? 'Sent every time this happens. Pausing it is not built yet.' : 'Your choice is saved for when this rule runs. Nothing is sent today either way.'}
           </span>
         </div>
-        <Switch on={r.isActive} label={`${r.isActive ? 'Move to draft' : 'Set live'}: ${r.name}`} onToggle={onToggle} />
+        {!r.running && <Switch on={r.isActive} label={`${r.isActive ? 'Mark not wanted' : 'Mark wanted'}: ${r.name}`} onToggle={onToggle} />}
       </div>
     </>
   );

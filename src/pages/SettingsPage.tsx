@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
+import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -54,8 +55,8 @@ const FALLBACK: Settings = {
 /* -------------------------------- options -------------------------------- */
 const LOCALES = [
   { value: 'en-MY', label: 'English (Malaysia)' },
-  { value: 'ms-MY', label: 'Bahasa Melayu' },
-  { value: 'zh-Hans', label: '简体中文' },
+  { value: 'ms-MY', label: 'Bahasa Melayu (planned)', disabled: true },
+  { value: 'zh-Hans', label: '简体中文 (planned)', disabled: true },
 ];
 const TIMEZONES = ['Asia/Kuala_Lumpur', 'Asia/Singapore', 'Asia/Bangkok', 'Asia/Jakarta'];
 const CURRENCIES = [
@@ -64,10 +65,9 @@ const CURRENCIES = [
   { value: 'THB', label: 'THB — Thai baht' },
   { value: 'IDR', label: 'IDR — Indonesian rupiah' },
 ];
+// One date format everywhere (docs/DATE-FORMAT.md): 16 Sep 2026. Numeric formats are not offered.
 const DATE_FORMATS = [
-  { value: 'D MMM YYYY', label: 'D MMM YYYY — 16 Sep 2026' },
-  { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY — 16/09/2026' },
-  { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD — 2026-09-16' },
+  { value: 'D MMM YYYY', label: '16 Sep 2026' },
 ];
 const PAYOUT_METHODS = [
   { value: 'bank_transfer', label: 'Bank transfer' },
@@ -91,12 +91,12 @@ const ABSOLUTE = [
 ];
 
 /* -------------------------------- styles -------------------------------- */
-const labelCls = 'text-[12px] font-medium text-muted-ink';
+const labelCls = 'text-meta font-medium text-muted-ink';
 // height 40, full-width, border-box, 0/12 padding, 1px line border, 8px radius.
 // `font:inherit` in the source resets size/weight/family -> renders at the
 // inherited 16 / 400 / IBM Plex Sans, so no text-size/weight class is added.
 const controlCls = 'h-10 w-full box-border px-3 py-0 text-ink bg-card border border-solid border-line rounded-control outline-none [font:inherit]';
-const helpCls = 'text-[12px] text-muted-ink';
+const helpCls = 'text-meta text-muted-ink';
 
 /** Native select styled to match the Field input. */
 function SelectField({ label, value, onChange, help, children }: {
@@ -121,8 +121,8 @@ function ToggleField({ label, description, checked, onChange }: {
   return (
     <label className="flex items-center justify-between gap-5 cursor-pointer">
       <span className="flex flex-col gap-0.5 min-w-0">
-        <span className="text-[13.5px] font-medium">{label}</span>
-        {description && <span className="text-[12px] text-muted-ink leading-[1.45]">{description}</span>}
+        <span className="text-copy font-medium">{label}</span>
+        {description && <span className="text-meta text-muted-ink leading-[1.45]">{description}</span>}
       </span>
       <button
         type="button"
@@ -143,20 +143,26 @@ function ToggleField({ label, description, checked, onChange }: {
 }
 
 /** One saveable section. Owns its Save / Discard controls and dirty pill. */
-function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveLabel, children }: {
+function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveLabel, children, notUsed }: {
   title: string; description: string; dirty: boolean; busy: boolean;
   onSave: () => void; onDiscard: () => void; saveLabel: string; children: ReactNode;
+  /** Saved but nothing reads it yet: say so, so nobody believes changing it changes the system. */
+  notUsed?: string;
 }) {
   return (
     <Card>
       <div className="px-5 py-4 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex flex-col gap-[3px] min-w-0">
-          <span className="text-[16px] font-semibold">{title}</span>
-          <span className="text-[12px] text-muted-ink leading-[1.45]">{description}</span>
+        <div className="flex flex-col gap-[3px] min-w-0 flex-1">
+          <span className="flex items-center gap-2 flex-wrap">
+            <span className="text-heading font-semibold">{title}</span>
+            {notUsed && <Badge tone="warning" label="Not used yet" size="sm" />}
+          </span>
+          <span className="text-meta text-muted-ink leading-[1.45]">{description}</span>
+          {notUsed && <span className="text-meta text-[var(--color-warning-fg)] leading-[1.45] text-pretty">{notUsed}</span>}
         </div>
         <div className="flex items-center gap-2.5 flex-wrap">
           {dirty && (
-            <span className={cx('inline-flex items-center gap-1.5 text-[11px] font-medium px-[9px] py-[3px] rounded-full', TONE.warning.text, TONE.warning.bg)}>
+            <span className={cx('inline-flex items-center gap-1.5 text-caption font-medium px-[9px] py-[3px] rounded-full', TONE.warning.text, TONE.warning.bg)}>
               <span className={cx('w-1.5 h-1.5 rounded-full', TONE.warning.dot)} />
               Unsaved changes
             </span>
@@ -286,7 +292,8 @@ export default function SettingsPage() {
           {/* --------------------------- Company --------------------------- */}
           <SectionCard
             title="Company"
-            description="Legal identity and support contacts used across documents and guest messages."
+            description="Legal identity and support contacts for documents and guest messages."
+            notUsed="Saved, but statements, emails and the owner portal still print the details written into them. Changing these has no effect yet."
             dirty={dirty('company')} busy={busy === 'company'} saveLabel="Save company"
             onSave={() => save('company')} onDiscard={() => discard('company')}
           >
@@ -328,13 +335,14 @@ export default function SettingsPage() {
           {/* ----------------------- Locale and money ----------------------- */}
           <SectionCard
             title="Locale and money"
-            description="How dates, times and money are read across the product. English is the default; other locales are planned."
+            description="How dates, times and money are read. The system works in English, Malaysia time and ringgit."
+            notUsed="Saved, but not read anywhere yet: the language, timezone and currency are fixed, and the default fee here is not used by statements (they use each unit's contract, then the owner's default, then 25%)."
             dirty={dirty('locale')} busy={busy === 'locale'} saveLabel="Save locale"
             onSave={() => save('locale')} onDiscard={() => discard('locale')}
           >
             <Grid>
               <SelectField label="Default locale" value={draft.locale.default} onChange={v => patch('locale', { default: v })}>
-                {LOCALES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {LOCALES.map(o => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>)}
               </SelectField>
               <SelectField label="Timezone" value={draft.locale.timezone} onChange={v => patch('locale', { timezone: v })}>
                 {TIMEZONES.map(tz => <option key={tz} value={tz}>{tz.replace('_', ' ')}</option>)}
@@ -352,7 +360,7 @@ export default function SettingsPage() {
                 min={0}
                 max={100}
                 step={0.5}
-                trailing={<span className="text-[12px] text-muted-ink">%</span>}
+                trailing={<span className="text-meta text-muted-ink">%</span>}
                 value={draft.locale.managementFeePct}
                 error={errors['locale.managementFeePct']}
                 help="Applied to new management agreements unless the owner's contract overrides it."
@@ -364,7 +372,8 @@ export default function SettingsPage() {
           {/* --------------------- Operations defaults --------------------- */}
           <SectionCard
             title="Operations defaults"
-            description="Standard turnover timings. New reservations inherit these unless a unit sets its own."
+            description="Standard turnover timings."
+            notUsed="Saved, but not read yet: new bookings use 15:00 and 11:00, and whether a photo is needed is set on each task. Housekeeping rules are on the Housekeeping screen."
             dirty={dirty('operations')} busy={busy === 'operations'} saveLabel="Save operations"
             onSave={() => save('operations')} onDiscard={() => discard('operations')}
           >
@@ -387,7 +396,7 @@ export default function SettingsPage() {
                 numeric
                 min={1}
                 max={24}
-                trailing={<span className="text-[12px] text-muted-ink">h</span>}
+                trailing={<span className="text-meta text-muted-ink">h</span>}
                 value={draft.operations.cleaningWindowHours}
                 help="Hours a turnover needs before the next check-in. The SLA counts down to it."
                 onChange={e => patch('operations', { cleaningWindowHours: clampInt(e.target.value, 1, 24, draft.operations.cleaningWindowHours) })}
@@ -417,6 +426,7 @@ export default function SettingsPage() {
           <SectionCard
             title="Statements and payouts"
             description="When owner statements are cut and how owners are paid."
+            notUsed="Saved, but not read yet: statements are generated by hand from Owner statements, and payouts are recorded on Payouts."
             dirty={dirty('statements')} busy={busy === 'statements'} saveLabel="Save statements"
             onSave={() => save('statements')} onDiscard={() => discard('statements')}
           >
