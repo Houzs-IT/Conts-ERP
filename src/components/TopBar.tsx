@@ -58,9 +58,14 @@ const KIND_ICON: Record<SearchKind, string> = {
 };
 
 export default function TopBar({
-  path, navigate, action,
-}: { path: string; navigate?: (p: string) => void; action?: { label: string; onClick: () => void } }) {
+  path, navigate, action, compact = false,
+}: { path: string; navigate?: (p: string) => void; action?: { label: string; onClick: () => void };
+  /** Phone: only the controls, as 40px squares, for the shell's mobile header row. The crumbs are
+   *  left out there because the page's own title sits right below. */
+  compact?: boolean }) {
   const nav = findNav(path);
+  // Phone controls are 40px squares (touch); the desk bar keeps its 36px ones.
+  const ctl = compact ? 40 : shell.controlSm;
   const go = (p: string) => navigate?.(p);
 
   /* --------------------------- search --------------------------- */
@@ -136,36 +141,44 @@ export default function TopBar({
   };
 
   return (
-    <div style={{ flex: 'none', background: '#FFFFFF', borderBottom: `1px solid ${color.border}`, padding: '16px 28px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+    <div style={compact
+      ? { flex: 'none', display: 'flex', alignItems: 'center' }
+      : { flex: 'none', background: '#FFFFFF', borderBottom: `1px solid ${color.border}`, padding: '16px 28px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
       {/* Crumbs truncate inside their own box; the actions cluster never shrinks. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: '0 1 auto', overflow: 'hidden' }}>
+      {!compact && <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: '0 1 auto', overflow: 'hidden' }}>
         <span style={{ fontSize: text.small, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nav?.group ?? 'Workspace'}</span>
         <span style={{ fontSize: text.small, color: color.borderStrong, flex: 'none' }}>/</span>
         <span style={{ fontSize: text.small, fontWeight: 600, color: color.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nav?.label ?? 'Dashboard'}</span>
-      </div>
+      </div>}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '1 1 auto', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: compact ? 'none' : '1 1 auto', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
         <button type="button" onClick={() => setSearchOpen(true)} aria-label="Search" aria-keyshortcuts="/"
-          style={{ display: 'flex', alignItems: 'center', gap: 8, height: shell.controlSm, padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: radius.control, background: '#FFFFFF', color: color.textMuted, flex: '0 1 210px', minWidth: 44, overflow: 'hidden', cursor: 'text', font: 'inherit', textAlign: 'left' }}>
-          <Icon name="Search" size="sm" />
-          <span style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Search</span>
-          <span style={{ marginLeft: 'auto', fontSize: text.micro, color: color.faint, flex: 'none' }}>/</span>
+          style={compact
+            ? { width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', padding: 0, border: `1px solid ${color.border}`, borderRadius: radius.control, background: '#FFFFFF', color: color.ink, cursor: 'pointer' }
+            : { display: 'flex', alignItems: 'center', gap: 8, height: shell.controlSm, padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: radius.control, background: '#FFFFFF', color: color.textMuted, flex: '0 1 210px', minWidth: 44, overflow: 'hidden', cursor: 'text', font: 'inherit', textAlign: 'left' }}>
+          <Icon name="Search" size={compact ? 'nav' : 'sm'} />
+          {!compact && <span style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Search</span>}
+          {!compact && <span style={{ marginLeft: 'auto', fontSize: text.micro, color: color.faint, flex: 'none' }}>/</span>}
         </button>
 
-        {/* Shown only when units are really connected to a booking site; never a fixed figure. */}
+        {/* Shown only when units are really connected to a booking site; never a fixed figure. On a phone
+            it is just the status dot in a 40px square, still a link to Integrations. */}
         {channelSync && channelSync.units > 0 && (
-          <a href="#/system/integrations" title="Open Integrations"
-            style={{ display: 'flex', alignItems: 'center', gap: 7, height: shell.controlSm, flex: 'none', padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: radius.control, fontSize: text.small, whiteSpace: 'nowrap', color: color.textMuted, textDecoration: 'none' }}>
-            <span className={channelSync.failed ? undefined : 'animate-live'} style={{ width: 6, height: 6, borderRadius: radius.pill, background: channelSync.failed ? '#B7791F' : '#16845B' }} />
-            <span>{channelSync.failed
+          <a href="#/system/integrations" title={channelSync.failed ? 'Channel sync needs attention' : 'Channels connected · open Integrations'}
+            aria-label={compact ? (channelSync.failed ? 'Channel sync needs attention' : 'Channels connected') : undefined}
+            style={compact
+              ? { width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', boxSizing: 'border-box', border: `1px solid ${color.border}`, borderRadius: radius.control }
+              : { display: 'flex', alignItems: 'center', gap: 7, height: shell.controlSm, flex: 'none', padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: radius.control, fontSize: text.small, whiteSpace: 'nowrap', color: color.textMuted, textDecoration: 'none' }}>
+            <span className={channelSync.failed ? undefined : 'animate-live'} style={{ width: compact ? 8 : 6, height: compact ? 8 : 6, borderRadius: radius.pill, background: channelSync.failed ? '#B7791F' : '#16845B' }} />
+            {!compact && <span>{channelSync.failed
               ? 'Channel sync needs attention'
-              : channelSync.lastSentAt ? `Channels synced ${new Date(channelSync.lastSentAt).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuala_Lumpur' })}` : 'Channels connected'}</span>
+              : channelSync.lastSentAt ? `Channels synced ${new Date(channelSync.lastSentAt).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuala_Lumpur' })}` : 'Channels connected'}</span>}
           </a>
         )}
 
         <div style={{ position: 'relative', flex: 'none' }}>
           <button aria-label="Notifications" aria-expanded={bellOpen} onClick={() => setBellOpen(v => !v)}
-            style={{ position: 'relative', width: shell.controlSm, height: shell.controlSm, flex: 'none', display: 'grid', placeItems: 'center', border: `1px solid ${color.border}`, borderRadius: radius.control, background: '#FFFFFF', color: color.ink, cursor: 'pointer' }}>
+            style={{ position: 'relative', width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', border: `1px solid ${color.border}`, borderRadius: radius.control, background: '#FFFFFF', color: color.ink, cursor: 'pointer' }}>
             <Icon name="Bell" size="nav" />
             {unread > 0 && <span style={{ position: 'absolute', top: 6, right: 7, width: 6, height: 6, borderRadius: radius.pill, background: '#C2413B' }} />}
           </button>
@@ -204,10 +217,10 @@ export default function TopBar({
         </div>
 
         {action && (
-          <button onClick={action.onClick}
-            style={{ height: shell.controlSm, flex: 'none', display: 'flex', alignItems: 'center', gap: 7, padding: '0 14px', borderRadius: radius.control, background: color.black, color: '#FFFFFF', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', transition: `background ${motion.fast} ease-out` }}>
+          <button onClick={action.onClick} aria-label={compact ? action.label : undefined} title={compact ? action.label : undefined}
+            style={{ height: ctl, width: compact ? ctl : undefined, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: compact ? 0 : '0 14px', borderRadius: radius.control, background: color.black, color: '#FFFFFF', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', transition: `background ${motion.fast} ease-out` }}>
             <Icon name="Plus" size="sm" />
-            <span style={{ whiteSpace: 'nowrap' }}>{action.label}</span>
+            {!compact && <span style={{ whiteSpace: 'nowrap' }}>{action.label}</span>}
           </button>
         )}
       </div>

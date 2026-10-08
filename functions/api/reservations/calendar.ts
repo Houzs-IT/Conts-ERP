@@ -11,6 +11,9 @@ const STATE_LABEL: Record<string, string> = {
   checked_out: 'Checked out', cancelled: 'Cancelled', no_show: 'No show',
 };
 
+/** A unit counts as on a booking site if it had a booking from it within this many days. */
+const CHANNEL_LOOKBACK_DAYS = 180;
+
 /** GET /api/reservations/calendar?from=&to= — units, bookings and blocks over the window, plus rates. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -21,10 +24,25 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const from = url.searchParams.get('from') ?? new Date().toISOString().slice(0, 10);
   const to = url.searchParams.get('to') ?? from;
 
-  const units = await all<any>(env, `
-    SELECT u.id, u.unit_number, u.base_rate, p.name AS property_name
-    FROM units u JOIN properties p ON p.id = u.property_id
-    ORDER BY p.name, u.unit_number`);
+  const [units, onChannel] = await Promise.all([
+    all<any>(env, `
+      SELECT u.id, u.unit_number, u.base_rate, p.name AS property_name
+      FROM units u JOIN properties p ON p.id = u.property_id
+      ORDER BY p.name, u.unit_number`),
+    // Which booking sites each unit is on, so the board shows a rate row only for those. A connection made
+    // through Channex (channex_channels: written on connect, removed on disconnect) is the truth; the
+    // per-OTA rate plans on units are created for all three sites at once, and unit_channels is never
+    // written by the app, so neither says where a unit is listed. A unit with a booking from a site in the
+    // last 180 days (or a future one) also counts: units imported from HostPlatform have bookings but no
+    // Channex connection yet.
+    all<{ unit_id: string; channel: string }>(env, `
+      SELECT unit_id, ota AS channel FROM channex_channels
+      UNION
+      SELECT unit_id, channel FROM reservations
+      WHERE channel IN ('airbnb','booking_com','agoda') AND check_out >= ?`,
+      new Date(Date.now() - CHANNEL_LOOKBACK_DAYS * 864e5).toISOString().slice(0, 10)),
+  ]);
+  const channelsOf = (unitId: string) => OTA_CHANNELS.filter(ch => onChannel.some(r => r.unit_id === unitId && r.channel === ch));
 
   const blocks = await all<any>(env, `
     SELECT r.id, r.unit_id, r.channel, r.state, r.check_in, r.check_out, r.gross_booking_value,
@@ -41,7 +59,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return json({
     from, to,
     generatedAt: new Date().toISOString(),
-    units: units.map(u => ({ id: u.id, unitNumber: u.unit_number, propertyName: u.property_name })),
+    // channels: the booking sites the unit is on, in a fixed order. The direct (web) rate is always shown.
+    units: units.map(u => ({ id: u.id, unitNumber: u.unit_number, propertyName: u.property_name, channels: channelsOf(u.id) })),
     baseRate: Object.fromEntries(units.map(u => [u.id, Number(u.base_rate)])),
     // What a night costs on a channel when it has no price of its own: (base + that channel's uplift), times
     // the weekend multiplier on Friday and Saturday. Same rule as the Pricing page and Channex (channelPrice.ts).

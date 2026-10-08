@@ -3,7 +3,7 @@ import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import Icon from './Icon';
 import { Logo } from './Logo';
-import { color, radius, shell, motion } from '../theme';
+import { color, radius, motion } from '../theme';
 
 /** Persisted so the collapse choice survives a reload (BUTTONS §2, Writes = localStorage).
  *  Storage can throw (private mode, blocked cookies), so every access is guarded. */
@@ -115,21 +115,26 @@ export default function AppShell({
 
       <div style={{ flex: 1, minWidth: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {isNarrow && (
-          <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: '#FFFFFF', borderBottom: `1px solid ${color.border}` }}>
+          // One row on phones: menu, logo, then search / bell / page action. The desk top bar's crumbs are
+          // dropped here because each page's own title sits right below.
+          <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', background: '#FFFFFF', borderBottom: `1px solid ${color.border}` }}>
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
               aria-label="Open navigation"
               aria-expanded={drawerOpen}
-              style={{ width: shell.controlTouch, height: shell.controlTouch, flex: 'none', display: 'grid', placeItems: 'center', border: `1px solid ${color.border}`, borderRadius: radius.control, background: '#FFFFFF', color: color.ink, cursor: 'pointer' }}
+              style={{ width: 40, height: 40, flex: 'none', display: 'grid', placeItems: 'center', border: `1px solid ${color.border}`, borderRadius: radius.control, background: '#FFFFFF', color: color.ink, cursor: 'pointer' }}
             >
               <Icon name="Menu" size="base" />
             </button>
-            <Logo variant="full" size="sm" />
+            <Logo variant="mark" size="sm" />
+            <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 600, letterSpacing: '0.18em', color: color.ink }}>THE CONTS</span>
+            <TopBar path={path} navigate={navigate} action={action} compact />
           </div>
         )}
-        <TopBar path={path} navigate={navigate} action={action} />
-        <main style={{ flex: 1, minHeight: 0, overflowY: flush ? 'hidden' : 'auto', padding: flush ? 0 : '24px 28px 40px', display: 'flex', flexDirection: 'column', gap: flush ? 0 : 20 }}>
+        {!isNarrow && <TopBar path={path} navigate={navigate} action={action} />}
+        {/* Phones get the standard 16px side gutter; the desk keeps its wider one. */}
+        <main style={{ flex: 1, minHeight: 0, overflowY: flush ? 'hidden' : 'auto', padding: flush ? 0 : isNarrow ? '16px 16px 32px' : '24px 28px 40px', display: 'flex', flexDirection: 'column', gap: flush ? 0 : isNarrow ? 16 : 20 }}>
           {children}
         </main>
       </div>

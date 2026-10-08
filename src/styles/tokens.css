@@ -11,6 +11,10 @@
    Keep them identical — root tokens.css is the source of truth. */
 @import '../../tokens.css';
 
+/* No preflight means the browser's 8px body margin survived: it framed every screen in a grey border
+   and, with the shell at 100vh, made the whole page scroll by 16px. The app shell owns the viewport. */
+body { margin: 0; }
+
 /* Design tokens -> Tailwind theme. Utilities such as text-ink, bg-page, bg-gold,
    border-line, text-success now emit the exact brand values (keeps design 1:1
    while adopting the ERP's Tailwind convention). */
