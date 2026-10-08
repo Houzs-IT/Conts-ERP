@@ -1,3 +1,4 @@
+import { syncAvailabilityIfLinked } from './channexSync';
 import { bookingAmounts } from './channexAmounts';
 import { type Env, one, run, audit, nowIso } from './db';
 import { channexConfigured, channexBookingFeed, channexAckBookingRevision, channexChannelFor } from './channex';
@@ -63,13 +64,17 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
   const checkOut: string | undefined = room.checkout_date ?? a.departure_date;
   if (!checkIn || !checkOut) return auditSkip(env, entry.id, 'missing_dates', a);
 
-  const existing = await one<{ id: string; state: string }>(env, 'SELECT id, state FROM reservations WHERE channex_booking_id = ?', a.booking_id);
+  const existing = await one<{ id: string; state: string; unit_id: string; check_in: string; check_out: string }>(env,
+    'SELECT id, state, unit_id, check_in, check_out FROM reservations WHERE channex_booking_id = ?', a.booking_id);
   const now = nowIso();
 
   if (a.status === 'cancelled') {
     if (existing && existing.state !== 'cancelled') {
       await run(env, `UPDATE reservations SET state = 'cancelled', updated_at = ? WHERE id = ?`, now, existing.id);
       await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_cancelled', entityTable: 'reservations', entityId: existing.id, after: { channexBookingId: a.booking_id } });
+      // The nights stayed closed on Airbnb after the first live cancellation (8 Oct 2026): nothing told
+      // Channex they were free again. Same release a cancellation made here sends.
+      await reopen(env, existing.unit_id, existing.check_in, existing.check_out, existing.id);
     }
     return true; // nothing local to cancel is not a failure
   }
@@ -84,6 +89,11 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
   if (existing) {
     await run(env, `UPDATE reservations SET guest_id = ?, check_in = ?, check_out = ?, guests_count = ?, gross_booking_value = ?, channel_fee = ?, currency = ?, state = 'confirmed', updated_at = ? WHERE id = ?`,
       guestId, checkIn, checkOut, guestsCount, amountSen, feeSen, a.currency ?? 'MYR', now, existing.id);
+    // A changed stay frees the nights it left and takes the ones it moved to.
+    if (existing.check_in !== checkIn || existing.check_out !== checkOut || existing.state === 'cancelled') {
+      if (existing.state !== 'cancelled') await reopen(env, unit.id, existing.check_in, existing.check_out, existing.id);
+      await syncAvailabilityIfLinked(env, unit.id, checkIn, checkOut, false);
+    }
     const clash = await findClash(env, unit.id, checkIn, checkOut, existing.id);
     if (clash) await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_clash', entityTable: 'reservations', entityId: existing.id, after: { checkIn, checkOut, clashingReservationId: clash.id, otaBookingId: a.booking_id } });
     await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_updated', entityTable: 'reservations', entityId: existing.id, after: { channexBookingId: a.booking_id } });
@@ -96,10 +106,18 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
     VALUES (?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, ?, ?)`,
     id, unit.id, guestId, channel, a.ota_reservation_code ?? a.unique_id ?? null, a.booking_id,
     checkIn, checkOut, guestsCount, amountSen, feeSen, a.currency ?? 'MYR', now, now);
+  // Taken here, so closed on every booking site this unit is sold on.
+  await syncAvailabilityIfLinked(env, unit.id, checkIn, checkOut, false);
   const clash = await findClash(env, unit.id, checkIn, checkOut, id);
   if (clash) await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_clash', entityTable: 'reservations', entityId: id, after: { checkIn, checkOut, clashingReservationId: clash.id, otaBookingId: a.booking_id } });
   await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.booking_created', entityTable: 'reservations', entityId: id, after: { channexBookingId: a.booking_id, otaName: a.ota_name, grossSen: amountSen, feeSen, amountSource, unitId: unit.id, checkIn, checkOut } });
   return true;
+}
+
+/** Tells the booking sites the nights are free again, unless another stay still holds them. */
+async function reopen(env: Env, unitId: string, checkIn: string, checkOut: string, exceptId: string) {
+  if (await findClash(env, unitId, checkIn, checkOut, exceptId)) return;
+  await syncAvailabilityIfLinked(env, unitId, checkIn, checkOut, true);
 }
 
 async function auditSkip(env: Env, revisionId: string, reason: string, details: unknown): Promise<false> {
