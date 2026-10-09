@@ -100,7 +100,7 @@ export async function createRenovationProject(
          SELECT p.id, ts.name, ts.sort_order, coalesce(ts.display_mode, 'list'), ?, ts.stage_key
            FROM p, t JOIN project_checklist_template_sections ts ON ts.template_id = t.checklist_template_id
           WHERE ts.stage_key = ANY(t.stage_keys)
-         RETURNING id, stage_key
+         RETURNING id, stage_key, name, sort_order
        ),
        items AS (
          INSERT INTO project_checklist (project_id, seq, title, description, status, section_id, role_label, crew_visible,
@@ -110,7 +110,8 @@ export async function createRenovationProject(
            FROM p, t
            JOIN project_checklist_template_items ti ON ti.template_id = t.checklist_template_id
            JOIN project_checklist_template_sections ts ON ts.id = ti.section_id
-           JOIN sec ON sec.stage_key = ts.stage_key
+           -- each item lands in the copy of ITS section: two template sections may share a stage
+           JOIN sec ON sec.stage_key = ts.stage_key AND sec.name = ts.name AND sec.sort_order = ts.sort_order
          RETURNING id
        ),
        tasks AS (

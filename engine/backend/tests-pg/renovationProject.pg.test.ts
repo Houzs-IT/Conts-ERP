@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { d1Compat } from "../src/db/d1-compat";
 import renovation from "../src/routes/renovation";
+import projects from "../src/routes/projects";
 import { assertDisposableTestDatabase } from "./lib/doc-no-fixture";
 import { loadOpenLines, lineGroupOf } from "../src/scm/routes/site-receipts";
 import { postGrnAndRollup } from "../src/scm/routes/grns";
@@ -33,6 +34,7 @@ function makeApp(perms: string[] = ["*"]) {
     await next();
   });
   outer.route("/api/renovation", renovation as never);
+  outer.route("/api/projects", projects as never);
   return outer;
 }
 
@@ -47,8 +49,8 @@ function env() {
   };
 }
 
-async function call(method: string, path: string, body?: unknown) {
-  const res = await app.request(`/api/renovation${path === "/" ? "" : path}`, {
+async function call(method: string, path: string, body?: unknown, base = "/api/renovation") {
+  const res = await app.request(`${base}${path === "/" ? "" : path}`, {
     method,
     headers: { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -277,5 +279,36 @@ describePg("renovation project routes on the real schema", () => {
     const ro = makeApp([]);
     const res = await ro.request(`/api/renovation/${projectId}/stages/key_permit/skip`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reason: "xxxx" }) }, env() as never);
     expect(res.status).toBe(403);
+  });
+
+  test("Project Maintenance: a section added by hand carries a stage and is copied into new projects", async () => {
+    const tpl = Number((await sql`select checklist_template_id from public.project_types where id = ${typeId}`)[0]!.checklist_template_id);
+    const P = (m: string, path: string, body?: unknown) => call(m, path, body, "/api/projects");
+    expect((await P("POST", `/checklist-templates/${tpl}/sections`, { name: "Bad stage", stage_key: "painting" })).status).toBe(400);
+    // same stage as a seeded section, so the copy must keep the two sections' items apart
+    const sec = await P("POST", `/checklist-templates/${tpl}/sections`, { name: `Site safety ${run}`, stage_key: "hardware" });
+    expect(sec.status).toBe(201);
+    expect(sec.json.stage_key).toBe("hardware");
+    const loose = await P("POST", `/checklist-templates/${tpl}/sections`, { name: `No stage ${run}` });
+    expect(loose.status).toBe(201);
+    expect((await P("POST", `/checklist-templates/${tpl}/items`, { title: `Safety briefing ${run}`, section_id: sec.json.id })).status).toBe(201);
+    let got = await P("GET", `/checklist-templates/${tpl}/items`);
+    expect(got.json.sections.find((x: any) => x.id === sec.json.id).stage_key).toBe("hardware");
+    expect((await P("PATCH", `/checklist-templates/sections/${loose.json.id}`, { stage_key: "nope" })).status).toBe(400);
+    expect((await P("PATCH", `/checklist-templates/sections/${loose.json.id}`, { stage_key: "furniture" })).status).toBe(200);
+    got = await P("GET", `/checklist-templates/${tpl}/items`);
+    expect(got.json.sections.find((x: any) => x.id === loose.json.id).stage_key).toBe("furniture");
+    expect((await P("PATCH", `/checklist-templates/sections/${loose.json.id}`, { stage_key: null })).status).toBe(200);
+
+    const r = await call("POST", "/", { name: `Stage copy ${run}`, projectTypeId: typeId, customerKind: "customer", customerName: "Mr Tan" });
+    expect(r.status).toBe(201);
+    const d = await call("GET", `/${r.json.id}`);
+    expect(d.json.checklist.length).toBe(35); // 34 seeded + the hand-added one, nothing doubled
+    const briefing = d.json.checklist.filter((c: any) => c.title === `Safety briefing ${run}`);
+    expect(briefing).toHaveLength(1);
+    expect(briefing[0].stage_key).toBe("hardware");
+    const secs = await sql`select name, stage_key from public.project_checklist_sections where project_id = ${r.json.id} order by sort_order`;
+    expect(secs.some((x) => x.name === `Site safety ${run}` && x.stage_key === "hardware")).toBe(true);
+    expect(secs.some((x) => x.name === `No stage ${run}`)).toBe(false);
   });
 });

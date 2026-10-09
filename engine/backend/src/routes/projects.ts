@@ -71,6 +71,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import { activeCompanyId, activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
 import { refuseForeignChild, refuseForeignProject } from "./lib/project-company-gate";
+import { isStageKey } from "../scm/shared/renovation-stages";
 
 /* The context the extracted handlers below receive. They are exported so the
    route tests can drive them directly; the shape is exactly what app.get/post
@@ -1759,7 +1760,7 @@ app.get(
       .bind(id)
       .all();
     const sections = await c.env.DB.prepare(
-      `SELECT id, name, sort_order, display_mode
+      `SELECT id, name, sort_order, display_mode, stage_key
          FROM project_checklist_template_sections
         WHERE template_id = ?
         ORDER BY sort_order, id`
@@ -4336,9 +4337,12 @@ app.post(
   async (c) => {
     const id = parseInt(c.req.param("id"), 10);
     if (isNaN(id)) return c.json({ error: "Invalid ID" }, 400);
-    const body = await c.req.json<{ name?: string; sort_order?: number }>();
+    const body = await c.req.json<{ name?: string; sort_order?: number; stage_key?: string | null }>();
     const name = (body.name || "").trim();
     if (!name) return c.json({ error: "name is required" }, 400);
+    // Renovation templates: the stage a section belongs to; only staged sections clone into a new project.
+    const stageKey = body.stage_key == null || body.stage_key === "" ? null : body.stage_key;
+    if (stageKey !== null && !isStageKey(stageKey)) return c.json({ error: "invalid_stage", message: "Unknown stage." }, 400);
     // Company for the WRITE, then prove the parent template is this company's.
     const co = requireActiveCompanyId(c);
     if (!co.ok) return c.json(co.refusal, 409);
@@ -4356,12 +4360,12 @@ app.post(
       order = (max?.s ?? 0) + 10;
     }
     const r = await c.env.DB.prepare(
-      `INSERT INTO project_checklist_template_sections (template_id, name, sort_order, company_id)
-       VALUES (?, ?, ?, ?)`
+      `INSERT INTO project_checklist_template_sections (template_id, name, sort_order, company_id, stage_key)
+       VALUES (?, ?, ?, ?, ?)`
     )
-      .bind(id, name, order, co.companyId)
+      .bind(id, name, order, co.companyId, stageKey)
       .run();
-    return c.json({ id: r.meta.last_row_id, name, sort_order: order }, 201);
+    return c.json({ id: r.meta.last_row_id, name, sort_order: order, stage_key: stageKey }, 201);
   }
 );
 
@@ -4375,9 +4379,16 @@ app.patch(
       name?: string;
       sort_order?: number;
       display_mode?: "list" | "documents";
+      stage_key?: string | null;
     }>();
     const sets: string[] = [];
     const binds: any[] = [];
+    if ("stage_key" in body) {
+      const k = body.stage_key == null || body.stage_key === "" ? null : body.stage_key;
+      if (k !== null && !isStageKey(k)) return c.json({ error: "invalid_stage", message: "Unknown stage." }, 400);
+      sets.push("stage_key = ?");
+      binds.push(k);
+    }
     if ("name" in body) {
       const n = (body.name || "").trim();
       if (!n) return c.json({ error: "name cannot be empty" }, 400);
