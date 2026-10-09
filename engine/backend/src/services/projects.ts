@@ -1188,6 +1188,8 @@ export function stripSetupDismantle<
 // ── List ──────────────────────────────────────────────────────
 
 export interface ListProjectsFilters {
+  /** exhibition | renovation (renovation flow, mig 0075). Absent = every kind. */
+  kind?: "exhibition" | "renovation";
   stage?: string;
   /** Date-derived event phase for the field/sales slim filter bar (owner
    *  2026-07-21). The `stage` enum is unmaintained (never reaches
@@ -1354,6 +1356,11 @@ export async function listProjects(env: Env, f: ListProjectsFilters) {
   if (f.company_id != null) {
     where.push("p.company_id = ?");
     binds.push(f.company_id);
+  }
+  // Read through to_jsonb so a database without mig 0075 lists every row as an exhibition.
+  if (f.kind) {
+    where.push("coalesce(to_jsonb(p)->>'project_kind', 'exhibition') = ?");
+    binds.push(f.kind);
   }
   if (f.stage) {
     const stages = f.stage.split(",").map((s) => s.trim()).filter(Boolean);

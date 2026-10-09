@@ -1181,6 +1181,7 @@ app.get("/", requirePageAccess("projects.list"), async (c) => {
     pending_defect_review: pendingDefectReview || undefined,
     pending_defect_review_states: pendingDefectReview ? DEFECT_REVIEW_REGION_STATES : undefined,
     pending_defect_review_exclude: pendingDefectReviewExclude || undefined,
+    kind: c.req.query("kind") === "exhibition" || c.req.query("kind") === "renovation" ? (c.req.query("kind") as "exhibition" | "renovation") : undefined,
     stage: c.req.query("stage"),
     // Date-derived event phase for the field/sales slim bar (owner 2026-07-21).
     // Only "setup" | "dismantle" are honoured; anything else is ignored.
@@ -3688,6 +3689,14 @@ app.post("/checklist/:itemId/status", requireAnyPermission(["projects.write", "p
   const status = body.status as "pending" | "done" | "na" | "blocked";
   if (!["pending", "done", "na", "blocked"].includes(status)) {
     return c.json({ error: "invalid status" }, 400);
+  }
+  // Renovation items are skipped with a reason (POST /api/renovation/checklist/:id/skip), never N/A.
+  if (status === "na") {
+    const reno = await c.env.DB.prepare(
+      `SELECT 1 AS reno FROM project_checklist ck JOIN projects p ON p.id = ck.project_id
+        WHERE ck.id = ? AND coalesce(to_jsonb(p)->>'project_kind', 'exhibition') = 'renovation'`
+    ).bind(itemId).first<{ reno: number }>();
+    if (reno) return c.json({ error: "use_skip_with_reason", message: "Skip this item with a reason instead of marking it N/A." }, 400);
   }
   const item = await c.env.DB.prepare(
     `SELECT required_perm, role_label FROM project_checklist WHERE id = ?`
