@@ -123,10 +123,13 @@ import { parseMoneyToSen } from '../../lib/money';
 import styles from './Products.module.css';
 import { normalizeImportHeader, looksLikeGridExport, mapGridHeaders, isGridNoPrice, importFailureMessage } from './products-import-headers';
 import { ProductRow, fmtRm, fmtUnit, priceForHeightTier, useSkuGridOrder, saveStagedEdits, stageRowEdit, type ProductEditPatch } from './products/SkuEditRow';
+import { CONTS_HIDDEN_MAINTENANCE_KEYS, CONTS_RENOVATION_CATALOG, resolveProductTab, visibleProductTabs } from '../../conts/catalog';
+import { RenovationSkuMaster } from './products/RenovationSkuMaster';
 
 const ICON_PROPS = { size: 16, strokeWidth: 1.75 } as const;
 
 type TopTab = 'sku' | 'modular' | 'maintenance' | 'combos' | 'variants' | 'fabric' | 'categories';
+const TOP_TABS: readonly TopTab[] = ['sku', 'modular', 'maintenance', 'combos', 'variants', 'fabric', 'categories'];
 
 
 export const Products = () => {
@@ -135,12 +138,8 @@ export const Products = () => {
      able to bookmark /scm/products?tab=variants). Reads/writes ?tab on every
      change; the legacy default (no query string) still lands on SKU Master. */
   const [searchParams, setSearchParams] = useSearchParams();
-  const tabFromUrl = (searchParams.get('tab') ?? 'sku') as TopTab;
-  const topTab: TopTab = ['sku', 'modular', 'maintenance', 'combos', 'variants', 'fabric', 'categories'].includes(
-    tabFromUrl,
-  )
-    ? tabFromUrl
-    : 'sku';
+  // Conts: a tab this instance hides (conts/catalog.ts) lands on the SKU Master too.
+  const topTab: TopTab = resolveProductTab(searchParams.get('tab'), TOP_TABS);
   const setTopTab = (next: TopTab) => {
     const sp = new URLSearchParams(searchParams);
     if (next === 'sku') sp.delete('tab');
@@ -162,7 +161,7 @@ export const Products = () => {
             role="tablist"
             className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-md border border-border bg-surface p-1 shadow-stone [&>*]:shrink-0"
           >
-            {([
+            {visibleProductTabs([
               { value: 'sku' as const, label: 'SKU Master' },
               /* PR #84 — Commander 2026-05-26 wanted a dedicated place to
                  manage per-Model specs (allowed options, thickness, etc.)
@@ -214,7 +213,7 @@ export const Products = () => {
         }
       />
 
-      {topTab === 'sku' && <SkuMasterTab />}
+      {topTab === 'sku' && (CONTS_RENOVATION_CATALOG ? <RenovationSkuTab /> : <SkuMasterTab />)}
       {topTab === 'modular' && <ProductModels />}
       {topTab === 'maintenance' && <MaintenanceTab />}
       {topTab === 'combos' && <SofaComboTab />}
@@ -222,6 +221,25 @@ export const Products = () => {
       {topTab === 'fabric' && <FabricTracking />}
       {topTab === 'categories' && <Categories />}
     </div>
+  );
+};
+
+/* Conts renovation SKU Master (products/RenovationSkuMaster.tsx), with this
+   page's own Import SKUs dialog and suppliers drawer. */
+const RenovationSkuTab = () => {
+  const [importing, setImporting] = useState(false);
+  const [suppliersRow, setSuppliersRow] = useState<MfgProductRow | null>(null);
+  const config = useMaintenanceConfig('master');
+  const sofaSizes = useMemo(
+    () => (config.data?.data?.sofaSizes ? maintValues(config.data.data.sofaSizes) : ['24', '26', '28', '30', '32', '35']),
+    [config.data],
+  );
+  return (
+    <>
+      <RenovationSkuMaster onImport={() => setImporting(true)} onOpenSuppliers={setSuppliersRow} />
+      {suppliersRow && <ProductSuppliersDrawer row={suppliersRow} onClose={() => setSuppliersRow(null)} />}
+      {importing && <ImportSkusDialog sofaSizes={sofaSizes} onClose={() => setImporting(false)} />}
+    </>
   );
 };
 
@@ -1274,7 +1292,8 @@ export const MaintenanceTab = ({
       sections.includes(t.section)
       // Specials edit GLOBAL special_addons (selling price) — show only on the
       // master Products page, never the per-supplier (cost-overlay) Maintenance.
-      && !((t.key === 'specials' || t.key === 'sofaSpecials') && scope !== 'master')),
+      && !((t.key === 'specials' || t.key === 'sofaSpecials') && scope !== 'master')
+      && !CONTS_HIDDEN_MAINTENANCE_KEYS.has(t.key)),
     [sections, scope],
   );
 
@@ -1506,10 +1525,11 @@ export const MaintenanceTab = ({
   return (
     <div className={styles.maintLayout}>
       <aside className={styles.maintNav}>
-        {sections.map((section) => (
+        {/* Conts hides some lists (conts/catalog.ts); a section left empty is not drawn. */}
+        {sections.filter((section) => MAINTENANCE_TABS.some((t) => t.section === section && !CONTS_HIDDEN_MAINTENANCE_KEYS.has(t.key))).map((section) => (
           <div key={section}>
             <div className={styles.maintSection}>{section}</div>
-            {MAINTENANCE_TABS.filter((t) => t.section === section).map((t) => {
+            {MAINTENANCE_TABS.filter((t) => t.section === section && !CONTS_HIDDEN_MAINTENANCE_KEYS.has(t.key)).map((t) => {
               const count = t.key === 'fabrics'
                 ? fabricsCount
                 : t.key === 'brandings'
@@ -3788,7 +3808,8 @@ const ProductSuppliersDrawer = ({
             <p style={{ marginTop: 4, fontSize: 'var(--fs-13)', color: '#767b6e' }}>
               {row.name}{row.description ? ` — ${row.description}` : ''}
             </p>
-            {!row.model_id
+            {/* Conts: group and sub-category are changed in the renovation SKU drawer. */}
+            {CONTS_RENOVATION_CATALOG ? null : !row.model_id
               ? <CategorySwapSelect kind="sku" id={row.id} category={row.category} />
               : (
                 <div style={{ marginTop: 4 }}>
@@ -3964,7 +3985,7 @@ const ProductSuppliersDrawer = ({
             </div>
           )}
 
-          <AddSupplierBinding productCode={row.code} productName={row.name} />
+          <AddSupplierBinding productCode={row.code} productName={row.name} hasBindings={q.isLoading ? undefined : suppliers.length > 0} />
 
           <SkuHistoryTabs productId={row.id} />
         </div>
@@ -4709,6 +4730,9 @@ const ImportSkusDialog = ({ sofaSizes, onClose }: { sofaSizes: string[]; onClose
         if (has(first.size_label)) out.size_label = first.size_label;
         if (has(first.status))     out.status = first.status;
         if (has(first.branding))   out.branding = first.branding;
+        // Renovation catalog columns ("sub category", "uom"); read as typed server-side.
+        if (has(first.sub_category)) out.sub_category = first.sub_category;
+        if (has(first.uom))          out.uom = first.uom;
 
         // Money is read in RINGGIT (new export, e.g. 1535.00 → 153500 sen). A
         // legacy `_sen` column is still honoured as a fallback so any file from

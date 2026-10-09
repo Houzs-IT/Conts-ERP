@@ -43,7 +43,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "../Button";
-import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
+import { API_URL, authedFetch } from "../../vendor/scm/lib/authed-fetch";
 /* Set-primary, delete and reorder all invalidated on success and said nothing on
    failure — the same shape as the fabric grid the owner reported as "I press it
    and nothing happens". Inline mutations, so the first sweep could not resolve
@@ -99,6 +99,14 @@ function classifyLoadError(err: unknown): LoadStatus {
   return "error";
 }
 
+/* Photo urls come back as `/api/scm/...` proxy paths. In production the API is
+   same-origin (Pages Function proxy) and they work as they are; in local dev the
+   API is another origin, so prefix it from the same base authedFetch uses. */
+export function resolveApiAssetUrl(url: string): string {
+  if (!url.startsWith("/api/scm")) return url;
+  return API_URL.startsWith("http") ? `${API_URL}${url.slice("/api/scm".length)}` : url;
+}
+
 const errMsg = (e: unknown): string =>
   e instanceof Error ? e.message : typeof e === "string" ? e : "Unknown error";
 
@@ -106,21 +114,27 @@ const newRid = () => `u${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export function PhotoGallery({
-  modelId,
-  modelName,
-}: {
-  modelId: string;
-  modelName?: string;
-}) {
+/* Two owners of a gallery: a product model (the Houzs Modular screens) or one
+   SKU (Conts renovation catalog, scm.mfg_product_photos, migration 0062). Same
+   four endpoints under a different base, same tiles. */
+export type PhotoGalleryProps =
+  | { modelId: string; modelName?: string; productId?: undefined; productName?: undefined }
+  | { productId: string; productName?: string; modelId?: undefined; modelName?: undefined };
+
+export function PhotoGallery(props: PhotoGalleryProps) {
+  const isSku = props.productId !== undefined;
+  const ownerId = (isSku ? props.productId : props.modelId) ?? "";
+  const modelName = isSku ? props.productName : props.modelName;
+  const base = isSku ? `/mfg-products/${encodeURIComponent(ownerId)}` : `/product-models/${ownerId}`;
+  const listKey = [isSku ? "mfg-product-photos" : "product-model-photos", ownerId];
   const qc = useQueryClient();
 
   // List query
   const photosQ = useQuery({
-    queryKey: ["product-model-photos", modelId],
+    queryKey: listKey,
     queryFn: () =>
       authedFetch<{ photos: PhotoRow[] }>(
-        `/product-models/${modelId}/photos`,
+        `${base}/photos`,
       ).then((r) =>
         [...r.photos].sort((a, b) => {
           // Primary first, then by order asc, then by id for determinism.
@@ -129,10 +143,16 @@ export function PhotoGallery({
           return a.id.localeCompare(b.id);
         }),
       ),
-    enabled: Boolean(modelId),
+    enabled: Boolean(ownerId),
     staleTime: 60_000,
     retry: false,
   });
+
+  // A SKU's photo count gates its ACTIVE status, so its list refreshes too.
+  const onGalleryChanged = () => {
+    void qc.invalidateQueries({ queryKey: listKey });
+    if (isSku) void qc.invalidateQueries({ queryKey: ["mfg-products"] });
+  };
 
   const loadStatus: LoadStatus = photosQ.error
     ? classifyLoadError(photosQ.error)
@@ -142,33 +162,33 @@ export function PhotoGallery({
   const setPrimaryMut = useMutation({
     mutationFn: ({ photoId }: { photoId: string }) =>
       authedFetch<{ ok: true }>(
-        `/product-models/${modelId}/photos/${photoId}`,
+        `${base}/photos/${photoId}`,
         { method: "PATCH", body: JSON.stringify({ is_primary: true }) },
       ),
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["product-model-photos", modelId] }),
+      onGalleryChanged(),
     onError: writeFailed,
   });
 
   const deleteMut = useMutation({
     mutationFn: ({ photoId }: { photoId: string }) =>
       authedFetch<{ ok: true }>(
-        `/product-models/${modelId}/photos/${photoId}`,
+        `${base}/photos/${photoId}`,
         { method: "DELETE" },
       ),
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["product-model-photos", modelId] }),
+      onGalleryChanged(),
     onError: writeFailed,
   });
 
   const reorderMut = useMutation({
     mutationFn: ({ photoId, order }: { photoId: string; order: number }) =>
       authedFetch<{ ok: true }>(
-        `/product-models/${modelId}/photos/${photoId}`,
+        `${base}/photos/${photoId}`,
         { method: "PATCH", body: JSON.stringify({ order }) },
       ),
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["product-model-photos", modelId] }),
+      onGalleryChanged(),
     onError: writeFailed,
   });
 
@@ -212,12 +232,12 @@ export function PhotoGallery({
     if (prepared.thumb) fd.append("thumb", prepared.thumb);
     try {
       await authedFetch<{ photo: PhotoRow }>(
-        `/product-models/${modelId}/photos`,
+        `${base}/photos`,
         { method: "POST", body: fd },
       );
       // Success — remove pending tile and refetch the gallery.
       setPending((prev) => prev.filter((p) => p.rid !== rid));
-      qc.invalidateQueries({ queryKey: ["product-model-photos", modelId] });
+      onGalleryChanged();
     } catch (e) {
       setPending((prev) =>
         prev.map((p) =>
@@ -326,22 +346,22 @@ export function PhotoGallery({
 
   return (
     <section
-      aria-label="Model photos"
+      aria-label={isSku ? "SKU photos" : "Model photos"}
       className="space-y-3 rounded-xl border border-border bg-surface p-4 shadow-stone sm:p-5"
     >
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[10px] font-semibold uppercase tracking-brand text-accent">
-            Model photos
+            {isSku ? "SKU photos" : "Model photos"}
           </div>
           <h2 className="mt-1 font-display text-[15px] font-extrabold tracking-tight text-ink">
             Gallery {modelName && <span className="text-ink-muted">· {modelName}</span>}
           </h2>
           <p className="mt-0.5 text-[11.5px] text-ink-muted">
             Drag &amp; drop or choose files. JPG / PNG / WebP, ≤ 5 MB each. The
-            primary photo is shown wherever this model is referenced (SO
-            configurator, catalogue, picker).
+            primary photo is shown wherever this {isSku ? "SKU" : "model"} is referenced
+            {isSku ? " (quotation and SO prints, SKU list)." : " (SO configurator, catalogue, picker)."}
           </p>
         </div>
         <button
@@ -577,7 +597,7 @@ function PhotoTile({
      the full image when it errors (photos uploaded before thumbnails
      shipped have no thumb object; the proxy 404s and onError fires). */
   const [useFull, setUseFull] = useState(!photo.thumbUrl);
-  const src = !useFull && photo.thumbUrl ? photo.thumbUrl : photo.url;
+  const src = resolveApiAssetUrl(!useFull && photo.thumbUrl ? photo.thumbUrl : photo.url);
   return (
     <div className="group relative aspect-square overflow-hidden rounded-lg border border-border bg-surface-2 shadow-stone">
       <img

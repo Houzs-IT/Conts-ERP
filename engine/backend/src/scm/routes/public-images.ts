@@ -36,6 +36,7 @@
 import { Hono } from 'hono';
 import { modelPhotoProxyHandler } from './product-models';
 import { categoryHeroBlobHandler } from './categories';
+import { mfgProductPhotoProxyHandler } from './mfg-product-photos';
 import type { Env, Variables } from '../env';
 
 export const publicScmImages = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -45,3 +46,8 @@ export const publicScmImages = new Hono<{ Bindings: Env; Variables: Variables }>
 //   GET /api/scm/categories/:id/hero-blob
 publicScmImages.get('/product-models/:id/photo/:key', modelPhotoProxyHandler);
 publicScmImages.get('/categories/:id/hero-blob', categoryHeroBlobHandler);
+// Conts renovation catalog: SKU photos (scm.mfg_product_photos, migration 0062).
+// Same safety argument: the handler checks the key sits under this SKU's prefix
+// and matches a stored photo row before streaming.
+//   GET /api/scm/mfg-products/:id/photo/:key
+publicScmImages.get('/mfg-products/:id/photo/:key', mfgProductPhotoProxyHandler);
