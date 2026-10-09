@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { cx } from '../../lib/design-tokens';
+import { Select as UiSelect } from '../../components/Select';
 import type { Tone, UnitReadiness, TaskState, BookingChannel, ReservationState } from '../../lib/types';
 
 export const BANKS = ['MBBE', 'PBBB', 'CIBB', 'RHBB', 'HLBB', 'AMBB', 'BIMB', 'UOVB', 'OCBC'];
@@ -77,7 +78,7 @@ export interface RosterRow { id: string; readiness: UnitReadiness }
 
 /* ---- small building blocks ---- */
 export function SectionHead({ children, noMargin }: { children: ReactNode; noMargin?: boolean }) {
-  return <div className={cx('text-[11px] font-bold tracking-[0.08em] text-muted-ink', noMargin ? 'm-0' : 'mt-1 mb-[14px]')}>{String(children).toUpperCase()}</div>;
+  return <div className={cx('text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink', noMargin ? 'm-0' : 'mt-1 mb-[14px]')}>{children}</div>;
 }
 export function Grid3({ children }: { children: ReactNode }) {
   return <div className="grid grid-cols-1 sm:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4 mb-[22px]">{children}</div>;
@@ -86,25 +87,21 @@ export function Labeled({ label, hint, help, span2, children }: { label: string;
   return (
     <div className={cx('flex flex-col gap-1.5 min-w-0', span2 && 'sm:[grid-column:span_2]')}>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[12px] font-medium text-muted-ink">{label}</span>
-        <span className="text-[9px] font-bold tracking-[0.08em] text-faint">{hint}</span>
+        <span className="text-meta font-medium text-muted-ink">{label}</span>
+        <span className="text-caption font-semibold uppercase tracking-[0.06em] text-faint">{hint}</span>
       </div>
       {children}
-      {help && <span className="text-[11px] text-muted-ink">{help}</span>}
+      {help && <span className="text-caption text-muted-ink">{help}</span>}
     </div>
   );
 }
+/** The form's labelled dropdown: the shared Select at form height, its label read out (the field label sits above it). */
 export function Select({ value, onChange, options, disabled, label }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; disabled?: boolean; label?: string }) {
-  return (
-    <select value={value} disabled={disabled} aria-label={label} onChange={e => onChange(e.target.value)}
-      className="h-[var(--control-height)] w-full min-w-0 box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:bg-muted disabled:text-muted-ink">
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  );
+  return <UiSelect size="md" label={label ?? ''} value={value} onChange={onChange} options={options} disabled={disabled} className="w-full" />;
 }
 /** A value shown in the place of a field, for data that is set somewhere else. */
 export function ReadOnly({ children }: { children: ReactNode }) {
-  return <div className="h-[var(--control-height)] flex items-center px-3 text-[14px] text-muted-ink bg-muted border border-solid border-line rounded-control overflow-hidden whitespace-nowrap text-ellipsis">{children}</div>;
+  return <div className="h-[var(--control-height)] flex items-center px-3 text-copy text-muted-ink bg-muted border border-solid border-line rounded-control overflow-hidden whitespace-nowrap text-ellipsis">{children}</div>;
 }
 
 export function CentreModal({ title, sub, onClose, footer, children }: { title: string; sub?: string; onClose: () => void; footer: ReactNode; children: ReactNode }) {
@@ -119,7 +116,7 @@ export function CentreModal({ title, sub, onClose, footer, children }: { title: 
     <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)]">
       <div onClick={onClose} className="absolute inset-0" />
       <div ref={ref} className="relative w-full max-w-[460px] max-h-[calc(100vh-32px)] overflow-y-auto bg-card rounded-card shadow-[var(--shadow-overlay)]">
-        <div className="pt-[22px] px-[22px] pb-1"><h2 className="m-0 text-[18px] font-semibold">{title}</h2>{sub && <p className="mt-[5px] mb-0 text-[13px] text-muted-ink">{sub}</p>}</div>
+        <div className="pt-[22px] px-[22px] pb-1"><h2 className="m-0 text-title font-semibold">{title}</h2>{sub && <p className="mt-[5px] mb-0 text-copy text-muted-ink">{sub}</p>}</div>
         <div className="py-4 px-[22px] flex flex-col gap-[14px]">{children}</div>
         <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end flex-wrap gap-[9px]">{footer}</div>
       </div>

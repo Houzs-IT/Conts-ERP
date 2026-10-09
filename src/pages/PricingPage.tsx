@@ -14,7 +14,8 @@ import { useToast } from '../components/Toast';
 import { api, notifyFailure } from '../lib/api';
 import { rm, dateRange, todayMyt, plural } from '../lib/format';
 import { Select, SearchSelect } from '../components/Select';
-import { usePhone } from './finance/listKit';
+import { usePhone, SearchBox } from './finance/listKit';
+import { EmptyState } from '../components/States';
 import { SYNC } from '../lib/vocabulary';
 import { TONE, cx } from '../lib/design-tokens';
 import type { BookingChannel, SyncState } from '../lib/types';
@@ -255,11 +256,7 @@ export default function PricingPage() {
       {loading && units.length === 0 ? (
         <Card><TableSkeleton rows={5} cols={4} /></Card>
       ) : rows.length === 0 ? (
-        <Card>
-          <div className="py-10 px-[22px] text-center flex flex-col gap-3 items-center">
-            <span className="text-copy text-muted-ink">No units to price yet. Add a unit to set its rates.</span>
-          </div>
-        </Card>
+        <EmptyState title="No units to price yet." body="Add a unit to set its rates." />
       ) : (
         <div className="flex gap-4 items-start flex-wrap">
           {/* Unit selector. On a phone it is a searchable picker above the editor, not 139 cards to scroll past. */}
@@ -269,13 +266,12 @@ export default function PricingPage() {
           ) : (
           <Card style={{ flex: '0 1 280px', minWidth: 240, maxWidth: 320 }}>
             <div className="py-3 px-3 [border-bottom:1px_solid_var(--color-line)] flex flex-col gap-2">
-              <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit or building" aria-label="Search units"
-                className="h-9 px-3 rounded-control border border-solid border-line bg-card font-sans text-copy text-ink outline-none" />
+              <SearchBox label="Search units" placeholder="Search unit or building" value={q} onChange={setQ} />
               <Select label="Building" value={building} onChange={setBuilding} placeholder={`All buildings · ${buildings.length}`} options={buildings.map(b => ({ value: b, label: b }))} />
-              <span className="text-caption font-semibold tracking-[0.05em] text-muted-ink px-1">UNITS · {listed.length === rows.length ? rows.length : `${listed.length} OF ${rows.length}`}</span>
+              <span className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink px-1">Units · {listed.length === rows.length ? rows.length : `${listed.length} of ${rows.length}`}</span>
             </div>
             <div className="max-h-[70vh] overflow-y-auto [scrollbar-width:thin]">
-            {listed.length === 0 && <div className="p-4 text-meta text-muted-ink">No unit matches.</div>}
+            {listed.length === 0 && <EmptyState bare kind="filtered" title="No units match." action={{ label: 'Clear filters', onClick: () => { setQ(''); setBuilding(''); } }} />}
             {listed.map(u => {
               const on = selected?.unitId === u.unitId;
               const failed = u.rates.filter(r => r.sync === 'failed').length;
@@ -339,13 +335,13 @@ export default function PricingPage() {
               {/* Uplift table */}
               <div className="overflow-x-auto">
                 <div className="min-w-[580px]">
-                  <div className={cx(COLS, 'grid gap-3 py-[9px] px-5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-caption font-semibold tracking-[0.05em] text-muted-ink')}>
-                    <div>CHANNEL</div>
-                    <div className="text-right">UPLIFT</div>
-                    <div className="text-right">GUEST PAYS</div>
-                    <div className="text-right">WEEKEND</div>
-                    <div className="text-right">YOU KEEP</div>
-                    <div>SYNC</div>
+                  <div className={cx(COLS, 'grid gap-3 py-[9px] px-5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink')}>
+                    <div>Channel</div>
+                    <div className="text-right">Uplift</div>
+                    <div className="text-right">Guest pays</div>
+                    <div className="text-right">Weekend</div>
+                    <div className="text-right">You keep</div>
+                    <div>Sync</div>
                   </div>
 
                   {selected.rates.map(r => {
@@ -420,7 +416,7 @@ export default function PricingPage() {
                   </label>
                   <div className="ml-auto">
                     <Button
-                      variant="primary" icon={<Icon name="Send" size="sm" />}
+                      size="sm" variant="primary" icon={<Icon name="Send" size="sm" />}
                       onClick={pushRates}
                       disabled={PUSHABLE.every(c => !pushSel[c]) || !from || !to || to < from}
                       disabledReason="Pick at least one channel and a valid date range first."

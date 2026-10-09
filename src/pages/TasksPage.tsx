@@ -12,7 +12,10 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useCrew } from '../lib/useCrew';
 import { api, notifyFailure } from '../lib/api';
-import { unitRef } from '../lib/format';
+import { unitRef, dateShort, weekdayDay, time, count, plural } from '../lib/format';
+import { Select } from '../components/Select';
+import { EmptyState } from '../components/States';
+import { Chip, Pager } from './finance/listKit';
 import { TASK } from '../lib/vocabulary';
 import type { Task, TaskState, Tone } from '../lib/types';
 
@@ -40,7 +43,7 @@ const firstName = (name: string) => name.split(' ')[0];
 type Row = Task & { date?: string; propertyId?: string; cleanerId?: string | null; sheetCleaner?: string | null; completedAt?: string | null; startedAt?: string | null };
 interface Payload { data: Row[]; total: number; page?: number; pageSize?: number; counts?: Record<string, number> }
 interface Facets { buildings: { id: string; name: string }[]; assignees: { key: string; name: string; count: number }[] }
-const dateTimeShort = (iso: string) => new Date(iso).toLocaleString('en-MY', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuala_Lumpur' });
+const dateTimeShort = (iso: string) => `${dateShort(iso)} ${time(iso)}`;
 
 /** Dev fallback so the screen renders before the endpoint is live. Times are
  *  HH:MM; the live backend returns ISO and owns the SLA object outright. */
@@ -103,7 +106,7 @@ const TONE_FG: Record<Tone, string> = {
 
 /* ------------------------------ local modal ------------------------------ */
 const inputCls = 'block w-full box-border h-10 py-0 px-3 text-ink bg-white border border-line rounded-control outline-none [font:inherit]';
-const labelCls = 'text-[12px] font-medium text-muted-ink';
+const labelCls = 'text-meta font-medium text-muted-ink';
 
 function Modal({ title, sub, onClose, children, footer, busy }: {
   title: string; sub?: string; onClose: () => void; children: ReactNode; footer: ReactNode; busy?: boolean;
@@ -123,8 +126,8 @@ function Modal({ title, sub, onClose, children, footer, busy }: {
         className="relative w-full max-w-[460px] max-h-[88vh] overflow-y-auto bg-card rounded-card shadow-[var(--shadow-overlay)] [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
         <div className="pt-5 px-[22px] pb-1 flex items-start justify-between gap-3">
           <div className="flex flex-col gap-[5px]">
-            <h2 className="m-0 text-[18px] leading-[1.3] font-semibold">{title}</h2>
-            {sub && <p className="m-0 text-[13px] leading-[1.5] text-muted-ink">{sub}</p>}
+            <h2 className="m-0 text-title leading-[1.3] font-semibold">{title}</h2>
+            {sub && <p className="m-0 text-copy leading-[1.5] text-muted-ink">{sub}</p>}
           </div>
           <button onClick={onClose} aria-label="Close" disabled={busy}
             className="bg-transparent border-none p-1 cursor-pointer text-muted-ink flex">
@@ -149,7 +152,7 @@ const PAGE_SIZE = 50;
 
 /* Eight-column track shared by the sticky header and every row. */
 const COLS = 'grid-cols-[92px_minmax(150px,1.2fr)_minmax(170px,1.6fr)_minmax(110px,1fr)_118px_minmax(118px,0.9fr)_64px_172px]';
-const dayLabel = (d: string | null | undefined) => (d ? new Date(`${d}T00:00:00+08:00`).toLocaleDateString('en-MY', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' }) : '—');
+const dayLabel = (d: string | null | undefined) => (d ? `${weekdayDay(d).split(' ')[0]} ${dateShort(d)}` : '—');
 const noteOf = (t: Row) => (t.instructions ?? '').replace(/^Cleaner: [^·]+(· )?/, '').trim();
 const whoOf = (t: Row) => t.assigneeName ?? (t.sheetCleaner ? `${t.sheetCleaner} (sheet)` : null);
 
@@ -211,9 +214,6 @@ export default function TasksPage() {
     k === 'all' ? Object.values(counts).reduce((s, n) => s + n, 0)
     : k === 'active' ? Object.entries(counts).filter(([s]) => s !== 'resolved').reduce((s, [, n]) => s + n, 0)
     : counts[k] ?? 0;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const firstShown = total ? (page - 1) * PAGE_SIZE + 1 : 0;
-  const lastShown = Math.min(total, page * PAGE_SIZE);
   const filtersActive = kindFilter !== 'all' || !!building || !!assignee || !!from || !!to || !!q || !!idFilter;
   const clearFilters = () => { setQDraft(''); setParam({ kind: null, building: null, assignee: null, from: null, to: null, q: null, id: null }); };
   const goPage = (n: number) => { setParam({ page: n > 1 ? String(n) : null }); document.querySelector('main')?.scrollTo({ top: 0 }); };
@@ -333,7 +333,7 @@ export default function TasksPage() {
     const noPhoto = t.requiresPhoto && t.photoCount < 1;
     const sz = 'sm';
     // Imported history carries a made-up finish time (the due time), so only a clean started in the app shows one.
-    if (done) return <span className="text-[12px] text-muted-ink">{t.completedAt && t.startedAt ? `Done ${dateTimeShort(t.completedAt)}` : 'Done'}</span>;
+    if (done) return <span className="text-meta text-muted-ink">{t.completedAt && t.startedAt ? `Done ${dateTimeShort(t.completedAt)}` : 'Done'}</span>;
     return (
       <div className="flex gap-1.5 flex-wrap items-center">
         {t.state === 'in_progress' ? (
@@ -347,12 +347,12 @@ export default function TasksPage() {
         )}
         <button type="button" title="Reschedule" aria-label={`Reschedule ${unitRef(t.propertyName, t.unitNumber)}`}
           onClick={() => setReschedule({ task: t, start: t.scheduledFor ?? '08:00', end: t.dueAt ?? '12:00' })}
-          className="w-8 h-8 grid place-items-center rounded-control text-muted-ink bg-transparent border border-solid border-line cursor-pointer hover:bg-muted">
+          className="w-9 h-9 grid place-items-center rounded-control text-muted-ink bg-transparent border border-solid border-line cursor-pointer hover:bg-muted">
           <Icon name="CalendarClock" size="sm" />
         </button>
         {(t.assigneeId || t.state === 'in_progress') && (
           <button type="button" title="Reassign" aria-label={`Reassign ${unitRef(t.propertyName, t.unitNumber)}`} onClick={() => openAssign(t)}
-            className="w-8 h-8 grid place-items-center rounded-control text-muted-ink bg-transparent border border-solid border-line cursor-pointer hover:bg-muted">
+            className="w-9 h-9 grid place-items-center rounded-control text-muted-ink bg-transparent border border-solid border-line cursor-pointer hover:bg-muted">
             <Icon name="UserPlus" size="sm" />
           </button>
         )}
@@ -360,69 +360,53 @@ export default function TasksPage() {
     );
   }
 
-  const selectCls = 'h-8 box-border py-0 pl-2.5 pr-7 font-sans text-[12.5px] text-ink bg-white border border-solid border-line rounded-control outline-none cursor-pointer max-w-full';
-  const dateCls = 'h-8 box-border py-0 px-2 font-sans text-[12.5px] text-ink bg-white border border-solid border-line rounded-control outline-none';
+  const dateCls = 'h-9 box-border py-0 px-2 font-sans text-copy text-ink bg-card border border-solid border-line rounded-control outline-none';
 
   return (
     <>
       <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={onPhotoPicked} />
       <PageHeader
         title="Tasks"
-        sub={`${countOf('active').toLocaleString('en-MY')} not done · ${(counts.resolved ?? 0).toLocaleString('en-MY')} done${filtersActive ? ' (filtered)' : ''}`}
+        sub={`${count(countOf('active'))} not done · ${count(counts.resolved ?? 0)} done${filtersActive ? ' (filtered)' : ''}`}
       />
 
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <Card style={{ overflow: 'visible' }}>
-        {/* State chips carry their counts under the other filters. */}
-        <div className="flex gap-[7px] flex-nowrap md:flex-wrap overflow-x-auto py-3 px-4 md:px-5 [border-bottom:1px_solid_var(--color-line-soft)] [scrollbar-width:none]">
-          {STATE_FILTERS.map(([k, label]) => {
-            const on = k === stateFilter;
-            const n = countOf(k);
-            return (
-              <button key={k} onClick={() => setParam({ state: k === 'active' ? null : k })} aria-pressed={on}
-                className={cx('h-8 flex-none box-border inline-flex items-center gap-1.5 px-3 py-0 rounded-full cursor-pointer whitespace-nowrap font-sans text-[12.5px] border border-solid',
-                  on ? 'bg-black text-white border-black font-semibold' : 'bg-white text-muted-ink border-line font-medium')}>
-                {label}
-                <span className={cx('tabular-nums text-[11.5px]', on ? 'text-white/70' : 'text-faint')}>{n.toLocaleString('en-MY')}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="flex gap-2 flex-wrap items-center py-2.5 px-4 md:px-5 [border-bottom:1px_solid_var(--color-line)] bg-page">
-          <div className="relative flex-[1_1_200px] min-w-[160px] max-w-[300px]">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint flex"><Icon name="Search" size="sm" /></span>
+        <div className="flex gap-2 flex-wrap items-center py-3 px-4 md:px-5 [border-bottom:1px_solid_var(--color-line-soft)] bg-page">
+          <div className="relative flex-[1_1_200px] min-w-[200px]">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-ink flex"><Icon name="Search" size="sm" /></span>
             <input value={qDraft} onChange={e => setQDraft(e.target.value)} placeholder="Unit, building or work" aria-label="Search tasks"
-              className="h-8 w-full box-border pl-8 pr-2.5 py-0 font-sans text-[12.5px] text-ink bg-white border border-solid border-line rounded-control outline-none" />
+              className="h-9 w-full box-border pl-8 pr-2.5 py-0 font-sans text-copy text-ink bg-card border border-solid border-line rounded-control outline-none" />
           </div>
           {/* Phones show search plus a toggle; the other filters fold away. */}
           <button type="button" onClick={() => setMoreFilters(v => !v)} aria-expanded={moreFilters}
-            className="md:hidden h-8 box-border inline-flex items-center gap-1.5 px-3 py-0 rounded-control border border-solid border-line bg-white text-ink font-sans text-[12.5px] cursor-pointer">
+            className="md:hidden h-9 box-border inline-flex items-center gap-1.5 px-3 py-0 rounded-control border border-solid border-line bg-card text-ink font-sans text-copy cursor-pointer">
             <Icon name="SlidersHorizontal" size="sm" /> Filters{extraCount ? ` · ${extraCount}` : ''}
           </button>
           <div className={cx(moreFilters ? 'flex' : 'hidden', 'md:contents w-full flex-col gap-2')}>
-          <select aria-label="Kind" value={kindFilter} onChange={e => setParam({ kind: e.target.value === 'all' ? null : e.target.value })} className={selectCls}>
-            {KIND_FILTERS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-          </select>
-          <select aria-label="Building" value={building} onChange={e => setParam({ building: e.target.value || null })} className={cx(selectCls, 'max-w-[180px]')}>
-            <option value="">All buildings</option>
-            {(facets?.buildings ?? []).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-          <select aria-label="Assignee" value={assignee} onChange={e => setParam({ assignee: e.target.value || null })} className={cx(selectCls, 'max-w-[180px]')}>
-            <option value="">Anyone</option>
-            <option value="none">Unassigned</option>
-            {(facets?.assignees ?? []).map(a => <option key={a.key} value={a.key}>{a.name} · {a.count.toLocaleString('en-MY')}</option>)}
-          </select>
+          <Select label="Kind" value={kindFilter} onChange={v => setParam({ kind: v === 'all' ? null : v })} className="md:w-[150px]"
+            options={KIND_FILTERS.map(([k, l]) => ({ value: k, label: l }))} />
+          <Select label="Building" value={building} onChange={v => setParam({ building: v || null })} className="md:w-[180px]"
+            placeholder="All buildings" options={(facets?.buildings ?? []).map(b => ({ value: b.id, label: b.name }))} />
+          <Select label="Assignee" value={assignee} onChange={v => setParam({ assignee: v || null })} className="md:w-[180px]"
+            placeholder="Anyone" options={[{ value: 'none', label: 'Unassigned' }, ...(facets?.assignees ?? []).map(a => ({ value: a.key, label: `${a.name} · ${count(a.count)}` }))]} />
           <span className="flex items-center gap-1.5">
             <input type="date" aria-label="From date" value={from} max={to || undefined} onChange={e => setParam({ from: e.target.value || null })} className={dateCls} />
-            <span className="text-[12px] text-muted-ink">to</span>
+            <span className="text-meta text-muted-ink">to</span>
             <input type="date" aria-label="To date" value={to} min={from || undefined} onChange={e => setParam({ to: e.target.value || null })} className={dateCls} />
           </span>
           </div>
           {filtersActive && (
-            <Button size="sm" variant="tertiary" icon={<Icon name="FilterX" size="sm" />} onClick={clearFilters}>Clear</Button>
+            <Button size="sm" variant="tertiary" icon={<Icon name="FilterX" size="sm" />} onClick={clearFilters}>Clear filters</Button>
           )}
+        </div>
+
+        {/* State pills with their counts, after search and the dropdowns. */}
+        <div className="flex gap-2 flex-nowrap md:flex-wrap overflow-x-auto py-3 px-4 md:px-5 [border-bottom:1px_solid_var(--color-line)] [scrollbar-width:none]">
+          {STATE_FILTERS.map(([k, label]) => (
+            <Chip key={k} on={k === stateFilter} onClick={() => setParam({ state: k === 'active' ? null : k })} count={countOf(k)}>{label}</Chip>
+          ))}
         </div>
 
         {/* Thin bar while a new page loads; the previous rows stay put underneath. */}
@@ -433,27 +417,20 @@ export default function TasksPage() {
         {loading && !data ? (
           <TableSkeleton rows={8} cols={6} />
         ) : rows.length === 0 ? (
-          <div className="py-[34px] px-[22px] flex flex-col gap-3 items-center text-center">
-            <span className="text-[13.5px] text-muted-ink">
-              {doneElsewhere ? 'Nothing left to do here. Every task under these filters is done.'
-                : filtersActive ? 'No tasks match these filters.' : 'No tasks yet. Check-outs and the Housekeeping planner create them.'}
-            </span>
-            <div className="flex gap-2 flex-wrap justify-center">
-              {doneElsewhere && (
-                <Button size="sm" variant="secondary" icon={<Icon name="History" size="sm" />} onClick={() => setParam({ state: 'resolved' })}>
-                  Show {(counts.resolved ?? 0).toLocaleString('en-MY')} done
-                </Button>
-              )}
-              {filtersActive && (
-                <Button size="sm" variant="secondary" icon={<Icon name="FilterX" size="sm" />} onClick={clearFilters}>Clear filters</Button>
-              )}
-            </div>
-          </div>
+          doneElsewhere ? (
+            <EmptyState bare icon="CheckCircle" title="Nothing left to do here." body="Every task under these filters is done."
+              action={{ label: `Show ${count(counts.resolved ?? 0)} done`, onClick: () => setParam({ state: 'resolved' }) }}
+              secondary={filtersActive ? { label: 'Clear filters', onClick: clearFilters } : undefined} />
+          ) : filtersActive ? (
+            <EmptyState bare kind="filtered" title="No tasks match these filters." action={{ label: 'Clear filters', onClick: clearFilters }} />
+          ) : (
+            <EmptyState bare title="No tasks yet." body="Check-outs and the Housekeeping planner create them." />
+          )
         ) : (
           <div className={cx('transition-opacity duration-150', loading && 'opacity-60')}>
             {/* Wide screens: a table with a header that stays on top while scrolling. */}
             <div className="hidden xl:block">
-              <div role="row" className={cx('grid', COLS, 'gap-3 py-[9px] px-5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink sticky top-[-24px] z-10')}>
+              <div role="row" className={cx('grid', COLS, 'gap-3 py-[9px] px-5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink sticky top-[-24px] z-10')}>
                 <div>Date</div><div>Unit</div><div>Work</div><div>Assignee</div><div>Status</div><div>Due</div><div className="text-right">Photos</div><div>Next step</div>
               </div>
               {rows.map(t => {
@@ -463,22 +440,22 @@ export default function TasksPage() {
                 const who = whoOf(t);
                 return (
                   <div key={t.id} className={cx('grid', COLS, 'box-border gap-3 items-center min-h-[52px] py-2 px-5 [border-bottom:1px_solid_var(--color-line-soft)] border-l-[3px] border-solid border-y-0 border-r-0', LINE[lineTone])}>
-                    <div className="text-[12.5px] tabular-nums whitespace-nowrap">{dayLabel(t.date)}</div>
+                    <div className="text-copy tabular-nums whitespace-nowrap">{dayLabel(t.date)}</div>
                     <div className="flex flex-col gap-px min-w-0">
-                      <span className="text-[13px] font-medium truncate" title={t.unitNumber}>{t.unitNumber}</span>
-                      <span className="text-[11.5px] text-muted-ink truncate" title={t.propertyName}>{t.propertyName}</span>
+                      <span className="text-copy font-medium truncate" title={t.unitNumber}>{t.unitNumber}</span>
+                      <span className="text-meta text-muted-ink truncate" title={t.propertyName}>{t.propertyName}</span>
                     </div>
                     <div className="flex flex-col gap-px min-w-0">
-                      <span className="text-[13px] truncate" title={t.title}>{t.title}</span>
-                      <span className="text-[11.5px] text-muted-ink truncate" title={noteOf(t) || undefined}>{KIND_LABEL[t.kind]}{noteOf(t) ? ` · ${noteOf(t)}` : ''}</span>
+                      <span className="text-copy truncate" title={t.title}>{t.title}</span>
+                      <span className="text-meta text-muted-ink truncate" title={noteOf(t) || undefined}>{KIND_LABEL[t.kind]}{noteOf(t) ? ` · ${noteOf(t)}` : ''}</span>
                     </div>
-                    <div className={cx('text-[12.5px] truncate', who ? 'text-ink' : 'text-muted-ink')} title={who ?? 'Unassigned'}>{who ?? 'Unassigned'}</div>
+                    <div className={cx('text-copy truncate', who ? 'text-ink' : 'text-muted-ink')} title={who ?? 'Unassigned'}>{who ?? 'Unassigned'}</div>
                     <div><Badge tone={TASK[t.state].tone} label={done ? 'Done' : TASK[t.state].label} size="sm" /></div>
                     <div className="flex flex-col gap-px min-w-0">
-                      {done ? null : <span className={cx('text-[12px] font-medium truncate', TONE_FG[t.sla.tone])} title={t.sla.label}>{t.sla.label}</span>}
-                      {!done && (t.dueAt || t.nextGuestAt) && <span className="text-[11.5px] text-muted-ink tabular-nums truncate">{t.dueAt ? `by ${t.dueAt}` : ''}{t.nextGuestAt ? `${t.dueAt ? ' · ' : ''}guest ${t.nextGuestAt}` : ''}</span>}
+                      {done ? null : <span className={cx('text-meta font-medium truncate', TONE_FG[t.sla.tone])} title={t.sla.label}>{t.sla.label}</span>}
+                      {!done && (t.dueAt || t.nextGuestAt) && <span className="text-meta text-muted-ink tabular-nums truncate">{t.dueAt ? `by ${t.dueAt}` : ''}{t.nextGuestAt ? `${t.dueAt ? ' · ' : ''}guest ${t.nextGuestAt}` : ''}</span>}
                     </div>
-                    <div className={cx('text-right text-[12.5px] tabular-nums', ev.warn ? TONE_FG.warning : 'text-muted-ink')} title={ev.label}>
+                    <div className={cx('text-right text-copy tabular-nums', ev.warn ? TONE_FG.warning : 'text-muted-ink')} title={ev.label}>
                       {t.photoCount || t.requiresPhoto ? `${t.photoCount}${t.requiresPhoto ? ' / 1' : ''}` : '—'}
                     </div>
                     <div>{rowActions(t)}</div>
@@ -497,16 +474,16 @@ export default function TasksPage() {
                   <div key={t.id} className={cx('box-border py-3 px-4 flex flex-col gap-2 [border-bottom:1px_solid_var(--color-line-soft)] border-l-[3px] border-solid border-y-0 border-r-0', LINE[lineTone])}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex flex-col gap-px min-w-0">
-                        <span className="text-[13.5px] font-semibold truncate">{unitRef(t.propertyName, t.unitNumber)}</span>
-                        <span className="text-[12px] text-muted-ink truncate">{dayLabel(t.date)} · {t.title}</span>
+                        <span className="text-copy font-semibold truncate">{unitRef(t.propertyName, t.unitNumber)}</span>
+                        <span className="text-meta text-muted-ink truncate">{dayLabel(t.date)} · {t.title}</span>
                       </div>
                       <Badge tone={TASK[t.state].tone} label={done ? 'Done' : TASK[t.state].label} size="sm" />
                     </div>
-                    <div className="flex gap-x-4 gap-y-1 flex-wrap text-[12px]">
+                    <div className="flex gap-x-4 gap-y-1 flex-wrap text-meta">
                       <span className={who ? 'text-ink' : 'text-muted-ink'}>{who ?? 'Unassigned'}</span>
                       {!done && <span className={TONE_FG[t.sla.tone]}>{t.sla.label}</span>}
                       {t.nextGuestAt && <span className="text-muted-ink">Guest {t.nextGuestAt}</span>}
-                      {(t.requiresPhoto || t.photoCount > 0) && <span className="text-muted-ink">{t.photoCount} photo{t.photoCount === 1 ? '' : 's'}</span>}
+                      {(t.requiresPhoto || t.photoCount > 0) && <span className="text-muted-ink">{plural(t.photoCount, 'photo')}</span>}
                     </div>
                     {!done && <div>{rowActions(t)}</div>}
                   </div>
@@ -516,20 +493,7 @@ export default function TasksPage() {
           </div>
         )}
 
-        {total > 0 && (
-          <div className="flex items-center justify-between gap-3 flex-wrap py-2.5 px-4 md:px-5 [border-top:1px_solid_var(--color-line)] bg-page">
-            <span className="text-[12.5px] text-muted-ink tabular-nums">
-              {firstShown.toLocaleString('en-MY')}–{lastShown.toLocaleString('en-MY')} of {total.toLocaleString('en-MY')}
-            </span>
-            <div className="flex items-center gap-1.5">
-              <Button size="sm" variant="secondary" icon={<Icon name="ChevronLeft" size="sm" />} disabled={page <= 1} disabledReason="This is the first page."
-                onClick={() => goPage(page - 1)}>Previous</Button>
-              <span className="text-[12.5px] text-muted-ink tabular-nums px-1.5">{page} / {pages}</span>
-              <Button size="sm" variant="secondary" disabled={page >= pages} disabledReason="This is the last page."
-                onClick={() => goPage(page + 1)}>Next <Icon name="ChevronRight" size="sm" /></Button>
-            </div>
-          </div>
-        )}
+        <Pager page={page} pageSize={PAGE_SIZE} total={total} onPage={goPage} unit="tasks" />
       </Card>
 
       {/* ---------------- Assign cleaner (with 409 override) ---------------- */}
@@ -547,18 +511,15 @@ export default function TasksPage() {
           </>}
         >
           <div className="flex flex-col gap-[7px]">
-            <label htmlFor="assign-who" className={labelCls}>Cleaner</label>
-            <select id="assign-who" value={assign.assigneeId} disabled={busy}
-              onChange={e => setAssign(a => a && { ...a, assigneeId: e.target.value, force: false, warning: undefined })}
-              className={inputCls}>
-              {CREW.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <Select label="Cleaner" showLabel size="md" value={assign.assigneeId} disabled={busy}
+              onChange={v => setAssign(a => a && { ...a, assigneeId: v, force: false, warning: undefined })}
+              options={CREW.map(c => ({ value: c.id, label: c.name }))} />
           </div>
           {assign.task.nextGuestAt && (
-            <div className="text-[12.5px] text-muted-ink">Next guest arrives {assign.task.nextGuestAt}.</div>
+            <div className="text-meta text-muted-ink">Next guest arrives {assign.task.nextGuestAt}.</div>
           )}
           {assign.warning && (
-            <div className={`py-2.5 px-3 rounded-control ${TONE.critical.bg} text-[var(--color-critical-fg)] text-[12.5px] flex gap-2 items-start`}>
+            <div className={`py-2.5 px-3 rounded-control ${TONE.critical.bg} text-[var(--color-critical-fg)] text-meta flex gap-2 items-start`}>
               <Icon name="TriangleAlert" size="sm" color={TONE.critical.hex} style={{ marginTop: 1 }} />
               <span>{assign.warning}</span>
             </div>
@@ -594,11 +555,11 @@ export default function TasksPage() {
                   onChange={e => setReschedule(r => r && { ...r, end: e.target.value })} className={inputCls} />
               </div>
             </div>
-            <div className="text-[12.5px] text-muted-ink">
+            <div className="text-meta text-muted-ink">
               Next guest arrives {reschedule.task.nextGuestAt ?? 'not scheduled'}.
             </div>
             {endsAfter && (
-              <div className={`py-2.5 px-3 rounded-control ${TONE.warning.bg} text-[var(--color-warning-fg)] text-[12.5px] flex gap-2 items-start`}>
+              <div className={`py-2.5 px-3 rounded-control ${TONE.warning.bg} text-[var(--color-warning-fg)] text-meta flex gap-2 items-start`}>
                 <Icon name="TriangleAlert" size="sm" color={TONE.warning.hex} style={{ marginTop: 1 }} />
                 <span>The window ends at {reschedule.end}, after the next guest arrives at {reschedule.task.nextGuestAt}. The unit may not be ready in time.</span>
               </div>
@@ -620,7 +581,7 @@ export default function TasksPage() {
           }
           : {
             title: `Mark ${unitRef(confirm.task.propertyName, confirm.task.unitNumber)} complete?`,
-            body: `${confirm.task.photoCount} photo${confirm.task.photoCount === 1 ? '' : 's'} attached. The task is marked resolved.`,
+            body: `${plural(confirm.task.photoCount, 'photo')} attached. The task is marked resolved.`,
             meta: confirm.task.nextGuestAt ? `Next check-in is ${confirm.task.nextGuestAt}.` : undefined,
             confirmLabel: 'Mark complete', busyLabel: 'Completing…', onConfirm: doComplete,
           }}

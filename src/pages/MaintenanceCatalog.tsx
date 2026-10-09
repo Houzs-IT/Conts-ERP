@@ -4,6 +4,8 @@ import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { TableSkeleton } from '../components/DataState';
+import { EmptyState } from '../components/States';
+import { Select } from '../components/Select';
 import { rm } from '../lib/format';
 
 // ---- Maintenance SKU catalog: the master list of repair items with a preset selling price.
@@ -38,8 +40,8 @@ export const SKU_FALLBACK: SkuPayload = {
   ],
 };
 
-const INPUT_CX = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-[16px] font-normal';
-const LABEL_CX = 'text-[12px] font-medium text-muted-ink';
+const INPUT_CX = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-copy font-normal';
+const LABEL_CX = 'text-meta font-medium text-muted-ink';
 
 const toSen = (s: string): number | null => {
   const n = parseFloat(s.replace(/[^0-9.]/g, ''));
@@ -86,11 +88,11 @@ export function CatalogPanel({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span className="text-[13px] text-muted-ink">
+        <span className="text-copy text-muted-ink">
           {skus.filter(s => s.active).length} active item{skus.filter(s => s.active).length === 1 ? '' : 's'} · a preset price seeds the quote when you raise a job.
         </span>
         <div className="flex items-center gap-2 flex-wrap">
-          <label className="flex items-center gap-1.5 text-[12px] text-muted-ink cursor-pointer">
+          <label className="flex items-center gap-1.5 text-meta text-muted-ink cursor-pointer">
             <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
             Show retired
           </label>
@@ -101,7 +103,13 @@ export function CatalogPanel({
       {loading && skus.length === 0 ? (
         <Card><TableSkeleton rows={4} cols={3} /></Card>
       ) : rows.length === 0 ? (
-        <Card><div className="px-[22px] py-[28px] text-[13px]">No catalog items yet.{canWrite ? ' Add the first one.' : ''}</div></Card>
+        skus.length === 0 ? (
+          <EmptyState icon="Package" title="No catalog items yet"
+            body={canWrite ? 'Add a repair item with a preset price, so picking it on a job fills the quote.' : 'Items appear here once someone in operations adds them.'}
+            action={canWrite ? { label: 'New item', onClick: () => setCreating(true) } : undefined} />
+        ) : (
+          <EmptyState kind="filtered" title="Every item is retired." action={{ label: 'Show retired', onClick: () => setShowInactive(true) }} />
+        )
       ) : (
         <Card>
           {rows.map((s, idx) => (
@@ -109,24 +117,21 @@ export function CatalogPanel({
               idx !== rows.length - 1 && '[border-bottom:1px_solid_var(--color-line-soft)]', !s.active && 'opacity-60')}>
               <div className="flex flex-col gap-[3px] min-w-[220px] flex-1">
                 <div className="flex items-center gap-[9px] flex-wrap">
-                  <span className="font-mono text-[11px] text-muted-ink">{s.code}</span>
-                  <span className="text-[14px] font-semibold">{s.name}</span>
+                  <span className="font-mono text-caption text-muted-ink">{s.code}</span>
+                  <span className="text-copy font-semibold">{s.name}</span>
                   <Badge tone="neutral" label={CATEGORY_LABEL[s.category]} size="sm" />
                   {s.trackStock && <Badge tone={stockTone(s.stockOnHand)} label={s.stockOnHand > 0 ? `${s.stockOnHand} in stock` : 'Out of stock'} size="sm" />}
                   {!s.active && <Badge tone="warning" label="Retired" size="sm" />}
                 </div>
-                {s.notes && <span className="text-[12px] text-muted-ink text-pretty">{s.notes}</span>}
+                {s.notes && <span className="text-meta text-muted-ink text-pretty">{s.notes}</span>}
               </div>
               <div className="flex items-center gap-4">
                 <div className="flex flex-col items-end">
-                  <span className="text-[15px] font-semibold tabular-nums">{s.defaultPrice != null ? rm(s.defaultPrice) : '—'}</span>
-                  <span className="text-[11px] text-muted-ink">{PER[s.unitLabel]}</span>
+                  <span className="text-heading font-semibold tabular-nums">{s.defaultPrice != null ? rm(s.defaultPrice) : '—'}</span>
+                  <span className="text-caption text-muted-ink">{PER[s.unitLabel]}</span>
                 </div>
                 {canWrite && (
-                  <button onClick={() => setEditing(s)}
-                    className="h-8 px-3 py-0 rounded-control cursor-pointer [font:inherit] border border-solid border-line bg-white text-ink whitespace-nowrap">
-                    Edit
-                  </button>
+                  <Button size="sm" variant="secondary" onClick={() => setEditing(s)}>Edit</Button>
                 )}
               </div>
             </div>
@@ -192,36 +197,30 @@ function SkuModal({ sku, onClose, onSave, onToggleActive }: {
       </div>
       <LabeledField label="Name"><input value={name} onChange={e => setName(e.target.value)} placeholder="Change a lightbulb" className={INPUT_CX} /></LabeledField>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
-        <LabeledField label="Category">
-          <select value={category} onChange={e => setCategory(e.target.value as SkuCategory)} className={INPUT_CX}>
-            {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
-          </select>
-        </LabeledField>
-        <LabeledField label="Price is per">
-          <select value={unitLabel} onChange={e => setUnitLabel(e.target.value as UnitLabel)} className={INPUT_CX}>
-            {UNIT_LABEL_OPTIONS.map(u => <option key={u} value={u}>{PER[u]}</option>)}
-          </select>
-        </LabeledField>
+        <Select size="md" showLabel label="Category" value={category} onChange={v => setCategory(v as SkuCategory)}
+          options={CATEGORY_OPTIONS.map(c => ({ value: c, label: CATEGORY_LABEL[c] }))} />
+        <Select size="md" showLabel label="Price is per" value={unitLabel} onChange={v => setUnitLabel(v as UnitLabel)}
+          options={UNIT_LABEL_OPTIONS.map(u => ({ value: u, label: PER[u] }))} />
       </div>
       <div className="flex flex-col gap-[10px] px-3 py-[11px] rounded-control bg-page border border-solid border-line">
         <label className="flex items-center gap-2.5 cursor-pointer">
           <input type="checkbox" checked={trackStock} onChange={e => setTrackStock(e.target.checked)} />
-          <span className="text-[13.5px] font-medium">Keep this part in stock</span>
+          <span className="text-copy font-medium">Keep this part in stock</span>
         </label>
         {trackStock ? (
           <div className="flex items-center gap-2.5">
             <span className={LABEL_CX}>On hand</span>
             <input inputMode="numeric" value={stock} onChange={e => setStock(e.target.value)}
               className={cx(INPUT_CX, 'w-24 text-right tabular-nums')} />
-            <span className="text-[12px] text-muted-ink">A job can draw parts from this to exchange.</span>
+            <span className="text-meta text-muted-ink">A job can draw parts from this to exchange.</span>
           </div>
         ) : (
-          <span className="text-[12px] text-muted-ink">Not stocked — jobs quote it but cannot draw it from a store.</span>
+          <span className="text-meta text-muted-ink">Not stocked — jobs quote it but cannot draw it from a store.</span>
         )}
       </div>
       <LabeledField label="Notes (optional)">
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Anything the operator should know."
-          className="block w-full box-border h-auto px-3 py-[10px] text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-[16px] font-normal resize-y leading-[1.5]" />
+          className="block w-full box-border h-auto px-3 py-[10px] text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-copy font-normal resize-y leading-[1.5]" />
       </LabeledField>
     </Modal>
   );
@@ -251,27 +250,24 @@ export function ExchangeModal({ jobLabel, skus, onClose, onExchange }: {
         </Button>
       </>}>
       {available.length === 0 ? (
-        <div className="px-3 py-[10px] rounded-control bg-page border border-solid border-line text-[12.5px] text-muted-ink">
+        <div className="px-3 py-[10px] rounded-control bg-page border border-solid border-line text-meta text-muted-ink">
           No stocked parts have any on hand. Mark an item "Keep this part in stock" in the catalog and set its quantity first.
         </div>
       ) : (
         <>
-          <LabeledField label="Part">
-            <select value={skuId} onChange={e => setSkuId(e.target.value)} className={INPUT_CX}>
-              {available.map(s => <option key={s.id} value={s.id}>{s.code} · {s.name} — {s.stockOnHand} in stock</option>)}
-            </select>
-          </LabeledField>
+          <Select size="md" showLabel label="Part" value={skuId} onChange={setSkuId}
+            options={available.map(s => ({ value: s.id, label: `${s.code} · ${s.name} · ${s.stockOnHand} in stock` }))} />
           <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-[14px] items-end">
             <LabeledField label="Quantity">
               <input inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} className={cx(INPUT_CX, 'text-right tabular-nums')} />
             </LabeledField>
             {sku && (
-              <div className="text-[12.5px] text-muted-ink pb-2.5">
+              <div className="text-meta text-muted-ink pb-2.5">
                 {sku.stockOnHand} on hand → <span className="font-medium text-ink tabular-nums">{Math.max(0, sku.stockOnHand - n)}</span> after
               </div>
             )}
           </div>
-          <div className="px-3 py-[10px] rounded-control bg-page border border-solid border-line text-[12.5px] text-muted-ink leading-[1.55]">
+          <div className="px-3 py-[10px] rounded-control bg-page border border-solid border-line text-meta text-muted-ink leading-[1.55]">
             This moves stock only. The part's selling price already reaches the owner statement through the job's quote when you complete it.
           </div>
         </>
@@ -292,8 +288,8 @@ function Modal({ title, sub, onClose, footer, children, width = 480 }: {
       <div style={{ maxWidth: width }}
         className="relative w-full max-h-[90vh] overflow-y-auto bg-white rounded-card shadow-[var(--shadow-overlay)] animate-dialog">
         <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-1">
-          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold text-pretty">{title}</h2>
-          {sub && <p className="m-0 text-[13px] leading-[1.55] text-muted-ink text-pretty">{sub}</p>}
+          <h2 className="m-0 text-title font-semibold text-pretty">{title}</h2>
+          {sub && <p className="m-0 text-copy leading-[1.55] text-muted-ink text-pretty">{sub}</p>}
         </div>
         <div className="px-[22px] pt-0 pb-5 flex flex-col gap-[14px]">{children}</div>
         <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">

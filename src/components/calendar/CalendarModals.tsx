@@ -2,11 +2,13 @@ import { useState, type ReactNode } from 'react';
 import { Button } from '../Button';
 import { Field } from '../Field';
 import ChannelMark from '../ChannelMark';
-import { date } from '../../lib/format';
+import { date, count } from '../../lib/format';
+import { Select } from '../Select';
+import Icon from '../Icon';
 import { UnitPicker } from '../booking/UnitPicker';
 import { CHANNEL } from '../../lib/vocabulary';
 import type { BookingChannel } from '../../lib/types';
-import { selectCls, type CalendarUnit } from './types';
+import { type CalendarUnit } from './types';
 
 // Channels a bulk rate push can target. Direct is the web rate itself.
 const PUSH: BookingChannel[] = ['direct', 'airbnb', 'booking_com', 'agoda'];
@@ -17,7 +19,7 @@ function CentreModal({ title, sub, onClose, onSave, saveLabel, canSave, children
       <div onClick={onClose} className="absolute inset-0" />
       <div className="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)]">
         <form onSubmit={e => { e.preventDefault(); if (canSave) onSave(); }}>
-          <div className="pt-[22px] px-[22px] pb-1"><h2 className="m-0 text-[18px] font-semibold">{title}</h2>{sub && <p className="mt-[5px] mx-0 mb-0 text-[13px] text-muted-ink">{sub}</p>}</div>
+          <div className="pt-[22px] px-[22px] pb-1"><h2 className="m-0 text-title font-semibold">{title}</h2>{sub && <p className="mt-[5px] mx-0 mb-0 text-copy text-muted-ink">{sub}</p>}</div>
           <div className="px-[22px] py-4 flex flex-col gap-[14px]">{children}</div>
           <div className="px-[22px] py-[14px] [border-top:1px_solid_var(--color-line)] bg-page rounded-b-card flex justify-end gap-[9px]">
             <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
@@ -92,7 +94,7 @@ export function RateUpdate({ units, initial, onClose, onSave }: {
   const lineOk = (l: RateLine) => l.from !== '' && l.to !== '' && l.to >= l.from && minStayOk(l) && (hasPrice(l) || l.minStay !== '' || l.stop !== 'same');
   const anyPrice = lines.some(hasPrice);
   const valid = unitIds.length > 0 && lines.every(lineOk) && (!anyPrice || channels.length > 0);
-  const pill = (on: boolean) => `inline-flex items-center gap-[6px] h-[30px] px-[11px] rounded-pill cursor-pointer [font:inherit] text-[12px] border border-solid ${on ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink'}`;
+  const pill = (on: boolean) => `inline-flex items-center gap-[6px] h-8 px-3 rounded-pill cursor-pointer [font-family:inherit] text-copy border border-solid ${on ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink'}`;
 
   return (
     <CentreModal title="Rate update" sub="Set prices, minimum stay or stop sell for one or more date ranges, saved together." onClose={onClose} saveLabel="Save" canSave={valid}
@@ -107,10 +109,10 @@ export function RateUpdate({ units, initial, onClose, onSave }: {
       })}>
       <div className="flex flex-col gap-[7px]">
         <div className="flex items-baseline justify-between gap-3">
-          <label className="text-[12px] font-medium text-muted-ink">Units · {unitIds.length} of {units.length}</label>
+          <label className="text-meta font-medium text-muted-ink">Units · {count(unitIds.length)} of {count(units.length)}</label>
           {units.length > 1 && (
             <button type="button" onClick={() => setUnitSel(Object.fromEntries(units.map(u => [u.id, unitIds.length !== units.length])))}
-              className="bg-transparent border-none p-0 cursor-pointer font-sans text-[12px] font-medium text-[var(--color-text-accent)]">
+              className="bg-transparent border-none p-0 cursor-pointer font-sans text-meta font-medium text-[var(--color-text-accent)]">
               {unitIds.length === units.length ? 'Clear all' : 'Select all'}
             </button>
           )}
@@ -122,9 +124,9 @@ export function RateUpdate({ units, initial, onClose, onSave }: {
               <div key={name} className="flex flex-col gap-1.5">
                 {groups.length > 1 && (
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11.5px] font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">{name}</span>
+                    <span className="text-meta font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">{name}</span>
                     <button type="button" onClick={() => setUnitSel(s => ({ ...s, ...Object.fromEntries(us.map(u => [u.id, !allOn])) }))}
-                      className="flex-none bg-transparent border-none p-0 cursor-pointer font-sans text-[11.5px] font-medium text-muted-ink hover:text-ink">
+                      className="flex-none bg-transparent border-none p-0 cursor-pointer font-sans text-meta font-medium text-muted-ink hover:text-ink">
                       {allOn ? 'None' : `All ${us.length}`}
                     </button>
                   </div>
@@ -144,8 +146,8 @@ export function RateUpdate({ units, initial, onClose, onSave }: {
         {lines.map((l, i) => (
           <div key={i} className="flex flex-col gap-2.5 p-3 border border-solid border-line rounded-card">
             <div className="flex items-center justify-between">
-              <span className="text-[12px] font-semibold text-muted-ink">Range {i + 1}</span>
-              {lines.length > 1 && <button type="button" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} className="bg-transparent border-none cursor-pointer text-[12px] text-muted-ink hover:text-ink">Remove</button>}
+              <span className="text-meta font-semibold text-muted-ink">Range {i + 1}</span>
+              {lines.length > 1 && <Button variant="tertiary" size="sm" type="button" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}>Remove</Button>}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="From" type="date" value={l.from} onChange={e => setLine(i, { from: e.target.value })} />
@@ -154,26 +156,19 @@ export function RateUpdate({ units, initial, onClose, onSave }: {
             <div className="grid grid-cols-3 gap-3">
               <Field label="Price (RM)" type="number" min={0} step="0.01" numeric value={l.price} onChange={e => setLine(i, { price: e.target.value })} help="Empty keeps it." />
               <Field label="Min stay" type="number" min={1} max={60} numeric value={l.minStay} onChange={e => setLine(i, { minStay: e.target.value })} help={minStayOk(l) ? '1 removes it.' : '1 to 60 nights.'} />
-              <div className="flex flex-col gap-[7px]">
-                <label className="text-[12px] font-medium text-muted-ink" htmlFor={`stop-${i}`}>Stop sell</label>
-                <select id={`stop-${i}`} value={l.stop} onChange={e => setLine(i, { stop: e.target.value as RateLine['stop'] })} className={`${selectCls} h-10 w-full text-[14px]`}>
-                  <option value="same">Keep</option>
-                  <option value="close">Close</option>
-                  <option value="open">Open</option>
-                </select>
-              </div>
+              <Select label="Stop sell" showLabel size="md" value={l.stop} onChange={v => setLine(i, { stop: v as RateLine['stop'] })}
+                options={[{ value: 'same', label: 'Keep' }, { value: 'close', label: 'Close' }, { value: 'open', label: 'Open' }]} />
             </div>
           </div>
         ))}
         {lines.length < 20 && (
-          <button type="button" onClick={() => setLines(ls => [...ls, blank()])}
-            className="self-start bg-transparent border border-dashed border-line rounded-control cursor-pointer px-3 h-9 font-sans text-[13px] text-ink hover:bg-muted">+ Add another range</button>
+          <div className="self-start"><Button variant="secondary" size="sm" type="button" icon={<Icon name="Plus" size="sm" />} onClick={() => setLines(ls => [...ls, blank()])}>Add another range</Button></div>
         )}
       </div>
 
       {anyPrice && (
         <div className="flex flex-col gap-[7px]">
-          <label className="text-[12px] font-medium text-muted-ink">Prices apply to</label>
+          <label className="text-meta font-medium text-muted-ink">Prices apply to</label>
           <div className="flex gap-2 flex-wrap">
             {PUSH.map(c => { const on = !!chanSel[c]; return (
               <button key={c} type="button" aria-pressed={on} onClick={() => setChanSel(s => ({ ...s, [c]: !on }))} className={pill(on)}>

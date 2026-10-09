@@ -16,7 +16,10 @@ import { useUnitRoster } from '../lib/useUnitRoster';
 import { api, notifyFailure } from '../lib/api';
 import { useSession } from '../lib/session';
 import { RESERVATION, READINESS } from '../lib/vocabulary';
-import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests } from '../lib/format';
+import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount } from '../lib/format';
+import { Select, SearchSelect } from '../components/Select';
+import { EmptyState } from '../components/States';
+import { Chip as FilterChip } from './finance/listKit';
 import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } from '../lib/types';
 
 /* ------------------------------------------------------------------ */
@@ -101,7 +104,6 @@ const OPS_ROLES: UserRole[] = ['management', 'operations_manager', 'operations_s
 const TWO_HOURS = 2 * 60 * 60 * 1000;
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
 const threadName = (ch: BookingChannel) => (ch === 'direct' ? 'WhatsApp' : channel[ch].label);
-const num = (v: number) => v.toLocaleString('en-MY');
 
 const FILTERS: { key: Filter; label: string; empty: string }[] = [
   { key: 'all', label: 'All guests', empty: 'No guests yet.' },
@@ -267,8 +269,8 @@ export default function GuestsPage() {
     <>
       <PageHeader
         title="Guests"
-        sub={counts ? `${num(counts.all)} guests${searching ? ' match your search' : ''} · contact details restricted to operations roles` : 'Loading guests'}
-        right={<Button variant="primary" size="md" onClick={() => setAdding(true)}>Add guest</Button>}
+        sub={counts ? `${plural(counts.all, 'guest')}${searching ? ' match your search' : ''}` : 'Loading guests'}
+        primary={<Button variant="primary" size="sm" onClick={() => setAdding(true)}>Add guest</Button>}
       />
 
       {list.error && <StaleBanner message={`Showing the last guest list we have. ${list.error}`} onRetry={list.reload} />}
@@ -276,46 +278,29 @@ export default function GuestsPage() {
       <div className="flex gap-5 items-start max-w-[1600px] max-md:flex-col max-md:items-stretch">
         {/* -------- left: directory list -------- */}
         <div className={cx('md:flex-[0_1_400px] md:min-w-[320px] md:max-w-[440px] w-full bg-card border border-solid border-line rounded-card overflow-hidden', pickedId && 'max-md:hidden')}>
-          <div className="py-[14px] px-4 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-[11px]">
+          <div className="py-4 px-4 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-3">
             <div className="flex gap-2">
               <label className="relative flex-1 min-w-0">
                 <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid"><Icon name="Search" size="sm" /></span>
                 <input value={draft} onChange={e => setSearch(e.target.value)} aria-label="Search guests"
                   placeholder={canSeeContact ? 'Name, phone or email' : 'Guest name'}
-                  className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-[13px] pl-[32px] pr-3 py-0 outline-none" />
+                  className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-copy pl-[32px] pr-3 py-0 outline-none" />
               </label>
-              <select value={sort} onChange={e => setSort(e.target.value)} aria-label="Sort guests"
-                className="h-9 flex-none max-w-[140px] px-2 rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-[12.5px] cursor-pointer">
-                {SORTS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-              </select>
+              <Select label="Sort guests" value={sort} onChange={setSort} className="flex-none w-[150px]"
+                options={SORTS.map(s => ({ value: s.key, label: s.label }))} />
             </div>
-            <div role="tablist" aria-label="Filter guests" className="flex gap-[6px] flex-wrap">
-              {FILTERS.map(f => {
-                const on = f.key === filter;
-                const n = counts?.[f.key];
-                return (
-                  <button
-                    key={f.key} role="tab" aria-selected={on}
-                    onClick={() => setFilter(f.key)}
-                    className={cx(
-                      'h-7 inline-flex items-center gap-[5px] px-[11px] py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] text-[12.5px] border border-solid',
-                      on ? 'border-black bg-black text-white' : 'border-line bg-card text-muted-ink',
-                    )}
-                  >
-                    {f.label}
-                    <span className="[font-variant-numeric:tabular-nums] opacity-85">{n === undefined ? '' : num(n)}</span>
-                  </button>
-                );
-              })}
+            <div role="group" aria-label="Filter guests" className="flex gap-2 flex-wrap">
+              {FILTERS.map(f => (
+                <FilterChip key={f.key} on={f.key === filter} onClick={() => setFilter(f.key)} count={counts?.[f.key]}>{f.label}</FilterChip>
+              ))}
             </div>
           </div>
 
           <div className="md:max-h-[calc(100dvh-380px)] md:min-h-[320px] overflow-y-auto" aria-busy={list.loading}>
             {!list.data ? <TableSkeleton rows={8} cols={2} /> : rows.length === 0 ? (
-              <div className="py-8 px-[18px] flex flex-col items-center gap-3 text-center text-[13px] text-muted-ink">
-                {emptyText}
-                {searching && <Button size="sm" variant="secondary" onClick={() => setSearch('')}>Clear search</Button>}
-              </div>
+              searching
+                ? <EmptyState bare kind="filtered" title={emptyText} action={{ label: 'Clear search', onClick: () => setSearch('') }} />
+                : <EmptyState bare title={emptyText} />
             ) : (
               <div className={cx('transition-opacity duration-150', list.loading && 'opacity-55')}>
                 {rows.map(g => (
@@ -334,13 +319,13 @@ export default function GuestsPage() {
         </div>
 
         {/* -------- right: guest profile -------- */}
-        <div className={cx('md:flex-[1.6_1_460px] min-w-0 flex flex-col gap-[18px]', !pickedId && 'max-md:hidden')}>
+        <div className={cx('md:flex-[1.6_1_460px] min-w-0 flex flex-col gap-5', !pickedId && 'max-md:hidden')}>
           <button type="button" onClick={() => updateParams(p => p.delete('g'))}
-            className="md:hidden self-start h-9 inline-flex items-center gap-1 px-2 -ml-2 rounded-control border-none bg-transparent text-ink [font:inherit] text-[13.5px] font-medium cursor-pointer">
+            className="md:hidden self-start h-9 inline-flex items-center gap-1 px-2 -ml-2 rounded-control border-none bg-transparent text-ink [font-family:inherit] text-copy font-medium cursor-pointer">
             <Icon name="ChevronLeft" size="sm" /> All guests
           </button>
           {selected ? (
-            <div className={cx('flex flex-col gap-[18px] transition-opacity duration-150', profileStale && 'opacity-55')} aria-busy={profileStale}>
+            <div className={cx('flex flex-col gap-5 transition-opacity duration-150', profileStale && 'opacity-55')} aria-busy={profileStale}>
               <ProfilePanel
                 g={selected} canSeeContact={canSeeContact}
                 onMessage={() => setMessage(selected)}
@@ -352,7 +337,7 @@ export default function GuestsPage() {
               />
             </div>
           ) : (
-            <div className="py-10 px-[22px] bg-card border border-solid border-line rounded-card text-[13px] text-muted-ink">
+            <div className="py-10 px-5 bg-card border border-solid border-line rounded-card text-copy text-muted-ink">
               {detail.error ?? (list.data && rows.length === 0 ? 'No guest to show.' : selectedId ? 'Loading profile…' : 'Select a guest to see their profile.')}
             </div>
           )}
@@ -397,16 +382,16 @@ function GuestRow({ g, selected, canSeeContact, onSelect }: {
         selected ? 'bg-gold-tint shadow-[inset_3px_0_0_var(--color-gold)]' : 'bg-card shadow-none',
       )}
     >
-      <span className="w-[34px] h-[34px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-[12px] font-semibold">
+      <span className="w-[34px] h-[34px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-meta font-semibold">
         {initials(g.fullName)}
       </span>
       <span className="flex flex-col gap-[2px] min-w-0 flex-1">
-        <span className="text-[13.5px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={g.fullName}>{g.fullName}</span>
-        <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={meta}>{meta}</span>
+        <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={g.fullName}>{g.fullName}</span>
+        <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={meta}>{meta}</span>
       </span>
       <span className="flex flex-col items-end gap-1 flex-none">
         <Badge tone={g.tag.tone} label={g.tag.label} size="sm" />
-        <span className="text-[11.5px] text-muted-ink [font-variant-numeric:tabular-nums]">{g.stays} {g.stays === 1 ? 'stay' : 'stays'}</span>
+        <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{plural(g.stays, 'stay')}</span>
       </span>
     </button>
   );
@@ -427,30 +412,30 @@ function ProfilePanel({ g, canSeeContact, onMessage, onBookAgain, onPrepare, onS
   return (
     <>
       {/* header + stats card */}
-      <div className="bg-card border border-solid border-line rounded-card p-[22px] flex flex-col gap-[18px]">
-        <div className="flex items-start justify-between gap-[18px] flex-wrap">
+      <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-4">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-[14px] min-w-0">
-            <span className="w-[46px] h-[46px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-[16px] font-semibold">
+            <span className="w-[46px] h-[46px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-heading font-semibold">
               {initials(g.fullName)}
             </span>
             <div className="min-w-0 flex flex-col gap-[3px]">
-              <h2 className="m-0 text-[20px] leading-[1.25] font-semibold">{g.fullName}</h2>
-              <span className="text-[12px] text-muted-ink">{contact}</span>
+              <h2 className="m-0 text-title leading-[1.25] font-semibold">{g.fullName}</h2>
+              <span className="text-meta text-muted-ink">{contact}</span>
               <div className="flex items-center gap-[7px] flex-wrap pt-[2px]">
                 <Badge tone={g.tag.tone} label={g.tag.label} size="sm" />
-                <span className="text-[11.5px] text-muted-ink">{g.since}</span>
+                <span className="text-meta text-muted-ink">{g.since}</span>
               </div>
             </div>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Button size="md" variant="secondary" icon={<Icon name="MessageSquare" size="sm" />} onClick={onMessage}>Message</Button>
-            <Button size="md" variant="primary" onClick={onBookAgain}>Book again</Button>
+            <Button size="sm" variant="secondary" icon={<Icon name="MessageSquare" size="sm" />} onClick={onMessage}>Message</Button>
+            <Button size="sm" variant="primary" onClick={onBookAgain}>Book again</Button>
           </div>
         </div>
 
         <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-[14px] pt-4 [border-top:1px_solid_var(--color-line-soft)]">
-          <Stat label="Stays" value={String(g.stays)} />
-          <Stat label="Nights" value={String(g.nights)} />
+          <Stat label="Stays" value={fmtCount(g.stays)} />
+          <Stat label="Nights" value={fmtCount(g.nights)} />
           <Stat label="Lifetime value" value={rm(g.lifetimeValue, { cents: false })} />
           <Stat label="Rating given" value={g.ratingScore != null ? g.ratingScore.toFixed(1) : '—'} />
         </div>
@@ -461,9 +446,9 @@ function ProfilePanel({ g, canSeeContact, onMessage, onBookAgain, onPrepare, onS
 
       {/* stay history */}
       <div className="bg-card border border-solid border-line rounded-card overflow-hidden">
-        <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-[16px] font-semibold">Stay history</div>
+        <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-heading font-semibold">Stay history</div>
         {g.history.length === 0 ? (
-          <div className="py-[18px] px-5 text-[12.5px] text-muted-ink">No stays on record. Cancelled bookings are not listed here.</div>
+          <div className="py-[18px] px-5 text-copy text-muted-ink">No stays yet. Cancelled bookings are not listed here.</div>
         ) : (
           g.history.map((s, i) => (
             <div key={i} className={cx('flex items-center gap-[14px] py-[13px] px-5 flex-wrap', i < g.history.length - 1 ? '[border-bottom:1px_solid_var(--color-line-soft)]' : '')}>
@@ -471,11 +456,11 @@ function ProfilePanel({ g, canSeeContact, onMessage, onBookAgain, onPrepare, onS
                 <Icon name="Image" size="sm" color={color.faint} />
               </span>
               <div className="flex flex-col gap-[2px] min-w-[140px] flex-1">
-                <span className="text-[13.5px] font-medium">{s.propertyName} {s.unitNumber}</span>
-                <span className="text-[11.5px] text-muted-ink">{dateRange(s.checkIn, s.checkOut)} · {fmtNights(s.nights)}</span>
+                <span className="text-copy font-medium">{s.propertyName} {s.unitNumber}</span>
+                <span className="text-meta text-muted-ink">{dateRange(s.checkIn, s.checkOut)} · {fmtNights(s.nights)}</span>
               </div>
               <ChannelChip ch={s.channel} />
-              <span className="text-[13px] font-medium w-[92px] text-right [font-variant-numeric:tabular-nums]">{rm(s.value, { cents: false })}</span>
+              <span className="text-copy font-medium w-[92px] text-right [font-variant-numeric:tabular-nums]">{rm(s.value, { cents: false })}</span>
               <Badge tone={RESERVATION[s.state].tone} label={RESERVATION[s.state].label} size="sm" />
             </div>
           ))
@@ -484,14 +469,14 @@ function ProfilePanel({ g, canSeeContact, onMessage, onBookAgain, onPrepare, onS
 
       {/* contact / notes footnote */}
       <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-2">
-        <span className="text-[16px] font-semibold">Contact</span>
+        <span className="text-heading font-semibold">Contact</span>
         {canSeeContact ? (
           <div className="flex flex-col gap-[3px]">
-            <span className="text-[13px]">{g.email ?? '—'}</span>
-            <span className="text-[13px] text-muted-ink">{g.phone ?? '—'}</span>
+            <span className="text-copy">{g.email ?? '—'}</span>
+            <span className="text-copy text-muted-ink">{g.phone ?? '—'}</span>
           </div>
         ) : (
-          <span className="text-[12.5px] text-faint">
+          <span className="text-copy text-faint">
             Guest contact details are visible to operations roles only. Field roles see the guest name where a task requires it.
           </span>
         )}
@@ -499,15 +484,15 @@ function ProfilePanel({ g, canSeeContact, onMessage, onBookAgain, onPrepare, onS
 
       {/* operations notes — internal, restricted to operations roles like contact */}
       <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-2">
-        <span className="text-[16px] font-semibold">Operations notes</span>
+        <span className="text-heading font-semibold">Operations notes</span>
         {canSeeContact ? (
           g.notes ? (
-            <span className="text-[13px] [text-wrap:pretty]">{g.notes}</span>
+            <span className="text-copy [text-wrap:pretty]">{g.notes}</span>
           ) : (
-            <span className="text-[12.5px] text-muted-ink">No operations notes.</span>
+            <span className="text-copy text-muted-ink">No operations notes.</span>
           )
         ) : (
-          <span className="text-[12.5px] text-faint">
+          <span className="text-copy text-faint">
             Operations notes are visible to operations roles only.
           </span>
         )}
@@ -533,8 +518,8 @@ function MovementStrip({ g, onPrepare, onSendAccess, onCheckIn, onCheckOut }: {
       <div className="flex items-center gap-3 flex-wrap">
         <ChannelMark ch={m.channel} size={24} />
         <div className="flex flex-col gap-[2px] min-w-0 flex-1">
-          <span className="text-[14px] font-semibold">{heading}</span>
-          <span className="text-[11.5px] text-muted-ink">
+          <span className="text-heading font-semibold">{heading}</span>
+          <span className="text-meta text-muted-ink">
             {m.propertyName} {m.unitNumber} · {fmtGuests(m.guestsCount)} · {fmtNights(m.nights)}
           </span>
         </div>
@@ -554,7 +539,7 @@ function MovementStrip({ g, onPrepare, onSendAccess, onCheckIn, onCheckOut }: {
             {m.accessSentAt && !m.preparedAt && <Chip label="Access sent" />}
           </>
         )}
-        {arrival && checkedIn && <span className="text-[12px] text-muted-ink">Checked in.</span>}
+        {arrival && checkedIn && <span className="text-meta text-muted-ink">Checked in.</span>}
         {!arrival && (
           <Button size="sm" variant="secondary" onClick={onCheckOut} disabled={checkedOut} disabledReason="Guest is already checked out.">
             {checkedOut ? 'Checked out' : 'Mark checked out'}
@@ -569,7 +554,7 @@ function ChannelChip({ ch }: { ch: BookingChannel }) {
   const c = channel[ch];
   return (
     <span
-      className="inline-flex items-center h-[22px] px-[9px] py-0 rounded-full border border-solid border-line text-[11px] font-semibold whitespace-nowrap"
+      className="inline-flex items-center h-[22px] px-[9px] py-0 rounded-full border border-solid border-line text-caption font-semibold whitespace-nowrap"
       style={{ background: c.tint, color: c.ink }}>
       {c.label}
     </span>
@@ -579,15 +564,15 @@ function ChannelChip({ ch }: { ch: BookingChannel }) {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-[3px]">
-      <span className="text-[11.5px] text-muted-ink">{label}</span>
-      <span className="text-[19px] font-semibold [font-variant-numeric:tabular-nums]">{value}</span>
+      <span className="text-meta text-muted-ink">{label}</span>
+      <span className="text-title font-semibold [font-variant-numeric:tabular-nums]">{value}</span>
     </div>
   );
 }
 
 function Chip({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center h-[22px] px-[9px] py-0 rounded-full bg-gold-tint text-gold-ink border border-solid border-[var(--color-gold-200)] text-[11px] font-semibold">
+    <span className="inline-flex items-center h-[22px] px-[9px] py-0 rounded-full bg-gold-tint text-gold-ink border border-solid border-[var(--color-gold-200)] text-caption font-semibold">
       {label}
     </span>
   );
@@ -602,7 +587,7 @@ function Chip({ label }: { label: string }) {
  *  inherited 16px / 400 — the controls genuinely render at that, not text-body. */
 const fieldBase = 'block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit]';
 const inputClass = cx(fieldBase, 'h-10 px-3 py-0');
-const labelClass = 'text-[12px] font-medium text-muted-ink';
+const labelClass = 'text-meta font-medium text-muted-ink';
 
 function ModalShell({ title, sub, onClose, children }: { title: string; sub?: string; onClose: () => void; children: ReactNode }) {
   return (
@@ -611,8 +596,8 @@ function ModalShell({ title, sub, onClose, children }: { title: string; sub?: st
       <div onClick={onClose} className="absolute inset-0" />
       <div className="relative w-full max-w-[460px] bg-white rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
         <div className="pt-5 px-[22px] pb-[6px]">
-          <h2 className="m-0 text-[18px] font-semibold">{title}</h2>
-          {sub && <p className="mt-[6px] mx-0 mb-0 text-[13px] text-muted-ink">{sub}</p>}
+          <h2 className="m-0 text-title font-semibold">{title}</h2>
+          {sub && <p className="mt-[6px] mx-0 mb-0 text-copy text-muted-ink">{sub}</p>}
         </div>
         {children}
       </div>
@@ -680,11 +665,10 @@ function AddGuestModal({ onClose, onAdd }: {
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
           <div className="flex flex-col gap-[6px]">
-            <label htmlFor="ag-unit" className={labelClass}>Unit</label>
-            <select id="ag-unit" value={unit?.id ?? ''} onChange={e => setUnitId(e.target.value)} className={inputClass} disabled={!UNITS.length}>
-              {UNITS.length === 0 && <option value="">Loading units…</option>}
-              {UNITS.map(u => <option key={u.id} value={u.id}>{u.propertyName} {u.unitNumber}</option>)}
-            </select>
+            {UNITS.length === 0
+              ? <Select label="Unit" showLabel size="md" value="" onChange={() => {}} disabled placeholder="Loading units…" options={[]} />
+              : <SearchSelect label="Unit" showLabel value={unit?.id ?? ''} onChange={setUnitId} placeholder="Search units"
+                  options={UNITS.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName }))} />}
           </div>
           <div className="flex flex-col gap-[6px]">
             <label htmlFor="ag-guests" className={labelClass}>Guests</label>

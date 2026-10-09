@@ -2,13 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { TONE, cx } from '../lib/design-tokens';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
+import { Button } from '../components/Button';
+import { Field } from '../components/Field';
 import { Dialog } from '../components/Dialog';
 import Icon from '../components/Icon';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { EmptyState } from '../components/States';
 import { useApi } from '../lib/useApi';
 import { api, ApiFailure } from '../lib/api';
-import { time, date, unitRef, plural } from '../lib/format';
+import { time, date, unitRef, plural, count } from '../lib/format';
 import { READINESS, SYNC } from '../lib/vocabulary';
 import type { SyncState, Tone, UnitReadiness } from '../lib/types';
 
@@ -119,8 +122,8 @@ export default function FieldTodayPage() {
     if (ok) setPhotos(p => ({ ...p, [t.id]: (p[t.id] ?? 0) + ok }));
     pendingFiles.current.set(t.id, failed);
     setQueue(q => ({ ...q, [t.id]: { kind: 'photo', state: failed.length ? 'failed' : 'synced', at: new Date().toISOString() } }));
-    if (failed.length) toast({ tone: 'critical', title: ok ? `${ok} uploaded, ${failed.length} not.` : `Photo${failed.length > 1 ? 's' : ''} not uploaded.`, body: reason });
-    else toast({ tone: 'success', title: `${ok} photo${ok > 1 ? 's' : ''} uploaded.` });
+    if (failed.length) toast({ tone: 'critical', title: ok ? `${count(ok)} uploaded, ${count(failed.length)} not.` : `Photo${failed.length > 1 ? 's' : ''} not uploaded.`, body: reason });
+    else toast({ tone: 'success', title: `${plural(ok, 'photo')} uploaded.` });
   }
 
   async function markReady() {
@@ -199,15 +202,21 @@ export default function FieldTodayPage() {
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       {/* progress — gold is a brand accent here, not a status tone */}
-      <div className="flex flex-col gap-1.5">
-        <div className="flex justify-between text-meta text-muted-ink">
-          <span>{completed} of {rows.length} tasks done</span>
-          {pending > 0 && <span>{pending} waiting to sync</span>}
+      {rows.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex justify-between text-meta text-muted-ink">
+            <span>{count(completed)} of {plural(rows.length, 'task')} done</span>
+            {pending > 0 && <span>{count(pending)} waiting to sync</span>}
+          </div>
+          <div className="h-1 rounded-full bg-sunken overflow-hidden">
+            <div className="h-full bg-gold [transition:width_200ms]" style={{ width: `${rows.length ? (completed / rows.length) * 100 : 0}%` }} />
+          </div>
         </div>
-        <div className="h-1 rounded-[999px] bg-sunken overflow-hidden">
-          <div className="h-full bg-gold [transition:width_200ms]" style={{ width: `${rows.length ? (completed / rows.length) * 100 : 0}%` }} />
-        </div>
-      </div>
+      )}
+
+      {!loading && !error && rows.length === 0 && (
+        <EmptyState icon="CalendarCheck" title="No tasks for you today" body="Operations assigns your cleans and jobs here. Reopen this page to check again." />
+      )}
 
       {loading && rows.length === 0 ? <TableSkeleton rows={3} cols={2} /> : rows.map(t => {
         const shots = photoCountOf(t);
@@ -223,7 +232,7 @@ export default function FieldTodayPage() {
           )}>
             {/* identity + due */}
             <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div className="flex flex-col gap-[3px] min-w-0 flex-1">
+              <div className="flex flex-col gap-1 min-w-0 flex-1">
                 <span className={cx(
                   'text-heading font-semibold',
                   complete ? 'line-through text-muted-ink' : 'no-underline text-ink',
@@ -239,16 +248,14 @@ export default function FieldTodayPage() {
             <div className="flex items-center gap-2 flex-wrap">
               <Badge tone={ready.tone} label={ready.label} />
               {t.flag && !complete && (
-                <span className={cx('text-caption font-semibold py-[3px] px-[9px] rounded-[999px]', TONE.warning.text, TONE.warning.bg)}>
-                  {t.flag}
-                </span>
+                <Badge tone="warning" label={t.flag} />
               )}
               <span className="text-meta text-muted-ink">{t.work}</span>
             </div>
 
             {/* access instruction */}
             {t.accessInstruction && (
-              <div className="flex items-start gap-[9px] py-[11px] px-3 rounded-control bg-muted">
+              <div className="flex items-start gap-2 py-2.5 px-3 rounded-control bg-muted">
                 <Icon name="KeyRound" size="sm" color="var(--color-muted-ink)" style={{ marginTop: 1 }} />
                 <span className="text-copy [text-wrap:pretty]">{`Access · ${t.accessInstruction}`}</span>
               </div>
@@ -267,44 +274,33 @@ export default function FieldTodayPage() {
 
             {/* actions */}
             {complete ? (
-              <span className={cx('text-copy flex items-center gap-[7px] min-h-[24px]', TONE.success.text)}>
+              <span className={cx('text-copy flex items-center gap-2 min-h-[24px]', TONE.success.text)}>
                 <Icon name="CheckCheck" size="sm" color="var(--color-success-fg)" /> Ready for the guest
               </span>
             ) : (
-              <div className="flex gap-[9px]">
+              <div className="flex gap-2">
                 <PhotoButton count={shots} busy={syncOf(t)?.state === 'queued' && queue[t.id]?.kind === 'photo'} onFiles={files => void addPhotos(t, files)} />
-                <button
-                  onClick={() => setConfirm(t)}
-                  disabled={needsPhoto}
-                  title={needsPhoto ? 'Add at least one photo first.' : undefined}
-                  className={cx(
-                    'flex-1 min-h-[44px] flex items-center justify-center gap-[7px] rounded-control border-none font-sans text-copy font-medium',
-                    needsPhoto ? 'bg-sunken text-faint cursor-not-allowed' : 'bg-black text-white cursor-pointer',
-                  )}>
-                  <Icon name="Check" size="sm" />
-                  <span>Mark ready</span>
-                </button>
+                <Button variant="primary" size="touch" className="flex-1" icon={<Icon name="Check" size="sm" />}
+                  onClick={() => setConfirm(t)} disabled={needsPhoto} disabledReason="Add at least one photo first.">
+                  Mark ready
+                </Button>
               </div>
             )}
 
             {/* report damage — per unit, danger, no financial field for field roles */}
-            <button
-              onClick={() => setDamage({ task: t, title: '', detail: '', blocksUnit: false })}
-              className={cx(
-                'min-h-[44px] flex items-center justify-center gap-[7px] border border-solid rounded-control bg-card cursor-pointer [font:inherit]',
-                TONE.critical.border, TONE.critical.text,
-              )}>
-              <Icon name="TriangleAlert" size="sm" />
-              <span>Report damage or missing item</span>
-            </button>
+            <Button variant="secondary" size="touch" icon={<Icon name="TriangleAlert" size="sm" />}
+              style={{ color: 'var(--color-critical-fg)', borderColor: 'var(--color-critical-line)' }}
+              onClick={() => setDamage({ task: t, title: '', detail: '', blocksUnit: false })}>
+              Report damage or missing item
+            </Button>
           </div>
         );
       })}
 
       {/* page-level: call operations */}
-      <div className="flex flex-col gap-[9px] pt-1">
+      <div className="flex flex-col gap-2 pt-1">
         <a href={`tel:${OPS_TEL}`}
-          className="min-h-[44px] flex items-center justify-center gap-[7px] border border-solid border-line rounded-control bg-card text-copy font-medium no-underline text-ink">
+          className="min-h-[var(--control-height-touch)] flex items-center justify-center gap-2 border border-solid border-line rounded-control bg-card text-copy font-medium no-underline text-ink">
           <Icon name="Phone" size="sm" />
           <span>Call operations</span>
         </a>
@@ -353,18 +349,16 @@ function SyncLine({ state, at, kind, onRetry }: { state: SyncState; at: string |
       <span>{label}</span>
     </>
   );
-  // Shared visual chrome; font size/weight only apply to the div — the button's
-  // `font: inherit` (last shorthand key in the original) resets it to 16px/400.
-  const base = 'flex items-center gap-[7px] w-full py-[9px] px-[11px] rounded-control text-left';
+  const base = 'flex items-center gap-2 w-full py-2 px-3 rounded-control text-left';
   return onRetry
-    ? <button onClick={onRetry} className={cx(base, 'min-h-[40px] border-none [font:inherit] cursor-pointer', TONE[tone].bg, TONE[tone].text)}>{inner}</button>
+    ? <button onClick={onRetry} className={cx(base, 'min-h-[44px] border-none font-sans text-copy font-medium cursor-pointer', TONE[tone].bg, TONE[tone].text)}>{inner}</button>
     : <div role="status" className={cx(base, 'text-copy font-medium', TONE[tone].bg, TONE[tone].text)}>{inner}</div>;
 }
 
 /* ------------------------------- photo button ------------------------------ */
 /** A real camera / file picker (multipart on the live backend). On mobile,
  *  `capture` opens the camera; on desktop it is a file chooser. */
-function PhotoButton({ count, busy, onFiles }: { count: number; busy?: boolean; onFiles: (files: File[]) => void }) {
+function PhotoButton({ count: shots, busy, onFiles }: { count: number; busy?: boolean; onFiles: (files: File[]) => void }) {
   const ref = useRef<HTMLInputElement>(null);
   return (
     <>
@@ -373,18 +367,15 @@ function PhotoButton({ count, busy, onFiles }: { count: number; busy?: boolean; 
         className="hidden"
         onChange={e => { const files = Array.from(e.target.files ?? []); onFiles(files); if (ref.current) ref.current.value = ''; }}
       />
-      <button
-        onClick={() => ref.current?.click()} disabled={busy}
-        className="flex-1 min-h-[44px] flex items-center justify-center gap-[7px] border border-solid border-line rounded-control bg-card cursor-pointer font-sans text-copy font-medium text-ink disabled:cursor-default disabled:text-muted-ink">
-        <Icon name="Camera" size="sm" />
-        <span>{busy ? 'Uploading...' : count > 0 ? `${count} photo${count > 1 ? 's' : ''} · add` : 'Add photo'}</span>
-      </button>
+      <Button variant="secondary" size="touch" className="flex-1" icon={<Icon name="Camera" size="sm" />}
+        onClick={() => ref.current?.click()} disabled={busy} disabledReason="Photos are uploading.">
+        {busy ? 'Uploading...' : shots > 0 ? `${plural(shots, 'photo')} · add` : 'Add photo'}
+      </Button>
     </>
   );
 }
 
 /* ------------------------------- report modal ------------------------------ */
-const INPUT_BASE = 'block w-full box-border text-ink bg-card border border-solid border-line rounded-control outline-none [font:inherit]';
 const LABEL_CLS = 'text-meta font-medium text-muted-ink';
 
 interface DamageState { task: unknown; title: string; detail: string; blocksUnit: boolean }
@@ -411,24 +402,21 @@ function ReportModal({ task, value, busy, onChange, onClose, onSubmit }: {
       <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
       <div ref={ref}
         className="relative w-full max-w-[560px] max-h-[92vh] overflow-y-auto bg-card rounded-t-card shadow-[var(--shadow-overlay)] flex flex-col [animation:rise_var(--motion-slow)_var(--ease-out)_both]">
-        <div className="pt-[18px] px-[18px] pb-1 flex flex-col gap-[5px]">
+        <div className="pt-[18px] px-5 pb-1 flex flex-col gap-1">
           <h2 className="m-0 text-title leading-[1.3] font-semibold">Report damage or missing item</h2>
           <p className="m-0 text-copy leading-[1.5] text-muted-ink">
             Opens a maintenance issue on {unitRef(task.unit.propertyName, task.unit.unitNumber)}. The office adds any cost.
           </p>
         </div>
 
-        <div className="pt-[14px] px-[18px] pb-1 flex flex-col gap-[14px]">
-          <div className="flex flex-col gap-[7px]">
-            <label htmlFor="dmg-title" className={LABEL_CLS}>What is damaged or missing</label>
-            <input id="dmg-title" value={value.title} disabled={busy} placeholder="Cracked bathroom mirror"
-              onChange={e => set({ title: e.target.value })} className={cx(INPUT_BASE, 'min-h-[44px] py-0 px-3')} />
-          </div>
-          <div className="flex flex-col gap-[7px]">
+        <div className="pt-4 px-5 pb-1 flex flex-col gap-4">
+          <Field label="What is damaged or missing" value={value.title} disabled={busy} placeholder="Cracked bathroom mirror"
+            onChange={e => set({ title: e.target.value })} style={{ minHeight: 'var(--control-height-touch)' }} />
+          <div className="flex flex-col gap-1.5">
             <label htmlFor="dmg-detail" className={LABEL_CLS}>Detail (optional)</label>
             <textarea id="dmg-detail" value={value.detail} disabled={busy} rows={3} placeholder="Where it is, how bad, any temporary fix"
               onChange={e => set({ detail: e.target.value })}
-              className={cx(INPUT_BASE, 'min-h-[88px] py-[10px] px-3 resize-y')} />
+              className="field-input min-h-[88px]" />
           </div>
           <label className={cx('flex gap-2.5 items-center text-copy min-h-[44px]', busy ? 'cursor-default' : 'cursor-pointer')}>
             <input type="checkbox" checked={value.blocksUnit} disabled={busy} className="w-5 h-5"
@@ -437,17 +425,12 @@ function ReportModal({ task, value, busy, onChange, onClose, onSubmit }: {
           </label>
         </div>
 
-        <div className="py-[14px] px-[18px] mt-2 [border-top:1px_solid_var(--color-line)] bg-page flex gap-[9px] sticky bottom-0">
-          <button onClick={onClose} disabled={busy}
-            className={cx('flex-1 min-h-[44px] rounded-control border border-solid border-line bg-card [font:inherit] text-ink', busy ? 'cursor-default' : 'cursor-pointer')}>Cancel</button>
-          <button onClick={onSubmit} disabled={!canSubmit}
-            className={cx(
-              'flex-1 min-h-[44px] flex items-center justify-center gap-[7px] rounded-control border-none font-sans text-copy font-medium',
-              canSubmit ? 'bg-[var(--color-critical-line)] text-white cursor-pointer' : 'bg-sunken text-faint cursor-not-allowed',
-            )}>
-            <Icon name="TriangleAlert" size="sm" />
-            <span>Report damage</span>
-          </button>
+        <div className="py-3.5 px-5 mt-2 [border-top:1px_solid_var(--color-line)] bg-page flex gap-2 sticky bottom-0">
+          <Button variant="secondary" size="touch" className="flex-1" onClick={onClose} disabled={busy} disabledReason="Sending the report.">Cancel</Button>
+          <Button variant="danger" size="touch" className="flex-1" icon={<Icon name="TriangleAlert" size="sm" />}
+            onClick={onSubmit} disabled={!canSubmit} disabledReason={busy ? 'Sending the report.' : 'Say what is damaged or missing first.'}>
+            Report damage
+          </Button>
         </div>
       </div>
     </div>

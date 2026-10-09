@@ -12,7 +12,10 @@ import { useApi } from '../lib/useApi';
 import { useCrew } from '../lib/useCrew';
 import { api, notifyFailure } from '../lib/api';
 import { READINESS, CHANNEL } from '../lib/vocabulary';
-import { rm, date as fmtDate, time, unitRef } from '../lib/format';
+import { rm, date as fmtDate, dateShort, time, unitRef, plural } from '../lib/format';
+import { Select } from '../components/Select';
+import { EmptyState } from '../components/States';
+import { Chip } from './finance/listKit';
 import type { Tone, UnitReadiness, BookingChannel } from '../lib/types';
 
 /** Kinds the operations day is made of. Housekeeping kinds share the cleaner flow. */
@@ -133,7 +136,7 @@ const matchesFilter = (r: Row, f: FilterKey) =>
   : f === 'earlier' ? !!r.carriedOver
   : /* unassigned */ !r.assigneeId;
 
-const shortDay = (d: string) => new Date(`${d}T12:00:00+08:00`).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' });
+const shortDay = (d: string) => dateShort(d);
 
 export default function OperationsTodayPage() {
   const CREW = useCrew('housekeeping');
@@ -242,8 +245,8 @@ export default function OperationsTodayPage() {
     <>
       <PageHeader
         title="Today"
-        sub={`${fmtDate(data?.date ?? FALLBACK.date)} · ${allRows.length} items need action before the next check-in`}
-        right={
+        sub={`${fmtDate(data?.date ?? FALLBACK.date)} · ${plural(allRows.length, 'item')} ${allRows.length === 1 ? 'needs' : 'need'} action before the next check-in`}
+        primary={
           <Button
             variant="primary"
             size="sm"
@@ -260,86 +263,62 @@ export default function OperationsTodayPage() {
 
       {(data?.checkoutsWithoutClean ?? 0) > 0 && (
         <div role="status" className={cx('flex items-center gap-3 flex-wrap py-[11px] px-3.5 rounded-control [border-left:2px_solid_var(--color-critical-line)]', TONE.critical.bg)}>
-          <span className={cx('text-[13px] flex-1 min-w-[200px]', TONE.critical.text)}>
-            {data!.checkoutsWithoutClean} check-out{data!.checkoutsWithoutClean === 1 ? '' : 's'} today {data!.checkoutsWithoutClean === 1 ? 'has' : 'have'} no cleaning task yet. Those units will not be turned over unless one is created.
+          <span className={cx('text-copy flex-1 min-w-[200px]', TONE.critical.text)}>
+            {plural(data!.checkoutsWithoutClean ?? 0, 'check-out')} today {data!.checkoutsWithoutClean === 1 ? 'has' : 'have'} no cleaning task yet. Those units will not be turned over unless one is created.
           </span>
           <Button size="sm" variant="secondary" onClick={() => { window.location.hash = '#/operations/housekeeping'; }}>Plan cleaning</Button>
         </div>
       )}
 
-      <div className="flex gap-[7px] flex-wrap">
-        {FILTERS.filter(fl => fl.key !== 'earlier' || allRows.some(r => r.carriedOver)).map(fl => {
-          const on = fl.key === filter;
-          const n = allRows.filter(r => matchesFilter(r, fl.key)).length;
-          return (
-            <button
-              key={fl.key}
-              onClick={() => setFilter(fl.key)}
-              aria-pressed={on}
-              className={cx(
-                'h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer whitespace-nowrap font-sans text-[13px] box-border border border-solid',
-                on ? 'bg-black text-white border-black' : 'bg-white text-muted-ink border-line',
-              )}
-            >
-              {fl.label}
-              <span className={cx('ml-1.5 tabular-nums text-[11.5px]', on ? 'text-white/70' : 'text-faint')}>{n}</span>
-            </button>
-          );
-        })}
+      <div className="flex items-center gap-2 flex-wrap">
+        {FILTERS.filter(fl => fl.key !== 'earlier' || allRows.some(r => r.carriedOver)).map(fl => (
+          <Chip key={fl.key} on={fl.key === filter} onClick={() => setFilter(fl.key)}
+            count={allRows.filter(r => matchesFilter(r, fl.key)).length}>{fl.label}</Chip>
+        ))}
       </div>
 
       <Card>
         <CardHeader title="All work, highest risk first" />
-        <div className="pt-0 px-5 pb-3 -mt-2 text-[12px] text-muted-ink">
+        <div className="pt-0 px-5 pb-3 -mt-2 text-meta text-muted-ink">
           Sorted by risk, then time{lastUpdated ? ` · last updated ${lastUpdated}` : ''}
         </div>
 
         <div className="overflow-x-auto hidden md:block">
           <div className="min-w-[1040px]">
-            <div className={cx('grid', COLS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink')}>
+            <div className={cx('grid', COLS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink')}>
               <div>Unit</div><div>Work</div><div>Readiness</div><div>Next guest</div><div>SLA</div><div>Assignee</div><div>Actions</div>
             </div>
 
             {loading && base.length === 0 ? (
               <TableSkeleton rows={5} cols={7} />
             ) : rows.length === 0 ? (
-              <div className="py-[30px] px-[22px] flex flex-col gap-2.5 items-start">
-                <span className="text-[13px] text-[#4A4844]">{allRows.length === 0 ? 'Nothing open needs action today.' : 'No work matches this filter.'}</span>
-                {allRows.length > 0 && <Button variant="secondary" size="sm" onClick={() => setFilter('all')}>Show all work</Button>}
-              </div>
+              allRows.length === 0
+                ? <EmptyState bare title="Nothing open needs action today." icon="CheckCircle" />
+                : <EmptyState bare kind="filtered" title="No work matches this filter." action={{ label: 'Show all work', onClick: () => setFilter('all') }} />
             ) : rows.map(r => {
               const actions = actionsFor(r);
               return (
                 <div key={r.id} className={cx('grid', COLS, 'box-border gap-[14px] items-center min-h-[56px] py-[11px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] border-l-[3px]', LINE[r.sla.tone])}>
                   <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-[13.5px] font-medium">{r.unitNumber}</span>
-                    <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.propertyName}</span>
+                    <span className="text-copy font-medium">{r.unitNumber}</span>
+                    <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.propertyName}</span>
                   </div>
                   <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-[13px]">{r.work}</span>
-                    {r.note && <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.note}</span>}
+                    <span className="text-copy">{r.work}</span>
+                    {r.note && <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{r.note}</span>}
                   </div>
                   <div><Badge tone={READINESS[r.readiness].tone} label={READINESS[r.readiness].label} /></div>
-                  <div className="text-[13px]">{r.nextGuestAt ?? '—'}</div>
+                  <div className="text-copy tabular-nums">{r.nextGuestAt ?? '—'}</div>
                   <div className="flex flex-col gap-1 items-start">
                     <Badge tone={r.sla.tone} label={r.sla.label} />
-                    {r.carriedOver && r.day && <span className={cx('text-[11.5px]', TONE.critical.text)}>From {shortDay(r.day)}</span>}
+                    {r.carriedOver && r.day && <span className={cx('text-meta', TONE.critical.text)}>From {shortDay(r.day)}</span>}
                   </div>
-                  <div className={cx('text-[13px] min-w-0 whitespace-nowrap overflow-hidden text-ellipsis', r.assigneeName ? 'text-ink' : 'text-muted-ink')}>
+                  <div className={cx('text-copy min-w-0 whitespace-nowrap overflow-hidden text-ellipsis', r.assigneeName ? 'text-ink' : 'text-muted-ink')}>
                     {r.assigneeName ?? 'Unassigned'}
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {actions.map(a => (
-                      <button
-                        key={a.key}
-                        onClick={a.run}
-                        className={cx(
-                          'h-7 inline-flex items-center px-[11px] py-0 rounded-control cursor-pointer whitespace-nowrap font-sans text-[12.5px] box-border border border-solid',
-                          a.primary ? 'bg-black text-white border-black' : 'bg-white text-[#4A4844] border-line',
-                        )}
-                      >
-                        {a.label}
-                      </button>
+                      <Button key={a.key} size="sm" variant={a.primary ? 'brand' : 'secondary'} onClick={a.run}>{a.label}</Button>
                     ))}
                   </div>
                 </div>
@@ -352,17 +331,19 @@ export default function OperationsTodayPage() {
         <div className="md:hidden [border-top:1px_solid_var(--color-line)]">
           {loading && base.length === 0 ? <TableSkeleton rows={4} cols={2} />
             : rows.length === 0 ? (
-              <div className="py-6 px-4 text-[13px] text-muted-ink">{allRows.length === 0 ? 'Nothing open needs action today.' : 'No work matches this filter.'}</div>
+              allRows.length === 0
+                ? <EmptyState bare title="Nothing open needs action today." icon="CheckCircle" />
+                : <EmptyState bare kind="filtered" title="No work matches this filter." action={{ label: 'Show all work', onClick: () => setFilter('all') }} />
             ) : rows.map(r => (
               <div key={r.id} className={cx('py-3 px-4 flex flex-col gap-2 [border-bottom:1px_solid_var(--color-line-soft)] border-l-[3px] border-solid border-y-0 border-r-0', LINE[r.sla.tone])}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-[13.5px] font-semibold truncate">{unitRef(r.propertyName, r.unitNumber)}</span>
-                    <span className="text-[12px] text-muted-ink truncate">{r.work}</span>
+                    <span className="text-copy font-semibold truncate">{unitRef(r.propertyName, r.unitNumber)}</span>
+                    <span className="text-meta text-muted-ink truncate">{r.work}</span>
                   </div>
                   <Badge tone={r.sla.tone} label={r.sla.label} size="sm" />
                 </div>
-                <div className="flex gap-x-4 gap-y-1 flex-wrap text-[12px]">
+                <div className="flex gap-x-4 gap-y-1 flex-wrap text-meta">
                   <span className={r.assigneeName ? 'text-ink' : 'text-muted-ink'}>{r.assigneeName ?? 'Unassigned'}</span>
                   <span className="text-muted-ink">{READINESS[r.readiness].label}</span>
                   {r.nextGuestAt && <span className="text-muted-ink">Guest {r.nextGuestAt}</span>}
@@ -370,11 +351,7 @@ export default function OperationsTodayPage() {
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {actionsFor(r).map(a => (
-                    <button key={a.key} onClick={a.run}
-                      className={cx('h-8 inline-flex items-center px-[11px] py-0 rounded-control cursor-pointer whitespace-nowrap font-sans text-[12.5px] box-border border border-solid',
-                        a.primary ? 'bg-black text-white border-black' : 'bg-white text-[#4A4844] border-line')}>
-                      {a.label}
-                    </button>
+                    <Button key={a.key} size="md" variant={a.primary ? 'brand' : 'secondary'} onClick={a.run}>{a.label}</Button>
                   ))}
                 </div>
               </div>
@@ -394,21 +371,17 @@ export default function OperationsTodayPage() {
             </Button>
           </>}
         >
-          <label className="flex flex-col gap-[7px]">
-            <span className="text-[12px] font-medium text-muted-ink">Cleaner</span>
-            <select className="field-input" value={assign.cleanerId}
-              onChange={e => setAssign(a => a && { ...a, cleanerId: e.target.value })}>
-              {CREW.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </label>
+          <Select label="Cleaner" showLabel size="md" value={assign.cleanerId}
+            onChange={v => setAssign(a => a && { ...a, cleanerId: v })}
+            options={CREW.map(c => ({ value: c.id, label: c.name }))} />
           {assign.row.nextGuestAt && (
-            <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-[12px]">
+            <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-meta">
               Next guest arrives {assign.row.nextGuestAt} {'·'} {assign.row.sla.label}
             </div>
           )}
           {assignOverlap(assign, allRows) && (
-            <div role="status" className={cx('py-[9px] px-[11px] rounded-control text-[12px]', TONE.warning.bg, TONE.warning.text)}>
-              {CREW.find(c => c.id === assign.cleanerId)?.name} already has {assignOverlap(assign, allRows)} task{assignOverlap(assign, allRows) === 1 ? '' : 's'} today. Assign anyway?
+            <div role="status" className={cx('py-[9px] px-[11px] rounded-control text-meta', TONE.warning.bg, TONE.warning.text)}>
+              {CREW.find(c => c.id === assign.cleanerId)?.name} already has {plural(assignOverlap(assign, allRows), 'task')} today. Assign anyway?
             </div>
           )}
         </Modal>
@@ -425,7 +398,7 @@ export default function OperationsTodayPage() {
           </>}
         >
           <label className="flex flex-col gap-[7px]">
-            <span className="text-[12px] font-medium text-muted-ink">Message</span>
+            <span className="text-meta font-medium text-muted-ink">Message</span>
             <textarea className="field-input" rows={5} value={message.body}
               onChange={e => setMessage(m => m && { ...m, body: e.target.value })} />
           </label>
@@ -491,8 +464,8 @@ function Modal({ title, sub, onClose, children, footer }: {
       <div onClick={onClose} className="absolute inset-0" />
       <div ref={ref} className="relative w-full max-w-[460px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
         <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[9px]">
-          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold [text-wrap:pretty]">{title}</h2>
-          {sub && <p className="m-0 text-[13px] leading-[1.55] text-muted-ink [text-wrap:pretty]">{sub}</p>}
+          <h2 className="m-0 text-title leading-[1.3] font-semibold [text-wrap:pretty]">{title}</h2>
+          {sub && <p className="m-0 text-copy leading-[1.55] text-muted-ink [text-wrap:pretty]">{sub}</p>}
         </div>
         <div className="pt-[14px] px-[22px] pb-[18px] flex flex-col gap-3">{children}</div>
         <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-border-default)] bg-page flex items-center justify-end gap-[9px] flex-wrap">

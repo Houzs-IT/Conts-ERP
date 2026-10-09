@@ -22,8 +22,8 @@ const base: CSSProperties = {
 
 const sizes: Record<Size, CSSProperties> = {
   sm:    { height: 'var(--control-height-sm)', padding: '0 13px', fontSize: 13 },
-  md:    { height: 'var(--control-height)',    padding: '0 16px', fontSize: 14 },
-  touch: { minHeight: 'var(--control-height-touch)', padding: '0 18px', fontSize: 14 },
+  md:    { height: 'var(--control-height)',    padding: '0 16px', fontSize: 13 },
+  touch: { minHeight: 'var(--control-height-touch)', padding: '0 18px', fontSize: 15 },
 };
 
 const variants: Record<Variant, CSSProperties> = {

@@ -9,6 +9,9 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useCleaners, type Cleaner, type Employment } from '../lib/useCleaners';
 import { api, notifyFailure } from '../lib/api';
+import { plural } from '../lib/format';
+import { Select } from '../components/Select';
+import { EmptyState } from '../components/States';
 import type { Tone } from '../lib/types';
 
 /* ------------------------------------------------------------------ *
@@ -25,7 +28,7 @@ const EMPLOYMENT_LABEL: Record<Employment, string> = { internal: 'Internal staff
 const EMPLOYMENT_TONE: Record<Employment, Tone> = { internal: 'info', outsourced: 'warning' };
 
 const inputCls = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit]';
-const labelCls = 'text-[12px] font-medium text-muted-ink';
+const labelCls = 'text-meta font-medium text-muted-ink';
 
 interface HouseUser { id: string; name: string; busy: number }
 
@@ -97,16 +100,16 @@ export default function CleanersPage() {
     <>
       <PageHeader
         title="Cleaners"
-        sub={`${roster.length} on the roster · ${activeCount} active · ${internal.length} internal, ${outsourced.length} outsourced`}
-        right={
-          <div className="flex gap-[9px] flex-wrap">
-            <Button variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setModal({ mode: 'create', draft: emptyDraft('outsourced') })}>
-              Add outsourced
-            </Button>
-            <Button variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setModal({ mode: 'create', draft: emptyDraft('internal') })}>
-              Add internal cleaner
-            </Button>
-          </div>
+        sub={`${plural(roster.length, 'cleaner')} on the roster · ${activeCount} active · ${internal.length} internal, ${outsourced.length} outsourced`}
+        actions={
+          <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setModal({ mode: 'create', draft: emptyDraft('outsourced') })}>
+            Add outsourced
+          </Button>
+        }
+        primary={
+          <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setModal({ mode: 'create', draft: emptyDraft('internal') })}>
+            Add internal cleaner
+          </Button>
         }
       />
 
@@ -115,9 +118,9 @@ export default function CleanersPage() {
       {loading && roster.length === 0 ? (
         <Card><TableSkeleton rows={4} cols={4} /></Card>
       ) : (
-        <div className="flex flex-col gap-4">
-          <RosterSection title="Internal staff" hint="Your own housekeepers — they log in and get push jobs." tone="info" cleaners={internal} onEdit={openEdit} onToggle={toggleActive} />
-          <RosterSection title="Outsourced / third-party" hint="Vendor crews you assign by hand or by rule — no login." tone="warning" cleaners={outsourced} onEdit={openEdit} onToggle={toggleActive} />
+        <div className="flex flex-col gap-5">
+          <RosterSection title="Internal staff" hint="Your own housekeepers. They log in and get push jobs." tone="info" emptyTitle="No internal cleaners yet." addLabel="Add internal cleaner" onAdd={() => setModal({ mode: 'create', draft: emptyDraft('internal') })} cleaners={internal} onEdit={openEdit} onToggle={toggleActive} />
+          <RosterSection title="Outsourced / third-party" hint="Vendor crews you assign by hand or by rule. No login." tone="warning" emptyTitle="No outsourced cleaners yet." addLabel="Add outsourced" onAdd={() => setModal({ mode: 'create', draft: emptyDraft('outsourced') })} cleaners={outsourced} onEdit={openEdit} onToggle={toggleActive} />
         </div>
       )}
 
@@ -138,31 +141,31 @@ export default function CleanersPage() {
   );
 }
 
-function RosterSection({ title, hint, tone, cleaners, onEdit, onToggle }: {
-  title: string; hint: string; tone: Tone; cleaners: Cleaner[]; onEdit: (c: Cleaner) => void; onToggle: (c: Cleaner) => void;
+function RosterSection({ title, hint, tone, emptyTitle, addLabel, onAdd, cleaners, onEdit, onToggle }: {
+  title: string; hint: string; tone: Tone; emptyTitle: string; addLabel: string; onAdd: () => void; cleaners: Cleaner[]; onEdit: (c: Cleaner) => void; onToggle: (c: Cleaner) => void;
 }) {
   return (
     <Card>
-      <div className="py-[13px] px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line)]">
-        <span className="text-[16px] font-semibold flex items-center gap-2"><Badge tone={tone} label={String(cleaners.length)} size="sm" />{title}</span>
-        <span className="text-[12px] text-muted-ink">{hint}</span>
+      <div className="py-[18px] px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line)]">
+        <span className="text-heading font-semibold flex items-center gap-2"><Badge tone={tone} label={String(cleaners.length)} size="sm" />{title}</span>
+        <span className="text-meta text-muted-ink">{hint}</span>
       </div>
       {cleaners.length === 0 ? (
-        <div className="py-[26px] px-[22px] text-[13px] text-muted-ink">None yet.</div>
+        <EmptyState bare title={emptyTitle} body={hint} action={{ label: addLabel, onClick: onAdd }} />
       ) : (
         cleaners.map(c => (
-          <div key={c.id} className={`flex gap-[18px] py-[13px] px-5 flex-wrap items-center [border-bottom:1px_solid_var(--color-line-soft)] ${c.isActive ? '' : 'opacity-[0.6]'}`}>
+          <div key={c.id} className={`flex gap-4 py-3 px-5 flex-wrap items-center [border-bottom:1px_solid_var(--color-line-soft)] ${c.isActive ? '' : 'opacity-[0.6]'}`}>
             <div className="flex-1 min-w-[220px] flex flex-col gap-[3px]">
               <div className="flex items-center gap-[9px] flex-wrap">
-                <span className="text-[14px] font-semibold">{c.name}</span>
+                <span className="text-copy font-semibold">{c.name}</span>
                 <Badge tone={EMPLOYMENT_TONE[c.employmentType]} label={EMPLOYMENT_LABEL[c.employmentType]} size="sm" />
                 {!c.isActive && <Badge tone="neutral" label="Inactive" size="sm" />}
               </div>
-              <div className="text-[12.5px] text-muted-ink flex gap-[16px] flex-wrap">
+              <div className="text-meta text-muted-ink flex gap-4 flex-wrap">
                 {c.vendorName && <span>Vendor: {c.vendorName}</span>}
                 {c.phone && <span>{c.phone}</span>}
                 <span>{c.employmentType === 'internal' ? (c.userId ? 'Linked login' : 'No login link') : 'No login'}</span>
-                <span>{c.busy} open job{c.busy === 1 ? '' : 's'} today</span>
+                <span>{plural(c.busy, 'open job')} today</span>
               </div>
             </div>
             <div className="flex gap-[7px] items-center">
@@ -197,11 +200,11 @@ function FormModal({ title, busy, draft, crew, takenUserIds, currentUserId, onCh
       className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
       <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
       <div ref={ref} className="relative w-full max-w-[460px] max-h-[88vh] overflow-y-auto bg-card rounded-card shadow-[var(--shadow-overlay)] animate-dialog">
-        <div className="pt-5 px-[22px] pb-1 flex items-start justify-between gap-3">
-          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold">{title}</h2>
+        <div className="pt-5 px-5 pb-1 flex items-start justify-between gap-3">
+          <h2 className="m-0 text-title leading-[1.3] font-semibold">{title}</h2>
           <button onClick={onClose} aria-label="Close" disabled={busy} className="bg-transparent border-none p-1 cursor-pointer text-muted-ink flex"><Icon name="X" size="sm" /></button>
         </div>
-        <div className="pt-[14px] px-[22px] pb-1 flex flex-col gap-[14px]">
+        <div className="pt-4 px-5 pb-1 flex flex-col gap-4">
           <div className="flex flex-col gap-[7px]">
             <label htmlFor="cl-name" className={labelCls}>Name</label>
             <input id="cl-name" value={draft.name} disabled={busy} placeholder={draft.employmentType === 'outsourced' ? 'BrightNest Crew' : 'Nurul Huda'}
@@ -209,12 +212,9 @@ function FormModal({ title, busy, draft, crew, takenUserIds, currentUserId, onCh
           </div>
 
           <div className="flex flex-col gap-[7px]">
-            <label htmlFor="cl-emp" className={labelCls}>Employment</label>
-            <select id="cl-emp" value={draft.employmentType} disabled={busy}
-              onChange={e => set({ employmentType: e.target.value as Employment })} className={inputCls}>
-              <option value="internal">Internal staff</option>
-              <option value="outsourced">Outsourced / third-party</option>
-            </select>
+            <Select label="Employment" showLabel size="md" value={draft.employmentType} disabled={busy}
+              onChange={v => set({ employmentType: v as Employment })}
+              options={[{ value: 'internal', label: 'Internal staff' }, { value: 'outsourced', label: 'Outsourced / third-party' }]} />
           </div>
 
           {draft.employmentType === 'outsourced' && (
@@ -227,12 +227,9 @@ function FormModal({ title, busy, draft, crew, takenUserIds, currentUserId, onCh
 
           {draft.employmentType === 'internal' && (
             <div className="flex flex-col gap-[7px]">
-              <label htmlFor="cl-user" className={labelCls}>Link to a housekeeper login (optional)</label>
-              <select id="cl-user" value={draft.userId} disabled={busy}
-                onChange={e => set({ userId: e.target.value })} className={inputCls}>
-                <option value="">No login link</option>
-                {linkable.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              <Select label="Link to a housekeeper login (optional)" showLabel size="md" value={draft.userId} disabled={busy}
+                onChange={v => set({ userId: v })} placeholder="No login link"
+                options={linkable.map(u => ({ value: u.id, label: u.name }))} />
             </div>
           )}
 
@@ -242,7 +239,7 @@ function FormModal({ title, busy, draft, crew, takenUserIds, currentUserId, onCh
               onChange={e => set({ phone: e.target.value })} className={inputCls} />
           </div>
         </div>
-        <div className="py-[14px] px-[22px] mt-2 [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap sticky bottom-0">
+        <div className="py-[14px] px-5 mt-2 [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap sticky bottom-0">
           <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button size="sm" variant="primary" loading={busy} disabled={!draft.name.trim()} disabledReason="Enter a name first." onClick={onSave}>Save cleaner</Button>
         </div>

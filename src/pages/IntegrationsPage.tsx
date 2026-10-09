@@ -11,7 +11,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import ChannexSyncPanel from '../components/ChannexSyncPanel';
 import { api } from '../lib/api';
-import { date, timeWithZone, masked } from '../lib/format';
+import { count, date, plural, timeWithZone, masked } from '../lib/format';
 import { INTEGRATION } from '../lib/vocabulary';
 import type { IntegrationState, Tone } from '../lib/types';
 
@@ -162,8 +162,8 @@ export default function IntegrationsPage() {
 
   return (
     <>
-      <PageHeader title="Integrations" sub={`${rows.filter(r => r.state === 'connected' || r.state === 'degraded').length} connected · ${rows.filter(r => r.state === 'not_connected').length} not connected · ${problems} needing attention`}
-        right={<Button size="sm" variant="secondary" icon={<Icon name="FileUp" size="sm" />} onClick={() => { window.location.hash = '#/system/integrations/hostplatform'; }}>Import from HostPlatform</Button>} />
+      <PageHeader title="Integrations" sub={`${count(rows.filter(r => r.state === 'connected' || r.state === 'degraded').length)} connected · ${count(rows.filter(r => r.state === 'not_connected').length)} not connected · ${count(problems)} needing attention`}
+        actions={<Button size="sm" variant="secondary" icon={<Icon name="FileUp" size="sm" />} onClick={() => { window.location.hash = '#/system/integrations/hostplatform'; }}>Import from HostPlatform</Button>} />
 
       {error && <StaleBanner message={`Showing the last status we have. ${error}`} onRetry={reload} />}
 
@@ -172,17 +172,17 @@ export default function IntegrationsPage() {
       {loading && rows.length === 0 ? (
         <Card><TableSkeleton rows={6} cols={3} /></Card>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(330px,1fr))] gap-4">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(330px,100%),1fr))] gap-4">
           {rows.map(row => {
             const label = PROVIDER_LABEL[row.provider] ?? row.provider;
             const m = META[row.state];
             const act = actionsFor(row.state, row);
             return (
               <Card key={row.id} style={{ display: 'flex', flexDirection: 'column' }}>
-                <div className="py-[18px] px-5 flex flex-col gap-3 flex-1">
+                <div className="p-5 flex flex-col gap-3 flex-1">
                   <div className="flex items-center gap-3">
                     <Monogram label={label} />
-                    <div className="flex flex-col gap-[3px] flex-1 min-w-0">
+                    <div className="flex flex-col gap-1 flex-1 min-w-0">
                       <span className="text-heading font-semibold">{label}</span>
                       <span className="text-meta text-muted-ink">{syncedLine(row)}</span>
                     </div>
@@ -197,12 +197,12 @@ export default function IntegrationsPage() {
 
                   <div className="mt-auto pt-1 text-meta text-muted-ink">
                     {row.viaChannex || row.provider === 'utilities'
-                      ? `${row.unitsLinked} ${row.unitsLinked === 1 ? 'unit' : 'units'} linked${row.syncInterval ? ` · ${row.syncInterval}` : ''}`
+                      ? `${plural(row.unitsLinked, 'unit')} linked${row.syncInterval ? ` · ${row.syncInterval}` : ''}`
                       : row.syncInterval ?? ''}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap py-[13px] px-5 [border-top:1px_solid_var(--color-line-soft)] bg-page">
+                <div className="flex items-center gap-2 flex-wrap py-3 px-5 [border-top:1px_solid_var(--color-line-soft)] bg-page">
                   {act.reconnect && (
                     <Button size="sm" variant="brand" icon={<Icon name="PlugZap" size="sm" />} onClick={() => setReconnectId(row.id)}>
                       Reconnect
@@ -264,7 +264,7 @@ function Monogram({ label }: { label: string }) {
   return (
     <span
       aria-hidden
-      className="w-[38px] h-[38px] flex-none grid place-items-center rounded-[6px] bg-muted border border-solid border-line text-heading font-semibold text-ink"
+      className="w-[38px] h-[38px] flex-none grid place-items-center rounded-control bg-muted border border-solid border-line text-heading font-semibold text-ink"
     >
       {label[0]}
     </span>
@@ -283,7 +283,7 @@ function ManagePanel({
     <>
       <div className="flex items-center gap-3 py-[18px] px-[22px] [border-bottom:1px_solid_var(--color-line)]">
         <Monogram label={label} />
-        <div className="flex flex-col gap-[3px] flex-1 min-w-0">
+        <div className="flex flex-col gap-1 flex-1 min-w-0">
           <span className="text-title font-semibold">{label}</span>
           <span className="text-meta text-muted-ink">{syncedLine(row)}</span>
         </div>
@@ -300,7 +300,7 @@ function ManagePanel({
         </Section>
 
         <Section label="Units linked">
-          <PanelValue>{row.unitsLinked} {row.unitsLinked === 1 ? 'unit' : 'units'}</PanelValue>
+          <PanelValue>{plural(row.unitsLinked, 'unit')}</PanelValue>
         </Section>
 
         <Section label="Sync interval">
@@ -311,7 +311,7 @@ function ManagePanel({
           {row.credentialMasked ? (
             <>
               <PanelValue mono>API key {row.credentialMasked}</PanelValue>
-              <div className="mt-[6px] text-meta text-muted-ink">
+              <div className="mt-1.5 text-meta text-muted-ink">
                 Masked. Revealing a credential is audited and done from the secrets vault, not here.
               </div>
             </>
@@ -321,7 +321,7 @@ function ManagePanel({
         </Section>
       </div>
 
-      <div className="flex items-center justify-end gap-[9px] flex-wrap py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page">
+      <div className="flex items-center justify-end gap-2 flex-wrap py-3.5 px-[22px] [border-top:1px_solid_var(--color-line)] bg-page">
         {act.reconnect && (
           <Button size="sm" variant="brand" icon={<Icon name="PlugZap" size="sm" />} onClick={onReconnect}>Reconnect</Button>
         )}
@@ -339,7 +339,7 @@ function ManagePanel({
 function Section({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-meta font-semibold text-muted-ink uppercase tracking-[0.04em]">{label}</span>
+      <span className="text-caption font-semibold text-muted-ink uppercase tracking-[0.06em]">{label}</span>
       {children}
     </div>
   );

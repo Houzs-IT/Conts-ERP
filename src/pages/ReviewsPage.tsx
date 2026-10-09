@@ -1,6 +1,5 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { color } from '../theme';
-import { cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { EmptyState } from '../components/States';
@@ -12,8 +11,9 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
-import { rating as fmtRating, date as fmtDate, todayMyt } from '../lib/format';
+import { rating as fmtRating, date as fmtDate, todayMyt, count, plural } from '../lib/format';
 import type { BookingChannel } from '../lib/types';
+import { Chip } from './finance/listKit';
 
 /** A guest review pulled in from a channel. `reply`/`repliedAt` are set once the
  *  host has responded; a null `reply` is the "needs reply" state. */
@@ -49,26 +49,10 @@ function Stars({ n }: { n: number }) {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col gap-[3px] px-4 py-[14px]">
+    <div className="flex flex-col gap-1 px-5 py-4">
       <span className="text-meta text-muted-ink">{label}</span>
       <span className="text-headline font-semibold tabular-nums tracking-[-0.01em]">{value}</span>
     </div>
-  );
-}
-
-/** Pill toggle, black-on-select — the house filter style (see InboxPage). Gold is
- *  reserved for the stars and never used as a status/selection fill here.
- *  `[font:inherit]` (as in the original inline style) intentionally follows and
- *  neutralises any font-size/weight, so the label inherits the page font. */
-function Pill({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
-  return (
-    <button onClick={onClick} aria-pressed={on}
-      className={cx(
-        'h-8 flex items-center gap-[5px] px-[13px] py-0 rounded-full whitespace-nowrap cursor-pointer border border-solid [font:inherit]',
-        on ? 'border-black bg-black text-white' : 'border-line bg-card text-muted-ink',
-      )}>
-      {children}
-    </button>
   );
 }
 
@@ -135,7 +119,7 @@ export default function ReviewsPage() {
       <PageHeader
         title="Reviews"
         sub={total > 0
-          ? `${fmtRating(average ?? 0)} average across ${total} reviews · ${pctReplied}% replied`
+          ? `${fmtRating(average ?? 0)} average across ${plural(total, 'review')} · ${pctReplied}% replied`
           : 'Guest reviews across every channel'}
       />
 
@@ -148,30 +132,30 @@ export default function ReviewsPage() {
             <Stat label="Average rating" value={average != null ? fmtRating(average, true) : '—'} />
           </div>
           <div className="[border-right:1px_solid_var(--color-line-soft)]">
-            <Stat label="Reviews" value={String(total)} />
+            <Stat label="Reviews" value={count(total)} />
           </div>
           <Stat label="Replied" value={`${pctReplied}%`} />
         </div>
       </Card>
 
       {/* Filters */}
-      <div className="flex gap-[18px] flex-wrap items-center">
-        <div role="group" aria-label="Filter by rating" className="flex gap-[7px] flex-wrap items-center">
+      <div className="flex gap-4 flex-wrap items-center">
+        <div role="group" aria-label="Filter by rating" className="flex gap-2 flex-wrap items-center">
           <span className="text-meta font-semibold text-muted-ink">Rating</span>
-          <Pill on={ratingFilter === 'all'} onClick={() => setRatingFilter('all')}>All</Pill>
+          <Chip on={ratingFilter === 'all'} onClick={() => setRatingFilter('all')}>All</Chip>
           {([5, 4, 3, 2, 1] as const).map(n => (
-            <Pill key={n} on={ratingFilter === n} onClick={() => setRatingFilter(n)}>
+            <Chip key={n} on={ratingFilter === n} onClick={() => setRatingFilter(n)}>
               {n}<Icon name="Star" size="sm" color={color.gold} />
-            </Pill>
+            </Chip>
           ))}
         </div>
-        <div role="group" aria-label="Filter by reply state" className="flex gap-[7px] flex-wrap items-center">
+        <div role="group" aria-label="Filter by reply state" className="flex gap-2 flex-wrap items-center">
           <span className="text-meta font-semibold text-muted-ink">Status</span>
-          <Pill on={replyFilter === 'all'} onClick={() => setReplyFilter('all')}>All</Pill>
-          <Pill on={replyFilter === 'needs_reply'} onClick={() => setReplyFilter('needs_reply')}>
-            Needs reply{needsReplyCount ? ` (${needsReplyCount})` : ''}
-          </Pill>
-          <Pill on={replyFilter === 'replied'} onClick={() => setReplyFilter('replied')}>Replied</Pill>
+          <Chip on={replyFilter === 'all'} onClick={() => setReplyFilter('all')}>All</Chip>
+          <Chip on={replyFilter === 'needs_reply'} onClick={() => setReplyFilter('needs_reply')} count={needsReplyCount || undefined}>
+            Needs reply
+          </Chip>
+          <Chip on={replyFilter === 'replied'} onClick={() => setReplyFilter('replied')}>Replied</Chip>
         </div>
       </div>
 
@@ -190,9 +174,9 @@ export default function ReviewsPage() {
           const composing = composingId === r.id;
           return (
             <Card key={r.id}>
-              <div className="flex flex-col gap-[11px] px-5 py-[15px]">
-                <div className="flex items-center justify-between gap-[14px] flex-wrap">
-                  <div className="flex items-center gap-[11px] min-w-0">
+              <div className="flex flex-col gap-3 px-5 py-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-3 min-w-0">
                     <ChannelMark ch={r.channel} size={22} />
                     <div className="flex flex-col gap-px min-w-0">
                       <span className="text-copy font-semibold">{r.guestName}</span>
@@ -209,8 +193,8 @@ export default function ReviewsPage() {
 
                 {/* Existing / just-posted reply */}
                 {replied && r.reply && (
-                  <div className="flex flex-col gap-1 bg-muted rounded-control px-[13px] py-[11px]">
-                    <span className="text-caption font-semibold text-muted-ink uppercase tracking-[0.04em]">
+                  <div className="flex flex-col gap-1 bg-muted rounded-control px-3 py-2.5">
+                    <span className="text-caption font-semibold text-muted-ink uppercase tracking-[0.06em]">
                       Your reply{r.repliedAt ? ` · ${fmtDate(r.repliedAt)}` : ''}
                     </span>
                     <p className="m-0 text-copy leading-[1.55] [text-wrap:pretty]">{r.reply}</p>
@@ -224,12 +208,12 @@ export default function ReviewsPage() {
                   </Button>
                 )}
                 {!replied && composing && (
-                  <form onSubmit={e => postReply(e, r)} className="flex flex-col gap-[9px]">
+                  <form onSubmit={e => postReply(e, r)} className="flex flex-col gap-2">
                     <textarea value={draft} onChange={e => setDraft(e.target.value)} autoFocus rows={3}
                       aria-label={`Reply to ${r.guestName}`}
                       placeholder={`Reply to ${r.guestName} on ${r.propertyName} ${r.unitNumber}`}
-                      className="w-full box-border px-3 py-[10px] [font:inherit] text-ink border border-solid border-line rounded-control outline-none resize-y" />
-                    <div className="flex gap-[9px] justify-end">
+                      className="w-full box-border px-3 py-2.5 [font-family:inherit] text-copy text-ink border border-solid border-line rounded-control outline-none resize-y" />
+                    <div className="flex gap-2 justify-end">
                       <Button type="button" size="sm" variant="secondary" onClick={cancelReply}>Cancel</Button>
                       <Button type="submit" size="sm" variant="primary" disabled={!draft.trim()} disabledReason="Write a reply first.">
                         Post reply

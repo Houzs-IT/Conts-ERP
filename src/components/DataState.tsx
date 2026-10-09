@@ -12,7 +12,7 @@ export function StaleBanner({ message, onRetry }: { message: string; onRetry: ()
       <span style={{ fontSize: text.small, flex: 1, minWidth: 200, textWrap: 'pretty' }}>{message}</span>
       <button onClick={onRetry} style={{
         height: 30, padding: '0 12px', borderRadius: radius.control, border: '1px solid #B7791F',
-        background: 'transparent', color: '#8A5A12', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', font: 'inherit',
+        background: 'transparent', color: '#8A5A12', font: 'inherit', fontSize: text.meta, fontWeight: 600, cursor: 'pointer',
       }}>Retry</button>
     </div>
   );

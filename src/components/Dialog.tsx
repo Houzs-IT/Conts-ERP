@@ -56,7 +56,7 @@ export function Dialog({ spec, busy, onClose }: { spec: DialogSpec | null; busy:
         }}
       >
         <div style={{ padding: '22px 22px 18px', display: 'flex', flexDirection: 'column', gap: 9 }}>
-          <h2 style={{ margin: 0, fontSize: 18, lineHeight: 1.3, fontWeight: 600, textWrap: 'pretty' }}>{spec.title}</h2>
+          <h2 style={{ margin: 0, fontSize: 19, lineHeight: 1.3, fontWeight: 600, textWrap: 'pretty' }}>{spec.title}</h2>
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--color-text-muted)', textWrap: 'pretty' }}>{spec.body}</p>
           {spec.meta && (
             <div style={{

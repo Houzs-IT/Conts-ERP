@@ -33,19 +33,19 @@ export default function ViewAs() {
   const viewing = state.viewing;
   const roles = [...new Set((state.users ?? []).map(u => u.role))];
   return (
-    <div className="fixed right-3 bottom-3 z-[70] flex flex-col items-end [font:inherit] text-[12.5px]">
+    <div className="fixed right-3 bottom-3 z-[70] flex flex-col items-end [font-family:inherit] text-meta">
       {open && (
         <div className="mb-2 w-[300px] max-h-[60vh] overflow-y-auto bg-card rounded-card border border-solid border-line [box-shadow:var(--shadow-overlay)]">
           <div className="px-3 py-2 text-[11px] text-muted-ink [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
             Staging only. Opens the system exactly as that account sees it.
           </div>
           <button type="button" disabled={busy || !viewing} onClick={() => go(state.me!.id)}
-            className="block w-full text-left px-3 py-2 bg-transparent border-none cursor-pointer [font:inherit] font-semibold disabled:opacity-50 disabled:cursor-default hover:bg-muted">
+            className="block w-full text-left px-3 py-2 bg-transparent border-none cursor-pointer [font-family:inherit] text-meta font-semibold disabled:opacity-50 disabled:cursor-default hover:bg-muted">
             Me — {state.me.fullName}
           </button>
           {roles.map(role => (
             <div key={role}>
-              <div className="px-3 pt-2 pb-1 text-[10px] font-semibold tracking-[0.08em] uppercase text-muted-ink">{role.replace(/_/g, ' ')}</div>
+              <div className="px-3 pt-2 pb-1 text-caption font-semibold tracking-[0.08em] uppercase text-muted-ink">{role.replace(/_/g, ' ')}</div>
               {(state.users ?? []).filter(u => u.role === role && u.id !== state.me!.id).map(u => (
                 <button key={u.id} type="button" disabled={busy || viewing?.id === u.id} onClick={() => go(u.id)}
                   className="block w-full text-left px-3 py-1.5 bg-transparent border-none cursor-pointer [font:inherit] disabled:opacity-50 disabled:cursor-default hover:bg-muted">
@@ -58,7 +58,7 @@ export default function ViewAs() {
         </div>
       )}
       <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
-        className="inline-flex items-center gap-2 h-9 px-3.5 rounded-full border border-solid cursor-pointer [font:inherit] font-semibold [box-shadow:var(--shadow-overlay)]"
+        className="inline-flex items-center gap-2 h-9 px-3.5 rounded-full border border-solid cursor-pointer [font-family:inherit] text-meta font-semibold [box-shadow:var(--shadow-overlay)]"
         style={{ background: 'var(--color-warning, #FBEFD5)', color: 'var(--color-warning-fg, #8A5A12)', borderColor: 'var(--color-warning-line, #B7791F)' }}>
         View as: {viewing ? `${viewing.fullName} (${viewing.role.replace(/_/g, ' ')})` : 'Me'} {open ? '▴' : '▾'}
       </button>

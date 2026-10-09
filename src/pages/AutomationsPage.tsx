@@ -5,6 +5,8 @@ import { Badge } from '../components/Badge';
 import Icon from '../components/Icon';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner } from '../components/DataState';
+import { EmptyState } from '../components/States';
+import { Chip } from './finance/listKit';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
@@ -355,11 +357,11 @@ export default function AutomationsPage() {
         sub={`${running} of ${total} run today · ${total - running} not running yet${qh ? ` · quiet hours ${qh.from}–${qh.to} MYT` : ''}`}
       />
 
-      <div className="flex items-start gap-2.5 py-[12px] px-[14px] rounded-control bg-[var(--color-warning)] text-[var(--color-warning-fg)] text-pretty" style={{ borderLeft: '2px solid var(--color-warning-line)' }}>
+      <div className="flex items-start gap-2.5 py-3 px-3.5 rounded-control bg-[var(--color-warning)] text-[var(--color-warning-fg)] text-pretty" style={{ borderLeft: '2px solid var(--color-warning-line)' }}>
         <Icon name="CircleAlert" size="sm" style={{ marginTop: 1 }} />
         <span className="text-meta">
           <strong className="font-semibold">Most rules do not run yet.</strong> {running} are sent by the system when they happen (owner statements and payouts, staff and account emails).
-          The other {total - running}, including every guest message, are written but nothing sends them: they need the timed background job (theconts-cron) and, for guests, the email and WhatsApp keys.
+          The other {total - running}, including every guest message, are written but nothing sends them: they need a timed background sender that is not set up yet and, for guests, the email and WhatsApp keys.
           Until then, guests get only the messages staff send from the Inbox and Bookings.
         </span>
       </div>
@@ -367,7 +369,7 @@ export default function AutomationsPage() {
       {error && <StaleBanner message={`Showing the last rules we have. ${error}`} onRetry={reload} />}
 
       {qh && (
-        <div className="flex items-start gap-2.5 py-[11px] px-[14px] rounded-control bg-gold-tint border border-solid border-[var(--color-gold-200)] text-gold-ink text-pretty">
+        <div className="flex items-start gap-2.5 py-3 px-3.5 rounded-control bg-gold-tint border border-solid border-[var(--color-gold-200)] text-gold-ink text-pretty">
           <Icon name="MoonStar" size="sm" style={{ marginTop: 1 }} />
           <span className="text-meta">{qh.note}</span>
         </div>
@@ -377,25 +379,19 @@ export default function AutomationsPage() {
         {FILTERS.map(f => {
           const on = filter === f.key;
           return (
-            <button key={f.key} onClick={() => setFilter(f.key)}
-              className={cx(
-                'h-8 px-[13px] py-0 rounded-full cursor-pointer [font:inherit] border border-solid',
-                on ? 'border-transparent bg-black text-white' : 'border-line bg-card text-muted-ink',
-              )}>
-              {f.label}
-            </button>
+            <Chip key={f.key} on={on} onClick={() => setFilter(f.key)}>{f.label}</Chip>
           );
         })}
       </div>
 
-      <div className="flex flex-col gap-[18px]">
+      <div className="flex flex-col gap-5">
         {visibleGroups.map(g => {
           const groupRules = rules.filter(r => r.group === g.key);
           if (groupRules.length === 0) return null;
           const groupRunning = groupRules.filter(r => r.running).length;
           return (
             <Card key={g.key}>
-              <div className="flex items-center gap-3 py-[15px] px-5 [border-bottom:1px_solid_var(--color-line)]">
+              <div className="flex items-center gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line)]">
                 <span className="w-[34px] h-[34px] flex-none grid place-items-center rounded-control bg-muted text-ink-2">
                   <Icon name={g.icon} size="sm" />
                 </span>
@@ -416,11 +412,7 @@ export default function AutomationsPage() {
         })}
 
         {visibleGroups.every(g => rules.filter(r => r.group === g.key).length === 0) && (
-          <Card>
-            <div className="py-[34px] px-[22px] text-center text-copy text-muted-ink">
-              No automations match this filter.
-            </div>
-          </Card>
+          <EmptyState kind="filtered" title="No automations match this filter." action={{ label: 'Clear filters', onClick: () => setFilter('all') }} />
         )}
       </div>
 
@@ -465,23 +457,23 @@ function RuleRow({ r, onOpen, onToggle }: { r: Rule; onOpen: () => void; onToggl
       role="button" tabIndex={0}
       onClick={onOpen}
       onKeyDown={e => { if (e.key === 'Enter') onOpen(); }}
-      className="flex items-start gap-3 sm:gap-4 py-[14px] px-4 sm:px-5 [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer">
-      <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-        <div className="flex items-center gap-[9px] flex-wrap">
+      className="flex flex-col gap-1.5 py-3.5 px-5 [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer">
+      <div className="flex items-start gap-3">
+        <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
           <span className="text-copy font-semibold">{r.name}</span>
           <StatusBadge r={r} />
           {r.quietHours === 'override' && <Badge tone="warning" label="Overrides quiet hours" size="sm" />}
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-meta text-ink-2">{whenOf(r)}</span>
-          <span className="text-faint">&middot;</span>
-          {r.channels.map(c => <ChannelChip key={c} label={c} />)}
-        </div>
-        <span className="text-meta text-muted-ink text-pretty line-clamp-2">{sample(r.preview)}</span>
+        {r.running
+          ? <span className="text-caption text-muted-ink whitespace-nowrap pt-0.5 hidden sm:inline">Always sent</span>
+          : <Switch on={r.isActive} label={`${r.isActive ? 'Mark not wanted' : 'Mark wanted'}: ${r.name}`} onToggle={onToggle} />}
       </div>
-      {r.running
-        ? <span className="text-caption text-muted-ink whitespace-nowrap pt-1 hidden sm:inline">Always sent</span>
-        : <Switch on={r.isActive} label={`${r.isActive ? 'Mark not wanted' : 'Mark wanted'}: ${r.name}`} onToggle={onToggle} />}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-meta text-ink-2">{whenOf(r)}</span>
+        <span className="text-faint">&middot;</span>
+        {r.channels.map(c => <ChannelChip key={c} label={c} />)}
+      </div>
+      <span className="text-meta text-muted-ink text-pretty line-clamp-2">{sample(r.preview)}</span>
     </div>
   );
 }
@@ -527,7 +519,7 @@ function RulePanel({ r, onClose, onToggle }: { r: Rule; onClose: () => void; onT
 
         <div className="border border-solid border-line rounded-card overflow-hidden">
           {rows.map((row, i) => (
-            <div key={row.label} className={cx('flex gap-3 py-2.5 px-[14px]', i < rows.length - 1 && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
+            <div key={row.label} className={cx('flex gap-3 py-2.5 px-3.5', i < rows.length - 1 && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
               <span className="text-copy text-muted-ink w-[116px] flex-none">{row.label}</span>
               <span className={cx('text-copy text-ink text-pretty', row.mono && 'font-mono')}>{row.value}</span>
             </div>
@@ -536,7 +528,7 @@ function RulePanel({ r, onClose, onToggle }: { r: Rule; onClose: () => void; onT
 
         <div>
           <div className="text-meta font-semibold text-muted-ink mb-2">Template preview</div>
-          <div className="py-[13px] px-[15px] rounded-card bg-page border border-solid border-line text-copy leading-[1.55] text-ink text-pretty">
+          <div className="py-3 px-4 rounded-card bg-page border border-solid border-line text-copy leading-[1.55] text-ink text-pretty">
             {sample(r.preview)}
           </div>
           <span className="block mt-2 text-meta text-faint text-pretty">

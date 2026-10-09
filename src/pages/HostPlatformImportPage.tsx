@@ -8,6 +8,8 @@ import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, ApiFailure } from '../lib/api';
 import { csvObjects, readXlsx, sheetObjects, type SheetRow } from '../lib/sheets';
+import { count as n, dateRange, plural } from '../lib/format';
+import { moneyString } from '../components/MoneyText';
 import {
   type Row, type RowError, type KnownUnit, type ImportKind,
   LISTING_COLUMNS, RESERVATION_COLUMNS, WORKBOOK_SHEETS, WORKBOOK_COLUMNS, WORKBOOK_HEADER_ROW,
@@ -27,8 +29,7 @@ interface Run { done: number; total: number; result: Result | null; failed: stri
 
 // Small parts keep each request well inside a Worker's CPU allowance (about 4 ms of mapping per 200 bookings measured locally).
 const CHUNK = 200;
-const n = (x: number) => x.toLocaleString('en-MY');
-const rm = (sen: number) => `RM ${(sen / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const rm = (sen: number) => moneyString(sen, 'exact');
 const tally = <T,>(xs: T[], f: (x: T) => string) => xs.reduce<Record<string, number>>((m, x) => { const k = f(x); m[k] = (m[k] ?? 0) + 1; return m; }, {});
 const chunks = <T,>(xs: T[], size = CHUNK) => { const o: T[][] = []; for (let i = 0; i < xs.length; i += size) o.push(xs.slice(i, i + size)); return o; };
 const CHANNEL: Record<string, string> = { airbnb: 'Airbnb', booking_com: 'Booking.com', agoda: 'Agoda', direct: 'Direct', maintenance_block: 'Blocks', owner_stay: 'Owner stays' };
@@ -135,23 +136,24 @@ export default function HostPlatformImportPage() {
     const hp = visibleUnits.filter(u => u.id.startsWith('hp-unit-')).length;
     return { matched, workbookOnly: wbUnits.units.length - matched, hostPlatformOnly: Math.max(0, hp - [...hit].filter(id => id.startsWith('hp-unit-')).length) };
   }, [wbUnits, visibleUnits]);
-  const range = resPlan?.reservations.length ? `${resPlan.reservations.reduce((m, r) => (r.checkIn < m ? r.checkIn : m), '9999')} to ${resPlan.reservations.reduce((m, r) => (r.checkOut > m ? r.checkOut : m), '0000')}` : '';
+  const range = resPlan?.reservations.length ? dateRange(resPlan.reservations.reduce((m, r) => (r.checkIn < m ? r.checkIn : m), '9999'), resPlan.reservations.reduce((m, r) => (r.checkOut > m ? r.checkOut : m), '0000')) : '';
   const done = (k: ImportKind) => !!runs[k]?.result && !runs[k]?.busy && !runs[k]?.failed;
 
   return (
     <>
       <PageHeader
         title="Import from HostPlatform"
-        sub="Brings the units, bookings and the owner workbook across. Safe to run again until cutover: a second run updates what the first one wrote and never adds duplicates."
-        right={<Button size="sm" variant="tertiary" icon={<Icon name="ArrowLeft" size="sm" />} onClick={() => { window.location.hash = '#/system/integrations'; }}>Integrations</Button>}
+        sub="6 steps · units, bookings and the owner workbook"
+        back={{ label: 'Integrations', onClick: () => { window.location.hash = '#/system/integrations'; } }}
       />
 
       {existing.error && <StaleBanner message={`Could not read the units already in Property OS, so every unit is counted as new in the previews below. ${existing.error}`} onRetry={existing.reload} />}
-      {readError && <div role="alert" className="text-[13px] text-[var(--color-critical-fg)]">{readError}</div>}
+      {readError && <div role="alert" className="text-copy text-[var(--color-critical-fg)]">{readError}</div>}
 
       <Card>
-        <div className="py-[14px] px-5 flex flex-col gap-[6px] text-[13px] leading-[1.5] text-[var(--color-ink-2)]">
+        <div className="py-4 px-5 flex flex-col gap-1.5 text-copy leading-[1.5] text-[var(--color-ink-2)]">
           <span className="font-semibold text-ink">Run the steps in order</span>
+          <span>Safe to run again until cutover: a second run updates what the first one wrote and never adds duplicates.</span>
           <span>Bookings attach to units, and the workbook's money attaches to bookings, so each step needs the one before it. Nothing here is sent to Airbnb, Booking.com or Channex: these bookings already exist on the booking sites.</span>
           <span>Files stay on this computer; only the columns the import needs are sent. Card and identity numbers in the HostPlatform exports are never sent.</span>
         </div>
@@ -166,7 +168,7 @@ export default function HostPlatformImportPage() {
             ['Owners named', n(listingPlan.owners.length)], ['Monthly costs', n(listingPlan.unitExpenses.length)],
           ]} errors={listingPlan.errors} notes={listingPlan.notes} />
         )}
-        action={listingPlan && <Button variant="primary" loading={runs.listing?.busy} disabled={!listingPlan.units.length} disabledReason="The file has no units."
+        action={listingPlan && <Button variant="primary" size="sm" loading={runs.listing?.busy} disabled={!listingPlan.units.length} disabledReason="The file has no units."
           onClick={() => send('listing', [pick(listing!.rows, LISTING_COLUMNS)])}>Import {n(listingPlan.units.length)} units</Button>} />
 
       <Step no={2} title="Owner workbook: units, owners and contracts" hint="The owner's operations workbook (.xlsx). Names the real owners, bank details, splits, packages (A to D), contract terms, utility account numbers, debts and the Package D guarantee pool. Also feeds steps 4 to 7." run={runs.workbook_units}
@@ -179,7 +181,7 @@ export default function HostPlatformImportPage() {
             ['With a contract', n(wbUnits.units.filter(u => u.contract).length)],
           ]} errors={wbUnits.errors} notes={[...(workbook?.missing.length ? [`Sheets not found: ${workbook.missing.join(', ')}.`] : []), ...wbUnits.notes]} />
         )}
-        action={wbUnits && <Button variant="primary" loading={runs.workbook_units?.busy} disabled={!wbUnits.units.length} disabledReason="The workbook has no units."
+        action={wbUnits && <Button variant="primary" size="sm" loading={runs.workbook_units?.busy} disabled={!wbUnits.units.length} disabledReason="The workbook has no units."
           onClick={() => send('workbook_units', [wb![WORKBOOK_SHEETS.units]], { splits: wb![WORKBOOK_SHEETS.splits], pool: wb![WORKBOOK_SHEETS.pool] })}>Import {n(wbUnits.units.length)} units</Button>} />
 
       <Step no={3} title="HostPlatform reservations" hint="One or more reservation exports (CSV). Pick them all at once." run={runs.reservations}
@@ -193,7 +195,7 @@ export default function HostPlatformImportPage() {
             ['Unit not found', n(unmatchedRes.length)],
           ]} errors={resPlan.errors} notes={unmatchedRes.length ? [`${n(unmatchedRes.length)} bookings are on units that are not in Property OS and will be refused. Import the listing first.`] : []} />
         )}
-        action={resPlan && <Button variant="primary" loading={runs.reservations?.busy} disabled={!resPlan.reservations.length} disabledReason="No bookings in the files."
+        action={resPlan && <Button variant="primary" size="sm" loading={runs.reservations?.busy} disabled={!resPlan.reservations.length} disabledReason="No bookings in the files."
           onClick={() => send('reservations', chunks(pick(reservations!.rows, RESERVATION_COLUMNS)))}>Import {n(resPlan.reservations.length)} bookings</Button>} />
 
       <Step no={4} title="Owner workbook: Airbnb earnings" hint="Sheet 订单数据. Replaces HostPlatform's amounts with the payout, fee and gross from Airbnb's earnings report, and adds stays HostPlatform never had." run={runs.workbook_airbnb}
@@ -204,7 +206,7 @@ export default function HostPlatformImportPage() {
             ['Booking.com', n(wbAirbnb.earnings.filter(e => e.site === 'booking_com').length)], ['Skipped', n(wbAirbnb.skipped.length)],
           ]} errors={wbAirbnb.errors} notes={wbAirbnb.skipped.length ? [`${n(wbAirbnb.skipped.length)} lines are skipped: ${Object.entries(tally(wbAirbnb.skipped, s => s.reason)).map(([k, v]) => `${v} × ${k}`).join(' ')}`] : []} />
         )}
-        action={wbAirbnb && <Button variant="primary" loading={runs.workbook_airbnb?.busy} disabled={!wbAirbnb.earnings.length} disabledReason="No earnings lines."
+        action={wbAirbnb && <Button variant="primary" size="sm" loading={runs.workbook_airbnb?.busy} disabled={!wbAirbnb.earnings.length} disabledReason="No earnings lines."
           onClick={() => send('workbook_airbnb', chunkByKey(wb![WORKBOOK_SHEETS.airbnb], r => String(r['确认码'] ?? ''), CHUNK))}>Import {n(wbAirbnb.earnings.length)} lines</Button>} />
 
       <Step no={5} title="Owner workbook: cleaning records" hint="Sheets 清洁记录 and 清洁单价. Each clean becomes a housekeeping task (done if the date has passed) given to the cleaner named in 负责人, who joins the cleaner roster, and, when the owner pays, a cleaning expense at the unit's price." run={runs.workbook_cleaning}
@@ -216,7 +218,7 @@ export default function HostPlatformImportPage() {
             ['Charged to owner', rm(wbCleaning.cleanings.filter(c => !c.payer).reduce((s, c) => s + (c.price ?? 0), 0))], ['Skipped', n(wbCleaning.skipped.length)],
           ]} errors={wbCleaning.errors} notes={[]} />
         )}
-        action={wbCleaning && <Button variant="primary" loading={runs.workbook_cleaning?.busy} disabled={!wbCleaning.cleanings.length} disabledReason="No cleaning records."
+        action={wbCleaning && <Button variant="primary" size="sm" loading={runs.workbook_cleaning?.busy} disabled={!wbCleaning.cleanings.length} disabledReason="No cleaning records."
           onClick={() => send('workbook_cleaning', chunks(wb![WORKBOOK_SHEETS.cleaning]), { prices: wb![WORKBOOK_SHEETS.cleaningPrices] })}>Import {n(wbCleaning.cleanings.length)} cleans</Button>} />
 
       <Step no={6} title="Owner workbook: utilities and charges" hint="Sheets 水费, 电费, 网络费, INDAH WATER and 杂费扣款. Each month's bill becomes an expense dated the 1st of that month. 杂费扣款 'Additional Deduction' lines are costs taken off before the split; 'O2' lines are owner adjustments added to the payout after the split, sign as written." run={runs.workbook_expenses}
@@ -229,7 +231,7 @@ export default function HostPlatformImportPage() {
             ['Skipped', n(wbExpenses.skipped.length)],
           ]} errors={wbExpenses.errors} notes={wbExpenses.credits.length ? [`${n(wbExpenses.credits.length)} lines are money back to the owner. They are kept as owner credits: credits dated in a month step 7 covers were already in that month's payout; later ones go on the next statement.`] : []} />
         )}
-        action={wbExpenses && <Button variant="primary" loading={runs.workbook_expenses?.busy} disabled={!wbExpenses.expenses.length} disabledReason="No expenses."
+        action={wbExpenses && <Button variant="primary" size="sm" loading={runs.workbook_expenses?.busy} disabled={!wbExpenses.expenses.length} disabledReason="No expenses."
           onClick={() => send('workbook_expenses', chunks(expenseRows))}>Import {n(wbExpenses.expenses.length)} expenses</Button>} />
 
       <Step no={7} title="Owner workbook: payout history" hint="Sheets OWNER PAYOUT and 整体报告. Each past month becomes a paid owner statement and payout, marked as from the workbook, so owners and finance see the history. The current month and later are never touched. Run after step 6." run={runs.workbook_payouts}
@@ -258,33 +260,33 @@ function Step({ no, title, hint, picker, preview, action, run, waitFor }: {
   const state = run?.failed ? { label: 'Stopped', tone: 'critical' as const } : run?.busy ? { label: 'Importing', tone: 'info' as const } : run?.result ? { label: 'Imported', tone: 'success' as const } : null;
   return (
     <Card>
-      <div className="py-[18px] px-5 flex flex-col gap-3">
+      <div className="p-5 flex flex-col gap-3">
         <div className="flex items-start gap-3">
-          <span className="flex-none grid place-items-center w-7 h-7 rounded-full bg-page [border:1px_solid_var(--color-line-soft)] text-[13px] font-semibold">{no}</span>
-          <div className="flex flex-col gap-[3px] flex-1 min-w-0">
-            <span className="text-[15px] font-semibold">{title}</span>
-            <span className="text-[12.5px] leading-[1.5] text-muted-ink [text-wrap:pretty]">{hint}</span>
+          <span className="flex-none grid place-items-center w-7 h-7 rounded-full bg-page [border:1px_solid_var(--color-line-soft)] text-copy font-semibold">{no}</span>
+          <div className="flex flex-col gap-1 flex-1 min-w-0">
+            <span className="text-heading font-semibold">{title}</span>
+            <span className="text-meta leading-[1.5] text-muted-ink [text-wrap:pretty]">{hint}</span>
           </div>
           {state && <Badge tone={state.tone} label={state.label} />}
         </div>
-        {waitFor && !run && !preview && <div className="text-[12.5px] text-muted-ink">{waitFor}</div>}
+        {waitFor && !run && !preview && <div className="text-meta text-muted-ink">{waitFor}</div>}
         {picker}
         {preview}
         {run && run.total > 0 && (
-          <div className="flex flex-col gap-[6px]" aria-live="polite">
+          <div className="flex flex-col gap-1.5" aria-live="polite">
             <div className="h-[6px] rounded-full bg-page overflow-hidden [border:1px_solid_var(--color-line-soft)]">
               <div className="h-full bg-[var(--color-brand-gold)] transition-[width] duration-200" style={{ width: `${Math.round((run.done / run.total) * 100)}%` }} />
             </div>
-            <span className="text-[12px] text-muted-ink">{run.done} of {run.total} {run.total === 1 ? 'part' : 'parts'} sent</span>
+            <span className="text-meta text-muted-ink">{n(run.done)} of {plural(run.total, 'part')} sent</span>
           </div>
         )}
-        {run?.failed && <div role="alert" className="text-[13px] text-[var(--color-critical-fg)]">{run.failed}</div>}
+        {run?.failed && <div role="alert" className="text-copy text-[var(--color-critical-fg)]">{run.failed}</div>}
         {run?.result && <ResultView r={run.result} />}
       </div>
       {action && (
-        <div className="flex items-center gap-2 flex-wrap py-[13px] px-5 [border-top:1px_solid_var(--color-line-soft)] bg-page">
+        <div className="flex items-center gap-2 flex-wrap py-3 px-5 [border-top:1px_solid_var(--color-line-soft)] bg-page">
           {action}
-          {run?.result && !run.busy && <span className="text-[12px] text-muted-ink">Running it again updates the same rows.</span>}
+          {run?.result && !run.busy && <span className="text-meta text-muted-ink">Running it again updates the same rows.</span>}
         </div>
       )}
     </Card>
@@ -296,7 +298,7 @@ function FilePick({ label, accept, multiple, onPick }: { label: string; accept: 
   return (
     <div className="flex items-center gap-2 min-w-0">
       <Button size="sm" variant="secondary" icon={<Icon name="FileUp" size="sm" />} onClick={() => ref.current?.click()}>
-        <span className="block max-w-[260px] overflow-hidden text-ellipsis">{label}</span>
+        <span className="block max-w-[220px] sm:max-w-[260px] overflow-hidden text-ellipsis">{label}</span>
       </Button>
       <input ref={ref} type="file" accept={accept} multiple={multiple} className="hidden" aria-label={label}
         onChange={e => { onPick(e.target.files); e.target.value = ''; }} />
@@ -309,13 +311,13 @@ function Stats({ items, errors, notes }: { items: [string, string][]; errors: Ro
     <div className="flex flex-col gap-2">
       <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2">
         {items.map(([k, v]) => (
-          <div key={k} className="flex flex-col gap-[2px] py-2 px-3 rounded-control bg-page min-w-0">
-            <span className="text-[11.5px] text-muted-ink">{k}</span>
-            <span className="text-[14px] font-semibold [font-variant-numeric:tabular-nums] break-words">{v}</span>
+          <div key={k} className="flex flex-col gap-0.5 py-2 px-3 rounded-control bg-page min-w-0">
+            <span className="text-meta text-muted-ink">{k}</span>
+            <span className="text-copy font-semibold [font-variant-numeric:tabular-nums] break-words">{v}</span>
           </div>
         ))}
       </div>
-      {notes.map(t => <p key={t} className="m-0 text-[12.5px] leading-[1.5] text-[var(--color-ink-2)] [text-wrap:pretty]">{t}</p>)}
+      {notes.map(t => <p key={t} className="m-0 text-meta leading-[1.5] text-[var(--color-ink-2)] [text-wrap:pretty]">{t}</p>)}
       <RowList title={errors.length === 1 ? 'row will be refused' : 'rows will be refused'} rows={errors} />
     </div>
   );
@@ -326,12 +328,12 @@ function RowList({ title, rows }: { title: string; rows: RowError[] }) {
   if (!rows.length) return null;
   const shown = open ? rows : rows.slice(0, 5);
   return (
-    <div className="flex flex-col gap-1 text-[12.5px]">
-      <span className="font-medium">{rows.length} {title}</span>
-      <ul className="m-0 pl-4 flex flex-col gap-[2px] text-[var(--color-ink-2)]">
+    <div className="flex flex-col gap-1 text-meta">
+      <span className="font-medium">{n(rows.length)} {title}</span>
+      <ul className="m-0 pl-4 flex flex-col gap-0.5 text-[var(--color-ink-2)]">
         {shown.map((e, i) => <li key={i}>Row {e.row}: {e.reason}</li>)}
       </ul>
-      {rows.length > 5 && <button className="self-start bg-transparent border-0 p-0 text-[12.5px] font-semibold text-[var(--color-text-accent)] cursor-pointer" onClick={() => setOpen(o => !o)}>{open ? 'Show fewer' : `Show all ${rows.length}`}</button>}
+      {rows.length > 5 && <Button size="sm" variant="tertiary" className="self-start" style={{ paddingLeft: 0 }} onClick={() => setOpen(o => !o)}>{open ? 'Show fewer' : `Show all ${n(rows.length)}`}</Button>}
     </div>
   );
 }
@@ -342,15 +344,15 @@ function ResultView({ r }: { r: Result }) {
     owner_statements: 'Statements', statement_lines: 'Statement lines', payouts: 'Payouts' };
   return (
     <div className="flex flex-col gap-2 py-3 px-3 rounded-control [border:1px_solid_var(--color-line-soft)]">
-      <span className="text-[13px] font-semibold">{n(r.created)} added · {n(r.updated)} updated · {n(r.skipped)} not imported</span>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-[var(--color-ink-2)]">
+      <span className="text-copy font-semibold">{n(r.created)} added · {n(r.updated)} updated · {n(r.skipped)} not imported</span>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-meta text-[var(--color-ink-2)]">
         {Object.entries(r.tables).map(([t, v]) => <span key={t}>{TABLE[t] ?? t}: {n(v.created)} new, {n(v.updated)} updated</span>)}
         {r.stats && 'matched' in r.stats && <span>Matched {n(r.stats.matched)}, workbook only {n(r.stats.workbookOnly)}, HostPlatform only {n(r.stats.hostPlatformOnly)}</span>}
         {r.stats && 'statesBefore' in r.stats && <span>States written {n(r.stats.statesBefore)} ways before, {n(r.stats.statesAfter)} after; cities {n(r.stats.citiesBefore)} before, {n(r.stats.citiesAfter)} after</span>}
         {r.stats && 'statements' in r.stats && <span>{n(r.stats.statements)} statements for {n(r.stats.unitMonths)} unit-months, {n(r.stats.payouts)} paid payouts; {n(r.stats.creditsSettled)} credits marked as already paid in them</span>}
         {r.stats && 'matchedHostPlatform' in r.stats && <span>Amounts set on {n(r.stats.matchedHostPlatform)} HostPlatform bookings, {n(r.stats.createdFromWorkbook)} added from the workbook</span>}
       </div>
-      {r.notes.map(t => <p key={t} className="m-0 text-[12.5px] text-[var(--color-ink-2)]">{t}</p>)}
+      {r.notes.map(t => <p key={t} className="m-0 text-meta text-[var(--color-ink-2)]">{t}</p>)}
       <RowList title={r.errors.length === 1 ? 'row not imported (error)' : 'rows not imported (errors)'} rows={r.errors} />
       <RowList title={r.skippedRows.length === 1 ? 'row skipped on purpose' : 'rows skipped on purpose'} rows={r.skippedRows} />
     </div>
