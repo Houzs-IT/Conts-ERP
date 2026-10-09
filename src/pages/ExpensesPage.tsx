@@ -6,11 +6,14 @@ import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, ApiFailure } from '../lib/api';
-import { rm, monthLabel, dateShort, date, todayMyt } from '../lib/format';
+import { monthLabel, dateShort, date, todayMyt, plural, count as fmtCount, titleCase } from '../lib/format';
+import { MoneyText, moneyString } from '../components/MoneyText';
+import { Select, SearchSelect, type SelectOption } from '../components/Select';
+import { EmptyState } from '../components/States';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 import {
-  useUrlState, usePhone, ListCard, Pager, SearchBox, FilterSelect, Chip, STICKY_HEAD, shiftMonth,
+  useUrlState, usePhone, ListCard, Pager, SearchBox, Chip, STICKY_HEAD, shiftMonth,
   useFinanceFilters, type FinanceFilters,
 } from './finance/listKit';
 
@@ -79,13 +82,11 @@ const toSen = (s: string): number | null => {
 };
 const thisMonth = () => todayMyt().slice(0, 7);
 
-// Standard field. The former inputStyle object relied on `font: inherit`, which
-// (applied last) resets the control to the inherited body font — 16px / 400 /
-// IBM Plex Sans — overriding the nominal size/weight. These classes reproduce that
-// exact rendering. Preflight is off in this project, so borders carry border-solid.
-const field = 'block w-full box-border h-10 px-3 py-0 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-[16px] font-normal';
-const fieldMono = 'block w-full box-border h-10 px-3 py-0 border border-solid border-line rounded-control outline-none bg-card text-ink font-mono text-[16px] font-normal';
-const labelClass = 'text-[12px] font-medium text-muted-ink';
+// Text inputs match the Select controls beside them (13px copy). Preflight is off in
+// this project, so borders carry border-solid.
+const field = 'block w-full box-border h-10 px-3 py-0 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy font-normal';
+const fieldMono = 'block w-full box-border h-10 px-3 py-0 border border-solid border-line rounded-control outline-none bg-card text-ink font-mono text-copy font-normal';
+const labelClass = 'text-meta font-medium text-muted-ink';
 
 /** The query string for one request: the page's filters plus the per-request extras. */
 function qs(base: Record<string, string>, extra: Record<string, string | number>) {
@@ -130,9 +131,14 @@ export default function ExpensesPage() {
   const clearFilters = () => url.set({ category: null, building: null, unit: null, owner: null, q: null, page: null });
   const setFilter = (patch: Record<string, string | null>) => url.set({ ...patch, page: null });
 
-  const unitOptions = useMemo(() => (filters?.units ?? [])
+  const unitOptions = useMemo<SelectOption[]>(() => (filters?.units ?? [])
     .filter(u => (!building || u.buildingId === building) && (!owner || u.ownerId === owner))
-    .map(u => ({ value: u.id, label: `${filters?.buildings.find(b => b.id === u.buildingId)?.name ?? ''} ${u.unitNumber}`.trim() })), [filters, building, owner]);
+    .map(u => ({ value: u.id, label: u.unitNumber, group: filters?.buildings.find(b => b.id === u.buildingId)?.name ?? '' })), [filters, building, owner]);
+  const ownerOptions = useMemo<SelectOption[]>(() => (filters?.owners ?? []).map(o => ({ value: o.id, label: titleCase(o.name) })), [filters]);
+  const buildingOptions = useMemo<SelectOption[]>(() => [
+    { value: '', label: 'All buildings' },
+    ...[...(filters?.buildings ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: b.name })),
+  ], [filters]);
 
   const monthOptions = useMemo(() => {
     const list = (data?.months ?? []).map(m => m.month);
@@ -149,7 +155,7 @@ export default function ExpensesPage() {
     try {
       await api.post('/expenses', input);
       setCreating(false);
-      toast({ tone: 'success', title: 'Expense added.', body: `${catLabel(input.category)} · ${rm(input.amount)} on ${dateShort(input.incurredOn)}.` });
+      toast({ tone: 'success', title: 'Expense added.', body: `${catLabel(input.category)} · ${moneyString(input.amount, 'exact')} on ${dateShort(input.incurredOn)}.` });
       refresh();
     } catch (e) {
       toast({ tone: 'critical', title: 'Expense was not added.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
@@ -190,20 +196,19 @@ export default function ExpensesPage() {
   const firstLoad = loading && !data;
   const cats = data?.byCategory ?? [];
   const catCount = cats.reduce((n, c) => n + c.count, 0);
+  // Pills read A to Z with Other last, so a category is always in the same place.
+  const catPills = [...cats].sort((a, b) =>
+    Number(a.category === 'other') - Number(b.category === 'other') || catLabel(a.category).localeCompare(catLabel(b.category)));
 
-  const subParts = [monthAll ? 'All months' : monthLabel(shownMonth), `${total.toLocaleString('en-MY')} ${total === 1 ? 'entry' : 'entries'}`, rm(totalAmount)];
+  const subParts = [monthAll ? 'All months' : monthLabel(shownMonth), plural(total, 'entry', 'entries'), moneyString(totalAmount, 'exact')];
 
   return (
     <>
       <PageHeader
         title="Expenses"
         sub={data ? subParts.join(' · ') : 'Loading…'}
-        right={
-          <div className="flex gap-[9px] flex-wrap">
-            <Button variant="secondary" onClick={() => setReporting(true)}>Generate report</Button>
-            <Button variant="primary" onClick={() => setCreating(true)}>Add expense</Button>
-          </div>
-        }
+        actions={<Button size="sm" variant="secondary" onClick={() => setReporting(true)}>Generate report</Button>}
+        primary={<Button size="sm" variant="primary" onClick={() => setCreating(true)}>Add expense</Button>}
       />
 
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={refresh} />}
@@ -211,7 +216,7 @@ export default function ExpensesPage() {
       {/* Category chips carry counts for the month and the other filters, so a click never lands on nothing. */}
       <div className={cx('flex gap-[7px] shrink-0', phone ? 'overflow-x-auto -mx-4 px-4 pb-1 [scrollbar-width:none]' : 'flex-wrap')}>
         <Chip on={!cat} onClick={() => setFilter({ category: null })} count={data ? catCount : undefined}>All categories</Chip>
-        {cats.map(c => (
+        {catPills.map(c => (
           <Chip key={c.category} on={cat === c.category} onClick={() => setFilter({ category: cat === c.category ? null : c.category })} count={c.count}>
             {catLabel(c.category)}
           </Chip>
@@ -221,17 +226,15 @@ export default function ExpensesPage() {
 
       <div className="flex flex-wrap gap-2 items-center shrink-0">
         <SearchBox className="flex-[2_1_220px]" label="Search expenses" placeholder="Search expenses" value={q} onChange={v => setFilter({ q: v || null })} />
-        <FilterSelect className="flex-[1_1_140px]" label="Building" all="All buildings" value={building} onChange={v => setFilter({ building: v || null, unit: null })}
-          options={(filters?.buildings ?? []).map(b => ({ value: b.id, label: b.name }))} />
-        <FilterSelect className="flex-[1_1_140px]" label="Unit" all="All units" value={unit} onChange={v => setFilter({ unit: v || null })} options={unitOptions} />
-        <FilterSelect label="Owner" all="All owners" value={owner} onChange={v => setFilter({ owner: v || null, unit: null })} className="flex-[1_1_160px]"
-          options={(filters?.owners ?? []).map(o => ({ value: o.id, label: o.name }))} />
+        <Select className="flex-[1_1_140px]" label="Building" value={building} onChange={v => setFilter({ building: v || null, unit: null })} options={buildingOptions} />
+        <SearchSelect className="flex-[1_1_160px]" label="Unit" allLabel="All units" placeholder="Search units" value={unit} onChange={v => setFilter({ unit: v || null })} options={unitOptions} />
+        <SearchSelect className="flex-[1_1_160px]" label="Owner" allLabel="All owners" placeholder="Search owners" value={owner} onChange={v => setFilter({ owner: v || null, unit: null })} options={ownerOptions} />
 
         {/* View toggle — grouped drill-down (default) or the flat list. */}
         <div className="flex flex-[1_0_auto] sm:flex-none h-9 rounded-control border border-solid border-line overflow-hidden" role="group" aria-label="Expenses view">
           {(['grouped', 'list'] as const).map(v => (
             <button key={v} onClick={() => setFilter({ view: v === 'grouped' ? null : v })} aria-pressed={view === v}
-              className={cx('flex-1 h-full px-[13px] py-0 cursor-pointer whitespace-nowrap font-sans text-[14px] border-none',
+              className={cx('flex-1 h-full px-[13px] py-0 cursor-pointer whitespace-nowrap font-sans text-copy border-none',
                 view === v ? 'bg-black text-white' : 'bg-card text-muted-ink')}>
               {v === 'grouped' ? 'Grouped' : 'List'}
             </button>
@@ -240,16 +243,16 @@ export default function ExpensesPage() {
 
         {/* Month — stepper plus a menu of the months that have expenses. */}
         <div className="flex flex-[1_0_150px] sm:flex-none sm:w-[168px] items-center h-9 rounded-control border border-solid border-line bg-card min-w-0">
-          <button aria-label="Previous month" onClick={() => stepMonth(-1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">‹</button>
+          <button aria-label="Previous month" onClick={() => stepMonth(-1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-heading">‹</button>
           <label className="relative flex-1 min-w-0 h-full">
             <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Month</span>
             <select value={monthAll ? 'all' : shownMonth} onChange={e => setFilter({ month: e.target.value })}
-              className="w-full h-full appearance-none bg-transparent border-none outline-none text-center font-sans text-[14px] font-medium text-ink cursor-pointer tabular-nums px-1 [text-align-last:center]">
+              className="w-full h-full appearance-none bg-transparent border-none outline-none text-center font-sans text-copy font-medium text-ink cursor-pointer tabular-nums px-1 [text-align-last:center]">
               {monthOptions.map(m => <option key={m} value={m}>{monthLabel(m)}{sentPeriods.has(m) ? ' · sent' : ''}</option>)}
               <option value="all">All months</option>
             </select>
           </label>
-          <button aria-label="Next month" onClick={() => stepMonth(1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">›</button>
+          <button aria-label="Next month" onClick={() => stepMonth(1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-heading">›</button>
         </div>
       </div>
 
@@ -257,12 +260,9 @@ export default function ExpensesPage() {
         {firstLoad ? (
           <div className="p-2"><TableSkeleton rows={8} cols={view === 'grouped' ? 3 : 6} /></div>
         ) : total === 0 ? (
-          <div className="py-[40px] px-[22px] flex flex-col items-center gap-2 text-center">
-            <span className="text-[14px] font-medium">No expenses {monthAll ? '' : `in ${monthLabel(shownMonth)}`}{filtered ? ' match these filters' : ''}.</span>
-            {filtered
-              ? <button onClick={clearFilters} className="font-sans text-[14px] text-gold-ink bg-transparent border-none cursor-pointer">Clear filters</button>
-              : <span className="text-[13px] text-muted-ink">Add one, or step to another month.</span>}
-          </div>
+          filtered
+            ? <EmptyState bare kind="filtered" title="No expenses match these filters." action={{ label: 'Clear filters', onClick: clearFilters }} />
+            : <EmptyState bare title={monthAll ? 'No expenses yet.' : `No expenses in ${monthLabel(shownMonth)}.`} body="Add one, or step to another month." />
         ) : view === 'grouped' ? (
           <GroupedTree
             key={`${path}#${nonce}`}
@@ -294,25 +294,25 @@ export default function ExpensesPage() {
               return (
                 <div role="row" key={r.id} className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[50px] py-[7px] px-[22px] leading-[1.35] [border-bottom:1px_solid_var(--color-line-soft)]')}>
                   <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-[13.5px] truncate" title={r.description}>{r.description || catLabel(r.category)}</span>
-                    {r.chargeTo !== 'owner' && <span className="text-[11.5px] text-muted-ink">Charged to {CHARGE_LABEL[r.chargeTo] ?? r.chargeTo}</span>}
+                    <span className="text-copy truncate" title={r.description}>{r.description || catLabel(r.category)}</span>
+                    {r.chargeTo !== 'owner' && <span className="text-meta text-muted-ink">Charged to {CHARGE_LABEL[r.chargeTo] ?? r.chargeTo}</span>}
                   </div>
                   <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-[13px] truncate" title={r.unitNumber}>{r.unitNumber}</span>
-                    <span className="text-[11.5px] text-muted-ink truncate" title={r.propertyName}>{r.propertyName}</span>
+                    <span className="text-copy truncate" title={r.unitNumber}>{r.unitNumber}</span>
+                    <span className="text-meta text-muted-ink truncate" title={r.propertyName}>{r.propertyName}</span>
                   </div>
                   <div className="min-w-0"><Badge tone={catTone(r.category)} label={catLabel(r.category)} /></div>
                   <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-[12.5px] tabular-nums whitespace-nowrap">{date(r.incurredOn)}</span>
-                    {locked && <span className="text-[11px] text-muted-ink">Statement final</span>}
+                    <span className="text-copy tabular-nums whitespace-nowrap">{date(r.incurredOn)}</span>
+                    {locked && <span className="text-caption text-muted-ink">Statement final</span>}
                   </div>
-                  <div className="font-mono text-[11px] text-muted-ink truncate" title={r.reference ?? undefined}>{r.reference ?? '—'}</div>
-                  <div className="text-right text-[13px] font-medium tabular-nums whitespace-nowrap">{rm(r.amount)}</div>
+                  <div className="font-mono text-caption text-muted-ink truncate" title={r.reference ?? undefined}>{r.reference ?? '—'}</div>
+                  <div className="text-right text-copy font-medium"><MoneyText sen={r.amount} mode="exact" /></div>
                   <div className="flex justify-end">
-                    <button onClick={() => setEditing(r)} title={locked ? `The ${monthLabel(r.incurredOn.slice(0, 7))} statement is final, so this expense is locked.` : 'Edit this expense'}
-                      className={cx('h-[30px] px-[10px] py-0 rounded-control cursor-pointer font-sans text-[13px] inline-flex items-center border border-solid border-line bg-card', locked ? 'text-muted-ink' : 'text-ink')}>
+                    <Button size="sm" variant="secondary" onClick={() => setEditing(r)} title={locked ? `The ${monthLabel(r.incurredOn.slice(0, 7))} statement is final, so this expense is locked.` : 'Edit this expense'}
+                      style={locked ? { color: 'var(--color-text-muted)' } : undefined}>
                       {locked ? 'Locked' : 'Edit'}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               );
@@ -323,9 +323,7 @@ export default function ExpensesPage() {
         {view === 'list' && !firstLoad && <Pager page={page} pageSize={PAGE_SIZE} total={total} unit="expenses" onPage={p => url.set({ page: p > 1 ? p : null })} />}
       </ListCard>
 
-      <span className="text-[12px] text-muted-ink">
-        Every deduction carries a category, date and amount. Totals cover everything the filters match, not just this page.
-      </span>
+      {view === 'list' && total > PAGE_SIZE && <span className="text-meta text-muted-ink">Totals cover everything the filters match, not just this page.</span>}
 
       {creating && <ExpenseModal mode="create" filters={filters} defaultBuilding={building} defaultUnit={unit} onClose={() => setCreating(false)} onSubmit={createExpense} />}
       {editing && (
@@ -357,17 +355,17 @@ export default function ExpensesPage() {
 function SortHead({ label, active, dir = 'desc', right, onClick }: { label: string; active: boolean; dir?: 'asc' | 'desc'; right?: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}
-      className={cx('p-0 bg-transparent border-none cursor-pointer font-sans text-[12px] font-semibold inline-flex items-center gap-1', right ? 'justify-end' : '', active ? 'text-ink' : 'text-muted-ink')}>
-      {label}{active && <span aria-hidden className="text-[10px]">{dir === 'asc' ? '▲' : '▼'}</span>}
+      className={cx('p-0 bg-transparent border-none cursor-pointer font-sans text-meta font-semibold inline-flex items-center gap-1', right ? 'justify-end' : '', active ? 'text-ink' : 'text-muted-ink')}>
+      {label}{active && <span aria-hidden className="text-caption">{dir === 'asc' ? '▲' : '▼'}</span>}
     </button>
   );
 }
 
 function TotalBar({ count, amount }: { count: number; amount: number }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-[12px] px-[22px] bg-page text-[13px] font-semibold">
-      <span>Total · {count.toLocaleString('en-MY')} {count === 1 ? 'expense' : 'expenses'}</span>
-      <span className="tabular-nums">{rm(amount)}</span>
+    <div className="flex items-center justify-between gap-3 py-[12px] px-[22px] bg-page text-copy font-semibold">
+      <span>Total · {plural(count, 'expense')}</span>
+      <MoneyText sen={amount} mode="exact" />
     </div>
   );
 }
@@ -377,12 +375,12 @@ function ExpenseCard({ e, onEdit }: { e: Expense; onEdit: () => void }) {
   return (
     <button onClick={onEdit} className="w-full text-left flex gap-3 items-start py-[11px] px-4 bg-card border-none [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer font-sans text-ink">
       <div className="flex flex-col gap-[3px] min-w-0 flex-1">
-        <span className="text-[13.5px] font-medium truncate">{e.description || catLabel(e.category)}</span>
-        <span className="text-[12px] text-muted-ink truncate">{e.propertyName} {e.unitNumber}</span>
-        <span className="text-[11.5px] text-muted-ink">{dateShort(e.incurredOn)}{e.locked ? ' · locked' : ''}</span>
+        <span className="text-copy font-medium truncate">{e.description || catLabel(e.category)}</span>
+        <span className="text-meta text-muted-ink truncate">{e.propertyName} {e.unitNumber}</span>
+        <span className="text-meta text-muted-ink">{dateShort(e.incurredOn)}{e.locked ? ' · locked' : ''}</span>
       </div>
       <div className="flex flex-col items-end gap-[5px] shrink-0">
-        <span className="text-[13.5px] font-semibold tabular-nums">{rm(e.amount)}</span>
+        <MoneyText sen={e.amount} mode="exact" strong className="text-copy" />
         <Badge tone={catTone(e.category)} label={catLabel(e.category)} size="sm" />
       </div>
     </button>
@@ -404,12 +402,12 @@ function GroupedTree({ title, period, total, count, cats, base, sort, withEdits,
   const totalOpen = open.has('total');
   return (
     <div role="tree" aria-label={`${title}, ${period}`}>
-      <TreeRow depth={0} kind="total" label={title} sub={`${period} · ${count.toLocaleString('en-MY')} ${count === 1 ? 'item' : 'items'}`} amount={total} expanded={totalOpen} onToggle={() => toggle('total')} />
+      <TreeRow depth={0} kind="total" label={title} sub={`${period} · ${plural(count, 'item')}`} amount={total} expanded={totalOpen} onToggle={() => toggle('total')} />
       {totalOpen && cats.map(c => {
         const key = `cat:${c.category}`;
         return (
           <div key={key}>
-            <TreeRow depth={1} kind="category" label={catLabel(c.category)} tone={catTone(c.category)} sub={`${c.count.toLocaleString('en-MY')} ${c.count === 1 ? 'item' : 'items'}`} amount={c.amount}
+            <TreeRow depth={1} kind="category" label={catLabel(c.category)} tone={catTone(c.category)} sub={plural(c.count, 'item')} amount={c.amount}
               expanded={open.has(key)} onToggle={() => toggle(key)} />
             {open.has(key) && (
               <CategoryRows base={base} category={c.category} count={c.count} sort={sort} open={open} toggle={toggle}
@@ -458,11 +456,11 @@ function CategoryRows({ base, category, count, sort, open, toggle, withEdits, on
         );
       })}
       {pages > 1 && (
-        <div className="flex items-center gap-3 flex-wrap min-h-[42px] py-2 pr-[18px] [border-bottom:1px_solid_var(--color-line-soft)] text-[12.5px] text-muted-ink" style={{ paddingLeft: 54 }}>
-          <span className="tabular-nums">{((page - 1) * TREE_PAGE + 1).toLocaleString('en-MY')}–{Math.min(data.pageTotal, page * TREE_PAGE).toLocaleString('en-MY')} of {data.pageTotal.toLocaleString('en-MY')}</span>
-          <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="bg-transparent border-none p-0 font-sans text-[12.5px] text-gold-ink cursor-pointer disabled:text-faint disabled:cursor-default">Previous</button>
-          <button disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="bg-transparent border-none p-0 font-sans text-[12.5px] text-gold-ink cursor-pointer disabled:text-faint disabled:cursor-default">Next</button>
-          <button onClick={openInList} className="ml-auto bg-transparent border-none p-0 font-sans text-[12.5px] text-gold-ink cursor-pointer">Open all in list</button>
+        <div className="flex items-center gap-3 flex-wrap min-h-[42px] py-2 pr-[18px] [border-bottom:1px_solid_var(--color-line-soft)] text-meta text-muted-ink" style={{ paddingLeft: 54 }}>
+          <span className="tabular-nums">{fmtCount((page - 1) * TREE_PAGE + 1)}–{fmtCount(Math.min(data.pageTotal, page * TREE_PAGE))} of {fmtCount(data.pageTotal)}</span>
+          <Button size="sm" variant="tertiary" disabled={page <= 1} disabledReason="This is the first page." onClick={() => setPage(p => p - 1)}>Previous</Button>
+          <Button size="sm" variant="tertiary" disabled={page >= pages} disabledReason="This is the last page." onClick={() => setPage(p => p + 1)}>Next</Button>
+          <Button size="sm" variant="tertiary" onClick={openInList} style={{ marginLeft: 'auto' }}>Open all in list</Button>
         </div>
       )}
     </div>
@@ -493,29 +491,29 @@ function TreeRow({ depth, kind, label, sub, amount, tone, count, expanded, onTog
       onClick={expandable ? onToggle : undefined}
     >
       {expandable ? (
-        <span aria-hidden className="w-[18px] h-[18px] grid place-items-center shrink-0 text-muted-ink text-[10px] leading-none">{expanded ? '▾' : '▸'}</span>
+        <span aria-hidden className="w-[18px] h-[18px] grid place-items-center shrink-0 text-muted-ink text-caption leading-none">{expanded ? '▾' : '▸'}</span>
       ) : <span className="w-[18px] shrink-0" aria-hidden />}
 
       {tone && !isTotal && <span className={cx('w-[7px] h-[7px] rounded-full shrink-0', TONE[tone].dot)} aria-hidden />}
 
       <div className="flex flex-col gap-px min-w-0 flex-1">
-        <span className={cx('truncate', isTotal ? 'text-[13.5px]' : isCategory ? 'text-[13px]' : 'text-[12.5px]')} title={label}>
+        <span className="truncate text-copy" title={label}>
           {label}
-          {count != null && count > 0 && kind !== 'expense' && <span className="ml-[6px] text-[11px] font-normal text-muted-ink">· {count.toLocaleString('en-MY')} {count === 1 ? 'item' : 'items'}</span>}
-          {count != null && count > 0 && kind === 'expense' && <span className="ml-[6px] text-[11px] font-normal text-muted-ink">· {count} {count === 1 ? 'line' : 'lines'}</span>}
+          {count != null && count > 0 && kind !== 'expense' && <span className="ml-[6px] text-caption font-normal text-muted-ink">· {plural(count, 'item')}</span>}
+          {count != null && count > 0 && kind === 'expense' && <span className="ml-[6px] text-caption font-normal text-muted-ink">· {plural(count, 'line')}</span>}
         </span>
-        {sub && <span className="text-[11px] text-muted-ink truncate" title={sub}>{sub}{locked ? ' · statement final' : ''}</span>}
+        {sub && <span className="text-meta text-muted-ink truncate" title={sub}>{sub}{locked ? ' · statement final' : ''}</span>}
       </div>
 
-      <span className={cx('font-mono shrink-0 text-right tabular-nums', isTotal ? 'text-[13.5px]' : 'text-[12.5px]')}>{rm(amount)}</span>
+      <MoneyText sen={amount} mode="exact" className="shrink-0 text-right text-copy" />
 
       {onEdit ? (
-        <button onClick={e => { e.stopPropagation(); onEdit(); }}
+        <Button size="sm" variant="secondary" onClick={e => { e.stopPropagation(); onEdit(); }}
           title={locked ? 'The statement for this month is final, so this expense is locked.' : 'Edit this expense'}
-          className={cx('h-[26px] w-[58px] py-0 rounded-control shrink-0 cursor-pointer font-sans text-[12px] inline-flex items-center justify-center border border-solid border-line bg-card', locked ? 'text-muted-ink' : 'text-ink')}>
+          style={{ width: 72, flexShrink: 0, ...(locked ? { color: 'var(--color-text-muted)' } : {}) }}>
           {locked ? 'Locked' : 'Edit'}
-        </button>
-      ) : <span className="w-[58px] shrink-0 hidden sm:block" aria-hidden />}
+        </Button>
+      ) : <span className="w-[72px] shrink-0 hidden sm:block" aria-hidden />}
     </div>
   );
 }
@@ -531,8 +529,8 @@ function Modal({ title, sub, onClose, footer, children, width = 520 }: {
       <div onClick={onClose} className="absolute inset-0" />
       <div className="relative w-full max-h-[90vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)] [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]" style={{ maxWidth: width }}>
         <div className="pt-[22px] px-[22px] pb-[18px] flex flex-col gap-1">
-          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold [text-wrap:pretty]">{title}</h2>
-          {sub && <p className="m-0 text-[13px] leading-[1.55] text-muted-ink [text-wrap:pretty]">{sub}</p>}
+          <h2 className="m-0 text-title leading-[1.3] font-semibold [text-wrap:pretty]">{title}</h2>
+          {sub && <p className="m-0 text-copy leading-[1.55] text-muted-ink [text-wrap:pretty]">{sub}</p>}
         </div>
         <div className="px-[22px] pb-5 flex flex-col gap-[14px]">{children}</div>
         <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
@@ -626,33 +624,22 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
         )}
       </>}>
       {readOnly && (
-        <div className={cx('py-[10px] px-3 rounded-control', TONE.warning.bg, 'text-[var(--color-warning-fg)] text-[12.5px] [text-wrap:pretty]')}>
+        <div className={cx('py-[10px] px-3 rounded-control', TONE.warning.bg, 'text-[var(--color-warning-fg)] text-meta [text-wrap:pretty]')}>
           {lockReason}
         </div>
       )}
       <form onSubmit={submit} className="flex flex-col gap-[14px]">
         {mode === 'create' && (
           <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
-            <LabeledField label="Building">
-              <select value={buildingId} onChange={e => { setBuildingId(e.target.value); setUnitId(''); }} className={field}>
-                <option value="">All buildings</option>
-                {(filters?.buildings ?? []).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-            </LabeledField>
-            <LabeledField label="Unit">
-              <select required value={unitId} onChange={e => setUnitId(e.target.value)} className={field}>
-                <option value="">Pick a unit</option>
-                {unitChoices.map(u => <option key={u.id} value={u.id}>{buildingId ? u.unitNumber : `${buildingName(u.buildingId)} ${u.unitNumber}`}</option>)}
-              </select>
-            </LabeledField>
+            <Select showLabel label="Building" value={buildingId} onChange={v => { setBuildingId(v); setUnitId(''); }}
+              options={[{ value: '', label: 'All buildings' }, ...[...(filters?.buildings ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: b.name }))]} />
+            <SearchSelect showLabel label="Unit" allLabel="Pick a unit" placeholder="Search units" value={unitId} onChange={setUnitId}
+              options={unitChoices.map(u => ({ value: u.id, label: u.unitNumber, group: buildingName(u.buildingId) }))} />
           </div>
         )}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
-          <LabeledField label="Category">
-            <select disabled={readOnly} value={category} onChange={e => setCategory(e.target.value as Category)} className={field}>
-              {catOptions.map(c => <option key={c} value={c}>{catLabel(c)}</option>)}
-            </select>
-          </LabeledField>
+          <Select showLabel size="md" label="Category" disabled={readOnly} value={category} onChange={v => setCategory(v as Category)}
+            options={catOptions.map(c => ({ value: c, label: catLabel(c) }))} />
           <LabeledField label="Amount (RM)">
             <input inputMode="decimal" disabled={readOnly} value={amount} onChange={e => setAmount(e.target.value)} placeholder="185.00"
               className={cx(field, 'text-right tabular-nums')} />
@@ -664,7 +651,7 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
         </div>
         <LabeledField label="Description">
           <textarea disabled={readOnly} value={description} onChange={e => setDescription(e.target.value)} placeholder="Internet, September" rows={2}
-            className="block w-full box-border px-3 py-[10px] border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-[16px] font-normal h-auto resize-y leading-[1.5]" />
+            className="block w-full box-border px-3 py-[10px] border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy font-normal h-auto resize-y leading-[1.5]" />
         </LabeledField>
       </form>
     </Modal>
@@ -674,12 +661,13 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
 // ---- Generate report -------------------------------------------------------
 
 function ReportModal({ units, periods, defaultUnit, defaultPeriod, filterNote, onClose, onGenerate }: {
-  units: { value: string; label: string }[]; periods: string[]; defaultUnit: string; defaultPeriod: string; filterNote: string;
+  units: SelectOption[]; periods: string[]; defaultUnit: string; defaultPeriod: string; filterNote: string;
   onClose: () => void; onGenerate: (unit: string, period: string) => void;
 }) {
   const [unit, setUnit] = useState(defaultUnit);
   const [period, setPeriod] = useState(defaultPeriod);
-  const unitLabel = unit ? units.find(u => u.value === unit)?.label ?? unit : 'All units';
+  const picked = units.find(u => u.value === unit);
+  const unitLabel = unit ? (picked ? `${picked.group ?? ''} ${picked.label}`.trim() : unit) : 'All units';
   const periodText = period ? monthLabel(period) : 'All months';
   // Keep the active month in the list even when it has no expenses, so the
   // select always shows what will be exported.
@@ -692,20 +680,11 @@ function ReportModal({ units, periods, defaultUnit, defaultPeriod, filterNote, o
         <Button size="sm" variant="primary" onClick={() => onGenerate(unit, period)}>Download CSV</Button>
       </>}>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-[14px]">
-        <LabeledField label="Unit">
-          <select value={unit} onChange={e => setUnit(e.target.value)} className={field}>
-            <option value="">All units</option>
-            {units.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
-          </select>
-        </LabeledField>
-        <LabeledField label="Month">
-          <select value={period} onChange={e => setPeriod(e.target.value)} className={field}>
-            <option value="">All months</option>
-            {periodOptions.map(p => <option key={p} value={p}>{monthLabel(p)}</option>)}
-          </select>
-        </LabeledField>
+        <SearchSelect showLabel label="Unit" allLabel="All units" placeholder="Search units" value={unit} onChange={setUnit} options={units} />
+        <Select showLabel label="Month" value={period} onChange={setPeriod}
+          options={[{ value: '', label: 'All months' }, ...periodOptions.map(p => ({ value: p, label: monthLabel(p) }))]} />
       </div>
-      <div className="py-[10px] px-3 rounded-control bg-page border border-solid border-line text-[12.5px] text-muted-ink">
+      <div className="py-[10px] px-3 rounded-control bg-page border border-solid border-line text-meta text-muted-ink">
         Scope: {unitLabel} · {periodText}{filterNote ? ` · ${filterNote}` : ''}
       </div>
     </Modal>

@@ -133,30 +133,30 @@ export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitL
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
           <div className="flex flex-col gap-1 min-w-0">
-            <span className="text-[16px] font-semibold">Access and keys</span>
-            <span className="text-[12px] text-muted-ink">Codes are masked. Revealing one is recorded in the audit trail.</span>
+            <span className="text-heading font-semibold">Access and keys</span>
+            <span className="text-meta text-muted-ink">Codes are masked. Revealing one is recorded in the audit trail.</span>
           </div>
           {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setEditing('new')}>Add access</Button>}
         </div>
 
         {loading && rows.length === 0 ? <TableSkeleton rows={3} cols={3} /> : rows.length === 0 ? (
-          <div className="py-6 px-5 text-[13px] text-muted-ink">No access recorded for this unit yet.{canEdit ? ' Add the door code, key box or Wi-Fi so cleaners and guests get the right instruction.' : ''}</div>
+          <div className="py-6 px-5 text-copy text-muted-ink">No access recorded for this unit yet.{canEdit ? ' Add the door code, key box or Wi-Fi so cleaners and guests get the right instruction.' : ''}</div>
         ) : rows.map(r => {
           const isRevealed = revealed[r.id] != null;
           const last = localReveal[r.id] ?? (r.lastRevealedBy ? { by: r.lastRevealedBy, at: r.lastRevealedAt ?? '' } : null);
           return (
             <div key={r.id} className="grid grid-cols-1 md:grid-cols-[minmax(140px,1fr)_minmax(200px,1.2fr)_minmax(180px,1.5fr)_auto] gap-x-[14px] gap-y-2 items-start md:items-center py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
               <div className="flex flex-col gap-[3px] min-w-0">
-                <span className="text-[13.5px] font-medium">{KIND_LABEL[r.kind] ?? r.kind}</span>
-                <span className="text-[11.5px] text-muted-ink [overflow-wrap:anywhere]">{r.label}</span>
+                <span className="text-copy font-medium">{KIND_LABEL[r.kind] ?? r.kind}</span>
+                <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">{r.label}</span>
                 {r.rotatesAfterStay && <span><Badge tone="info" label="Rotates after each stay" size="sm" /></span>}
               </div>
               <div className="min-w-0">
                 {!r.secret ? (
-                  <span className="text-[13px] text-muted-ink">No code</span>
+                  <span className="text-copy text-muted-ink">No code</span>
                 ) : isRevealed ? (
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-[13.5px] font-medium [overflow-wrap:anywhere]">{revealed[r.id]}</span>
+                    <span className="font-mono text-copy font-medium [overflow-wrap:anywhere]">{revealed[r.id]}</span>
                     <IconAction name="EyeOff" label={`Mask the code for ${r.label}`} onClick={() => remask(r)} />
                     <IconAction name="Copy" label={`Copy the code for ${r.label}`} onClick={() => copy(r)} />
                   </div>
@@ -168,11 +168,11 @@ export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitL
                     <span className="text-muted-ink font-medium">Reveal</span>
                   </button>
                 )}
-                <div className="text-[11px] text-faint mt-1">
+                <div className="text-caption text-muted-ink mt-1">
                   Changed {safeDate(r.updatedAt)} · {last ? `last shown to ${last.by}${last.at ? ` ${safeDate(last.at)}` : ''}` : 'never revealed'}
                 </div>
               </div>
-              <span className="text-[12.5px] text-muted-ink text-pretty">{r.instruction}</span>
+              <span className="text-meta text-muted-ink text-pretty">{r.instruction}</span>
               {canEdit ? (
                 <div className="flex gap-1.5">
                   <IconAction name="Pencil" label={`Edit ${r.label}`} onClick={() => setEditing(r)} />
@@ -219,7 +219,7 @@ function CredentialModal({ initial, unitLabel, onClose, onSubmit }: { initial: C
       <Field label={initial && hadCode ? 'New code' : 'Code'} placeholder={initial && hadCode ? 'Leave blank to keep the current code' : 'e.g. 4417#  (leave blank if there is none)'}
         value={secret} autoComplete="off" spellCheck={false} disabled={removeCode} onChange={e => setSecret(e.target.value)} />
       {initial && hadCode && (
-        <label className="flex items-center gap-2 text-[13px] -mt-1">
+        <label className="flex items-center gap-2 text-copy -mt-1">
           <input type="checkbox" checked={removeCode} onChange={e => { setRemoveCode(e.target.checked); if (e.target.checked) setSecret(''); }} />
           Remove the code (for example a guard desk that needs none)
         </label>
@@ -229,7 +229,7 @@ function CredentialModal({ initial, unitLabel, onClose, onSubmit }: { initial: C
         <textarea id="credential-instruction" rows={3} value={instruction} onChange={e => setInstruction(e.target.value)} placeholder="e.g. Smart lock on the main door. Lobby via the guard — say The Conts."
           className="field-input w-full box-border min-h-[84px] py-2! resize-y" />
       </div>
-      <label className="flex items-center gap-2 text-[13px]">
+      <label className="flex items-center gap-2 text-copy">
         <input type="checkbox" checked={rotates} onChange={e => setRotates(e.target.checked)} />
         The code changes after each stay
       </label>

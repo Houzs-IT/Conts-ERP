@@ -5,7 +5,9 @@ import Icon from '../../components/Icon';
 import { tone as T } from '../../theme';
 import { cx } from '../../lib/design-tokens';
 import type { UnitReadiness } from '../../lib/types';
-import { READY_TONE, cap, type Building, type Unit } from './shared';
+import { READINESS } from '../../lib/vocabulary';
+import { titleCase } from '../../lib/format';
+import { READY_TONE, type Building, type Unit } from './shared';
 
 interface Props {
   buildings: Building[];
@@ -98,7 +100,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
 
   const dot = (id: string) => {
     const r = readiness[id];
-    return r ? <span title={cap(r)} aria-label={cap(r)} className="w-2 h-2 rounded-full flex-none" style={{ background: T[READY_TONE[r]].line }} /> : null;
+    return r ? <span title={READINESS[r].label} aria-label={READINESS[r].label} className="w-2 h-2 rounded-full flex-none" style={{ background: T[READY_TONE[r]].line }} /> : null;
   };
 
   return (
@@ -107,29 +109,29 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
         <div className="relative flex items-center">
           <span className="absolute left-[10px] text-muted-ink flex pointer-events-none"><Icon name="Search" size="sm" /></span>
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search code, listing, owner, building" aria-label="Search units"
-            className="field-input h-[36px]! w-full pl-[32px]! pr-[32px]! text-[13px]!" />
+            className="field-input h-[36px]! w-full pl-[32px]! pr-[32px]! text-copy!" />
           {q && (
             <button type="button" onClick={() => setQ('')} aria-label="Clear search"
               className="absolute right-[6px] w-6 h-6 grid place-items-center rounded-control bg-transparent [border:none] cursor-pointer text-muted-ink hover:bg-muted"><Icon name="X" size="sm" /></button>
           )}
         </div>
         <div className="flex items-center justify-between gap-2 min-h-[20px]">
-          <span className="text-[12px] font-semibold text-muted-ink [font-variant-numeric:tabular-nums]">
-            {needle ? `${matchCount} of ${units.length} units match` : `${units.length} units · ${buildings.length} buildings`}
+          <span className="text-meta font-semibold text-muted-ink [font-variant-numeric:tabular-nums]">
+            {needle ? `${matchCount} of ${units.length} units match` : 'Buildings'}
           </span>
           {!needle && buildings.length > 1 && (
             <button type="button" onClick={() => setAll(!anyOpen)}
-              className="bg-transparent [border:none] p-0 cursor-pointer [font:inherit] text-[12px]! font-medium text-gold-ink whitespace-nowrap">
+              className="bg-transparent [border:none] p-0 cursor-pointer [font:inherit] text-meta! font-medium text-gold-ink whitespace-nowrap">
               {anyOpen ? 'Collapse all' : 'Expand all'}
             </button>
           )}
         </div>
       </div>
       <div ref={listRef} className="relative max-h-[68vh] overflow-y-auto overscroll-contain [scrollbar-width:thin]">
-        {shownGroups.length === 0 && <div className="p-6 text-center text-[13px] text-muted-ink">{needle ? 'Nothing matches that search.' : 'No buildings yet.'}</div>}
+        {shownGroups.length === 0 && <div className="p-6 text-center text-copy text-muted-ink">{needle ? 'Nothing matches that search.' : 'No buildings yet.'}</div>}
         {shownGroups.map(([state, list]) => (
           <div key={state}>
-            <div className="sticky top-0 z-[1] py-[8px] px-4 bg-page [border-bottom:1px_solid_var(--color-line-soft)] text-[10.5px] font-bold tracking-[0.08em] text-muted-ink flex justify-between">
+            <div className="sticky top-0 z-[1] py-[8px] px-4 bg-page [border-bottom:1px_solid_var(--color-line-soft)] text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink flex justify-between">
               <span>{state.toUpperCase()}</span>
               <span className="[font-variant-numeric:tabular-nums]">{list.reduce((s, b) => s + topUnitsOf(b).length, 0)} units</span>
             </div>
@@ -144,10 +146,10 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                       className="flex items-center gap-2 flex-1 bg-transparent [border:none] cursor-pointer disabled:cursor-default [font:inherit] text-left min-w-0 p-0 text-ink">
                       <span className="[transition:transform_160ms] text-muted-ink flex flex-none" style={{ transform: `rotate(${open ? 90 : 0}deg)` }}><Icon name="ChevronRight" size="sm" /></span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-[13px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={b.name}>{b.name}</span>
-                        {b.city && <span className="block text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.city}</span>}
+                        <span className="block text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={b.name}>{b.name}</span>
+                        {b.city && <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.city}</span>}
                       </span>
-                      <span className="flex-none min-w-[26px] h-[20px] px-1.5 box-border rounded-pill bg-muted text-[11px] font-semibold text-muted-ink grid place-items-center [font-variant-numeric:tabular-nums]"
+                      <span className="flex-none min-w-[26px] h-[20px] px-1.5 box-border rounded-pill bg-muted text-caption font-semibold text-muted-ink grid place-items-center [font-variant-numeric:tabular-nums]"
                         title={`${us.length} ${us.length === 1 ? 'unit' : 'units'}`}>{us.length}</span>
                     </button>
                     {canEdit && <>
@@ -167,10 +169,10 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                             className="flex items-center gap-[10px] flex-1 min-w-0 py-[8px] pr-1 pl-[34px] [border:none] bg-transparent cursor-pointer [font:inherit] text-left text-ink">
                             {dot(u.id)}
                             <span className="flex-1 min-w-0">
-                              <span className={cx('block text-[12.5px] whitespace-nowrap overflow-hidden text-ellipsis', on ? 'font-semibold' : 'font-medium')}>{u.unitCode || 'New unit'}</span>
-                              <span className="block text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName || 'No owner yet'}{kids.length ? ` · ${kids.length} sub-unit${kids.length > 1 ? 's' : ''}` : ''}</span>
+                              <span className={cx('block text-copy whitespace-nowrap overflow-hidden text-ellipsis', on ? 'font-semibold' : 'font-medium')}>{u.unitCode || 'New unit'}</span>
+                              <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName ? titleCase(u.ownerName) : 'No owner yet'}{kids.length ? ` · ${kids.length} sub-unit${kids.length > 1 ? 's' : ''}` : ''}</span>
                             </span>
-                            <span className="text-[9.5px] font-bold text-gold-ink flex-none">{u.pkg.replace('Package ', 'Pkg ')}</span>
+                            <span className="text-caption font-bold text-gold-ink flex-none">{u.pkg.replace('Package ', 'Pkg ')}</span>
                           </button>
                           {canEdit && (
                             <button onClick={() => onAddSubUnit(b.id, u)} aria-label={`Add a sub-unit under ${u.unitCode || 'this unit'}`} title="Add sub-unit"
@@ -184,13 +186,13 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                               className={cx('flex items-center gap-[10px] w-full py-[8px] pr-4 pl-[54px] [border:none] [border-bottom:1px_solid_var(--color-line-soft)]! cursor-pointer [font:inherit] text-left text-ink', son ? 'bg-gold-tint shadow-[inset_3px_0_0_var(--color-gold)]' : 'bg-card hover:bg-page')}>
                               {dot(su.id)}
                               <span className="flex-1 min-w-0">
-                                <span className={cx('flex items-center gap-1.5 text-[12px] whitespace-nowrap overflow-hidden text-ellipsis', son ? 'font-semibold' : 'font-medium')}>
+                                <span className={cx('flex items-center gap-1.5 text-meta whitespace-nowrap overflow-hidden text-ellipsis', son ? 'font-semibold' : 'font-medium')}>
                                   <span className="overflow-hidden text-ellipsis">{su.unitCode || 'New sub-unit'}</span>
-                                  <span className="text-[8.5px] font-bold tracking-[0.06em] text-gold-ink flex-none">SUB</span>
+                                  <span className="text-caption font-bold tracking-[0.06em] text-gold-ink flex-none">SUB</span>
                                 </span>
-                                <span className="block text-[11px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{su.listingName || 'Room / floor'}</span>
+                                <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{su.listingName || 'Room / floor'}</span>
                               </span>
-                              <span className="text-[9.5px] font-bold text-muted-ink flex-none">{su.split === 'Not set' ? '' : su.split.split(' ')[0]}</span>
+                              <span className="text-caption font-bold text-muted-ink flex-none">{su.split === 'Not set' ? '' : su.split.split(' ')[0]}</span>
                             </button>
                           );
                         })}

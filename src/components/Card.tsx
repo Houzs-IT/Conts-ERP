@@ -29,7 +29,7 @@ export function CardHeader({ title, right }: { title: string; right?: ReactNode 
 
 export function LinkAction({ children, onClick }: { children: ReactNode; onClick?: () => void }) {
   return (
-    <button onClick={onClick} style={{ fontSize: text.small, fontWeight: 600, color: color.goldInk, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit' }}>
+    <button onClick={onClick} style={{ font: 'inherit', fontSize: text.small, fontWeight: 600, color: color.goldInk, background: 'none', border: 'none', cursor: 'pointer' }}>
       {children}
     </button>
   );

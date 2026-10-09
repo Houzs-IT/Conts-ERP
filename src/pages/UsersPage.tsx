@@ -4,11 +4,13 @@ import PageHeader from '../components/PageHeader';
 import PermissionsChart from '../components/PermissionsChart';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
+import { Field } from '../components/Field';
+import { Select } from '../components/Select';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, ApiFailure } from '../lib/api';
-import { date, plural } from '../lib/format';
+import { count, date, plural } from '../lib/format';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone, UserRole } from '../lib/types';
@@ -28,6 +30,7 @@ import type { Tone, UserRole } from '../lib/types';
 // lowest access so a picker reads top-down.
 const ROLES: UserRole[] = ['management', 'operations_manager', 'operations_staff', 'finance_admin', 'housekeeper', 'technician', 'owner'];
 const roleLabel = (r: string) => ROLE_LABEL[r] ?? r;
+const ROLE_OPTIONS = ROLES.map(r => ({ value: r, label: roleLabel(r) }));
 const roleTone: Record<UserRole, Tone> = {
   management: 'info', operations_manager: 'info', operations_staff: 'neutral',
   finance_admin: 'success', housekeeper: 'warning', technician: 'warning', owner: 'neutral',
@@ -67,12 +70,6 @@ function status(u: Row): { label: string; tone: Tone } {
 const initials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('');
 
 /* ------------------------------- styles ------------------------------- */
-// The former inputStyle object ended with `font: 'inherit'` (last shorthand key),
-// so inputs/selects actually render at the inherited 16px / 400 / IBM Plex Sans —
-// reproduced with [font:inherit]. py-0 zeroes the UA vertical padding (no preflight).
-const inputClass = 'block w-full box-border h-10 px-3 py-0 [font:inherit] text-ink bg-card border border-solid border-line rounded-control outline-none';
-const labelClass = 'text-meta font-medium text-muted-ink';
-const errClass = cx('text-meta', TONE.critical.text);
 const LIST_COLS_CLASS = 'grid-cols-[minmax(180px,1.6fr)_minmax(180px,1.4fr)_150px_140px_120px_110px]';
 // Left accent on org cards — the -line tone shade, as a box-shadow inset (kept off
 // the border so it does not change the card geometry). Static per-tone literals so
@@ -100,12 +97,12 @@ function Modal({ title, sub, onClose, children, footer, width = 460 }: {
       className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[rgba(21,21,21,0.44)] animate-[fade-in_var(--motion-standard)_var(--ease-out)_both]">
       <div onClick={onClose} className="absolute inset-0" />
       <div className="relative w-full max-h-[calc(100vh-48px)] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]" style={{ maxWidth: width }}>
-        <div className="pt-5 px-[22px] pb-1 flex flex-col gap-[5px]">
+        <div className="pt-5 px-[22px] pb-1 flex flex-col gap-1">
           <h2 className="m-0 text-title leading-[1.3] font-semibold">{title}</h2>
           {sub && <p className="m-0 text-copy leading-[1.5] text-muted-ink">{sub}</p>}
         </div>
         <div className="py-4 px-[22px]">{children}</div>
-        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page flex justify-end gap-[9px] flex-wrap sticky bottom-0">{footer}</div>
+        <div className="py-3.5 px-[22px] [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page flex justify-end gap-2 flex-wrap sticky bottom-0">{footer}</div>
       </div>
     </div>
   );
@@ -280,8 +277,8 @@ export default function UsersPage() {
     <>
       <PageHeader
         title="Users and roles"
-        sub={`${plural(rows.length, 'account')} · ${invitedCount} invited and not yet signed in`}
-        right={tab === 'users' && (
+        sub={`${plural(rows.length, 'account')} · ${count(invitedCount)} invited and not yet signed in`}
+        primary={tab === 'users' && (
           <Button variant="primary" size="sm" onClick={() => { setLastTempPassword(null); setInviteOpen(true); }}>
             Invite user
           </Button>
@@ -298,7 +295,7 @@ export default function UsersPage() {
               aria-selected={on}
               onClick={() => setTab(t.key)}
               className={cx(
-                'px-[6px] py-[11px] mr-[18px] bg-transparent border-none cursor-pointer font-sans text-copy whitespace-nowrap',
+                'px-1.5 py-3 mr-4 bg-transparent border-none cursor-pointer font-sans text-copy whitespace-nowrap',
                 on ? 'font-semibold text-ink [box-shadow:inset_0_-2px_0_var(--color-gold,#C8A46A)]' : 'font-normal text-muted-ink',
               )}
             >{t.label}</button>
@@ -311,12 +308,12 @@ export default function UsersPage() {
       {/* ------------------------------ Users tab ------------------------------ */}
       {tab === 'users' && (
         <Card>
-          <div className="py-[13px] px-5 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] flex items-center justify-between gap-[14px] flex-wrap">
+          <div className="py-3 px-5 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] flex items-center justify-between gap-3 flex-wrap">
             <span className="text-meta text-muted-ink">Role sets what a person can do. The reporting line is separate — see the organisation chart.</span>
           </div>
           <div className="overflow-x-auto">
             <div className="min-w-[940px]">
-              <div className={cx('grid', LIST_COLS_CLASS, 'gap-[14px] py-[9px] px-5 bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-meta font-semibold text-muted-ink')}>
+              <div className={cx('grid', LIST_COLS_CLASS, 'gap-3.5 py-2.5 px-5 bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-meta font-semibold text-muted-ink')}>
                 <div>Name</div><div>Email</div><div>Role</div><div>Reports to</div><div>Last sign-in</div><div>Status</div>
               </div>
               {loading && rows.length === 0 ? <TableSkeleton rows={7} cols={6} /> : rows.map(u => {
@@ -326,7 +323,7 @@ export default function UsersPage() {
                   <button
                     key={u.id}
                     onClick={() => openEdit(u)}
-                    className={cx('grid', LIST_COLS_CLASS, 'gap-[14px] items-center w-full text-left min-h-[54px] py-[9px] px-5 bg-transparent border-none rounded-none cursor-pointer [font:inherit]')}
+                    className={cx('grid', LIST_COLS_CLASS, 'gap-3.5 items-center w-full text-left min-h-[50px] py-2 px-5 bg-transparent border-none rounded-none cursor-pointer [font:inherit] [border-bottom:1px_solid_var(--color-line-soft)]')}
                   >
                     <span className="flex items-center gap-2.5 min-w-0">
                       <span className={cx('w-[30px] h-[30px] flex-none rounded-full grid place-items-center text-caption font-semibold', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>
@@ -338,7 +335,7 @@ export default function UsersPage() {
                       </span>
                     </span>
                     <span className="text-copy text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.email}</span>
-                    <span><span className={cx('inline-flex text-caption font-medium py-[3px] px-[9px] rounded-full whitespace-nowrap', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>{roleLabel(u.role)}</span></span>
+                    <span><Badge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /></span>
                     <span className={cx('text-copy whitespace-nowrap overflow-hidden text-ellipsis', manager ? 'text-ink' : 'text-faint')}>{manager ?? '—'}</span>
                     <span className="text-copy text-muted-ink">{u.lastLoginAt ? date(u.lastLoginAt) : 'Never'}</span>
                     <span><Badge tone={s.tone} label={s.label} /></span>
@@ -356,8 +353,8 @@ export default function UsersPage() {
       {/* --------------------------- Organisation tab -------------------------- */}
       {tab === 'org' && (
         <Card>
-          <div className="py-[18px] px-[22px] flex flex-col gap-5">
-            <div className="flex items-center justify-between gap-[14px] flex-wrap">
+          <div className="p-5 flex flex-col gap-5">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
               <span className="text-meta text-muted-ink max-w-[640px] leading-[1.5]">
                 Reporting line, not a permission source. It drives escalation and rosters. Permissions come from the role on each account — see the Permissions tab.
               </span>
@@ -381,32 +378,14 @@ export default function UsersPage() {
             </>
           }
         >
-          <form id="invite-form" onSubmit={submitInvite} className="flex flex-col gap-[14px]">
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="inv-name" className={labelClass}>Full name</label>
-              <input id="inv-name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" className={inputClass} />
-              {fieldErrors.fullName && <span className={errClass}>{fieldErrors.fullName}</span>}
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="inv-email" className={labelClass}>Work email</label>
-              <input id="inv-email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@theconts.com" className={inputClass} />
-              {fieldErrors.email && <span className={errClass}>{fieldErrors.email}</span>}
-            </div>
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-[14px]">
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="inv-role" className={labelClass}>Role</label>
-                <select id="inv-role" value={role} onChange={e => setRole(e.target.value as UserRole)} className={cx(inputClass, 'capitalize')}>
-                  {ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
-                </select>
-              </div>
+          <form id="invite-form" onSubmit={submitInvite} className="flex flex-col gap-4">
+            <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" error={fieldErrors.fullName} />
+            <Field label="Work email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@theconts.com" error={fieldErrors.email} />
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
+              <Select label="Role" showLabel size="md" value={role} onChange={v => setRole(v as UserRole)} options={ROLE_OPTIONS} />
               {role !== 'owner' && (
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="inv-mgr" className={labelClass}>Reports to</label>
-                  <select id="inv-mgr" value={managerId} onChange={e => setManagerId(e.target.value)} className={inputClass}>
-                    <option value="">No manager</option>
-                    {staff.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}
-                  </select>
-                </div>
+                <Select label="Reports to" showLabel size="md" value={managerId} onChange={setManagerId} placeholder="No manager"
+                  options={staff.map(s => ({ value: s.id, label: s.fullName }))} />
               )}
             </div>
             <div className="text-meta text-muted-ink leading-[1.5]">
@@ -414,9 +393,9 @@ export default function UsersPage() {
             </div>
           </form>
           {lastTempPassword && (
-            <div className="mt-[14px] py-[11px] px-[13px] rounded-control bg-page border border-solid border-line">
+            <div className="mt-4 py-3 px-3.5 rounded-control bg-page border border-solid border-line">
               <div className="text-meta text-muted-ink">Temporary password for {lastTempPassword.name}</div>
-              <div className="text-heading font-semibold font-mono mt-[3px]">{lastTempPassword.password}</div>
+              <div className="text-heading font-semibold font-mono mt-1">{lastTempPassword.password}</div>
             </div>
           )}
         </Modal>
@@ -438,26 +417,12 @@ export default function UsersPage() {
             </>
           }
         >
-          <form id="edit-form" onSubmit={submitEdit} className="flex flex-col gap-[14px]">
+          <form id="edit-form" onSubmit={submitEdit} className="flex flex-col gap-4">
+            <Field label="Full name" value={editName} onChange={e => setEditName(e.target.value)} error={editErrors.fullName} />
+            <Field label="Email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} error={editErrors.email} />
+            <Field label="Phone" value={editPhone} onChange={e => setEditPhone(e.target.value)} placeholder="+60 12-345 6789" />
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="ed-name" className={labelClass}>Full name</label>
-              <input id="ed-name" value={editName} onChange={e => setEditName(e.target.value)} className={inputClass} />
-              {editErrors.fullName && <span className={cx('text-meta', TONE.critical.text)}>{editErrors.fullName}</span>}
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="ed-email" className={labelClass}>Email</label>
-              <input id="ed-email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} className={inputClass} />
-              {editErrors.email && <span className={cx('text-meta', TONE.critical.text)}>{editErrors.email}</span>}
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="ed-phone" className={labelClass}>Phone</label>
-              <input id="ed-phone" value={editPhone} onChange={e => setEditPhone(e.target.value)} placeholder="+60 12-345 6789" className={inputClass} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="ed-role" className={labelClass}>Role</label>
-              <select id="ed-role" value={editRole} onChange={e => setEditRole(e.target.value as UserRole)} className={cx(inputClass, 'capitalize')}>
-                {ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
-              </select>
+              <Select label="Role" showLabel size="md" value={editRole} onChange={v => setEditRole(v as UserRole)} options={ROLE_OPTIONS} />
               {editRole !== editing.role && (
                 <span className={cx('text-meta', TONE.warning.text)}>
                   Changing the role rebuilds this person’s navigation and permissions on their next sign-in.
@@ -465,14 +430,11 @@ export default function UsersPage() {
               )}
             </div>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="ed-mgr" className={labelClass}>Reports to</label>
-              <select id="ed-mgr" value={editManager} onChange={e => setEditManager(e.target.value)} className={inputClass}>
-                <option value="">No manager</option>
-                {staff.filter(s => s.id !== editing.id).map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}
-              </select>
+              <Select label="Reports to" showLabel size="md" value={editManager} onChange={setEditManager} placeholder="No manager"
+                options={staff.filter(s => s.id !== editing.id).map(s => ({ value: s.id, label: s.fullName }))} />
               <span className="text-meta text-muted-ink">Reporting line only. It does not grant or remove any access.</span>
             </div>
-            <label htmlFor="ed-active" className="flex items-center gap-[9px] cursor-pointer">
+            <label htmlFor="ed-active" className="flex items-center gap-2 cursor-pointer">
               <input id="ed-active" type="checkbox" checked={editActive} onChange={e => setEditActive(e.target.checked)} className="w-4 h-4" />
               <span className="text-copy">Account is active</span>
             </label>
@@ -501,15 +463,9 @@ export default function UsersPage() {
                   <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{s.fullName}</span>
                   <span className="text-caption text-muted-ink">{roleLabel(s.role)}</span>
                 </div>
-                <select
-                  aria-label={`Manager for ${s.fullName}`}
-                  value={orgDraft[s.id] ?? ''}
-                  onChange={e => setOrgDraft(d => ({ ...d, [s.id]: e.target.value }))}
-                  className={inputClass}
-                >
-                  <option value="">No manager</option>
-                  {staff.filter(o => o.id !== s.id).map(o => <option key={o.id} value={o.id}>{o.fullName}</option>)}
-                </select>
+                <Select label={`Manager for ${s.fullName}`} size="md" value={orgDraft[s.id] ?? ''}
+                  onChange={v => setOrgDraft(d => ({ ...d, [s.id]: v }))} placeholder="No manager"
+                  options={staff.filter(o => o.id !== s.id).map(o => ({ value: o.id, label: o.fullName }))} />
               </div>
             ))}
           </form>
@@ -550,7 +506,7 @@ function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, 
       {levels.filter(l => l.people.length).map(l => (
         <div key={l.label} className="flex flex-col gap-2.5">
           <div className="flex items-center gap-2.5">
-            <span className="text-caption font-semibold tracking-[0.12em] uppercase text-muted-ink">{l.label}</span>
+            <span className="text-caption font-semibold tracking-[0.06em] uppercase text-muted-ink">{l.label}</span>
             <span className="flex-1 h-px bg-[var(--color-line-soft,#EDEAE4)]" />
           </div>
           <div className="flex gap-3 flex-wrap">
@@ -558,10 +514,10 @@ function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, 
               const reports = directReports(p.id);
               const manager = p.managerId ? nameById[p.managerId] : null;
               const meta = reports > 0
-                ? `${reports} direct report${reports === 1 ? '' : 's'}`
+                ? plural(reports, 'direct report')
                 : manager ? `Reports to ${manager}` : null;
               return (
-                <div key={p.id} className={cx('min-w-[188px] py-[13px] px-[15px] rounded-card border border-solid border-line bg-card flex flex-col gap-2', ORG_ACCENT[roleTone[p.role]])}>
+                <div key={p.id} className={cx('min-w-[188px] py-3 px-4 rounded-card border border-solid border-line bg-card flex flex-col gap-2', ORG_ACCENT[roleTone[p.role]])}>
                   <div className="flex items-center gap-2.5">
                     <span className={cx('w-8 h-8 flex-none rounded-full grid place-items-center text-caption font-semibold', TONE[roleTone[p.role]].bg, TONE[roleTone[p.role]].text)}>
                       {initials(p.fullName)}

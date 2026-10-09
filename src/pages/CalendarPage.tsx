@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Button } from '../components/Button';
+import { EmptyState, SkeletonRows } from '../components/States';
+import { usePhone } from './finance/listKit';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import Icon from '../components/Icon';
@@ -11,7 +14,7 @@ import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { api, notifyFailure } from '../lib/api';
-import { todayMyt, rm, date, dateRange, dateShort, dateTime, time, timeWithZone } from '../lib/format';
+import { todayMyt, rm, date, dateRange, dateShort, dateTime, time, timeWithZone, monthLabel, weekdayDay, year, plural } from '../lib/format';
 import { CHANNEL, TONE } from '../lib/vocabulary';
 import type { BookingChannel, Tone } from '../lib/types';
 import { CalendarFilters } from '../components/calendar/CalendarFilters';
@@ -58,8 +61,6 @@ const SYNC_CHIP: Record<string, { label: string; tone: Tone }> = {
 const today = new Date(todayMyt());
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const addDays = (d: Date, n: number) => new Date(d.getTime() + n * 864e5);
-// Dates are parsed as UTC midnight, so weekday / day / month are read in UTC to stay on the calendar date.
-const utcLabel = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString('en-MY', { ...o, timeZone: 'UTC' });
 /** Fri and Sat nights: the nights the weekend multiplier prices up. */
 const isWeekendNight = (d: Date) => d.getUTCDay() === 5 || d.getUTCDay() === 6;
 const ringgit = (sen: number) => Math.round(sen / 100).toLocaleString('en-MY');
@@ -189,7 +190,7 @@ export default function CalendarPage() {
   const todayIdx = dayIndex(iso(today));
   const days = Array.from({ length: span }, (_, i) => addDays(gridStart, i));
   const months = days.reduce<{ label: string; count: number }[]>((acc, d) => {
-    const label = utcLabel(d, { month: 'long', year: 'numeric' });
+    const label = monthLabel(iso(d), { long: true });
     if (acc.length && acc[acc.length - 1].label === label) acc[acc.length - 1].count++;
     else acc.push({ label, count: 1 });
     return acc;
@@ -318,7 +319,7 @@ export default function CalendarPage() {
     try {
       const res = await api.post<{ bookings?: { processed: number } }>('/integrations/sync');
       const n = res?.bookings?.processed ?? 0;
-      toast({ tone: 'success', title: 'Channels synced.', body: n ? `${n} booking ${n === 1 ? 'update' : 'updates'} pulled from Channex.` : 'Nothing new from Channex.' });
+      toast({ tone: 'success', title: 'Channels synced.', body: n ? `${plural(n, 'booking update')} pulled from Channex.` : 'Nothing new from Channex.' });
       reload(); reloadIntegrations();
     } catch (e) {
       toast({ tone: 'critical', title: 'Channels were not synced.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
@@ -327,31 +328,33 @@ export default function CalendarPage() {
     }
   }
 
-  const segBtn = 'h-full min-w-10 md:min-w-0 px-2.5 grid place-items-center bg-transparent hover:bg-muted border-none cursor-pointer font-sans text-[13px] text-ink';
+  const segBtn = 'h-full min-w-10 md:min-w-0 px-2.5 grid place-items-center bg-transparent hover:bg-muted border-none cursor-pointer font-sans text-copy text-ink';
   // Phones drop the year: the month header right under it already says it.
   const rangeShort = `${dateShort(iso(start))} – ${dateShort(iso(addDays(start, span - 1)))}`;
-  const rangeYear = utcLabel(addDays(start, span - 1), { year: 'numeric' });
-  // Icon-only 40px squares on phones; icon and label from md up.
-  const toolBtn = 'relative inline-flex items-center justify-center gap-1.5 h-[42px] w-[42px] md:w-auto md:h-9 md:px-3 box-border rounded-control border border-solid border-line bg-card hover:bg-muted cursor-pointer font-sans text-[13px] font-medium text-ink whitespace-nowrap flex-none disabled:cursor-default';
+  const rangeYear = year(iso(addDays(start, span - 1)));
+  // View toggles: icon-only 40px squares on phones; icon and label from md up.
+  const toolBtn = 'relative inline-flex items-center justify-center gap-1.5 h-[42px] w-[42px] md:w-auto md:h-9 md:px-3 box-border rounded-control border border-solid border-line bg-card hover:bg-muted cursor-pointer font-sans text-copy font-medium text-ink whitespace-nowrap flex-none disabled:cursor-default';
+  const refreshIcon = <span className={`inline-grid ${syncing ? 'animate-spin' : ''}`}><Icon name="RefreshCw" size="sm" /></span>;
 
   return (
     <>
       <PageHeader
         title="Calendar"
-        sub={`${totalUnits} ${totalUnits === 1 ? 'unit' : 'units'} · ${buildingCount} ${buildingCount === 1 ? 'building' : 'buildings'}${phone ? '' : ' · Asia/Kuala Lumpur'}`}
-        right={
+        sub={`${plural(totalUnits, 'unit')} · ${plural(buildingCount, 'building')}`}
+        actions={phone ? (
+          // Phones: icon-only 42px squares, each with its own label for screen readers.
           <div className="flex items-center gap-2">
-            <button type="button" className={toolBtn} onClick={() => setRateUpdate({})} aria-label="Rate update" title="Rate update">
-              <Icon name="Tag" size="sm" /><span className="hidden md:inline">Rate update</span>
-            </button>
-            <button type="button" className={toolBtn} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }} aria-label="Block wizard" title="Block dates">
-              <Icon name="Ban" size="sm" /><span className="hidden md:inline">Block wizard</span>
-            </button>
-            <button type="button" className={toolBtn} onClick={refresh} disabled={syncing} aria-label="Refresh" title="Pull new bookings from the channels">
-              <span className={`inline-grid ${syncing ? 'animate-spin' : ''}`}><Icon name="RefreshCw" size="sm" /></span><span className="hidden md:inline">Refresh</span>
-            </button>
+            <button type="button" className={toolBtn} onClick={() => setRateUpdate({})} aria-label="Rate update" title="Rate update"><Icon name="Tag" size="sm" /></button>
+            <button type="button" className={toolBtn} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }} aria-label="Block wizard" title="Block dates"><Icon name="Ban" size="sm" /></button>
+            <button type="button" className={toolBtn} onClick={refresh} disabled={syncing} aria-label="Refresh" title="Pull new bookings from the channels">{refreshIcon}</button>
           </div>
-        }
+        ) : (
+          <>
+            <Button size="sm" variant="secondary" icon={<Icon name="Tag" size="sm" />} onClick={() => setRateUpdate({})}>Rate update</Button>
+            <Button size="sm" variant="secondary" icon={<Icon name="Ban" size="sm" />} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }} title="Block dates">Block wizard</Button>
+            <Button size="sm" variant="secondary" icon={refreshIcon} onClick={refresh} disabled={syncing} disabledReason="Pulling new bookings from the channels" title="Pull new bookings from the channels">Refresh</Button>
+          </>
+        )}
       />
 
       {error && <StaleBanner message={`Showing the last board we have. ${error}`} onRetry={reload} />}
@@ -364,7 +367,7 @@ export default function CalendarPage() {
           <div className="flex items-center gap-2">
             <div className="flex flex-1 md:flex-none min-w-0 items-stretch h-[42px] md:h-9 box-border rounded-control border border-solid border-line bg-card overflow-hidden">
               <button type="button" onClick={() => setWeekOffset(w => w - 1)} className={segBtn} aria-label="Previous 30 days"><Icon name="ChevronLeft" size="sm" /></button>
-              <span className="flex-1 md:flex-none min-w-0 px-1.5 md:px-3 grid place-items-center [border-left:1px_solid_var(--color-line)] [border-right:1px_solid_var(--color-line)] text-[13px] font-medium whitespace-nowrap [font-variant-numeric:tabular-nums] md:min-w-[156px]">
+              <span className="flex-1 md:flex-none min-w-0 px-1.5 md:px-3 grid place-items-center [border-left:1px_solid_var(--color-line)] [border-right:1px_solid_var(--color-line)] text-copy font-medium whitespace-nowrap [font-variant-numeric:tabular-nums] md:min-w-[156px]">
                 <span>{rangeShort}<span className="hidden md:inline"> {rangeYear}</span></span>
               </span>
               <button type="button" onClick={() => setWeekOffset(w => w + 1)} className={segBtn} aria-label="Next 30 days"><Icon name="ChevronRight" size="sm" /></button>
@@ -374,7 +377,7 @@ export default function CalendarPage() {
 
             <div className="ml-auto flex items-center gap-2">
               {lastSync && (
-                <span className="hidden sm:inline-flex items-center gap-1.5 text-[12px] text-muted-ink whitespace-nowrap" title={`Last update sent to Channex ${dateTime(lastSync)}`}>
+                <span className="hidden sm:inline-flex items-center gap-1.5 text-meta text-muted-ink whitespace-nowrap" title={`Last update sent to Channex ${dateTime(lastSync)}`}>
                   <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: TONE[syncTrouble ? 'warning' : 'success'].line }} />
                   {syncTrouble
                     ? <a href="#/system/integrations" className="no-underline" style={{ color: TONE.warning.fg }}>Channel errors · see Integrations</a>
@@ -384,7 +387,7 @@ export default function CalendarPage() {
               <button type="button" onClick={() => setFiltersOpen(v => !v)} aria-expanded={filtersOpen} aria-label={filterCount ? `Filters, ${filterCount} on` : 'Filters'} title="Filters"
                 className={`${toolBtn} md:hidden ${filtersOpen ? 'bg-muted!' : ''}`}>
                 <Icon name="SlidersHorizontal" size="sm" />
-                {filterCount > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 box-border rounded-full bg-black text-white text-[11px] grid place-items-center">{filterCount}</span>}
+                {filterCount > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 box-border rounded-full bg-black text-white text-caption grid place-items-center">{filterCount}</span>}
               </button>
               {groups.length > 1 && (
                 // Phones fold one building at a time from its header; the toolbar there has no room for a third button.
@@ -412,14 +415,14 @@ export default function CalendarPage() {
           <div style={{ minWidth: `calc(var(--unit-col) + ${span * COL}px)` }} aria-busy={loading}
             className={`transition-opacity duration-150 ${loading && data ? 'opacity-70' : ''}`}>
             <div className="sticky top-0 z-20 flex bg-muted [border-bottom:1px_solid_var(--color-line)]">
-              <div className={`${STICKY_COL} bg-muted! z-30 flex items-end px-2 md:px-3 pb-2.5 text-[12px] font-semibold text-muted-ink whitespace-nowrap`}>
-                {units.length.toLocaleString('en-MY')} {units.length === 1 ? 'unit' : 'units'}
+              <div className={`${STICKY_COL} bg-muted! z-30 flex items-end px-2 md:px-3 pb-2.5 text-meta font-semibold text-muted-ink whitespace-nowrap`}>
+                {plural(units.length, 'unit')}
               </div>
               <div className="flex flex-col">
                 <div className="flex h-7">
                   {months.map((m, k) => (
                     <div key={m.label} className={`flex-none box-border flex items-center ${k ? '[border-left:1px_solid_var(--color-line)]' : ''}`} style={{ width: m.count * COL }}>
-                      <span className="sticky left-[calc(var(--unit-col)+10px)] px-2.5 text-[12px] font-semibold text-ink whitespace-nowrap">{m.label}</span>
+                      <span className="sticky left-[calc(var(--unit-col)+10px)] px-2.5 text-meta font-semibold text-ink whitespace-nowrap">{m.label}</span>
                     </div>
                   ))}
                 </div>
@@ -429,8 +432,8 @@ export default function CalendarPage() {
                     return (
                       <div key={i} className={`flex-none box-border h-11 flex flex-col items-center justify-center gap-0.5 ${CELL_EDGE} ${i === todayIdx ? BG_TODAY : isWeekendNight(d) ? 'bg-sunken' : 'bg-muted'} ${todayEdge(i)}`} style={{ width: COL }}
                         title={isToday ? 'Today' : undefined}>
-                        <span className={`text-[11px] font-medium ${isToday ? 'font-semibold text-[var(--color-text-accent)]' : 'text-muted-ink'}`}>{utcLabel(d, { weekday: 'short' })}</span>
-                        <span className={`text-[13px] font-semibold leading-none grid place-items-center ${isToday ? 'w-6 h-6 rounded-full bg-gold text-black' : 'h-6 text-ink'}`}>{d.getUTCDate()}</span>
+                        <span className={`text-caption font-medium ${isToday ? 'font-semibold text-[var(--color-text-accent)]' : 'text-muted-ink'}`}>{weekdayDay(iso(d)).split(' ')[0]}</span>
+                        <span className={`text-copy font-semibold leading-none grid place-items-center ${isToday ? 'w-6 h-6 rounded-full bg-gold text-black' : 'h-6 text-ink'}`}>{d.getUTCDate()}</span>
                       </div>
                     );
                   })}
@@ -439,7 +442,13 @@ export default function CalendarPage() {
             </div>
 
             {units.length === 0 && (
-              <div className="px-4 py-10 text-center text-[13px] text-muted-ink">{loading ? 'Loading the board…' : 'No units match these filters.'}</div>
+              // Pinned to the visible part of the wide grid so it does not centre on the 30-night track.
+              <div className="sticky left-0 w-[min(100%,calc(100vw-2rem))] md:w-[min(100%,720px)]">
+                {loading ? <div className="p-4"><SkeletonRows rows={4} height={64} /></div>
+                  : filtersDirty
+                    ? <EmptyState bare kind="filtered" title="No units match these filters." action={{ label: 'Clear filters', onClick: () => { setOff({}); setStatusOff({}); setProperty('all'); } }} />
+                    : <EmptyState bare icon="CalendarDays" title="No units on the board yet." body="Units appear here once they are added under Properties." action={{ label: 'Open units', onClick: () => { window.location.hash = '#/properties/units'; } }} />}
+              </div>
             )}
 
             <div className="relative">
@@ -483,10 +492,10 @@ export default function CalendarPage() {
                               <Icon name={rowOpen ? 'ChevronDown' : 'ChevronRight'} size="sm" />
                             </span>
                             <span className="min-w-0 flex flex-col gap-px">
-                              <span className="text-[13px] font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
+                              <span className="text-copy font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
                               {/* The building is the group header above, so the second line is just today's state. */}
                               {readiness && (
-                                <span className="flex items-center gap-[5px] min-w-0 text-[11px] text-muted-ink whitespace-nowrap">
+                                <span className="flex items-center gap-[5px] min-w-0 text-caption text-muted-ink whitespace-nowrap">
                                   <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: readiness.dot }} />
                                   <span className="overflow-hidden text-ellipsis">{readiness.label}</span>
                                 </span>
@@ -543,12 +552,12 @@ export default function CalendarPage() {
                                 {width >= 30 && <ChannelMark ch={b.channel} size={narrow ? 14 : 16} />}
                                 {/* The name may wrap onto a second line rather than be cut short; the tooltip has it in full. */}
                                 {narrow
-                                  ? <span className="max-w-full text-[11px] leading-[13px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{firstName}</span>
+                                  ? <span className="max-w-full text-caption leading-[13px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{firstName}</span>
                                   : <span className="min-w-0 flex flex-col">
-                                      <span className="md:hidden text-[12px] leading-[14px] font-semibold [overflow-wrap:anywhere] line-clamp-2">{fullName}</span>
-                                      <span className="hidden md:[display:-webkit-box] text-[12px] leading-[14px] font-semibold [overflow-wrap:anywhere] line-clamp-2">{fullName}</span>
+                                      <span className="md:hidden text-meta leading-[14px] font-semibold [overflow-wrap:anywhere] line-clamp-2">{fullName}</span>
+                                      <span className="hidden md:[display:-webkit-box] text-meta leading-[14px] font-semibold [overflow-wrap:anywhere] line-clamp-2">{fullName}</span>
                                       {b.grossBookingValue > 0 && width > 150 && (
-                                        <span className="hidden md:block text-[11px] leading-[13px] whitespace-nowrap opacity-75 [font-variant-numeric:tabular-nums]">{rm(b.grossBookingValue, { cents: false })}</span>
+                                        <span className="hidden md:block text-caption leading-[13px] whitespace-nowrap opacity-75 [font-variant-numeric:tabular-nums]">{rm(b.grossBookingValue, { cents: false })}</span>
                                       )}
                                     </span>}
                               </div>
@@ -572,11 +581,11 @@ export default function CalendarPage() {
                                 <button key={i} type="button" onClick={() => setRateUpdate({ unitIds: [u.id], from: dayIso(i), to: dayIso(i) })}
                                   title={`${left ? '1 of 1 unit available' : 'Sold'} · ${restriction} · click to change`}
                                   style={{ width: COL }}
-                                  className={`flex-none box-border h-10 md:h-8 p-0 pl-1 border-none bg-transparent hover:bg-sunken/80 cursor-pointer font-sans text-[11.5px] whitespace-nowrap flex items-center justify-end gap-0.5 [font-variant-numeric:tabular-nums] ${minStay && !rs?.stopSell ? 'pr-1.5' : 'pr-2'} ${left ? 'text-ink-2' : 'text-faint'}`}>
+                                  className={`flex-none box-border h-10 md:h-8 p-0 pl-1 border-none bg-transparent hover:bg-sunken/80 cursor-pointer font-sans text-meta whitespace-nowrap flex items-center justify-end gap-0.5 [font-variant-numeric:tabular-nums] ${minStay && !rs?.stopSell ? 'pr-1.5' : 'pr-2'} ${left ? 'text-ink-2' : 'text-faint'}`}>
                                   {rs?.stopSell
-                                    ? <span className="px-1 rounded-[4px] text-[10.5px] font-semibold leading-[16px]" style={{ background: TONE.critical.bg, color: TONE.critical.fg }}>Closed</span>
+                                    ? <span className="px-1 rounded-[4px] text-caption font-semibold leading-[16px]" style={{ background: TONE.critical.bg, color: TONE.critical.fg }}>Closed</span>
                                     : <>
-                                        {minStay > 0 && <span className="mr-auto px-[3px] rounded-[4px] text-[10px] font-semibold leading-[16px] bg-muted text-ink">{minStay}n</span>}
+                                        {minStay > 0 && <span className="mr-auto px-[3px] rounded-[4px] text-caption font-semibold leading-[16px] bg-muted text-ink">{minStay}n</span>}
                                         {left ? '1 left' : 'Sold'}
                                       </>}
                                 </button>
@@ -595,11 +604,11 @@ export default function CalendarPage() {
                                   <span className="md:hidden text-ink font-medium whitespace-nowrap overflow-hidden text-ellipsis">{r.short}</span>
                                   <span className="hidden md:inline text-ink font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={r.label}>{chip ? r.short : r.label}</span>
                                   {chip && (
-                                    <span className="hidden md:inline-block text-[10.5px] font-semibold px-1.5 rounded-full leading-[17px] whitespace-nowrap"
+                                    <span className="hidden md:inline-block text-caption font-semibold px-1.5 rounded-full leading-[17px] whitespace-nowrap"
                                       style={{ background: TONE[chip.tone].bg, color: TONE[chip.tone].fg }}
                                       title={sync?.lastSyncedAt ? `Last update sent ${dateTime(sync.lastSyncedAt)}` : undefined}>{chip.label}</span>
                                   )}
-                                  <span className="hidden md:inline ml-auto text-[10.5px] font-medium text-faint">RM</span>
+                                  <span className="hidden md:inline ml-auto text-caption font-medium text-faint">RM</span>
                                 </>
                               }>
                                 {days.map((_, i) => {
@@ -611,7 +620,7 @@ export default function CalendarPage() {
                                     <button key={i} type="button" onClick={() => setPriceModal({ unit: u, channel: r.key, dayIso: dayIso(i), current: price })}
                                       title={`${r.label} · ${date(dayIso(i))} · ${none ? (unlinked ? `not linked to ${r.label}, so no price is sent` : 'no rate set') : `RM ${ringgit(price)}`}${custom ? ' · set by hand' : ''} · click to set`}
                                       style={{ width: COL }}
-                                      className={`flex-none box-border h-10 md:h-8 p-0 pr-2 border-none bg-transparent hover:bg-sunken/80 cursor-pointer font-sans text-[12px] text-right [font-variant-numeric:tabular-nums] ${none ? 'text-faint' : custom ? 'font-semibold text-ink' : 'text-ink-2'}`}>
+                                      className={`flex-none box-border h-10 md:h-8 p-0 pr-2 border-none bg-transparent hover:bg-sunken/80 cursor-pointer font-sans text-meta text-right [font-variant-numeric:tabular-nums] ${none ? 'text-faint' : custom ? 'font-semibold text-ink' : 'text-ink-2'}`}>
                                       {none ? '—' : ringgit(price)}
                                     </button>
                                   );
@@ -666,27 +675,14 @@ export default function CalendarPage() {
           })
             .then(() => {
               setRateUpdate(false);
-              const ranges = v.lines.length === 1 ? dateRange(v.lines[0].from, v.lines[0].to) : `${v.lines.length} date ranges`;
-              toast({ tone: 'success', title: 'Saved.', body: `${v.unitIds.length} ${v.unitIds.length === 1 ? 'unit' : 'units'} · ${ranges}.` });
+              const ranges = v.lines.length === 1 ? dateRange(v.lines[0].from, v.lines[0].to) : plural(v.lines.length, 'date range');
+              toast({ tone: 'success', title: 'Saved.', body: `${plural(v.unitIds.length, 'unit')} · ${ranges}.` });
               reload();
             })
             .catch(notifyFailure);
         }} />}
     </>
   );
-}
-
-/** Below the shell's phone breakpoint. Read synchronously on first render so nothing shifts after mount. */
-const PHONE_QUERY = '(max-width: 767.98px)';
-function usePhone() {
-  const [phone, setPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia(PHONE_QUERY).matches);
-  useEffect(() => {
-    const mql = window.matchMedia(PHONE_QUERY);
-    const onChange = () => setPhone(mql.matches);
-    mql.addEventListener('change', onChange);
-    return () => mql.removeEventListener('change', onChange);
-  }, []);
-  return phone;
 }
 
 /** A building's row on the board: fold toggle on the left, and for each night how many of its units are
@@ -701,18 +697,18 @@ function BuildingRowHeader({ name, units, folded, showToggle, onToggle, days, by
     <div className="relative z-[1] flex bg-page/85 [border-bottom:1px_solid_var(--color-line)]">
       <div className={`${STICKY_COL} bg-page! z-10 flex`}>
         <button type="button" onClick={onToggle} disabled={!showToggle} aria-expanded={!folded}
-          title={`${name} · ${n} ${n === 1 ? 'unit' : 'units'}${showToggle ? (folded ? ' · show its units' : ' · fold it away') : ''}`}
+          title={`${name} · ${plural(n, 'unit')}${showToggle ? (folded ? ' · show its units' : ' · fold it away') : ''}`}
           className="flex-1 min-w-0 flex items-center gap-1 pl-1.5 pr-2 md:pr-3 h-9 m-0 border-none bg-transparent enabled:hover:bg-muted/60 enabled:cursor-pointer text-left font-sans text-ink">
           {showToggle && <span className="w-5 h-5 flex-none grid place-items-center text-muted-ink"><Icon name={folded ? 'ChevronRight' : 'ChevronDown'} size="sm" /></span>}
-          <span className="min-w-0 flex-1 text-[12px] md:text-[12.5px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{name}</span>
-          <span className="flex-none text-[11px] font-medium text-muted-ink [font-variant-numeric:tabular-nums]">{n}</span>
+          <span className="min-w-0 flex-1 text-meta font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{name}</span>
+          <span className="flex-none text-caption font-medium text-muted-ink [font-variant-numeric:tabular-nums]">{n}</span>
         </button>
       </div>
       {days.map((_, i) => {
         const free = freeOn(i);
         return (
-          <div key={i} style={{ width: COL }} title={`${name} · ${date(dayIso(i))} · ${free} of ${n} ${n === 1 ? 'unit' : 'units'} free`}
-            className={`flex-none box-border h-9 pr-2 flex items-center justify-end text-[11px] whitespace-nowrap [font-variant-numeric:tabular-nums] ${free === 0 ? 'text-faint' : 'text-muted-ink font-medium'}`}>
+          <div key={i} style={{ width: COL }} title={`${name} · ${date(dayIso(i))} · ${free} of ${plural(n, 'unit')} free`}
+            className={`flex-none box-border h-9 pr-2 flex items-center justify-end text-caption whitespace-nowrap [font-variant-numeric:tabular-nums] ${free === 0 ? 'text-faint' : 'text-muted-ink font-medium'}`}>
             {free === 0 ? 'Full' : `${free} free`}
           </div>
         );
@@ -725,7 +721,7 @@ function BuildingRowHeader({ name, units, folded, showToggle, onToggle, days, by
 function SubRow({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div className="flex [border-top:1px_solid_var(--color-line-soft)]">
-      <div className={`${STICKY_COL} z-10 pl-2 md:pl-[38px] pr-2 md:pr-3 h-10 md:h-8 flex items-center gap-1.5 md:gap-2 text-[12px] text-muted-ink min-w-0`}>{label}</div>
+      <div className={`${STICKY_COL} z-10 pl-2 md:pl-[38px] pr-2 md:pr-3 h-10 md:h-8 flex items-center gap-1.5 md:gap-2 text-meta text-muted-ink min-w-0`}>{label}</div>
       {children}
     </div>
   );

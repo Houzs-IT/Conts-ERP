@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card } from '../components/Card';
+import { Card, CardHeader } from '../components/Card';
+import PageHeader from '../components/PageHeader';
+import { EmptyState } from '../components/States';
+import { MoneyText, moneyString } from '../components/MoneyText';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
@@ -11,12 +14,12 @@ import { useApi } from '../lib/useApi';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
-import { rm, rmShort, date, monthLabel, todayMyt, titleCase } from '../lib/format';
+import { rmShort, date, monthLabel, todayMyt, titleCase } from '../lib/format';
 import { PayoutDetails } from './owners/PayoutDetails';
 import { cx } from '../lib/design-tokens';
 import {
   type Owner, type UnitLine, type Payload, type FeeSource,
-  FALLBACK, netOf, grossOf, guaranteedOf, terms, linkBtn,
+  FALLBACK, netOf, grossOf, guaranteedOf, terms,
   Roll, Section, StatementHistory, LinkUnitModal, ContractModal,
 } from './owners/shared';
 
@@ -115,16 +118,11 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
 
   if (!o) {
     return (
-      <div className="flex flex-col gap-4">
-        <BackLink onBack={() => navigate('/owners')} />
-        <Card>
-          <div className="flex flex-col items-center gap-2 text-center py-[52px] px-6">
-            <span className="text-muted-ink"><Icon name="UserX" /></span>
-            <div className="text-heading font-semibold">{loading ? 'Loading owner…' : 'Owner not found'}</div>
-            {!loading && <div className="text-copy text-muted-ink max-w-[360px]">{error ?? 'This owner is no longer on file.'}</div>}
-            {!loading && <button onClick={() => navigate('/owners')} className="mt-1 text-gold-ink bg-transparent [border:none] cursor-pointer [font:inherit]">Back to owners</button>}
-          </div>
-        </Card>
+      <div className="flex flex-col gap-5">
+        <PageHeader title={loading ? 'Owner' : 'Owner not found'} back={{ label: 'All owners', onClick: () => navigate('/owners') }} />
+        <EmptyState icon="UserX" title={loading ? 'Loading owner…' : 'Owner not found'}
+          body={loading ? undefined : (error ?? 'This owner is no longer on file.')}
+          action={loading ? undefined : { label: 'Back to owners', onClick: () => navigate('/owners') }} />
       </div>
     );
   }
@@ -138,7 +136,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
     try {
       await api.patch(`/units/${u.unitId}`, { ownerId: o.id });
       await api.post('/contracts', { ownerId: o.id, model: u.model, managementFeePct: u.feePct ?? 0, grrAmount: u.grrAmount ?? 0, startsOn: todayMyt() });
-      toast({ tone: 'success', title: 'Unit linked.', body: `${u.unitLabel} assigned to ${o.displayName}.` });
+      toast({ tone: 'success', title: 'Unit linked.', body: `${titleCase(u.unitLabel)} assigned to ${titleCase(o.displayName)}.` });
       setModal(null); reload();
     } catch (e) {
       toast({ tone: 'critical', title: 'Unit was not linked.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
@@ -148,7 +146,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
     if (!o) return;
     try {
       await api.post('/contracts', { ownerId: o.id, managementFeePct: c.feePct, startsOn: c.startedOn, renewsOn: c.renewsOn });
-      toast({ tone: 'success', title: 'Contract saved.', body: `Management agreement recorded for ${o.displayName}.` });
+      toast({ tone: 'success', title: 'Contract saved.', body: `Management agreement recorded for ${titleCase(o.displayName)}.` });
       setModal(null); reload();
     } catch (e) {
       toast({ tone: 'critical', title: 'Contract was not saved.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
@@ -170,7 +168,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
   function invite() {
     if (!o) return;
     setDialog({
-      title: `Invite ${o.displayName} to the owner portal?`,
+      title: `Invite ${titleCase(o.displayName)} to the owner portal?`,
       body: 'Creates an owner account with a temporary password. They can view their statements, revenue and property health, and approve quotes.',
       meta: o.email, confirmLabel: 'Send invite',
       onConfirm: async () => {
@@ -178,7 +176,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
         try {
           await api.post(`/owners/${o.id}/invite`);
           patch({ portalInvited: true });
-          toast({ tone: 'success', title: 'Invite sent.', body: `${o.displayName} can now sign in to the owner portal.` });
+          toast({ tone: 'success', title: 'Invite sent.', body: `${titleCase(o.displayName)} can now sign in to the owner portal.` });
         } catch (e) {
           toast({ tone: 'critical', title: 'Invite was not sent.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
         } finally { setBusy(false); setDialog(null); }
@@ -188,14 +186,14 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
   function deleteOwner() {
     if (!o) return;
     setDialog({
-      title: `Delete ${o.displayName}?`,
+      title: `Delete ${titleCase(o.displayName)}?`,
       body: 'This permanently removes the owner record and their portal login, if any. Only possible when they have no units, contract or statement history.',
       meta: o.email, confirmLabel: 'Delete owner', busyLabel: 'Deleting…', danger: true,
       onConfirm: async () => {
         setBusy(true);
         try {
           await api.del(`/owners/${o.id}`);
-          toast({ tone: 'success', title: 'Owner deleted.', body: `${o.displayName} was removed.` });
+          toast({ tone: 'success', title: 'Owner deleted.', body: `${titleCase(o.displayName)} was removed.` });
           navigate('/owners');
         } catch (e) {
           toast({ tone: 'critical', title: 'Owner was not deleted.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
@@ -206,28 +204,24 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <BackLink onBack={() => navigate('/owners')} />
+      <PageHeader
+        title={titleCase(o.displayName)}
+        back={{ label: 'All owners', onClick: () => navigate('/owners') }}
+        badge={o.portalInvited ? <Badge tone="success" label="Portal active" /> : <Badge tone="neutral" label="Not invited" />}
+        sub={
+          <span className="flex flex-wrap gap-x-3 gap-y-1">
+            {o.email ? <a href={`mailto:${o.email}`} className="text-ink underline underline-offset-2">{o.email}</a> : <span>No email on file</span>}
+            {o.phone ? <a href={`tel:${o.phone.replace(/[^+0-9]/g, '')}`} className="text-ink underline underline-offset-2">{o.phone}</a> : <span>No phone on file</span>}
+          </span>
+        }
+        primary={o.portalInvited ? undefined : <Button size="sm" variant="primary" icon={<Icon name="Mail" size="sm" />} onClick={invite}>Invite to portal</Button>}
+      />
 
       {error && <StaleBanner message={`Showing the last record we have. ${error}`} onRetry={reload} />}
 
-      {/* Header */}
+      {/* Headline figures, whole ringgit; the unit P&L below is exact. */}
       <Card>
-        <div className="pt-6 px-6 pb-5 flex items-start justify-between gap-5 flex-wrap">
-          <div className="flex items-center gap-4 min-w-0">
-            <span className="w-14 h-14 flex-none rounded-[999px] bg-black text-gold grid place-items-center text-title font-semibold">
-              {o.displayName.split(' ').map(n => n[0]).slice(0, 2).join('')}
-            </span>
-            <div className="min-w-0">
-              <h1 className="m-0 text-headline font-semibold tracking-[-0.01em]">{titleCase(o.displayName)}</h1>
-              <div className="text-copy text-muted-ink mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                {o.email ? <a href={`mailto:${o.email}`} className="text-ink underline underline-offset-2">{o.email}</a> : <span>No email on file</span>}
-                {o.phone ? <a href={`tel:${o.phone.replace(/[^+0-9]/g, '')}`} className="text-ink underline underline-offset-2">{o.phone}</a> : <span>No phone on file</span>}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-end">{o.portalInvited ? <Badge tone="success" label="Portal active" /> : <Badge tone="neutral" label="Not invited" />}</div>
-        </div>
-        <div className="flex gap-[30px] flex-wrap pt-[18px] px-6 pb-5 [border-top:1px_solid_var(--color-line-soft)]">
+        <div className="flex gap-[30px] gap-y-3 flex-wrap py-4 px-5">
           <Roll label="Owner payout, this month (estimate)" value={rmShort(net)} strong />
           {guaranteed > 0 && <Roll label="of which guaranteed rent" value={rmShort(guaranteed)} />}
           <Roll label="Booking revenue, this month" value={rmShort(gross)} />
@@ -240,12 +234,9 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
         {/* Left column: units + per-unit P&L */}
         <div className="flex flex-col gap-5 min-w-0">
           <Card>
-            <div className="pt-[18px] px-[22px] pb-[14px] flex items-center justify-between gap-3">
-              <span className="text-title font-semibold">Units and P&amp;L</span>
-              <button onClick={() => setModal('link')} className={linkBtn}><Icon name="Plus" size="sm" /> Link unit</button>
-            </div>
+            <CardHeader title="Units and P&L" right={<Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal('link')}>Link unit</Button>} />
             {o.units.length === 0 ? (
-              <div className="px-[22px] pb-5 text-copy text-muted-ink">No units linked yet. Use <button onClick={() => setModal('link')} className="bg-transparent [border:none] p-0 cursor-pointer [font:inherit] font-semibold text-gold-ink underline underline-offset-2">Link unit</button> to assign one and preset the fee or GRR.</div>
+              <EmptyState bare title="No units linked yet." body="Link a unit to assign it to this owner and preset the fee or guaranteed rent." />
             ) : (
               <div className="[border-top:1px_solid_var(--color-line-soft)]">
                 {o.units.map(u => <UnitPanel key={u.unitId} ownerId={o.id} unit={u} owner={o} />)}
@@ -257,16 +248,16 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
         {/* Right column: fee default, contract, payout, statements */}
         <div className="flex flex-col gap-5 min-w-0">
           <Card>
-            <div className="p-[22px] flex flex-col gap-5">
-              <Section title="Owner-level default fee" action={<button onClick={() => setModal('defaultFee')} className={linkBtn}><Icon name="Pencil" size="sm" /> {o.defaultManagementFeePct != null ? 'Change' : 'Set'}</button>}>
+            <div className="p-5 flex flex-col gap-5">
+              <Section title="Owner-level default fee" action={<Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setModal('defaultFee')}>{o.defaultManagementFeePct != null ? 'Change' : 'Set'}</Button>}>
                 <div className="text-copy text-muted-ink leading-[1.6]">
                   {o.defaultManagementFeePct != null
-                    ? <>Units under {o.displayName} use <strong className="font-semibold text-ink">{o.defaultManagementFeePct}%</strong> unless a unit sets its own fee on <strong className="font-semibold">Link unit</strong>.</>
+                    ? <>Units under {titleCase(o.displayName)} use <strong className="font-semibold text-ink">{o.defaultManagementFeePct}%</strong> unless a unit sets its own fee on <strong className="font-semibold">Link unit</strong>.</>
                     : <>No owner default set. Units fall back to their own contract fee, or 25%. Set a default to apply one fee across this owner's units.</>}
                 </div>
               </Section>
 
-              <Section title="Contract" action={<button onClick={() => setModal('contract')} className={linkBtn}><Icon name="Plus" size="sm" /> {o.contract ? 'Update' : 'Add contract'}</button>}>
+              <Section title="Contract" action={<Button size="sm" variant="tertiary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal('contract')}>{o.contract ? 'Update' : 'Add contract'}</Button>}>
                 {o.contract ? (
                   <div className="text-copy text-muted-ink">
                     {o.contract.feePct > 0 ? `${o.contract.feePct}% management fee` : 'GRR agreement'} · started {date(o.contract.startedOn)}{o.contract.renewsOn ? ` · renews ${date(o.contract.renewsOn)}` : ''}
@@ -281,24 +272,14 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
           </Card>
 
           <Card>
-            <div className="p-4 flex flex-col gap-[9px]">
-              <div className="flex gap-[9px]">
-                <Button variant="primary" style={{ flex: 1 }} icon={<Icon name="Mail" size="sm" />} onClick={invite} disabled={o.portalInvited} disabledReason="This owner already has portal access">
-                  {o.portalInvited ? 'Portal active' : 'Invite to portal'}
-                </Button>
-              </div>
-            </div>
-          </Card>
-
-          <Card>
-            <div className="p-4 flex flex-col gap-1.5">
+            <div className="py-4 px-5 flex flex-col gap-1.5">
               <span className="text-meta font-semibold text-[var(--color-critical-fg)]">Danger zone</span>
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <span className="text-meta text-muted-ink text-pretty max-w-[300px]">{canDelete ? 'Removes this owner and their portal login. Cannot be undone.' : 'An owner with units or a contract cannot be deleted. Reassign or remove those first.'}</span>
-                <button type="button" onClick={deleteOwner} disabled={!canDelete} title={canDelete ? undefined : 'This owner has units or a contract on file.'}
-                  className={cx('bg-transparent border-none p-0 font-sans text-copy font-medium', canDelete ? 'text-[var(--color-critical-fg)] cursor-pointer underline underline-offset-2' : 'text-faint cursor-not-allowed')}>
+                <Button size="sm" variant="tertiary" onClick={deleteOwner} disabled={!canDelete} disabledReason="This owner has units or a contract on file."
+                  style={canDelete ? { color: 'var(--color-critical-fg)' } : undefined}>
                   Delete owner
-                </button>
+                </Button>
               </div>
             </div>
           </Card>
@@ -310,14 +291,6 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       {modal === 'defaultFee' && <DefaultFeeModal current={o.defaultManagementFeePct} owner={o.displayName} onClose={() => setModal(null)} onSubmit={saveDefaultFee} />}
       <Dialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
     </div>
-  );
-}
-
-function BackLink({ onBack }: { onBack: () => void }) {
-  return (
-    <button onClick={onBack} className="self-start inline-flex items-center gap-[6px] bg-transparent [border:none] cursor-pointer [font:inherit] text-copy text-muted-ink">
-      <Icon name="ChevronLeft" size="sm" /> All owners
-    </button>
   );
 }
 
@@ -337,11 +310,11 @@ function UnitPanel({ ownerId, unit, owner }: { ownerId: string; unit: UnitLine; 
         className="w-full flex items-center gap-[13px] py-[13px] px-[22px] bg-transparent [border:none] cursor-pointer text-left font-sans text-ink">
         <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size="sm" color="var(--color-muted-ink)" />
         <div className="flex flex-col gap-px flex-1 min-w-0">
-          <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{unit.unitLabel}</span>
-          <span className="text-meta text-muted-ink">{terms(unit)} · {unit.occupancy}% occ · ADR {rm(unit.adr, { cents: false })}</span>
+          <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{titleCase(unit.unitLabel)}</span>
+          <span className="text-meta text-muted-ink">{terms(unit)} · {unit.occupancy}% occupied · ADR {moneyString(unit.adr, 'exact')}</span>
         </div>
         <div className="flex flex-col items-end gap-0.5 flex-none">
-          <span className="text-copy font-semibold tabular-nums">{rm(unit.net, { cents: false })}</span>
+          <MoneyText sen={unit.net} mode="exact" tone="auto" strong className="text-copy" />
           {unit.model === 'management' && feeSource && <span className="text-caption text-muted-ink">{FEE_SOURCE_LABEL[feeSource]}</span>}
         </div>
       </button>
@@ -366,9 +339,9 @@ function UnitPanel({ ownerId, unit, owner }: { ownerId: string; unit: UnitLine; 
               <div className="grid grid-cols-[repeat(auto-fit,minmax(84px,1fr))] gap-3 py-3 px-4 bg-page rounded-card">
                 {[
                   ['Occupancy', `${up.occupancy}%`],
-                  ['ADR', rm(up.adr, { cents: false })],
-                  ['Gross', rm(up.gross, { cents: false })],
-                  ['Net', rm(up.net, { cents: false })],
+                  ['ADR', moneyString(up.adr, 'exact')],
+                  ['Gross', moneyString(up.gross, 'exact')],
+                  ['Net', moneyString(up.net, 'exact')],
                 ].map(([label, value]) => (
                   <div key={label} className="flex flex-col gap-0.5 min-w-0">
                     <span className="text-caption text-muted-ink">{label}</span>
@@ -384,9 +357,7 @@ function UnitPanel({ ownerId, unit, owner }: { ownerId: string; unit: UnitLine; 
                   return (
                     <div key={i} className={cx('flex items-center justify-between gap-4 py-[10px] px-[13px] [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0', isNet && 'bg-page')}>
                       <span className={cx('text-copy', isNet ? 'font-semibold text-ink' : 'font-normal text-muted-ink')}>{l.label}</span>
-                      <span className={cx('tabular-nums', isNet ? 'text-copy font-bold text-ink' : 'text-copy font-medium text-ink')}>
-                        {l.amount < 0 ? `− ${rm(Math.abs(l.amount), { cents: false })}` : rm(l.amount, { cents: false })}
-                      </span>
+                      <MoneyText sen={l.amount} mode="exact" className={cx('text-copy text-ink', isNet ? 'font-bold' : 'font-medium')} />
                     </div>
                   );
                 })}
@@ -405,12 +376,12 @@ function UnitPanel({ ownerId, unit, owner }: { ownerId: string; unit: UnitLine; 
                           <Badge tone="neutral" label={cap(e.category)} size="sm" />
                           <span className="whitespace-nowrap overflow-hidden text-ellipsis">{e.label}</span>
                         </span>
-                        <span className="text-meta font-medium tabular-nums">{rm(Math.abs(e.amount), { cents: false })}</span>
+                        <MoneyText sen={Math.abs(e.amount)} mode="exact" className="text-meta font-medium" />
                       </div>
                     ))}
                     <div className="flex items-center justify-between gap-4 py-[9px] px-[13px] bg-page">
                       <span className="text-meta font-semibold">Total expenses</span>
-                      <span className="text-copy font-semibold tabular-nums">{rm(up.expensesTotal, { cents: false })}</span>
+                      <MoneyText sen={up.expensesTotal} mode="exact" strong className="text-copy" />
                     </div>
                   </div>
                 )}
@@ -441,7 +412,7 @@ function DefaultFeeModal({ current, owner, onClose, onSubmit }: { current: numbe
         <form onSubmit={e => { e.preventDefault(); if (valid && !busy) { setBusy(true); onSubmit(parsed); } }}>
           <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[5px]">
             <h2 className="m-0 text-title font-semibold">Owner default management fee</h2>
-            <p className="m-0 text-copy text-muted-ink">Applied to every unit of {owner} that has no fee of its own. Leave blank to clear it.</p>
+            <p className="m-0 text-copy text-muted-ink">Applied to every unit of {titleCase(owner)} that has no fee of its own. Leave blank to clear it.</p>
           </div>
           <div className="py-4 px-[22px]">
             <Field label="Default management fee %" type="number" min={0} max={100} numeric value={pct} placeholder="e.g. 22"

@@ -14,6 +14,7 @@ import { dateTime, plural } from '../lib/format';
 import { EmptyState } from '../components/States';
 import { SearchSelect } from '../components/Select';
 import { useUnitRoster } from '../lib/useUnitRoster';
+import { Chip } from './finance/listKit';
 import { TASK } from '../lib/vocabulary';
 import type { TaskState } from '../lib/types';
 
@@ -185,11 +186,12 @@ export default function InspectionsPage() {
 
   // ---- Derived -------------------------------------------------------------
 
-  const filtered = rows.filter(i =>
-    filter === 'All' ? true
-    : filter === 'Passed' ? i.passed === true
-    : filter === 'Failed' ? i.passed === false
-    : i.passed === null);
+  const matches = (i: Inspection, fl: Filter) =>
+    fl === 'All' ? true
+    : fl === 'Passed' ? i.passed === true
+    : fl === 'Failed' ? i.passed === false
+    : i.passed === null;
+  const filtered = rows.filter(i => matches(i, filter));
 
   const groups = GROUP_ORDER
     .map(state => ({ state, items: filtered.filter(i => i.state === state) }))
@@ -226,16 +228,11 @@ export default function InspectionsPage() {
 
       {error && <StaleBanner message={`Showing the last inspections we have. ${error}`} onRetry={reload} />}
 
-      <div className="flex gap-[7px] flex-wrap">
-        {FILTERS.map(fl => {
-          const on = fl === filter;
-          return (
-            <button key={fl} onClick={() => setFilter(fl)}
-              className={`h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border ${on ? 'bg-black text-white border-black' : 'bg-white text-muted-ink border-line'}`}>
-              {fl}
-            </button>
-          );
-        })}
+      <div className="flex items-center gap-2 flex-wrap">
+        {FILTERS.map(fl => (
+          <Chip key={fl} on={fl === filter} onClick={() => setFilter(fl)} count={rows.filter(i => matches(i, fl)).length}>{fl}</Chip>
+        ))}
+        {filter !== 'All' && <Button size="sm" variant="tertiary" onClick={() => setFilter('All')}>Clear filters</Button>}
       </div>
 
       <span className="text-meta text-muted-ink">
@@ -249,7 +246,7 @@ export default function InspectionsPage() {
           body="An inspection checks a unit after cleaning, item by item, before it is released for the next guest. Start one for any unit."
           action={{ label: 'Start inspection', onClick: () => setStarting(true) }} />
       ) : filtered.length === 0 ? (
-        <EmptyState kind="filtered" title={`No inspections are ${filter.toLowerCase()}.`} action={{ label: 'Show all', onClick: () => setFilter('All') }} />
+        <EmptyState kind="filtered" title={`No inspections are ${filter.toLowerCase()}.`} action={{ label: 'Clear filters', onClick: () => setFilter('All') }} />
       ) : (
         <div className="flex flex-col gap-4">
           {groups.map(g => (
@@ -453,7 +450,7 @@ function ChecklistPanel({
                   onChange={e => onNote(idx, e.target.value)}
                   placeholder="What is wrong, and what needs doing."
                   rows={2}
-                  className="w-full box-border py-[9px] px-[11px] text-ink bg-white border border-line rounded-control outline-none [font:inherit] resize-y"
+                  className="w-full box-border py-[9px] px-[11px] text-ink bg-white border border-line rounded-control outline-none [font-family:inherit] text-copy resize-y"
                 />
                 <div className="flex items-center gap-2.5 flex-wrap">
                   {item.linkedIssue ? (
@@ -462,10 +459,10 @@ function ChecklistPanel({
                       Tracked as {item.linkedIssue}
                     </span>
                   ) : (
-                    <button onClick={() => onRaise(idx)} className="h-8 px-3 py-0 rounded-control border border-[#C2413B] bg-white text-[var(--color-critical-fg)] cursor-pointer [font:inherit] inline-flex items-center gap-1.5">
-                      <Icon name="Wrench" size="sm" />
+                    <Button size="sm" variant="secondary" icon={<Icon name="Wrench" size="sm" />} onClick={() => onRaise(idx)}
+                      style={{ color: 'var(--color-critical-fg)', borderColor: 'var(--color-critical-line)' }}>
                       Raise maintenance issue
-                    </button>
+                    </Button>
                   )}
                   <span className="text-caption text-muted-ink">A failed item holds the unit off check-in.</span>
                 </div>
@@ -500,7 +497,7 @@ function ChecklistPanel({
 }
 
 function PassFail({ value, onPass, onFail }: { value: boolean | null; onPass: () => void; onFail: () => void }) {
-  const seg = 'py-[7px] px-[14px] cursor-pointer [font:inherit] inline-flex items-center gap-[5px]';
+  const seg = 'py-[7px] px-[14px] cursor-pointer [font-family:inherit] text-copy inline-flex items-center gap-[5px]';
   return (
     <div className="inline-flex flex-none border border-line rounded-control overflow-hidden">
       <button type="button" onClick={onPass} aria-pressed={value === true}

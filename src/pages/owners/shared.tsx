@@ -4,7 +4,9 @@ import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { useApi } from '../../lib/useApi';
 import type { RosterUnit } from '../../lib/useUnitRoster';
-import { rm, monthLabel } from '../../lib/format';
+import { rm, monthLabel, titleCase } from '../../lib/format';
+import { MoneyText } from '../../components/MoneyText';
+import { Select, SearchSelect } from '../../components/Select';
 import { cx } from '../../lib/design-tokens';
 import { STATEMENT } from '../../lib/vocabulary';
 import type { StatementState } from '../../lib/types';
@@ -65,7 +67,8 @@ export const grossOf = (o: Owner) => o.units.reduce((s, u) => s + u.gross, 0);
 export const guaranteedOf = (o: Owner) => o.units.reduce((s, u) => s + (u.model === 'grr' ? u.net : 0), 0);
 export const managedGrossOf = (o: Owner) => o.units.reduce((s, u) => s + (u.model === 'grr' ? 0 : u.gross), 0);
 export const managedNetOf = (o: Owner) => o.units.reduce((s, u) => s + (u.model === 'grr' ? 0 : u.net), 0);
-export const terms = (u: UnitLine) => u.model === 'grr' ? `GRR ${rm(u.grrAmount ?? 0, { cents: false })}/mo` : `${u.feePct ?? 0}% fee`;
+// Exact, because terms sit beside owner money (net payout, P&L) that is shown with sen.
+export const terms = (u: UnitLine) => u.model === 'grr' ? `GRR ${rm(u.grrAmount ?? 0)}/mo` : `${u.feePct ?? 0}% fee`;
 
 // One statement per past period, combined across all of an owner's units.
 export interface OwnerStatement { id: string; period: string; grossBookingValue: number; netPayout: number; state: StatementState }
@@ -88,8 +91,6 @@ export function statementsFallback(o: Owner): StatementsPayload {
     }),
   };
 }
-
-export const linkBtn = 'inline-flex items-center gap-[5px] bg-transparent [border:none] cursor-pointer font-sans text-copy font-medium text-gold-ink';
 
 export function Roll({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
@@ -126,8 +127,8 @@ export function StatementHistory({ o }: { o: Owner }) {
             <a key={s.id} href={`#/finance/statements/${encodeURIComponent(s.id)}`}
               className="grid grid-cols-[1fr_0.9fr_0.9fr_auto] gap-2.5 items-center py-[11px] px-[13px] [border-bottom:1px_solid_var(--color-line-soft)] no-underline text-inherit!">
               <div className="text-copy font-medium">{periodLabel(s.period)}</div>
-              <span className="text-meta text-right text-muted-ink tabular-nums">{rm(s.grossBookingValue, { cents: false })}</span>
-              <span className="text-copy text-right font-semibold tabular-nums">{rm(s.netPayout, { cents: false })}</span>
+              <MoneyText sen={s.grossBookingValue} mode="exact" tone="muted" className="text-meta text-right" />
+              <MoneyText sen={s.netPayout} mode="exact" strong className="text-copy text-right" />
               <span className="flex justify-end"><Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} size="sm" /></span>
             </a>
           ))}
@@ -167,15 +168,6 @@ export function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, c
     </div>
   );
 }
-const selectStyle = 'h-[var(--control-height)] w-full box-border py-0 px-3 font-sans text-copy text-ink bg-card border border-solid border-line rounded-control outline-none';
-export function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
-  return (
-    <div className="flex flex-col gap-[7px]">
-      <label className="text-meta font-medium text-muted-ink">{label}</label>
-      <select value={value} onChange={e => onChange(e.target.value)} className={selectStyle}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
-    </div>
-  );
-}
 
 export function AddOwnerModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (o: Omit<Owner, 'id' | 'units' | 'portalInvited' | 'contract' | 'defaultManagementFeePct'>) => void }) {
   const [f, setF] = useState({ displayName: '', email: '', phone: '', ic: '', bankName: '', bankAccount: '', accountHolder: '' });
@@ -210,11 +202,11 @@ export function LinkUnitModal({ owner, units, onClose, onSubmit }: { owner: stri
   const [grr, setGrr] = useState('');
   const canSubmit = unitId !== '' && (model === 'management' ? feePct !== '' : grr !== '');
   return (
-    <Modal title="Link a unit" sub={`Assign a unit to ${owner} and preset how the owner is paid.`} onClose={onClose} submitLabel="Link unit" canSubmit={canSubmit}
+    <Modal title="Link a unit" sub={`Assign a unit to ${titleCase(owner)} and preset how the owner is paid.`} onClose={onClose} submitLabel="Link unit" canSubmit={canSubmit}
       onSubmit={() => onSubmit(line(unitId, unitLabel, model, model === 'management' ? Number(feePct) : undefined, model === 'grr' ? Math.round(Number(grr) * 100) : undefined, 0, 0, 0, 0))}>
-      <SelectField label="Unit" value={unitId} onChange={v => setUnitId(v)}
-        options={[{ value: '', label: 'Choose a unit' }, ...choices.map(u => ({ value: u.id, label: `${u.propertyName} ${u.unitNumber}${u.ownerName ? ` (now ${u.ownerName})` : ''}` }))]} />
-      <SelectField label="Payout model" value={model} onChange={v => setModel(v as FeeModel)}
+      <SearchSelect showLabel label="Unit" allLabel="Choose a unit" placeholder="Search unit or building" value={unitId} onChange={v => setUnitId(v)}
+        options={choices.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName, hint: u.ownerName ? `now ${titleCase(u.ownerName)}` : undefined }))} />
+      <Select showLabel size="md" label="Payout model" value={model} onChange={v => setModel(v as FeeModel)}
         options={[{ value: 'management', label: 'Management fee (% of revenue)' }, { value: 'grr', label: 'GRR — guaranteed monthly rent' }]} />
       {model === 'management'
         ? <Field label="Management fee %" type="number" min={0} max={100} numeric value={feePct} onChange={e => setFeePct(e.target.value)} help="Overrides the owner default for this unit. The Conts keeps this share; the owner receives the rest." />
@@ -229,7 +221,7 @@ export function ContractModal({ owner, onClose, onSubmit }: { owner: string; onC
   const [renewsOn, setRenewsOn] = useState('');
   const canSubmit = startedOn !== '';
   return (
-    <Modal title="Management agreement" sub={`Record the contract terms for ${owner}.`} onClose={onClose} submitLabel="Save contract" canSubmit={canSubmit}
+    <Modal title="Management agreement" sub={`Record the contract terms for ${titleCase(owner)}.`} onClose={onClose} submitLabel="Save contract" canSubmit={canSubmit}
       onSubmit={() => onSubmit({ feePct: Number(feePct) || 0, startedOn, renewsOn: renewsOn || null })}>
       <Field label="Management fee %" type="number" min={0} max={100} numeric value={feePct} onChange={e => setFeePct(e.target.value)} help="Set 0 for a GRR-only arrangement." />
       <div className="grid grid-cols-2 gap-3">

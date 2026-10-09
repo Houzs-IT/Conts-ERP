@@ -5,7 +5,8 @@ import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { dateTime, relative } from '../lib/format';
+import { count, dateTime, relative } from '../lib/format';
+import { EmptyState } from '../components/States';
 import { cx } from '../lib/design-tokens';
 
 // System Health, laid out like the Hookka /admin/health page so the two can be moved between systems:
@@ -44,11 +45,11 @@ function StatCard({ icon, label, value, sub, tone = 'neutral', title, onClick }:
   return (
     <div title={title} onClick={onClick} className={cx('relative overflow-hidden rounded-card border border-solid border-line bg-card px-4 py-3', onClick && 'cursor-pointer hover:border-line-strong')}>
       <span aria-hidden className="absolute left-0 top-0 h-full w-[3px]" style={{ background: BAR[tone] }} />
-      <div className="flex items-center gap-1.5 text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink">
+      <div className="flex items-center gap-1.5 text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">
         <span style={{ color: tone === 'neutral' ? undefined : INK[tone] }} className="flex">{icon}</span><span>{label}</span>
       </div>
       <div className="mt-1.5 text-headline font-bold leading-none tracking-[-0.01em] [font-variant-numeric:tabular-nums]" style={{ color: INK[tone] }}>
-        {typeof value === 'number' ? value.toLocaleString() : value}
+        {typeof value === 'number' ? count(value) : value}
       </div>
       {sub && <div className="mt-1 text-caption text-muted-ink">{sub}</div>}
     </div>
@@ -79,7 +80,7 @@ function Breakdown({ title, items }: { title: string; items: { label: string; co
   const max = Math.max(1, ...items.map(i => i.count));
   return (
     <div className="rounded-card border border-solid border-line-soft p-3">
-      <div className="mb-2 text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink">{title}</div>
+      <div className="mb-2 text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">{title}</div>
       <div className="flex flex-col gap-1.5">
         {items.map(i => (
           <div key={i.label} className="flex items-center gap-2 text-meta">
@@ -104,7 +105,7 @@ function AuditDiff({ before, after }: { before: Detail; after: Detail }) {
         const b = before?.[k], a = after?.[k];
         const changed = before && after && show(b) !== show(a);
         return (
-          <div key={k} className={cx('grid grid-cols-[160px_1fr] gap-3 py-[7px] px-[13px]', i < keys.length - 1 && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
+          <div key={k} className={cx('grid grid-cols-[minmax(110px,160px)_1fr] gap-3 py-2 px-3', i < keys.length - 1 && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
             <span className="text-meta font-medium text-muted-ink">{words(k)}</span>
             <span className="text-meta font-mono break-all">
               {before && after ? (changed ? <>{show(b)} <span className="text-muted-ink">→</span> {show(a)}</> : show(a)) : show(a ?? b)}
@@ -116,8 +117,8 @@ function AuditDiff({ before, after }: { before: Detail; after: Detail }) {
   );
 }
 
-const panel = 'rounded-card border border-solid border-line bg-card px-5 py-5';
-const panelTitle = 'text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink';
+const panel = 'rounded-card border border-solid border-line bg-card p-5';
+const panelTitle = 'text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink';
 
 export default function SystemHealthPage() {
   const [range, setRange] = useState<Range>('7d');
@@ -133,7 +134,7 @@ export default function SystemHealthPage() {
   const d = live.data;
   const banner = useMemo<{ tone: BannerTone; label: string; detail: string }>(() => {
     if (!d) return live.error ? { tone: 'red', label: 'The health check itself could not run', detail: live.error } : { tone: 'loading', label: 'Checking…', detail: '' };
-    const detail = `DB ${fmtMs(d.db.latency_ms)} · Storage ${d.r2.bound ? fmtMs(d.r2.latency_ms) : '—'} · ${d.counts.users_active} active users`;
+    const detail = `DB ${fmtMs(d.db.latency_ms)} · Storage ${d.r2.bound ? fmtMs(d.r2.latency_ms) : '—'} · ${count(d.counts.users_active)} active users`;
     if (!d.db.ok) return { tone: 'red', label: 'Database unreachable', detail: d.db.error || detail };
     if (d.db.latency_ms >= VERY_SLOW_MS) return { tone: 'red', label: `Database very slow (${fmtMs(d.db.latency_ms)})`, detail };
     const down = [d.r2.bound && !d.r2.ok ? 'File storage' : '', ...d.checks.filter(c => c.status === 'critical').map(c => c.label)].filter(Boolean);
@@ -151,7 +152,7 @@ export default function SystemHealthPage() {
     <>
       <PageHeader title="System Health"
         sub={d ? `Checked ${relative(d.time)} · this version published ${dateTime(__BUILD_ID__)}` : 'Live state of the database, storage, integrations and recent changes.'}
-        right={<Button size="sm" variant="secondary" icon={<Icon name="RefreshCw" size="sm" />} loading={live.loading && !!d} onClick={() => { reloadLive(); reloadFeed(); }}>Refresh</Button>} />
+        actions={<Button size="sm" variant="secondary" icon={<Icon name="RefreshCw" size="sm" />} loading={live.loading && !!d} onClick={() => { reloadLive(); reloadFeed(); }}>Refresh</Button>} />
 
       <HealthBanner tone={banner.tone} label={banner.label} detail={banner.detail} />
 
@@ -165,9 +166,9 @@ export default function SystemHealthPage() {
             <StatCard icon={<Icon name="HardDrive" size="sm" />} label="File storage" value={d.r2.bound ? fmtMs(d.r2.latency_ms) : '—'} sub={d.r2.bound ? (d.r2.ok ? 'Reachable' : 'Unreachable') : 'Not connected'}
               tone={d.r2.bound && !d.r2.ok ? 'error' : 'neutral'} />
             <StatCard icon={<Icon name="Users" size="sm" />} label="Active users" value={d.counts.users_active}
-              sub={`${d.counts.users_invited} invited · ${d.counts.users_disabled} disabled${d.counts.users_locked ? ` · ${d.counts.users_locked} locked` : ''}`}
+              sub={`${count(d.counts.users_invited)} invited · ${count(d.counts.users_disabled)} disabled${d.counts.users_locked ? ` · ${count(d.counts.users_locked)} locked` : ''}`}
               tone={d.counts.users_locked ? 'warning' : 'neutral'} onClick={() => navigate('/system/users')} />
-            <StatCard icon={<Icon name="ClipboardCheck" size="sm" />} label="Audit events 24h" value={d.counts.audit_24h} sub={`${d.counts.audit_7d} in 7d · ${d.counts.sensitive_24h} sensitive today`} />
+            <StatCard icon={<Icon name="ClipboardCheck" size="sm" />} label="Audit events 24h" value={d.counts.audit_24h} sub={`${count(d.counts.audit_7d)} in 7d · ${count(d.counts.sensitive_24h)} sensitive today`} />
             {d.checks.map(c => (
               <StatCard key={c.key} icon={<Icon name={CHECK_ICON[c.key] ?? 'Activity'} size="sm" />} label={c.label} value={c.value} sub={c.summary}
                 tone={CHECK_TONE[c.status]} title={c.detail} onClick={c.link ? () => navigate(c.link!.path) : undefined} />
@@ -204,9 +205,10 @@ export default function SystemHealthPage() {
           <div className={panel}>
             <div className={cx(panelTitle, 'mb-3 flex items-center gap-2')}><Icon name="Bug" size="sm" /> Problems in the last 7 days</div>
             {d.problems.length === 0
-              ? <div className="py-3 text-center text-copy text-muted-ink">Nothing has failed.</div>
+              ? <EmptyState bare icon="CircleCheck" title="Nothing has failed." body="Failed messages, syncs and jobs from the last 7 days show here." />
               : (
-                <table className="w-full border-collapse text-copy">
+                <div className="overflow-x-auto">
+                <table className="w-full min-w-[560px] border-collapse text-copy">
                   <thead><tr className="text-left text-caption text-muted-ink">{['When', 'What happened', 'Unit', 'Reason given'].map(h => <th key={h} className="font-medium py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{h}</th>)}</tr></thead>
                   <tbody>
                     {d.problems.map((p, i) => (
@@ -219,6 +221,7 @@ export default function SystemHealthPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
           </div>
         </>
@@ -251,11 +254,12 @@ export default function SystemHealthPage() {
         )}
         {feed.loading && rows.length === 0 ? <TableSkeleton rows={4} cols={4} />
           : feed.error && rows.length === 0 ? <div className="py-6 text-center text-copy text-[var(--color-critical-fg)]">{feed.error}</div>
-          : rows.length === 0 ? <div className="py-6 text-center text-copy text-muted-ink">No {sensitiveOnly ? 'sensitive ' : ''}events in the last {range}.</div>
+          : rows.length === 0 ? <EmptyState bare kind={sensitiveOnly ? 'filtered' : 'empty'} icon="ClipboardCheck" title={`No ${sensitiveOnly ? 'sensitive ' : ''}events in the last ${range}.`}
+              action={sensitiveOnly ? { label: 'Show all events', onClick: () => { setSensitiveOnly(false); setLimit(100); } } : undefined} />
           : (
             <>
-            <div className="max-h-[520px] overflow-y-auto">
-              <table className="w-full border-collapse text-copy">
+            <div className="max-h-[520px] overflow-auto">
+              <table className="w-full min-w-[480px] border-collapse text-copy">
                 <thead><tr className="text-left text-caption text-muted-ink">{['When', 'Who', 'Action', 'Resource'].map(h => <th key={h} className="sticky top-0 bg-card font-medium py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{h}</th>)}</tr></thead>
                 <tbody>
                   {rows.map(r => (
@@ -270,7 +274,7 @@ export default function SystemHealthPage() {
                       </tr>
                       {openRow === r.id && (
                         <tr><td colSpan={4} className="px-5 py-2 bg-page [border-bottom:1px_solid_var(--color-line-soft)]">
-                          <div className="text-meta text-muted-ink">{dateTime(r.created_at)} · record {r.entity_id}</div>
+                          <div className="text-meta text-muted-ink">{dateTime(r.created_at)} · record {String(r.entity_id).length > 12 ? String(r.entity_id).slice(0, 6).toUpperCase() : r.entity_id}</div>
                           <AuditDiff before={r.before} after={r.after} />
                         </td></tr>
                       )}
@@ -279,8 +283,8 @@ export default function SystemHealthPage() {
                 </tbody>
               </table>
             </div>
-            <div className="mt-3 flex items-center justify-between gap-3 text-meta text-muted-ink">
-              <span>Showing {rows.length} of {(feed.data?.total ?? rows.length).toLocaleString()} in the last {range}. Click a row to see what changed.</span>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-meta text-muted-ink">
+              <span>Showing {count(rows.length)} of {count(feed.data?.total ?? rows.length)} in the last {range}. Click a row to see what changed.</span>
               {rows.length < (feed.data?.total ?? 0) && limit < 1000 && <Button size="sm" variant="secondary" loading={feed.loading} onClick={() => setLimit(l => Math.min(1000, l + 200))}>Show more</Button>}
             </div>
             </>

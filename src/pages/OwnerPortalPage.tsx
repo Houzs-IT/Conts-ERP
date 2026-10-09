@@ -3,12 +3,15 @@ import { color } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
 import { api, downloadFile } from '../lib/api';
-import { rm, rmDeduction, date, percent, rating, monthLabel } from '../lib/format';
+import { date, percent, rating, monthLabel, count, plural } from '../lib/format';
 import { TASK, PAYOUT } from '../lib/vocabulary';
 import type { TaskState, PayoutState } from '../lib/types';
 import { Badge } from '../components/Badge';
 import { Dialog } from '../components/Dialog';
 import { Button } from '../components/Button';
+import PageHeader from '../components/PageHeader';
+import { EmptyState } from '../components/States';
+import { MoneyText, moneyString } from '../components/MoneyText';
 import Icon from '../components/Icon';
 import { useToast } from '../components/Toast';
 
@@ -159,7 +162,7 @@ export default function OwnerPortalPage() {
   );
 
   if (!st) {
-    return <div className="p-6 text-[13px] text-muted-ink">{summary.error ?? 'Loading your account…'}</div>;
+    return <div className="p-6 text-copy text-muted-ink">{summary.error ?? 'Loading your account…'}</div>;
   }
   const multiUnit = st.units.length > 1;
 
@@ -195,64 +198,58 @@ export default function OwnerPortalPage() {
 
   const statsCards = [
     { label: 'Occupancy', value: percent(st.stats.occupancy), note: monthLabel(st.period) },
-    { label: 'Average nightly rate', value: st.stats.adr ? rm(st.stats.adr, { cents: false }) : '—', note: monthLabel(st.period) },
-    { label: 'Bookings', value: String(st.stats.bookings), note: monthLabel(st.period) },
-    { label: 'Guest rating', value: st.stats.rating != null ? rating(st.stats.rating) : '—', note: `${st.stats.reviews} reviews, last 12 months` },
+    { label: 'Average nightly rate', value: st.stats.adr ? moneyString(st.stats.adr, 'whole') : '—', note: monthLabel(st.period) },
+    { label: 'Bookings', value: count(st.stats.bookings), note: monthLabel(st.period) },
+    { label: 'Guest rating', value: st.stats.rating != null ? rating(st.stats.rating) : '—', note: `${plural(st.stats.reviews, 'review')}, last 12 months` },
   ];
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-1">
-        <h1 className="m-0 text-[28px] font-semibold tracking-[-0.015em]">Your property</h1>
-        <span className="text-[13.5px] text-muted-ink">
-          {st.units.length
-            ? st.units.map((u, i) => (
-                <span key={u.id}>
-                  {i > 0 && ' · '}
-                  <a href={`#/properties/units/${encodeURIComponent(u.id)}`} className="no-underline text-inherit!">{u.label}</a>
-                </span>
-              ))
-            : 'No units are on your account yet.'}
-        </span>
-      </div>
+      <PageHeader
+        title="Your property"
+        sub={st.units.length
+          ? st.units.map((u, i) => (
+              <span key={u.id}>
+                {i > 0 && ' · '}
+                <a href={`#/properties/units/${encodeURIComponent(u.id)}`} className="no-underline text-inherit!">{u.label}</a>
+              </span>
+            ))
+          : 'No units are on your account yet.'}
+      />
 
       {/* Statement summary — the gross → fees → expenses → net chain */}
-      <section className="bg-black text-white rounded-card p-7 flex justify-between gap-7 flex-wrap">
-        <div className="flex flex-col gap-[9px] min-w-[220px]">
-          <span className="text-[12px] text-[var(--color-text-on-dark-muted)]">Net payout · {monthLabel(st.period)}</span>
-          <span className="text-[40px] leading-[1.1] font-semibold tracking-[-0.02em] text-gold">{rm(st.payout.amount)}</span>
-          <div className="flex items-center gap-[9px] flex-wrap">
+      <section className="bg-black text-white rounded-card p-5 flex justify-between gap-6 flex-wrap">
+        <div className="flex flex-col gap-2 min-w-[220px]">
+          <span className="text-meta text-[var(--color-text-on-dark-muted)]">Net payout · {monthLabel(st.period)}</span>
+          <MoneyText sen={st.payout.amount} mode="exact" className="text-headline leading-[1.1] font-semibold tracking-[-0.01em] text-gold" />
+          <div className="flex items-center gap-2 flex-wrap">
             <Badge label={PAYOUT[st.payout.state].label} tone={PAYOUT[st.payout.state].tone} size="sm" />
-            {payoutLine && <span className="text-[12px] text-[var(--color-text-on-dark)]">{payoutLine}</span>}
+            {payoutLine && <span className="text-meta text-[var(--color-text-on-dark)]">{payoutLine}</span>}
           </div>
-          <span className={cx('mt-[3px] text-[11.5px]', st.isFinal ? 'text-[var(--color-text-on-dark-muted)]' : 'text-[var(--color-gold-300)]')}>
+          <span className={cx('mt-1 text-meta', st.isFinal ? 'text-[var(--color-text-on-dark-muted)]' : 'text-[var(--color-gold-300)]')}>
             {st.isFinal ? 'Finalised statement.' : 'Provisional figures. This statement is not final and may change.'}
           </span>
         </div>
 
-        <div className="flex flex-col gap-[11px] min-w-[260px] flex-1">
-          <span className="text-[11.5px] text-[var(--color-text-on-dark-muted)] uppercase tracking-[0.06em]">Gross to net</span>
+        <div className="flex flex-col gap-3 min-w-[min(260px,100%)] flex-1">
+          <span className="text-caption font-semibold text-[var(--color-text-on-dark-muted)] uppercase tracking-[0.06em]">Gross to net</span>
           {st.grossToNet.map(l => {
             const strong = l.type === 'net';
             return (
-              <div key={l.label} className="flex justify-between gap-[14px] pb-2 [border-bottom:1px_solid_var(--color-charcoal)]">
-                <span className={cx('text-[13px]', strong ? 'text-white font-semibold' : 'text-[var(--color-text-on-dark)] font-normal')}>
+              <div key={l.label} className="flex justify-between gap-3.5 pb-2 [border-bottom:1px_solid_var(--color-charcoal)]">
+                <span className={cx('text-copy', strong ? 'text-white font-semibold' : 'text-[var(--color-text-on-dark)] font-normal')}>
                   {l.label}
                   {l.reference && <span className="text-[var(--color-text-on-dark-muted)]"> · {l.reference}</span>}
                 </span>
-                <span className={cx('text-[13px] tabular-nums whitespace-nowrap', strong ? 'font-semibold text-gold' : 'font-medium text-white')}>
-                  {l.amount < 0 ? rmDeduction(l.amount) : rm(l.amount)}
-                </span>
+                <MoneyText sen={l.amount} mode="exact" className={cx('text-copy', strong ? 'font-semibold text-gold' : 'font-medium text-white')} />
               </div>
             );
           })}
-          <span className="text-[11.5px] text-[var(--color-text-on-dark-muted)] text-pretty">Gross booking value is the total before documented fees and expenses.</span>
-          <button
-            onClick={() => downloadStatement(st.statementId)}
-            className="self-start mt-[3px] inline-flex items-center gap-[7px] px-[14px] py-[9px] border border-solid border-gold rounded-control bg-transparent [font:inherit] text-gold cursor-pointer"
-          >
-            <Icon name="Download" size="sm" /> Download statement
-          </button>
+          <span className="text-meta text-[var(--color-text-on-dark-muted)] text-pretty">Gross booking value is the total before documented fees and expenses.</span>
+          <Button variant="brand" size="md" className="self-start mt-1" style={{ color: 'var(--color-gold)' }}
+            icon={<Icon name="Download" size="sm" />} onClick={() => downloadStatement(st.statementId)}>
+            Download statement
+          </Button>
         </div>
       </section>
 
@@ -262,47 +259,44 @@ export default function OwnerPortalPage() {
       {/* Performance stats */}
       <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
         {statsCards.map(s => (
-          <div key={s.label} className="bg-card border border-solid border-line rounded-card p-[18px] flex flex-col gap-[5px]">
-            <span className="text-[11.5px] text-muted-ink">{s.label}</span>
-            <span className="text-[26px] font-semibold">{s.value}</span>
-            <span className="text-[11.5px] text-muted-ink">{s.note}</span>
+          <div key={s.label} className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-1">
+            <span className="text-meta text-muted-ink">{s.label}</span>
+            <span className="text-headline font-semibold tabular-nums">{s.value}</span>
+            <span className="text-meta text-muted-ink">{s.note}</span>
           </div>
         ))}
       </div>
 
-      <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]">
+      <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))]">
         {/* Earnings trend — inline SVG */}
-        <section className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-[6px]">
-          <span className="text-[16px] font-semibold">Earnings over time</span>
-          <span className="text-[12px] text-muted-ink">
+        <section className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-1.5">
+          <span className="text-heading font-semibold">Earnings over time</span>
+          <span className="text-meta text-muted-ink">
             Net payout, RM · last {trend.data?.months ?? points.length} months · {trend.data?.unitLabel ?? st.unitsLabel}
           </span>
           {points.length ? <TrendChart points={points} /> : (
-            <span className="text-[13px] text-muted-ink mt-2">Earnings appear after your first statement.</span>
+            <EmptyState bare icon="ChartLine" title="No earnings yet" body="Earnings appear after your first statement." />
           )}
         </section>
 
         {/* Property health */}
         <section className="bg-card border border-solid border-line rounded-card overflow-hidden flex flex-col">
-          <div className="px-5 py-[18px] text-[16px] font-semibold [border-bottom:1px_solid_var(--color-line-soft)]">Property health</div>
-          {rows.length === 0 && <div className="px-5 py-[13px] text-[13px] text-muted-ink">No maintenance on your property.</div>}
+          <div className="px-5 py-[18px] text-heading font-semibold [border-bottom:1px_solid_var(--color-line-soft)]">Property health</div>
+          {rows.length === 0 && <EmptyState bare icon="Wrench" title="No maintenance on your property" body="Repairs and quotes that need your approval appear here." />}
           {rows.map(i => {
             const v = TASK[i.state];
             const waiting = i.state === 'waiting' && i.quotedAmount != null;
             return (
-              <div key={i.id} className="px-5 py-[13px] [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-[5px]">
-                <div className="flex items-center gap-[9px] flex-wrap">
+              <div key={i.id} className="px-5 py-3 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Badge label={v.label} tone={v.tone} size="sm" />
-                  <span className="text-[13.5px] font-medium">{i.title}</span>
+                  <span className="text-copy font-medium">{i.title}</span>
                 </div>
-                <span className="text-[11.5px] text-muted-ink text-pretty">{issueLine(i, multiUnit)}</span>
+                <span className="text-meta text-muted-ink text-pretty">{issueLine(i, multiUnit)}</span>
                 {waiting && (
-                  <button
-                    onClick={() => setApprove(i)}
-                    className="self-start mt-[2px] px-[13px] py-[7px] border border-solid border-gold rounded-control bg-transparent [font:inherit] text-gold-ink cursor-pointer"
-                  >
+                  <Button variant="brand" size="md" className="self-start mt-1" onClick={() => setApprove(i)}>
                     Approve quote
-                  </button>
+                  </Button>
                 )}
               </div>
             );
@@ -312,18 +306,18 @@ export default function OwnerPortalPage() {
 
       {/* Documents */}
       <section className="bg-card border border-solid border-line rounded-card overflow-hidden">
-        <div className="px-5 py-[18px] text-[16px] font-semibold [border-bottom:1px_solid_var(--color-line-soft)]">Documents</div>
-        {documents.length === 0 && <div className="px-5 py-[13px] text-[13px] text-muted-ink">Your statements and contract will appear here.</div>}
+        <div className="px-5 py-[18px] text-heading font-semibold [border-bottom:1px_solid_var(--color-line-soft)]">Documents</div>
+        {documents.length === 0 && <EmptyState bare icon="FileText" title="No documents yet" body="Your statements and contract will appear here." />}
         {documents.map(d => (
-          <div key={d.id} className="px-5 py-[13px] [border-bottom:1px_solid_var(--color-line-soft)] flex items-center gap-[14px]">
+          <div key={d.id} className="px-5 py-3 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center gap-3.5">
             <span className="w-[34px] h-[34px] flex-none grid place-items-center rounded-control bg-muted text-[var(--color-ink-2)]">
               <Icon name={DOC_ICON[d.type]} size="sm" />
             </span>
             <div className="flex flex-col gap-px min-w-0 flex-1">
-              <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{d.title}</span>
-              <span className="text-[11.5px] text-muted-ink">{d.meta}</span>
+              <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{d.title}</span>
+              <span className="text-meta text-muted-ink">{d.meta}</span>
             </div>
-            <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => downloadDoc(d)}>Download</Button>
+            <Button size="md" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => downloadDoc(d)}>Download</Button>
           </div>
         ))}
       </section>
@@ -332,7 +326,7 @@ export default function OwnerPortalPage() {
         busy={false}
         onClose={() => setApprove(null)}
         spec={!approve ? null : {
-          title: `Approve ${rm(approve.quotedAmount ?? 0)} for ${approve.title.toLowerCase()}?`,
+          title: `Approve ${moneyString(approve.quotedAmount ?? 0, 'exact')} for ${approve.title.toLowerCase()}?`,
           body: 'The Conts will schedule the work and deduct the amount from your next statement.',
           meta: [`Quoted ${date(approve.reportedAt)}`, approve.vendorName && `by ${approve.vendorName}`, approve.unitLabel].filter(Boolean).join(' · '),
           confirmLabel: 'Approve quote', busyLabel: 'Approving…', onConfirm: doApprove,
@@ -357,9 +351,9 @@ function StatementBreakdown({ statementId }: { statementId: string }) {
   return (
     <section className="bg-card border border-solid border-line rounded-card overflow-hidden">
       <div className="px-5 py-[18px] flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
-        <span className="text-[16px] font-semibold">Statement breakdown</span>
-        <span className="text-[12px] text-muted-ink">
-          {monthLabel(data.period)} · {multi ? `${data.units.length} units · tap a unit to open` : data.unitsLabel}
+        <span className="text-heading font-semibold">Statement breakdown</span>
+        <span className="text-meta text-muted-ink">
+          {monthLabel(data.period)} · {multi ? `${plural(data.units.length, 'unit')} · tap a unit to open` : data.unitsLabel}
         </span>
       </div>
 
@@ -372,34 +366,32 @@ function StatementBreakdown({ statementId }: { statementId: string }) {
               <button
                 onClick={() => setOpenUnit(o => (o === u.id ? null : u.id))}
                 aria-expanded={open}
-                className="w-full flex items-center justify-between gap-3 px-5 py-[14px] bg-transparent border-none cursor-pointer text-left"
+                className="w-full min-h-[48px] flex items-center justify-between gap-3 px-5 py-3.5 bg-transparent border-none cursor-pointer text-left font-sans text-ink"
               >
                 <span className="flex items-center gap-2 min-w-0">
                   <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size="sm" color="var(--color-muted-ink)" />
-                  <span className="text-[14px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">{u.label}</span>
+                  <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{u.label}</span>
                 </span>
-                <span className="text-[13.5px] font-semibold tabular-nums whitespace-nowrap">{rm(u.net)}</span>
+                <MoneyText sen={u.net} mode="exact" strong className="text-copy" />
               </button>
             )}
 
             {open && (
-              <div className={multi ? 'px-5 pb-[16px] pt-0' : 'px-5 py-[16px]'}>
-                {!multi && <div className="text-[13.5px] font-medium mb-[10px]">{u.label}</div>}
+              <div className={multi ? 'px-5 pb-4 pt-0' : 'px-5 py-4'}>
+                {!multi && <div className="text-copy font-medium mb-2.5">{u.label}</div>}
                 <div className="flex flex-col">
                   {u.lines.map((l, i) => (
-                    <div key={i} className="flex items-center justify-between gap-3 py-[8px] [border-bottom:1px_solid_var(--color-line-soft)]">
-                      <span className="text-[12.5px] text-muted-ink text-pretty">
+                    <div key={i} className="flex items-center justify-between gap-3 py-2 [border-bottom:1px_solid_var(--color-line-soft)]">
+                      <span className="text-copy text-muted-ink text-pretty">
                         {l.label}
                         {l.reference && <span className="text-faint"> · {l.reference}</span>}
                       </span>
-                      <span className={cx('text-[12.5px] tabular-nums whitespace-nowrap', l.type === 'gross' ? 'text-ink font-medium' : 'text-muted-ink')}>
-                        {l.amount < 0 ? rmDeduction(l.amount) : rm(l.amount)}
-                      </span>
+                      <MoneyText sen={l.amount} mode="exact" className={cx('text-copy', l.type === 'gross' ? 'text-ink font-medium' : 'text-muted-ink')} />
                     </div>
                   ))}
-                  <div className="flex items-center justify-between gap-3 pt-[11px]">
-                    <span className="text-[13px] font-semibold">Net payout · {shortLabel}</span>
-                    <span className="text-[13.5px] font-semibold text-gold-ink tabular-nums">{rm(u.net)}</span>
+                  <div className="flex items-center justify-between gap-3 pt-3">
+                    <span className="text-copy font-semibold">Net payout · {shortLabel}</span>
+                    <MoneyText sen={u.net} mode="exact" strong className="text-copy text-gold-ink" />
                   </div>
                 </div>
               </div>
@@ -415,11 +407,11 @@ function StatementBreakdown({ statementId }: { statementId: string }) {
 function issueLine(i: HealthIssue, showUnit: boolean): string {
   const where = showUnit ? `${i.unitLabel}. ` : '';
   if (i.state === 'waiting') {
-    return `${where}Quoted ${i.quotedAmount != null ? rm(i.quotedAmount) : ''}${i.vendorName ? ` by ${i.vendorName}` : ''} on ${date(i.reportedAt)}. Your approval is needed.`;
+    return `${where}Quoted ${i.quotedAmount != null ? moneyString(i.quotedAmount, 'exact') : ''}${i.vendorName ? ` by ${i.vendorName}` : ''} on ${date(i.reportedAt)}. Your approval is needed.`;
   }
   if (i.state === 'resolved') {
     const cost = i.chargeTo === 'owner' && i.finalAmount
-      ? ` ${rm(i.finalAmount)} on your statement.`
+      ? ` ${moneyString(i.finalAmount, 'exact')} on your statement.`
       : i.chargeTo === 'warranty' ? ' Covered under warranty.' : '';
     return `${where}Completed ${date(i.resolvedAt ?? i.reportedAt)}.${cost}`;
   }
@@ -441,10 +433,10 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
   const area = `${line} L${x(points.length - 1).toFixed(1)},${baseY} L${x(0).toFixed(1)},${baseY} Z`;
   const last = points[points.length - 1];
   const lastX = x(points.length - 1), lastY = y(last.netPayout);
-  const desc = points.map(p => `${monthLabel(p.period)} ${rm(p.netPayout)}`).join(', ');
+  const desc = points.map(p => `${monthLabel(p.period)} ${moneyString(p.netPayout, 'whole')}`).join(', ');
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" className="block mt-[6px] h-auto" role="img" aria-label={`Net payout by month: ${desc}`}>
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" className="block mt-1.5 h-auto" role="img" aria-label={`Net payout by month: ${desc}`}>
       <defs>
         <linearGradient id="owner-trend-fill" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color.gold} stopOpacity="0.24" />
@@ -455,7 +447,7 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
       <path d={area} fill="url(#owner-trend-fill)" />
       <path d={line} fill="none" stroke={color.gold} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
       <circle cx={lastX} cy={lastY} r="4.5" fill={color.gold} stroke="#FFFFFF" strokeWidth="2" />
-      <text x={lastX} y={Math.max(14, lastY - 12)} textAnchor="end" fontSize="12" fontWeight="600" fill={color.goldInk}>{rm(last.netPayout, { cents: false })}</text>
+      <text x={lastX} y={Math.max(14, lastY - 12)} textAnchor="end" fontSize="12" fontWeight="600" fill={color.goldInk}>{moneyString(last.netPayout, 'whole')}</text>
       {points.map((p, i) => (
         <text key={p.period} x={x(i)} y={H - 12} textAnchor="middle" fontSize="11" fill={color.textMuted}>{monthLabel(p.period)}</text>
       ))}

@@ -9,7 +9,8 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
-import { relative, time } from '../lib/format';
+import { relative, time, count } from '../lib/format';
+import { Button } from '../components/Button';
 import type { BookingChannel } from '../lib/types';
 
 /** A single message in a thread. `status` only ever exists on an outbound message
@@ -164,26 +165,30 @@ export default function InboxPage() {
     <>
       <PageHeader
         title="Inbox"
-        sub={`${unreadCount} unread · Airbnb, Booking.com, Agoda and WhatsApp messages together`}
+        sub={`${count(unreadCount)} unread · Airbnb, Booking.com, Agoda and WhatsApp messages together`}
       />
 
       {error && <StaleBanner message={`Showing the last threads we have. ${error}`} onRetry={reload} />}
 
-      <div role="tablist" aria-label="Filter conversations" className="flex gap-[7px] flex-wrap">
+      <div role="tablist" aria-label="Filter conversations" className="flex gap-2 flex-wrap">
         {(['all', 'unread'] as const).map(f => {
           const on = f === filter;
-          const label = f === 'all' ? 'All' : `Unread${unreadCount ? ` (${unreadCount})` : ''}`;
           return (
             <button key={f} role="tab" aria-selected={on} onClick={() => setFilter(f)}
-              className={cx('h-[34px] flex items-center py-0 px-[15px] rounded-full cursor-pointer whitespace-nowrap [font:inherit] border border-solid',
-                on ? 'border-black bg-black text-white' : 'border-line bg-white text-muted-ink')}>
-              {label}
+              className={cx('inline-flex shrink-0 items-center gap-[7px] h-8 px-[12px] rounded-full cursor-pointer whitespace-nowrap font-sans text-copy font-medium border border-solid',
+                on ? 'border-black bg-black text-white' : 'border-line bg-card text-muted-ink')}>
+              {f === 'all' ? 'All' : 'Unread'}
+              {f === 'unread' && unreadCount > 0 && (
+                <span className={cx('text-caption font-semibold py-px px-[6px] rounded-full tabular-nums', on ? 'bg-[rgba(255,255,255,0.18)] text-white' : 'bg-muted text-muted-ink')}>
+                  {count(unreadCount)}
+                </span>
+              )}
             </button>
           );
         })}
       </div>
 
-      <div className="grid [grid-template-columns:minmax(260px,0.8fr)_minmax(0,1.6fr)] gap-5 items-start">
+      <div className="grid grid-cols-1 md:[grid-template-columns:minmax(260px,0.8fr)_minmax(0,1.6fr)] gap-5 items-start">
         {/* ---- Thread list, every channel in one place ---- */}
         <Card>
           {loading && threads.length === 0 ? (
@@ -198,8 +203,8 @@ export default function InboxPage() {
               return (
                 <button key={t.id} onClick={() => selectThread(t.id)}
                   aria-current={on}
-                  className={cx('flex items-start gap-[11px] w-full py-[13px] px-4 [border-width:0_0_1px] [border-style:solid] [border-color:var(--color-line-soft)] cursor-pointer [font:inherit] text-left',
-                    on ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'bg-white')}>
+                  className={cx('flex items-start gap-3 w-full min-h-[48px] py-3 px-5 [border-width:0_0_1px] [border-style:solid] [border-color:var(--color-line-soft)] cursor-pointer [font:inherit] text-left',
+                    on ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'bg-card')}>
                   {t.channel && <ChannelMark ch={t.channel} size={22} />}
                   <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
@@ -219,7 +224,7 @@ export default function InboxPage() {
         {/* ---- Selected conversation ---- */}
         <Card>
           {open ? (
-            <div className="py-[15px] px-5 [border-bottom:1px_solid_var(--color-line)] flex items-center gap-[11px] flex-wrap">
+            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line)] flex items-center gap-3 flex-wrap">
               {open.channel && <ChannelMark ch={open.channel} size={22} />}
               <div className="flex flex-col gap-px flex-1 min-w-0">
                 <span className="text-copy font-semibold">{open.guestName ?? 'Unknown guest'}</span>
@@ -228,7 +233,7 @@ export default function InboxPage() {
               <Badge tone="neutral" label={threadChannelLabel(open.channel)} size="sm" />
             </div>
           ) : (
-            <div className="py-[15px] px-5 [border-bottom:1px_solid_var(--color-line)] text-meta text-muted-ink">
+            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line)] text-meta text-muted-ink">
               No conversation selected
             </div>
           )}
@@ -246,12 +251,12 @@ export default function InboxPage() {
                 const sending = m.status === 'sending';
                 return (
                   <div key={m.id} className={cx('flex flex-col gap-1', out ? 'items-end' : 'items-start')}>
-                    <div className={cx('max-w-[78%] py-[11px] px-[14px] rounded-card text-copy leading-[1.55] [text-wrap:pretty]',
+                    <div className={cx('max-w-[78%] py-2.5 px-3.5 rounded-card text-copy leading-[1.55] [text-wrap:pretty]',
                       sending ? 'opacity-70' : 'opacity-100',
                       out ? 'bg-black text-white' : 'bg-muted text-ink')}>
                       {m.body}
                     </div>
-                    <div className="flex items-center gap-[7px]">
+                    <div className="flex items-center gap-2">
                       <span className="text-caption text-muted-ink">
                         {sending ? 'Sending…' : time(m.sentAt)}
                       </span>
@@ -263,17 +268,15 @@ export default function InboxPage() {
             )}
           </div>
 
-          {open && <form onSubmit={send} className="py-[14px] px-5 [border-top:1px_solid_var(--color-line)] flex gap-2.5 items-center">
+          {open && <form onSubmit={send} className="py-4 px-5 [border-top:1px_solid_var(--color-line)] flex gap-2.5 items-center">
             <input value={draft} onChange={e => setDraft(e.target.value)}
               placeholder={open ? `Reply to ${open.guestName ?? 'guest'} on ${threadChannelLabel(open.channel)}` : 'Select a conversation'}
               disabled={!open}
               aria-label="Reply"
-              className="flex-1 min-w-0 h-10 py-0 px-[14px] [font:inherit] border border-solid border-line rounded-control outline-none" />
-            <button type="submit" disabled={!draft.trim() || !open}
-              className={cx('h-10 py-0 px-4 rounded-control border-0 [font:inherit]',
-                (draft.trim() && open) ? 'bg-black text-white cursor-pointer' : 'bg-muted text-faint cursor-not-allowed')}>
+              className="flex-1 min-w-0 h-10 py-0 px-3.5 [font-family:inherit] text-copy bg-card text-ink border border-solid border-line rounded-control outline-none" />
+            <Button type="submit" variant="primary" size="md" disabled={!draft.trim() || !open} disabledReason="Write a message first.">
               Send
-            </button>
+            </Button>
           </form>}
         </Card>
       </div>

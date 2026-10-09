@@ -7,6 +7,7 @@ import { useToast } from '../../components/Toast';
 import { color } from '../../theme';
 import { api, notifyFailure, downloadFile } from '../../lib/api';
 import { rm, monthLabel, year, todayMyt, date } from '../../lib/format';
+import { bankName } from '../../lib/vocabulary';
 import {
   BANKS, STATES, PACKAGES, TERMS, SPLITS, cap,
   SectionHead, Grid3, Labeled, Select, ReadOnly, CentreModal,
@@ -20,13 +21,13 @@ export function SaveBar({ title, sub, dirty, saving, canEdit, onSave, extra }: {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
       <div className="flex flex-col gap-1 min-w-0">
-        <span className="text-[16px] font-semibold">{title}</span>
-        {sub && <span className="text-[12px] text-muted-ink">{sub}</span>}
+        <span className="text-heading font-semibold">{title}</span>
+        {sub && <span className="text-meta text-muted-ink">{sub}</span>}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {extra}
         {canEdit && <>
-          {dirty && <span className="text-[12px] text-warning">Unsaved changes</span>}
+          {dirty && <span className="text-meta text-warning">Unsaved changes</span>}
           <Button variant="primary" size="sm" loading={saving} disabled={!dirty} disabledReason="Nothing has changed" onClick={onSave}>Save changes</Button>
         </>}
       </div>
@@ -72,11 +73,11 @@ export function DetailsForm({ u, buildings, money, canEdit, onChange }: { u: Uni
       <Grid3>
         <Labeled label="Owner name" hint="FREE TEXT"><Field label="" aria-label="Owner name" value={u.ownerName} onChange={e => onChange({ ownerName: e.target.value })} /></Labeled>
         <Labeled label="IC or passport" hint="FREE TEXT" help="Accepts both formats"><Field label="" aria-label="IC or passport" value={u.ic} onChange={e => onChange({ ic: e.target.value })} /></Labeled>
-        <Labeled label="Bank name" hint="DROPDOWN"><Select label="Bank name" value={u.bankName} onChange={v => onChange({ bankName: v })} options={BANKS.map(b => ({ value: b, label: b }))} /></Labeled>
+        <Labeled label="Bank name" hint="DROPDOWN"><Select label="Bank name" value={u.bankName} onChange={v => onChange({ bankName: v })} options={BANKS.map(b => ({ value: b, label: bankName(b) ?? b }))} /></Labeled>
         <Labeled label="Bank account" hint="FREE TEXT"><Field label="" aria-label="Bank account" value={u.bankAccount} onChange={e => onChange({ bankAccount: e.target.value })} /></Labeled>
         <Labeled label="Account holder" hint="FREE TEXT" span2><Field label="" aria-label="Account holder" value={u.accountHolder} onChange={e => onChange({ accountHolder: e.target.value })} /></Labeled>
       </Grid3>
-      <p className="-mt-3 mb-[22px] text-[11.5px] text-muted-ink">Owner and bank details belong to the owner, so a change here applies to every unit they own.</p>
+      <p className="-mt-3 mb-[22px] text-meta text-muted-ink">Owner and bank details belong to the owner, so a change here applies to every unit they own.</p>
 
       <SectionHead>Revenue model</SectionHead>
       <Grid3>
@@ -107,15 +108,15 @@ function GuaranteedRent({ u, onChange }: { u: Unit; onChange: Change }) {
   return (
     <div className="max-w-[440px] mt-1 mb-[6px]">
       <div className="flex items-baseline justify-between gap-2 mb-1.5">
-        <span className="text-[12px] font-medium text-muted-ink">Guaranteed rent</span>
-        <span className="text-[9px] font-bold tracking-[0.08em] text-faint">AMOUNT + PERIOD</span>
+        <span className="text-meta font-medium text-muted-ink">Guaranteed rent</span>
+        <span className="text-caption font-bold tracking-[0.08em] text-faint">AMOUNT + PERIOD</span>
       </div>
       <div className="flex gap-2">
         <div className="flex-1 min-w-0"><Field label="" aria-label="Guaranteed rent" type="number" numeric value={shown} onChange={e => setAmount(e.target.value)} /></div>
         <div className="w-[132px] flex-none"><Select label="Guarantee period" value={period} onChange={v => onChange({ guaranteePeriod: v as GuaranteePeriod })} options={[{ value: 'month', label: 'per month' }, { value: 'year', label: 'per year' }]} /></div>
       </div>
       {monthlySen != null ? (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2 text-[12px]">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2 text-meta">
           <span className="tabular-nums font-semibold text-ink">{rm(monthlySen, { cents: false })}</span>
           <span className="text-muted-ink">· {monthLabel(today)} per month</span>
           <span className="text-faint">—</span>
@@ -123,7 +124,7 @@ function GuaranteedRent({ u, onChange }: { u: Unit; onChange: Change }) {
           <span className="text-muted-ink">· {year(today)} per year</span>
         </div>
       ) : (
-        <p className="text-[12px] text-muted-ink mt-2">Enter the guarantee; the statement folds an annual figure back to a monthly deduction.</p>
+        <p className="text-meta text-muted-ink mt-2">Enter the guarantee; the statement folds an annual figure back to a monthly deduction.</p>
       )}
     </div>
   );
@@ -168,18 +169,18 @@ export function DocumentsCard({ unitId, unitLabel, documents, onUploaded }: { un
   return (
     <Card>
       <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
-        <span className="text-[16px] font-semibold">Documents</span>
-        <span className="text-[12px] text-muted-ink">Agreements, statements, inspection reports and photos for this unit.</span>
+        <span className="text-heading font-semibold">Documents</span>
+        <span className="text-meta text-muted-ink">Agreements, statements, inspection reports and photos for this unit.</span>
       </div>
-      {documents.length === 0 && <div className="py-6 px-5 text-[13px] text-muted-ink">No documents on this unit yet.</div>}
+      {documents.length === 0 && <div className="py-6 px-5 text-copy text-muted-ink">No documents on this unit yet.</div>}
       {documents.map(doc => (
         <div key={doc.id} className="flex items-center gap-[14px] py-[13px] px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
           <Icon name="FileText" size="nav" color={color.textMuted} />
           <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-            <span className="text-[13.5px] font-medium [overflow-wrap:anywhere]">{doc.name}</span>
-            <span className="text-[11.5px] text-muted-ink">{cap(doc.kind)} · {doc.sizeLabel} · added {date(doc.updatedAt)}</span>
+            <span className="text-copy font-medium [overflow-wrap:anywhere]">{doc.name}</span>
+            <span className="text-meta text-muted-ink">{cap(doc.kind)} · {doc.sizeLabel} · added {date(doc.updatedAt)}</span>
           </div>
-          <button onClick={() => download(doc)} className="text-gold-ink bg-transparent [border:none] cursor-pointer [font:inherit] flex-none">Download</button>
+          <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => download(doc)}>Download</Button>
         </div>
       ))}
       <div className="flex flex-wrap items-center gap-2 py-3 px-5 bg-page">
@@ -198,12 +199,12 @@ export function ExpensesEditor({ u, canEdit, onChange }: { u: Unit; canEdit: boo
   return (
     <fieldset disabled={!canEdit} className="p-5 m-0 border-0 min-w-0">
       <div className="border border-solid border-line rounded-card overflow-hidden">
-        {u.expenses.length === 0 && <div className="py-3 px-[14px] text-[13px] text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]">No recurring expenses.</div>}
+        {u.expenses.length === 0 && <div className="py-3 px-[14px] text-copy text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]">No recurring expenses.</div>}
         {u.expenses.map(e => (
           <div key={e.id} className="grid grid-cols-[minmax(0,1fr)_110px_30px] sm:grid-cols-[minmax(0,1fr)_160px_30px] gap-2 sm:gap-3 items-center py-[10px] px-[14px] [border-bottom:1px_solid_var(--color-line-soft)]">
             <input aria-label="Expense category" value={e.category} onChange={ev => onChange({ expenses: u.expenses.map(x => x.id === e.id ? { ...x, category: ev.target.value } : x) })} className="field-input h-[38px]! min-w-0" />
             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="text-[12px] text-muted-ink">RM</span>
+              <span className="text-meta text-muted-ink">RM</span>
               <input aria-label={`${e.category} amount`} type="number" value={String(Math.round(e.amount / 100))} onChange={ev => setAmt(e.id, ev.target.value)} className="field-input h-[38px]! min-w-0 text-right tabular-nums" />
             </div>
             {canEdit ? (
@@ -214,16 +215,16 @@ export function ExpensesEditor({ u, canEdit, onChange }: { u: Unit; canEdit: boo
         ))}
         {canEdit && (
           <button type="button" onClick={() => onChange({ expenses: [...u.expenses, { id: crypto.randomUUID(), category: 'Other', amount: 0, note: '' }] })}
-            className="flex items-center gap-2 w-full py-[10px] px-[14px] bg-card [border:none] [border-bottom:1px_solid_var(--color-line-soft)]! cursor-pointer font-sans text-[12.5px] font-medium text-gold-ink text-left">
+            className="flex items-center gap-2 w-full py-[10px] px-[14px] bg-card [border:none] [border-bottom:1px_solid_var(--color-line-soft)]! cursor-pointer font-sans text-copy font-medium text-gold-ink text-left">
             <Icon name="Plus" size="sm" /> Add expense
           </button>
         )}
         <div className="flex justify-between py-3 px-[14px] bg-muted">
-          <span className="text-[13px] font-semibold">Total monthly</span>
-          <span className="text-[13px] font-semibold">{rm(total)}</span>
+          <span className="text-copy font-semibold">Total monthly</span>
+          <span className="text-copy font-semibold tabular-nums">{rm(total)}</span>
         </div>
       </div>
-      <p className="text-[12px] text-muted-ink mt-[10px] mb-0">Deducted from the owner statement each month. Manual now; utilities API later.</p>
+      <p className="text-meta text-muted-ink mt-[10px] mb-0">Deducted from the owner statement each month.</p>
     </fieldset>
   );
 }
@@ -246,7 +247,7 @@ export function ConfirmAdd({ title, sub, body, confirm, onClose, onConfirm }: { 
   return (
     <CentreModal title={title} sub={sub} onClose={onClose}
       footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" onClick={onConfirm}>{confirm}</Button></>}>
-      <p className="m-0 text-[13px] text-muted-ink">{body}</p>
+      <p className="m-0 text-copy text-muted-ink">{body}</p>
     </CentreModal>
   );
 }
