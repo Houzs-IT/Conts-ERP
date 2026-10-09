@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { SearchSelect } from '../components/Select';
+import { SearchSelect, Select } from '../components/Select';
+import { Dot } from '../components/Badge';
+import { EmptyState } from '../components/States';
+import { Chip } from './finance/listKit';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { Field } from '../components/Field';
@@ -61,10 +64,6 @@ function scheduleTone(replaceBy: string | null): Tone | null {
   return null;
 }
 const isDue = (i: Item) => scheduleTone(i.replaceBy) !== null;
-
-/** Condition pill — tint background + AA foreground, routed through TONE so the
- *  status colours resolve to the -fg foreground, never the pale root tint. */
-const condPill = (c: Condition) => cx(TONE[COND_TONE[c]].bg, TONE[COND_TONE[c]].text);
 
 type CondFilter = 'all' | 'attention' | Condition;
 
@@ -132,7 +131,7 @@ export default function InventoryPage() {
     <>
       <PageHeader
         title="Fit-out register"
-        sub={`${plural(all.length, 'item')} across ${plural(unitCount, 'unit')} · furniture and fittings supplied to units`}
+        sub={`${plural(all.length, 'item')} across ${plural(unitCount, 'unit')}`}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Add item</Button>}
       />
 
@@ -147,29 +146,24 @@ export default function InventoryPage() {
         <Stat label="Units furnished" value={String(unitCount)} hint="With items on the register" />
       </div>
 
-      <div className="flex gap-[14px] items-end flex-wrap">
-        <SearchSelect label="Unit" showLabel className="w-[260px] max-w-full" allLabel="All units" placeholder="Search unit or building"
+      <div className="flex items-center gap-2 flex-wrap">
+        <SearchSelect label="Unit" className="w-[260px] max-w-full" allLabel="All units" placeholder="Search unit or building"
           value={unitFilter === 'all' ? '' : unitFilter} onChange={v => setUnitFilter(v || 'all')}
           options={units.map(u => ({ value: `${u.propertyName}|${u.unitNumber}`, label: u.unitNumber, group: u.propertyName }))} />
-
-        <div className="flex flex-col gap-1.5">
-          <span className="text-meta font-medium text-muted-ink">Condition</span>
-          <div className="flex gap-[7px] flex-wrap">
-            <Chip label="All" active={condFilter === 'all'} onClick={() => setCondFilter('all')} />
-            <Chip label="Needs attention" active={condFilter === 'attention'} onClick={() => setCondFilter('attention')} />
-            {CONDITIONS.map(c => <Chip key={c} label={COND_LABEL[c]} active={condFilter === c} onClick={() => setCondFilter(c)} />)}
-          </div>
-        </div>
-
-        {filtersOn && (
-          <button onClick={clearFilters}
-            className="h-8 flex items-center px-3 py-0 rounded-full cursor-pointer font-sans text-copy font-normal border border-solid border-line bg-transparent text-muted-ink">
-            Clear filters
-          </button>
-        )}
+        <Chip on={condFilter === 'all'} onClick={() => setCondFilter('all')} count={all.length}>All</Chip>
+        <Chip on={condFilter === 'attention'} onClick={() => setCondFilter('attention')} count={attention}>Needs attention</Chip>
+        {CONDITIONS.map(c => <Chip key={c} on={condFilter === c} onClick={() => setCondFilter(c)} count={all.filter(i => i.condition === c).length}>{COND_LABEL[c]}</Chip>)}
+        {filtersOn && <Button size="sm" variant="tertiary" onClick={clearFilters}>Clear filters</Button>}
       </div>
 
       <Card>
+        {!loading && rows.length === 0 ? (
+          filtersOn
+            ? <EmptyState bare kind="filtered" title="No items match these filters." action={{ label: 'Clear filters', onClick: clearFilters }} />
+            : <EmptyState bare icon="Sofa" title="No fit-out items recorded yet"
+                body="Add the furniture, appliances, linen and electronics supplied for each unit to track their condition and replacement."
+                action={{ label: 'Add item', onClick: () => setAdding(true) }} />
+        ) : (
         <div className="overflow-x-auto">
           <div className="min-w-[1060px]">
             <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-meta font-semibold text-muted-ink')}>
@@ -178,16 +172,6 @@ export default function InventoryPage() {
 
             {loading && all.length === 0 ? (
               <TableSkeleton rows={6} cols={7} />
-            ) : rows.length === 0 ? (
-              <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
-                <span className="text-copy font-semibold">{filtersOn ? 'No items match these filters.' : 'No fit-out items recorded yet.'}</span>
-                <span className="text-copy text-muted-ink max-w-[380px]">
-                  {filtersOn ? 'Adjust the unit or condition filter to see more of the register.' : 'Add the furniture, appliances, linen and electronics supplied for each unit to track their condition and replacement.'}
-                </span>
-                {filtersOn
-                  ? <button onClick={clearFilters} className="bg-transparent border-none cursor-pointer font-sans text-copy font-semibold text-gold-ink">Clear filters</button>
-                  : <div className="mt-1.5"><Button variant="secondary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Add item</Button></div>}
-              </div>
             ) : rows.map(i => {
               const sTone = scheduleTone(i.replaceBy);
               return (
@@ -203,12 +187,10 @@ export default function InventoryPage() {
                     <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{i.propertyName}</span>
                   </div>
                   <span className="text-copy text-[var(--color-ink-2)]">{CAT_LABEL[i.category]}</span>
-                  <div>
-                    <select value={i.condition} onChange={e => setCondition(i, e.target.value as Condition)}
-                      aria-label={`Condition of ${i.name}`}
-                      className={cx('h-[30px] px-2 py-0 font-sans text-heading font-normal cursor-pointer rounded-full border-none appearance-none text-center', condPill(i.condition))}>
-                      {CONDITIONS.map(c => <option key={c} value={c}>{COND_LABEL[c]}</option>)}
-                    </select>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Dot tone={COND_TONE[i.condition]} />
+                    <Select label={`Condition of ${i.name}`} className="flex-1" value={i.condition} onChange={v => setCondition(i, v as Condition)}
+                      options={CONDITIONS.map(c => ({ value: c, label: COND_LABEL[c] }))} />
                   </div>
                   <span className="text-copy text-right tabular-nums">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span>
                   <span className={cx('text-copy', sTone ? cx(TONE[sTone].text, 'font-semibold') : 'text-muted-ink font-normal')}>
@@ -220,6 +202,7 @@ export default function InventoryPage() {
             })}
           </div>
         </div>
+        )}
       </Card>
 
       {adding && <AddItemModal units={units} onClose={() => setAdding(false)} onSubmit={addItem} />}
@@ -228,17 +211,6 @@ export default function InventoryPage() {
 }
 
 /* ---------- small local primitives ---------- */
-
-/** Selected uses brand black (selection, never a status tone). */
-function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick} aria-pressed={active}
-      className={cx('h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer font-sans text-heading font-normal border border-solid',
-        active ? 'border-black bg-black text-white' : 'border-line bg-card text-muted-ink')}>
-      {label}
-    </button>
-  );
-}
 
 function Stat({ label, value, hint, tone, active, onClick }: { label: string; value: string; hint?: string; tone?: Tone; active?: boolean; onClick?: () => void }) {
   const interactive = !!onClick;
@@ -340,8 +312,8 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
           <div className="py-4 px-[22px] flex flex-col gap-[14px]">
             <Field label="Item" placeholder="e.g. Queen bed frame and mattress" value={f.name} onChange={set('name')} />
 
-            <Sel label="Unit" value={f.unitNumber} onChange={set('unitNumber')}
-              options={[...units.map(u => ({ value: u.unitNumber, label: u.label })), { value: '__new', label: 'Add a new unit…' }]} />
+            <SearchSelect label="Unit" showLabel value={f.unitNumber} onChange={v => set('unitNumber')({ target: { value: v } })} placeholder="Search unit or building"
+              options={[...units.map(u => ({ value: u.unitNumber, label: u.unitNumber, group: u.propertyName })), { value: '__new', label: 'Add a new unit…' }]} />
             {addingNewUnit && (
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Property" placeholder="e.g. Arte Mont Kiara" value={f.newProperty} onChange={set('newProperty')} />
@@ -350,12 +322,12 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
             )}
 
             <div className="grid grid-cols-2 gap-3">
-              <Sel label="Category" value={f.category} onChange={set('category')} options={CATEGORIES.map(c => ({ value: c, label: CAT_LABEL[c] }))} />
+              <Select size="md" showLabel label="Category" value={f.category} onChange={v => set('category')({ target: { value: v } })} options={CATEGORIES.map(c => ({ value: c, label: CAT_LABEL[c] }))} />
               <Field label="Quantity" placeholder="e.g. 1 set" value={f.quantity} onChange={set('quantity')} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <Sel label="Condition" value={f.condition} onChange={set('condition')} options={CONDITIONS.map(c => ({ value: c, label: COND_LABEL[c] }))} />
+              <Select size="md" showLabel label="Condition" value={f.condition} onChange={v => set('condition')({ target: { value: v } })} options={CONDITIONS.map(c => ({ value: c, label: COND_LABEL[c] }))} />
               <Field label="Purchase value (RM)" type="number" min={0} step="0.01" numeric placeholder="e.g. 3200" value={f.value} onChange={set('value')} />
             </div>
 
@@ -372,18 +344,6 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
           </div>
         </form>
       </div>
-    </div>
-  );
-}
-
-function Sel({ label, value, onChange, options }: { label: string; value: string; onChange: (e: { target: { value: string } }) => void; options: { value: string; label: string }[] }) {
-  return (
-    <div className="flex flex-col gap-[7px]">
-      <label className="text-meta font-medium text-muted-ink">{label}</label>
-      <select value={value} onChange={onChange}
-        className="h-10 w-full box-border px-3 py-0 font-sans text-copy text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
     </div>
   );
 }

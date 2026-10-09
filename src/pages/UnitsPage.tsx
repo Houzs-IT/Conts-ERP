@@ -3,7 +3,11 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { color, tone as T, channel as CH } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
-import { Badge } from '../components/Badge';
+import PageHeader from '../components/PageHeader';
+import { EmptyState } from '../components/States';
+import { Select } from '../components/Select';
+import { MoneyText } from '../components/MoneyText';
+import { Badge, Dot } from '../components/Badge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
@@ -13,7 +17,9 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure, downloadFile } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, dateRange, date, dateShort, dateTime, monthLabel } from '../lib/format';
+import { rm, dateRange, date, dateShort, dateTime, monthLabel, plural, humanize, titleCase } from '../lib/format';
+import { READINESS, TASK } from '../lib/vocabulary';
+import { STATUS } from '../lib/bookingStatus';
 import type { UnitReadiness } from '../lib/types';
 import UnitTree, { firstUnitId } from './units/UnitTree';
 import AccessTab from './units/AccessTab';
@@ -21,12 +27,14 @@ import BookingsTab from './units/BookingsTab';
 import { SaveBar, DetailsForm, ContractFields, DocumentsCard, ExpensesEditor, BuildingModal, ConfirmAdd } from './units/UnitForms';
 import { PROPERTIES_FALLBACK, DETAIL_FALLBACK, mkUnit } from './units/fallback';
 import {
-  READY_TONE, TASK_TONE, RES_TONE, COND_TONE, MASTER_ROLES, STATES, cap,
+  READY_TONE, TASK_TONE, COND_TONE, MASTER_ROLES, STATES, cap,
   type Unit, type Building, type PropertiesPayload, type UnitDetail, type RosterRow,
 } from './units/shared';
 
 /** The unit lifecycle states an operator can set by hand, in the order they read on the record. */
 const READINESS_OPTIONS: UnitReadiness[] = ['ready', 'occupied', 'cleaning', 'dirty', 'inspection', 'maintenance', 'blocked'];
+
+const CHARGE_LABEL: Record<string, string> = { owner: 'Owner', guest_deposit: 'Guest deposit', the_conts: 'The Conts', warranty: 'Warranty' };
 
 // Short labels so the eight tabs sit on one row; the title carries the full name.
 const TABS = [
@@ -158,13 +166,8 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   }
 
   const header = (
-    <div className="flex items-end justify-between gap-4 flex-wrap">
-      <div className="min-w-0">
-        <h1 className="m-0 text-[28px] leading-[1.2] font-semibold tracking-[-0.01em]">Units</h1>
-        <div className="text-[12px] text-muted-ink mt-1">{units.length} {units.length === 1 ? 'unit' : 'units'} · {buildings.length} {buildings.length === 1 ? 'building' : 'buildings'}</div>
-      </div>
-      {canEdit && <Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button>}
-    </div>
+    <PageHeader title="Units" sub={`${plural(units.length, 'unit')} · ${plural(buildings.length, 'building')}`}
+      primary={canEdit ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button> : undefined} />
   );
 
   const modals = <>
@@ -188,11 +191,9 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       <div className="flex flex-col gap-5">
         {header}
         <Card>
-          <div className="flex flex-col items-center gap-2 text-center py-[52px] px-6">
-            <span className="text-muted-ink"><Icon name="Building2" /></span>
-            <div className="text-[16px] font-semibold">No units yet</div>
-            <div className="text-[13px] text-muted-ink max-w-[360px]">{buildings.length ? 'Add a unit with the + on a building.' : 'Add a building first, then add units to it.'}</div>
-          </div>
+          <EmptyState bare icon="Building2" title="No units yet"
+            body={buildings.length ? 'Add a unit with the + on a building.' : 'Add a building first, then add units to it.'}
+            action={canEdit && !buildings.length ? { label: 'Add building', onClick: () => setModal({ kind: 'building' }) } : undefined} />
           {buildings.length > 0 && <div className="pb-4 px-4"><UnitTree buildings={buildings} units={units} selectedId="" readiness={readiness} canEdit={canEdit}
             onSelect={select} onEditBuilding={b => setModal({ kind: 'editBuilding', building: b })} onAddUnit={id => setModal({ kind: 'unit', buildingId: id })} onAddSubUnit={(bid, p) => setModal({ kind: 'subunit', buildingId: bid, parent: p })} /></div>}
         </Card>
@@ -216,10 +217,10 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
             className="xl:hidden flex items-center gap-3 w-full py-[11px] px-[14px] bg-card border border-solid border-line rounded-card cursor-pointer [font:inherit] text-left">
             <Icon name="Building2" size="sm" color={color.textMuted} />
             <span className="flex-1 min-w-0">
-              <span className="block text-[11px] text-muted-ink">{building?.name ?? 'Unit'}</span>
-              <span className="block text-[13.5px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{form?.unitCode || form?.listingName || 'Choose a unit'}</span>
+              <span className="block text-caption text-muted-ink">{building?.name ?? 'Unit'}</span>
+              <span className="block text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{form?.unitCode || form?.listingName || 'Choose a unit'}</span>
             </span>
-            <span className="text-[12.5px] font-medium text-gold-ink flex-none">{treeOpen ? 'Close' : 'Change unit'}</span>
+            <span className="text-meta font-medium text-gold-ink flex-none">{treeOpen ? 'Close' : 'Change unit'}</span>
           </button>
           <div className={cx(treeOpen ? 'block' : 'hidden', 'xl:block min-w-0')}>
             <UnitTree buildings={buildings} units={units} selectedId={openId} readiness={readiness} canEdit={canEdit}
@@ -230,7 +231,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
 
         <div className="flex flex-col gap-5 min-w-0">
           {!d ? (
-            <Card><div className="p-10 text-center text-muted-ink text-[13.5px]">{detail.error ?? 'Loading unit…'}</div></Card>
+            <Card><div className="p-10 text-center text-muted-ink text-copy">{detail.error ?? 'Loading unit…'}</div></Card>
           ) : (
             <UnitRecord d={d} form={form} buildings={buildings} building={building} unitLabel={unitLabel}
               tab={tab} setTab={setTab} canEdit={canEdit} dirty={dirty} saving={saving} onSave={() => void save()}
@@ -300,7 +301,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
     toast({ tone: 'info', title: 'Preparing report', body: `Expenses for ${unitLabel} — served as a download.` });
     downloadFile('/expenses/report', { unitId: form.id, period: new Date().toISOString().slice(0, 7) }).catch(notifyFailure);
   }
-  const needsForm = <Card><div className="p-8 text-center text-[13px] text-muted-ink">This unit's master data is not available to your role.</div></Card>;
+  const needsForm = <Card><div className="p-8 text-center text-copy text-muted-ink">This unit's master data is not available to your role.</div></Card>;
   const title = form?.listingName || `${u.propertyName} ${u.unitNumber}`;
   const subtitle = [form?.unitCode || u.unitNumber, building?.name ?? u.propertyName].filter(Boolean).join(' · ');
 
@@ -317,9 +318,9 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
             {!photo && (
               <div className="flex flex-col items-center gap-[7px] text-center px-4">
                 <Icon name="Image" size="lg" color={color.faint} />
-                <span className="text-[13.5px] font-medium text-ink">Drop a photo of this unit</span>
-                <span className="text-[12px] text-muted-ink">
-                  or <button onClick={() => fileRef.current?.click()} className="[font:inherit] text-[12px]! bg-transparent [border:none] p-0 cursor-pointer text-gold-ink underline">browse files</button>
+                <span className="text-copy font-medium text-ink">Drop a photo of this unit</span>
+                <span className="text-meta text-muted-ink">
+                  or <button onClick={() => fileRef.current?.click()} className="[font:inherit] text-meta! bg-transparent [border:none] p-0 cursor-pointer text-gold-ink underline">browse files</button>
                 </span>
               </div>
             )}
@@ -329,20 +330,16 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 
         <div className="pt-[18px] px-5 sm:px-6 pb-4 flex items-start justify-between gap-6 flex-wrap">
           <div className="flex flex-col gap-[9px] min-w-0">
-            <div className="text-[11px] font-bold tracking-[0.06em] text-muted-ink [overflow-wrap:anywhere]">{subtitle.toUpperCase()}</div>
-            <h2 className="m-0 text-[22px] sm:text-[24px] leading-[1.2] font-semibold tracking-[-0.01em] [overflow-wrap:anywhere]">{title}</h2>
-            <span className="text-[13px] text-muted-ink">{form?.address || `${u.addressLine}, ${u.city}`}</span>
+            <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink [overflow-wrap:anywhere]">{subtitle}</div>
+            <h2 className="m-0 text-title font-semibold tracking-[-0.01em] [overflow-wrap:anywhere]">{title}</h2>
+            <span className="text-copy text-muted-ink">{form?.address || `${u.addressLine}, ${u.city}`}</span>
             <div className="flex items-center gap-3 flex-wrap">
-              <label className="inline-flex items-center gap-2" title="Change the unit state">
-                <Badge tone={READY_TONE[readiness]} label={cap(readiness)} />
-                <span className="relative inline-flex items-center">
-                  <select aria-label="Change unit state" value={readiness} onChange={e => changeReadiness(e.target.value as UnitReadiness)}
-                    className="h-[30px] appearance-none pl-[10px] pr-[26px] text-[12px] font-medium text-ink bg-card border border-solid border-line rounded-control cursor-pointer outline-none">
-                    {READINESS_OPTIONS.map(r => <option key={r} value={r}>{cap(r)}</option>)}
-                  </select>
-                  <span className="pointer-events-none absolute right-[8px] text-muted-ink flex"><Icon name="ChevronDown" size="sm" /></span>
-                </span>
-              </label>
+              {/* One control for the state; the dot keeps its colour. A native select, so the list is never clipped by the card. */}
+              <span className="inline-flex items-center gap-2" title="Change the unit state">
+                <Dot tone={READY_TONE[readiness]} />
+                <Select label="Unit state" className="w-[150px]" value={readiness} onChange={v => changeReadiness(v as UnitReadiness)}
+                  options={READINESS_OPTIONS.map(r => ({ value: r, label: READINESS[r].label }))} />
+              </span>
               {form?.parentUnitId && <Badge tone="warning" label="Sub-unit" />}
               {form && <Badge tone="neutral" label={form.pkg} />}
               {u.channels.length > 0 && (
@@ -354,9 +351,9 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
             </div>
           </div>
           <div className="flex flex-col gap-1 flex-none items-start">
-            <span className="text-[12px] text-muted-ink">Owner</span>
-            <a href={`#/owners/${encodeURIComponent(u.owner.id)}`} className="text-[14.5px] font-semibold no-underline text-ink!">{u.owner.name}</a>
-            {u.contract && <span className="text-[12px] text-muted-ink">{u.contract.managementFeePct}% · renews {u.contract.renewsOn ? date(u.contract.renewsOn) : '—'}</span>}
+            <span className="text-meta text-muted-ink">Owner</span>
+            <a href={`#/owners/${encodeURIComponent(u.owner.id)}`} className="text-heading font-semibold no-underline text-ink!">{titleCase(u.owner.name)}</a>
+            {u.contract && <span className="text-meta text-muted-ink">{u.contract.managementFeePct}% · {u.contract.renewsOn ? `renews ${date(u.contract.renewsOn)}` : 'No renewal date'}</span>}
           </div>
         </div>
 
@@ -366,8 +363,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
             ['Rating', p.rating != null ? p.rating.toFixed(2) : '—'], ['Open issues', String(openIssues)],
           ].map(([label, value]) => (
             <div key={label} className="flex flex-col gap-1 min-w-0">
-              <span className="text-[12px] font-medium text-muted-ink">{label}</span>
-              <span className="text-[20px] sm:text-[22px] font-semibold tracking-[-0.01em]">{value}</span>
+              <span className="text-meta font-medium text-muted-ink">{label}</span>
+              <span className="text-title font-semibold tracking-[-0.01em] tabular-nums">{value}</span>
             </div>
           ))}
         </div>
@@ -375,7 +372,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
         <div ref={tabsRef} role="tablist" aria-label="Unit record" className="flex flex-nowrap px-5 sm:px-6 [border-top:1px_solid_var(--color-line)] overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {tabs.map(([k, label, full]) => (
             <button key={k} role="tab" aria-selected={k === shown} onClick={() => setTab(k)} title={full !== label ? full : undefined} data-tab={k}
-              className={cx('py-[13px] px-0.5 mr-4 last:mr-0 [border:none] bg-transparent cursor-pointer [font:inherit] whitespace-nowrap text-[13px]! flex-none',
+              className={cx('py-[13px] px-0.5 mr-4 last:mr-0 [border:none] bg-transparent cursor-pointer [font:inherit] whitespace-nowrap text-copy! flex-none',
                 k === shown ? 'font-semibold! text-ink [box-shadow:inset_0_-2px_0_var(--color-gold)]' : 'text-muted-ink')}>
               {label}
             </button>
@@ -387,33 +384,31 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(300px,100%),1fr))] gap-5 [align-items:start]">
           <Card>
             <div className="pt-[18px] px-5 pb-[14px] flex items-baseline justify-between gap-3">
-              <span className="text-[18px] font-semibold">Current and next stays</span>
-              <button type="button" onClick={() => setTab('reservations')} className="bg-transparent [border:none] p-0 cursor-pointer [font:inherit] text-[12.5px]! font-semibold text-gold-ink whitespace-nowrap">All bookings</button>
+              <span className="text-heading font-semibold">Current and next stays</span>
+              <button type="button" onClick={() => setTab('reservations')} className="bg-transparent [border:none] p-0 cursor-pointer [font:inherit] text-meta! font-semibold text-gold-ink whitespace-nowrap">All bookings</button>
             </div>
-            {d.stays.length === 0 && <div className="py-4 px-5 text-[13px] text-muted-ink [border-top:1px_solid_var(--color-line-soft)]">Nothing booked from today on.</div>}
+            {d.stays.length === 0 && <div className="py-4 px-5 text-copy text-muted-ink [border-top:1px_solid_var(--color-line-soft)]">Nothing booked from today on.</div>}
             {d.stays.slice(0, 4).map(s => (
               <div key={s.id} className="flex items-center gap-3 py-[13px] px-5 [border-top:1px_solid_var(--color-line-soft)]">
                 <span title={CH[s.channel].label} className="flex"><ChannelMark ch={s.channel} size={28} /></span>
                 <div className="flex flex-col gap-[3px] flex-1 min-w-0">
-                  <span className="text-[14px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{s.guestName ?? 'No guest'}</span>
-                  <span className="text-[12px] text-muted-ink"><span className="sr-only">{CH[s.channel].label} · </span>{dateRange(s.checkIn, s.checkOut)}</span>
+                  <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{s.guestName ?? 'No guest'}</span>
+                  <span className="text-meta text-muted-ink"><span className="sr-only">{CH[s.channel].label} · </span>{dateRange(s.checkIn, s.checkOut)}</span>
                 </div>
-                <Badge tone={RES_TONE[s.state]} label={cap(s.state)} />
+                <Badge tone={STATUS[s.state].tone} label={STATUS[s.state].label} />
               </div>
             ))}
           </Card>
           <ChannexChannelsCard unitId={u.id} linked={!!u.channexLinked} canManage={canManageChannels} onChanged={reload} />
           {d.pnl && (
             <Card>
-              <div className="pt-[18px] px-5 pb-[14px]"><span className="text-[18px] font-semibold">{periodLabel} P and L</span></div>
+              <div className="pt-[18px] px-5 pb-[14px]"><span className="text-heading font-semibold">{periodLabel} P and L</span></div>
               {d.pnl.map((l, i) => {
                 const net = l.type === 'net';
                 return (
                   <div key={i} className={cx('flex items-center justify-between gap-5 py-3 px-5 [border-top:1px_solid_var(--color-line-soft)]', net && 'bg-page')}>
-                    <span className={cx('text-[13.5px]', net ? 'font-semibold text-ink' : 'font-normal text-muted-ink')}>{l.label}</span>
-                    <span className={cx('text-ink whitespace-nowrap', net ? 'text-[15px] font-bold' : 'text-[13.5px] font-medium')}>
-                      {l.amount < 0 ? `− ${rm(Math.abs(l.amount), { cents: false })}` : rm(l.amount, { cents: false })}
-                    </span>
+                    <span className={cx('text-copy', net ? 'font-semibold text-ink' : 'font-normal text-muted-ink')}>{l.label}</span>
+                    <MoneyText sen={l.amount} mode="exact" className={cx('text-ink text-right', net ? 'text-heading font-semibold' : 'text-copy font-medium')} />
                   </div>
                 );
               })}
@@ -449,44 +444,44 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
         <>
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
-              <span className="text-[16px] font-semibold">Cleaning and tasks</span>
+              <span className="text-heading font-semibold">Cleaning and tasks</span>
               {/* units/detail.ts sends the latest 12; the full list is on the Housekeeping board. */}
-              {d.tasks.length >= 12 && <span className="text-[12px] text-muted-ink">Latest 12</span>}
+              {d.tasks.length >= 12 && <span className="text-meta text-muted-ink">Latest 12</span>}
             </div>
-            {d.tasks.length === 0 && <div className="py-4 px-5 text-[13px] text-muted-ink">No tasks for this unit.</div>}
+            {d.tasks.length === 0 && <div className="py-4 px-5 text-copy text-muted-ink">No tasks for this unit.</div>}
             {d.tasks.map(t => (
               <div key={t.id} className="flex items-center gap-[14px] py-[14px] px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex-wrap" style={{ borderLeft: `3px solid ${T[TASK_TONE[t.state]].line}` }}>
                 <div className="flex flex-col gap-0.5 flex-1 min-w-[180px]">
-                  <span className="text-[13.5px] font-medium">{t.title}</span>
-                  <span className="text-[11.5px] text-muted-ink">
-                    {cap(t.kind)} · {t.assigneeName ?? 'Unassigned'}{t.completedAt ? ` · done ${dateTime(t.completedAt)}` : t.dueAt ? ` · due ${dateTime(t.dueAt)}` : ''}
+                  <span className="text-copy font-medium">{t.title}</span>
+                  <span className="text-meta text-muted-ink">
+                    {humanize(t.kind)} · {t.assigneeName ?? 'Unassigned'}{t.completedAt ? ` · done ${dateTime(t.completedAt)}` : t.dueAt ? ` · due ${dateTime(t.dueAt)}` : ''}
                   </span>
                 </div>
-                <Badge tone={TASK_TONE[t.state]} label={cap(t.state)} />
+                <Badge tone={TASK_TONE[t.state]} label={TASK[t.state].label} />
               </div>
             ))}
           </Card>
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
-              <span className="text-[16px] font-semibold">Maintenance</span>
-              {d.maintenance.length >= 12 && <span className="text-[12px] text-muted-ink">Latest 12</span>}
+              <span className="text-heading font-semibold">Maintenance</span>
+              {d.maintenance.length >= 12 && <span className="text-meta text-muted-ink">Latest 12</span>}
             </div>
-            {d.maintenance.length === 0 && <div className="py-4 px-5 text-[13px] text-muted-ink">No maintenance issues reported.</div>}
+            {d.maintenance.length === 0 && <div className="py-4 px-5 text-copy text-muted-ink">No maintenance jobs reported.</div>}
             {d.maintenance.map(m => (
               <div key={m.id} className="py-[14px] px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-start gap-4 flex-wrap">
                 <div className="flex flex-col gap-[3px] flex-1 min-w-[200px]">
                   <div className="flex items-center gap-[9px] flex-wrap">
-                    <span className="text-[13.5px] font-semibold">{m.title}</span>
-                    <Badge tone={TASK_TONE[m.state]} label={cap(m.state)} />
+                    <span className="text-copy font-semibold">{m.title}</span>
+                    <Badge tone={TASK_TONE[m.state]} label={TASK[m.state].label} />
                     {m.blocksUnit && <Badge tone="critical" label="Blocks the unit" />}
                   </div>
-                  <span className="text-[11.5px] text-muted-ink">{dateShort(m.reportedAt)}{m.vendorName ? ` · ${m.vendorName}` : ''} · charged to {cap(m.chargeTo)}</span>
-                  {m.detail && <span className="text-[12.5px] [text-wrap:pretty]">{m.detail}</span>}
+                  <span className="text-meta text-muted-ink">{dateShort(m.reportedAt)}{m.vendorName ? ` · ${m.vendorName}` : ''} · charged to {CHARGE_LABEL[m.chargeTo] ?? humanize(m.chargeTo)}</span>
+                  {m.detail && <span className="text-copy [text-wrap:pretty]">{m.detail}</span>}
                 </div>
                 {(m.finalAmount != null || m.quotedAmount != null) && (
                   <div className="flex flex-col items-end gap-0.5 flex-none">
-                    <span className="text-[14px] font-semibold">{rm(m.finalAmount ?? m.quotedAmount!)}</span>
-                    <span className="text-[11px] text-muted-ink">{m.finalAmount != null ? 'Final' : 'Quoted'}</span>
+                    <MoneyText sen={m.finalAmount ?? m.quotedAmount!} mode="exact" className="text-copy font-semibold" />
+                    <span className="text-caption text-muted-ink">{m.finalAmount != null ? 'Final' : 'Quoted'}</span>
                   </div>
                 )}
               </div>
@@ -494,21 +489,21 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           </Card>
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center justify-between gap-3 flex-wrap">
-              <span className="text-[16px] font-semibold">Fit-out register</span>
-              <a href="#/properties/inventory" className="text-[12.5px] text-gold-ink no-underline">Open inventory</a>
+              <span className="text-heading font-semibold">Fit-out register</span>
+              <a href="#/properties/inventory" className="text-meta font-semibold text-gold-ink no-underline">Open inventory</a>
             </div>
-            {d.inventory.length === 0 ? <div className="py-4 px-5 text-[13px] text-muted-ink">Nothing recorded in this unit.</div> : (
+            {d.inventory.length === 0 ? <div className="py-4 px-5 text-copy text-muted-ink">Nothing recorded in this unit.</div> : (
               <div className="overflow-x-auto">
                 <div className="min-w-[600px]">
                   {d.inventory.map(i => (
                     <div key={i.id} className="grid grid-cols-[minmax(200px,2fr)_minmax(90px,0.8fr)_minmax(130px,1fr)_minmax(100px,0.9fr)] gap-[14px] items-center min-h-[50px] py-[9px] px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
                       <div className="flex flex-col gap-px min-w-0">
-                        <span className="text-[13.5px]">{i.name}</span>
-                        {i.suppliedInHouse && <span className="text-[11px] text-muted-ink">Supplied by The Conts</span>}
+                        <span className="text-copy">{i.name}</span>
+                        {i.suppliedInHouse && <span className="text-caption text-muted-ink">Supplied by The Conts</span>}
                       </div>
-                      <span className="text-[12.5px]">{i.quantity}</span>
+                      <span className="text-copy">{i.quantity}</span>
                       <div><Badge tone={COND_TONE[i.condition] ?? 'neutral'} label={cap(i.condition)} /></div>
-                      <span className="text-[12.5px] text-right">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span>
+                      <span className="text-copy text-right tabular-nums">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span>
                     </div>
                   ))}
                 </div>
@@ -529,19 +524,19 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           )}
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
-              <span className="text-[16px] font-semibold">Gross to net</span>
-              <span className="text-[12px] text-muted-ink">{periodLabel}</span>
+              <span className="text-heading font-semibold">Gross to net</span>
+              <span className="text-meta text-muted-ink">{periodLabel}</span>
             </div>
             {d.pnl.map((l, i) => {
               const net = l.type === 'net';
               return (
                 <div key={i} className={cx('flex items-center justify-between gap-5 [border-bottom:1px_solid_var(--color-line-soft)]', net ? 'py-[15px] px-5 bg-page' : 'py-3 px-5 bg-card')}>
-                  <span className={cx(net ? 'text-[14px] font-semibold text-ink' : 'text-[13px] font-normal text-muted-ink')}>{l.label}</span>
-                  <span className={cx('whitespace-nowrap', net ? 'text-[16px] font-semibold' : 'text-[13px] font-medium')}>{l.amount < 0 ? `− ${rm(Math.abs(l.amount))}` : rm(l.amount)}</span>
+                  <span className={cx(net ? 'text-copy font-semibold text-ink' : 'text-copy font-normal text-muted-ink')}>{l.label}</span>
+                  <MoneyText sen={l.amount} mode="exact" className={cx('text-right', net ? 'text-heading font-semibold' : 'text-copy font-medium')} />
                 </div>
               );
             })}
-            <div className="py-[13px] px-5 text-[11.5px] text-muted-ink [text-wrap:pretty]">
+            <div className="py-[13px] px-5 text-meta text-muted-ink [text-wrap:pretty]">
               Bookings that check in this month, less the management fee and the expenses recorded this month. The month is not closed yet, so the figures still move.
             </div>
           </Card>
@@ -551,20 +546,20 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       {shown === 'activity' && (
         <Card>
           <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
-            <span className="text-[16px] font-semibold">Activity</span>
-            <span className="text-[12px] text-muted-ink">Who did what, when, and from where. Read straight from the audit trail.</span>
+            <span className="text-heading font-semibold">Activity</span>
+            <span className="text-meta text-muted-ink">Who did what, when, and from where. Read straight from the audit trail.</span>
           </div>
-          {d.activity.length === 0 && <div className="py-4 px-5 text-[13px] text-muted-ink">Nothing recorded yet.</div>}
+          {d.activity.length === 0 && <div className="py-4 px-5 text-copy text-muted-ink">Nothing recorded yet.</div>}
           {d.activity.map((a, i) => (
             <div key={i} className="flex items-center gap-[14px] py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex-wrap">
-              <span className="w-[30px] h-[30px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-[11px] font-semibold">
+              <span className="w-[30px] h-[30px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-caption font-semibold">
                 {a.actorLabel.split(' ').map(n => n[0]).slice(0, 2).join('')}
               </span>
               <div className="flex flex-col gap-px flex-1 min-w-[160px]">
-                <span className="text-[13px]"><strong className="font-semibold">{a.actorLabel}</strong> · {a.action.replace(/[._]/g, ' ')}</span>
-                <span className="text-[11.5px] text-muted-ink">{a.source.replace(/_/g, ' ')}</span>
+                <span className="text-copy"><strong className="font-semibold">{a.actorLabel}</strong> · {a.action.replace(/[._]/g, ' ')}</span>
+                <span className="text-meta text-muted-ink">{a.source.replace(/_/g, ' ')}</span>
               </div>
-              <span className="text-[11.5px] text-muted-ink">{dateTime(a.occurredAt)}</span>
+              <span className="text-meta text-muted-ink">{dateTime(a.occurredAt)}</span>
             </div>
           ))}
         </Card>
