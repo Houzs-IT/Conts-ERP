@@ -40,7 +40,10 @@ import { moveModelCategory, planModelCategoryMoves, type ImportModelMove } from 
 import { ensureModelForSku, modelCodeForSku } from '../lib/ensure-model-for-sku';
 import { MFG_PRODUCT_CATEGORIES, MFG_CATEGORY_LABELS, mfgCategoryLabel, parseMfgCategory } from '../shared/product-categories';
 import { isPhotoRequiredCategory, isUom, validateCategoryPair } from '../shared/renovation-catalog';
-import { photoCountFor, primaryPhotosFor } from './mfg-product-photos';
+import {
+  deleteMfgProductPhotoHandler, listMfgProductPhotosHandler, patchMfgProductPhotoHandler,
+  photoCountFor, photoKeysFor, primaryPhotosFor, uploadMfgProductPhotoHandler,
+} from './mfg-product-photos';
 import { resolveDefaultParty, type BindingForParty } from '../lib/default-supply-party';
 
 export const mfgProducts = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -754,7 +757,13 @@ export const deleteMfgProductHandler = async (c: any) => {
     }
   }
 
+  // SKU photos (migration 0062): the rows cascade with the SKU, so read the R2
+  // keys first and remove the objects once the delete has succeeded.
+  const photoKeys = await photoKeysFor(supabase, id, co.companyId);
   const { error } = await scopeToCompanyId(supabase.from('mfg_products').delete().eq('id', id), co.companyId);
+  if (!error && photoKeys.length > 0 && c.env?.SO_ITEM_PHOTOS) {
+    for (const k of photoKeys) await c.env.SO_ITEM_PHOTOS.delete(k).catch(() => {});
+  }
   if (error) {
     if (error.code === '42501') return c.json({ error: 'forbidden', reason: error.message }, 403);
     if (error.code === '23503') {
@@ -772,6 +781,14 @@ export const deleteMfgProductHandler = async (c: any) => {
   return c.body(null, 204);
 };
 mfgProducts.delete('/:id', deleteMfgProductHandler);
+
+// ── SKU photos (renovation catalog, migration 0062) ─────────────────────
+// The public GET that streams a photo is mounted outside the auth gate in
+// public-images.ts; these are the authed list / upload / edit routes.
+mfgProducts.get('/:id/photos', listMfgProductPhotosHandler);
+mfgProducts.post('/:id/photos', uploadMfgProductPhotoHandler);
+mfgProducts.patch('/:id/photos/:photoId', patchMfgProductPhotoHandler);
+mfgProducts.delete('/:id/photos/:photoId', deleteMfgProductPhotoHandler);
 
 // ── GET /:id ───────────────────────────────────────────────────────────
 mfgProducts.get('/:id', async (c) => {
