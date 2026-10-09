@@ -8,6 +8,7 @@ import { Dialog } from '../components/Dialog';
 import Icon from '../components/Icon';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { EmptyState } from '../components/States';
 import { useApi } from '../lib/useApi';
 import { api, ApiFailure } from '../lib/api';
 import { time, date, unitRef, plural, count } from '../lib/format';
@@ -201,15 +202,21 @@ export default function FieldTodayPage() {
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       {/* progress — gold is a brand accent here, not a status tone */}
-      <div className="flex flex-col gap-1.5">
-        <div className="flex justify-between text-meta text-muted-ink">
-          <span>{count(completed)} of {plural(rows.length, 'task')} done</span>
-          {pending > 0 && <span>{count(pending)} waiting to sync</span>}
+      {rows.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex justify-between text-meta text-muted-ink">
+            <span>{count(completed)} of {plural(rows.length, 'task')} done</span>
+            {pending > 0 && <span>{count(pending)} waiting to sync</span>}
+          </div>
+          <div className="h-1 rounded-full bg-sunken overflow-hidden">
+            <div className="h-full bg-gold [transition:width_200ms]" style={{ width: `${rows.length ? (completed / rows.length) * 100 : 0}%` }} />
+          </div>
         </div>
-        <div className="h-1 rounded-full bg-sunken overflow-hidden">
-          <div className="h-full bg-gold [transition:width_200ms]" style={{ width: `${rows.length ? (completed / rows.length) * 100 : 0}%` }} />
-        </div>
-      </div>
+      )}
+
+      {!loading && !error && rows.length === 0 && (
+        <EmptyState icon="CalendarCheck" title="No tasks for you today" body="Operations assigns your cleans and jobs here. Reopen this page to check again." />
+      )}
 
       {loading && rows.length === 0 ? <TableSkeleton rows={3} cols={2} /> : rows.map(t => {
         const shots = photoCountOf(t);

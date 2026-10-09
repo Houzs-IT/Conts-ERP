@@ -27,7 +27,7 @@ export default function FieldShell({ children }: { children: ReactNode }) {
         </button>
       </header>
 
-      <main style={{ flex: 1, padding: '16px 16px 32px', display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560, width: '100%', margin: '0 auto' }}>
+      <main style={{ flex: 1, padding: '16px 16px 32px', display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560, width: '100%', boxSizing: 'border-box', margin: '0 auto' }}>
         {children}
       </main>
     </div>

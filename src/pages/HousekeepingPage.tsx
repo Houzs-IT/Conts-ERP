@@ -691,7 +691,7 @@ export default function HousekeepingPage() {
         <div className="inline-flex flex-none border border-solid border-line rounded-control overflow-hidden w-fit">
           {TABS.map(([v, label]) => (
             <button key={v} onClick={() => setParam({ date: v === 'today' ? null : tabRange(v) })} aria-pressed={v === tab}
-              className={`h-9 px-[13px] md:px-[15px] py-0 cursor-pointer [border:none] [font:inherit] text-copy whitespace-nowrap ${v === tab ? 'bg-black text-white' : 'bg-white text-muted-ink'}`}>
+              className={`h-9 px-[13px] md:px-[15px] py-0 cursor-pointer [border:none] [font-family:inherit] text-copy whitespace-nowrap ${v === tab ? 'bg-black text-white' : 'bg-white text-muted-ink'}`}>
               {label}
             </button>
           ))}
@@ -703,7 +703,7 @@ export default function HousekeepingPage() {
           </button>
           <input type="date" aria-label="Pick a day" value={from}
             onChange={e => { if (isDay(e.target.value)) setParam({ date: e.target.value === today ? null : e.target.value }); }}
-            className="h-9 box-border px-2.5 py-0 text-copy text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit]" />
+            className="h-9 box-border px-2.5 py-0 text-copy text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit]" />
           <button type="button" onClick={() => shiftRange(1)} aria-label={multiDay ? 'Next period' : 'Next day'} title={multiDay ? 'Next period' : 'Next day'}
             className="w-9 h-9 grid place-items-center rounded-control border border-solid border-line bg-white text-ink cursor-pointer hover:bg-muted">
             <Icon name="ChevronRight" size="sm" />
@@ -771,7 +771,7 @@ export default function HousekeepingPage() {
           })}
           {checkouts.length > 10 && (
             <button type="button" onClick={() => setShowAllCheckouts(v => !v)}
-              className="w-full py-2.5 px-5 text-meta font-semibold text-muted-ink bg-page border-none cursor-pointer [font:inherit] hover:text-ink">
+              className="w-full py-2.5 px-5 text-meta font-semibold text-muted-ink bg-page border-none cursor-pointer [font-family:inherit] hover:text-ink">
               {showAllCheckouts ? 'Show fewer' : `Show all ${count(checkouts.length)}`}
             </button>
           )}

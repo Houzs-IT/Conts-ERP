@@ -69,7 +69,7 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
   return (
     <Card>
       <div className="pt-[18px] px-[22px] pb-[14px] flex items-center justify-between gap-3">
-        <span className="text-title font-semibold">Channels</span>
+        <span className="text-heading font-semibold">Channels</span>
         <Badge tone={linked ? 'success' : 'neutral'} label={linked ? 'In Channex' : 'Not in Channex'} />
       </div>
       <div className="px-[22px] pb-[18px] flex flex-col gap-3 text-[13px] text-muted-ink">

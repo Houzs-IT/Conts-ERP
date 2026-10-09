@@ -295,7 +295,7 @@ function SortHead({ label, col, align = 'left', sortKey, dir, onSort }: {
     <button onClick={() => onSort(col)} aria-label={`Sort by ${label}`}
       aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
       className={cx('flex items-center gap-[3px]', align === 'right' ? 'justify-end' : 'justify-start',
-        'bg-transparent [border:none] p-0 cursor-pointer [font:inherit] text-meta font-semibold', active ? 'text-gold-ink' : 'text-muted-ink')}>
+        'bg-transparent [border:none] p-0 cursor-pointer [font-family:inherit] text-meta font-semibold', active ? 'text-gold-ink' : 'text-muted-ink')}>
       <span>{label}</span>
       <Icon name={active ? (dir === 'asc' ? 'ChevronUp' : 'ChevronDown') : 'ChevronsUpDown'} size="sm" style={{ opacity: active ? 1 : 0.4 }} />
     </button>

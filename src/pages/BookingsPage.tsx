@@ -325,7 +325,7 @@ export default function BookingsPage() {
                   const active = sortKey === c.key;
                   return (
                     <button key={c.key} type="button" onClick={() => toggleSort(c.key)} title={`Sort by ${c.label}`}
-                      className={cx('flex items-center gap-1 [font:inherit] text-meta font-semibold text-muted-ink bg-transparent border-none cursor-pointer p-0', c.align === 'right' && 'justify-end')}>
+                      className={cx('flex items-center gap-1 [font-family:inherit] text-meta font-semibold text-muted-ink bg-transparent border-none cursor-pointer p-0', c.align === 'right' && 'justify-end')}>
                       <span>{c.label}</span>
                       <Icon name={active ? (sortDir === 'desc' ? 'ChevronDown' : 'ChevronUp') : 'ChevronsUpDown'} size="sm"
                         color={active ? 'var(--color-ink)' : 'var(--color-line)'} />
@@ -338,7 +338,7 @@ export default function BookingsPage() {
                 {COLUMNS.map(c => (
                   <input key={c.key} value={drafts[c.param]} onChange={e => setSearch(c.param, e.target.value)}
                     placeholder={c.hint} aria-label={`Search ${c.label}`}
-                    className={cx('h-7 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-meta px-2 py-0 outline-none', c.align === 'right' && 'text-right')} />
+                    className={cx('h-7 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-meta px-2 py-0 outline-none', c.align === 'right' && 'text-right')} />
                 ))}
                 <div aria-hidden />
               </div>

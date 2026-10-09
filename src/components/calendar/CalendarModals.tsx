@@ -94,7 +94,7 @@ export function RateUpdate({ units, initial, onClose, onSave }: {
   const lineOk = (l: RateLine) => l.from !== '' && l.to !== '' && l.to >= l.from && minStayOk(l) && (hasPrice(l) || l.minStay !== '' || l.stop !== 'same');
   const anyPrice = lines.some(hasPrice);
   const valid = unitIds.length > 0 && lines.every(lineOk) && (!anyPrice || channels.length > 0);
-  const pill = (on: boolean) => `inline-flex items-center gap-[6px] h-8 px-3 rounded-pill cursor-pointer [font:inherit] text-copy border border-solid ${on ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink'}`;
+  const pill = (on: boolean) => `inline-flex items-center gap-[6px] h-8 px-3 rounded-pill cursor-pointer [font-family:inherit] text-copy border border-solid ${on ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink'}`;
 
   return (
     <CentreModal title="Rate update" sub="Set prices, minimum stay or stop sell for one or more date ranges, saved together." onClose={onClose} saveLabel="Save" canSave={valid}

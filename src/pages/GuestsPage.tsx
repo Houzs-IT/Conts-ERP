@@ -284,7 +284,7 @@ export default function GuestsPage() {
                 <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid"><Icon name="Search" size="sm" /></span>
                 <input value={draft} onChange={e => setSearch(e.target.value)} aria-label="Search guests"
                   placeholder={canSeeContact ? 'Name, phone or email' : 'Guest name'}
-                  className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-copy pl-[32px] pr-3 py-0 outline-none" />
+                  className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-copy pl-[32px] pr-3 py-0 outline-none" />
               </label>
               <Select label="Sort guests" value={sort} onChange={setSort} className="flex-none w-[150px]"
                 options={SORTS.map(s => ({ value: s.key, label: s.label }))} />
@@ -321,7 +321,7 @@ export default function GuestsPage() {
         {/* -------- right: guest profile -------- */}
         <div className={cx('md:flex-[1.6_1_460px] min-w-0 flex flex-col gap-5', !pickedId && 'max-md:hidden')}>
           <button type="button" onClick={() => updateParams(p => p.delete('g'))}
-            className="md:hidden self-start h-9 inline-flex items-center gap-1 px-2 -ml-2 rounded-control border-none bg-transparent text-ink [font:inherit] text-copy font-medium cursor-pointer">
+            className="md:hidden self-start h-9 inline-flex items-center gap-1 px-2 -ml-2 rounded-control border-none bg-transparent text-ink [font-family:inherit] text-copy font-medium cursor-pointer">
             <Icon name="ChevronLeft" size="sm" /> All guests
           </button>
           {selected ? (

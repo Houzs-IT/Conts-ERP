@@ -450,7 +450,7 @@ function ChecklistPanel({
                   onChange={e => onNote(idx, e.target.value)}
                   placeholder="What is wrong, and what needs doing."
                   rows={2}
-                  className="w-full box-border py-[9px] px-[11px] text-ink bg-white border border-line rounded-control outline-none [font:inherit] text-copy resize-y"
+                  className="w-full box-border py-[9px] px-[11px] text-ink bg-white border border-line rounded-control outline-none [font-family:inherit] text-copy resize-y"
                 />
                 <div className="flex items-center gap-2.5 flex-wrap">
                   {item.linkedIssue ? (
@@ -497,7 +497,7 @@ function ChecklistPanel({
 }
 
 function PassFail({ value, onPass, onFail }: { value: boolean | null; onPass: () => void; onFail: () => void }) {
-  const seg = 'py-[7px] px-[14px] cursor-pointer [font:inherit] text-copy inline-flex items-center gap-[5px]';
+  const seg = 'py-[7px] px-[14px] cursor-pointer [font-family:inherit] text-copy inline-flex items-center gap-[5px]';
   return (
     <div className="inline-flex flex-none border border-line rounded-control overflow-hidden">
       <button type="button" onClick={onPass} aria-pressed={value === true}

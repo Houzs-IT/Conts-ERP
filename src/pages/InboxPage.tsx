@@ -273,7 +273,7 @@ export default function InboxPage() {
               placeholder={open ? `Reply to ${open.guestName ?? 'guest'} on ${threadChannelLabel(open.channel)}` : 'Select a conversation'}
               disabled={!open}
               aria-label="Reply"
-              className="flex-1 min-w-0 h-10 py-0 px-3.5 [font:inherit] text-copy bg-card text-ink border border-solid border-line rounded-control outline-none" />
+              className="flex-1 min-w-0 h-10 py-0 px-3.5 [font-family:inherit] text-copy bg-card text-ink border border-solid border-line rounded-control outline-none" />
             <Button type="submit" variant="primary" size="md" disabled={!draft.trim() || !open} disabledReason="Write a message first.">
               Send
             </Button>

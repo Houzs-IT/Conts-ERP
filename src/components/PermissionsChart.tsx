@@ -124,7 +124,7 @@ export default function PermissionsChart() {
                           aria-label={`${ROLE_LABEL[r] ?? r} access to ${a.label}`}
                           value={level} disabled={!data.canEdit || saving}
                           onChange={e => pick(a, r, e.target.value as AccessLevel)}
-                          className="h-8 w-full max-w-[150px] px-2 py-0 [font:inherit] text-copy font-semibold bg-card border border-solid rounded-control outline-none"
+                          className="h-8 w-full max-w-[150px] px-2 py-0 [font-family:inherit] text-copy font-semibold bg-card border border-solid rounded-control outline-none"
                           style={{ color: LEVEL_COLOR[level], borderColor: changed ? 'var(--color-gold, #B08D57)' : 'var(--color-line, #DEDAD3)' }}
                         >
                           {data.levels.map(l => (

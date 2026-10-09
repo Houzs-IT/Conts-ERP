@@ -198,7 +198,7 @@ export default function TopBar({
                 <div style={{ padding: '12px 16px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                   <span style={{ fontSize: text.copy, fontWeight: 600, color: color.ink }}>Notifications</span>
                   <button type="button" onClick={markAllRead} disabled={unreadNotifs.length === 0} title={unreadNotifs.length === 0 ? 'Nothing unread' : undefined}
-                    style={{ fontSize: text.small, color: unreadNotifs.length === 0 ? color.faint : color.inkSecondary, background: 'none', border: 'none', cursor: unreadNotifs.length === 0 ? 'default' : 'pointer', font: 'inherit', padding: 0 }}>
+                    style={{ font: 'inherit', fontSize: text.small, color: unreadNotifs.length === 0 ? color.faint : color.inkSecondary, background: 'none', border: 'none', cursor: unreadNotifs.length === 0 ? 'default' : 'pointer', padding: 0 }}>
                     Mark all read
                   </button>
                 </div>
@@ -258,8 +258,8 @@ export default function TopBar({
               <Icon name="Search" size="nav" color={color.textMuted} />
               <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)} onKeyDown={onSearchKeyDown}
                 placeholder="Booking reference, guest, phone, unit or owner" aria-label="Search"
-                style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', fontSize: 15, color: color.ink, font: 'inherit' }} />
-              <button type="button" onClick={closeSearch} style={{ fontSize: text.micro, color: color.textMuted, flex: 'none', border: `1px solid ${color.border}`, borderRadius: 4, background: 'none', padding: '2px 6px', cursor: 'pointer', font: 'inherit' }}>Esc</button>
+                style={{ font: 'inherit', flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', fontSize: 15, color: color.ink }} />
+              <button type="button" onClick={closeSearch} style={{ font: 'inherit', fontSize: text.micro, color: color.textMuted, flex: 'none', border: `1px solid ${color.border}`, borderRadius: 4, background: 'none', padding: '2px 6px', cursor: 'pointer' }}>Esc</button>
             </div>
             <div style={{ maxHeight: 420, overflowY: 'auto', padding: 6 }}>
               {results.length === 0 ? (

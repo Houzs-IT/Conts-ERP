@@ -289,7 +289,7 @@ export default function MaintenancePage() {
           const on = t === tab;
           return (
             <button key={t} onClick={() => setTab(t)}
-              className={cx('h-9 flex items-center px-4 py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border border-solid text-copy font-medium',
+              className={cx('h-9 flex items-center px-4 py-0 rounded-full cursor-pointer whitespace-nowrap [font-family:inherit] border border-solid text-copy font-medium',
                 on ? 'border-black bg-black text-white' : 'border-line bg-white text-muted-ink')}>
               {t === 'jobs' ? 'Jobs' : 'Item catalog'}
             </button>
@@ -710,7 +710,7 @@ function Segmented({ options, value, onChange }: { options: string[]; value: str
         const on = o === value;
         return (
           <button key={o} type="button" onClick={() => onChange(o)}
-            className={cx('px-4 py-2 cursor-pointer border-none [font:inherit] text-copy',
+            className={cx('px-4 py-2 cursor-pointer border-none [font-family:inherit] text-copy',
               on ? 'bg-black text-white' : 'bg-white text-muted-ink')}>
             {o}
           </button>

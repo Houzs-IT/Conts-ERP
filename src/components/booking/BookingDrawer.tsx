@@ -260,7 +260,7 @@ function ReasonModal({ title, body, meta, confirmLabel, keepLabel, onClose, onCo
           <label htmlFor="bk-reason" className="text-meta font-medium text-muted-ink">Reason (required)</label>
           <textarea id="bk-reason" autoFocus required value={reason} onChange={e => setReason(e.target.value)} rows={3} maxLength={300}
             placeholder="e.g. Guest asked to cancel by WhatsApp"
-            className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit] text-copy p-[10px_12px] resize-y" />
+            className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
         </div>
         <div className="flex justify-end gap-[9px] flex-wrap">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>{keepLabel}</Button>
@@ -296,7 +296,7 @@ export function MessageGuestModal({ r, onClose, onSent }: { r: { id: string; gue
           <label htmlFor="bk-msg" className="text-meta font-medium text-muted-ink">Message</label>
           <textarea id="bk-msg" required value={body} onChange={e => setBody(e.target.value)} rows={4}
             placeholder={`Hi ${(r.guestName || 'there').split(' ')[0]}, checking in on your upcoming stay…`}
-            className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit] text-copy p-[10px_12px] resize-y" />
+            className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Close</Button>

@@ -24,7 +24,7 @@ export function PageControls({ page, pageSize, total, onPage, onSize, sizes = [2
           <label className="flex items-center gap-[6px]">
             <span className="max-sm:hidden">Rows</span>
             <select value={pageSize} onChange={e => onSize(Number(e.target.value))} aria-label="Rows per page"
-              className="h-8 px-2 rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-meta cursor-pointer">
+              className="h-8 px-2 rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-meta cursor-pointer">
               {sizes.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>

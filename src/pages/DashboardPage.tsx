@@ -369,7 +369,7 @@ export default function DashboardPage() {
                       onClick={() => setRange(r.key)}
                       aria-pressed={on}
                       className={cx(
-                        'h-8 px-3 py-0 cursor-pointer [font:inherit] text-copy whitespace-nowrap',
+                        'h-8 px-3 py-0 cursor-pointer [font-family:inherit] text-copy whitespace-nowrap',
                         '[border-top:0] [border-right:0] [border-bottom:0]',
                         i === 0 ? '[border-left:0]' : '[border-left:1px_solid_var(--color-line)]',
                         on ? 'bg-black text-white' : 'bg-card text-muted-ink',

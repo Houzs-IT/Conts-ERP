@@ -212,7 +212,7 @@ export default function ReviewsPage() {
                     <textarea value={draft} onChange={e => setDraft(e.target.value)} autoFocus rows={3}
                       aria-label={`Reply to ${r.guestName}`}
                       placeholder={`Reply to ${r.guestName} on ${r.propertyName} ${r.unitNumber}`}
-                      className="w-full box-border px-3 py-2.5 [font:inherit] text-copy text-ink border border-solid border-line rounded-control outline-none resize-y" />
+                      className="w-full box-border px-3 py-2.5 [font-family:inherit] text-copy text-ink border border-solid border-line rounded-control outline-none resize-y" />
                     <div className="flex gap-2 justify-end">
                       <Button type="button" size="sm" variant="secondary" onClick={cancelReply}>Cancel</Button>
                       <Button type="submit" size="sm" variant="primary" disabled={!draft.trim()} disabledReason="Write a reply first.">
