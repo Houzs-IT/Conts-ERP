@@ -40,7 +40,8 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, next, waitUn
   // users on every request (one query, shared with the security settings below), so switching someone
   // off or changing their role on Users and roles takes effect on their very next click.
   const live = await sessionState(env, signed.userId);
-  if (!live.user?.active) {
+  // A cookie signed before management's "Sign out everywhere" (or a password reset) is refused the same way.
+  if (!live.user?.active || signed.iat < live.user.revokedAt) {
     return new Response(JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: 'This account has been switched off or changed. Sign in again, or ask management.' } }),
       { status: 401, headers: { 'content-type': 'application/json; charset=utf-8', 'set-cookie': clearCookie(request) } });
   }

@@ -71,8 +71,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const newHash = await hashPassword(password);
   await run(env,
-    'UPDATE users SET password_hash = ?, must_change_password = 0, failed_attempts = 0, locked_until = NULL, updated_at = ? WHERE id = ?',
-    newHash, nowIso(), user.id);
+    'UPDATE users SET password_hash = ?, must_change_password = 0, failed_attempts = 0, locked_until = NULL, sessions_revoked_at = ?, updated_at = ? WHERE id = ?',
+    newHash, nowIso(), nowIso(), user.id);
   // Marked spent rather than deleted: a repeat click of the same link then gets the
   // same clear "expired, request a new one" answer instead of a confusing 404.
   await run(env, 'UPDATE password_reset_tokens SET used_at = ? WHERE token_hash = ?', nowIso(), hash);

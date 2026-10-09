@@ -1,5 +1,6 @@
 import { type Env, all, one, run, fail, nowIso } from './db';
 import { accessFor, canManage, type Level } from './access';
+import { notify } from './notify';
 
 export interface SecuritySettings { staffTtlHours: number; ownerTtlHours: number; absoluteDays: number; maxAttempts: number; lockoutMinutes: number }
 
@@ -30,17 +31,46 @@ function parseSecurity(rows: { key: string; value: string }[]): SecuritySettings
 /** The security settings and the signed-in user's current role and active flag, in one query (one
  *  connection), for the session middleware. The cookie only says who signed in; what they may do is read
  *  from users on every request, so deactivating someone or changing their role takes effect at once. */
-export async function sessionState(env: Env, userId: string): Promise<{ settings: SecuritySettings; user: { role: string; active: boolean; fullName: string } | null }> {
+export async function sessionState(env: Env, userId: string): Promise<{ settings: SecuritySettings; user: { role: string; active: boolean; fullName: string; revokedAt: number } | null }> {
   const rows = await all<{ key: string; value: string }>(env, `
     SELECT key, value FROM settings WHERE key LIKE 'security.%'
     UNION ALL
-    SELECT '~user', role || '|' || is_active::text || '|' || full_name FROM users WHERE id = ?`, userId);
+    SELECT '~user', role || '|' || is_active::text || '|' || COALESCE(sessions_revoked_at, '') || '|' || full_name FROM users WHERE id = ?`, userId);
   const u = rows.find(r => r.key === '~user');
-  const [role, active, ...name] = (u?.value ?? '').split('|');
+  const [role, active, revoked, ...name] = (u?.value ?? '').split('|');
   return {
     settings: parseSecurity(rows.filter(r => r.key !== '~user')),
-    user: u ? { role, active: active === '1', fullName: name.join('|') } : null,
+    user: u ? { role, active: active === '1', fullName: name.join('|'), revokedAt: revoked ? Date.parse(revoked) : 0 } : null,
   };
+}
+
+/** Ends every session this person has open: the middleware refuses any cookie signed before this moment. */
+export async function revokeSessions(env: Env, userId: string) {
+  await run(env, 'UPDATE users SET sessions_revoked_at = ? WHERE id = ?', nowIso(), userId);
+}
+
+/** Emails a one-hour, single-use reset link. Only the token's hash is stored; the token itself leaves the server
+ *  only inside the email body. Shared by Forgot password and management's "Send password reset" on Users. */
+export async function sendPasswordReset(env: Env, origin: string, user: { id: string; email: string }) {
+  const token = crypto.randomUUID();
+  const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', ENC.encode(token)))]
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+  await run(env,
+    'INSERT INTO password_reset_tokens (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)',
+    hash, user.id, new Date(Date.now() + 60 * 60000).toISOString(), nowIso());
+  return notify(env, {
+    template: 'account.password_reset',
+    recipient: user.email,
+    channel: 'email',
+    subject: 'Reset your Conts ERP password',
+    body: `Use this link to choose a new password:\n\n${origin}/#/reset-password?token=${token}\n\nThe link expires in 60 minutes. If you did not ask for this, you can ignore this email.`,
+    // Keyed by the token, not the user: notify()'s dedup collapses same-hour
+    // calls sharing a template+entity, and a fresh "resend" makes a genuinely
+    // new token each time — keying on user.id would silently drop every resend
+    // within the same clock hour as the first request.
+    entityTable: 'password_reset_tokens', entityId: hash,
+    urgent: true,
+  });
 }
 
 /** Staff sign in far less often than they'd want to be interrupted, so they idle out on a

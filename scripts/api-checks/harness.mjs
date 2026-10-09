@@ -10,9 +10,9 @@ export async function call(method, path, body, role = 'management') {
   const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch {}
   return { status: r.status, json: j, text: t };
 }
-/** Like call(), but as any session, e.g. an owner: { userId, email, role, fullName }. */
+/** Like call(), but as any session, e.g. an owner: { userId, email, role, fullName, iat? }. */
 export async function callAsUser(u, method, path, body) {
-  const b = Buffer.from(JSON.stringify({ userId: u.userId, email: u.email, role: u.role, fullName: u.fullName ?? 'Test', exp: Date.now() + 36e5 })).toString('base64').replace(/=+$/, '');
+  const b = Buffer.from(JSON.stringify({ userId: u.userId, email: u.email, role: u.role, fullName: u.fullName ?? 'Test', iat: u.iat, exp: Date.now() + 36e5 })).toString('base64').replace(/=+$/, '');
   const cookie = `tc_session=${b}.${b64(createHmac('sha256', 'smoke-test-secret-not-real-0123456789').update(b).digest())}`;
   const r = await fetch('http://localhost:8788' + path, { method, headers: { cookie, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
   const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch {}

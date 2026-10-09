@@ -6,20 +6,21 @@ import { ROLES } from '../../_lib/roles';
 const MANAGE = ['management'];
 const VIEW = ['management', 'operations_manager'];
 
-/** GET /api/users — every account, with who each reports to. Never the password hash, attempt counter or lock time. */
+/** GET /api/users — every account, with who each reports to. Never the password hash or attempt counter; only whether a lock is on now. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (!VIEW.includes(session.role)) return fail('FORBIDDEN', 'User accounts are managed by administrators.', 403);
 
   const rows = await all<any>(env, `
-    SELECT id, full_name, email, phone, role, manager_id, is_active, must_change_password, last_login_at, locale, created_at
+    SELECT id, full_name, email, phone, role, manager_id, is_active, must_change_password, last_login_at, locale, created_at,
+      COALESCE(locked_until::timestamptz > now(), false) AS is_locked
     FROM users ORDER BY role, full_name`);
   return json({
     generatedAt: nowIso(),
     data: rows.map(r => ({
       id: r.id, fullName: r.full_name, email: r.email, phone: r.phone ?? '—', role: r.role, managerId: r.manager_id,
-      isActive: !!r.is_active, mustChangePassword: !!r.must_change_password, lastLoginAt: r.last_login_at,
+      isActive: !!r.is_active, mustChangePassword: !!r.must_change_password, isLocked: !!r.is_locked, lastLoginAt: r.last_login_at,
       locale: r.locale, createdAt: r.created_at,
     })),
   });
