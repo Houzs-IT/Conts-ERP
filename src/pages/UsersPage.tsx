@@ -74,7 +74,7 @@ function status(u: Row): { label: string; tone: Tone } {
 const initials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('');
 
 /* ------------------------------- styles ------------------------------- */
-const LIST_COLS_CLASS = 'grid-cols-[minmax(180px,1.6fr)_minmax(180px,1.4fr)_150px_140px_120px_110px_36px]';
+const LIST_COLS_CLASS = 'grid-cols-[minmax(150px,1.5fr)_minmax(160px,1.4fr)_130px_120px_100px_90px_32px]';
 // Left accent on org cards — the -line tone shade, as a box-shadow inset (kept off
 // the border so it does not change the card geometry). Static per-tone literals so
 // the JIT scanner sees each class.
@@ -395,13 +395,13 @@ export default function UsersPage() {
           <div className="py-3 px-5 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] flex items-center justify-between gap-3 flex-wrap">
             <span className="text-meta text-muted-ink">Role sets what a person can do. The reporting line is separate — see the organisation chart.</span>
           </div>
-          {/* Phones: one stacked row per person instead of a 940px table that hides role and status off-screen. */}
+          {/* Phones: one stacked row per person instead of a 910px table that hides role and status off-screen. */}
           <div className="sm:hidden">
             {loading && rows.length === 0 ? <TableSkeleton rows={5} cols={2} /> : rows.map(u => {
               const s = status(u);
               return (
                 <div key={u.id} onClick={() => openEdit(u)}
-                  className="flex items-center gap-3 w-full text-left py-3 px-4 cursor-pointer [border-bottom:1px_solid_var(--color-line-soft)]">
+                  className="flex items-center gap-3 w-full box-border text-left py-3 px-4 cursor-pointer [border-bottom:1px_solid_var(--color-line-soft)]">
                   <span className={cx('w-[32px] h-[32px] flex-none rounded-full grid place-items-center text-caption font-semibold', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>
                     {initials(u.fullName)}
                   </span>
@@ -416,7 +416,7 @@ export default function UsersPage() {
             })}
           </div>
           <div className="overflow-x-auto max-sm:hidden">
-            <div className="min-w-[990px]">
+            <div className="min-w-[910px]">
               <div className={cx('grid', LIST_COLS_CLASS, 'gap-3.5 py-2.5 px-5 bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-meta font-semibold text-muted-ink')}>
                 <div>Name</div><div>Email</div><div>Role</div><div>Reports to</div><div>Last sign-in</div><div>Status</div><div><span className="sr-only">Actions</span></div>
               </div>
@@ -427,7 +427,7 @@ export default function UsersPage() {
                   <div
                     key={u.id}
                     onClick={() => openEdit(u)}
-                    className={cx('grid', LIST_COLS_CLASS, 'gap-3.5 items-center w-full text-left min-h-[50px] py-2 px-5 cursor-pointer hover:bg-muted [border-bottom:1px_solid_var(--color-line-soft)]')}
+                    className={cx('grid', LIST_COLS_CLASS, 'gap-3.5 items-center w-full box-border text-left min-h-[50px] py-2 px-5 cursor-pointer hover:bg-muted [border-bottom:1px_solid_var(--color-line-soft)]')}
                   >
                     <span className="flex items-center gap-2.5 min-w-0">
                       <span className={cx('w-[30px] h-[30px] flex-none rounded-full grid place-items-center text-caption font-semibold', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>
