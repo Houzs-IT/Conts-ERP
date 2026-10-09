@@ -128,6 +128,14 @@ export function soMirrorRow(l: MoneyLine, opts: { inLumpSum?: boolean } = {}): S
   return { qty: l.qty, unit_price_sen: l.unitPriceSen, discount_sen: l.qty * l.unitPriceSen - a.netSen, total_sen: a.netSen, description2: null, uom };
 }
 
+/** What a line costs us (PO amount): cost is per the same unit as the rate,
+    so a measured line costs measure x unit cost. Lump-sum section lines keep
+    their own cost: the PO still buys them. */
+export function lineCostSen(l: Pick<MoneyLine, 'kind' | 'qty' | 'measureMilli'> & { unitCostSen: number }): number {
+  if (!isPricedKind(l.kind)) return 0;
+  return l.measureMilli !== null ? roundDiv(l.measureMilli * l.unitCostSen, MEASURE_SCALE) : l.qty * l.unitCostSen;
+}
+
 /** What the Qty column prints: "42.6FT", "LS", "1 SET", "FULL UNIT", "3". */
 export function qtyLabel(l: Pick<MoneyLine, 'qty' | 'measureMilli' | 'measureUom' | 'uom'>): string {
   const uom = String(l.measureUom ?? l.uom ?? '').toUpperCase();

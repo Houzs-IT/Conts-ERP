@@ -6,6 +6,7 @@ import {
   instalmentPctError,
   instalmentPreview,
   lineAmounts,
+  lineCostSen,
   nextInstalmentAmount,
   parseMeasureMilli,
   poInstalmentAmounts,
@@ -89,6 +90,14 @@ describe('line amounts', () => {
   test('DETAIL and TEXT lines are never priced', () => {
     expect(lineAmounts(line({ kind: 'DETAIL', unitPriceSen: RM(100) }))).toMatchObject({ netSen: 0, priced: false });
     expect(lineAmounts(line({ kind: 'TEXT', unitPriceSen: RM(100) })).netSen).toBe(0);
+  });
+});
+
+describe('line cost', () => {
+  test('qty x cost, measure x cost, nothing for description lines', () => {
+    expect(lineCostSen({ kind: 'ITEM', qty: 3, measureMilli: null, unitCostSen: 1000 })).toBe(3000);
+    expect(lineCostSen({ kind: 'CHILD', qty: 1, measureMilli: 42600, unitCostSen: 2000 })).toBe(85200);
+    expect(lineCostSen({ kind: 'DETAIL', qty: 1, measureMilli: null, unitCostSen: 1000 })).toBe(0);
   });
 });
 
