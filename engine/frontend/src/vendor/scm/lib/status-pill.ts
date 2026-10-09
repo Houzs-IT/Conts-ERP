@@ -108,6 +108,10 @@ const SO: Record<string, Entry> = {
   ON_HOLD:       { label: 'On Hold',       tone: 'progress' },
   RETURNED:      { label: 'Returned',      tone: 'pending' },
   CANCELLED:     { label: 'Cancelled',     tone: 'danger' },
+  // Renovation contracts (Conts, migration 0065).
+  RENO_CONFIRMED:   { label: 'Contract confirmed', tone: 'info' },
+  RENO_IN_PROGRESS: { label: 'Works in progress',  tone: 'progress' },
+  RENO_COMPLETED:   { label: 'Works completed',    tone: 'success' },
 };
 const DO: Record<string, Entry> = {
   DRAFT:      { label: 'Draft',      tone: 'pending' },

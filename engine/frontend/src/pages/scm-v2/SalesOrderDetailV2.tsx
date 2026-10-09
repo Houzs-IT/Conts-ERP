@@ -609,6 +609,14 @@ function SalesOrderDetailV2ReadOnly() {
   ]);
 
   const salesOrder = (detail.data as { salesOrder?: SoHeader } | undefined)?.salesOrder ?? null;
+  /* A renovation contract (Conts, 2026-10-09) has its own screen: lines change by
+     variation order, money by instalment. Its RENO_* status is the tell; the
+     generic routes refuse its writes anyway (backend renovation-write-fence). */
+  useEffect(() => {
+    if (docNo && salesOrder && String(salesOrder.status ?? '').startsWith('RENO_')) {
+      navigate(`/scm/renovation/contracts/${encodeURIComponent(docNo)}`, { replace: true });
+    }
+  }, [docNo, salesOrder, navigate]);
   // Coverage keyed by line id; empty until the async coverage query returns (or
   // when the endpoint 404s on an older backend). Overlaid onto the lines below.
   /* The overlay is SHARED with the list drill-down (vendor/scm/lib/
