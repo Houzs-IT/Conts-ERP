@@ -81,6 +81,8 @@ export const NAV: NavGroup[] = [
   ] },
   { label: 'SUPPLY CHAIN', workspace: 'supply', items: [
     { key: 'scSales', label: 'Sales order', icon: 'shopping-cart', area: 'scSales', children: [
+      // Renovation quotations (revisions, package templates, convert to the contract SO): engine only.
+      { key: 'renoQuotations', label: 'Quotations', path: '/sales/quotations' },
       { key: 'salesOrders', label: 'Sales orders', path: '/sales/orders' },
       { key: 'salesOrderAmendment', label: 'Sales order amendment', path: '/sales/amendments' },
       { key: 'deliveryOrders', label: 'Delivery orders', path: '/sales/delivery-orders' },
@@ -140,8 +142,8 @@ const DENY: Partial<Record<UserRole, string[]>> = {
   owner: ['*'],
 };
 
-/** Menu items whose screens exist only in the supply chain engine: hidden where it is not set up. */
-const ENGINE_ONLY_AREAS = ['serviceCases', 'projects'];
+/** Menu areas (and single menu keys) whose screens exist only in the supply chain engine: hidden where it is not set up. */
+const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations'];
 const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'owner'];
 
 /** Areas (and menu keys) closed to a role: from its permission levels where the session carries them, else the built-in list. */

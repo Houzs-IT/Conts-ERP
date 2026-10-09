@@ -10,6 +10,7 @@ export const ENGINE_PATH: Record<string, string> = {
   '/projects/calendar': '/projects?view=calendar',
   '/projects/finances': '/projects?view=finances',
   '/projects/maintenance': '/projects?view=maintenance',
+  '/sales/quotations': '/scm/renovation/quotations',
   '/sales/orders': '/scm/sales-orders',
   '/sales/amendments': '/scm/amendments',
   '/sales/delivery-orders': '/scm/delivery-orders',
