@@ -7,6 +7,9 @@ import { Button } from '../components/Button';
 import { Dialog, type DialogSpec } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { EmptyState } from '../components/States';
+import { Select } from '../components/Select';
+import { Chip } from './finance/listKit';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { rm, dateShort, time } from '../lib/format';
@@ -59,8 +62,8 @@ const FILTERS = ['All', 'Needs approval', 'Blocking a unit', 'Open', 'Resolved']
 // sinks to the bottom. Every state renders its own section when it has rows.
 const GROUP_ORDER: TaskState[] = ['overdue', 'reopened', 'waiting', 'in_progress', 'assigned', 'open', 'resolved'];
 
-const INPUT_CX = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-[16px] font-normal';
-const LABEL_CX = 'text-[12px] font-medium text-muted-ink';
+const INPUT_CX = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-copy font-normal';
+const LABEL_CX = 'text-meta font-medium text-muted-ink';
 
 const toSen = (s: string): number | null => {
   const n = parseFloat(s.replace(/[^0-9.]/g, ''));
@@ -111,12 +114,13 @@ export default function MaintenancePage() {
   const [confirm, setConfirm] = useState<{ kind: 'approval' | 'block' | 'reopen'; issue: Issue } | null>(null);
   const canExchange = activeSkus.some(s => s.trackStock && s.stockOnHand > 0);
 
-  const rows = merged.filter(i =>
-    filter === 'All' ? true
-    : filter === 'Needs approval' ? i.ownerApprovalRequired && !i.ownerApprovedAt
-    : filter === 'Blocking a unit' ? i.blocksUnit
-    : filter === 'Resolved' ? i.state === 'resolved'
-    : i.state !== 'resolved');
+  const matches = (i: Issue, fl: string) =>
+    fl === 'All' ? true
+    : fl === 'Needs approval' ? i.ownerApprovalRequired && !i.ownerApprovedAt
+    : fl === 'Blocking a unit' ? i.blocksUnit
+    : fl === 'Resolved' ? i.state === 'resolved'
+    : i.state !== 'resolved';
+  const rows = merged.filter(i => matches(i, filter));
 
   const groups = GROUP_ORDER
     .map(state => ({ state, items: rows.filter(i => i.state === state) }))
@@ -277,7 +281,7 @@ export default function MaintenancePage() {
         sub={tab === 'catalog'
           ? 'Item catalog and preset selling prices'
           : `${openCount} open · ${approvalCount} awaiting owner approval · ${blockingCount} blocking a unit`}
-        right={tab === 'jobs' ? <Button variant="primary" onClick={() => setCreating(true)}>Create job</Button> : undefined}
+        primary={tab === 'jobs' ? <Button size="sm" variant="primary" onClick={() => setCreating(true)}>Create job</Button> : undefined}
       />
 
       <div className="flex gap-[7px] flex-wrap">
@@ -285,7 +289,7 @@ export default function MaintenancePage() {
           const on = t === tab;
           return (
             <button key={t} onClick={() => setTab(t)}
-              className={cx('h-9 flex items-center px-4 py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border border-solid text-[13px] font-medium',
+              className={cx('h-9 flex items-center px-4 py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border border-solid text-copy font-medium',
                 on ? 'border-black bg-black text-white' : 'border-line bg-white text-muted-ink')}>
               {t === 'jobs' ? 'Jobs' : 'Item catalog'}
             </button>
@@ -302,35 +306,28 @@ export default function MaintenancePage() {
       <>
       {error && <StaleBanner message={`Showing the last issues we have. ${error}`} onRetry={reload} />}
 
-      <div className="flex gap-[7px] flex-wrap">
-        {FILTERS.map(fl => {
-          const on = fl === filter;
-          return (
-            <button key={fl} onClick={() => setFilter(fl)}
-              className={cx('h-8 flex items-center px-[13px] py-0 rounded-full cursor-pointer whitespace-nowrap [font:inherit] border border-solid',
-                on ? 'border-black bg-black text-white' : 'border-line bg-white text-muted-ink')}>
-              {fl}
-            </button>
-          );
-        })}
+      <div className="flex items-center gap-2 flex-wrap">
+        {FILTERS.map(fl => (
+          <Chip key={fl} on={fl === filter} onClick={() => setFilter(fl)} count={merged.filter(i => matches(i, fl)).length}>{fl}</Chip>
+        ))}
+        {filter !== 'All' && <Button size="sm" variant="tertiary" onClick={() => setFilter('All')}>Clear filters</Button>}
       </div>
 
       {loading && merged.length === 0 ? (
         <Card><TableSkeleton rows={4} cols={3} /></Card>
+      ) : merged.length === 0 ? (
+        <EmptyState icon="Wrench" title="No maintenance jobs yet"
+          body="Log a repair on a unit to track its quote, the owner's approval, the work and the final cost."
+          action={{ label: 'Create job', onClick: () => setCreating(true) }} />
       ) : rows.length === 0 ? (
-        <Card>
-          <div className="px-[22px] py-[28px] flex flex-col gap-2">
-            <span className="text-[13px]">No maintenance issues match these filters.</span>
-            <button onClick={() => setFilter('All')} className="self-start text-gold-ink bg-transparent border-none cursor-pointer [font:inherit]">Clear filters</button>
-          </div>
-        </Card>
+        <EmptyState kind="filtered" title="No jobs match these filters." action={{ label: 'Clear filters', onClick: () => setFilter('All') }} />
       ) : (
         <div className="flex flex-col gap-4">
           {groups.map(g => (
             <div key={g.state} className="flex flex-col gap-2">
               <div className="flex items-center gap-[9px] pl-0.5">
                 <Badge tone={TASK[g.state].tone} label={TASK[g.state].label} />
-                <span className="text-[12px] text-muted-ink">{g.items.length}</span>
+                <span className="text-meta text-muted-ink">{g.items.length}</span>
               </div>
               <Card>
                 {g.items.map((i, idx) => (
@@ -414,31 +411,31 @@ function IssueRow({
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex flex-col gap-[3px] min-w-[220px] flex-1">
           <div className="flex items-center gap-[9px] flex-wrap">
-            <span className="font-mono text-[11px] text-muted-ink">{i.id}</span>
-            <span className="text-[14px] font-semibold">{i.title}</span>
+            <span className="font-mono text-caption text-muted-ink">{i.id}</span>
+            <span className="text-copy font-semibold">{i.title}</span>
             {i.blocksUnit && <Badge tone="critical" label="Blocks the unit" />}
           </div>
-          <span className="text-[12px] text-muted-ink">
+          <span className="text-meta text-muted-ink">
             {i.propertyName} {i.unitNumber} · reported {dateShort(i.reportedAt)}
             {i.skuCode ? ` · ${i.skuCode}` : ''}
             {i.assigneeName ? ` · ${i.assigneeName}` : i.vendorName ? ` · ${i.vendorName}` : ''}
             {evidence ? ` · ${evidence}` : ''}
           </span>
           {(i.startedAt || duration) && (
-            <span className="text-[12px] text-muted-ink flex items-center gap-1.5 flex-wrap">
+            <span className="text-meta text-muted-ink flex items-center gap-1.5 flex-wrap">
               {i.startedAt && <span>Started {time(i.startedAt)}</span>}
               {i.endedAt && <span>· ended {time(i.endedAt)}</span>}
               {duration && <Badge tone="info" label={`Took ${duration}`} size="sm" />}
               {i.startedAt && !i.endedAt && !resolved && <Badge tone="warning" label="In progress" size="sm" />}
             </span>
           )}
-          {i.detail && <span className="text-[13px] text-pretty">{i.detail}</span>}
+          {i.detail && <span className="text-copy text-pretty">{i.detail}</span>}
         </div>
         <div className="flex flex-col items-end gap-1 flex-none">
-          <span className="text-[16px] font-semibold">
+          <span className="text-heading font-semibold tabular-nums">
             {i.finalAmount != null ? rm(i.finalAmount) : i.quotedAmount != null ? rm(i.quotedAmount) : '—'}
           </span>
-          <span className="text-[11px] text-muted-ink">
+          <span className="text-caption text-muted-ink">
             {i.finalAmount != null ? 'Final' : i.quotedAmount != null ? 'Quoted' : 'Not quoted'} · {CHARGE_LABEL[i.chargeTo]}
           </span>
         </div>
@@ -446,12 +443,10 @@ function IssueRow({
 
       {i.ownerApprovalRequired && !i.ownerApprovedAt && i.quotedAmount != null && (
         <div className="flex items-center gap-3 flex-wrap px-3 py-[10px] rounded-control bg-gold-tint border border-solid border-[var(--color-gold-200)]">
-          <span className="text-[12.5px] text-gold-ink flex-1 min-w-[200px]">
+          <span className="text-meta text-gold-ink flex-1 min-w-[200px]">
             The owner must approve {rm(i.quotedAmount)} before this is scheduled.
           </span>
-          <button onClick={onRequestApproval} className="h-[34px] px-[13px] py-0 rounded-control border-none bg-black text-white cursor-pointer [font:inherit]">
-            Resend approval request
-          </button>
+          <Button size="sm" variant="primary" onClick={onRequestApproval}>Resend approval request</Button>
         </div>
       )}
 
@@ -479,15 +474,11 @@ function IssueRow({
 }
 
 function RowAction({ children, onClick, primary, danger }: { children: ReactNode; onClick: () => void; primary?: boolean; danger?: boolean }) {
-  const skin = primary
-    ? 'border-none bg-black text-white'
-    : danger
-      ? cx('border border-solid border-[#E4B4B1] bg-white', TONE.critical.text)
-      : 'border border-solid border-line bg-white text-ink';
   return (
-    <button onClick={onClick} className={cx('h-8 px-3 py-0 rounded-control cursor-pointer [font:inherit] whitespace-nowrap', skin)}>
+    <Button size="sm" variant={primary ? 'primary' : 'secondary'} onClick={onClick}
+      style={danger ? { color: 'var(--color-critical-fg)', borderColor: 'var(--color-critical-line)' } : undefined}>
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -503,8 +494,8 @@ function Modal({ title, sub, onClose, footer, children, width = 480 }: {
       <div style={{ maxWidth: width }}
         className="relative w-full max-h-[90vh] overflow-y-auto bg-white rounded-card shadow-[var(--shadow-overlay)] animate-dialog">
         <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-1">
-          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold text-pretty">{title}</h2>
-          {sub && <p className="m-0 text-[13px] leading-[1.55] text-muted-ink text-pretty">{sub}</p>}
+          <h2 className="m-0 text-title font-semibold text-pretty">{title}</h2>
+          {sub && <p className="m-0 text-copy leading-[1.55] text-muted-ink text-pretty">{sub}</p>}
         </div>
         <div className="px-[22px] pt-0 pb-5 flex flex-col gap-[14px]">{children}</div>
         <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
@@ -570,16 +561,9 @@ function CreateJobModal({ skus, onClose, onCreate }: { skus: Sku[]; onClose: () 
       </>}>
       <form id="create-job" onSubmit={submit} className="flex flex-col gap-[14px]">
         {skus.length > 0 && (
-          <LabeledField label="Maintenance item (optional)">
-            <select value={skuId} onChange={e => pickSku(e.target.value)} className={INPUT_CX}>
-              <option value="">— Pick a catalog item to fill the price —</option>
-              {skus.map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.code} · {s.name}{s.defaultPrice != null ? ` — ${rm(s.defaultPrice)}` : ''}
-                </option>
-              ))}
-            </select>
-          </LabeledField>
+          <Select size="md" showLabel label="Maintenance item (optional)" value={skuId} onChange={pickSku}
+            placeholder="Pick a catalog item to fill the price"
+            options={skus.map(s => ({ value: s.id, label: `${s.code} · ${s.name}${s.defaultPrice != null ? ` · ${rm(s.defaultPrice)}` : ''}` }))} />
         )}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
           <LabeledField label="Property"><input required value={propertyName} onChange={e => setPropertyName(e.target.value)} placeholder="Vista Jaya One" className={INPUT_CX} /></LabeledField>
@@ -588,19 +572,16 @@ function CreateJobModal({ skus, onClose, onCreate }: { skus: Sku[]; onClose: () 
         <LabeledField label="Title"><input required value={title} onChange={e => setTitle(e.target.value)} placeholder="Broken blind, living room" className={INPUT_CX} /></LabeledField>
         <LabeledField label="Detail">
           <textarea value={detail} onChange={e => setDetail(e.target.value)} placeholder="What happened, and what needs doing." rows={3}
-            className="block w-full box-border h-auto px-3 py-[10px] text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-[16px] font-normal resize-y leading-[1.5]" />
+            className="block w-full box-border h-auto px-3 py-[10px] text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-copy font-normal resize-y leading-[1.5]" />
         </LabeledField>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
           <LabeledField label="Vendor"><input value={vendorName} onChange={e => setVendorName(e.target.value)} placeholder="AquaFix" className={INPUT_CX} /></LabeledField>
           <LabeledField label="Quote (RM, optional)"><input inputMode="decimal" value={quote} onChange={e => setQuote(e.target.value)} placeholder="320.00" className={cx(INPUT_CX, 'text-right tabular-nums')} /></LabeledField>
         </div>
-        <LabeledField label="Charge to">
-          <select value={chargeTo} onChange={e => setChargeTo(e.target.value as ChargeTo)} className={INPUT_CX}>
-            {CHARGE_OPTIONS.map(c => <option key={c} value={c}>{CHARGE_LABEL[c]}</option>)}
-          </select>
-        </LabeledField>
+        <Select size="md" showLabel label="Charge to" value={chargeTo} onChange={v => setChargeTo(v as ChargeTo)}
+          options={CHARGE_OPTIONS.map(c => ({ value: c, label: CHARGE_LABEL[c] }))} />
         <Toggle checked={blocksUnit} onChange={setBlocksUnit} label="This blocks the unit" hint="Takes the unit off sale and holds the dates while the work is open." />
-        <div className="px-3 py-[10px] rounded-control bg-page border border-solid border-line text-[12.5px] text-muted-ink leading-[1.55]">
+        <div className="px-3 py-[10px] rounded-control bg-page border border-solid border-line text-meta text-muted-ink leading-[1.55]">
           <span className="font-medium text-ink">Where this cost goes.</span>{' '}
           {quote.trim()
             ? <>When you mark the job complete, its final amount posts as a <b>maintenance expense</b> on {unitNumber.trim() || 'the unit'} and rolls up to the <b>{CHARGE_LABEL[chargeTo]}</b> statement.</>
@@ -621,12 +602,9 @@ function AssignModal({ issue, onClose, onAssign }: { issue: Issue; onClose: () =
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" onClick={() => onAssign(issue, tech)}>Assign</Button>
       </>}>
-      <LabeledField label="Technician or vendor">
-        <select value={tech} onChange={e => setTech(e.target.value)} className={INPUT_CX}>
-          {TECHS.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-      </LabeledField>
-      <span className="text-[12px] text-muted-ink">They are notified by push and the job moves to assigned.</span>
+      <Select size="md" showLabel label="Technician or vendor" value={tech} onChange={setTech}
+        options={TECHS.map(t => ({ value: t, label: t }))} />
+      <span className="text-meta text-muted-ink">They are notified by push and the job moves to assigned.</span>
     </Modal>
   );
 }
@@ -703,22 +681,20 @@ function CompleteModal({ issue, onClose, onComplete, onNeedsPhoto }: {
           Mark complete
         </Button>
       </>}>
-      <div className="px-3 py-[10px] rounded-control bg-page border border-solid border-line text-[12.5px] text-muted-ink">
+      <div className="px-3 py-[10px] rounded-control bg-page border border-solid border-line text-meta text-muted-ink">
         {issue.propertyName} {issue.unitNumber} · {issue.title} · charged to {CHARGE_LABEL[issue.chargeTo]}
       </div>
       <LabeledField label="Final amount (RM)">
         <input inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} placeholder="320.00" autoFocus
           className={cx(INPUT_CX, 'text-right tabular-nums')} />
       </LabeledField>
-      <div className={cx('flex items-center gap-2.5 flex-wrap px-3 py-[10px] rounded-control text-[12.5px]',
+      <div className={cx('flex items-center gap-2.5 flex-wrap px-3 py-[10px] rounded-control text-meta',
         hasPhoto ? cx(TONE.success.bg, TONE.success.text) : cx(TONE.warning.bg, TONE.warning.text))}>
         <span className="flex-1 min-w-[180px]">
           {hasPhoto ? `${issue.photoCount} ${issue.photoCount === 1 ? 'photo' : 'photos'} attached — evidence requirement met.` : 'A photo is required before this job can be completed.'}
         </span>
         {!hasPhoto && (
-          <button onClick={onNeedsPhoto} className="h-[30px] px-3 py-0 rounded-control border border-solid border-current bg-transparent text-inherit cursor-pointer [font:inherit]">
-            Upload a photo
-          </button>
+          <Button size="sm" variant="secondary" onClick={onNeedsPhoto}>Upload a photo</Button>
         )}
       </div>
     </Modal>
@@ -734,7 +710,7 @@ function Segmented({ options, value, onChange }: { options: string[]; value: str
         const on = o === value;
         return (
           <button key={o} type="button" onClick={() => onChange(o)}
-            className={cx('px-4 py-2 cursor-pointer border-none [font:inherit]',
+            className={cx('px-4 py-2 cursor-pointer border-none [font:inherit] text-copy',
               on ? 'bg-black text-white' : 'bg-white text-muted-ink')}>
             {o}
           </button>
@@ -753,8 +729,8 @@ function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange
         <span className="w-5 h-5 rounded-full bg-white" />
       </button>
       <div className="flex flex-col gap-0.5">
-        <span className="text-[13.5px] font-medium">{label}</span>
-        {hint && <span className="text-[12px] text-muted-ink">{hint}</span>}
+        <span className="text-copy font-medium">{label}</span>
+        {hint && <span className="text-meta text-muted-ink">{hint}</span>}
       </div>
     </div>
   );

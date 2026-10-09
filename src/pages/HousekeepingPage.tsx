@@ -11,7 +11,9 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useCleaners, type Cleaner, type Employment } from '../lib/useCleaners';
 import { api, notifyFailure } from '../lib/api';
-import { todayMyt, rm, unitRef, dateTime, time } from '../lib/format';
+import { todayMyt, rm, unitRef, dateTime, time, date as fmtDate, dateShort, weekdayDay, count, plural } from '../lib/format';
+import { Select, type SelectOption } from '../components/Select';
+import { EmptyState } from '../components/States';
 import { READINESS, TASK } from '../lib/vocabulary';
 import { TONE } from '../lib/design-tokens';
 import type { TaskState, Tone, UnitReadiness } from '../lib/types';
@@ -159,7 +161,7 @@ const ACCENT: Record<Tone, string> = {
 /* font:inherit is the last shorthand key on the source input style, so the real
  * render is the inherited 16px/400 — no text-size/weight class is added here. */
 const inputCls = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit]';
-const labelCls = 'text-[12px] font-medium text-muted-ink';
+const labelCls = 'text-meta font-medium text-muted-ink';
 
 function Modal({ title, sub, onClose, children, footer, busy }: {
   title: string; sub?: string; onClose: () => void; children: ReactNode; footer: ReactNode; busy?: boolean;
@@ -179,8 +181,8 @@ function Modal({ title, sub, onClose, children, footer, busy }: {
         className="relative w-full max-w-[460px] max-h-[88vh] overflow-y-auto bg-card rounded-card shadow-[var(--shadow-overlay)] animate-dialog">
         <div className="pt-5 px-[22px] pb-1 flex items-start justify-between gap-3">
           <div className="flex flex-col gap-[5px]">
-            <h2 className="m-0 text-[18px] leading-[1.3] font-semibold">{title}</h2>
-            {sub && <p className="m-0 text-[13px] leading-[1.5] text-muted-ink">{sub}</p>}
+            <h2 className="m-0 text-title leading-[1.3] font-semibold">{title}</h2>
+            {sub && <p className="m-0 text-copy leading-[1.5] text-muted-ink">{sub}</p>}
           </div>
           <button onClick={onClose} aria-label="Close" disabled={busy}
             className="bg-transparent border-none p-1 cursor-pointer text-muted-ink flex">
@@ -200,8 +202,8 @@ const TABS: [Tab, string][] = [['today', 'Today'], ['tomorrow', 'Tomorrow'], ['w
 const tabRange = (t: Tab) => (t === 'today' ? todayMyt() : t === 'tomorrow' ? todayMyt(1) : `${todayMyt()}..${todayMyt(6)}`);
 const isDay = (v: string | undefined): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
 const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
-const dayName = (d: string, opts: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short' }) =>
-  new Date(`${d}T12:00:00+08:00`).toLocaleDateString('en-MY', { ...opts, timeZone: 'Asia/Kuala_Lumpur' });
+/** Wed 16 Sep */
+const dayName = (d: string) => `${weekdayDay(d).split(' ')[0]} ${dateShort(d)}`;
 type Show = 'all' | 'pending' | 'done';
 
 export default function HousekeepingPage() {
@@ -226,8 +228,8 @@ export default function HousekeepingPage() {
     setParam({ date: next === today ? null : next });
   };
   const rangeLabel = multiDay ? `${dayName(from)} – ${dayName(to)}`
-    : from === today ? `Today, ${dayName(from, { day: 'numeric', month: 'short' })}`
-    : dayName(from, { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+    : from === today ? `Today, ${dateShort(from)}`
+    : `${weekdayDay(from).split(' ')[0]} ${fmtDate(from)}`;
   const rawShow = params.get('show');
   const show: Show = rawShow === 'pending' || rawShow === 'done' ? rawShow : 'all';
   const groupByBuilding = params.get('group') !== '0';
@@ -400,7 +402,7 @@ export default function HousekeepingPage() {
       load.set(c.id, (load.get(c.id) ?? 0) + 1);
       patch(t.id, { cleanerId: c.id, assigneeId: c.userId, employmentType: c.employmentType, assigneeName: c.name, state: 'assigned', sequence: t.sequence });
     });
-    toast({ tone: 'success', title: `${targets.length} task${targets.length === 1 ? '' : 's'} auto-assigned.`, body: `Ordered by ${RULE_LABEL[rule].toLowerCase()}, ${STRATEGY_LABEL[strategy].toLowerCase()}, ${PREFER_LABEL[prefer].toLowerCase()}.` });
+    toast({ tone: 'success', title: `${plural(targets.length, 'task')} auto-assigned.`, body: `Ordered by ${RULE_LABEL[rule].toLowerCase()}, ${STRATEGY_LABEL[strategy].toLowerCase()}, ${PREFER_LABEL[prefer].toLowerCase()}.` });
     setConfirm(null);
     try { await api.post('/housekeeping/auto-assign', { rule, strategy, prefer }); } catch { /* dev */ }
     setBusy(false);
@@ -485,7 +487,7 @@ export default function HousekeepingPage() {
       const r = await api.post<{ created: number; skipped: number }>('/housekeeping/plan', { reservationIds: ids });
       toast({
         tone: 'success',
-        title: r.created === 1 ? 'Cleaning task created.' : `${r.created} cleaning tasks created.`,
+        title: r.created === 1 ? 'Cleaning task created.' : `${plural(r.created, 'cleaning task')} created.`,
         body: r.skipped ? `${r.skipped} already had a clean and were left alone.` : 'Assign cleaners from the roster below.',
       });
     } catch (e) { notifyFailure(e); }
@@ -501,7 +503,7 @@ export default function HousekeepingPage() {
     let g = groups.find(x => x.id === key);
     if (!g) {
       const name = key === 'earlier' ? 'Not done from earlier days'
-        : multiDay ? (t.day ? dayName(t.day, { weekday: 'long', day: 'numeric', month: 'short' }) : 'No date')
+        : multiDay ? (t.day ? dayName(t.day) : 'No date')
         : groupByBuilding ? t.propertyName : rangeLabel;
       g = { id: key, name, tasks: [] }; groups.push(g);
     }
@@ -515,7 +517,7 @@ export default function HousekeepingPage() {
     if (t.state === 'resolved') {
       const mins = elapsedMin(t.startedAt, t.completedAt, now);
       return (
-        <div key={t.id} className="grid grid-cols-[18px_minmax(0,1fr)_auto] md:grid-cols-[18px_minmax(160px,1.3fr)_minmax(120px,1.2fr)_minmax(90px,0.8fr)_minmax(110px,0.8fr)_72px] box-border gap-x-3 items-center min-h-[40px] py-1.5 px-5 [border-bottom:1px_solid_var(--color-line-soft)] [border-left:3px_solid_var(--color-success-line)] text-[12.5px]">
+        <div key={t.id} className="grid grid-cols-[18px_minmax(0,1fr)_auto] md:grid-cols-[18px_minmax(160px,1.3fr)_minmax(120px,1.2fr)_minmax(90px,0.8fr)_minmax(110px,0.8fr)_72px] box-border gap-x-3 items-center min-h-[40px] py-1.5 px-5 [border-bottom:1px_solid_var(--color-line-soft)] [border-left:3px_solid_var(--color-success-line)] text-copy">
           <span className={`${TONE.success.text} flex`}><Icon name="Check" size="sm" /></span>
           <span className="font-medium truncate" title={unitRef(t.propertyName, t.unitNumber)}>{unitRef(t.propertyName, t.unitNumber)}</span>
           <span className="text-muted-ink truncate hidden md:block" title={t.title}>{t.title}</span>
@@ -524,7 +526,7 @@ export default function HousekeepingPage() {
           <span className="flex justify-end min-w-0">
             {t.photoCount > 0
               ? <Button size="sm" variant="tertiary" icon={<Icon name="Images" size="sm" />} onClick={() => setGallery(t)}>{t.photoCount}</Button>
-              : <span className="text-muted-ink text-[12px] truncate md:hidden">{who ?? 'Done'}</span>}
+              : <span className="text-muted-ink text-meta truncate md:hidden">{who ?? 'Done'}</span>}
           </span>
         </div>
       );
@@ -535,7 +537,7 @@ export default function HousekeepingPage() {
     const done = false; // finished cleans render as the compact row above
     const noPhoto = t.requiresPhoto && t.photoCount < 1;
     const hasCleaner = !!(t.cleanerId || t.assigneeId);
-    const windowLabel = t.scheduledFor && t.dueAt ? `${t.scheduledFor} → ${t.dueAt}` : '—';
+    const windowLabel = t.scheduledFor && t.dueAt ? `${t.scheduledFor} → ${t.dueAt}` : 'Not set';
     const mins = elapsedMin(t.startedAt, t.completedAt, now);
     const durLabel = mins === null ? null : done ? `Cleaned in ${fmtDur(mins)}` : `Running ${fmtDur(mins)}`;
 
@@ -546,20 +548,20 @@ export default function HousekeepingPage() {
         <div className="flex-1 min-w-[260px] flex flex-col gap-[9px]">
           <div className="flex items-center gap-[9px] flex-wrap">
             <span
-              className="w-[26px] h-[26px] flex-none rounded-[6px] bg-muted text-muted-ink grid place-items-center text-[11px] font-semibold"
+              className="w-[26px] h-[26px] flex-none rounded-[6px] bg-muted text-muted-ink grid place-items-center text-caption font-semibold"
               title={`Sequence position (${RULE_LABEL[rule]})`}>{idx + 1}</span>
-            <span className="text-[14px] font-semibold">{unitRef(t.propertyName, t.unitNumber)}</span>
+            <span className="text-heading font-semibold">{unitRef(t.propertyName, t.unitNumber)}</span>
             <Badge tone={TASK[t.state].tone} label={TASK[t.state].label} size="sm" />
-            <Badge tone={sla.tone} label={sla.label} size="sm" />
+            {t.nextGuestAt && <Badge tone={sla.tone} label={sla.label} size="sm" />}
           </div>
 
-          <div className="text-[13px] text-ink">{t.title} · {t.linenSet}</div>
+          <div className="text-copy text-ink">{t.title} · {t.linenSet}</div>
 
-          <div className="flex gap-[22px] flex-wrap text-[12.5px]">
+          <div className="flex gap-5 flex-wrap text-meta">
             {(multiDay || t.carriedOver) && t.day && <Field2 label="Day" value={dayName(t.day)} tone={t.carriedOver ? 'critical' : undefined} />}
             <Field2 label="Window" value={windowLabel} />
-            <Field2 label="Checkout" value={t.checkoutTime ?? '—'} />
-            <Field2 label="Next check-in" value={t.nextGuestAt ?? 'No arrival'} tone={sla.tone === 'critical' ? 'critical' : undefined} />
+            <Field2 label="Checkout" value={t.checkoutTime ?? 'Not set'} />
+            <Field2 label="Next check-in" value={t.nextGuestAt ?? 'No next guest'} tone={sla.tone === 'critical' ? 'critical' : undefined} />
             <Field2 label="Assignee" value={who ?? 'Unassigned'} muted={!who} />
             {durLabel && <Field2 label="Duration" value={durLabel} tone={inProgress ? 'info' : 'success'} />}
             <Field2 label="Source" value={t.sourceRef} />
@@ -568,21 +570,21 @@ export default function HousekeepingPage() {
           </div>
 
           {t.nextGuestAt && (
-            <div className="text-[12px] text-muted-ink flex gap-[7px] items-center">
+            <div className="text-meta text-muted-ink flex gap-[7px] items-center">
               <Icon name="Clock" size="sm" color="var(--color-faint)" />
               <span>Must be clean by {t.nextGuestAt} — next guest check-in.</span>
             </div>
           )}
 
           {t.instructions && (
-            <div className="text-[12.5px] text-muted-ink flex gap-[7px] items-start">
+            <div className="text-meta text-muted-ink flex gap-[7px] items-start">
               <Icon name="Info" size="sm" color="var(--color-faint)" style={{ marginTop: 1 }} />
               <span>{t.instructions}</span>
             </div>
           )}
 
           {inProgress && noPhoto && (
-            <div className={`text-[12px] ${TONE.warning.text} flex gap-1.5 items-center`}>
+            <div className={`text-meta ${TONE.warning.text} flex gap-1.5 items-center`}>
               <Icon name="Camera" size="sm" />
               Add at least one photo before marking this unit ready.
             </div>
@@ -637,7 +639,7 @@ export default function HousekeepingPage() {
             </Button>
           )}
           {done && (
-            <span className={`text-[12.5px] ${TONE.success.text} flex items-center gap-1.5 justify-center h-9`}>
+            <span className={`text-meta ${TONE.success.text} flex items-center gap-1.5 justify-center h-9`}>
               <Icon name="CheckCheck" size="sm" /> Ready for guest
             </span>
           )}
@@ -651,19 +653,20 @@ export default function HousekeepingPage() {
       <input ref={fileInputRef} type="file" accept="image/*" multiple hidden onChange={onPhotoPicked} />
       <PageHeader
         title="Housekeeping"
-        sub={`${rangeLabel} · ${merged.length} clean${merged.length === 1 ? '' : 's'} · ${doneCount} done · ${unassigned.length} unassigned`}
-        right={
-          <div className="flex gap-[9px] flex-wrap">
-            <Button variant="secondary" icon={<Icon name="History" size="sm" />} onClick={() => navigate('/operations/tasks?state=resolved&kind=cleaning')}>
+        sub={`${rangeLabel} · ${plural(merged.length, 'clean')} · ${count(doneCount)} done · ${count(unassigned.length)} unassigned`}
+        actions={
+          <>
+            <Button size="sm" variant="secondary" icon={<Icon name="History" size="sm" />} onClick={() => navigate('/operations/tasks?state=resolved&kind=cleaning')}>
               History
             </Button>
-            <Button variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/operations/cleaners')}>
+            <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/operations/cleaners')}>
               Cleaners
             </Button>
-            <Button variant="secondary" icon={<Icon name="ListOrdered" size="sm" />} onClick={() => setEditRule({ rule, strategy, prefer })}>
+            <Button size="sm" variant="secondary" icon={<Icon name="ListOrdered" size="sm" />} onClick={() => setEditRule({ rule, strategy, prefer })}>
               Assignment rules
             </Button>
             <Button
+              size="sm"
               variant="secondary"
               icon={<Icon name="Wand2" size="sm" />}
               disabled={unassigned.length === 0}
@@ -672,10 +675,12 @@ export default function HousekeepingPage() {
             >
               Auto-assign
             </Button>
-            <Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>
-              New cleaning task
-            </Button>
-          </div>
+          </>
+        }
+        primary={
+          <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>
+            New cleaning task
+          </Button>
         }
       />
 
@@ -686,7 +691,7 @@ export default function HousekeepingPage() {
         <div className="inline-flex flex-none border border-solid border-line rounded-control overflow-hidden w-fit">
           {TABS.map(([v, label]) => (
             <button key={v} onClick={() => setParam({ date: v === 'today' ? null : tabRange(v) })} aria-pressed={v === tab}
-              className={`px-[13px] md:px-[15px] py-2 cursor-pointer [border:none] [font:inherit] text-[14px] whitespace-nowrap ${v === tab ? 'bg-black text-white' : 'bg-white text-muted-ink'}`}>
+              className={`h-9 px-[13px] md:px-[15px] py-0 cursor-pointer [border:none] [font:inherit] text-copy whitespace-nowrap ${v === tab ? 'bg-black text-white' : 'bg-white text-muted-ink'}`}>
               {label}
             </button>
           ))}
@@ -698,7 +703,7 @@ export default function HousekeepingPage() {
           </button>
           <input type="date" aria-label="Pick a day" value={from}
             onChange={e => { if (isDay(e.target.value)) setParam({ date: e.target.value === today ? null : e.target.value }); }}
-            className="h-9 box-border px-2.5 py-0 text-[13px] text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit]" />
+            className="h-9 box-border px-2.5 py-0 text-copy text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit]" />
           <button type="button" onClick={() => shiftRange(1)} aria-label={multiDay ? 'Next period' : 'Next day'} title={multiDay ? 'Next period' : 'Next day'}
             className="w-9 h-9 grid place-items-center rounded-control border border-solid border-line bg-white text-ink cursor-pointer hover:bg-muted">
             <Icon name="ChevronRight" size="sm" />
@@ -720,9 +725,9 @@ export default function HousekeepingPage() {
           return (
             <Tag key={label} {...(target ? { type: 'button' as const, onClick: () => setParam({ show: target === 'all' || target === show ? null : target }), 'aria-pressed': on } : {})}
               className={`text-left flex flex-col gap-0.5 py-2.5 px-3.5 rounded-card border border-solid bg-card [font:inherit] ${on ? 'border-ink' : 'border-line'} ${target ? 'cursor-pointer hover:bg-page' : ''} ${label === 'No clean planned' ? 'col-span-2 md:col-span-1' : ''}`}>
-              <span className="text-[11.5px] font-semibold uppercase tracking-[0.03em] text-faint">{label}</span>
-              <span className={`text-[22px] leading-[1.15] font-semibold tabular-nums ${n && tone !== 'neutral' ? TONE[tone].text : 'text-ink'}`}>
-                {loading && !data ? '–' : n.toLocaleString('en-MY')}
+              <span className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">{label}</span>
+              <span className={`text-title leading-[1.15] font-semibold tabular-nums ${n && tone !== 'neutral' ? TONE[tone].text : 'text-ink'}`}>
+                {loading && !data ? '–' : count(n)}
               </span>
             </Tag>
           );
@@ -732,10 +737,10 @@ export default function HousekeepingPage() {
       {/* Stays leaving with nothing planned: the cleans that would otherwise be missed. */}
       {checkouts.length > 0 && (
         <Card>
-          <div className="py-[13px] px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line)]">
+          <div className="py-[18px] px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line)]">
             <div className="flex flex-col gap-0.5">
-              <span className="text-[16px] font-semibold">Check-outs with no clean planned · {checkouts.length}</span>
-              <span className="text-[12px] text-muted-ink">Each one leaves a unit dirty. Create the turnover now; the window closes at the next guest's check-in.</span>
+              <span className="text-heading font-semibold">Check-outs with no clean planned · {count(checkouts.length)}</span>
+              <span className="text-meta text-muted-ink">Each one leaves a unit dirty. Create the turnover now; the window closes at the next guest's check-in.</span>
             </div>
             <Button size="sm" variant="primary" icon={<Icon name="ListPlus" size="sm" />} disabled={planning.size > 0}
               disabledReason="Already creating tasks." onClick={() => setConfirm({ kind: 'plan' })}>
@@ -747,16 +752,16 @@ export default function HousekeepingPage() {
             return (
               <div key={c.reservationId} className="grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(170px,1.3fr)_minmax(130px,1fr)_minmax(150px,1fr)_auto] box-border gap-x-3 gap-y-0.5 items-center min-h-[52px] py-2 px-5 [border-bottom:1px_solid_var(--color-line-soft)] [border-left:3px_solid_var(--color-critical-line)]">
                 <div className="flex flex-col gap-px min-w-0">
-                  <span className="text-[13px] font-medium truncate" title={unitRef(c.propertyName, c.unitNumber)}>{unitRef(c.propertyName, c.unitNumber)}</span>
-                  <span className="text-[11.5px] text-muted-ink truncate md:hidden">
-                    {multiDay ? `${dayName(c.date)} · ` : ''}Out {c.checkoutTime ?? '—'} · {c.nextGuestAt ? `next guest ${c.nextGuestAt}` : 'no arrival'}
+                  <span className="text-copy font-medium truncate" title={unitRef(c.propertyName, c.unitNumber)}>{unitRef(c.propertyName, c.unitNumber)}</span>
+                  <span className="text-meta text-muted-ink truncate md:hidden">
+                    {multiDay ? `${dayName(c.date)} · ` : ''}Out {c.checkoutTime ?? 'not set'} · {c.nextGuestAt ? `next guest ${c.nextGuestAt}` : 'no next guest'}
                   </span>
                 </div>
-                <span className="text-[12.5px] text-muted-ink truncate hidden md:block" title={`${c.guestName}${c.ref ? ` · ${c.ref}` : ''}`}>{c.guestName}</span>
-                <span className="text-[12.5px] tabular-nums hidden md:block whitespace-nowrap">
+                <span className="text-copy text-muted-ink truncate hidden md:block" title={`${c.guestName}${c.ref ? ` · ${c.ref}` : ''}`}>{c.guestName}</span>
+                <span className="text-copy tabular-nums hidden md:block whitespace-nowrap">
                   {multiDay ? <span className="text-muted-ink">{dayName(c.date)} · </span> : null}
-                  Out {c.checkoutTime ?? '—'} <span className="text-muted-ink">→</span>{' '}
-                  {c.nextGuestAt ? <span className={TONE.warning.text}>in {c.nextGuestAt}</span> : <span className="text-muted-ink">no arrival</span>}
+                  Out {c.checkoutTime ?? 'not set'} <span className="text-muted-ink">→</span>{' '}
+                  {c.nextGuestAt ? <span className={TONE.warning.text}>in {c.nextGuestAt}</span> : <span className="text-muted-ink">no next guest</span>}
                 </span>
                 <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} loading={busyRow} onClick={() => plan([c.reservationId])}>
                   Create task
@@ -766,30 +771,29 @@ export default function HousekeepingPage() {
           })}
           {checkouts.length > 10 && (
             <button type="button" onClick={() => setShowAllCheckouts(v => !v)}
-              className="w-full py-2.5 px-5 text-[12.5px] font-semibold text-muted-ink bg-page border-none cursor-pointer [font:inherit] hover:text-ink">
-              {showAllCheckouts ? 'Show fewer' : `Show all ${checkouts.length}`}
+              className="w-full py-2.5 px-5 text-meta font-semibold text-muted-ink bg-page border-none cursor-pointer [font:inherit] hover:text-ink">
+              {showAllCheckouts ? 'Show fewer' : `Show all ${count(checkouts.length)}`}
             </button>
           )}
         </Card>
       )}
 
       <Card>
-        <div className="py-[13px] px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line)]">
-          <span className="text-[16px] font-semibold">
+        <div className="py-[18px] px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line)]">
+          <span className="text-heading font-semibold">
             Cleaning tasks{show !== 'all' ? ` · ${show === 'done' ? 'done' : 'still to do'}` : ''}
           </span>
           <div className="flex items-center gap-[14px] flex-wrap">
             {show !== 'all' && (
-              <button type="button" onClick={() => setParam({ show: null })}
-                className="text-[12.5px] font-semibold text-muted-ink bg-transparent border-none cursor-pointer p-0 [font:inherit] hover:text-ink">Show all</button>
+              <Button size="sm" variant="tertiary" onClick={() => setParam({ show: null })}>Show all</Button>
             )}
             {!multiDay && (
-              <label className="flex gap-[7px] items-center cursor-pointer text-[12.5px] text-muted-ink select-none">
+              <label className="flex gap-[7px] items-center cursor-pointer text-meta text-muted-ink select-none">
                 <input type="checkbox" checked={groupByBuilding} onChange={e => setGroupByBuilding(e.target.checked)} />
                 Group by building
               </label>
             )}
-            <span className="text-[12px] text-muted-ink hidden md:inline">SLA counts down to the next guest check-in</span>
+            <span className="text-meta text-muted-ink hidden md:inline">SLA counts down to the next guest check-in</span>
           </div>
         </div>
 
@@ -797,11 +801,11 @@ export default function HousekeepingPage() {
           {loading && !data ? (
             <TableSkeleton rows={4} cols={4} />
           ) : ordered.length === 0 ? (
-            <div className="py-[30px] px-[22px] text-[13px] text-muted-ink text-center">
-              {merged.length > 0 ? 'Nothing here under this filter.'
-                : checkouts.length > 0 ? `No cleaning tasks yet for ${multiDay ? 'these days' : 'this day'}. Create them from the check-outs above.`
-                : `No check-outs and no cleaning on ${multiDay ? 'these days' : 'this day'}.`}
-            </div>
+            merged.length > 0
+              ? <EmptyState bare kind="filtered" title="No cleaning tasks match this filter." action={{ label: 'Show all', onClick: () => setParam({ show: null }) }} />
+              : checkouts.length > 0
+                ? <EmptyState bare icon="Sparkles" title={`No cleaning tasks yet for ${multiDay ? 'these days' : 'this day'}.`} body="Create them from the check-outs above." />
+                : <EmptyState bare icon="Sparkles" title={`No check-outs and no cleaning on ${multiDay ? 'these days' : 'this day'}.`} />
           ) : grouped ? (
             (() => { let seq = -1; return groups.map(g => {
               const done = g.tasks.filter(t => t.state === 'resolved').length;
@@ -810,9 +814,9 @@ export default function HousekeepingPage() {
                 <div key={g.id}>
                   <div className={`py-[9px] px-5 flex items-center gap-[9px] flex-wrap [border-bottom:1px_solid_var(--color-line-soft)] ${late ? TONE.critical.bg : 'bg-page'}`}>
                     <Icon name={late ? 'TriangleAlert' : multiDay ? 'CalendarDays' : 'Building2'} size="sm" color={late ? undefined : 'var(--color-faint)'} />
-                    <span className={`text-[13px] font-semibold ${late ? TONE.critical.text : ''}`}>{g.name}</span>
-                    <span className="text-[12px] text-muted-ink tabular-nums">
-                      {g.tasks.length} clean{g.tasks.length === 1 ? '' : 's'}{done ? ` · ${done} done` : ''}
+                    <span className={`text-copy font-semibold ${late ? TONE.critical.text : ''}`}>{g.name}</span>
+                    <span className="text-meta text-muted-ink tabular-nums">
+                      {plural(g.tasks.length, 'clean')}{done ? ` · ${count(done)} done` : ''}
                     </span>
                   </div>
                   {g.tasks.map(t => renderRow(t, ++seq))}
@@ -840,18 +844,15 @@ export default function HousekeepingPage() {
           </>}
         >
           <div className="flex flex-col gap-[7px]">
-            <label htmlFor="assign-cleaner" className={labelCls}>Cleaner</label>
-            <select id="assign-cleaner" value={assign.cleanerId} disabled={busy}
-              onChange={e => setAssign(a => a && { ...a, cleanerId: e.target.value, force: false, warning: undefined })}
-              className={inputCls}>
-              {cleanerOptions(CREW)}
-            </select>
+            <Select label="Cleaner" showLabel size="md" value={assign.cleanerId} disabled={busy}
+              onChange={v => setAssign(a => a && { ...a, cleanerId: v, force: false, warning: undefined })}
+              options={cleanerOptions(CREW)} />
           </div>
           {assign.task.nextGuestAt && (
-            <div className="text-[12.5px] text-muted-ink">Next guest arrives {assign.task.nextGuestAt}.</div>
+            <div className="text-meta text-muted-ink">Next guest arrives {assign.task.nextGuestAt}.</div>
           )}
           {assign.warning && (
-            <div className={`py-2.5 px-3 rounded-control ${TONE.critical.bg} ${TONE.critical.text} text-[12.5px] flex gap-2 items-start`}>
+            <div className={`py-2.5 px-3 rounded-control ${TONE.critical.bg} ${TONE.critical.text} text-meta flex gap-2 items-start`}>
               <Icon name="TriangleAlert" size="sm" style={{ marginTop: 1 }} />
               <span>{assign.warning}</span>
             </div>
@@ -887,11 +888,11 @@ export default function HousekeepingPage() {
                   onChange={e => setReschedule(r => r && { ...r, end: e.target.value })} className={inputCls} />
               </div>
             </div>
-            <div className="text-[12.5px] text-muted-ink">
+            <div className="text-meta text-muted-ink">
               Next guest arrives {reschedule.task.nextGuestAt ?? 'not scheduled'}.
             </div>
             {endsAfter && (
-              <div className={`py-2.5 px-3 rounded-control ${TONE.warning.bg} ${TONE.warning.text} text-[12.5px] flex gap-2 items-start`}>
+              <div className={`py-2.5 px-3 rounded-control ${TONE.warning.bg} ${TONE.warning.text} text-meta flex gap-2 items-start`}>
                 <Icon name="TriangleAlert" size="sm" style={{ marginTop: 1 }} />
                 <span>The window ends at {reschedule.end}, after the next guest arrives at {reschedule.task.nextGuestAt}. The unit may not be ready in time.</span>
               </div>
@@ -972,12 +973,9 @@ export default function HousekeepingPage() {
           </div>
           <div className="flex gap-[14px]">
             <div className="flex-1 flex flex-col gap-[7px]">
-              <label htmlFor="dmg-charge" className={labelCls}>Charge to</label>
-              <select id="dmg-charge" value={damage.chargeTo} disabled={busy}
-                onChange={e => setDamage(d => d && { ...d, chargeTo: e.target.value as 'owner' | 'company' })} className={inputCls}>
-                <option value="owner">Owner</option>
-                <option value="company">The Conts</option>
-              </select>
+              <Select label="Charge to" showLabel size="md" value={damage.chargeTo} disabled={busy}
+                onChange={v => setDamage(d => d && { ...d, chargeTo: v as 'owner' | 'company' })}
+                options={[{ value: 'owner', label: 'Owner' }, { value: 'company', label: 'The Conts' }]} />
             </div>
             <div className="flex-1 flex flex-col gap-[7px]">
               <label htmlFor="dmg-amount" className={labelCls}>Quoted amount (RM)</label>
@@ -986,7 +984,7 @@ export default function HousekeepingPage() {
                 className={`${inputCls} text-right tabular-nums`} />
             </div>
           </div>
-          <label className={`flex gap-[9px] items-center ${busy ? 'cursor-default' : 'cursor-pointer'} text-[13px]`}>
+          <label className={`flex gap-[9px] items-center ${busy ? 'cursor-default' : 'cursor-pointer'} text-copy`}>
             <input type="checkbox" checked={damage.blocksUnit} disabled={busy}
               onChange={e => setDamage(d => d && { ...d, blocksUnit: e.target.checked })} />
             Block the unit — it is not safe to let the next guest in
@@ -1033,18 +1031,18 @@ export default function HousekeepingPage() {
           }
           : confirm.kind === 'complete' && confirm.task ? {
             title: `Mark ${unitRef(confirm.task.propertyName, confirm.task.unitNumber)} ready for guest?`,
-            body: `${confirm.task.photoCount} photo${confirm.task.photoCount === 1 ? '' : 's'} attached. The unit is released as ready.`,
+            body: `${plural(confirm.task.photoCount, 'photo')} attached. The unit is released as ready.`,
             meta: confirm.task.nextGuestAt ? `Next check-in is ${confirm.task.nextGuestAt}.` : undefined,
             confirmLabel: 'Mark complete', busyLabel: 'Completing…', onConfirm: doComplete,
           }
           : confirm.kind === 'plan' ? {
-            title: `Create ${checkouts.length} cleaning task${checkouts.length === 1 ? '' : 's'}?`,
+            title: `Create ${plural(checkouts.length, 'cleaning task')}?`,
             body: 'One turnover per check-out listed, unassigned. Each window opens at check-out and closes at the next guest’s check-in that day. Check-outs that already have a clean are skipped.',
             meta: multiDay ? rangeLabel : undefined,
             confirmLabel: 'Create tasks', busyLabel: 'Creating…', onConfirm: () => plan(checkouts.map(c => c.reservationId)),
           }
           : {
-            title: `Auto-assign ${unassigned.length} unassigned task${unassigned.length === 1 ? '' : 's'}?`,
+            title: `Auto-assign ${plural(unassigned.length, 'unassigned task')}?`,
             body: `Every unassigned task is given a cleaner and sequenced by ${RULE_LABEL[rule].toLowerCase()}. Cleaners are notified.`,
             confirmLabel: 'Auto-assign', busyLabel: 'Assigning…', onConfirm: doAutoAssign,
           }}
@@ -1059,7 +1057,7 @@ function RuleChoice<T extends string>({ legend, value, options, onPick }: {
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-[12px] font-semibold text-muted-ink">{legend}</span>
+      <span className="text-meta font-semibold text-muted-ink">{legend}</span>
       {options.map(([v, label, desc]) => {
         const on = value === v;
         return (
@@ -1067,8 +1065,8 @@ function RuleChoice<T extends string>({ legend, value, options, onPick }: {
             className={`text-left py-3 px-[13px] rounded-control cursor-pointer [font:inherit] flex gap-[11px] items-start border border-solid ${on ? 'border-gold bg-gold-tint' : 'border-line bg-white'}`}>
             <span className={`w-4 h-4 flex-none mt-px rounded-full border-2 border-solid ${on ? 'border-gold bg-gold' : 'border-line-strong bg-transparent'}`} />
             <span className="flex flex-col gap-0.5">
-              <span className="text-[13.5px] font-semibold">{label}</span>
-              <span className="text-[12px] text-muted-ink">{desc}</span>
+              <span className="text-copy font-semibold">{label}</span>
+              <span className="text-meta text-muted-ink">{desc}</span>
             </span>
           </button>
         );
@@ -1077,30 +1075,22 @@ function RuleChoice<T extends string>({ legend, value, options, onPick }: {
   );
 }
 
-/** <option>s for a cleaner picker, grouped Internal vs Outsourced, with the vendor
+/** Options for a cleaner picker, grouped Internal vs Outsourced, with the vendor
  *  and today's load so the operator can spread work. Used by Assign and Create. */
-function cleanerOptions(crew: Cleaner[]) {
-  return (['internal', 'outsourced'] as Employment[]).map(emp => {
-    const list = crew.filter(c => c.employmentType === emp);
-    if (!list.length) return null;
-    return (
-      <optgroup key={emp} label={EMPLOYMENT_LABEL[emp]}>
-        {list.map(c => (
-          <option key={c.id} value={c.id}>
-            {c.name}{emp === 'outsourced' && c.vendorName ? ` — ${c.vendorName}` : ''}{c.busy ? ` · ${c.busy} today` : ''}
-          </option>
-        ))}
-      </optgroup>
-    );
-  });
+function cleanerOptions(crew: Cleaner[]): SelectOption[] {
+  return (['internal', 'outsourced'] as Employment[]).flatMap(emp =>
+    crew.filter(c => c.employmentType === emp).map(c => ({
+      value: c.id, group: EMPLOYMENT_LABEL[emp],
+      label: `${c.name}${emp === 'outsourced' && c.vendorName ? ` — ${c.vendorName}` : ''}${c.busy ? ` · ${c.busy} today` : ''}`,
+    })));
 }
 
 /** A compact label/value pair used across a task's field row. */
 function Field2({ label, value, muted, tone }: { label: string; value: string; muted?: boolean; tone?: Tone }) {
   return (
     <div className="flex flex-col gap-0.5 min-w-0">
-      <span className="text-[11px] text-faint font-semibold uppercase tracking-[0.03em]">{label}</span>
-      <span className={`text-[12.5px] font-medium whitespace-nowrap ${tone ? TONE[tone].text : muted ? 'text-muted-ink' : 'text-ink'}`}>{value}</span>
+      <span className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">{label}</span>
+      <span className={`text-copy font-medium whitespace-nowrap ${tone ? TONE[tone].text : muted ? 'text-muted-ink' : 'text-ink'}`}>{value}</span>
     </div>
   );
 }
@@ -1130,9 +1120,9 @@ function PhotoGalleryModal({ task, onClose }: { task: Task; onClose: () => void 
       footer={<Button size="sm" variant="secondary" onClick={onClose}>Close</Button>}
     >
       {loading && photos.length === 0 ? (
-        <div className="text-[13px] text-muted-ink">Loading photos…</div>
+        <div className="text-copy text-muted-ink">Loading photos…</div>
       ) : photos.length === 0 ? (
-        <div className="text-[13px] text-muted-ink">No photos yet. The cleaner adds them from the task before marking it ready.</div>
+        <div className="text-copy text-muted-ink">No photos yet. The cleaner adds them from the task before marking it ready.</div>
       ) : (
         <div className="grid grid-cols-2 gap-[11px]">
           {photos.map(p => (
@@ -1145,10 +1135,10 @@ function PhotoGalleryModal({ task, onClose }: { task: Task; onClose: () => void 
                 ) : null}
                 <span data-ph className="w-full h-full flex-col items-center justify-center gap-1.5 text-muted-ink" style={{ display: p.url ? 'none' : 'flex' }}>
                   <Icon name="Image" size="lg" color="var(--color-faint)" />
-                  <span className="text-[11px]">Photo</span>
+                  <span className="text-caption">Photo</span>
                 </span>
               </div>
-              <span className="text-[11.5px] text-muted-ink truncate">
+              <span className="text-meta text-muted-ink truncate">
                 {p.uploader ? `${p.uploader} · ` : ''}{p.capturedAt ? dateTime(p.capturedAt) : p.fileName}
               </span>
             </a>
@@ -1211,19 +1201,14 @@ function CreateCleaningModal({ crew, defaultDate, busy, onClose, onCreate }: {
 
       <div className="flex gap-[14px]">
         <div className="flex-1 flex flex-col gap-[7px]">
-          <label htmlFor="ck-kind" className={labelCls}>Kind of clean</label>
-          <select id="ck-kind" value={d.kind} disabled={busy}
-            onChange={e => set({ kind: e.target.value as CleanKind })} className={inputCls}>
-            {CLEAN_KINDS.map(k => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
-          </select>
+          <Select label="Kind of clean" showLabel size="md" value={d.kind} disabled={busy}
+            onChange={v => set({ kind: v as CleanKind })}
+            options={CLEAN_KINDS.map(k => ({ value: k, label: KIND_LABEL[k] }))} />
         </div>
         <div className="flex-1 flex flex-col gap-[7px]">
-          <label htmlFor="ck-linen" className={labelCls}>Linen set</label>
-          <select id="ck-linen" value={d.linenSet} disabled={busy}
-            onChange={e => set({ linenSet: e.target.value })} className={inputCls}>
-            <option value="Set A">Set A</option>
-            <option value="Set B">Set B</option>
-          </select>
+          <Select label="Linen set" showLabel size="md" value={d.linenSet} disabled={busy}
+            onChange={v => set({ linenSet: v })}
+            options={[{ value: 'Set A', label: 'Set A' }, { value: 'Set B', label: 'Set B' }]} />
         </div>
       </div>
 
@@ -1245,19 +1230,16 @@ function CreateCleaningModal({ crew, defaultDate, busy, onClose, onCreate }: {
         </div>
       </div>
       {endsAfter && (
-        <div className={`py-2.5 px-3 rounded-control ${TONE.warning.bg} ${TONE.warning.text} text-[12.5px] flex gap-2 items-start`}>
+        <div className={`py-2.5 px-3 rounded-control ${TONE.warning.bg} ${TONE.warning.text} text-meta flex gap-2 items-start`}>
           <Icon name="TriangleAlert" size="sm" style={{ marginTop: 1 }} />
           <span>The window ends at {d.dueAt}, after the next guest arrives at {d.nextGuestAt}. The unit may not be ready in time.</span>
         </div>
       )}
 
       <div className="flex flex-col gap-[7px]">
-        <label htmlFor="ck-cleaner" className={labelCls}>Assign a cleaner (optional)</label>
-        <select id="ck-cleaner" value={d.assigneeId} disabled={busy}
-          onChange={e => set({ assigneeId: e.target.value })} className={inputCls}>
-          <option value="">Leave unassigned</option>
-          {cleanerOptions(crew)}
-        </select>
+        <Select label="Assign a cleaner (optional)" showLabel size="md" value={d.assigneeId} disabled={busy}
+          onChange={v => set({ assigneeId: v })} placeholder="Leave unassigned"
+          options={cleanerOptions(crew)} />
       </div>
 
       <div className="flex flex-col gap-[7px]">
@@ -1267,7 +1249,7 @@ function CreateCleaningModal({ crew, defaultDate, busy, onClose, onCreate }: {
           className="block w-full box-border h-auto py-[9px] px-3 text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit] resize-y" />
       </div>
 
-      <label className={`flex gap-[9px] items-center ${busy ? 'cursor-default' : 'cursor-pointer'} text-[13px]`}>
+      <label className={`flex gap-[9px] items-center ${busy ? 'cursor-default' : 'cursor-pointer'} text-copy`}>
         <input type="checkbox" checked={d.requiresPhoto} disabled={busy}
           onChange={e => set({ requiresPhoto: e.target.checked })} />
         Require a photo before the unit can be marked ready
@@ -1300,11 +1282,9 @@ function EditDetailsModal({ task, busy, onClose, onSave }: {
       </>}
     >
       <div className="flex flex-col gap-[7px]">
-        <label htmlFor="ed-kind" className={labelCls}>Kind of clean</label>
-        <select id="ed-kind" value={kind} disabled={busy}
-          onChange={e => setKind(e.target.value as CleanKind)} className={inputCls}>
-          {CLEAN_KINDS.map(k => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
-        </select>
+        <Select label="Kind of clean" showLabel size="md" value={kind} disabled={busy}
+          onChange={v => setKind(v as CleanKind)}
+          options={CLEAN_KINDS.map(k => ({ value: k, label: KIND_LABEL[k] }))} />
       </div>
       <div className="flex flex-col gap-[7px]">
         <label htmlFor="ed-notes" className={labelCls}>Instructions</label>
