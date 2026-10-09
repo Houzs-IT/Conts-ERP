@@ -208,3 +208,41 @@ export function uomPrintLabel(code: string | null | undefined): string {
   const c = String(code ?? '').toUpperCase();
   return UOMS.find((u) => u.code === c)?.printLabel ?? c;
 }
+
+/* Generic SKUs: one per WORKS and SERVICE sub-category (code RN-<SUB>), so every
+   priced line of a quotation or SO can pick a SKU and carry a free-text
+   description. Seeded by migration 0064; the trade of a line is still the SKU's
+   sub_category. Measured trades default to their measuring unit. */
+export const GENERIC_SKU_GROUPS: readonly CatalogGroup[] = ['WORKS', 'SERVICE'];
+
+const GENERIC_UOM: Readonly<Record<string, string>> = {
+  ELECTRICAL: 'POINT',
+  PLASTER_CEILING: 'SQFT',
+  MASONRY_TILING: 'SQFT',
+  FLOORING: 'SQFT',
+  WATERPROOFING: 'SQFT',
+};
+
+export interface GenericSkuDef {
+  code: string;
+  group: CatalogGroup;
+  sub: string;
+  name: string;
+  uom: string;
+}
+
+export function genericSkuCode(sub: string): string {
+  return `RN-${String(sub).toUpperCase()}`;
+}
+
+export function genericSkus(): GenericSkuDef[] {
+  return GENERIC_SKU_GROUPS.flatMap((g) =>
+    subCategoriesOf(g).map((s) => ({
+      code: genericSkuCode(s.code),
+      group: g,
+      sub: s.code,
+      name: `${groupDef(g).label} - ${s.label}`,
+      uom: GENERIC_UOM[s.code] ?? 'LOT',
+    })),
+  );
+}
