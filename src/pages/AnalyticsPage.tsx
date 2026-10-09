@@ -10,7 +10,9 @@ import { rm, rmCompact, monthLabel, fileStamp, plural, MONTHS } from '../lib/for
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import type { BookingChannel, Tone } from '../lib/types';
-import { useUrlState, usePhone, ListCard, SearchBox, FilterSelect, STICKY_HEAD } from './finance/listKit';
+import { useUrlState, usePhone, ListCard, SearchBox, STICKY_HEAD } from './finance/listKit';
+import { Select } from '../components/Select';
+import { EmptyState } from '../components/States';
 
 /* -----------------------------------------------------------------------------
  * Analytics / Revenue — `/performance/analytics` and `/finance/revenue`.
@@ -250,7 +252,7 @@ export default function AnalyticsPage() {
           <div className="flex items-start justify-between gap-[14px] flex-wrap">
             <div className="flex flex-col gap-1.5 min-w-0">
               <div className="flex items-baseline gap-3 flex-wrap">
-                <span className="text-[30px] font-semibold tracking-[-0.01em] leading-[1.05]">{m.full(headline)}</span>
+                <span className="text-headline font-semibold tracking-[-0.01em] leading-[1.05]">{m.full(headline)}</span>
                 <span className={cx('text-copy font-semibold', delta.note && delta.value === 0 ? 'text-muted-ink font-normal' : TONE[delta.tone].text)}>{deltaText(delta)}</span>
               </div>
               <span className="text-meta text-muted-ink [text-wrap:pretty]">
@@ -268,7 +270,7 @@ export default function AnalyticsPage() {
                     onClick={() => setRange(r.key)}
                     aria-pressed={on}
                     className={cx(
-                      'h-[30px] px-3 py-0 cursor-pointer [font:inherit] border-none whitespace-nowrap',
+                      'h-9 px-3 py-0 cursor-pointer font-sans text-copy border-none whitespace-nowrap',
                       i === 0 ? '' : '[border-left:1px_solid_var(--color-line)]',
                       on ? 'bg-black text-white' : 'bg-card text-muted-ink',
                     )}
@@ -290,7 +292,7 @@ export default function AnalyticsPage() {
                   onClick={() => setMetric(k)}
                   aria-pressed={on}
                   className={cx(
-                    'h-8 px-[14px] py-0 cursor-pointer [font:inherit] border-none whitespace-nowrap',
+                    'h-9 px-[14px] py-0 cursor-pointer font-sans text-copy border-none whitespace-nowrap',
                     i === 0 ? '' : '[border-left:1px_solid_var(--color-line)]',
                     on ? 'bg-charcoal text-white' : 'bg-card text-muted-ink',
                   )}
@@ -325,7 +327,7 @@ export default function AnalyticsPage() {
             <CardHeader title={g.title} right={<span className="text-meta text-muted-ink">by {m.label.toLowerCase()}</span>} />
             {g.key === 'weak' && idle > 0 && <div className="px-5 pb-2 -mt-1 text-meta text-muted-ink">{plural(idle, 'listed unit')} had no booked nights in this window and {idle === 1 ? 'is' : 'are'} not ranked.</div>}
             {loading ? <TableSkeleton rows={4} cols={2} /> : g.rows.length === 0 ? (
-              <div className="p-5 text-copy text-muted-ink">Not enough data for this period.</div>
+              <EmptyState bare title="Not enough data for this period." body="Units appear here once they have booked nights in the window." />
             ) : g.rows.map((u, i) => (
               <div key={u.unitId} className="flex items-center gap-[14px] px-5 py-3 [border-top:1px_solid_var(--color-line-soft)]">
                 <span className="text-meta font-semibold text-faint w-4 flex-none">{i + 1}</span>
@@ -422,16 +424,18 @@ function UnitTable({ units, metric, loading }: { units: UnitRow[]; metric: Metri
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div className="flex flex-col gap-[2px]">
           <span className="text-heading font-semibold">All units</span>
-          <span className="text-meta text-muted-ink">{rows.length === units.length ? `${units.length} listed units` : `${rows.length} of ${units.length} listed units`}</span>
+          <span className="text-meta text-muted-ink">{rows.length === units.length ? plural(units.length, 'listed unit') : `${rows.length} of ${plural(units.length, 'listed unit')}`}</span>
         </div>
         <div className="flex gap-2 flex-wrap flex-[1_1_420px] justify-end">
           <SearchBox className="flex-[1_1_200px] max-w-[300px]" label="Search units" placeholder="Search unit" value={url.get('uq')} onChange={v => url.set({ uq: v || null })} />
-          <FilterSelect className="flex-[1_1_160px] max-w-[240px]" label="Building" all="All buildings" value={building} onChange={v => url.set({ ub: v || null })} options={buildings} />
+          <Select className="flex-[1_1_160px] max-w-[240px]" label="Building" value={building} onChange={v => url.set({ ub: v || null })} options={[{ value: '', label: 'All buildings' }, ...buildings]} />
         </div>
       </div>
       <ListCard>
         {loading ? <TableSkeleton rows={8} cols={phone ? 2 : 6} /> : rows.length === 0 ? (
-          <div className="py-[36px] px-5 text-center text-copy text-muted-ink">No units match.</div>
+          units.length === 0
+            ? <EmptyState bare title="No listed units in this window." />
+            : <EmptyState bare kind="filtered" title="No units match these filters." action={{ label: 'Clear filters', onClick: () => url.set({ uq: null, ub: null }) }} />
         ) : phone ? (
           <div>
             {rows.map(u => (
@@ -474,7 +478,7 @@ function UnitTable({ units, metric, loading }: { units: UnitRow[]; metric: Metri
               </div>
             ))}
             <div className={cx('grid', UNIT_COLS, 'gap-[14px] items-center px-5 py-[11px] bg-page text-copy font-semibold')}>
-              <span>Total · {rows.length} units</span>
+              <span>Total · {plural(rows.length, 'unit')}</span>
               <span className="text-right tabular-nums whitespace-nowrap">{rm(revenue, { cents: false })}</span>
               <span />
               <span className="text-right tabular-nums whitespace-nowrap" title="Revenue divided by booked nights">{nights ? rm(Math.round(revenue / nights), { cents: false }) : '—'}</span>

@@ -9,14 +9,17 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
-import { rm, rmShort, monthLabel, todayMyt, titleCase } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
+import { rmShort, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
+import { MoneyText } from '../components/MoneyText';
+import { Select } from '../components/Select';
+import { EmptyState } from '../components/States';
+import { cx } from '../lib/design-tokens';
 import {
   type Owner, type Payload,
   FALLBACK, netOf, grossOf, guaranteedOf, managedNetOf, managedGrossOf, terms,
   Roll, AddOwnerModal,
 } from './owners/shared';
-import { useUrlState, usePhone, ListCard, SearchBox, FilterSelect, Chip, MonthStepper, STICKY_HEAD, shiftMonth, useFinanceFilters } from './finance/listKit';
+import { useUrlState, usePhone, ListCard, SearchBox, Chip, MonthStepper, STICKY_HEAD, shiftMonth, useFinanceFilters } from './finance/listKit';
 
 /**
  * Owners list. Each row opens the full owner profile at `#/owners/:id`
@@ -104,7 +107,7 @@ export default function OwnersPage() {
   async function addOwner(o: Omit<Owner, 'id' | 'units' | 'portalInvited' | 'contract' | 'defaultManagementFeePct'>) {
     try {
       const made = await api.post<{ id: string }>('/owners', o);
-      toast({ tone: 'success', title: 'Owner added.', body: `${o.displayName} — link a unit next.` });
+      toast({ tone: 'success', title: 'Owner added.', body: `${titleCase(o.displayName)}: link a unit next.` });
       setModal(false);
       navigate(`/owners/${encodeURIComponent(made.id)}`);
     } catch (e) {
@@ -121,8 +124,8 @@ export default function OwnersPage() {
 
   return (
     <>
-      <PageHeader title="Owners" sub={`${all.length} owners · ${unitCount} units under management`}
-        right={<Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal(true)}>Add owner</Button>} />
+      <PageHeader title="Owners" sub={`${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')} under management`}
+        primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal(true)}>Add owner</Button>} />
 
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
@@ -139,33 +142,31 @@ export default function OwnersPage() {
         </div>
       </Card>
 
-      <div className="flex flex-col gap-2">
-        <div className={cx('flex gap-[7px] shrink-0', phone ? 'overflow-x-auto -mx-4 px-4 pb-1' : 'flex-wrap')}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <SearchBox className="flex-1 min-w-[200px]" label="Search owners" placeholder="Search owner, email or unit" value={url.get('q')} onChange={v => url.set({ q: v || null })} />
+        {filters && (
+          <Select className="flex-[0_1_200px]" label="Building" value={building} onChange={v => url.set({ building: v || null })}
+            options={[{ value: '', label: 'All buildings' }, ...[...filters.buildings].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: b.name }))]} />
+        )}
+        {phone && (
+          <Select className="flex-[1_1_180px]" label="Sort by" value={sortRaw === 'name' ? '' : sortRaw}
+            onChange={v => url.set({ sort: v || null })}
+            options={[{ value: '', label: 'Sort: name A-Z' }, { value: '-net', label: 'Sort: net, highest first' }, { value: 'net', label: 'Sort: net, lowest first' }, { value: '-gross', label: 'Sort: gross, highest first' }, { value: '-units', label: 'Sort: most units' }]} />
+        )}
+        <div className={cx('flex gap-2', phone ? 'w-full overflow-x-auto pb-1' : 'flex-wrap')}>
           <Chip on={!model} onClick={() => url.set({ model: null })} count={counts.all}>All owners</Chip>
           <Chip on={model === 'management'} onClick={() => url.set({ model: 'management' })} count={counts.management}>Management fee</Chip>
           <Chip on={model === 'grr'} onClick={() => url.set({ model: 'grr' })} count={counts.grr}>Guaranteed rent</Chip>
           <Chip on={model === 'none'} onClick={() => url.set({ model: 'none' })} count={counts.none}>No units</Chip>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <SearchBox className="flex-[2_1_240px]" label="Search owners" placeholder="Search owner, email or unit" value={url.get('q')} onChange={v => url.set({ q: v || null })} />
-          {filters && (
-            <FilterSelect className="flex-[1_1_180px]" label="Building" all="All buildings" value={building} onChange={v => url.set({ building: v || null })}
-              options={filters.buildings.map(b => ({ value: b.id, label: b.name }))} />
-          )}
-          {phone && (
-            <FilterSelect className="flex-[1_1_180px]" label="Sort by" all="Sort: name A-Z" value={sortRaw === 'name' ? '' : sortRaw}
-              onChange={v => url.set({ sort: v || null })}
-              options={[{ value: '-net', label: 'Sort: net, highest first' }, { value: 'net', label: 'Sort: net, lowest first' }, { value: '-gross', label: 'Sort: gross, highest first' }, { value: '-units', label: 'Sort: most units' }]} />
-          )}
-        </div>
+        {filtered && <Button size="sm" variant="tertiary" onClick={() => url.set({ q: null, building: null, model: null })}>Clear filters</Button>}
       </div>
 
       <ListCard busy={loading && !!data}>
         {loading && !data ? <TableSkeleton rows={8} cols={phone ? 2 : 6} /> : rows.length === 0 ? (
-          <div className="py-[44px] px-[22px] text-center flex flex-col items-center gap-2">
-            <span className="text-copy font-medium">{all.length === 0 ? 'No owners yet.' : 'No owners match these filters.'}</span>
-            {filtered && <button onClick={() => url.set({ q: null, building: null, model: null })} className="font-sans text-copy text-gold-ink bg-transparent border-none cursor-pointer">Clear filters</button>}
-          </div>
+          all.length === 0
+            ? <EmptyState bare title="No owners yet." body="Add an owner, then link their units and set the fee or guaranteed rent." />
+            : <EmptyState bare kind="filtered" title="No owners match these filters." action={{ label: 'Clear filters', onClick: () => url.set({ q: null, building: null, model: null }) }} />
         ) : phone ? (
           <div>
             {rows.map(o => (
@@ -177,14 +178,14 @@ export default function OwnersPage() {
                   <span className="text-meta text-muted-ink truncate">{unitsText(o)} · {ownerTerms(o)}</span>
                 </div>
                 <div className="flex flex-col items-end gap-[2px] shrink-0">
-                  <span className="text-copy font-semibold tabular-nums">{rm(netOf(o), { cents: false })}</span>
+                  <MoneyText sen={netOf(o)} mode="exact" tone="auto" strong className="text-copy" />
                   <span className="text-caption text-muted-ink">net</span>
                 </div>
               </button>
             ))}
             <div className="flex items-center justify-between py-3 px-4 bg-page text-copy font-semibold">
-              <span>{rows.length} {rows.length === 1 ? 'owner' : 'owners'}</span>
-              <span className="tabular-nums">{rm(shownNet, { cents: false })}</span>
+              <span>{plural(rows.length, 'owner')}</span>
+              <MoneyText sen={shownNet} mode="exact" />
             </div>
           </div>
         ) : (
@@ -207,8 +208,8 @@ export default function OwnersPage() {
                 </div>
                 <span className="text-copy text-muted-ink truncate" title={o.units.map(u => u.unitLabel).join(', ')}>{unitsText(o)}</span>
                 <span className="text-copy text-muted-ink truncate">{ownerTerms(o)}</span>
-                <span className="text-copy text-right text-muted-ink tabular-nums whitespace-nowrap">{rm(grossOf(o), { cents: false })}</span>
-                <span className={cx('text-copy text-right font-medium tabular-nums whitespace-nowrap', netOf(o) < 0 ? TONE.critical.text : '')}>{rm(netOf(o), { cents: false })}</span>
+                <MoneyText sen={grossOf(o)} mode="exact" tone="muted" className="text-copy text-right" />
+                <MoneyText sen={netOf(o)} mode="exact" tone="auto" className="text-copy text-right font-medium" />
                 <div className="flex items-center justify-between gap-2 min-w-0">
                   {o.portalInvited ? <Badge tone="success" label="Active" /> : <Badge tone="neutral" label="Not invited" />}
                   <Icon name="ChevronRight" size="sm" color="var(--color-muted-ink)" />
@@ -216,9 +217,9 @@ export default function OwnersPage() {
               </div>
             ))}
             <div className={cx(COLS, 'grid gap-[14px] items-center py-[12px] px-[22px] bg-page text-copy font-semibold')}>
-              <span>{filtered ? `${rows.length} of ${all.length} owners` : `${rows.length} owners`}</span><span /><span />
-              <span className="text-right tabular-nums whitespace-nowrap">{rm(shownGross, { cents: false })}</span>
-              <span className="text-right tabular-nums whitespace-nowrap">{rm(shownNet, { cents: false })}</span>
+              <span>{filtered ? `${rows.length} of ${plural(all.length, 'owner')}` : plural(rows.length, 'owner')}</span><span /><span />
+              <MoneyText sen={shownGross} mode="exact" className="text-right" />
+              <MoneyText sen={shownNet} mode="exact" className="text-right" />
               <span />
             </div>
           </div>
