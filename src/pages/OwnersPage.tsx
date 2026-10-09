@@ -174,8 +174,8 @@ export default function OwnersPage() {
                 className="w-full text-left flex items-center gap-3 py-[11px] px-4 bg-card border-none [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer font-sans text-ink">
                 <span className="w-[32px] h-[32px] flex-none rounded-full bg-black text-gold grid place-items-center text-caption font-semibold">{initials(o.displayName)}</span>
                 <div className="flex flex-col gap-[2px] min-w-0 flex-1">
-                  <span className="text-copy font-medium truncate">{titleCase(o.displayName)}</span>
-                  <span className="text-meta text-muted-ink truncate">{unitsText(o)} · {ownerTerms(o)}</span>
+                  <span className="text-copy font-medium truncate" title={o.displayName}>{titleCase(o.displayName)}</span>
+                  <span className="text-meta text-muted-ink truncate" title={`${o.units.map(u => u.unitLabel).join(', ') || unitsText(o)} · ${ownerTerms(o)}`}>{unitsText(o)} · {ownerTerms(o)}</span>
                 </div>
                 <div className="flex flex-col items-end gap-[2px] shrink-0">
                   <MoneyText sen={netOf(o)} mode="exact" tone="auto" strong className="text-copy" />
@@ -207,7 +207,7 @@ export default function OwnersPage() {
                   </div>
                 </div>
                 <span className="text-copy text-muted-ink truncate" title={o.units.map(u => u.unitLabel).join(', ')}>{unitsText(o)}</span>
-                <span className="text-copy text-muted-ink truncate">{ownerTerms(o)}</span>
+                <span className="text-copy text-muted-ink truncate" title={ownerTerms(o)}>{ownerTerms(o)}</span>
                 <MoneyText sen={grossOf(o)} mode="exact" tone="muted" className="text-copy text-right" />
                 <MoneyText sen={netOf(o)} mode="exact" tone="auto" className="text-copy text-right font-medium" />
                 <div className="flex items-center justify-between gap-2 min-w-0">
