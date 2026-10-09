@@ -10,7 +10,13 @@ server and screens, copied whole at Houzs commit c20343f5 with the owner's appro
 because the supply chain cannot be separated from the rest of that code). Rules for it:
 - Houzs's own repository, database and live system are read-only reference. Never change
   them, never deploy to them, never point `engine/` at a Houzs address.
-- Change as little as possible inside `engine/`, so a newer Houzs copy can replace it.
+- Change as little as possible inside `engine/`, except the renovation work: the owner decided
+  on 9 Oct 2026 to rework the engine's Projects module, catalog and sales documents in place
+  for Conts's renovation business (design: `docs/superpowers/specs/2026-10-09-renovation-flow-design.md`,
+  plans and the cross-phase contract: `docs/superpowers/plans/2026-10-09-*`). From then on the
+  engine diverges from Houzs on purpose; a newer Houzs copy can no longer replace it wholesale,
+  only be picked from file by file. Keep renovation code in files named `renovation*` and keep
+  Houzs-only paths working.
   Conts-specific settings live in `engine/backend/wrangler.toml` and env files;
   `wrangler.houzs.toml` files are Houzs's settings kept for reference and must never be used.
 - No scheduled jobs and no AutoCount in the engine: both act on Houzs's systems.
