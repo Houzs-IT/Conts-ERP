@@ -952,5 +952,13 @@ scm.route("/slips", slips);
 import { renovation } from "./routes/renovation";
 scm.use("/renovation/*", scmAreaGuard("scm.sales.orders", { writeLevel: "view" }));
 scm.route("/renovation", renovation);
+// ── Renovation flow, phase 3: site receipts (POD at the customer's unit) ──
+// A site supervisor receives a renovation PO on the phone at the unit: a GRN
+// with photos, signatures and location that books no stock (lib/
+// renovation-site-receipt.ts). Gated as the GRN area; the route also requires
+// projects.write on the real caller.
+import { siteReceipts } from "./routes/site-receipts";
+scm.use("/site-receipts/*", scmAreaGuard("scm.procurement.grn"));
+scm.route("/site-receipts", siteReceipts);
 
 export default scm;
