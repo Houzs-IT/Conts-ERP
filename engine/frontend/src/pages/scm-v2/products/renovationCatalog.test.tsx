@@ -13,6 +13,8 @@ const h = vi.hoisted(() => ({
   bind: vi.fn(),
   rows: [] as unknown[],
   fetched: [] as string[],
+  posted: [] as Array<{ path: string; file: File | null }>,
+  heicFails: false,
 }));
 
 vi.mock('../../../vendor/scm/lib/mfg-products-queries', async (orig) => ({
@@ -27,8 +29,27 @@ vi.mock('../../../vendor/scm/lib/suppliers-queries', () => ({
 }));
 vi.mock('../../../vendor/scm/lib/authed-fetch', async (orig) => ({
   ...(await orig<typeof import('../../../vendor/scm/lib/authed-fetch')>()),
-  authedFetch: async (path: string) => { h.fetched.push(path); return { photos: [] }; },
+  authedFetch: async (path: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      const fd = init.body as FormData;
+      h.posted.push({ path, file: (fd.get('file') as File | null) ?? null });
+      return { photo: {} };
+    }
+    h.fetched.push(path);
+    return { photos: [] };
+  },
 }));
+vi.mock('../../../lib/heicToJpeg', async (orig) => {
+  const actual = await orig<typeof import('../../../lib/heicToJpeg')>();
+  return {
+    ...actual,
+    toUploadableImage: async (f: File) => {
+      if (!actual.isHeicFile(f)) return f;
+      if (h.heicFails) throw new actual.HeicConversionError(f.name);
+      return new File(['jpeg'], f.name.replace(/\.heic$/i, '.jpg'), { type: 'image/jpeg' });
+    },
+  };
+});
 
 import { CatalogChips } from './CatalogChips';
 import { CatalogCategoryPicker } from './CatalogCategoryPicker';
@@ -154,6 +175,25 @@ describe('PhotoGallery on a SKU', () => {
     wrap(<PhotoGallery productId="p-9" productName="TV 55" />);
     await screen.findByText(/Gallery/);
     expect(h.fetched).toContain('/mfg-products/p-9/photos');
+  });
+  test('an iPhone HEIC photo is offered, converted and uploaded as JPEG; one that cannot convert shows why', async () => {
+    const { container } = wrap(<PhotoGallery productId="p-9" productName="TV 55" />);
+    await screen.findByText(/Gallery/);
+    const input = await vi.waitFor(() => {
+      const el = container.querySelector('input[type="file"][multiple]') as HTMLInputElement | null;
+      if (!el) throw new Error('upload input not rendered yet');
+      return el;
+    });
+    expect(input.accept).toContain('.heic');
+    fireEvent.change(input, { target: { files: [new File(['heic'], 'IMG_0001.HEIC', { type: '' })] } });
+    await vi.waitFor(() => expect(h.posted).toHaveLength(1));
+    expect(h.posted[0]!.path).toBe('/mfg-products/p-9/photos');
+    expect(h.posted[0]!.file).toMatchObject({ name: 'IMG_0001.jpg', type: 'image/jpeg' });
+    h.heicFails = true;
+    fireEvent.change(input, { target: { files: [new File(['heic'], 'IMG_0002.HEIC', { type: 'image/heic' })] } });
+    expect(await screen.findByText(/IMG_0002\.HEIC .*Most Compatible/)).toBeTruthy();
+    expect(h.posted).toHaveLength(1);
+    h.heicFails = false;
   });
 });
 

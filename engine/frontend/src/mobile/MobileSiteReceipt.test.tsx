@@ -3,7 +3,19 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OpenLine } from "../pages/projects/renovation/renovationApi";
 
-const h = vi.hoisted(() => ({ posts: [] as unknown[] }));
+const h = vi.hoisted(() => ({ posts: [] as unknown[], heicFails: false }));
+
+vi.mock("../lib/heicToJpeg", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/heicToJpeg")>();
+  return {
+    ...actual,
+    toUploadableImage: async (f: File) => {
+      if (!actual.isHeicFile(f)) return f;
+      if (h.heicFails) throw new actual.HeicConversionError(f.name);
+      return new File(["jpeg"], f.name.replace(/\.heic$/i, ".jpg"), { type: "image/jpeg" });
+    },
+  };
+});
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
@@ -66,5 +78,24 @@ describe("site receipt rules on the phone", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm received" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/Tick at least one line/);
     expect(h.posts).toHaveLength(0);
+  });
+
+  it("an iPhone HEIC photo is converted to JPEG when picked; one that cannot be is refused with a clear message", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MobileSiteReceipt projectId={7} projectName="Skyline A-12-3" onBack={() => {}} onDone={() => {}} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Sofa 3 seater");
+    const input = screen.getByLabelText("Items in place", { selector: "input" }) as HTMLInputElement;
+    expect(input.accept).toContain(".heic");
+    fireEvent.change(input, { target: { files: [new File(["heic"], "IMG_0001.HEIC", { type: "" })] } });
+    expect(await screen.findByText(/in place: IMG_0001\.jpg/)).toBeTruthy();
+    h.heicFails = true;
+    fireEvent.change(input, { target: { files: [new File(["heic"], "IMG_0002.HEIC", { type: "image/heic" })] } });
+    expect((await screen.findByRole("alert")).textContent).toMatch(/IMG_0002\.HEIC .*Most Compatible/);
+    expect(screen.queryByText(/IMG_0002/, { selector: "span" })).toBeNull();
+    h.heicFails = false;
   });
 });
