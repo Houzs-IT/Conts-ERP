@@ -204,7 +204,10 @@ app.get("/calendar", requirePageAccess("projects.list"), async (c) => {
             t.stage_key, t.trade_code, t.fix_phase, t.label, t.fulfilment_kind, t.state,
             t.supplier_id::text AS supplier_id, sup.name AS supplier_name, po.po_number,
             t.planned_start::text AS planned_start, t.planned_end::text AS planned_end,
-            t.actual_start::text AS actual_start, t.actual_end::text AS actual_end
+            t.actual_start::text AS actual_start, t.actual_end::text AS actual_end,
+            (EXISTS (SELECT 1 FROM project_trade_task_lines l WHERE l.task_id = t.id AND l.purchase_order_item_id IS NOT NULL)
+              AND NOT EXISTS (SELECT 1 FROM project_trade_task_lines l JOIN scm.purchase_order_items poi ON poi.id = l.purchase_order_item_id
+                               WHERE l.task_id = t.id AND poi.received_qty < poi.qty)) AS po_fully_received
        FROM project_trade_tasks t
        JOIN projects p ON p.id = t.project_id AND p.archived_at IS NULL
        LEFT JOIN scm.suppliers sup ON sup.id = t.supplier_id
@@ -225,6 +228,7 @@ app.get("/calendar", requirePageAccess("projects.list"), async (c) => {
       state: String(r.state), fulfilment_kind: String(r.fulfilment_kind),
       planned_start: (r.planned_start as string) ?? null, planned_end: (r.planned_end as string) ?? null,
       actual_start: (r.actual_start as string) ?? null, actual_end: (r.actual_end as string) ?? null,
+      poFullyReceived: r.po_fully_received === true,
     }, today),
   }));
   const contractors = await db(c).prepare(
