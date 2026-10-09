@@ -1,3 +1,6 @@
+/* Layer order is declared first so the base layer below sits under the utilities. */
+@layer theme, base, utilities;
+
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 /* Tailwind v4 (the ERP convention) — utilities + theme only, NO preflight, so the
@@ -14,6 +17,20 @@
 /* No preflight means the browser's 8px body margin survived: it framed every screen in a grey border
    and, with the shell at 100vh, made the whole page scroll by 16px. The app shell owns the viewport. */
 body { margin: 0; }
+
+/* Form controls do not inherit type from the page without a preflight: every <button>, <input>, <select>
+   and <textarea> without its own font class rendered in Arial at 13.33px, and an unstyled <button> kept
+   the browser's 2px outset border (the Pricing unit list drew one on all 139 rows). These defaults sit in
+   the base layer, so any utility class or inline style on a control still wins. */
+@layer base {
+  button, input, select, textarea, optgroup {
+    font-family: inherit;
+    font-feature-settings: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+  }
+  button { border: 0 solid; background-color: transparent; }
+}
 
 /* Design tokens -> Tailwind theme. Utilities such as text-ink, bg-page, bg-gold,
    border-line, text-success now emit the exact brand values (keeps design 1:1

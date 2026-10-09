@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
@@ -243,7 +244,7 @@ export default function ExpensesPage() {
 
         {/* Month — stepper plus a menu of the months that have expenses. */}
         <div className="flex flex-[1_0_150px] sm:flex-none sm:w-[168px] items-center h-9 rounded-control border border-solid border-line bg-card min-w-0">
-          <button aria-label="Previous month" onClick={() => stepMonth(-1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-heading">‹</button>
+          <button aria-label="Previous month" onClick={() => stepMonth(-1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink hover:text-ink"><Icon name="ChevronLeft" size="sm" /></button>
           <label className="relative flex-1 min-w-0 h-full">
             <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Month</span>
             <select value={monthAll ? 'all' : shownMonth} onChange={e => setFilter({ month: e.target.value })}
@@ -252,7 +253,7 @@ export default function ExpensesPage() {
               <option value="all">All months</option>
             </select>
           </label>
-          <button aria-label="Next month" onClick={() => stepMonth(1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-heading">›</button>
+          <button aria-label="Next month" onClick={() => stepMonth(1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink hover:text-ink"><Icon name="ChevronRight" size="sm" /></button>
         </div>
       </div>
 

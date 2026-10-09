@@ -11,10 +11,12 @@ import { color } from '../theme';
 
 const HAS_ARTWORK = false; // flip to true once /brand/logo.svg exists
 
-export function Logo({ variant = 'full', size = 'md', onDark = false }: {
+export function Logo({ variant = 'full', size = 'md', onDark = false, product = false }: {
   variant?: 'full' | 'mark' | 'wordmark';
   size?: 'sm' | 'md' | 'lg';
   onDark?: boolean;
+  /** The app's own lockup (sidebar): "Property OS" under the wordmark, as in the desktop design. */
+  product?: boolean;
 }) {
   const height = { sm: 28, md: 40, lg: 50 }[size];
   const ink = onDark ? '#FFFFFF' : color.ink;
@@ -54,10 +56,13 @@ export function Logo({ variant = 'full', size = 'md', onDark = false }: {
         fontSize: size === 'sm' ? 12 : size === 'lg' ? 16 : 14,
         fontWeight: 600, letterSpacing: '0.18em', color: onDark ? '#FFFFFF' : ink,
       }}>THE CONTS</span>
-      <span style={{
-        // The small lockup has to fit beside the sidebar's collapse button (about 136px).
-        fontSize: size === 'sm' ? 8.5 : 11, letterSpacing: size === 'sm' ? '0.17em' : '0.26em', color: muted, whiteSpace: 'nowrap',
-      }}>PROPERTY MANAGEMENT</span>
+      {product
+        // The sidebar lockup has to fit beside the collapse button (about 136px); the design names the
+        // product there instead of squeezing the tagline below the 11px minimum.
+        ? <span style={{ fontSize: 11, lineHeight: 1.35, color: muted, whiteSpace: 'nowrap' }}>Property OS</span>
+        : <span style={{
+            fontSize: 11, letterSpacing: size === 'sm' ? '0.17em' : '0.26em', color: muted, whiteSpace: 'nowrap',
+          }}>PROPERTY MANAGEMENT</span>}
     </div>
   );
 
