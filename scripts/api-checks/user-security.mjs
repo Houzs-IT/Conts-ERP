@@ -27,14 +27,17 @@ check('session signed before revoke is refused 401', r.status === 401, r.text);
 r = await callAsUser(as(Date.now() + 1000), 'GET', '/api/auth/session');
 check('a new sign-in after revoke works', r.status === 200, r.text);
 
-// A fresh invite already has must_change_password set, so the proof that this ran is the sign-out.
-const beforeForce = Date.now();
+const beforeReset = Date.now();
 await new Promise(res => setTimeout(res, 5));
+r = await call('POST', `/api/users/${uid}/security`, { action: 'temp_password' });
+const temp = r.json?.tempPassword;
+check('reset password returns a temporary password once', r.status === 200 && /^[A-Za-z2-9]{4}-[A-Za-z2-9]{4}-[A-Za-z2-9]{4}$/.test(temp ?? ''), r.text);
+r = await callAsUser(as(beforeReset), 'GET', '/api/auth/session');
+check('reset password signs them out everywhere 401', r.status === 401, r.text);
+r = await call('POST', '/api/auth/login', { email, password: temp });
+check('they can sign in with it, and are sent to choose their own', r.status === 200 && r.json.user.mustChangePassword === true && r.json.home === '/change-password', r.text);
 r = await call('POST', `/api/users/${uid}/security`, { action: 'force_change' });
-check('require new password 200', r.status === 200, r.text);
-r = await callAsUser(as(beforeForce), 'GET', '/api/auth/session');
-check('require new password also signs them out 401', r.status === 401, r.text);
-check('list shows must change password', (await row())?.mustChangePassword === true);
+check('the old require-new-password action is gone 422', r.status === 422, r.text);
 
 for (let i = 0; i < 5; i++) await call('POST', '/api/auth/login', { email, password: 'Wrong-password-1' });
 check('five wrong passwords show Locked in the list', (await row())?.isLocked === true);

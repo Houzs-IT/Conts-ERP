@@ -201,11 +201,13 @@ export default function UsersPage() {
     }
   }
   /* ---------------------------- row actions --------------------------- */
-  // Passwords stay hashed: these send a link, require a new password, end sessions or lift a lock,
-  // never show or set one. See functions/api/users/[id]/security.ts.
+  // Passwords stay hashed. The one exception is Reset password: the server returns a temporary password
+  // once, it is shown here once to be passed on, and it is dropped from memory when this box closes.
+  // See functions/api/users/[id]/security.ts.
   const { user: me } = useSession();
   const canManage = me?.role === 'management';
   const [confirm, setConfirm] = useState<DialogSpec | null>(null);
+  const [tempShown, setTempShown] = useState<{ name: string; email: string; password: string } | null>(null);
 
   async function act(u: Row, call: () => Promise<unknown>, done: string, body?: string) {
     setBusy(true);
@@ -247,11 +249,14 @@ export default function UsersPage() {
       meta: `Sent to ${u.email}`, confirmLabel: 'Send link', busyLabel: 'Sending…',
       onConfirm: () => act(u, security(u, 'reset_email'), `Reset link sent to ${u.email}.`),
     }) });
-    if (u.isActive && !invited && !self) items.push({ key: 'force', label: 'Require a new password', icon: 'KeyRound', run: () => setConfirm({
-      title: `Make ${u.fullName} choose a new password?`,
-      body: 'They are signed out on every device now. The next time they sign in, they must set a new password before they can do anything else.',
-      confirmLabel: 'Sign out and require new password', busyLabel: 'Saving…',
-      onConfirm: () => act(u, security(u, 'force_change'), `${u.fullName} must choose a new password at next sign-in.`, 'They have been signed out everywhere.'),
+    if (u.isActive && !self) items.push({ key: 'temp', label: 'Reset password', icon: 'KeyRound', run: () => setConfirm({
+      title: `Reset ${u.fullName}'s password?`,
+      body: 'Their current password stops working and they are signed out on every device now. You get a temporary password to give them; when they sign in with it, they must choose their own before they can do anything else.',
+      confirmLabel: 'Reset and sign out', busyLabel: 'Resetting…', danger: true,
+      onConfirm: () => act(u, async () => {
+        const res = await api.post<{ tempPassword: string }>(`/users/${u.id}/security`, { action: 'temp_password' });
+        setTempShown({ name: u.fullName, email: u.email, password: res.tempPassword });
+      }, `${u.fullName}'s password was reset.`, 'They have been signed out on every device.'),
     }) });
     if (!self) items.push({ key: 'revoke', label: 'Sign out everywhere', icon: 'LogOut', run: () => setConfirm({
       title: `Sign ${u.fullName} out everywhere?`,
@@ -548,6 +553,34 @@ export default function UsersPage() {
       )}
 
       <Dialog spec={confirm} busy={busy} onClose={() => setConfirm(null)} />
+
+      {tempShown && (
+        <Modal
+          title={`Temporary password for ${tempShown.name}`}
+          sub="Give this to them in person or by a private message. It is shown only now; close this box and it cannot be seen again."
+          onClose={() => setTempShown(null)}
+          footer={
+            <>
+              <Button variant="secondary" size="sm" onClick={() => {
+                navigator.clipboard?.writeText(tempShown.password).then(
+                  () => toast({ tone: 'success', title: 'Copied.' }),
+                  () => toast({ tone: 'warning', title: 'Could not copy. Select the password and copy it by hand.' }));
+              }}>Copy password</Button>
+              <Button variant="primary" size="sm" onClick={() => setTempShown(null)}>Done</Button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            <div className="py-3 px-3.5 rounded-control bg-page border border-solid border-line">
+              <div className="text-meta text-muted-ink">Sign in as {tempShown.email} with</div>
+              <div className="text-heading font-semibold font-mono mt-1 select-all break-all">{tempShown.password}</div>
+            </div>
+            <span className="text-meta text-muted-ink leading-[1.5]">
+              They have been signed out on every device. When they sign in with this, they must choose their own password before they can do anything else.
+            </span>
+          </div>
+        </Modal>
+      )}
 
       {/* ---------------------------- Edit org modal ---------------------------- */}
       {orgOpen && (
