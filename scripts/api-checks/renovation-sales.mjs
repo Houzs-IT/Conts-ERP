@@ -89,6 +89,9 @@ const [brand] = await db.q(`select id from public.project_brands where name = 'D
 check('Dream Crafter letterhead seeded', Boolean(brand));
 const [prof] = await db.q(`select bank_line, array_length(terms_lines, 1) as n from scm.reno_brand_profiles where brand_id = $1`, [brand.id]);
 check('letterhead has bank line and 4 terms lines', prof?.bank_line?.includes('HLBB') && Number(prof.n) === 4);
+const brands = await M.listBrandProfiles(db, 1);
+const dc = brands.find((b) => b.name === 'Dream Crafter');
+check('brand profile lines come back as arrays (the production driver fetches no array types)', Array.isArray(dc?.companyLines) && dc.companyLines.length === 4 && Array.isArray(dc.termsLines) && dc.termsLines.length === 4);
 const terms = await M.listTermTemplates(db, 1);
 check('3 payment-term templates seeded (2 customer, 1 PO)', terms.length === 3 && terms.filter((t) => t.kind === 'PO').length === 1,
   terms.map((t) => `${t.kind}:${t.name}`).join(', '));

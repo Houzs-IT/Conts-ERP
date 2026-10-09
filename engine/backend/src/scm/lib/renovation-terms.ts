@@ -84,7 +84,7 @@ export async function saveTermTemplate(db: RenoDb, actor: RenoActor, id: string 
 
 export async function listBrandProfiles(db: RenoDb, companyId: number) {
   const rows = await db.q(
-    `select b.id, b.name, b.color, b.logo_r2_key, b.active, p.company_lines, p.contact_line, p.bank_line, p.terms_lines, p.intro, p.signatory_company,
+    `select b.id, b.name, b.color, b.logo_r2_key, b.active, to_jsonb(p.company_lines) as company_lines, p.contact_line, p.bank_line, to_jsonb(p.terms_lines) as terms_lines, p.intro, p.signatory_company,
             (p.brand_id is not null) as has_profile
        from public.project_brands b left join scm.reno_brand_profiles p on p.brand_id = b.id
       where b.company_id = $1 order by b.sort_order, b.name`,
