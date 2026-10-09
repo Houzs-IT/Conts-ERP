@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Card, CardHeader, LinkAction } from '../components/Card';
 import PageHeader from '../components/PageHeader';
+import Icon from '../components/Icon';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Dialog } from '../components/Dialog';
@@ -318,7 +319,8 @@ export default function DashboardPage() {
       <PageHeader
         title="Dashboard"
         sub={[period ? `${monthLabel(period)} to date` : '', lastUpdated ? `Last updated ${lastUpdated}` : ''].filter(Boolean).join(' · ')}
-        primary={<Button variant="primary" size="sm" onClick={() => go('#/properties/units')}>Add property</Button>}
+        actions={<Button variant="secondary" size="sm" onClick={() => go('#/properties/units')}>Add property</Button>}
+        primary={<Button variant="primary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => go('#/reservations/bookings?create=1')}>Create reservation</Button>}
       />
 
       {failure && <StaleBanner message={`Showing the last figures we have. ${failure}`} onRetry={() => { kpi.reload(); trend.reload(); today.reload(); exc.reload(); portfolio.reload(); }} />}
@@ -356,7 +358,7 @@ export default function DashboardPage() {
                     </span>
                   )}
                 </div>
-                <span className="text-meta text-muted-ink">Accommodation revenue by check-in month · occupancy under each month</span>
+                <span className="text-meta text-muted-ink">Gross booking value, stays split by night · occupancy under each month</span>
               </div>
 
               {/* 3M / 12M / YTD — re-reads the chart from /dashboard/trend?range= */}
