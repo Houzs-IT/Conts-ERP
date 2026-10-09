@@ -83,6 +83,18 @@ function parseId(x: string | undefined): number | null {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
+// ── Mode: which Projects screens this install shows (app_settings projects_mode, mig 0082) ──
+
+app.get("/mode", requirePageAccess("projects.list"), async (c) => {
+  try {
+    const row = await db(c).prepare(`SELECT value FROM app_settings WHERE key = 'projects_mode'`).bind().first<{ value: string | null }>();
+    return c.json({ mode: row?.value === "renovation" ? "renovation" : "exhibition" });
+  } catch (e) {
+    console.error("[renovation] mode read failed", e);
+    return c.json({ mode: "exhibition", error: "mode_unreadable" });
+  }
+});
+
 // ── Project types ────────────────────────────────────────────────────────
 
 app.get("/types", requirePageAccess("projects.list"), async (c) => {
