@@ -332,8 +332,42 @@ export default function PricingPage() {
                 </div>
               </div>
 
+              {/* Phones: one block per channel, every figure visible, instead of a 580px table cut off at "Guest pays". */}
+              <div className="sm:hidden">
+                {selected.rates.map(r => {
+                  const guestPays = selected.baseRate + r.upliftSen;
+                  const weekend = Math.round(guestPays * weekendMultiplier);
+                  const commission = COMMISSION[r.channel];
+                  const youKeep = Math.round(guestPays * (1 - commission / 100));
+                  const belowFloor = youKeep < selected.costFloor;
+                  const s = r.sync === 'not_connected' ? { label: 'Not connected', tone: 'neutral' as const } : SYNC[r.sync];
+                  return (
+                    <div key={r.channel} className="py-3 px-4 flex flex-col gap-2.5 [border-bottom:1px_solid_var(--color-line-soft)]">
+                      <div className="flex items-center gap-2.5">
+                        <ChannelMark ch={r.channel} size={20} />
+                        <div className="flex flex-col min-w-0 flex-1">
+                          <span className="text-copy">{CH[r.channel].label}</span>
+                          <span className="text-caption text-faint">{commission}% fee</span>
+                        </div>
+                        <Badge tone={s.tone} label={s.label} size="sm" />
+                      </div>
+                      <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-2">
+                        <div className="flex flex-col gap-0.5"><dt className="text-caption text-muted-ink">Uplift</dt>
+                          <dd className="m-0"><EditableMoney sen={r.upliftSen} ariaLabel={`${CH[r.channel].label} uplift`} onCommit={s2 => setUplift(selected.unitId, r.channel, s2)} /></dd></div>
+                        <div className="flex flex-col gap-0.5"><dt className="text-caption text-muted-ink">Guest pays</dt>
+                          <dd className="m-0 text-copy font-semibold [font-variant-numeric:tabular-nums]">{rm(guestPays, { cents: false })}</dd></div>
+                        <div className="flex flex-col gap-0.5"><dt className="text-caption text-muted-ink">Weekend</dt>
+                          <dd className="m-0 text-copy text-muted-ink [font-variant-numeric:tabular-nums]">{rm(weekend, { cents: false })}</dd></div>
+                        <div className="flex flex-col gap-0.5"><dt className="text-caption text-muted-ink">You keep</dt>
+                          <dd className={cx('m-0 text-copy [font-variant-numeric:tabular-nums]', belowFloor ? TONE.critical.text : 'text-ink')}>{rm(youKeep, { cents: false })}{belowFloor && ' · below floor'}</dd></div>
+                      </dl>
+                    </div>
+                  );
+                })}
+              </div>
+
               {/* Uplift table */}
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto max-sm:hidden">
                 <div className="min-w-[580px]">
                   <div className={cx(COLS, 'grid gap-3 py-[9px] px-5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink')}>
                     <div>Channel</div>

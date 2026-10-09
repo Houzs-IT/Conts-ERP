@@ -111,9 +111,11 @@ const FILTERS: { key: Filter; label: string; empty: string }[] = [
   { key: 'departing_today', label: 'Departing today', empty: 'Nobody departs today.' },
   { key: 'tomorrow', label: 'Tomorrow', empty: 'No arrivals or departures tomorrow.' },
 ];
+// Latest stay first: the guest an operator is looking for is usually the one who just booked or stayed,
+// not "A Yoon Kim, 0 stays" at the top of 3,400 names.
 const SORTS = [
-  { key: 'name', label: 'Name A to Z' },
   { key: 'recent', label: 'Latest stay' },
+  { key: 'name', label: 'Name A to Z' },
   { key: 'value', label: 'Lifetime value' },
   { key: 'stays', label: 'Most stays' },
 ] as const;
@@ -145,11 +147,12 @@ export default function GuestsPage() {
   }
   const rawFilter = params.get('filter');
   const filter: Filter = FILTERS.some(f => f.key === rawFilter) ? rawFilter as Filter : 'all';
-  const sort = SORTS.some(s => s.key === params.get('sort')) ? params.get('sort')! : 'name';
+  const sort = SORTS.some(s => s.key === params.get('sort')) ? params.get('sort')! : 'recent';
 
   const listQuery = useMemo(() => {
     const p = new URLSearchParams();
-    for (const k of ['q', 'filter', 'sort', 'page']) { const v = params.get(k); if (v) p.set(k, v); }
+    for (const k of ['q', 'filter', 'page']) { const v = params.get(k); if (v) p.set(k, v); }
+    p.set('sort', sort);
     return p.toString();
   }, [params]);
   const list = useApi<ListPayload>(`/guests${listQuery ? `?${listQuery}` : ''}`, LIST_FALLBACK);
@@ -199,7 +202,7 @@ export default function GuestsPage() {
     if (window.matchMedia('(max-width: 767.98px)').matches) document.querySelector('main')?.scrollTo({ top: 0 });
   }
   function setFilter(key: Filter) { updateParams(p => { if (key === 'all') p.delete('filter'); else p.set('filter', key); p.delete('page'); p.delete('g'); }); }
-  function setSort(key: string) { updateParams(p => { if (key === 'name') p.delete('sort'); else p.set('sort', key); p.delete('page'); p.delete('g'); }); }
+  function setSort(key: string) { updateParams(p => { if (key === 'recent') p.delete('sort'); else p.set('sort', key); p.delete('page'); p.delete('g'); }); }
   function goPage(n: number) { updateParams(p => { if (n <= 1) p.delete('page'); else p.set('page', String(n)); p.delete('g'); }); }
 
   // ---- actions: a change shows at once and is rolled back if the server refuses it ----
@@ -279,14 +282,14 @@ export default function GuestsPage() {
         {/* -------- left: directory list -------- */}
         <div className={cx('md:flex-[0_1_400px] md:min-w-[320px] md:max-w-[440px] w-full bg-card border border-solid border-line rounded-card overflow-hidden', pickedId && 'max-md:hidden')}>
           <div className="py-4 px-4 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-3">
-            <div className="flex gap-2">
-              <label className="relative flex-1 min-w-0">
+            <div className="flex gap-2 flex-wrap">
+              <label className="relative flex-[1_1_180px] min-w-0">
                 <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid"><Icon name="Search" size="sm" /></span>
                 <input value={draft} onChange={e => setSearch(e.target.value)} aria-label="Search guests"
                   placeholder={canSeeContact ? 'Name, phone or email' : 'Guest name'}
                   className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-copy pl-[32px] pr-3 py-0 outline-none" />
               </label>
-              <Select label="Sort guests" value={sort} onChange={setSort} className="flex-none w-[150px]"
+              <Select label="Sort guests" value={sort} onChange={setSort} className="flex-[1_1_150px] sm:flex-none sm:w-[150px]"
                 options={SORTS.map(s => ({ value: s.key, label: s.label }))} />
             </div>
             <div role="group" aria-label="Filter guests" className="flex gap-2 flex-wrap">

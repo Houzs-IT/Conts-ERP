@@ -88,8 +88,8 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
       <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={`${label}: ${current?.label ?? allLabel ?? 'none'}`}
         onClick={() => setOpen(v => !v)}
         className={cx(CONTROL, 'w-full flex items-center gap-2 pl-3 pr-2 text-left')}>
-        <span className={cx('flex-1 min-w-0 truncate', !current && 'text-muted-ink')}>{current ? (current.group ? `${current.label}` : current.label) : (allLabel ?? 'Choose')}</span>
-        <Icon name="ChevronsUpDown" size="sm" color="var(--color-muted-ink)" />
+        <span className={cx('flex-1 min-w-0 truncate', !current && !allLabel && 'text-muted-ink')}>{current ? (current.group ? `${current.label}` : current.label) : (allLabel ?? 'Choose')}</span>
+        <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />
       </button>
       {open && (
         <div className="absolute z-30 top-[calc(100%+4px)] left-0 w-full min-w-[260px] max-w-[calc(100vw-32px)] bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] overflow-hidden">

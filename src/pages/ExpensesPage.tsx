@@ -492,7 +492,7 @@ function TreeRow({ depth, kind, label, sub, amount, tone, count, expanded, onTog
       onClick={expandable ? onToggle : undefined}
     >
       {expandable ? (
-        <span aria-hidden className="w-[18px] h-[18px] grid place-items-center shrink-0 text-muted-ink text-caption leading-none">{expanded ? '▾' : '▸'}</span>
+        <span aria-hidden className="w-[18px] h-[18px] grid place-items-center shrink-0 text-muted-ink"><Icon name={expanded ? 'ChevronDown' : 'ChevronRight'} size="sm" /></span>
       ) : <span className="w-[18px] shrink-0" aria-hidden />}
 
       {tone && !isTotal && <span className={cx('w-[7px] h-[7px] rounded-full shrink-0', TONE[tone].dot)} aria-hidden />}

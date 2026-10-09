@@ -130,8 +130,6 @@ export default function PayoutsPage() {
       <PageHeader
         title="Payouts"
         sub={`${moneyString(due, 'exact')} not yet paid · ${plural(counts.pending, 'payout')} waiting for a run · ${counts.failed} failed`}
-        actions={<Select label="Filter by status" value={filter} onChange={v => setFilter(v as Filter)} className="w-[200px]"
-          options={[{ value: 'all', label: `All statuses · ${allCount}` }, ...GROUP_ORDER.map(s => ({ value: s, label: `${PAYOUT[s].label} · ${counts[s]}` }))]} />}
         primary={<Button size="sm" variant="primary" icon={<Icon name="PlayCircle" size="sm" />} onClick={() => setRunOpen(true)}
           disabled={counts.pending === 0} disabledReason="No payouts are waiting. Payouts appear here when statements are sent.">Start payout run</Button>}
       />
@@ -142,6 +140,8 @@ export default function PayoutsPage() {
         <SearchBox className="flex-[2_1_240px]" label="Search payouts" placeholder="Search owner" value={q} onChange={v => url.set({ q: v || null, page: null })} />
         <FilterSelect className="flex-[1_1_180px]" label="Statement month" all="All statement months" value={period} onChange={v => url.set({ period: v || null, page: null })}
           options={(data?.periods ?? []).map(p => ({ value: p, label: monthLabel(p) }))} />
+        <Select label="Filter by status" value={filter} onChange={v => setFilter(v as Filter)} className="flex-[1_1_180px]"
+          options={[{ value: 'all', label: `All statuses · ${allCount}` }, ...GROUP_ORDER.map(s => ({ value: s, label: `${PAYOUT[s].label} · ${counts[s]}` }))]} />
       </div>
 
       {/* Failed payouts are surfaced first, with the reason and the fix. */}

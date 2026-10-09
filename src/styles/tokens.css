@@ -30,6 +30,9 @@ body { margin: 0; }
     color: inherit;
   }
   button { border: 0 solid; background-color: transparent; }
+  /* .field-input sets height: var(--control-height) (40px) but, with no preflight, kept content-box sizing
+     and drew 42px, so text fields stood 2px taller than the selects beside them. */
+  .field-input { box-sizing: border-box; }
 }
 
 /* Design tokens -> Tailwind theme. Utilities such as text-ink, bg-page, bg-gold,

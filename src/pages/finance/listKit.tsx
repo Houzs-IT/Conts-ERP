@@ -117,15 +117,16 @@ export function SearchBox({ value, onChange, placeholder, label, className }: {
 export function FilterSelect({ label, value, onChange, all, options, className }: {
   label: string; value: string; onChange: (v: string) => void; all: string; options: { value: string; label: string }[]; className?: string;
 }) {
+  // Same face as the shared Select: no native arrow, one lucide chevron, "All ..." reads as a real choice.
   return (
     <label className={cx('relative flex items-center min-w-0', className)}>
       <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">{label}</span>
       <select value={value} onChange={e => onChange(e.target.value)} title={label}
-        className={cx('block w-full box-border h-9 pl-3 pr-7 border border-solid border-line rounded-control outline-none bg-card font-sans text-copy cursor-pointer min-w-0 text-ellipsis',
-          value ? 'text-ink' : 'text-muted-ink')}>
+        className="block w-full box-border h-9 pl-3 pr-8 appearance-none border border-solid border-line rounded-control outline-none bg-card font-sans text-copy text-ink cursor-pointer min-w-0 text-ellipsis">
         <option value="">{all}</option>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
+      <span className="absolute right-2.5 flex pointer-events-none text-muted-ink"><Icon name="ChevronDown" size="sm" /></span>
     </label>
   );
 }
