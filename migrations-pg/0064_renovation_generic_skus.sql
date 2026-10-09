@@ -4,10 +4,11 @@
 -- free-text description. The line's trade is the SKU's sub_category. Price 0: the line sets its price.
 -- Each gets its own 1:1 model, like every other SKU (owner 2026-09-18). Not photo-required groups, so ACTIVE.
 -- The list is renovation-catalog.ts genericSkus() (tests/renovationCatalogSeedParity.test.ts compares them).
--- Seeded for the Conts company only; re-running is a no-op.
+-- Seeded for the Conts company only; re-running is a no-op. Its internal code is HOUZS on purpose (migration 0046),
+-- so it is selected by that code; a lookup by 'CONTS' finds nothing and would seed nothing.
 set local search_path = scm, public, extensions;
 
-with co as (select id from public.companies where code = 'CONTS'),
+with co as (select id from public.companies where code = 'HOUZS'),
 seed (code, name, category, sub, uom) as (values
   ('RN-PROTECTION', 'Works - Protection', 'WORKS', 'PROTECTION', 'LOT'),
   ('RN-HACKING', 'Works - Hacking', 'WORKS', 'HACKING', 'LOT'),
