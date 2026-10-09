@@ -85,10 +85,14 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
   const guestId = await upsertGuest(env, { fullName: guestName, email: a.customer?.mail ?? null, phone: a.customer?.phone ?? null });
   // Booking value and the site's fee: Channex's amount is the payout on Airbnb (channexAmounts.ts).
   const { grossSen: amountSen, feeSen, source: amountSource } = bookingAmounts(a, room.amount);
+  // Owner statements count what the booking site pays out (collected_revenue, the workbook's Amount;
+  // functions/_lib/ownerStatement.ts). The Host Platform import fills it; a booking arriving here must too,
+  // or it never reaches a statement.
+  const payoutSen = Math.max(0, amountSen - feeSen);
 
   if (existing) {
-    await run(env, `UPDATE reservations SET guest_id = ?, check_in = ?, check_out = ?, guests_count = ?, gross_booking_value = ?, channel_fee = ?, currency = ?, state = 'confirmed', updated_at = ? WHERE id = ?`,
-      guestId, checkIn, checkOut, guestsCount, amountSen, feeSen, a.currency ?? 'MYR', now, existing.id);
+    await run(env, `UPDATE reservations SET guest_id = ?, check_in = ?, check_out = ?, guests_count = ?, gross_booking_value = ?, channel_fee = ?, collected_revenue = ?, currency = ?, state = 'confirmed', updated_at = ? WHERE id = ?`,
+      guestId, checkIn, checkOut, guestsCount, amountSen, feeSen, payoutSen, a.currency ?? 'MYR', now, existing.id);
     // A changed stay frees the nights it left and takes the ones it moved to.
     if (existing.check_in !== checkIn || existing.check_out !== checkOut || existing.state === 'cancelled') {
       if (existing.state !== 'cancelled') await reopen(env, unit.id, existing.check_in, existing.check_out, existing.id);
@@ -102,10 +106,10 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
 
   const id = crypto.randomUUID();
   await run(env, `
-    INSERT INTO reservations (id, unit_id, guest_id, channel, external_ref, channex_booking_id, state, check_in, check_out, guests_count, gross_booking_value, channel_fee, currency, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, ?, ?)`,
+    INSERT INTO reservations (id, unit_id, guest_id, channel, external_ref, channex_booking_id, state, check_in, check_out, guests_count, gross_booking_value, channel_fee, collected_revenue, currency, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id, unit.id, guestId, channel, a.ota_reservation_code ?? a.unique_id ?? null, a.booking_id,
-    checkIn, checkOut, guestsCount, amountSen, feeSen, a.currency ?? 'MYR', now, now);
+    checkIn, checkOut, guestsCount, amountSen, feeSen, payoutSen, a.currency ?? 'MYR', now, now);
   // Taken here, so closed on every booking site this unit is sold on.
   await syncAvailabilityIfLinked(env, unit.id, checkIn, checkOut, false);
   const clash = await findClash(env, unit.id, checkIn, checkOut, id);
