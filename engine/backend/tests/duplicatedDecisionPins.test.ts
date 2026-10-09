@@ -123,11 +123,14 @@ describe("SO 'done' has three live answers and the count must not change", () =>
   });
 
   test("the SIX-status spelling (SO_TERMINAL_STATES) adds DRAFT on top of the five", () => {
+    // Plus the three renovation-contract statuses (Conts, migration 0065): a
+    // renovation SO never demands warehouse stock, so it is terminal for the
+    // allocator and MRP only. The other two homes never see those statuses.
     expect(sorted(SO_TERMINAL_STATES)).toEqual([
-      "CANCELLED", "CLOSED", "DELIVERED", "DRAFT", "INVOICED", "SHIPPED",
+      "CANCELLED", "CLOSED", "DELIVERED", "DRAFT", "INVOICED", "RENO_COMPLETED", "RENO_CONFIRMED", "RENO_IN_PROGRESS", "SHIPPED",
     ]);
     const five = new Set(sorted(soDones[1]));
-    expect(sorted(SO_TERMINAL_STATES).filter((s) => !five.has(s))).toEqual(["DRAFT"]);
+    expect(sorted(SO_TERMINAL_STATES).filter((s) => !five.has(s))).toEqual(["DRAFT", "RENO_COMPLETED", "RENO_CONFIRMED", "RENO_IN_PROGRESS"]);
   });
 
   test("the two questions still outstanding are exactly DRAFT and SHIPPED", () => {
@@ -137,7 +140,8 @@ describe("SO 'done' has three live answers and the count must not change", () =>
     const inAllThree = [...all].filter(
       (s) => sorted(soDones[0]).includes(s) && sorted(soDones[1]).includes(s) && sorted(SO_TERMINAL_STATES).includes(s),
     );
-    expect([...all].filter((s) => !inAllThree.includes(s)).sort()).toEqual(["DRAFT", "SHIPPED"]);
+    // The RENO_* statuses are not a question: only renovation contracts carry them (see above).
+    expect([...all].filter((s) => !inAllThree.includes(s) && !s.startsWith("RENO_")).sort()).toEqual(["DRAFT", "SHIPPED"]);
   });
 
   test("the FIVE-status set is also written out at two more homes, and they agree", () => {
