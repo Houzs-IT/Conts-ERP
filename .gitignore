@@ -13,3 +13,6 @@ dist/
 # Left behind only if a production step is interrupted (scripts/engine-production.mjs)
 engine/frontend/.deploy-live/
 engine/backend/.secrets-upload.json
+
+# TypeScript build cache
+engine/frontend/*.tsbuildinfo
