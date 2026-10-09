@@ -14,6 +14,7 @@ import { auditEntity, refuse, todayKl, type RenoDb } from './renovation-db';
 import { projectHandoverState, type HandoverState } from './renovation-hooks';
 import type { RenoActor } from './renovation-quotation';
 import { poInstalmentAmounts } from '../shared/renovation-money';
+import { fmtSen } from '../shared/format';
 
 export type PayableOn = 'ON_CONFIRM' | 'ON_RECEIPT' | 'ON_HANDOVER' | 'MANUAL';
 
@@ -147,7 +148,7 @@ export async function recordPoPayment(
   const row = view.instalments.find((i) => i.id === instalmentId)!;
   if (!row.payable) throw refuse(409, 'not_payable', `${row.label} is not payable yet (${row.payableOn.replace('ON_', 'on ').toLowerCase().replace('_', ' ')}).`);
   if (!Number.isInteger(body.amountSen) || body.amountSen <= 0) throw refuse(400, 'bad_amount', 'Enter an amount above zero.');
-  if (body.amountSen > row.outstandingSen) throw refuse(409, 'over_payment', `Only RM${(row.outstandingSen / 100).toFixed(2)} is outstanding on ${row.label}.`);
+  if (body.amountSen > row.outstandingSen) throw refuse(409, 'over_payment', `Only ${fmtSen(row.outstandingSen)} is outstanding on ${row.label}.`);
   if (body.paymentVoucherId) {
     const [pv] = await db.q<{ status: string; supplier_id: string | null; pv_number: string }>(
       `select status::text as status, supplier_id, pv_number from scm.payment_vouchers where id = $1 and company_id = $2`,
@@ -162,6 +163,6 @@ export async function recordPoPayment(
      values ($1, $2, $3, $4, $5::date, $6, $7) returning id`,
     [actor.companyId, instalmentId, body.paymentVoucherId ?? null, body.amountSen, body.paidOn || todayKl(), body.note ?? '', actor.name],
   );
-  await auditEntity(db, { companyId: actor.companyId, entityType: 'purchase_order', entityId: inst.purchase_order_id, docNo: view.po.poNumber, action: 'INSTALMENT_PAYMENT', actorName: actor.name, note: `${inst.label}: RM${(body.amountSen / 100).toFixed(2)}` });
+  await auditEntity(db, { companyId: actor.companyId, entityType: 'purchase_order', entityId: inst.purchase_order_id, docNo: view.po.poNumber, action: 'INSTALMENT_PAYMENT', actorName: actor.name, note: `${inst.label}: ${fmtSen(body.amountSen)}` });
   return { id: p.id };
 }

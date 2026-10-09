@@ -18,6 +18,7 @@ import { readInstalments } from './renovation-doc-lines';
 import { readContractHead, revisedContractSen, RENO_LIVE_STATUSES } from './renovation-so';
 import type { RenoActor } from './renovation-quotation';
 import { instalmentPreview, nextInstalmentAmount } from '../shared/renovation-money';
+import { fmtSen } from '../shared/format';
 
 export interface BillRow {
   instalmentId: string; seq: number; kind: 'INVOICE' | 'CREDIT_NOTE' | 'ZERO'; amountSen: number; invoiceDate: string;
@@ -144,7 +145,7 @@ export async function billInstalment(
     result = { kind: 'INVOICE', amountSen: n.amountSen, invoiceNumber, salesInvoiceId: si.id };
   } else if (n.amountSen < 0) {
     if (!body.confirmCreditNote) {
-      throw refuse(409, 'credit_note_needs_confirm', `This instalment comes to -RM${(-n.amountSen / 100).toFixed(2)}: the contract is over-billed. Confirm to raise a credit note.`,
+      throw refuse(409, 'credit_note_needs_confirm', `This instalment comes to ${fmtSen(n.amountSen)}: the contract is over-billed. Confirm to raise a credit note.`,
         { amountSen: n.amountSen });
     }
     const [acct] = await db.q<{ sales_return_account: string }>(
@@ -178,7 +179,7 @@ export async function billInstalment(
   );
   await auditSo(db, {
     companyId: actor.companyId, docNo: soDocNo, action: 'BILL_INSTALMENT', actorName: actor.name,
-    note: `Instalment ${inst.seq}: ${result.kind === 'INVOICE' ? result.invoiceNumber : result.kind === 'CREDIT_NOTE' ? result.noteNumber : 'nothing to bill'} RM${(result.amountSen / 100).toFixed(2)}`,
+    note: `Instalment ${inst.seq}: ${result.kind === 'INVOICE' ? result.invoiceNumber : result.kind === 'CREDIT_NOTE' ? result.noteNumber : 'nothing to bill'} ${fmtSen(result.amountSen)}`,
   });
   return result;
 }

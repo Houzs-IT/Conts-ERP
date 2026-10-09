@@ -23,6 +23,7 @@ import { insertSoItems, mirrorRowsFor, readContractHead, recomputeSoHeader, RENO
 import type { RenoActor } from './renovation-quotation';
 import type { NormSection } from './renovation-validate';
 import { lineAmounts, lineCostSen, soMirrorRow } from '../shared/renovation-money';
+import { fmtSen } from '../shared/format';
 
 export type VoStatus = 'DRAFT' | 'SENT' | 'APPROVED' | 'CANCELLED';
 
@@ -301,7 +302,7 @@ export async function applyVo(
   );
   await auditSo(db, {
     companyId: actor.companyId, docNo: soDocNo, action: 'VO_APPLY', actorName: actor.name,
-    note: `${v.vo_no} approved: ${rows.length} line(s) added, ${omits.length} omitted, net RM${(net / 100).toFixed(2)}${flags ? `, ${flags} PO line(s) flagged` : ''}`,
+    note: `${v.vo_no} approved: ${rows.length} line(s) added, ${omits.length} omitted, net ${fmtSen(net)}${flags ? `, ${flags} PO line(s) flagged` : ''}`,
   });
   return { soDocNo, netSen: net, revisedContractSen: revised, flags };
 }
