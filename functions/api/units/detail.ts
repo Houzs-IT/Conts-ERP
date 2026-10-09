@@ -2,6 +2,7 @@ import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { stampMyt } from '../../_lib/ops';
 import { stayMonths, metrics, monthEndExclusive, daysInMonth as daysInMonthOf } from '../../_lib/revenue';
+import { loadInputs, computeMonth, statementSettings, fmtPct, type Query } from '../../_lib/ownerStatement';
 
 /**
  * The whole unit record in one request. Seven tabs of a detail page firing seven
@@ -42,7 +43,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const month = new Date().toISOString().slice(0, 7);
 
   // Independent reads, so they go out together: each one is its own connection (db.ts).
-  const [channels, stays, tasks, maintenance, inventory, access, documents, activity, perfRows, rating, expenses] = await Promise.all([
+  // Occupancy, ADR and RevPAR as everywhere else (functions/_lib/revenue.ts): gross value and nights split by night
+  // into the month. The money chain is the month so far worked out the way the owner statement will be.
+  const monthEndEx = monthEndExclusive(month), daysInMonth = daysInMonthOf(month);
+  const q: Query = (sql, ...args) => all(env, sql, ...args);
+  const [channels, stays, tasks, maintenance, inventory, access, documents, activity, perfRows, rating, statement] = await Promise.all([
     all<{ channel: string }>(env,
       'SELECT channel FROM unit_channels WHERE unit_id = ? AND is_active = 1', unitId),
 
@@ -90,39 +95,30 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       FROM audit_log WHERE entity_id = ? OR entity_table = 'units' AND entity_id = ?
       ORDER BY occurred_at DESC LIMIT 20`, unitId, unitId),
 
-    // Occupancy, ADR and RevPAR as everywhere else (functions/_lib/revenue.ts): gross value and nights split by night into the month.
-    stayMonths(env, `${month}-01`, monthEndExclusive(month), { unitId }),
+    stayMonths(env, `${month}-01`, monthEndEx, { unitId }),
 
     one<{ avg: number | null; n: number }>(env,
       'SELECT AVG(rating) AS avg, COUNT(*) AS n FROM reviews WHERE unit_id = ?', unitId),
 
-    money ? all<{ category: string; total: number }>(env, `
-      SELECT category, SUM(amount) AS total FROM expenses
-      WHERE unit_id = ? AND substr(incurred_on, 1, 7) = ?
-      GROUP BY category`, unitId, month) : Promise.resolve([]),
+    money ? Promise.all([statementSettings(q), loadInputs(q, `${month}-01`, monthEndEx, { unitId })])
+      .then(([settings, inputs]) => computeMonth(month, inputs, settings, 'dated').find(x => x.unitId === unitId) ?? null)
+      : Promise.resolve(null),
   ]);
-
-  const daysInMonth = daysInMonthOf(month);
   const perf = metrics(perfRows, daysInMonth);
-  // The money chain below stays on the month's collected revenue (split by night) until owner statements
-  // move to the workbook rules (feat/owner-statements).
-  const revenue = perf.collected;
 
-  // The gross-to-net chain, only for finance-permitted roles.
   let pnl: { label: string; amount: number; type: string }[] | undefined;
-  if (money) {
-    const feePct = unit.management_fee_pct ?? 25;
-    const fee = Math.round(revenue * (feePct / 100));
-    const expTotal = expenses.reduce((s, e) => s + e.total, 0);
-    pnl = [
-      { label: 'Gross booking value', amount: perf.gross, type: 'gross' },
-      { label: `Management fee · ${feePct}%`, amount: -fee, type: 'fee' },
-      ...expenses.map(e => ({
-        label: e.category.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()),
-        amount: -e.total, type: 'expense',
-      })),
-      { label: 'Net payout', amount: revenue - fee - expTotal, type: 'net' },
-    ];
+  const m = statement;
+  if (m) {
+    pnl = m.terms.basis === 'fixed_rent'
+      ? [{ label: 'Fixed monthly rent', amount: m.fixedRent, type: 'gross' }]
+      : [
+        { label: 'Hospitality income', amount: m.gross, type: 'gross' },
+        ...m.deductionGroups.filter(g => g.amount).map(g => ({ label: g.label, amount: -g.amount, type: 'expense' })),
+        { label: `${fmtPct(100 - (m.ownerPct ?? 0))} to operator`, amount: -m.operatorShare, type: 'fee' },
+        ...(m.topUp ? [{ label: 'Minimum guarantee top-up', amount: m.topUp, type: 'adjustment' }] : []),
+      ];
+    if (m.adjustmentsTotal) pnl.push({ label: 'Owner adjustments', amount: m.adjustmentsTotal, type: 'adjustment' });
+    pnl.push({ label: 'Net payout', amount: m.netPayout, type: 'net' });
   }
 
   return json({

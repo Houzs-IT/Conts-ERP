@@ -19,22 +19,34 @@ export const RESERVATION_COLUMNS = [
   'Booking Type', 'Property Name', 'Unit Name', 'Room Type', 'Capacity (Adults)', 'Room Size (sqft)', ' of Bed Rooms',
   ' of Bath Rooms', 'Check In Date', 'Check Out Date', 'Confirmation Code', 'Created At', 'Booking Source',
   'Booking Status', 'Number of pax', 'Remarks', 'Currency', 'Platform Fee', 'Total Price', 'First Name', 'Last Name',
-  'Guest Name', '[].User Email[]', '[].Contact Number[]', 'Nationality', 'Payment Received',
+  'Guest Name', '[].User Email[]', '[].Contact Number[]', 'Nationality', 'Payment Received', 'Rate Name',
+  'Room Rate', 'Cleaning Fee', 'Sales Service Tax', 'Sales Tax', 'Tourism Tax', 'Heritage Tax', 'OTA Tax',
+  'Deposit Collected', 'Deposit Refunded', 'Payment Method',
+  'Extra Guest Fee', 'Early Check-in Fee', 'Late Check-out Fee', 'Shuttle Fee', 'Transportation Fee', 'Breakfast Fee', 'Lunch Fee', 'Dinner Fee', 'Other Fee', 'Add-ons', 'Total Service Fee',
 ];
+export const EXTRA_FEE_COLUMNS = ['Extra Guest Fee', 'Early Check-in Fee', 'Late Check-out Fee', 'Shuttle Fee', 'Transportation Fee', 'Breakfast Fee', 'Lunch Fee', 'Dinner Fee', 'Other Fee', 'Add-ons', 'Total Service Fee'];
+/** reservations columns from migration 0052 that the HostPlatform export fills. */
+export const RESERVATION_MONEY_COLUMNS = [
+  'room_revenue', 'guest_cleaning_fee', 'extra_fees', 'sst_amount', 'tourism_tax', 'ota_tax', 'deposit_collected', 'deposit_refunded',
+  'payment_method', 'rate_plan', 'guest_nationality',
+] as const;
 
 /** Workbook sheets the import reads. Everything else in the file (including the login sheet) is never read. */
 export const WORKBOOK_SHEETS = {
   units: 'Unit资料', splits: '分成', pool: '水池', airbnb: '订单数据', cleaning: '清洁记录', cleaningPrices: '清洁单价',
   water: '水费', electricity: '电费', internet: '网络费', sewerage: 'INDAH WATER', misc: '杂费扣款',
+  payouts: 'OWNER PAYOUT', report: '整体报告',
 } as const;
 /** Header row per sheet (1-based); 水池 has a title line above its header. */
 export const WORKBOOK_HEADER_ROW: Record<string, number> = { '水池': 2 };
 /** Workbook columns that are sent to the server, per sheet. */
 export const WORKBOOK_COLUMNS: Record<string, string[]> = {
-  'Unit资料': ['Listing名称', 'Unit编号', '房东/业主', '地址', '分成', 'IC', 'LONGTERM/PROFIT SHARING', 'PACKAGE', 'BANK AC', 'BANK NAME', 'BANK HOLDER NAME', 'GRR', '合约开始日期', '合约结束日期', '电费账号', '网络账号', 'INDAH WATER账号', 'DEBT AMOUNT'],
+  'Unit资料': ['Listing名称', 'Unit编号', '房东/业主', '地址', '分成', 'IC', 'LONGTERM/PROFIT SHARING', 'PACKAGE', 'BANK AC', 'BANK NAME', 'BANK HOLDER NAME', 'GRR', '合约开始日期', '合约结束日期', '电费账号', '网络账号', 'INDAH WATER账号', 'DEBT AMOUNT', 'CONTRACT', 'SALES ORDER', 'STAMPING', 'Miscellaneous Charges'],
   '分成': ['UNIT', 'OWNER%', 'MANAGE PAYOUT%', 'AGENT%'],
-  '水池': ['Unit', '每月最低拿到（保底）', '全年租金（GRR）', '合约开始', '合约结束'],
-  '订单数据': ['确认码', '入住日期', '退房日期', '晚数', 'Listing名称', 'Unit编号', '金额(Amount)', '服务费(Service fee)', '总收入(Gross earnings)', '数据来源'],
+  // 水池 holds four tables one under the other; poolSheetRows() splits them and keys the month tables by JAN..DEC.
+  '水池': ['Unit', '每月最低拿到（保底）', '全年租金（GRR）', '合约开始', '合约结束', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'],
+  '订单数据': ['确认码', '入住日期', '退房日期', '晚数', 'Listing名称', 'Unit编号', '金额(Amount)', '服务费(Service fee)', '总收入(Gross earnings)', '数据来源',
+    '已支付(Paid out)', '快速支付费(Fast pay)', '清洁费(Cleaning fee)', 'Airbnb税费(Tax)'],
   '清洁记录': ['Unit', '退房日期', '退房时间', '入住时间', '负责人', '清洁类型', '费用方', '备注'],
   '清洁单价': ['Unit', 'BC单价', 'DC单价'],
   '水费': ['Unit编号', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'],
@@ -42,11 +54,13 @@ export const WORKBOOK_COLUMNS: Record<string, string[]> = {
   '网络费': ['Unit编号', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'],
   'INDAH WATER': ['Unit编号', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'],
   '杂费扣款': ['日期', '类型', 'Unit编号', '项目描述', '金额(RM)', '备注'],
+  'OWNER PAYOUT': ['UNIT', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'],
+  '整体报告': ['LONG TERM', 'TOTAL REVENUE', 'ALL CLEANING TOTAL', 'UTILITIES', 'ADDITIONAL DEDUCTION', 'MISCELLANEOUS CHARGES', 'TOTAL DEDUCTION', 'GP', 'OWNER PAYOUT'],
 };
 /** The year the workbook's JAN..DEC utility columns belong to. */
 export const WORKBOOK_YEAR = 2026;
 
-export const IMPORT_KINDS = ['listing', 'reservations', 'workbook_units', 'workbook_airbnb', 'workbook_cleaning', 'workbook_expenses'] as const;
+export const IMPORT_KINDS = ['listing', 'reservations', 'workbook_units', 'workbook_airbnb', 'workbook_cleaning', 'workbook_expenses', 'workbook_payouts', 'fix_locations'] as const;
 export type ImportKind = typeof IMPORT_KINDS[number];
 export const MAX_ROWS_PER_REQUEST = 600;
 
@@ -72,6 +86,13 @@ export const num = (v: unknown): number | null => {
 };
 /** Ringgit to integer sen. */
 export const sen = (v: unknown): number | null => { const n = num(v); return n === null ? null : Math.round(n * 100); };
+/** Sen, never below zero; null when blank. */
+const nonNeg = (v: unknown): number | null => { const n = sen(v); return n === null ? null : Math.max(0, n); };
+/** The sum of several money columns in sen; null only when every one of them is blank. */
+const sumSen = (r: Row, cols: string[]): number | null => {
+  const vals = cols.map(c => nonNeg(r[c])).filter((x): x is number => x !== null);
+  return vals.length ? vals.reduce((a, b) => a + b, 0) : null;
+};
 
 export const slug = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'x';
 
@@ -89,6 +110,7 @@ export function hash(s: string): string {
 
 const MONTHS: Record<string, number> = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
 const pad = (n: number) => String(n).padStart(2, '0');
+const MONTH_COLS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
 /** A date as YYYY-MM-DD from an ISO string, a 'DD-Mon-YYYY' string or an Excel serial number. */
 export function toDate(v: unknown): string | null {
@@ -156,6 +178,65 @@ export function parseUnitName(name: unknown): { code: string; bedrooms: number |
 export const unitKey = (building: string, code: string) => `${building.toLowerCase()}|${code.toLowerCase()}`;
 
 /* ------------------------------------------------------------------ */
+/* Building state and city                                             */
+/* ------------------------------------------------------------------ */
+
+/** The 16 Malaysian states and federal territories, as Property OS writes them. */
+export const MY_STATES = ['Johor', 'Kedah', 'Kelantan', 'Melaka', 'Negeri Sembilan', 'Pahang', 'Penang', 'Perak', 'Perlis', 'Sabah', 'Sarawak',
+  'Selangor', 'Terengganu', 'Kuala Lumpur', 'Putrajaya', 'Labuan'] as const;
+const STATE_ALIASES: Record<string, string> = {
+  'wp': 'Kuala Lumpur', 'w.p': 'Kuala Lumpur', 'w.p.': 'Kuala Lumpur', 'kl': 'Kuala Lumpur', 'wpkl': 'Kuala Lumpur', 'w.p.k.l': 'Kuala Lumpur',
+  'federal territory': 'Kuala Lumpur', 'wilayah persekutuan': 'Kuala Lumpur',
+  'pulau pinang': 'Penang', 'p. pinang': 'Penang', 'malacca': 'Melaka', 'n. sembilan': 'Negeri Sembilan', 'n sembilan': 'Negeri Sembilan', 'johore': 'Johor',
+};
+/** A state as written anywhere ('W.P Kuala Lumpur', 'WP', 'WILAYAH PERSEKUTUAN KUALA LUMPUR', 'Pulau Pinang') to its canonical name, or null. */
+export function canonicalState(v: unknown): string | null {
+  const s = str(v).toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!s) return null;
+  if (STATE_ALIASES[s]) return STATE_ALIASES[s];
+  // Drop the federal-territory prefix in any spelling: 'W.P Kuala Lumpur', 'WP Putrajaya', 'Wilayah Persekutuan Labuan'.
+  const bare = s.replace(/^(w\.?\s?p\.?|wilayah persekutuan|federal territory( of)?)\s*/, '').trim();
+  return MY_STATES.find(x => x.toLowerCase() === bare) ?? STATE_ALIASES[bare] ?? null;
+}
+/** The state a Malaysian postcode belongs to (Pos Malaysia ranges). */
+export function stateForPostcode(postcode: unknown): string | null {
+  const m = /\b(\d{5})\b/.exec(str(postcode));
+  if (!m) return null;
+  const p = Number(m[1]);
+  const ranges: [number, number, string][] = [
+    [1000, 2999, 'Perlis'], [5000, 9999, 'Kedah'], [10000, 14999, 'Penang'], [15000, 18999, 'Kelantan'], [20000, 24999, 'Terengganu'],
+    [25000, 28999, 'Pahang'], [30000, 36999, 'Perak'], [39000, 39999, 'Pahang'], [40000, 48999, 'Selangor'], [49000, 49999, 'Pahang'],
+    [50000, 60999, 'Kuala Lumpur'], [62000, 62999, 'Putrajaya'], [63000, 68999, 'Selangor'], [69000, 69999, 'Pahang'], [70000, 73999, 'Negeri Sembilan'],
+    [75000, 78999, 'Melaka'], [79000, 86999, 'Johor'], [87000, 87999, 'Labuan'], [88000, 91999, 'Sabah'], [93000, 98999, 'Sarawak'],
+  ];
+  return ranges.find(([a, b]) => p >= a && p <= b)?.[2] ?? null;
+}
+const CITY_ALIASES: Record<string, string> = { 'kl': 'Kuala Lumpur', 'k.l': 'Kuala Lumpur', 'k.l.': 'Kuala Lumpur', 'pj': 'Petaling Jaya', 'p.j': 'Petaling Jaya', 'p.j.': 'Petaling Jaya' };
+/** Towns recognised in a free-text address when a building has no city. Longest names first. */
+const TOWNS = ['Kuala Lumpur', 'Petaling Jaya', 'Shah Alam', 'Subang Jaya', 'Ampang Jaya', 'Cyberjaya', 'Putrajaya', 'Puchong', 'Cheras', 'Ampang', 'Bangsar', 'Mont Kiara', 'Kajang', 'Klang', 'Seri Kembangan'];
+/** A city in title case with known short forms spelled out ('KUALA LUMPUR' -> 'Kuala Lumpur', 'PJ' -> 'Petaling Jaya'). Blank stays null. */
+export function canonicalCity(v: unknown): string | null {
+  const s = str(v).replace(/\s+/g, ' ').trim();
+  if (!s) return null;
+  const alias = CITY_ALIASES[s.toLowerCase()];
+  if (alias) return alias;
+  const known = TOWNS.find(t => t.toLowerCase() === s.toLowerCase());
+  if (known) return known;
+  return s.toLowerCase().replace(/(^|[\s-])([a-z])/g, (_, a, b) => a + b.toUpperCase());
+}
+/** State and city for a building: what it says, cleaned; when blank, worked out from the postcode, then the address text. */
+export function normaliseLocation(x: { state?: unknown; city?: unknown; postcode?: unknown; address?: unknown }): { state: string | null; city: string | null; postcode: string | null } {
+  const address = str(x.address).replace(/\s+/g, ' ');
+  const postcode = /\b(\d{5})\b/.exec(str(x.postcode))?.[1] ?? [...address.matchAll(/\b(\d{5})\b/g)].pop()?.[1] ?? null;
+  const upper = address.toUpperCase();
+  const state = canonicalState(x.state) ?? stateForPostcode(postcode)
+    ?? (/KUALA LUMPUR|WILAYAH PERSEKUTUAN/.test(upper) ? 'Kuala Lumpur' : MY_STATES.find(s => upper.includes(s.toUpperCase())) ?? null);
+  const town = TOWNS.find(t => upper.includes(t.toUpperCase()));
+  const city = canonicalCity(x.city) ?? (town ?? (state === 'Kuala Lumpur' ? 'Kuala Lumpur' : state === 'Putrajaya' ? 'Putrajaya' : null));
+  return { state, city, postcode };
+}
+
+/* ------------------------------------------------------------------ */
 /* Listing                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -191,9 +272,10 @@ export function mapListing(rows: Row[]): ListingPlan {
     seen.add(k);
     const pid = `hp-prop-${slug(building)}`;
     if (!properties.has(building.toLowerCase())) {
+      const loc = normaliseLocation({ state: r['State'], city: r['city'], postcode: r['ZipCode'], address: r['Street'] });
       properties.set(building.toLowerCase(), {
-        id: pid, name: building, addressLine: str(r['Street']), city: str(r['city']).replace(/\b([A-Z])([A-Z]+)\b/g, (_, a, b) => a + b.toLowerCase()),
-        state: str(r['State']), postcode: opt(r['ZipCode']), countryCode: opt(r['Country Code'])?.toUpperCase().slice(0, 2) ?? 'MY',
+        id: pid, name: building, addressLine: str(r['Street']), city: loc.city ?? '',
+        state: loc.state ?? '', postcode: opt(r['ZipCode']) ?? loc.postcode, countryCode: opt(r['Country Code'])?.toUpperCase().slice(0, 2) ?? 'MY',
         latitude: num(r['Latitude']), longitude: num(r['Longitude']),
       });
     }
@@ -230,6 +312,8 @@ export interface ReservationIn {
   id: string; row: number; code: string; building: string; unitNumber: string; channel: Channel; state: State; externalRef: string;
   checkIn: string; checkOut: string; guestsCount: number; gross: number; fee: number; collected: number; currency: string;
   notes: string; createdAt: string | null; guestId: string | null; maxGuests: number | null; sizeSqft: number | null;
+  /** The reservations money-breakdown columns (migration 0052), by column name. Sen; null = the export left it blank. */
+  money: Record<typeof RESERVATION_MONEY_COLUMNS[number], number | string | null>;
 }
 export interface ReservationPlan { guests: GuestIn[]; reservations: ReservationIn[]; errors: RowError[] }
 
@@ -287,7 +371,7 @@ export function mapReservations(rows: Row[], today: string): ReservationPlan {
       gid = guestId(name, phone, email);
       if (!guests.has(gid)) guests.set(gid, { id: gid, fullName: name.slice(0, 200), email, phone, countryCode: countryCode(r['Nationality']) });
     }
-    const remarks = opt(r['Remarks']);
+    const remarks = opt(r['Remarks']), rateName = opt(r['Rate Name']);
     const showRemarks = remarks && channel !== 'airbnb' && channel !== 'booking_com' && channel !== 'agoda';
     reservations.push({
       id: `hp-res-${code}`, row, code, building, unitNumber, channel, state, externalRef: ota ?? code, checkIn, checkOut,
@@ -297,6 +381,13 @@ export function mapReservations(rows: Row[], today: string): ReservationPlan {
       createdAt: hpTimestamp(r['Created At']), guestId: gid,
       maxGuests: num(r['Capacity (Adults)']) ? Math.round(num(r['Capacity (Adults)'])!) : null,
       sizeSqft: num(r['Room Size (sqft)']) ? Math.round(num(r['Room Size (sqft)'])!) : null,
+      money: {
+        room_revenue: nonNeg(r['Room Rate']), guest_cleaning_fee: nonNeg(r['Cleaning Fee']), extra_fees: sumSen(r, EXTRA_FEE_COLUMNS),
+        sst_amount: sumSen(r, ['Sales Service Tax', 'Sales Tax']), tourism_tax: sumSen(r, ['Tourism Tax', 'Heritage Tax']), ota_tax: nonNeg(r['OTA Tax']),
+        deposit_collected: nonNeg(r['Deposit Collected']), deposit_refunded: nonNeg(r['Deposit Refunded']),
+        payment_method: opt(r['Payment Method'])?.slice(0, 60) ?? null, rate_plan: rateName?.slice(0, 120) ?? null,
+        guest_nationality: opt(r['Nationality'])?.slice(0, 60) ?? null,
+      },
     });
   });
   return { guests: [...guests.values()], reservations, errors };
@@ -378,13 +469,23 @@ export function buildingForPrefix(prefix: string, properties: KnownProperty[]): 
 /* Workbook: units, owners, contracts                                  */
 /* ------------------------------------------------------------------ */
 
+export type Package = 'Package A' | 'Package B' | 'Package C' | 'Package D';
+export interface UtilityAccountIn { kind: 'electricity' | 'internet' | 'sewerage'; accountNo: string; provider: string | null }
+export interface PoolMonthIn { month: string; poolBalance: number | null; paidFromPool: number | null; companyTopUp: number | null }
+
 export interface WorkbookUnitIn {
   row: number; workbookId: string; listingName: string | null; address: string | null;
   ownerName: string | null; ic: string | null; bankName: string | null; bankAccount: string | null; bankHolder: string | null;
-  pkg: 'Package A' | 'Package B' | 'Package C' | null; packageD: boolean; term: 'Long term' | 'Short term' | null;
+  pkg: Package | null; packageD: boolean; term: 'Long term' | 'Short term' | null;
   split: 'Profit share' | 'GRR — guaranteed rent' | null; splitValue: number | null;
-  contract: { model: 'management' | 'grr'; feePct: number; grrAmount: number; startsOn: string; endsOn: string | null } | null;
-  utilityAccounts: number; debt: boolean;
+  /** Unit资料 'Miscellaneous Charges', kept on the unit too: a row without a contract start date has no contract to hold it. */
+  miscCharges: boolean;
+  contract: {
+    model: 'management' | 'grr'; feePct: number; grrAmount: number; startsOn: string; endsOn: string | null;
+    agentPct: number | null; minimumGuarantee: number; minimumGuaranteeAnnual: number | null;
+    guaranteeStartsOn: string | null; guaranteeEndsOn: string | null; agreementFile: string | null; miscCharges: boolean;
+  } | null;
+  utilityAccounts: UtilityAccountIn[]; debt: number | null; poolMonths: PoolMonthIn[];
 }
 
 const ownerPct = (v: unknown): number | null => {
@@ -393,11 +494,63 @@ const ownerPct = (v: unknown): number | null => {
   return Math.round((n <= 1 ? n * 100 : n) * 100) / 100;
 };
 
-/** One entry per workbook unit id. Duplicate ids keep the later row (reported). */
-export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[]): { units: WorkbookUnitIn[]; errors: RowError[]; notes: string[] } {
+/** 水池 is four tables stacked in one sheet, each under a title line and its own 'Unit' header: the Package D
+ *  minimums, then the pool's month-end balance, what the pool paid owners, and what the company added. Rows come
+ *  back keyed by that table's own header, with `_section` set. Anything above the first header is ignored. */
+export function poolSheetRows(raw: { row: number; cells: unknown[] }[]): Row[] {
+  const out: Row[] = [];
+  let header: string[] | null = null, section: string | null = null, title = '';
+  for (const r of [...raw].sort((a, b) => a.row - b.row)) {
+    const first = str(r.cells[0]);
+    if (first === 'Unit') {
+      header = Array.from(r.cells, c => str(c));
+      section = /保底一览/.test(title) ? 'guarantee' : /水池余额/.test(title) ? 'balance' : /从水池补给/.test(title) ? 'from_pool' : /公司新补/.test(title) ? 'company' : null;
+      continue;
+    }
+    // A title line is the only kind of row with Chinese in its first cell ('PACKAGE D 保底一览（2026）...'); unit ids have none.
+    if (/[㐀-鿿]/.test(first)) { title = first; header = null; section = null; continue; }
+    if (!header || !section || !first) continue;
+    const o: Row = { _row: r.row, _sheet: WORKBOOK_SHEETS.pool, _section: section };
+    header.forEach((h, i) => { if (h && o[h] === undefined) o[h] = r.cells[i] ?? null; });
+    out.push(o);
+  }
+  return out;
+}
+
+/** '505936231124 TIME' -> account and provider. '- (included in ...)' and text without a digit are not account numbers. */
+function utilityAccount(kind: UtilityAccountIn['kind'], v: unknown): UtilityAccountIn | null {
+  const s = typeof v === 'number' ? String(Math.round(v)) : opt(v);
+  if (!s || s.startsWith('-') || !/\d/.test(s)) return null;
+  const m = /^([0-9][0-9 ]*[0-9])\s+([A-Za-z][A-Za-z &]*)$/.exec(s);
+  const accountNo = (m ? m[1] : s).replace(/\s+/g, ' ').slice(0, 60);
+  const provider = m ? m[2].trim().toUpperCase() : kind === 'electricity' ? 'TNB' : kind === 'sewerage' ? 'Indah Water' : null;
+  return { kind, accountNo, provider };
+}
+
+/** One entry per workbook unit id. Duplicate ids keep the later row (reported). Pool months are only taken up
+ *  to the month before `today` (later months are the sheet's projection, not history). */
+export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[], today = todayInKL()): { units: WorkbookUnitIn[]; errors: RowError[]; notes: string[] } {
   const errors: RowError[] = [], byId = new Map<string, WorkbookUnitIn>();
   const splitOf = new Map(splits.map(s => [str(s['UNIT']).toUpperCase(), s]));
-  const poolOf = new Map(pool.map(p => [str(p['Unit']).toUpperCase(), p]));
+  // Older callers send the guarantee table without `_section`. The first row of a unit wins.
+  const poolOf = new Map<string, Row>();
+  for (const p of pool) if (!p._section || p._section === 'guarantee') { const k = str(p['Unit']).toUpperCase(); if (k && !poolOf.has(k)) poolOf.set(k, p); }
+  const months = new Map<string, Map<string, PoolMonthIn>>();
+  const thisMonth = today.slice(0, 7);
+  for (const p of pool) {
+    const field = p._section === 'balance' ? 'poolBalance' : p._section === 'from_pool' ? 'paidFromPool' : p._section === 'company' ? 'companyTopUp' : null;
+    if (!field) continue;
+    const k = str(p['Unit']).toUpperCase();
+    MONTH_COLS.forEach((m, mi) => {
+      const v = sen(p[m]), month = `${WORKBOOK_YEAR}-${pad(mi + 1)}`;
+      if (v === null || month >= thisMonth) return;
+      if (!months.has(k)) months.set(k, new Map());
+      const byMonth = months.get(k)!;
+      const cur = byMonth.get(month) ?? { month, poolBalance: null, paidFromPool: null, companyTopUp: null };
+      if (cur[field] === null) cur[field] = v;
+      byMonth.set(month, cur);
+    });
+  }
   let dup = 0;
   rows.forEach((r, i) => {
     const row = rowNo(r, i), workbookId = str(r['Unit编号']).toUpperCase();
@@ -407,45 +560,84 @@ export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[]): { uni
     const kind = str(r['LONGTERM/PROFIT SHARING']).toUpperCase();
     const pkgLetter = str(r['PACKAGE']).toUpperCase().replace(/^PACKAGE\s*/, '');
     const owner = sp ? ownerPct(sp['OWNER%']) : null;
+    const agent = sp ? ownerPct(sp['AGENT%']) : null;
     const splitText = /^(\d{1,3})\s*\/\s*(\d{1,3})$/.exec(str(r['分成']));
     const ownerShare = owner ?? (splitText ? Number(splitText[1]) : null);
     const grr = sen(r['GRR']);
-    const minimum = pl ? sen(pl['每月最低拿到（保底）']) : null;
+    // The owner's floor on a profit share (整体报告 PROFIT SHARING 'GRR' column): on Package D it is the annual rent
+    // over 12 (水池: 每月最低 = 全年租金 ÷ 12), from the contract start; on other packages Unit资料 GRR is the monthly floor itself.
+    const isD = pkgLetter === 'D';
+    const grrFloor = kind !== 'LT' ? sen(r['GRR']) : null;
+    const minimum = pl ? sen(pl['每月最低拿到（保底）']) : isD ? (grrFloor ? Math.round(grrFloor / 12) : null) : grrFloor;
+    const annual = pl ? sen(pl['全年租金（GRR）']) : isD ? grrFloor : null;
     const startsOn = toDate(r['合约开始日期']) ?? (pl ? toDate(pl['合约开始']) : null);
     const endsOn = toDate(r['合约结束日期']) ?? (pl ? toDate(pl['合约结束']) : null);
     const isGrr = kind === 'LT' && !!grr;
     const feePct = isGrr ? 0 : ownerShare !== null ? Math.max(0, Math.min(100, 100 - ownerShare)) : 25;
+    const miscCharges = r['Miscellaneous Charges'] === true || /^(true|yes|y|1)$/i.test(str(r['Miscellaneous Charges']));
     const ic = opt(r['IC'])?.replace(/\s*\n\s*|\s{2,}/g, ' / ') ?? null;
     const account = opt(r['BANK AC']);
+    const debt = sen(r['DEBT AMOUNT']);
+    const accounts = [utilityAccount('electricity', r['电费账号']), utilityAccount('internet', r['网络账号']), utilityAccount('sewerage', r['INDAH WATER账号'])]
+      .filter((a): a is UtilityAccountIn => !!a);
     byId.set(workbookId, {
       row, workbookId, listingName: opt(r['Listing名称']), address: opt(r['地址']),
       ownerName: opt(r['房东/业主']), ic, bankName: opt(r['BANK NAME']), bankAccount: account ? account.replace(/\s/g, '') : null, bankHolder: opt(r['BANK HOLDER NAME']),
-      pkg: pkgLetter === 'A' || pkgLetter === 'B' || pkgLetter === 'C' ? (`Package ${pkgLetter}` as WorkbookUnitIn['pkg']) : null,
+      pkg: /^[ABCD]$/.test(pkgLetter) ? (`Package ${pkgLetter}` as Package) : null,
       packageD: pkgLetter === 'D',
       term: kind === 'LT' ? 'Long term' : kind === 'PS' || kind === 'MANAGE' ? 'Short term' : null,
       split: isGrr ? 'GRR — guaranteed rent' : ownerShare !== null ? 'Profit share' : null,
       splitValue: isGrr ? grr : ownerShare !== null ? Math.round(ownerShare) : null,
-      contract: startsOn ? { model: isGrr ? 'grr' : 'management', feePct, grrAmount: isGrr ? grr! : Math.max(0, minimum ?? 0), startsOn, endsOn } : null,
-      utilityAccounts: ['电费账号', '网络账号', 'INDAH WATER账号'].filter(c => opt(r[c])).length,
-      debt: num(r['DEBT AMOUNT']) !== null && num(r['DEBT AMOUNT'])! > 0,
+      contract: startsOn ? {
+        model: isGrr ? 'grr' : 'management', feePct, grrAmount: isGrr ? grr! : 0, startsOn, endsOn,
+        agentPct: agent !== null && agent > 0 ? Math.min(agent, feePct) : null,
+        minimumGuarantee: Math.max(0, minimum ?? 0), minimumGuaranteeAnnual: annual !== null && annual > 0 ? annual : null,
+        // Package D's floor applies from the contract start (prorated by day in its first month); another package's applies throughout.
+        guaranteeStartsOn: isD ? (pl ? toDate(pl['合约开始']) : null) ?? startsOn : null, guaranteeEndsOn: isD ? (pl ? toDate(pl['合约结束']) : null) ?? endsOn : null,
+        agreementFile: opt(r['CONTRACT'])?.slice(0, 200) ?? null,
+        miscCharges,
+      } : null,
+      miscCharges,
+      utilityAccounts: accounts, debt: debt !== null && debt > 0 ? debt : null,
+      poolMonths: [...(months.get(workbookId)?.values() ?? [])],
     });
   });
   const units = [...byId.values()];
   const notes: string[] = [];
   if (dup) notes.push(`${dup} unit ids appear more than once in Unit资料; the last row of each was used.`);
   const d = units.filter(u => u.packageD).length;
-  if (d) notes.push(`${d} units are on Package D, which Property OS does not have yet (it allows A, B and C). Their package was left unchanged; the monthly minimum from 水池 is kept on the contract.`);
-  const acc = units.reduce((n, u) => n + u.utilityAccounts, 0);
-  if (acc) notes.push(`${acc} utility account numbers (electricity, internet, Indah Water) were not imported: Property OS has no field for them yet.`);
-  const debt = units.filter(u => u.debt).length;
-  if (debt) notes.push(`${debt} units have a DEBT AMOUNT; it was not imported (no field for it).`);
-  const noContract = units.filter(u => !u.contract).length;
-  if (noContract) notes.push(`${noContract} units have no contract start date, so no contract was created for them.`);
+  if (d) notes.push(`${d} units are on Package D; ${units.filter(u => u.packageD && u.contract?.minimumGuarantee).length} of them have a monthly minimum from 水池, kept on their contract.`);
+  const acc = units.reduce((n, u) => n + u.utilityAccounts.length, 0);
+  if (acc) notes.push(`${acc} utility account numbers (electricity, internet, Indah Water) are kept on their units.`);
+  const debt = units.filter(u => u.debt);
+  if (debt.length) notes.push(`${debt.length} units carry a DEBT AMOUNT (RM ${(debt.reduce((n, u) => n + u.debt!, 0) / 100).toFixed(2)} in all). It is recorded against the owner but held: it is not deducted from a statement until someone releases it.`);
+  const agents = units.filter(u => u.contract?.agentPct).length;
+  if (agents) notes.push(`${agents} contracts have an agent share (分成 AGENT%).`);
+  const noContract = units.filter(u => !u.contract);
+  if (noContract.length) notes.push(`${noContract.length} units have no contract start date. Their owner, package and split are set, but no contract is created: a contract needs a start date.`);
+  const pm = units.reduce((n, u) => n + u.poolMonths.length, 0);
+  if (pm) notes.push(`${pm} unit-months of the Package D guarantee pool (水池) are kept, up to last month.`);
   return { units, errors, notes };
 }
 
 export interface OwnerIn { id: string; name: string; ic: string | null; bankName: string | null; bankAccount: string | null; bankHolder: string | null }
-export const workbookOwnerId = (u: { ic: string | null; ownerName: string | null }) => `wb-owner-${slug(u.ic ?? u.ownerName ?? 'unknown')}`;
+/* Owner ids are opaque: they once embedded the IC number ('wb-owner-<ic>'), which then showed in URLs and the audit
+ * log. Now 'wb-owner-' / 'hp-owner-' + the first 16 hex characters of sha256('conts-owner:' + key), where the key is
+ * the IC with everything but letters and digits removed, lower-cased, or, with no IC, the name with runs of spaces,
+ * tabs and line breaks made one space, trimmed, lower-cased. Migration 0052 computes exactly this in SQL to re-key
+ * the owners imported before; scripts/api-checks/owner-rekey.mjs checks the two agree. Re-runs still find an owner
+ * by IC or name first, so the id only matters for an owner seen for the first time. */
+export const ownerKeyFromIc = (ic: string | null | undefined) => (ic ?? '').replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+export const ownerKeyFromName = (name: string | null | undefined) => (name ?? '').replace(/[ \t\r\n]+/g, ' ').replace(/^ +| +$/g, '').toLowerCase();
+export async function opaqueOwnerId(prefix: 'wb-owner-' | 'hp-owner-', key: string): Promise<string> {
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`conts-owner:${key}`)));
+  return prefix + [...bytes.slice(0, 8)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+/** A workbook owner: keyed by IC when there is one, else by name. */
+export const workbookOwnerId = (u: { ic: string | null; ownerName: string | null }) =>
+  opaqueOwnerId('wb-owner-', ownerKeyFromIc(u.ic) || ownerKeyFromName(u.ownerName ?? 'unknown'));
+/** An owner named in the HostPlatform listing (a name only). */
+export const listingOwnerId = (name: string) => opaqueOwnerId('hp-owner-', ownerKeyFromName(name));
 
 /* ------------------------------------------------------------------ */
 /* Workbook: Airbnb earnings                                           */
@@ -454,6 +646,8 @@ export const workbookOwnerId = (u: { ic: string | null; ownerName: string | null
 export interface AirbnbEarningIn {
   row: number; code: string; site: 'airbnb' | 'booking_com'; workbookId: string; checkIn: string; checkOut: string;
   gross: number | null; fee: number | null; amount: number | null; idSuffix: string;
+  /** Sen; null = blank. paidOutOn is a date only when 已支付 holds one (today it holds blanks and zeros). */
+  cleaningFee: number | null; tax: number | null; fastPay: number | null; paidOutOn: string | null;
 }
 
 /** The workbook's earnings lines: Airbnb (HM...) and a few Booking.com (10-digit) codes. 'OWNER' rows are
@@ -482,6 +676,9 @@ export function mapAirbnbEarnings(rows: Row[]): { earnings: AirbnbEarningIn[]; e
     earnings.push({
       row, code, site, workbookId, checkIn, checkOut, gross: gross === null ? null : Math.max(0, gross), fee: fee === null ? null : Math.max(0, fee),
       amount: amount === null ? null : Math.max(0, amount), idSuffix: (unitsPerCode.get(code)?.size ?? 1) > 1 ? `-${slug(workbookId)}` : '',
+      cleaningFee: nonNeg(r['清洁费(Cleaning fee)']), tax: nonNeg(r['Airbnb税费(Tax)']), fastPay: nonNeg(r['快速支付费(Fast pay)']),
+      // An Excel date serial is > 20000; the 0s in this column are not dates.
+      paidOutOn: typeof r['已支付(Paid out)'] === 'number' && (r['已支付(Paid out)'] as number) < 20000 ? null : toDate(r['已支付(Paid out)']),
     });
   });
   return { earnings, errors, skipped };
@@ -494,6 +691,7 @@ export function mapAirbnbEarnings(rows: Row[]): { earnings: AirbnbEarningIn[]; e
 export interface CleaningIn {
   row: number; id: string; workbookId: string; date: string; kind: 'turnover' | 'deep_clean'; title: string;
   instructions: string; dueTime: string | null; nextGuestTime: string | null; price: number | null; payer: string | null;
+  cleaner: string | null;
 }
 
 const CLEAN_KIND: Record<string, { kind: CleaningIn['kind']; title: string; priceCol: string; tag: string }> = {
@@ -515,12 +713,12 @@ export function mapCleaning(rows: Row[], prices: Row[]): { cleanings: CleaningIn
     seen.add(id);
     const who = opt(r['负责人']), payer = opt(r['费用方']), remark = opt(r['备注']);
     const checkInText = opt(r['入住时间']);
-    const instructions = [who && `Cleaner: ${who}`, payer && `Paid by: ${payer}`, checkInText && !toTime(r['入住时间']) && `Next check-in: ${checkInText}`, remark]
+    const instructions = [payer && `Paid by: ${payer}`, checkInText && !toTime(r['入住时间']) && `Next check-in: ${checkInText}`, remark]
       .filter(Boolean).join(' · ');
     cleanings.push({
       row, id, workbookId, date, kind: type.kind, title: type.title, instructions: instructions.slice(0, 500),
       dueTime: toTime(r['退房时间']), nextGuestTime: toTime(r['入住时间']),
-      price: sen(priceOf.get(workbookId)?.[type.priceCol]), payer,
+      price: sen(priceOf.get(workbookId)?.[type.priceCol]), payer, cleaner: who ? who.slice(0, 100) : null,
     });
   });
   return { cleanings, errors, skipped };
@@ -531,8 +729,11 @@ export function mapCleaning(rows: Row[], prices: Row[]): { cleanings: CleaningIn
 /* ------------------------------------------------------------------ */
 
 export interface ExpenseIn { row: number; id: string; workbookId: string; category: string; description: string; amount: number; incurredOn: string; reference: string | null }
+/** Money for or against the owner after the split (owner_adjustments). amount is signed sen: positive adds to the
+ *  owner's payout, negative deducts. An 'O2' 杂费扣款 line is exactly this, sign included (the workbook adds the O2
+ *  column to the owner's share); a negative 'Additional Deduction' line is money back to the owner. */
+export interface CreditIn { row: number | string; id: string; workbookId: string; description: string; amount: number; occurredOn: string; reference: string | null }
 
-const MONTH_COLS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const UTILITY: Record<string, { category: string; tag: string; label: string }> = {
   '水费': { category: 'water', tag: 'water', label: 'Water' },
   '电费': { category: 'electricity', tag: 'electricity', label: 'Electricity' },
@@ -540,9 +741,15 @@ const UTILITY: Record<string, { category: string; tag: string; label: string }> 
   'INDAH WATER': { category: 'utilities', tag: 'sewerage', label: 'Indah Water (sewerage)' },
 };
 
-/** Rows carry `_sheet`: one of the four utility sheets or 杂费扣款. */
-export function mapWorkbookExpenses(rows: Row[]): { expenses: ExpenseIn[]; errors: RowError[]; skipped: RowError[] } {
-  const errors: RowError[] = [], skipped: RowError[] = [], expenses: ExpenseIn[] = [], seen = new Set<string>();
+/** Rows carry `_sheet`: one of the four utility sheets or 杂费扣款. 杂费扣款 has two kinds of line, and the workbook
+ *  treats them differently (整体报告):
+ *   - 'Additional Deduction' is a cost taken off the income BEFORE the owner/company split: an expense. A negative
+ *     one is money back to the owner and becomes an owner credit.
+ *   - 'O2' is added to the owner's share AFTER the split, sign as written: -423.94 'MAINTENANCE FEE' is paid by the
+ *     company for the owner and taken off his payout; +1,038.05 'TNB' is a bill the owner paid himself, given back.
+ *     Every O2 line becomes an owner adjustment with that signed amount. */
+export function mapWorkbookExpenses(rows: Row[]): { expenses: ExpenseIn[]; credits: CreditIn[]; errors: RowError[]; skipped: RowError[] } {
+  const errors: RowError[] = [], skipped: RowError[] = [], expenses: ExpenseIn[] = [], credits: CreditIn[] = [], seen = new Set<string>();
   rows.forEach((r, i) => {
     const row = rowNo(r, i), sheet = str(r._sheet);
     const workbookId = str(r['Unit编号']).toUpperCase();
@@ -566,14 +773,74 @@ export function mapWorkbookExpenses(rows: Row[]): { expenses: ExpenseIn[]; error
     const date = toDate(r['日期']), amount = sen(r['金额(RM)']), type = opt(r['类型']) ?? 'Charge', what = opt(r['项目描述']) ?? '';
     if (!date || amount === null) return errors.push({ row: where, reason: 'No date or amount.' });
     if (amount === 0) return;
-    // expenses.amount must be zero or more; a negative line is money back to the owner, which is an adjustment, not an expense.
-    if (amount < 0) return skipped.push({ row: where, reason: `${workbookId} ${date} ${type}: negative amount (RM ${(amount / 100).toFixed(2)}) is a credit, not an expense; not imported.` });
-    const id = `wb-misc-${hash(`${workbookId}|${date}|${type}|${what}|${amount}`)}`;
+    const afterSplit = /^O2$/i.test(type);
+    const key = hash(`${workbookId}|${date}|${type}|${what}|${amount}`);
+    const id = afterSplit ? `wb-o2-${key}` : `wb-${amount < 0 ? 'credit' : 'misc'}-${key}`;
     if (seen.has(id)) return skipped.push({ row: where, reason: 'Same charge listed twice; counted once.' });
     seen.add(id);
-    expenses.push({ row, id, workbookId, category: 'other', description: `${type}: ${what}`.slice(0, 300), amount, incurredOn: date, reference: opt(r['备注'])?.slice(0, 200) ?? null });
+    const description = `${type}: ${what}`.slice(0, 300), reference = opt(r['备注'])?.slice(0, 200) ?? null;
+    if (afterSplit) credits.push({ row: where, id, workbookId, description, amount, occurredOn: date, reference });
+    else if (amount < 0) credits.push({ row: where, id, workbookId, description, amount: -amount, occurredOn: date, reference });
+    else expenses.push({ row, id, workbookId, category: 'other', description, amount, incurredOn: date, reference });
   });
-  return { expenses, errors, skipped };
+  return { expenses, credits, errors, skipped };
+}
+
+/* ------------------------------------------------------------------ */
+/* Workbook: owner payout history                                      */
+/* ------------------------------------------------------------------ */
+
+/** The 整体报告 figures for one unit, sen. revenue - deductions = gp; the owner was paid `payout`. */
+export interface PayoutBreakdown { revenue: number; cleaning: number; utilities: number; additional: number; misc: number; payout: number }
+/** What one unit's owner was paid for one month (OWNER PAYOUT sheet), sen. Can be negative (the month cost more than it made). */
+export interface PayoutMonthIn { row: number; workbookId: string; month: string; amount: number; breakdown: PayoutBreakdown | null }
+
+/** OWNER PAYOUT: one row per unit, JAN..DEC of WORKBOOK_YEAR. Only months before the current one are history;
+ *  the current and later months are never turned into statements. 整体报告 is one month's breakdown per unit with
+ *  no month written on it: its month is the one whose OWNER PAYOUT column agrees with the report's OWNER PAYOUT
+ *  for most units, and a unit's breakdown is used only when its own two figures agree. */
+export function mapPayoutHistory(rows: Row[], report: Row[], today: string): { months: PayoutMonthIn[]; reportMonth: string | null; errors: RowError[]; skipped: RowError[]; notes: string[] } {
+  const errors: RowError[] = [], skipped: RowError[] = [], notes: string[] = [];
+  const thisMonth = today.slice(0, 7);
+  const byUnit = new Map<string, { row: number; amounts: Map<string, number> }>();
+  let dup = 0, future = 0;
+  rows.forEach((r, i) => {
+    const row = rowNo(r, i), workbookId = str(r['UNIT']).toUpperCase();
+    if (!workbookId || /^\d+$/.test(workbookId)) return;
+    if (byUnit.has(workbookId)) dup++;
+    const amounts = new Map<string, number>();
+    MONTH_COLS.forEach((m, mi) => {
+      const v = sen(r[m]), month = `${WORKBOOK_YEAR}-${pad(mi + 1)}`;
+      if (!v) return;
+      if (month >= thisMonth) { future++; return; }
+      amounts.set(month, v);
+    });
+    byUnit.set(workbookId, { row, amounts });
+  });
+  if (dup) notes.push(dup === 1 ? '1 unit appears twice in OWNER PAYOUT; its last row was used.' : `${dup} units appear twice in OWNER PAYOUT; the last row of each was used.`);
+  if (future) skipped.push({ row: 'OWNER PAYOUT', reason: `${future} amounts are for this month or later; statements are only made for past months.` });
+
+  // Which month 整体报告 describes.
+  const rep = report.map(r => ({ id: str(r['LONG TERM']).toUpperCase(), payout: sen(r['OWNER PAYOUT']), r })).filter(x => x.id && x.payout !== null);
+  const votes = new Map<string, number>();
+  for (const x of rep) for (const [m, v] of byUnit.get(x.id)?.amounts ?? []) if (v === x.payout) votes.set(m, (votes.get(m) ?? 0) + 1);
+  const best = [...votes.entries()].sort((a, b) => b[1] - a[1])[0];
+  const reportMonth = best && best[1] * 2 >= rep.length ? best[0] : null;
+  const breakdown = new Map<string, PayoutBreakdown>();
+  if (reportMonth) {
+    for (const x of rep) {
+      if (byUnit.get(x.id)?.amounts.get(reportMonth) !== x.payout) continue;
+      const v = (c: string) => sen(x.r[c]) ?? 0;
+      breakdown.set(x.id, { revenue: v('TOTAL REVENUE'), cleaning: v('ALL CLEANING TOTAL'), utilities: v('UTILITIES'), additional: v('ADDITIONAL DEDUCTION'), misc: v('MISCELLANEOUS CHARGES'), payout: x.payout! });
+    }
+    notes.push(`整体报告 is the ${reportMonth} report: ${breakdown.size} units get its revenue and deductions on their ${reportMonth} statement; every other month shows the payout only.`);
+  } else if (rep.length) notes.push('整体报告 could not be tied to a month of OWNER PAYOUT, so no statement shows its breakdown.');
+
+  const months: PayoutMonthIn[] = [];
+  for (const [workbookId, u] of byUnit) {
+    for (const [month, amount] of u.amounts) months.push({ row: u.row, workbookId, month, amount, breakdown: month === reportMonth ? breakdown.get(workbookId) ?? null : null });
+  }
+  return { months, reportMonth, errors, skipped, notes };
 }
 
 /** Workbook Airbnb lines grouped so every line of one code lands in the same request. */
@@ -589,13 +856,14 @@ export function chunkByKey<T>(rows: T[], keyOf: (r: T) => string, size: number):
   return out;
 }
 
-/** Keeps only the named columns (plus `_row` / `_sheet`), so nothing else in the export leaves the browser. */
+/** Keeps only the named columns (plus `_row` / `_sheet` / `_section`), so nothing else in the export leaves the browser. */
 export function pick(rows: Row[], columns: string[]): Row[] {
   return rows.map(r => {
     const o: Row = {};
     for (const c of columns) if (r[c] !== undefined && r[c] !== null && r[c] !== '') o[c] = r[c];
     if (r._row !== undefined) o._row = r._row;
     if (r._sheet !== undefined) o._sheet = r._sheet;
+    if (r._section !== undefined) o._section = r._section;
     return o;
   });
 }

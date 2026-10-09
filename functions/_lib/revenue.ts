@@ -5,7 +5,9 @@
  *   - occupancy = booked nights / nights available in the period (the workbook's "29 nights = 96.67%" is
  *     29 / 30 days of September);
  *   - maintenance blocks, owner stays and cancelled bookings are not revenue and not booked nights.
- *  ADR = gross / booked nights; RevPAR = gross / available nights. */
+ *  ADR = gross / booked nights; RevPAR = gross / available nights.
+ *  Owner statements use the same night split (functions/_lib/ownerStatement.ts) but on what the booking
+ *  site paid out (collected revenue), because that is what the owner workbook calls Hospitality Income. */
 import { type Env, all } from './db';
 
 /** SQL condition for a stay that counts, on reservations aliased `r`. */
