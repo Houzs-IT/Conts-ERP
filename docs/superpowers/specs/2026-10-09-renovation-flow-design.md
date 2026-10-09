@@ -11,7 +11,9 @@ ID + full-home-customisation company (Dream Crafter / The Conts), from design to
 | Customers | Both: Conts-managed owner units and outside customers |
 | Leads | Live in a CRM list, not in Projects. A project is opened when design starts |
 | Project module | Rework the engine's Houzs exhibition Projects module in place. The engine now diverges from Houzs on purpose; record this in `CLAUDE.md` |
-| Execution | Everything is subcontracted: every trade and every supplier gets a PO. Built-in carpentry is factory-made and lands in the Furniture stage |
+| Execution | For this round everything is treated as subcontracted: every trade and supplier gets a PO. A later Production module will add production orders for in-house crews (today's Notion shows INHOUSE - MONIR / ZAINAL); trade tasks keep room for that second fulfilment link. Built-in carpentry is factory-made and lands in the Furniture stage |
+| Scheduling | Trade order is a suggestion, not a gate: tasks carry planned date ranges, may overlap and be reordered; overdue dates raise flags. A cross-project calendar shows every task by date and contractor (replaces the Notion calendar) |
+| Board conditions | Furniture condition and Reno item condition are derived from PO/GRN/DO: no PO = Pending Purchased, PO not fully received = Pending Arrived, all received = All Arrived. Reno condition = current stage. Payment condition = instalments billed/received |
 | Customer billing | Payment-term templates (e.g. 15/50/30/5, 30/30/35/5) with a description per instalment, editable per document, each instalment tied to a stage |
 | VO | Its own document (VO number, add and omit lines, customer signature). Added to the contract sum; the next unbilled instalment catches up the difference; a net negative becomes a credit note |
 | Subcontractor payment | Per-PO payment schedule; default template Mobilise / Completion / Retention; retention released after handover and defects closed |
@@ -145,6 +147,12 @@ Stage state: not started / in progress / done / skipped.
 - Manual skip of a stage or checklist item requires a reason; actor and time are logged.
 - A billing instalment tied to a skipped stage moves to the next stage that is not skipped.
 
+### Project board and calendar
+- Board (replaces the Notion "Project" table): one row per project with Building, SO number, SO date, salesperson, the three derived conditions above, payment condition, unit key status, current stage, red flags.
+- Calendar (replaces the Notion task calendar): every trade and template task across projects by planned date range, filterable by contractor and project; drag to change planned dates.
+- Task names follow the owner's Notion vocabulary (WIRING & HACKING, LIGHTING & FAN INSTALLATION, PLASTER CEILING, PAINTING, TEXTURED PAINTING, WINDOW, GRILL, SLIDING DOOR INSTALLATION, CARPENTRY, CURTAIN INSTALLATION, FURNITURE DELIVERY / INSTALLATION, QC, TOUCH UP, SET UP CLEANING, JOINT HANDOVER INSPECTION).
+- Furniture deliveries from our own warehouse use the engine delivery order and its POD; supplier-direct deliveries use the site receipt.
+
 ### Hard gate
 Hardware works cannot start until: SO confirmed, instalment 1 received, shop drawings
 signed, renovation permit approved (or skipped with reason).
@@ -156,11 +164,11 @@ signed, renovation permit approved (or skipped with reason).
 | Key & permit | key/access-card count, renovation permit, renovation deposit, worker passes | permit, deposit receipt |
 | Defect check | inspect per room, submit to developer, follow up, re-inspect | defect report with photos |
 | Shop drawings | site measure, carpentry/electrical/ceiling drawings, material & colour selection, customer sign-off (max 3 amendments) | drawings, colour sheet, signature; triggers factory PO |
-| Hardware | trade tasks generated from SO WORKS sub-categories in fixed order (protection, hacking, plumbing, electrical 1st fix, ceiling, painting, electrical 2nd fix, flooring); per task: subcontractor, PO, planned/actual dates, before/after photos | completion = PO receipt |
+| Hardware | trade tasks generated from SO WORKS sub-categories, laid out in the suggested `TRADE_ORDER` but freely reordered/overlapped; plus template tasks (Pre-reno works & item delivery, QC); per task: subcontractor, PO, planned date range, actual dates, before/after photos | completion = PO receipt |
 | Furniture & built-in | cabinet delivery & install, stone top measured after cabinets, curtains, loose furniture | site receipt POD |
 | Appliances | delivery, install, power test | site receipt POD, test tick |
 | Soft / Airbnb | linen, amenities, styling, photoshoot | site receipt POD, photos |
-| Handover | cleaning, internal QC, customer walk-through, snag list rectified within 7 days, handover form signed, keys returned, deposit refund | signed handover, snag photos |
+| Handover | template tasks (Post reno cleaning, Touch up, Set up cleaning, Joint handover inspection), customer walk-through, snag list rectified within 7 days, handover form signed, keys returned, deposit refund | signed handover, snag photos |
 | Warranty | complaints become Service Cases | Service Case |
 
 Project templates: Full renovation (all stages), Airbnb package (no hardware/defect),
@@ -191,7 +199,7 @@ over and retention released; renovation deposit refunded. Red flags list on the 
 board until all pass.
 
 ## 7. Not in this round
-Own work crews, subcontractor bid comparison, Gantt scheduling (only order + delay flags),
+Production orders for in-house crews (later Production module), subcontractor bid comparison, importing the ~30 live Notion projects,
 CRM beyond a simple lead list.
 
 ## 8. Engineering notes

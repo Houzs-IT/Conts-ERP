@@ -131,3 +131,4 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner to confirm: no-show allowed from the check-in day (audit said "after"); undo check-in / check-out only on the same day and only for management; reinstating a cancelled stay is management only.
 - Booking drawer money lines from migration 0052 (room, cleaning paid by guest, SST, tourism tax, payout, payout date ...) show automatically once 0052 is applied and filled; nothing is estimated before that.
 - Not built: guest notification on cancel / date change (the screens now say the guest is not messaged); refunds; repricing rule for date changes (direct bookings take a new total by hand).
+- Engine backend light suite: 29 test files fail in Conts because they read Houzs data, CI workflows or repo-level scripts that were never copied (list: run `npx vitest run --config vitest.light.config.mts` in engine/backend); decide per file to port or skip.
