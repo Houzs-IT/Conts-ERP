@@ -1,5 +1,6 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { masked } from '../../_lib/properties';
 
 const area = (city: string, postcode: string | null) => (postcode ? `${city}, ${postcode}` : city);
 
@@ -31,8 +32,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       listingName: u.listing_name ?? '', unitCode: u.unit_code ?? u.unit_number, state: u.state,
       address: u.address ?? `${u.unit_number}, ${u.address_line}`,
       ownerName: u.owner_name,
-      ic: banking ? (u.ic_number ?? '') : '', bankName: banking ? (u.bank_name ?? '') : '',
-      bankAccount: banking ? (u.bank_account_number ?? '') : '', accountHolder: banking ? (u.bank_account_holder ?? u.owner_name) : '',
+      // Last four only, as on the owner profile; the full numbers are revealed there (audited), not here.
+      ic: banking ? masked(u.ic_number) : '', bankName: banking ? (u.bank_name ?? '') : '',
+      bankAccount: banking ? masked(u.bank_account_number) : '', accountHolder: banking ? (u.bank_account_holder ?? u.owner_name) : '',
       pkg: u.package, term: u.term, split: u.split_kind, splitValue: u.split_value, guaranteePeriod: u.guarantee_period ?? 'month',
       bedrooms: u.bedrooms, ...(banking ? { baseRate: Number(u.base_rate) } : {}),
       expenses: expenses.filter(e => e.unit_id === u.id).map(e => ({ id: e.id, category: e.category, amount: Number(e.amount), note: e.note })),

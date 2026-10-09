@@ -51,6 +51,9 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   const payouts = await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM payouts WHERE owner_id = ?', id);
   if (Number(payouts?.n) > 0) return fail('HAS_PAYOUTS', `${owner.display_name} has payout history and cannot be deleted.`, 409);
 
+  const adjustments = await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM owner_adjustments WHERE owner_id = ?', id);
+  if (Number(adjustments?.n) > 0) return fail('HAS_ADJUSTMENTS', `${owner.display_name} has credits or charges on record and cannot be deleted.`, 409);
+
   // The login exists only for this owner's portal access, so it goes with the record.
   if (owner.user_id) await run(env, "DELETE FROM users WHERE id = ? AND role = 'owner'", owner.user_id);
   await run(env, 'DELETE FROM owners WHERE id = ?', id);

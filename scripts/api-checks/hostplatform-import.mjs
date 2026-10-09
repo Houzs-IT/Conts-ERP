@@ -46,7 +46,7 @@ const reservations = resFiles.flatMap(f => M.pick(M.csvObjects(readFileSync(join
 const xlsxName = files.find(f => /\.xlsx$/i.test(f));
 const S = M.WORKBOOK_SHEETS;
 const wb = xlsxName ? await M.readXlsx(readFileSync(join(dir, xlsxName)), Object.values(S)) : null;
-const sheet = name => wb ? M.pick(M.sheetObjects(wb.sheets[name] ?? [], M.WORKBOOK_HEADER_ROW[name] ?? 1, name), M.WORKBOOK_COLUMNS[name]) : [];
+const sheet = name => !wb ? [] : M.pick(name === S.pool ? M.poolSheetRows(wb.sheets[name] ?? []) : M.sheetObjects(wb.sheets[name] ?? [], M.WORKBOOK_HEADER_ROW[name] ?? 1, name), M.WORKBOOK_COLUMNS[name]);
 const W = Object.fromEntries(Object.entries(S).map(([k, name]) => [k, sheet(name)]));
 console.log(`files: listing ${listing.length} rows, reservations ${reservations.length} rows from ${resFiles.length} files, workbook ${xlsxName ? 'yes' : 'no'}`);
 if (wb) console.log('workbook rows read:', Object.fromEntries(Object.entries(W).map(([k, v]) => [k, v.length])), '| login sheet read:', Object.keys(wb.sheets).includes('用户管理'));
@@ -69,9 +69,9 @@ check('every listing row maps to a unit', L.units.length + L.errors.length === l
 check('every booking code is unique', new Set(R.reservations.map(r => r.id)).size === R.reservations.length);
 check('every booking has check-out after check-in', R.reservations.every(r => r.checkOut > r.checkIn));
 
-let WU, WA, WC, WE;
+let WU, WA, WC, WE, WP;
 if (wb) {
-  WU = M.mapWorkbookUnits(W.units, W.splits, W.pool);
+  WU = M.mapWorkbookUnits(W.units, W.splits, W.pool, today);
   WA = M.mapAirbnbEarnings(W.airbnb);
   WC = M.mapCleaning(W.cleaning, W.cleaningPrices);
   WE = M.mapWorkbookExpenses([...W.water, ...W.electricity, ...W.internet, ...W.sewerage, ...W.misc]);
@@ -88,9 +88,12 @@ if (wb) {
   const hpRefs = new Set(R.reservations.map(r => r.externalRef));
   console.log(`   codes also on HostPlatform: ${WA.earnings.filter(e => hpRefs.has(e.code)).length} of ${WA.earnings.length}`);
   console.log(`workbook cleaning -> ${WC.cleanings.length} cleans ${JSON.stringify(count(WC.cleanings, c => c.kind))}, ${WC.skipped.length} skipped, ${WC.errors.length} refused, with a price & owner-paid: ${WC.cleanings.filter(c => c.price && !c.payer).length}`);
-  console.log(`workbook expenses -> ${WE.expenses.length} expenses ${JSON.stringify(count(WE.expenses, e => e.category))} totalling ${rm(WE.expenses.reduce((n, e) => n + e.amount, 0))}; ${WE.skipped.length} skipped (negative credits ${rm(-WE.skipped.reduce((n, s) => n + (Number(/RM (-?[\d.]+)/.exec(s.reason)?.[1] ?? 0) * 100), 0))}), ${WE.errors.length} refused`);
-  const payout = wb.sheets['OWNER PAYOUT'];
-  if (payout === undefined) console.log('   OWNER PAYOUT: not read (by design).');
+  console.log(`workbook expenses -> ${WE.expenses.length} expenses ${JSON.stringify(count(WE.expenses, e => e.category))} totalling ${rm(WE.expenses.reduce((n, e) => n + e.amount, 0))}; ${WE.credits.length} owner credits totalling ${rm(WE.credits.reduce((n, c) => n + c.amount, 0))}; ${WE.skipped.length} skipped, ${WE.errors.length} refused`);
+  WP = M.mapPayoutHistory(W.payouts, W.report, today);
+  console.log(`workbook payouts -> ${W.payouts.length} sheet rows, ${WP.months.length} unit-months before ${today.slice(0, 7)} ${JSON.stringify(count(WP.months, m => m.month))}, total ${rm(WP.months.reduce((n, m) => n + m.amount, 0))}; report month ${WP.reportMonth}, ${WP.months.filter(m => m.breakdown).length} with a breakdown`);
+  for (const n of WP.notes) console.log('   note:', n);
+  for (const x of WP.skipped) console.log('   skipped:', x.reason);
+  check('workbook units: Package D mapped', WU.units.some(u => u.pkg === 'Package D'));
 }
 // Rough CPU cost of the JavaScript side of one 500-row request (mapping + unit matching + JSON), without the database.
 {
@@ -162,7 +165,7 @@ async function runAll(label) {
   console.log(`\n== ${label} ==`);
   // Same order and part sizes (200 rows) as the screen.
   await step('listing', [await M.importListing(db, M.mapListing(listing), now)]);
-  if (wb) await step('workbook units', [await M.importWorkbookUnits(db, M.mapWorkbookUnits(W.units, W.splits, W.pool).units, now)]);
+  if (wb) await step('workbook units', [await M.importWorkbookUnits(db, M.mapWorkbookUnits(W.units, W.splits, W.pool, today).units, now, today)]);
   const rr = [];
   for (const c of chunks(reservations, 200)) rr.push(await M.importReservations(db, M.mapReservations(c, today), now));
   await step('reservations', rr);
@@ -174,10 +177,14 @@ async function runAll(label) {
     for (const c of chunks(W.cleaning, 200)) { const m = M.mapCleaning(c, W.cleaningPrices); const x = await M.importCleaning(db, m.cleanings, today, now); x.skipped += m.skipped.length + m.errors.length; cr.push(x); }
     await step('workbook cleaning', cr);
     const er = [];
-    for (const c of chunks([...W.water, ...W.electricity, ...W.internet, ...W.sewerage, ...W.misc], 200)) { const m = M.mapWorkbookExpenses(c); const x = await M.importExpenses(db, m.expenses, now); x.skipped += m.skipped.length + m.errors.length; er.push(x); }
+    for (const c of chunks([...W.water, ...W.electricity, ...W.internet, ...W.sewerage, ...W.misc], 200)) { const m = M.mapWorkbookExpenses(c); const x = await M.importExpenses(db, m.expenses, now, m.credits); x.skipped += m.skipped.length + m.errors.length; er.push(x); }
     await step('workbook expenses', er);
+    // The whole OWNER PAYOUT sheet in one request, as the screen sends it.
+    const pm = M.mapPayoutHistory(W.payouts, W.report, today);
+    await step('workbook payouts', [await M.importPayoutHistory(db, pm.months, now)]);
   }
-  const tables = ['properties', 'owners', 'owner_contracts', 'units', 'unit_expenses', 'guests', 'reservations', 'tasks', 'expenses'];
+  const tables = ['properties', 'owners', 'owner_contracts', 'units', 'unit_expenses', 'guests', 'reservations', 'tasks', 'expenses',
+    'cleaners', 'unit_utility_accounts', 'owner_adjustments', 'guarantee_pool_months', 'owner_statements', 'statement_lines', 'payouts'];
   const counts = {};
   for (const t of tables) counts[t] = Number((await pg.query(`select count(*)::int as n from ${t}`)).rows[0].n);
   console.log('  table counts:', JSON.stringify(counts));
@@ -238,6 +245,96 @@ const onPlaceholder = Number((await q(`select count(*)::int n from units where o
 console.log(`  owners ${owners[0].n}; units still under "Owner to be confirmed": ${onPlaceholder}`);
 const expByCat = await q(`select category, count(*)::int n, sum(amount)::bigint total from expenses group by 1 order by 1`);
 console.log('  expenses:', expByCat.map(e => `${e.category} ${e.n} (${rm(Number(e.total))})`).join(', '));
+
+if (wb) {
+  console.log('\nworkbook completeness');
+  const one = async sql => (await q(sql))[0];
+  const pkgD = await one(`select count(*)::int n from units where package = 'Package D'`);
+  const wantD = WU.units.filter(u => u.packageD).length;
+  console.log(`  Package D: ${pkgD.n} units in Property OS, ${wantD} workbook unit ids`);
+  check('Package D units imported', pkgD.n > 0 && pkgD.n <= wantD, `${pkgD.n} of ${wantD}`);
+  const con = await one(`select count(*)::int n, count(*) filter (where agent_fee_pct > 0)::int agent, count(*) filter (where minimum_guarantee > 0)::int minimum,
+    count(*) filter (where agreement_file is not null)::int file, count(*) filter (where misc_charges = 1)::int misc,
+    count(*) filter (where model = 'management' and grr_amount <> 0)::int mgmt_grr from owner_contracts`);
+  console.log(`  contracts ${con.n}: agent share ${con.agent}, monthly minimum ${con.minimum}, agreement file ${con.file}, misc charges ${con.misc}`);
+  check('management contracts carry no fixed rent (the minimum moved to minimum_guarantee)', con.mgmt_grr === 0, `${con.mgmt_grr}`);
+  const ua = await q(`select kind, count(*)::int n from unit_utility_accounts group by 1 order by 1`);
+  const uaTotal = ua.reduce((n, r) => n + r.n, 0), uaWant = WU.units.reduce((n, u) => n + u.utilityAccounts.length, 0);
+  console.log(`  utility accounts ${uaTotal} (workbook rows give ${uaWant}): ${ua.map(r => `${r.kind} ${r.n}`).join(', ')}`);
+  check('utility accounts imported (one per unit and kind)', uaTotal > 0 && uaTotal <= uaWant, `${uaTotal} of ${uaWant}`);
+  const pool = await one(`select count(*)::int n, count(distinct unit_id)::int units, max(month) last from guarantee_pool_months`);
+  console.log(`  guarantee pool months ${pool.n} on ${pool.units} units, last ${pool.last}`);
+  check('no pool month for this month or later', !pool.last || pool.last < today.slice(0, 7), pool.last);
+  const credits = await one(`select count(*)::int n, coalesce(sum(amount), 0)::bigint total, count(*) filter (where state = 'settled')::int settled,
+    coalesce(sum(amount) filter (where state = 'settled'), 0)::bigint settled_total,
+    count(*) filter (where state = 'settled' and statement_id is not null)::int on_stmt, count(*) filter (where state = 'open')::int open,
+    coalesce(sum(amount) filter (where state = 'open'), 0)::bigint open_total from owner_adjustments where kind in ('credit','charge') and source = 'owner_workbook'`);
+  const wantCredits = WE.credits.reduce((n, c) => n + c.amount, 0);
+  console.log(`  owner adjustments (credits and charges) ${credits.n} = ${rm(Number(credits.total))}; settled in workbook payouts ${credits.settled} = ${rm(Number(credits.settled_total))} (${credits.on_stmt} linked to that month's statement); open for the next statement ${credits.open} = ${rm(Number(credits.open_total))}`);
+  const inDb = new Set((await q(`select id from owner_adjustments where kind in ('credit','charge')`)).map(r => r.id));
+  const refused = WE.credits.filter(c => !inDb.has(c.id));
+  console.log(`  adjustments in the workbook ${WE.credits.length} = ${rm(wantCredits)}; refused ${refused.length} = ${rm(refused.reduce((n, c) => n + c.amount, 0))} on ${[...new Set(refused.map(c => c.workbookId))].join(', ') || 'none'} (no named owner)`);
+  check(`owner adjustments: imported + refused = ${WE.credits.length} lines, ${rm(wantCredits)} net to owners`, Number(credits.total) + refused.reduce((n, c) => n + c.amount, 0) === wantCredits && credits.n + refused.length === WE.credits.length, `${credits.n} imported, ${refused.length} refused`);
+  const debt = await one(`select count(*)::int n, coalesce(sum(amount), 0)::bigint total, count(*) filter (where state = 'held')::int held from owner_adjustments where kind = 'opening_debt'`);
+  console.log(`  debts carried over ${debt.n} = ${rm(-Number(debt.total))}, held ${debt.held}`);
+  check('every DEBT AMOUNT recorded and held', debt.n === WU.units.filter(u => u.debt).length && debt.held === debt.n, `${debt.n}`);
+  const cl = await one(`select count(*)::int n, count(*) filter (where employment_type = 'outsourced')::int outsourced from cleaners where id like 'wb-cleaner-%'`);
+  const linked = await one(`select count(*)::int n from tasks where id like 'wb-clean-%' and cleaner_id is not null`);
+  const wantCl = new Set(WC.cleanings.map(c => c.cleaner).filter(Boolean)).size;
+  console.log(`  cleaners ${cl.n} (outsourced ${cl.outsourced}); cleaning tasks linked to a cleaner ${linked.n} of ${WC.cleanings.filter(c => c.cleaner).length} named in the sheet`);
+  check(`cleaner roster has every name in 负责人 (${wantCl})`, cl.n === wantCl, `${cl.n}`);
+  const st = await one(`select count(*)::int n, count(distinct owner_id)::int owners, min(period_start) first, max(period_start) last, coalesce(sum(net_payout), 0)::bigint net,
+    count(*) filter (where state <> 'paid')::int not_paid from owner_statements where source = 'owner_workbook'`);
+  const lines = await one(`select count(distinct (unit_id, statement_id))::int unit_months from statement_lines where statement_id like 'wb-stmt-%'`);
+  const po = await one(`select count(*)::int n, coalesce(sum(amount), 0)::bigint total from payouts where source = 'owner_workbook'`);
+  const wantNet = WP.months.reduce((n, m) => n + m.amount, 0);
+  console.log(`  history statements ${st.n} for ${st.owners} owners, ${st.first} to ${st.last}, net ${rm(Number(st.net))}; paid payouts ${po.n} = ${rm(Number(po.total))}`);
+  console.log(`  history unit-months: mapped ${WP.months.length}, on statements ${lines.unit_months}; net mapped ${rm(wantNet)}`);
+  check('history statements are all paid', st.not_paid === 0);
+  check(`no statement for this month or later (${today.slice(0, 7)})`, !st.last || st.last < `${today.slice(0, 7)}-01`, st.last);
+  check('statement totals add up (net = gross - fee - expenses + adjustments)', (await one(`select count(*)::int n from owner_statements where net_payout <> gross_booking_value - management_fee - expenses_total + adjustments_total`)).n === 0);
+  check('history statement lines add up to each statement net', (await one(`select count(*)::int n from owner_statements s where s.source = 'owner_workbook' and s.net_payout <> (select coalesce(sum(amount), 0) from statement_lines l where l.statement_id = s.id)`)).n === 0);
+  const money = await one(`select count(*) filter (where room_revenue is not null)::int room, count(*) filter (where guest_cleaning_fee > 0)::int cleaning, count(*) filter (where sst_amount > 0)::int sst,
+    count(*) filter (where ota_tax > 0)::int ota_tax, count(*) filter (where payout_amount is not null)::int payout, count(*) filter (where payment_method is not null)::int method,
+    count(*) filter (where rate_plan is not null)::int rate_plan, count(*) filter (where guest_nationality is not null)::int nationality, count(*) filter (where payout_date is not null)::int payout_date from reservations`);
+  console.log(`  booking money columns filled: ${JSON.stringify(money)}`);
+  check('HostPlatform bookings have room revenue', money.room === R.reservations.length, `${money.room} of ${R.reservations.length}`);
+  const hpSum = (await one(`select count(*)::int n from reservations where id like 'hp-res-%' and id !~ '^hp-res-(ab|bc)-' and notes not like '%amounts from owner workbook%'
+    and room_revenue + coalesce(guest_cleaning_fee, 0) + coalesce(sst_amount, 0) + coalesce(extra_fees, 0) + coalesce(tourism_tax, 0) <> gross_booking_value - case when channel = 'airbnb' then channel_fee else 0 end`)).n;
+  check('HostPlatform money parts add up to the booking total (room + cleaning + SST + extras + tourism tax)', hpSum === 0, `${hpSum} bookings differ`);
+}
+
+{
+  console.log('\nbuilding state and city');
+  const dist = async () => (await q(`select count(distinct trim(state))::int states, count(distinct trim(city))::int cities,
+    json_agg(distinct trim(state)) state_list, json_agg(distinct trim(city)) city_list from properties`))[0];
+  const imported = await dist();
+  console.log(`  as this import writes them: ${imported.states} states ${JSON.stringify(imported.state_list)}, ${imported.cities} cities ${JSON.stringify(imported.city_list)}`);
+  const ownStates = (await q(`select distinct state from properties where id like 'hp-%' or id like 'wb-%'`)).map(r => r.state);
+  check('the import writes only canonical state names on its own buildings (a hand-made one is left to the fix step)', ownStates.every(s => M.MY_STATES.includes(s)), JSON.stringify(ownStates));
+  // Put back what the first production import wrote (listing text as exported, blank on workbook-made buildings, 'WP' typed by hand), then run the fix.
+  const raw = new Map(listing.map(r => [M.buildingName(r['Property Name']).toLowerCase(), r]));
+  const props = await q(`select id, name from properties`);
+  for (const p of props) {
+    const r = raw.get(p.name.toLowerCase());
+    const state = p.id === 'pilot-prop' ? 'WP' : r ? String(r['State'] ?? '') : '';
+    const city = p.id === 'pilot-prop' ? 'Kuala Lumpur' : r ? String(r['city'] ?? '') : '';
+    await pg.query(`update properties set state = $1, city = $2, postcode = case when id like 'wb-%' then null else postcode end where id = $3`, [state, city, p.id]);
+  }
+  const before = await dist();
+  console.log(`  before the fix (as production has them now): ${before.states} states ${JSON.stringify(before.state_list)}, ${before.cities} cities ${JSON.stringify(before.city_list)}`);
+  const f1 = await M.fixLocations(db, new Date().toISOString());
+  const after = await dist();
+  console.log(`  fix run 1: ${f1.updated} buildings changed ${JSON.stringify(f1.stats)}; ${f1.skippedRows.length} left without a state`);
+  console.log(`  after the fix: ${after.states} states ${JSON.stringify(after.state_list)}, ${after.cities} cities ${JSON.stringify(after.city_list)}`);
+  const f2 = await M.fixLocations(db, new Date().toISOString());
+  check('fix: every building has a canonical state', after.state_list.every(s => M.MY_STATES.includes(s)), JSON.stringify(after.state_list));
+  check('fix run 2 changes nothing', f2.updated === 0, `${f2.updated}`);
+  await pg.query(`update properties set state = 'Somewhere Else' where id = 'pilot-prop'`);
+  const f3 = await M.fixLocations(db, new Date().toISOString());
+  const kept = (await q(`select state from properties where id = 'pilot-prop'`))[0].state;
+  check('fix leaves a state it does not recognise as typed', kept === 'Somewhere Else' && f3.updated === 0, `${kept}, ${f3.updated} changed`);
+}
 const audit = Number((await q(`select count(*)::int n from audit_log`))[0].n);
 console.log(`  audit_log rows: ${audit} (the API writes one per request; this script calls the library directly)`);
 console.log(fails ? `\n${fails} FAILED` : '\nall ok');

@@ -84,7 +84,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       periodStart: r.period_start, periodEnd: r.period_end, state: r.state,
       grossBookingValue: r.gross_booking_value, managementFee: r.management_fee,
       expensesTotal: r.expenses_total, netPayout: r.net_payout, currency: r.currency,
-      sentAt: r.sent_at, finalisedAt: r.finalised_at,
+      sentAt: r.sent_at, finalisedAt: r.finalised_at, source: r.source ?? 'generated',
     })),
   });
 };
