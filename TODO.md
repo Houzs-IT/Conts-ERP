@@ -132,3 +132,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Booking drawer money lines from migration 0052 (room, cleaning paid by guest, SST, tourism tax, payout, payout date ...) show automatically once 0052 is applied and filled; nothing is estimated before that.
 - Not built: guest notification on cancel / date change (the screens now say the guest is not messaged); refunds; repricing rule for date changes (direct bookings take a new total by hand).
 - Engine backend light suite: 29 test files fail in Conts because they read Houzs data, CI workflows or repo-level scripts that were never copied (list: run `npx vitest run --config vitest.light.config.mts` in engine/backend); decide per file to port or skip.
+
+## Renovation catalog (phase 1, feat/reno-catalog)
+- Migrations 0060-0064 (category tree, SKU photos, one main supplier, 19 generic RN-<SUB> SKUs) are written, checked on a local in-memory Postgres, and NOT yet applied to staging or production; migrate-pg.mjs applies them in order, each in its own transaction (0060 needs that).
+- Owner: link the new item groups (Works, Built-in, Furniture, Lighting, Appliances, Soft furnishing) to accounts under Accounting > Item Groups, or invoices for those lines post nothing.
+- Renovation SKU Master not yet seen in a real browser against staging (no engine .dev.vars on this machine); checked only in a local page with a stubbed API.

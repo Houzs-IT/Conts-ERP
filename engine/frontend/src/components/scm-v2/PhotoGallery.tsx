@@ -346,22 +346,22 @@ export function PhotoGallery(props: PhotoGalleryProps) {
 
   return (
     <section
-      aria-label="Model photos"
+      aria-label={isSku ? "SKU photos" : "Model photos"}
       className="space-y-3 rounded-xl border border-border bg-surface p-4 shadow-stone sm:p-5"
     >
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[10px] font-semibold uppercase tracking-brand text-accent">
-            Model photos
+            {isSku ? "SKU photos" : "Model photos"}
           </div>
           <h2 className="mt-1 font-display text-[15px] font-extrabold tracking-tight text-ink">
             Gallery {modelName && <span className="text-ink-muted">· {modelName}</span>}
           </h2>
           <p className="mt-0.5 text-[11.5px] text-ink-muted">
             Drag &amp; drop or choose files. JPG / PNG / WebP, ≤ 5 MB each. The
-            primary photo is shown wherever this model is referenced (SO
-            configurator, catalogue, picker).
+            primary photo is shown wherever this {isSku ? "SKU" : "model"} is referenced
+            {isSku ? " (quotation and SO prints, SKU list)." : " (SO configurator, catalogue, picker)."}
           </p>
         </div>
         <button
