@@ -32,7 +32,8 @@ export default function PageHeader({ title, sub, right, actions, primary, back, 
           {sub && <div style={{ fontSize: text.meta, color: color.textMuted }}>{sub}</div>}
         </div>
         {hasActions && (
-          <div data-print-hide style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          // Right-aligned beside the title; once wrapped under it on a phone, left-aligned with it, not a ragged right stack.
+          <div data-print-hide className="flex items-center gap-2 flex-wrap justify-start sm:justify-end">
             {actions}
             {right}
             {primary}

@@ -228,7 +228,7 @@ export default function ContractsPage() {
                     <span className="text-copy font-medium min-w-0 [overflow-wrap:anywhere]">{titleCase(r.ownerName)}</span>
                     <span className="shrink-0"><Badge tone={STATE_TONE[state]} label={state} size="sm" /></span>
                   </span>
-                  <span className="text-meta text-muted-ink truncate w-full">{r.unitsLabel}</span>
+                  <span className="text-meta text-muted-ink truncate w-full" title={r.unitsLabel}>{r.unitsLabel}</span>
                   <span className="flex items-center justify-between gap-2 w-full flex-wrap">
                     <span className="text-meta font-medium">{feeLabel(r)}</span>
                     <EndsCell r={r} />
@@ -262,7 +262,7 @@ export default function ContractsPage() {
                     </div>
                   </div>
                   <span className="text-copy text-muted-ink truncate" title={r.unitsLabel}>{r.unitsLabel}</span>
-                  <span className="text-copy font-medium truncate">{feeLabel(r)}</span>
+                  <span className="text-copy font-medium truncate" title={feeLabel(r)}>{feeLabel(r)}</span>
                   <span className="text-copy tabular-nums whitespace-nowrap">{date(r.startsOn)}</span>
                   <EndsCell r={r} />
                   <div><Badge tone={STATE_TONE[state]} label={state} /></div>

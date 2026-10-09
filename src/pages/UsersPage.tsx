@@ -311,7 +311,26 @@ export default function UsersPage() {
           <div className="py-3 px-5 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] flex items-center justify-between gap-3 flex-wrap">
             <span className="text-meta text-muted-ink">Role sets what a person can do. The reporting line is separate — see the organisation chart.</span>
           </div>
-          <div className="overflow-x-auto">
+          {/* Phones: one stacked row per person instead of a 940px table that hides role and status off-screen. */}
+          <div className="sm:hidden">
+            {loading && rows.length === 0 ? <TableSkeleton rows={5} cols={2} /> : rows.map(u => {
+              const s = status(u);
+              return (
+                <button key={u.id} onClick={() => openEdit(u)}
+                  className="flex items-center gap-3 w-full text-left py-3 px-4 bg-transparent border-none rounded-none cursor-pointer [font:inherit] [border-bottom:1px_solid_var(--color-line-soft)]">
+                  <span className={cx('w-[32px] h-[32px] flex-none rounded-full grid place-items-center text-caption font-semibold', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>
+                    {initials(u.fullName)}
+                  </span>
+                  <span className="flex flex-col gap-1 min-w-0 flex-1">
+                    <span className="text-copy font-medium truncate" title={u.fullName}>{u.fullName}</span>
+                    <span className="text-meta text-muted-ink truncate" title={u.email}>{u.email}</span>
+                    <span className="flex items-center gap-1.5 flex-wrap"><Badge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /><Badge tone={s.tone} label={s.label} size="sm" /></span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="overflow-x-auto max-sm:hidden">
             <div className="min-w-[940px]">
               <div className={cx('grid', LIST_COLS_CLASS, 'gap-3.5 py-2.5 px-5 bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-meta font-semibold text-muted-ink')}>
                 <div>Name</div><div>Email</div><div>Role</div><div>Reports to</div><div>Last sign-in</div><div>Status</div>
@@ -330,11 +349,11 @@ export default function UsersPage() {
                         {initials(u.fullName)}
                       </span>
                       <span className="flex flex-col gap-px min-w-0">
-                        <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{u.fullName}</span>
+                        <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={u.fullName}>{u.fullName}</span>
                         <span className="text-caption text-muted-ink whitespace-nowrap">{u.phone}</span>
                       </span>
                     </span>
-                    <span className="text-copy text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.email}</span>
+                    <span className="text-copy text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={u.email}>{u.email}</span>
                     <span><Badge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /></span>
                     <span className={cx('text-copy whitespace-nowrap overflow-hidden text-ellipsis', manager ? 'text-ink' : 'text-faint')}>{manager ?? '—'}</span>
                     <span className="text-copy text-muted-ink">{u.lastLoginAt ? date(u.lastLoginAt) : 'Never'}</span>

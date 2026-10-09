@@ -202,6 +202,8 @@ export default function IntegrationsPage() {
                   </div>
                 </div>
 
+                {/* The action strip only when it has an action; an empty grey band read as a broken card. */}
+                {(act.reconnect || act.retry || row.viaChannex || row.provider === 'utilities') && (
                 <div className="flex items-center gap-2 flex-wrap py-3 px-5 [border-top:1px_solid_var(--color-line-soft)] bg-page">
                   {act.reconnect && (
                     <Button size="sm" variant="brand" icon={<Icon name="PlugZap" size="sm" />} onClick={() => setReconnectId(row.id)}>
@@ -221,6 +223,7 @@ export default function IntegrationsPage() {
                       </Button>
                     )}
                 </div>
+                )}
               </Card>
             );
           })}

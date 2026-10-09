@@ -150,8 +150,8 @@ export default function SystemHealthPage() {
 
   return (
     <>
-      <PageHeader title="System Health"
-        sub={d ? `Checked ${relative(d.time)} · this version published ${dateTime(__BUILD_ID__)}` : 'Live state of the database, storage, integrations and recent changes.'}
+      <PageHeader title="System health"
+        sub={d ? `Checked ${relative(d.time).replace(/^Just now$/, 'just now')} · this version published ${dateTime(__BUILD_ID__)}` : 'Live state of the database, storage, integrations and recent changes.'}
         actions={<Button size="sm" variant="secondary" icon={<Icon name="RefreshCw" size="sm" />} loading={live.loading && !!d} onClick={() => { reloadLive(); reloadFeed(); }}>Refresh</Button>} />
 
       <HealthBanner tone={banner.tone} label={banner.label} detail={banner.detail} />

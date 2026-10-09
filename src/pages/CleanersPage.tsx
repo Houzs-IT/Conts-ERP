@@ -27,7 +27,7 @@ import type { Tone } from '../lib/types';
 const EMPLOYMENT_LABEL: Record<Employment, string> = { internal: 'Internal staff', outsourced: 'Outsourced' };
 const EMPLOYMENT_TONE: Record<Employment, Tone> = { internal: 'info', outsourced: 'warning' };
 
-const inputCls = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit]';
+const inputCls = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy';
 const labelCls = 'text-meta font-medium text-muted-ink';
 
 interface HouseUser { id: string; name: string; busy: number }
