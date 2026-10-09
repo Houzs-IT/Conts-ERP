@@ -71,7 +71,7 @@ export function RenovationBoard({ canCreate }: { canCreate: boolean }) {
             <table className="w-full text-sm">
               <thead className="bg-surface-dim text-left text-xs uppercase tracking-wide text-ink-secondary">
                 <tr>
-                  <th className="px-3 py-2">Project</th>
+                  <th className="px-3 py-2 min-w-[12rem]">Project</th>
                   <th className="px-3 py-2">Building / unit</th>
                   <th className="px-3 py-2">SO</th>
                   <th className="px-3 py-2">Salesperson</th>
