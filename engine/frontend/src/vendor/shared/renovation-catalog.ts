@@ -246,3 +246,23 @@ export function genericSkus(): GenericSkuDef[] {
     })),
   );
 }
+
+/* Read a sub-category / unit the way a person types it into an import sheet:
+   the code in any case ("plaster_ceiling", "Plaster ceiling") or its label; a
+   unit also by its print label ("LS"). null for blank or unreadable, so an
+   import can report what it could not read instead of dropping it. */
+const normWord = (s: string) => s.trim().toUpperCase().replace(/[\s\-/]+/g, ' ').replace(/_/g, ' ').replace(/\s+/g, ' ');
+
+export function parseSubCategory(input: string | null | undefined): string | null {
+  const raw = String(input ?? '').trim();
+  if (!raw) return null;
+  const w = normWord(raw);
+  return SUB_CATEGORIES.find((s) => normWord(s.code) === w || normWord(s.label) === w)?.code ?? null;
+}
+
+export function parseUom(input: string | null | undefined): string | null {
+  const raw = String(input ?? '').trim();
+  if (!raw) return null;
+  const w = normWord(raw);
+  return UOMS.find((u) => normWord(u.code) === w || normWord(u.label) === w || normWord(u.printLabel) === w)?.code ?? null;
+}

@@ -39,7 +39,7 @@ import { PRODUCT_CODE_CASCADE } from '../lib/product-code-rename';
 import { moveModelCategory, planModelCategoryMoves, type ImportModelMove } from '../lib/model-category-move';
 import { ensureModelForSku, modelCodeForSku } from '../lib/ensure-model-for-sku';
 import { MFG_PRODUCT_CATEGORIES, MFG_CATEGORY_LABELS, mfgCategoryLabel, parseMfgCategory } from '../shared/product-categories';
-import { isPhotoRequiredCategory, isUom, validateCategoryPair } from '../shared/renovation-catalog';
+import { isPhotoRequiredCategory, isUom, parseSubCategory, parseUom, validateCategoryPair } from '../shared/renovation-catalog';
 import {
   deleteMfgProductPhotoHandler, listMfgProductPhotosHandler, patchMfgProductPhotoHandler,
   photoCountFor, photoKeysFor, primaryPhotosFor, uploadMfgProductPhotoHandler,
@@ -525,7 +525,7 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
      *
      * The existence read moved UP for this; the write branch below reuses it. */
     const { data: existing } = await supabase.from('mfg_products')
-      .select('id, seat_height_prices').eq('code', code).eq('company_id', activeCompanyId(c)).maybeSingle();
+      .select('id, seat_height_prices, category, sub_category, status').eq('code', code).eq('company_id', activeCompanyId(c)).maybeSingle();
 
     if (categoryCell && !category) {
       failures.push({
@@ -547,14 +547,62 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
       continue;
     }
 
+    /* Renovation columns (Conts): sub category and uom, read as typed (code or
+       label). Filled-cell-only like the rest; an unreadable cell is reported. */
+    const subCell = String(r.sub_category ?? r.subCategory ?? '').trim();
+    const uomCell = String(r.uom ?? '').trim();
+    const sub = parseSubCategory(subCell);
+    if (subCell && !sub) {
+      failures.push({ code, reason: `"${subCell}" is not a sub-category.` });
+      continue;
+    }
+    const uom = parseUom(uomCell);
+    if (uomCell && !uom) {
+      failures.push({ code, reason: `"${uomCell}" is not a unit — use PCS, UNIT, SET, LOT (LS), FT, SQFT, POINT or FULL.` });
+      continue;
+    }
+    const prev = existing as { category?: string; sub_category?: string | null; status?: string } | null;
+    const finalCategory = String(category ?? prev?.category ?? '');
+    const categoryChanged = !!category && category !== prev?.category;
+    const finalSub = sub ?? (categoryChanged ? null : (prev?.sub_category ?? null));
+    if (sub || category) {
+      const pair = validateCategoryPair(finalCategory, finalSub);
+      if (!pair.ok) {
+        failures.push({
+          code,
+          reason: pair.error === 'sub_category_required'
+            ? `${mfgCategoryLabel(finalCategory)} SKUs need a sub-category (the "sub category" column).`
+            : pair.error === 'sub_category_mismatch'
+              ? `sub-category "${subCell || finalSub}" does not belong to ${mfgCategoryLabel(finalCategory)}.`
+              : `category "${finalCategory}" is not a category.`,
+        });
+        continue;
+      }
+    }
+    /* Photo rule: a new SKU in a photo group starts INACTIVE; an existing one is
+       activated only when it already has a photo (a read error refuses). */
+    const needsPhoto = isPhotoRequiredCategory(finalCategory);
+    const wantsActive = String(r.status ?? '').trim().toUpperCase() === 'ACTIVE';
+    if (needsPhoto && existing && wantsActive && prev?.status !== 'ACTIVE') {
+      const photos = await photoCountFor(supabase, String((existing as { id: string }).id), co.companyId);
+      if (!photos.ok || photos.count === 0) {
+        failures.push({ code, reason: photos.ok ? 'add a photo before making this SKU active.' : `could not check its photos, so it was not activated (${photos.reason}).` });
+        continue;
+      }
+    }
+
     const row: Record<string, unknown> = { code };
     /* Present-and-non-empty only, exactly like every other column. On a create
        the guard above has already proved both are there. */
     if (name) row.name = name;
     if (category) row.category = category;
+    if (sub) row.sub_category = sub;
+    else if (categoryChanged) row.sub_category = null;
+    if (uom) row.uom = uom;
 
     // String fields — include only when the cell actually has a value.
     if (hasVal(r.status))      row.status = String(r.status);
+    if (needsPhoto && !existing) row.status = 'INACTIVE';
     if (hasVal(r.description)) row.description = String(r.description);
     if (hasVal(r.base_model))  row.base_model = String(r.base_model);
     if (hasVal(r.size_label))  row.size_label = String(r.size_label);
@@ -597,7 +645,7 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
     if (move) {
       let moveError = moveFailed.get(move.modelId);
       if (moveError === undefined && !modelsMoved.some((m) => m.modelId === move.modelId)) {
-        const moved = await moveModelCategory(supabase, co.companyId, move.modelId, move.to);
+        const moved = await moveModelCategory(supabase, co.companyId, move.modelId, move.to, sub);
         if (moved.ok) {
           modelsMoved.push({ ...move, skuCount: moved.skuCodes.length });
         } else {
