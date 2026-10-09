@@ -88,14 +88,22 @@ export async function primaryPhotosFor(
       .order('is_primary', { ascending: false })
       .order('sort_order', { ascending: true });
     if (error) return { ok: false, reason: error.message };
-    for (const r of (data ?? []) as Array<{ product_id: string; r2_key: string; thumb_key: string | null }>) {
-      const seen = byProduct.get(r.product_id);
-      if (seen) { seen.count += 1; continue; }
-      byProduct.set(r.product_id, {
+    // The primary photo, else the lowest sort order; chosen here, not by row order.
+    const best = new Map<string, { is_primary: boolean; sort_order: number }>();
+    for (const r of (data ?? []) as Array<{ product_id: string; r2_key: string; thumb_key: string | null; is_primary: boolean; sort_order: number }>) {
+      const entry = {
         url: mfgPhotoUrl(r.product_id, r.r2_key),
         thumbUrl: r.thumb_key ? mfgPhotoUrl(r.product_id, r.thumb_key) : null,
-        count: 1,
-      });
+        count: (byProduct.get(r.product_id)?.count ?? 0) + 1,
+      };
+      const b = best.get(r.product_id);
+      const better = !b || (r.is_primary && !b.is_primary) || (r.is_primary === b.is_primary && r.sort_order < b.sort_order);
+      if (better) {
+        best.set(r.product_id, { is_primary: r.is_primary, sort_order: r.sort_order });
+        byProduct.set(r.product_id, entry);
+      } else {
+        byProduct.get(r.product_id)!.count = entry.count;
+      }
     }
   }
   return { ok: true, byProduct };

@@ -40,7 +40,8 @@ import { moveModelCategory, planModelCategoryMoves, type ImportModelMove } from 
 import { ensureModelForSku, modelCodeForSku } from '../lib/ensure-model-for-sku';
 import { MFG_PRODUCT_CATEGORIES, MFG_CATEGORY_LABELS, mfgCategoryLabel, parseMfgCategory } from '../shared/product-categories';
 import { isPhotoRequiredCategory, isUom, validateCategoryPair } from '../shared/renovation-catalog';
-import { photoCountFor } from './mfg-product-photos';
+import { photoCountFor, primaryPhotosFor } from './mfg-product-photos';
+import { resolveDefaultParty, type BindingForParty } from '../lib/default-supply-party';
 
 export const mfgProducts = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -152,6 +153,16 @@ export const listMfgProductsHandler = async (c: AppContext) => {
   // column marker). OPT-IN via ?anchorState=1 so the SO / PO / GRN catalog pickers
   // that load this SAME list stay a plain column read with no extra binding query.
   const wantAnchorState = c.req.query('anchorState') === '1';
+  /* Renovation SKU Master (Conts): ?group= / ?sub= filter on the derived
+     category_group / sub_category; ?status=all includes INACTIVE (a photo-group
+     SKU waits there for its photo); ?withPhotos=1 and ?withMain=1 add the
+     primary photo and the default PO party. All opt-in, so the pickers that load
+     this same list are unchanged. */
+  const group = c.req.query('group')?.trim().toUpperCase() || null;
+  const sub = c.req.query('sub')?.trim().toUpperCase() || null;
+  const allStatuses = c.req.query('status') === 'all';
+  const wantPhotos = c.req.query('withPhotos') === '1';
+  const wantMain = c.req.query('withMain') === '1';
   const supabase = c.get('supabase');
 
   // PR #104 — Commander 2026-05-26: dropped fabric_usage_sen /
@@ -187,6 +198,7 @@ export const listMfgProductsHandler = async (c: AppContext) => {
         'id, code, name, category, description, base_model, size_code, size_label, base_price_sen, price1_sen, sell_price_sen, pwp_price_sen, ' +
           'unit_m3_milli, status, pos_active, one_shot, source_doc_no, included_addons, sku_code, model_id, ' +
           'branding, barcode, sub_assemblies, pieces, seat_height_prices, default_variants, updated_at, ' +
+          'category_group, sub_category, uom, ' +
           // Commander 2026-05-29 — surface the Model's allowed_options so the SO
           // line editor can hide variant choices the SKU doesn't allow, which
           // heads off SOME variant_not_allowed refusals on save. NOT all of
@@ -198,9 +210,11 @@ export const listMfgProductsHandler = async (c: AppContext) => {
           // no matter what this select returns (2026-08-18).
           'model:product_models(allowed_options)',
       )
-      .eq('status', 'ACTIVE')
       .order('code', { ascending: true });
+    if (!allStatuses) q = q.eq('status', 'ACTIVE');
     if (category) q = q.eq('category', category);
+    if (group) q = q.eq('category_group', group);
+    if (sub) q = q.eq('sub_category', sub);
     // 0166 — barcode rides the same OR-chain so a scanner blast into the SKU
     // Master search box finds the row (escapeForOr keeps the grammar safe).
     if (s) q = q.or(`code.ilike.%${s}%,name.ilike.%${s}%,description.ilike.%${s}%,barcode.ilike.%${s}%`);
@@ -248,6 +262,45 @@ export const listMfgProductsHandler = async (c: AppContext) => {
       }
     }
   }
+  if (wantPhotos && products.length > 0) {
+    const photos = await primaryPhotosFor(supabase, products.map((p) => String(p.id)), Number(activeCompanyId(c)));
+    // A failed photo read leaves the fields off (the screen shows no thumbnail),
+    // it never claims "0 photos".
+    if (photos.ok) {
+      for (const p of products) {
+        const ph = photos.byProduct.get(String(p.id));
+        p.primaryPhotoUrl = ph?.url ?? null;
+        p.primaryThumbUrl = ph?.thumbUrl ?? null;
+        p.photoCount = ph?.count ?? 0;
+      }
+    }
+  }
+  if (wantMain && products.length > 0) {
+    const { data: bindings, error: bErr } = await readMfgProductBindings<BindingForParty & { item_code: string }>(supabase, {
+      codes: products.map((p) => String(p.code)),
+      companyId: activeCompanyId(c),
+      select: 'id, item_code, supplier_id, is_main_supplier, unit_price_sen',
+    });
+    if (!bErr) {
+      const byCode = new Map<string, BindingForParty[]>();
+      for (const b of bindings) byCode.set(b.item_code, [...(byCode.get(b.item_code) ?? []), b]);
+      const supplierIds = [...new Set(bindings.map((b) => b.supplier_id))];
+      const names = new Map<string, string>();
+      if (supplierIds.length > 0) {
+        const { data: sups } = await scopeToCompany(supabase.from('suppliers').select('id, name').in('id', supplierIds), c);
+        for (const s2 of (sups ?? []) as Array<{ id: string; name: string }>) names.set(s2.id, s2.name);
+      }
+      const seeCost = canViewScmProductCost(c);
+      for (const p of products) {
+        const list = byCode.get(String(p.code)) ?? [];
+        const party = resolveDefaultParty(list);
+        p.supplierCount = list.length;
+        p.mainSupplierId = party?.supplierId ?? null;
+        p.mainSupplierName = party ? (names.get(party.supplierId) ?? null) : null;
+        if (seeCost) p.mainCostSen = party?.unitPriceSen ?? null;
+      }
+    }
+  }
   /* Perf (go-live) — the 1141-row SKU master is the catalog picker every SO /
      PO / GRN / DO "new" page loads, and it changes rarely (price/config edits,
      not per-order). A short PRIVATE max-age lets the browser reuse the payload
@@ -255,7 +308,8 @@ export const listMfgProductsHandler = async (c: AppContext) => {
      while staying per-user (never shared/CDN) and short enough that a
      commander price edit shows within a minute. Follows the existing
      `private, max-age` header convention used elsewhere in this router. */
-  c.header('cache-control', 'private, max-age=60');
+  // The SKU Master's all-status view changes as people edit it: never cached.
+  c.header('cache-control', allStatuses ? 'no-store' : 'private, max-age=60');
   /* Multi-company (fix/so-product-company-scope): the 60s PRIVATE cache is keyed
      by URL only, but the ACTIVE company travels in the X-Company-Id REQUEST header
      (authed-fetch.ts stamps it from the top-bar switcher). WITHOUT Vary, the
@@ -926,7 +980,7 @@ export const patchMfgProductHandler = async (c: AppContext) => {
     const finalStatus = String(updates.status ?? current.status ?? '');
     const statusChanged = updates.status !== undefined && updates.status !== current.status;
     if (finalStatus === 'ACTIVE' && isPhotoRequiredCategory(finalCategory) && (statusChanged || categoryChanged)) {
-      const photos = await photoCountFor(supabase, id, co.companyId);
+      const photos = await photoCountFor(supabase, String(id), co.companyId);
       if (!photos.ok) {
         return c.json({ error: 'photo_check_failed', reason: `Could not check this SKU's photos, so it stays as it is — try again (${photos.reason}).` }, 503);
       }
