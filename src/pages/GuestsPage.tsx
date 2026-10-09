@@ -588,7 +588,7 @@ function Chip({ label }: { label: string }) {
 /** Shared field visuals minus height/padding, so per-control sizing composes cleanly.
  *  `font:inherit` (last shorthand) intentionally resets the size/weight to the
  *  inherited 16px / 400 — the controls genuinely render at that, not text-body. */
-const fieldBase = 'block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit]';
+const fieldBase = 'block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy';
 const inputClass = cx(fieldBase, 'h-10 px-3 py-0');
 const labelClass = 'text-meta font-medium text-muted-ink';
 

@@ -632,9 +632,9 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
       <form onSubmit={submit} className="flex flex-col gap-[14px]">
         {mode === 'create' && (
           <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
-            <Select showLabel label="Building" value={buildingId} onChange={v => { setBuildingId(v); setUnitId(''); }}
+            <Select showLabel size="md" label="Building" value={buildingId} onChange={v => { setBuildingId(v); setUnitId(''); }}
               options={[{ value: '', label: 'All buildings' }, ...[...(filters?.buildings ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: b.name }))]} />
-            <SearchSelect showLabel label="Unit" allLabel="Pick a unit" placeholder="Search units" value={unitId} onChange={setUnitId}
+            <SearchSelect showLabel size="md" label="Unit" allLabel="Pick a unit" placeholder="Search units" value={unitId} onChange={setUnitId}
               options={unitChoices.map(u => ({ value: u.id, label: u.unitNumber, group: buildingName(u.buildingId) }))} />
           </div>
         )}

@@ -105,7 +105,7 @@ const TONE_FG: Record<Tone, string> = {
 };
 
 /* ------------------------------ local modal ------------------------------ */
-const inputCls = 'block w-full box-border h-10 py-0 px-3 text-ink bg-white border border-line rounded-control outline-none [font:inherit]';
+const inputCls = 'block w-full box-border h-10 py-0 px-3 text-ink bg-white border border-line rounded-control outline-none [font-family:inherit] text-copy';
 const labelCls = 'text-meta font-medium text-muted-ink';
 
 function Modal({ title, sub, onClose, children, footer, busy }: {
