@@ -13,7 +13,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (owner instanceof Response) return owner;
 
   const statements = await all<any>(env, `
-    SELECT id, period_start, finalised_at, generated_at FROM owner_statements WHERE owner_id = ? AND state IN ${VISIBLE} ORDER BY period_start DESC LIMIT 24`, owner.id);
+    SELECT id, period_start, state, finalised_at, generated_at FROM owner_statements WHERE owner_id = ? AND state IN ${VISIBLE} ORDER BY period_start DESC LIMIT 24`, owner.id);
   const files = await all<any>(env, `
     SELECT id, kind, file_name, mime_type, byte_size, created_at FROM documents WHERE owner_id = ? AND visible_to_owner = 1 ORDER BY created_at DESC LIMIT 50`, owner.id);
 
@@ -22,7 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     data: [
       ...statements.map(s => ({
         id: s.id, type: 'statement', refId: s.id, title: `Statement — ${monthYear(String(s.period_start).slice(0, 7))}`,
-        meta: `Finalised ${day(s.finalised_at ?? s.generated_at)} · PDF`, issuedAt: String(s.finalised_at ?? s.generated_at).slice(0, 10),
+        meta: s.finalised_at ? `Finalised ${day(s.finalised_at)} · PDF` : `${s.state === 'paid' ? 'Paid' : 'Final'} · PDF`, issuedAt: String(s.finalised_at ?? s.generated_at).slice(0, 10),
       })),
       ...files.map(f => ({
         id: f.id, type: kindOf(f.kind), title: f.file_name, meta: `${Math.max(1, Math.round(Number(f.byte_size) / 1024))} KB`, issuedAt: String(f.created_at).slice(0, 10),

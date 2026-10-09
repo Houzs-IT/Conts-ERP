@@ -14,7 +14,9 @@ const OWNER_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/auth\/logout$/],
   ['POST', /^\/api\/auth\/change-password$/],
   ['GET', /^\/api\/owner\/(summary|trend|property-health|documents)$/],
-  ['GET', /^\/api\/owner\/statements\/[^/]+\/pdf$/],
+  ['GET', /^\/api\/owner\/statements\/[^/]+(\/pdf)?$/],
+  // The Owner Income Report: the handler resolves the owner from the session (ownerFor) and shows only their final statements.
+  ['GET', /^\/api\/statements\/[^/]+\/report$/],
   ['POST', /^\/api\/maintenance\/issues\/[^/]+\/approve$/],
 ];
 

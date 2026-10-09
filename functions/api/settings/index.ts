@@ -3,7 +3,7 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 
 const MANAGE = ['management'];
 
-type Field = { def: string | number | boolean; legacy?: string; kind: 'text' | 'email' | 'choice' | 'number' | 'bool' | 'time'; min?: number; max?: number; options?: string[]; required?: boolean };
+type Field = { def: string | number | boolean; legacy?: string; kind: 'text' | 'longtext' | 'email' | 'choice' | 'number' | 'bool' | 'time'; min?: number; max?: number; integer?: boolean; options?: string[]; required?: boolean };
 
 /** Every setting, its default, and how to check a saved value. Stored as one row per setting, keyed "section.name". */
 const SPEC: Record<string, Record<string, Field>> = {
@@ -33,6 +33,14 @@ const SPEC: Record<string, Record<string, Field>> = {
     autoGenerate: { def: true, kind: 'bool' },
     payoutMethod: { def: 'bank_transfer', kind: 'text' },
   },
+  // The Owner Income Report (functions/_lib/ownerReport.ts) and statement generation (miscChargeMonthly, sen,
+  // deducted each month from units whose contract has miscellaneous charges). Terms are one per line.
+  report: {
+    paymentTerms: { def: '7th every month', kind: 'text', required: true },
+    monthlyTerms: { def: '', kind: 'longtext' },
+    yearTerms: { def: '', kind: 'longtext' },
+    miscChargeMonthly: { def: 10000, kind: 'number', min: 0, max: 10_000_000, integer: true },
+  },
   security: {
     // Staff stay signed in through a normal work week; the owner portal is a brief,
     // occasional check-in so it times out sooner — see functions/_lib/auth.ts securitySettings().
@@ -53,9 +61,10 @@ function decode(f: Field, raw: string | undefined) {
 
 /** The first problem with one value, or null. */
 function problem(f: Field, v: unknown): string | null {
+  if (f.kind === 'number' && f.integer && !Number.isInteger(v)) return 'Enter a whole number.';
   if (f.kind === 'number') return typeof v === 'number' && Number.isFinite(v) && v >= (f.min ?? -Infinity) && v <= (f.max ?? Infinity) ? null : `Enter a number from ${f.min} to ${f.max}.`;
   if (f.kind === 'bool') return typeof v === 'boolean' ? null : 'Choose on or off.';
-  if (typeof v !== 'string' || v.length > 300) return 'Enter text.';
+  if (typeof v !== 'string' || v.length > (f.kind === 'longtext' ? 4000 : 300)) return f.kind === 'longtext' ? 'Keep it under 4,000 characters.' : 'Enter text.';
   if (f.required && v.trim() === '') return 'This cannot be empty.';
   if (f.kind === 'choice') return f.options!.includes(v) ? null : 'Pick one of the options.';
   if (f.kind === 'time') return /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? null : 'Enter a time as HH:MM.';

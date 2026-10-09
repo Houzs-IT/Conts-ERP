@@ -16,7 +16,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const units = await all<any>(env, `
     SELECT u.id, u.property_id, u.parent_unit_id, u.unit_number, u.bedrooms, u.base_rate, u.listing_name, u.unit_code, u.address, u.package, u.term, u.split_kind, u.split_value, u.guarantee_period,
            p.state, p.address_line, o.display_name AS owner_name, o.ic_number, o.bank_name, o.bank_account_number, o.bank_account_holder,
-           c.management_fee_pct, c.starts_on, c.renews_on,
+           c.management_fee_pct, c.starts_on, c.renews_on, c.minimum_guarantee, c.minimum_guarantee_annual, c.guarantee_starts_on, c.guarantee_ends_on,
            (SELECT COUNT(*) FROM documents d WHERE d.unit_id = u.id AND d.kind = 'contract') AS contract_docs
     FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
     LEFT JOIN owner_contracts c ON c.id = u.contract_id
@@ -40,6 +40,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       expenses: expenses.filter(e => e.unit_id === u.id).map(e => ({ id: e.id, category: e.category, amount: Number(e.amount), note: e.note })),
       contract: {
         feePct: u.management_fee_pct ?? 25, startedOn: u.starts_on ?? '', renewsOn: u.renews_on ?? '',
+        // Package D's monthly minimum (sen), read-only here: it comes from the owner workbook import.
+        ...(banking ? { minimumGuarantee: Number(u.minimum_guarantee ?? 0), minimumGuaranteeAnnual: u.minimum_guarantee_annual == null ? null : Number(u.minimum_guarantee_annual),
+          guaranteeStartsOn: u.guarantee_starts_on ?? null, guaranteeEndsOn: u.guarantee_ends_on ?? null } : {}),
         documents: docs.filter(d => d.unit_id === u.id).map(d => ({ id: d.id, name: d.file_name })),
       },
     })),
