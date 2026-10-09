@@ -81,7 +81,9 @@ for (const [code, name, cat] of [
   ['RN-WARDROBE', 'Wardrobe (generic)', 'ACCESSORY'], ['RN-ADDON', 'Carpentry add-on', 'ACCESSORY'], ['RN-ELECTRICAL', 'Electrical works', 'WORKS'],
   ['RN-LIGHT', 'Light fitting', 'ACCESSORY'], ['RN-CURTAIN', 'Curtain', 'CARPET'], ['RN-SERVICE', 'Service', 'SERVICE'], ['RN-BIG', 'Lump contract line', 'SERVICE'],
 ]) {
-  await db.q(`insert into scm.mfg_products (id, code, name, category, company_id) values ($1, $2, $3, $4::scm.mfg_product_category, 1)`, [`mfg-${code.toLowerCase()}`, code, name, cat]);
+  // phase 1 (0061): a WORKS product must name its trade; 0064 already seeds RN-ELECTRICAL
+  await db.q(`insert into scm.mfg_products (id, code, name, category, sub_category, company_id) values ($1, $2, $3, $4::scm.mfg_product_category, $5, 1) on conflict (id) do nothing`,
+    [`mfg-${code.toLowerCase()}`, code, name, cat, cat === 'WORKS' ? 'ELECTRICAL' : null]);
 }
 await db.q(`insert into scm.acc_item_group_accounts (company_id, group_code, purchase_account, sales_account, sales_return_account, purchase_return_account)
             values (1, 'RENOVATION', '600-0000', '500-0000', '510-0000', '610-0000')`);
@@ -219,7 +221,7 @@ const poA = raised.created.find((p) => p.supplierId === supA.id);
 let sch = await M.readPoSchedule(db, poA.id, 1);
 check('default PO schedule 30/65/5 adds to the PO total', sch.instalments.map((i) => i.pctBp).join('/') === '3000/6500/500' && sch.totals.scheduledSen === poA.totalSen);
 check('mobilise payable, completion and retention not yet', sch.instalments[0].payable && !sch.instalments[1].payable && !sch.instalments[2].payable);
-check('handover unknown until phase 3 keeps retention closed', sch.handover === 'unknown');
+check('project not handed over (phase 3 project_handovers) keeps retention closed', sch.handover === 'not_handed_over' && !sch.instalments[2].payable, sch.handover);
 await refusal('completion not payable before receipt', 'not_payable', () => tx((d) => M.recordPoPayment(d, actor, sch.instalments[1].id, { amountSen: 100 })));
 await refusal('cannot overpay an instalment', 'over_payment', () => tx((d) => M.recordPoPayment(d, actor, sch.instalments[0].id, { amountSen: sch.instalments[0].amountSen + 1 })));
 await tx((d) => M.recordPoPayment(d, actor, sch.instalments[0].id, { amountSen: sch.instalments[0].amountSen, note: 'mobilise' }));
@@ -227,6 +229,9 @@ await refusal('schedule frozen once paid', 'schedule_has_payments', () => tx((d)
 await db.q(`update scm.purchase_order_items set received_qty = qty where purchase_order_id = $1`, [poA.id]);
 sch = await M.readPoSchedule(db, poA.id, 1);
 check('completion payable once fully received', sch.instalments[1].payable && sch.instalments[0].outstandingSen === 0);
+await db.q(`insert into public.project_handovers (project_id, customer_signer_name, customer_signature_r2_key) values ($1, 'MR FOO', 'renovation/check/sig.png')`, [proj.id]);
+sch = await M.readPoSchedule(db, poA.id, 1);
+check('handover signed on the project makes retention payable', sch.handover === 'handed_over' && sch.instalments[2].payable, sch.handover);
 await tx((d) => M.releasePoInstalment(d, actor, sch.instalments[2].id, 'Handover signed, snag list closed'));
 sch = await M.readPoSchedule(db, poA.id, 1);
 check('retention payable after manual release', sch.instalments[2].payable);

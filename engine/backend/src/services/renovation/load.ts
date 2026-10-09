@@ -2,11 +2,12 @@
    about a dozen queries for any number of projects, through env.DB (Hyperdrive),
    so the free Workers plan's 50 outside calls per request is never in reach.
 
-   Phase 2 (sales documents) builds in parallel and its tables may not exist yet:
+   Phase 2's (sales documents) tables are read as they are; if an environment's
+   migrations lag behind the code they may be missing:
      - scm.reno_doc_lines / reno_doc_sections missing (42P01) -> lines = null:
        nothing is auto-skipped and the board conditions read "not available".
-     - scm.reno_doc_instalments / reno_instalment_bills missing -> billing
-       not available: no prompts, and the hardware gate stays CLOSED.
+     - billing tables missing -> billing not available: no prompts, and the
+       hardware gate stays CLOSED. Amounts always come from phase 2's billingViews.
    Phase 2's column names are read through to_jsonb(row)->>'col', so a column
    that is named differently reads as null instead of failing the whole page.
    Any other read error is thrown: the route answers 409 and no gate opens. */
@@ -17,6 +18,8 @@ import { normTrigger } from "./billing";
 import type { LineSupply } from "./conditions";
 import type { LinePod } from "./pod";
 import type { ContractLine, StoredStage } from "./stages";
+import { billingViews, type BillingView } from "../../scm/lib/renovation-billing";
+import { renoDbFromD1 } from "./dbBridge";
 
 export interface DbStmt {
   bind(...args: unknown[]): DbStmt;
@@ -400,26 +403,16 @@ export async function loadContractLines(db: Db, docNos: readonly string[]): Prom
   };
 }
 
-/** Customer instalments per SO with billed and received amounts. Reads phase 2's
-    tables with phase 2's rule: an instalment is billed when it has a live bill;
-    received is what its invoice has been paid, capped at the billed amount.
-    TODO(phase 2 merge): swap for billingView(sb, soDocNo) from scm/lib/renovation-billing.ts. */
+/** Customer instalments per SO with billed and received amounts, from phase 2's
+    own billingViews (scm/lib/renovation-billing.ts): this file never works out an
+    amount itself. Missing phase-2 tables (an environment whose migrations lag)
+    read as "billing not available", which keeps the hardware gate closed. */
 export async function loadBilling(db: Db, sos: readonly SoRow[]): Promise<Map<string, BillingFacts>> {
   const out = new Map<string, BillingFacts>();
   if (sos.length === 0) return out;
-  const docNos = sos.map((s) => s.doc_no);
-  let inst: Array<{ j: Record<string, unknown> }>;
-  let bills: Array<{ j: Record<string, unknown> }>;
+  let views: Map<string, BillingView>;
   try {
-    inst = await rows(db,
-      `SELECT to_jsonb(i) AS j FROM scm.reno_doc_instalments i
-        WHERE coalesce(to_jsonb(i)->>'so_doc_no', to_jsonb(i)->>'doc_no') IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, ids(docNos));
-    const instIds = inst.map((r) => String(r.j.id));
-    bills = instIds.length
-      ? await rows(db,
-          `SELECT to_jsonb(b) AS j FROM scm.reno_instalment_bills b
-            WHERE to_jsonb(b)->>'instalment_id' IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, ids(instIds))
-      : [];
+    views = await billingViews(renoDbFromD1(db), sos.map((s) => s.doc_no));
   } catch (e) {
     if (isMissingRelation(e)) {
       for (const so of sos) out.set(so.doc_no, { available: false, unavailableReason: "table_missing", contractSen: so.local_total_sen ?? null, instalments: [] });
@@ -427,44 +420,30 @@ export async function loadBilling(db: Db, sos: readonly SoRow[]): Promise<Map<st
     }
     throw e;
   }
-  const invoiceIds = [...new Set(bills.map((b) => b.j.sales_invoice_id ?? b.j.invoice_id).filter((x) => x != null).map(String))];
-  const invoices = invoiceIds.length
-    ? await rows<{ id: string; total_sen: number; paid_sen: number; status: string }>(db,
-        `SELECT id::text AS id, total_sen, paid_sen, status::text AS status FROM scm.sales_invoices
-          WHERE id::text IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, ids(invoiceIds))
-    : [];
-  const invById = new Map(invoices.map((i) => [i.id, i]));
-  const num = (x: unknown) => (x == null || x === "" ? 0 : Number(x));
-
   for (const so of sos) {
-    const list: InstalmentFact[] = inst
-      .filter((r) => String(r.j.so_doc_no ?? r.j.doc_no) === so.doc_no)
-      .map((r) => {
-        const j = r.j;
-        const live = bills.filter((b) => String(b.j.instalment_id) === String(j.id)
-          && !["CANCELLED", "VOID", "VOIDED"].includes(String(b.j.status ?? "").toUpperCase()));
-        const billedSen = live.reduce((s, b) => s + num(b.j.amount_sen ?? b.j.billed_sen ?? b.j.expected_amount_sen), 0);
-        const receivedSen = live.reduce((s, b) => {
-          const inv = invById.get(String(b.j.sales_invoice_id ?? b.j.invoice_id ?? ""));
-          const amt = num(b.j.amount_sen ?? b.j.billed_sen ?? b.j.expected_amount_sen);
-          return s + (inv && inv.status !== "CANCELLED" ? Math.min(num(inv.paid_sen), Math.max(amt, 0)) : 0);
-        }, 0);
-        return {
-          id: String(j.id),
-          seq: num(j.seq),
-          label: String(j.label ?? `Instalment ${num(j.seq)}`),
-          pctBp: num(j.pct_bp),
-          description: j.description == null ? null : String(j.description),
-          stageCode: j.stage_code == null ? null : String(j.stage_code),
-          trigger: normTrigger(j.trigger == null ? null : String(j.trigger)),
-          billedSen,
-          receivedSen,
-          dueSen: j.expected_amount_sen == null ? null : num(j.expected_amount_sen),
-          billed: live.length > 0,
-        };
-      })
-      .sort((a, b) => a.seq - b.seq);
-    out.set(so.doc_no, { available: true, contractSen: so.local_total_sen ?? null, instalments: list });
+    const v = views.get(so.doc_no);
+    out.set(so.doc_no, v ? billingFactsOf(v) : { available: false, unavailableReason: "so_missing", contractSen: null, instalments: [] });
   }
   return out;
+}
+
+/** Phase 2's billing view in the shape the stage prompts, gate and board read. */
+export function billingFactsOf(v: BillingView): BillingFacts {
+  return {
+    available: true,
+    contractSen: v.revisedContractSen,
+    instalments: v.instalments.map((i): InstalmentFact => ({
+      id: i.id,
+      seq: i.seq,
+      label: i.label || `Instalment ${i.seq}`,
+      pctBp: i.pctBp,
+      description: i.description || null,
+      stageCode: i.stageCode,
+      trigger: normTrigger(i.trigger),
+      billedSen: i.bill ? i.bill.amountSen : 0,
+      receivedSen: i.bill && i.bill.kind === "INVOICE" ? i.bill.paidSen : 0,
+      dueSen: i.bill ? i.bill.amountSen : i.amountSen,
+      billed: i.bill !== null,
+    })),
+  };
 }

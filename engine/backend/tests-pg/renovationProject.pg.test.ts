@@ -7,14 +7,15 @@ import { assertDisposableTestDatabase } from "./lib/doc-no-fixture";
 import { loadOpenLines, lineGroupOf } from "../src/scm/routes/site-receipts";
 import { postGrnAndRollup } from "../src/scm/routes/grns";
 import { pgTransactionSupabase } from "../src/scm/lib/pg-supabase-transaction";
+import { onRenovationSoLinesChanged, projectHandoverState } from "../src/scm/lib/renovation-hooks";
+import { renoDbOf } from "../src/scm/lib/renovation-db";
 
 /* The renovation project routes against real Postgres, on the REAL schema:
-   houzs_test must be built from migrations-pg 0044, 0045, 0047 and 0075-0082
-   (a throwaway local cluster; never staging or production). Phase 1 / phase 2
-   columns and tables that are not on main yet are created here as stand-ins
-   with the integration contract's names, so the test proves both halves:
-   before phase 2 exists (table missing -> billing unavailable, gate closed) and
-   after (auto-skip, conditions, gate opens, trade tasks).
+   houzs_test must be built from every file in migrations-pg (phase 1 catalog,
+   phase 2 sales documents 0060-0073 and phase 3 projects 0075-0082), on a
+   throwaway local cluster or on PGlite (scripts/pg-tests-on-pglite.mjs);
+   never staging or production. Billing amounts come from phase 2's own
+   billingView, and handover state through phase 2's projectHandoverState hook.
    SKIPPED without TEST_DATABASE_URL. */
 
 const url = process.env.TEST_DATABASE_URL ?? "";
@@ -69,7 +70,7 @@ describePg("renovation project routes on the real schema", () => {
 
   beforeAll(async () => {
     assertDisposableTestDatabase(url);
-    sql = postgres(url, { max: 2, prepare: false, fetch_types: false, onnotice: () => {} });
+    sql = postgres(url, { max: 1, prepare: false, fetch_types: false, onnotice: () => {} });
     app = makeApp();
     typeId = Number((await sql`select id from public.project_types where slug = 'full_renovation' and company_id = ${CO}`)[0]!.id);
   });
@@ -119,41 +120,31 @@ describePg("renovation project routes on the real schema", () => {
     expect((await call("POST", `/checklist/${permit.id}/skip`, { reason: "Management needs no permit" })).status).toBe(200);
   });
 
-  test("a renovation SO before phase 2's tables exist: lines and billing unavailable, gate closed", async () => {
-    await sql.unsafe(`ALTER TABLE scm.mfg_sales_orders ADD COLUMN IF NOT EXISTS so_kind text`);
-    await sql.unsafe(`DROP TABLE IF EXISTS scm.reno_instalment_bills, scm.reno_doc_instalments, scm.reno_doc_lines, scm.reno_doc_sections`);
-    await sql`insert into scm.mfg_sales_orders (doc_no, debtor_name, project_id, company_id, so_kind, status) values (${so}, 'Ms Lim', ${projectId}, ${CO}, 'RENOVATION', 'CONFIRMED')`;
+  test("a renovation SO without contract lines: nothing auto-skipped, gate closed", async () => {
+    await sql`insert into scm.mfg_sales_orders (doc_no, debtor_name, project_id, company_id, so_kind, status) values (${so}, 'Ms Lim', ${projectId}, ${CO}, 'RENOVATION', 'RENO_CONFIRMED')`;
     const d = await call("GET", `/${projectId}`);
     expect(d.status).toBe(200);
-    expect(d.json.linesUnavailable).toBe("table_missing");
-    expect(d.json.billing.available).toBe(false);
+    expect(d.json.linesUnavailable).toBeNull();
+    expect(d.json.stages.find((s: any) => s.key === "furniture").state).toBe("skipped");
+    expect(d.json.billing).toMatchObject({ available: true, contractSen: 0, instalments: [] });
     expect(d.json.gate.open).toBe(false);
-    expect(d.json.gate.reasons).toContain("billing_unavailable");
-    expect((await call("POST", `/${projectId}/trade-tasks/sync`)).status).toBe(409);
   });
 
-  test("with phase 2's tables: auto-skip, derived conditions, trade tasks, gate opens when paid and signed", async () => {
-    // phase 1 / phase 2 stand-ins (contract names)
-    await sql.unsafe(`ALTER TABLE scm.mfg_products ADD COLUMN IF NOT EXISTS category_group text, ADD COLUMN IF NOT EXISTS sub_category text`);
-    await sql.unsafe(`CREATE TABLE scm.reno_doc_sections (id uuid primary key default gen_random_uuid(), so_doc_no text, heading text)`);
-    await sql.unsafe(`CREATE TABLE scm.reno_doc_lines (id uuid primary key default gen_random_uuid(), section_id uuid, kind text, parent_line_id uuid, room text,
-      qty int, supply_by_owner boolean default false, supplier_id uuid, so_item_id uuid, vo_id uuid, omitted_by_vo_id uuid, stage_code text)`);
-    await sql.unsafe(`CREATE TABLE scm.reno_doc_instalments (id uuid primary key default gen_random_uuid(), so_doc_no text, seq int, label text, pct_bp int, description text, stage_code text, trigger text not null default 'stage_start')`);
-    await sql.unsafe(`CREATE TABLE scm.reno_instalment_bills (id uuid primary key default gen_random_uuid(), instalment_id uuid, sales_invoice_id uuid, amount_sen int, status text default 'BILLED')`);
-    await sql.unsafe(`ALTER TYPE scm.mfg_so_status ADD VALUE IF NOT EXISTS 'RENO_CONFIRMED'`);
+  test("with phase 2's real tables: auto-skip, derived conditions, trade tasks, gate opens when paid and signed", async () => {
 
     staffId = String((await sql`insert into scm.staff (id, staff_code, name, role, initials, color) values (gen_random_uuid(), ${"T" + run}, 'Test', 'admin', 'TT', '#000') returning id`)[0]!.id);
     supplierId = String((await sql`insert into scm.suppliers (code, name) values (${"SUP" + run}, 'Wiring Sdn Bhd') returning id`)[0]!.id);
     for (const [code, cat, group, sub] of [
-      [`RN-ELECTRICAL-${run}`, "SERVICE", "WORKS", "ELECTRICAL"],
-      [`RN-PAINT-${run}`, "SERVICE", "WORKS", "PAINTING"],
+      [`RN-ELECTRICAL-${run}`, "WORKS", "WORKS", "ELECTRICAL"],
+      [`RN-PAINT-${run}`, "WORKS", "WORKS", "PAINTING"],
       [`SOFA-${run}`, "SOFA", "FURNITURE", "SOFA"],
     ] as const) {
-      await sql`insert into scm.mfg_products (id, code, name, category, category_group, sub_category, company_id) values (${code}, ${code}, ${code}, ${cat}, ${group}, ${sub}, ${CO})`;
+      await sql`insert into scm.mfg_products (id, code, name, category, category_group, sub_category, company_id) values (${code}, ${code}, ${code}, ${cat}::scm.mfg_product_category, ${group}, ${sub}, ${CO})`;
     }
     const sec = String((await sql`insert into scm.reno_doc_sections (so_doc_no, heading) values (${so}, 'ALL') returning id`)[0]!.id);
-    for (const [k, code, room] of [["elec", `RN-ELECTRICAL-${run}`, "Living"], ["paint", `RN-PAINT-${run}`, "Living"], ["sofa", `SOFA-${run}`, "Living"]] as const) {
-      items[k] = String((await sql`insert into scm.mfg_sales_order_items (doc_no, item_group, item_code, qty, company_id) values (${so}, 'reno', ${code}, 1, ${CO}) returning id`)[0]!.id);
+    // contract RM 5,000: wiring 1,000 + painting 500 + sofa 3,500
+    for (const [k, code, room, sen] of [["elec", `RN-ELECTRICAL-${run}`, "Living", 100000], ["paint", `RN-PAINT-${run}`, "Living", 50000], ["sofa", `SOFA-${run}`, "Living", 350000]] as const) {
+      items[k] = String((await sql`insert into scm.mfg_sales_order_items (doc_no, item_group, item_code, qty, unit_price_sen, total_sen, company_id) values (${so}, 'RENOVATION', ${code}, 1, ${sen}, ${sen}, ${CO}) returning id`)[0]!.id);
       await sql`insert into scm.reno_doc_lines (section_id, kind, room, qty, so_item_id) values (${sec}, 'ITEM', ${room}, 1, ${items[k]})`;
     }
     const po = String((await sql`insert into scm.purchase_orders (po_number, supplier_id, created_by, company_id) values (${"PO-" + run}, ${supplierId}, ${staffId}, ${CO}) returning id`)[0]!.id);
@@ -169,10 +160,15 @@ describePg("renovation project routes on the real schema", () => {
     expect(d.json.conditions.renoItem.condition).toBe("pending_purchased"); // painting has no PO yet
     expect(d.json.billing.available).toBe(true);
 
-    const sync = await call("POST", `/${projectId}/trade-tasks/sync`);
-    expect(sync.status).toBe(200);
-    expect(sync.json.created).toBe(3); // electrical first + second, painting
+    // phase 2's lines-changed hook (fired after a convert or a VO) syncs the trade tasks and the cached stage
+    await sql`update public.projects set reno_stage = 'closed', stage = 'completed' where id = ${projectId}`;
+    await onRenovationSoLinesChanged(so, renoDbOf(sql));
+    const cached = await sql`select reno_stage, stage from public.projects where id = ${projectId}`;
+    expect(cached[0]).toMatchObject({ reno_stage: "design", stage: "draft" });
+    const hooked = await call("GET", `/${projectId}`);
+    expect(hooked.json.tasks.filter((t: any) => !String(t.trade_code).startsWith("INTERNAL:")).length).toBe(3); // electrical first + second, painting
     const again = await call("POST", `/${projectId}/trade-tasks/sync`);
+    expect(again.status).toBe(200);
     expect(again.json.created).toBe(0);
     const d2 = await call("GET", `/${projectId}`);
     const wiring = d2.json.tasks.find((t: any) => t.trade_code === "ELECTRICAL" && t.fix_phase === "first");
@@ -189,14 +185,19 @@ describePg("renovation project routes on the real schema", () => {
     // pay instalment 1 + sign drawings + confirm SO -> gate opens
     const inst = String((await sql`insert into scm.reno_doc_instalments (so_doc_no, seq, label, pct_bp, stage_code, trigger) values (${so}, 1, 'Deposit', 1500, 'design', 'so_confirmed') returning id`)[0]!.id);
     await sql`insert into scm.reno_doc_instalments (so_doc_no, seq, label, pct_bp, stage_code, trigger) values (${so}, 2, 'Works start', 5000, 'hardware', 'stage_start')`;
-    const inv = String((await sql`insert into scm.sales_invoices (invoice_number, so_doc_no, debtor_name, total_sen, paid_sen, created_by, company_id) values (${"SI-" + run}, ${so}, 'Ms Lim', 150000, 150000, ${staffId}, ${CO}) returning id`)[0]!.id);
-    await sql`insert into scm.reno_instalment_bills (instalment_id, sales_invoice_id, amount_sen) values (${inst}, ${inv}, 150000)`;
-    await sql.unsafe(`UPDATE scm.mfg_sales_orders SET status = 'RENO_CONFIRMED' WHERE doc_no = '${so}'`);
+    await sql`insert into scm.reno_doc_instalments (so_doc_no, seq, label, pct_bp, stage_code, trigger) values (${so}, 3, 'Handover', 3500, 'handover', 'stage_done')`;
+    // phase 2's amounts before anything is billed: 15%, 50% and 35% of RM 5,000
+    const pre = await call("GET", `/${projectId}`);
+    expect(pre.json.billing.contractSen).toBe(500000);
+    expect(pre.json.billing.instalments.map((i: any) => [i.seq, i.dueSen, i.billed])).toEqual([[1, 75000, false], [2, 250000, false], [3, 175000, false]]);
+    const inv = String((await sql`insert into scm.sales_invoices (invoice_number, so_doc_no, debtor_name, total_sen, paid_sen, created_by, company_id) values (${"SI-" + run}, ${so}, 'Ms Lim', 75000, 75000, ${staffId}, ${CO}) returning id`)[0]!.id);
+    await sql`insert into scm.reno_instalment_bills (so_doc_no, instalment_id, seq, kind, amount_sen, cum_bp, revised_contract_sen, billed_before_sen, invoice_date, sales_invoice_id, invoice_number)
+      values (${so}, ${inst}, 1, 'INVOICE', 75000, 1500, 500000, 0, '2026-10-09', ${inv}, ${"SI-" + run})`;
     const signed = d2.json.checklist.find((c: any) => c.item_key === "shop_drawings_signed");
     await sql`update public.project_checklist set status = 'done' where id = ${signed.id}`;
     const d3 = await call("GET", `/${projectId}`);
     expect(d3.json.gate).toMatchObject({ open: true, reasons: [] });
-    expect(d3.json.payment).toMatchObject({ condition: "partly_paid", receivedCount: 1, count: 2 });
+    expect(d3.json.payment).toMatchObject({ condition: "partly_paid", receivedCount: 1, count: 3, billedSen: 75000, receivedSen: 75000, contractSen: 500000 });
     expect((await call("POST", `/${projectId}/stages/hardware/start`)).status).toBe(200);
     const d4 = await call("GET", `/${projectId}`);
     expect(d4.json.prompts.map((p: any) => [p.seq, p.actionable])).toEqual([[2, true]]);
@@ -256,6 +257,8 @@ describePg("renovation project routes on the real schema", () => {
     const up = await app.request(`/api/renovation/${projectId}/files?kind=signature`, { method: "POST", headers: { "content-type": "image/png" }, body: new Uint8Array([137, 80, 78, 71]) }, env() as never);
     const key = (await up.json() as { key: string }).key;
     expect(key.startsWith(`renovation/${projectId}/signature-`)).toBe(true);
+    expect(await projectHandoverState(renoDbOf(sql), projectId)).toBe("not_handed_over");
+    expect(await projectHandoverState(renoDbOf(sql), null)).toBe("unknown");
     const refused = await call("POST", `/${projectId}/handover`, { customerSignerName: "Ms Lim", customerSignatureR2Key: key });
     expect(refused.json.error).toBe("snags_open");
     expect((await call("POST", `/snags/${snag.json.id}/close`)).status).toBe(200);
@@ -266,6 +269,8 @@ describePg("renovation project routes on the real schema", () => {
     expect(d.json.handover.customer_signer_name).toBe("Ms Lim");
     expect(d.json.unitKey).toBe("returned");
     expect(d.json.checklist.find((c: any) => c.item_key === "handover_signed").status).toBe("done");
+    // phase 2's PO payment schedule reads this through its hook: retention becomes payable
+    expect(await projectHandoverState(renoDbOf(sql), projectId)).toBe("handed_over");
   });
 
   test("a user without projects.write cannot change anything", async () => {

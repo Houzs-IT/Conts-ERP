@@ -202,8 +202,16 @@ describe('SO mirror rows for a structure', () => {
 });
 
 describe('phase 3 seams', () => {
-  test('handover state is unknown until phase 3', async () => {
+  test('handover state reads phase 3 project_handovers; no connection, no project or a failed read is unknown', async () => {
     expect(await projectHandoverState(null, 1)).toBe('unknown');
+    const seen: Array<[string, readonly unknown[]]> = [];
+    const db = (rows: unknown[]) => ({ q: async (t: string, p: readonly unknown[] = []) => { seen.push([t, p]); return rows as any[]; } });
+    expect(await projectHandoverState(db([{ ok: 1 }]), 7)).toBe('handed_over');
+    expect(seen[0]![0]).toMatch(/from public\.project_handovers where project_id = \$1/i);
+    expect(seen[0]![1]).toEqual([7]);
+    expect(await projectHandoverState(db([]), 7)).toBe('not_handed_over');
+    expect(await projectHandoverState(db([{ ok: 1 }]), null)).toBe('unknown');
+    expect(await projectHandoverState({ q: async () => { throw new Error('down'); } }, 7)).toBe('unknown');
   });
   test('a failing listener never fails the sale', async () => {
     const seen: string[] = [];
