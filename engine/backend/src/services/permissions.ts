@@ -94,6 +94,13 @@ export const PERMISSIONS: PermissionDef[] = [
   // to one super_admin row), so gate on this admin-level key instead. Owner + IT
   // Admin cover it via "*"; grant the ROLE it belongs to under Team > Roles & Permissions.
   { key: "scm.so.remove_processing_date", resource: "Supply Chain", verb: "manage", label: "Remove SO Processing Date", description: "Clear an already-set Processing Date on a SCM Sales Order (admin-level; pulls the order back out of the Proceed lane)" },
+  // Renovation sales documents (Conts, 2026-10-09; scm/routes/renovation.ts). Reading them needs only
+  // Sales Orders view; these gate the writes.
+  { key: "scm.renovation.quote",    resource: "Supply Chain", verb: "write",  label: "Edit renovation quotations",   description: "Create, revise, send and accept renovation quotations and package templates, convert an accepted quotation to the contract, edit the contract's print header, raise variation orders" },
+  { key: "scm.renovation.vo.apply", resource: "Supply Chain", verb: "approve", label: "Approve variation orders",    description: "Approve a signed variation order: its lines change the renovation contract and flag the purchase-order lines it omits" },
+  { key: "scm.renovation.bill",     resource: "Supply Chain", verb: "manage", label: "Bill renovation instalments",  description: "Issue the progress invoice (or credit note) for a renovation contract instalment, release and record payments on a renovation PO's payment schedule" },
+  { key: "scm.renovation.terms",    resource: "Supply Chain", verb: "write",  label: "Edit payment terms and letterheads", description: "Edit customer and PO payment-term templates and the brand letterheads printed on renovation documents" },
+  { key: "scm.renovation.po_split", resource: "Supply Chain", verb: "manage", label: "Raise renovation POs",         description: "Raise the purchase orders of a renovation contract (one per supplier) and edit a PO's payment schedule" },
   // Owner 2026-09-23 — a keyed-in payment's transaction-slip date must fall in
   // the last 14 days (scm/shared/payment-slip-date.ts owns the window). This key
   // is the exception: Finance / management keying a receipt that surfaced late.

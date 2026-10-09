@@ -66,6 +66,11 @@ export function contsPermissions(a: ContsAccess): string[] {
     [...(rank(level) >= 1 ? view : []), ...(rank(level) >= 2 ? edit : []), ...(rank(level) >= 3 ? full : [])];
   keys.push(...ladder(a.serviceCases, ["service_cases.read"], ["service_cases.create", "service_cases.write"], ["service_cases.manage", "service_cases.approve"]));
   keys.push(...ladder(a.projects, ["projects.read"], ["projects.write", "projects.chat"], ["projects.manage", "projects.approve"]));
+  // Renovation sales documents: quoting with Sales at edit, approving VOs and terms at full; POs with
+  // Procurement at edit; billing with Invoices at edit.
+  keys.push(...ladder(a.scSales, [], ["scm.renovation.quote"], ["scm.renovation.vo.apply", "scm.renovation.terms"]));
+  keys.push(...ladder(a.scProcurement, [], ["scm.renovation.po_split"], []));
+  keys.push(...ladder(a.scInvoices, [], ["scm.renovation.bill"], []));
   return keys;
 }
 

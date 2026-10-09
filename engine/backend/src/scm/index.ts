@@ -943,4 +943,14 @@ scm.route("/scan-payment", scanPayment);
 scm.use("/slips/*", scmAreaGuard("scm.sales.orders", { writeLevel: "view" }));
 scm.route("/slips", slips);
 
+
+// ── Renovation sales documents (Conts phase 2, 2026-10-09) ──────────────────
+// Quotations, the renovation contract, SO -> PO split, progress billing,
+// variation orders, PO payment schedules, payment terms and letterheads.
+// Reads ride the Sales Orders view level; each write checks its own
+// scm.renovation.* key inside routes/renovation.ts.
+import { renovation } from "./routes/renovation";
+scm.use("/renovation/*", scmAreaGuard("scm.sales.orders", { writeLevel: "view" }));
+scm.route("/renovation", renovation);
+
 export default scm;

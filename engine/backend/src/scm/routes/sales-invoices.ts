@@ -696,6 +696,27 @@ export const createSalesInvoiceHandler = async (c: Context<{ Bindings: Env; Vari
     }
   }
 
+  /* RENOVATION CONTRACTS BILL BY INSTALMENT (Conts, 2026-10-09). A hand-made
+     invoice against one would bill outside its payment schedule, and the next
+     instalment's "cumulative % - already billed" would not know about it.
+     They are billed from the renovation contract screen
+     (POST /api/scm/renovation/sales-orders/:docNo/instalments/:id/bill).
+     42703 = so_kind not there yet (before migration 0069): nothing to refuse. */
+  {
+    const srcSoDocNo = (body.soDocNo as string | undefined) ?? null;
+    if (srcSoDocNo) {
+      const { data: kindRow, error: kindErr } = await sb
+        .from('mfg_sales_orders').select('so_kind').eq('doc_no', srcSoDocNo).maybeSingle();
+      if (kindErr && (kindErr as { code?: string }).code !== '42703') return c.json({ error: 'load_failed', reason: kindErr.message }, 500);
+      if ((kindRow as { so_kind?: string } | null)?.so_kind === 'RENOVATION') {
+        return c.json({
+          error: 'renovation_so_bills_by_instalment',
+          message: `${srcSoDocNo} is a renovation contract: bill it by instalment on the renovation contract screen.`,
+        }, 409);
+      }
+    }
+  }
+
   /* Price-vs-order drift — a WARNING carried back in the response, NEVER a
      rejection (see siPriceDriftWarnings). Computed here so the operator hears
      about a fat-fingered price on the same round-trip that creates the invoice,

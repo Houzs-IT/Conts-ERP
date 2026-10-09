@@ -42,6 +42,7 @@ import { readSoLineFreeze, soLineWriteRefusal, soBuildLineIds, soLineFrozen, SO_
 import { SO_STATUS_RANK, soStatusTransitionError, soDiscardBlocked } from '../lib/so-lifecycle-guards';
 import { HELD_OR_TERM, HOLD_COLUMNS, isDocumentHeld } from '../lib/document-hold';
 import { mountHoldRoute } from './document-hold-routes';
+import { renovationSoWriteFence } from '../lib/renovation-write-fence';
 import { enqueueSoCreate, enqueueCancel, enqueueEdit, retiredLineOf, type AcRetiredLine } from '../lib/autocount-outbox';
 import { fitSoAddress } from '../../services/autocount-address-fit';
 import { fitAddressIfTouched } from '../lib/so-address-on-save';
@@ -343,6 +344,17 @@ mfgSalesOrders.use('*', async (c, next) => {
   if (touchesMirrored && !houzsOwns2990(c.env)) return c.json(MIRRORED_SO_READONLY, 409);
   return next();
 });
+
+/* ── Renovation contracts refuse the generic writes (Conts, 2026-10-09) ─────
+   Lines change through a variation order, status through the renovation
+   contract route; payments, hold and photos pass. Fails closed (503) when the
+   order's kind cannot be read. lib/renovation-write-fence.ts. */
+mfgSalesOrders.use('*', renovationSoWriteFence(async (c, docNo) => {
+  const { data, error } = await c.get('supabase').from('mfg_sales_orders').select('so_kind').eq('doc_no', docNo).maybeSingle();
+  // 42703 = the column is not there yet (worker deployed before migration 0069): no renovation order can exist.
+  if (error && (error as { code?: string }).code === '42703') return { kind: null, error: false };
+  return { kind: (data as { so_kind?: string } | null)?.so_kind ?? null, error: Boolean(error) };
+}));
 
 /* ── SO child-lock guard (Tier 2 — downstream lock) ─────────────────────────
    ANY live Delivery Order OR Sales Invoice blocks the CANCELLED transition and
