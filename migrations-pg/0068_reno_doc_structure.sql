@@ -5,7 +5,8 @@
 -- optional lump-sum price, parent / child / dimension / text lines, room, an optional decimal measure with its unit,
 -- line discount %, a typed amount override, FOC and supply-by-owner flags, the bound supplier and cost, and the stage
 -- override (stage_code) the project uses instead of the product's default stage.
--- Exactly one owner per section. vo_id gets its foreign key in 0070 with the variation order table.
+-- Exactly one owner per section. vo_id (a variation order's own draft section) and added_by_vo_id (a contract section
+-- a VO appended on approval) get their foreign keys in 0070 with the variation order table.
 create table scm.reno_doc_sections (
   id uuid primary key default gen_random_uuid(),
   company_id bigint not null default 1,
@@ -19,8 +20,10 @@ create table scm.reno_doc_sections (
   lump_sum_sen integer,
   page_break_before boolean not null default false,
   so_item_id uuid references scm.mfg_sales_order_items(id) on delete set null,
+  added_by_vo_id uuid,
   created_at timestamptz not null default now(),
-  check (num_nonnulls(template_id, revision_id, so_doc_no, vo_id) = 1)
+  check (num_nonnulls(template_id, revision_id, so_doc_no, vo_id) = 1),
+  check (added_by_vo_id is null or so_doc_no is not null)
 );
 create index idx_reno_doc_sections_template on scm.reno_doc_sections (template_id) where template_id is not null;
 create index idx_reno_doc_sections_revision on scm.reno_doc_sections (revision_id) where revision_id is not null;

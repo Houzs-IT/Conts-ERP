@@ -1,5 +1,5 @@
 -- REVERSAL: ALTER TABLE scm.reno_doc_lines DROP CONSTRAINT reno_doc_lines_vo_fk, DROP CONSTRAINT reno_doc_lines_omitted_by_vo_fk;
---           ALTER TABLE scm.reno_doc_sections DROP CONSTRAINT reno_doc_sections_vo_fk;
+--           ALTER TABLE scm.reno_doc_sections DROP CONSTRAINT reno_doc_sections_vo_fk, DROP CONSTRAINT reno_doc_sections_added_by_vo_fk;
 --           DROP TABLE scm.reno_po_line_flags, scm.reno_variation_orders;
 -- Variation orders: numbered VO-<SO no>-NN, add and omit lines, printed for the customer's signature. Approving one
 -- appends its add lines to the contract (tagged with the VO), reduces or cancels the omitted lines, records an
@@ -29,6 +29,7 @@ create table scm.reno_variation_orders (
 );
 
 alter table scm.reno_doc_sections add constraint reno_doc_sections_vo_fk foreign key (vo_id) references scm.reno_variation_orders(id) on delete cascade;
+alter table scm.reno_doc_sections add constraint reno_doc_sections_added_by_vo_fk foreign key (added_by_vo_id) references scm.reno_variation_orders(id) on delete set null;
 alter table scm.reno_doc_lines add constraint reno_doc_lines_vo_fk foreign key (vo_id) references scm.reno_variation_orders(id) on delete set null;
 alter table scm.reno_doc_lines add constraint reno_doc_lines_omitted_by_vo_fk foreign key (omitted_by_vo_id) references scm.reno_variation_orders(id) on delete set null;
 
