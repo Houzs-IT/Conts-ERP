@@ -27,13 +27,13 @@ describe('the PostgREST rendering is exactly what it replaced', () => {
      the query sent over the wire is no longer byte-identical to the literal
      that stood there for the life of the allocator. Semantics would survive;
      the proof that nothing changed would not. */
-  test('renders the allocator literal', () => {
-    expect(tsPgrest).toBe('(CANCELLED,CLOSED,SHIPPED,DELIVERED,INVOICED,DRAFT)');
+  test('renders the allocator literal, with the renovation statuses appended', () => {
+    expect(tsPgrest).toBe('(CANCELLED,CLOSED,SHIPPED,DELIVERED,INVOICED,DRAFT,RENO_CONFIRMED,RENO_IN_PROGRESS,RENO_COMPLETED)');
   });
 });
 
 describe('the set still means what its consumers assume', () => {
-  test.each(['CANCELLED', 'CLOSED', 'SHIPPED', 'DELIVERED', 'INVOICED', 'DRAFT'])(
+  test.each(['CANCELLED', 'CLOSED', 'SHIPPED', 'DELIVERED', 'INVOICED', 'DRAFT', 'RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED'])(
     '%s is terminal',
     (s) => { expect(tsStates).toContain(s); },
   );
@@ -43,7 +43,8 @@ describe('the set still means what its consumers assume', () => {
     (s) => { expect(tsStates).not.toContain(s); },
   );
 
-  test('exactly six statuses — a seventh needs the consumers re-read, not just this list', () => {
-    expect(tsStates.length).toBe(6);
+  test('exactly nine statuses — a tenth needs the consumers re-read, not just this list', () => {
+    // Six furniture statuses plus the three renovation-contract statuses (Conts, migration 0065).
+    expect(tsStates.length).toBe(9);
   });
 });

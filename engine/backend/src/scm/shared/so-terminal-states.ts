@@ -38,9 +38,19 @@
    ---------------------------------------------------------------------------- */
 
 /** SO statuses that no longer create demand: the goods have left, the order is
- *  closed or cancelled, or it was never committed (DRAFT). */
+ *  closed or cancelled, or it was never committed (DRAFT).
+ *
+ *  The three RENO_* statuses (Conts, 2026-10-09, migration 0065) belong to
+ *  renovation contracts (so_kind = 'RENOVATION'). Their lines never demand
+ *  warehouse stock: the work is bought on purchase orders raised from the
+ *  contract and delivered to site, so the allocator and MRP must skip them for
+ *  the whole life of the contract. Appended, so the furniture prefix of the
+ *  PostgREST string keeps its order. Consumers re-read when added: the allocator
+ *  (so-stock-allocation.ts, the PGREST string) and MRP (mrp.ts SO_DONE); the
+ *  delivery sync only ever moves CONFIRMED orders, which a renovation SO never is. */
 export const SO_TERMINAL_STATES = [
   'CANCELLED', 'CLOSED', 'SHIPPED', 'DELIVERED', 'INVOICED', 'DRAFT',
+  'RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED',
 ] as const;
 
 /** The same set as a PostgREST `in` list — `.not('status','in', ...)`. */
