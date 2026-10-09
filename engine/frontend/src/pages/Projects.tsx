@@ -127,6 +127,7 @@ import { OrganizerPicker, VenuePicker } from "./projects/ProjectPickers";
 import { CreateProjectPanel } from "./projects/CreateProjectPanel";
 import { DateRangeFilter, MultiSelectFilter, SectionTaskBadges, ImportCsvPanel } from "./projects/ProjectsListParts";
 import { ProjectsCalendarView } from "./projects/ProjectsCalendarView";
+import { ByProjectsMode, RenovationCalendarView, RenovationListView, RenovationProjectRoute } from "./projects/renovation/RenovationRoutes";
 export { buildCalendarWindow, buildProjectsCalendarModel } from "./projects/calendarModel";
 import { SPEC_INPUT_CLASS, QuickRentalField, SpecTextField, SpecCell, SpecValue } from "./projects/specFields";
 import { LogisticsDateTimeField, GrabHelperBox, type CrewMember } from "./projects/logisticsParts";
@@ -505,8 +506,8 @@ export function Projects() {
 
   return (
     <div>
-      {view === "list" && <ProjectsListView />}
-      {view === "calendar" && <ProjectsCalendarView />}
+      {view === "list" && <ByProjectsMode renovation={() => <RenovationListView />} exhibition={() => <ProjectsListView />} />}
+      {view === "calendar" && <ByProjectsMode renovation={() => <RenovationCalendarView />} exhibition={() => <ProjectsCalendarView />} />}
       {view === "finances" &&
         (canProjectFinance ? (
           <ProjectsFinancesView />
@@ -4375,13 +4376,19 @@ export function ProjectDetail() {
 
   if (isNaN(id)) return <Navigate to="/projects" replace />;
 
-  return (
+  const exhibition = () => (
     <ProjectDetailContent
       id={id}
       onUpdated={() => {}}
       toast={toast}
       brands={brandsQ.data?.data ?? []}
       eventTypes={eventTypesQ.data?.data ?? []}
+    />
+  );
+  return (
+    <ByProjectsMode
+      renovation={() => <RenovationProjectRoute id={id} fallback={exhibition} />}
+      exhibition={exhibition}
     />
   );
 }

@@ -48,6 +48,8 @@ const MobileSearch = lazy(() => import("./MobileSearch").then((m) => ({ default:
 const MobileInbox = lazy(() => import("./MobileInbox").then((m) => ({ default: m.MobileInbox })));
 const MobileServiceCase = lazy(() => import("./MobileServiceCase").then((m) => ({ default: m.MobileServiceCase })));
 const MobilePMS = lazy(() => import("./MobilePMS").then((m) => ({ default: m.MobilePMS })));
+// Renovation mode (projects_mode, mig 0082) swaps PMS for the renovation board, detail and site receipt.
+const MobileProjectsEntry = lazy(() => import("./MobileRenovationProject").then((m) => ({ default: m.MobileProjectsEntry })));
 const MobileMailCenter = lazy(() => import("./MobileMailCenter").then((m) => ({ default: m.MobileMailCenter })));
 const MobileRoles = lazy(() => import("./MobileRoles").then((m) => ({ default: m.MobileRoles })));
 const MobileTitles = lazy(() => import("./MobileTitles").then((m) => ({ default: m.MobileTitles })));
@@ -1008,7 +1010,7 @@ function MobileAppInner() {
   else if (screen.t === "mileage-capture") overlay = <MobileMileageCapture onBack={back} />;
   else if (screen.t === "service") overlay = <MobileServiceCase onBack={back} startNew={screen.startNew} />;
   else if (screen.t === "delivery-planning") overlay = <MobileDeliveryPlanning onBack={back} onOpen={(doc) => setScreen({ t: "so-detail", docNo: doc })} onPod={(doNumber) => setScreen({ t: "pod", docNo: doNumber, from: "delivery-planning" })} />;
-  else if (screen.t === "pms") overlay = <MobilePMS onBack={back} initialProjectId={screen.projectId} />;
+  else if (screen.t === "pms") overlay = <MobileProjectsEntry onBack={back} initialProjectId={screen.projectId} exhibition={() => <MobilePMS onBack={back} initialProjectId={screen.projectId} />} />;
   else if (screen.t === "mail") overlay = <MobileMailCenter onBack={back} />;
   else if (screen.t === "roles") overlay = can("roles.read") ? <MobileRoles onBack={back} /> : <TabLocked title="Roles" />;
   else if (screen.t === "titles") overlay = can("users.read") ? <MobileTitles onBack={back} /> : <TabLocked title="Titles" />;

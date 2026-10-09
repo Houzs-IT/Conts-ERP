@@ -52,6 +52,7 @@ import { HoldChip, type HoldFields } from "../../vendor/scm/components/HoldChip"
 import { FocAmount } from "../../vendor/scm/components/FocAmount";
 import { LinePoRefLink } from "../../vendor/scm/components/LinePoRefLink";
 import { ADD_LINE_LABEL, addLineHref } from "../../vendor/scm/lib/add-line-handoff";
+import { SiteReceiptPanel } from "../projects/renovation/SiteReceiptPanel";
 type GrnStatus = "DRAFT" | "POSTED" | "CANCELLED" | string;
 
 type GrnHeader = HoldFields & {
@@ -750,6 +751,8 @@ function GoodsReceivedDetailV2ReadOnly() {
                 emptyLabel="No line items"
               />
             </Section>
+            {/* Renovation site receipt: proof of delivery at the unit (renders nothing otherwise). */}
+            <SiteReceiptPanel grnId={id} />
           </DetailMain>
 
           <DetailAside>
