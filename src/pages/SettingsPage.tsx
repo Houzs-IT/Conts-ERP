@@ -1,14 +1,15 @@
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { Select, type SelectOption } from '../components/Select';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
-import { cx, TONE } from '../lib/design-tokens';
+import { cx } from '../lib/design-tokens';
 
 /* ------------------------------------------------------------------ *
  * Settings — organisation-wide defaults (routes.json → SYSTEM →
@@ -83,6 +84,7 @@ const INACTIVITY = [
   { value: 1440, label: '24 hours' },
   { value: 10080, label: '7 days' },
 ];
+const INACTIVITY_OPTIONS = INACTIVITY.map(o => ({ value: String(o.value), label: o.label }));
 const ABSOLUTE = [
   { value: 8, label: '8 hours' },
   { value: 24, label: '24 hours' },
@@ -90,26 +92,14 @@ const ABSOLUTE = [
   { value: 720, label: '30 days' },
 ];
 
-/* -------------------------------- styles -------------------------------- */
-const labelCls = 'text-meta font-medium text-muted-ink';
-// height 40, full-width, border-box, 0/12 padding, 1px line border, 8px radius.
-// `font:inherit` in the source resets size/weight/family -> renders at the
-// inherited 16 / 400 / IBM Plex Sans, so no text-size/weight class is added.
-const controlCls = 'h-10 w-full box-border px-3 py-0 text-ink bg-card border border-solid border-line rounded-control outline-none [font:inherit]';
-const helpCls = 'text-meta text-muted-ink';
-
-/** Native select styled to match the Field input. */
-function SelectField({ label, value, onChange, help, children }: {
-  label: string; value: string | number; onChange: (v: string) => void; help?: string; children: ReactNode;
+/** The shared Select, with its label above and an optional help line, to sit beside Field inputs. */
+function SelectField({ label, value, onChange, help, options }: {
+  label: string; value: string | number; onChange: (v: string) => void; help?: string; options: SelectOption[];
 }) {
-  const id = useId();
   return (
-    <div className="flex flex-col gap-[7px]">
-      <label htmlFor={id} className={labelCls}>{label}</label>
-      <select id={id} value={value} onChange={e => onChange(e.target.value)} className={controlCls}>
-        {children}
-      </select>
-      {help && <span className={helpCls}>{help}</span>}
+    <div className="flex flex-col gap-1.5">
+      <Select label={label} showLabel size="md" value={String(value)} onChange={onChange} options={options} />
+      {help && <span className="text-meta text-muted-ink">{help}</span>}
     </div>
   );
 }
@@ -152,7 +142,7 @@ function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveL
   return (
     <Card>
       <div className="px-5 py-4 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex flex-col gap-[3px] min-w-0 flex-1">
+        <div className="flex flex-col gap-1 min-w-0 flex-1">
           <span className="flex items-center gap-2 flex-wrap">
             <span className="text-heading font-semibold">{title}</span>
             {notUsed && <Badge tone="warning" label="Not used yet" size="sm" />}
@@ -160,12 +150,9 @@ function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveL
           <span className="text-meta text-muted-ink leading-[1.45]">{description}</span>
           {notUsed && <span className="text-meta text-[var(--color-warning-fg)] leading-[1.45] text-pretty">{notUsed}</span>}
         </div>
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           {dirty && (
-            <span className={cx('inline-flex items-center gap-1.5 text-caption font-medium px-[9px] py-[3px] rounded-full', TONE.warning.text, TONE.warning.bg)}>
-              <span className={cx('w-1.5 h-1.5 rounded-full', TONE.warning.dot)} />
-              Unsaved changes
-            </span>
+            <Badge tone="warning" label="Unsaved changes" size="sm" />
           )}
           {dirty && <Button variant="tertiary" size="sm" onClick={onDiscard} disabled={busy}>Discard</Button>}
           <Button
@@ -180,7 +167,7 @@ function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveL
           </Button>
         </div>
       </div>
-      <div className="px-5 py-[18px] flex flex-col gap-4">
+      <div className="p-5 flex flex-col gap-4">
         {children}
       </div>
     </Card>
@@ -287,7 +274,7 @@ export default function SettingsPage() {
       {(loading || !data) && !(import.meta.env.DEV && data) ? (
         <Card><TableSkeleton rows={5} cols={2} /></Card>
       ) : (
-        <div className="flex flex-col gap-[18px]">
+        <div className="flex flex-col gap-5">
 
           {/* --------------------------- Company --------------------------- */}
           <SectionCard
@@ -341,18 +328,11 @@ export default function SettingsPage() {
             onSave={() => save('locale')} onDiscard={() => discard('locale')}
           >
             <Grid>
-              <SelectField label="Default locale" value={draft.locale.default} onChange={v => patch('locale', { default: v })}>
-                {LOCALES.map(o => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>)}
-              </SelectField>
-              <SelectField label="Timezone" value={draft.locale.timezone} onChange={v => patch('locale', { timezone: v })}>
-                {TIMEZONES.map(tz => <option key={tz} value={tz}>{tz.replace('_', ' ')}</option>)}
-              </SelectField>
-              <SelectField label="Currency" value={draft.locale.currency} onChange={v => patch('locale', { currency: v })}>
-                {CURRENCIES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </SelectField>
-              <SelectField label="Date format" value={draft.locale.dateFormat} onChange={v => patch('locale', { dateFormat: v })}>
-                {DATE_FORMATS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </SelectField>
+              <SelectField label="Default locale" value={draft.locale.default} onChange={v => patch('locale', { default: v })} options={LOCALES} />
+              <SelectField label="Timezone" value={draft.locale.timezone} onChange={v => patch('locale', { timezone: v })}
+                options={TIMEZONES.map(tz => ({ value: tz, label: tz.replace('_', ' ') }))} />
+              <SelectField label="Currency" value={draft.locale.currency} onChange={v => patch('locale', { currency: v })} options={CURRENCIES} />
+              <SelectField label="Date format" value={draft.locale.dateFormat} onChange={v => patch('locale', { dateFormat: v })} options={DATE_FORMATS} />
               <Field
                 label="Default management fee"
                 type="number"
@@ -436,14 +416,9 @@ export default function SettingsPage() {
                 value={draft.statements.cycleDay}
                 help="Day of the month the previous period is closed and statements are cut."
                 onChange={v => patch('statements', { cycleDay: Number(v) })}
-              >
-                {Array.from({ length: 28 }, (_, i) => i + 1).map(day => (
-                  <option key={day} value={day}>{`Day ${day}`}</option>
-                ))}
-              </SelectField>
-              <SelectField label="Payout method" value={draft.statements.payoutMethod} onChange={v => patch('statements', { payoutMethod: v })}>
-                {PAYOUT_METHODS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </SelectField>
+                options={Array.from({ length: 28 }, (_, i) => i + 1).map(day => ({ value: String(day), label: `Day ${day}` }))}
+              />
+              <SelectField label="Payout method" value={draft.statements.payoutMethod} onChange={v => patch('statements', { payoutMethod: v })} options={PAYOUT_METHODS} />
             </Grid>
             <div className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)] pt-4">
               <ToggleField
@@ -468,25 +443,22 @@ export default function SettingsPage() {
                 value={draft.security.staffInactivityTimeoutMins}
                 help="A staff account is signed out after this long with no activity."
                 onChange={v => patch('security', { staffInactivityTimeoutMins: Number(v) })}
-              >
-                {INACTIVITY.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </SelectField>
+                options={INACTIVITY_OPTIONS}
+              />
               <SelectField
                 label="Owner inactivity timeout"
                 value={draft.security.ownerInactivityTimeoutMins}
                 help="An owner-portal account is signed out after this long with no activity."
                 onChange={v => patch('security', { ownerInactivityTimeoutMins: Number(v) })}
-              >
-                {INACTIVITY.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </SelectField>
+                options={INACTIVITY_OPTIONS}
+              />
               <SelectField
                 label="Absolute session timeout"
                 value={draft.security.absoluteTimeoutHours}
                 help="Maximum session length before a fresh sign-in is required, however active."
                 onChange={v => patch('security', { absoluteTimeoutHours: Number(v) })}
-              >
-                {ABSOLUTE.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </SelectField>
+                options={ABSOLUTE.map(o => ({ value: String(o.value), label: o.label }))}
+              />
               <Field
                 label="Lock account after failed attempts"
                 type="number"
