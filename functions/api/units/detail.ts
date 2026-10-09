@@ -1,6 +1,7 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { stampMyt } from '../../_lib/ops';
+import { stayMonths, metrics, monthEndExclusive, daysInMonth as daysInMonthOf } from '../../_lib/revenue';
 
 /**
  * The whole unit record in one request. Seven tabs of a detail page firing seven
@@ -41,7 +42,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const month = new Date().toISOString().slice(0, 7);
 
   // Independent reads, so they go out together: each one is its own connection (db.ts).
-  const [channels, stays, tasks, maintenance, inventory, access, documents, activity, perf, rating, expenses] = await Promise.all([
+  const [channels, stays, tasks, maintenance, inventory, access, documents, activity, perfRows, rating, expenses] = await Promise.all([
     all<{ channel: string }>(env,
       'SELECT channel FROM unit_channels WHERE unit_id = ? AND is_active = 1', unitId),
 
@@ -89,14 +90,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       FROM audit_log WHERE entity_id = ? OR entity_table = 'units' AND entity_id = ?
       ORDER BY occurred_at DESC LIMIT 20`, unitId, unitId),
 
-    one<any>(env, `
-      SELECT COALESCE(SUM(check_out::date - check_in::date),0) AS nights,
-             COALESCE(SUM(collected_revenue),0) AS revenue,
-             COALESCE(SUM(gross_booking_value),0) AS gross
-      FROM reservations
-      WHERE unit_id = ? AND state IN ('confirmed','checked_in','checked_out')
-        AND channel NOT IN ('maintenance_block','owner_stay')
-        AND substr(check_in, 1, 7) = ?`, unitId, month),
+    // Occupancy, ADR and RevPAR as everywhere else (functions/_lib/revenue.ts): gross value and nights split by night into the month.
+    stayMonths(env, `${month}-01`, monthEndExclusive(month), { unitId }),
 
     one<{ avg: number | null; n: number }>(env,
       'SELECT AVG(rating) AS avg, COUNT(*) AS n FROM reviews WHERE unit_id = ?', unitId),
@@ -107,9 +102,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       GROUP BY category`, unitId, month) : Promise.resolve([]),
   ]);
 
-  const nights = perf?.nights ?? 0;
-  const revenue = perf?.revenue ?? 0;
-  const daysInMonth = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+  const daysInMonth = daysInMonthOf(month);
+  const perf = metrics(perfRows, daysInMonth);
+  // The money chain below stays on the month's collected revenue (split by night) until owner statements
+  // move to the workbook rules (feat/owner-statements).
+  const revenue = perf.collected;
 
   // The gross-to-net chain, only for finance-permitted roles.
   let pnl: { label: string; amount: number; type: string }[] | undefined;
@@ -118,7 +115,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const fee = Math.round(revenue * (feePct / 100));
     const expTotal = expenses.reduce((s, e) => s + e.total, 0);
     pnl = [
-      { label: 'Gross booking value', amount: perf?.gross ?? 0, type: 'gross' },
+      { label: 'Gross booking value', amount: perf.gross, type: 'gross' },
       { label: `Management fee · ${feePct}%`, amount: -fee, type: 'fee' },
       ...expenses.map(e => ({
         label: e.category.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()),
@@ -161,13 +158,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     },
     performance: {
       period: month,
-      occupancy: Number(((nights / daysInMonth) * 100).toFixed(1)),
-      occupiedNights: nights,
-      adr: nights ? Math.round(revenue / nights) : 0,
-      revpar: Math.round(revenue / daysInMonth),
+      occupancy: perf.occupancy,
+      occupiedNights: perf.nights,
+      adr: perf.adr,
+      revpar: perf.revpar,
       rating: rating?.avg != null ? Number(rating.avg.toFixed(2)) : null,
       reviewCount: rating?.n ?? 0,
-      ...(money ? { revenue, gross: perf?.gross ?? 0 } : {}),
+      ...(money ? { revenue: perf.collected, gross: perf.gross } : {}),
     },
     pnl,
     stays: stays.map(s => ({
