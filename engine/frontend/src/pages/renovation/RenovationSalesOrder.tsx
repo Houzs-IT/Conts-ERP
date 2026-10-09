@@ -4,6 +4,7 @@
 // asked procurement to amend or cancel.
 
 import { useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { FilePlus2, Printer, ReceiptText, ShoppingCart } from 'lucide-react';
 import { PageHeader } from '../../components/Layout';
@@ -40,6 +41,7 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  const qc = useQueryClient();
   const run = useRenoMutation((body: Record<string, unknown>) => renoSend<{ kind: string; invoiceNumber?: string; noteNumber?: string; amountSen: number; posting: { status: string; reason?: string } }>(
     `/sales-orders/${encodeURIComponent(c.docNo)}/instalments/${inst!.id}/bill`, 'POST', body));
   useEffect(() => { setAmount(inst?.amountSen ?? 0); setNote(null); setError(null); setResult(null); }, [inst]);
@@ -51,10 +53,11 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
       const r = await run.mutateAsync({ invoiceDate: date, expectedAmountSen: amount, confirmCreditNote });
       const doc = r.kind === 'INVOICE' ? `Sales invoice ${r.invoiceNumber}` : r.kind === 'CREDIT_NOTE' ? `Credit note ${r.noteNumber}` : 'Nothing to bill: instalment closed';
       const posted = r.posting.status === 'posted' || r.posting.status === 'already_posted' ? 'journal posted' : r.posting.status === 'not_needed' ? '' : `journal not posted yet (${r.posting.reason ?? r.posting.status})`;
+      setNote(null);
       setResult([doc, rm(r.amountSen), posted].filter(Boolean).join(' · '));
     } catch (e) {
       const f = refusalOf(e);
-      if (f.code === 'stale_amount' && typeof f.detail.amountSen === 'number') { setAmount(f.detail.amountSen); setNote('The amount changed (a variation order moved the contract sum). Check the new amount and bill again.'); return; }
+      if (f.code === 'stale_amount' && typeof f.detail.amountSen === 'number') { void qc.invalidateQueries({ queryKey: ['reno'] }); setAmount(f.detail.amountSen); setNote('The amount changed (a variation order moved the contract sum). Check the new amount and bill again.'); return; }
       if (f.code === 'credit_note_needs_confirm' && typeof f.detail.amountSen === 'number') { setAmount(f.detail.amountSen); setNote(f.message); return; }
       setError(f.message);
     }
@@ -62,9 +65,9 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
   return (
     <ModalOverlay open onClose={onClose} title={`Bill ${inst.label || `instalment ${inst.seq}`}`} icon={<ReceiptText size={16} />}
       footer={result
-        ? <div className="flex justify-end"><Button onClick={onClose}>Done</Button></div>
+        ? <div className="flex w-full justify-end"><Button onClick={onClose}>Done</Button></div>
         : (
-          <div className="flex justify-end gap-2">
+          <div className="flex w-full justify-end gap-2">
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
             {negative
               ? <Button variant="danger" disabled={run.isPending} onClick={() => submit(true)}>{run.isPending ? 'Raising…' : `Raise credit note ${rm(-amount)}`}</Button>
@@ -284,7 +287,7 @@ export function RenovationSalesOrder() {
         <Stat label="To bill" value={rm(b.revisedContractSen - b.billedSen)} />
       </div>
       <Card title="Progress billing" dense>
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[720px] text-left text-[12.5px]">
             <thead className="bg-surface-2 text-[10.5px] uppercase tracking-wide text-ink-muted">
               <tr><th className="px-3 py-1.5">Instalment</th><th className="text-right">%</th><th>Stage</th><th className="text-right">Amount</th><th className="pl-4">Document</th><th className="text-right">Received</th><th className="px-3" /></tr>
@@ -309,6 +312,19 @@ export function RenovationSalesOrder() {
             </tbody>
           </table>
         </div>
+        <ul className="divide-y divide-border-subtle md:hidden">
+          {b.instalments.map((i) => (
+            <li key={i.id} className={cn('px-3 py-2.5 text-[12.5px]', i.isNext && 'bg-primary-soft/40')}>
+              <div className="flex items-start justify-between gap-2">
+                <span className="font-semibold">{i.label || `Instalment ${i.seq}`} · {pctLabel(i.pctBp)}</span>
+                <span className={cn('font-semibold tabular-nums', i.amountSen < 0 && 'text-err', !i.bill && !i.isNext && 'font-normal text-ink-muted')}>{rm(i.amountSen)}</span>
+              </div>
+              <div className="text-[11.5px] text-ink-muted">{i.stageCode ? STAGE_LABEL[i.stageCode as StageKey] : 'No stage'} · cum. {pctLabel(i.cumBp)}{!i.bill && !i.isNext ? ' · projected' : ''}</div>
+              {i.bill && <div className="mt-0.5 text-[12px]">{i.bill.invoiceNumber ?? i.bill.noteNumber ?? 'Closed, nothing to bill'} · {fmtDate(i.bill.invoiceDate)}{i.bill.kind === 'INVOICE' ? ` · received ${rm(i.bill.paidSen)}` : ''}</div>}
+              {i.isNext && live && can('scm.renovation.bill') && <Button className="mt-2 h-8 w-full" onClick={() => setBilling(i)}>Bill this instalment</Button>}
+            </li>
+          ))}
+        </ul>
       </Card>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card title="Variation orders" actions={live && can('scm.renovation.quote') ? <Button variant="secondary" icon={<FilePlus2 size={15} />} onClick={newVo}>New VO</Button> : null}>

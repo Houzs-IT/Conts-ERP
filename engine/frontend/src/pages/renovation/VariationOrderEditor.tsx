@@ -191,7 +191,7 @@ export function VariationOrderEditor() {
         </div>
       </div>
       <ModalOverlay open={approveOpen} onClose={() => setApproveOpen(false)} title={`Approve ${v.voNo}`} icon={<CheckCircle2 size={16} />}
-        footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setApproveOpen(false)}>Cancel</Button><Button disabled={run.isPending} onClick={approve}>{run.isPending ? 'Applying…' : 'Approve and apply'}</Button></div>}>
+        footer={<div className="flex w-full justify-end gap-2"><Button variant="secondary" onClick={() => setApproveOpen(false)}>Cancel</Button><Button disabled={run.isPending} onClick={approve}>{run.isPending ? 'Applying…' : 'Approve and apply'}</Button></div>}>
         <div className="space-y-3 text-[13px]">
           <p>The contract changes by <span className="font-semibold">{rm(netSen)}</span>. Added lines join the contract; omitted lines are cancelled or reduced, and their PO lines are flagged for procurement.</p>
           <Field label="Signed by (customer)"><input className={inputCls} value={signedName} onChange={(e) => setSignedName(e.target.value)} placeholder="Name on the signed VO" /></Field>

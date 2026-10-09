@@ -54,7 +54,7 @@ function NewQuotationDialog({ open, onClose }: { open: boolean; onClose: () => v
   };
   return (
     <ModalOverlay open={open} onClose={onClose} title="New quotation" icon={<FileText size={16} />}
-      footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={busy || !projectId} onClick={create}>{busy ? 'Creating…' : 'Create quotation'}</Button></div>}>
+      footer={<div className="flex w-full justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={busy || !projectId} onClick={create}>{busy ? 'Creating…' : 'Create quotation'}</Button></div>}>
       <div className="space-y-3">
         <Field label="Project">
           <input className={inputCls} placeholder="Search projects" value={q} onChange={(e) => setQ(e.target.value)} />

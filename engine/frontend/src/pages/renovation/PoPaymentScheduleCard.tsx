@@ -25,7 +25,7 @@ function PayDialog({ inst, onClose }: { inst: Inst | null; onClose: () => void }
   if (!inst) return null;
   return (
     <ModalOverlay open onClose={onClose} title={`Record payment · ${inst.label}`} icon={<Wallet size={16} />}
-      footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={pay.isPending} onClick={async () => { setError(null); try { await pay.mutateAsync(undefined); onClose(); } catch (e) { setError(refusalOf(e).message); } }}>{pay.isPending ? 'Saving…' : 'Record'}</Button></div>}>
+      footer={<div className="flex w-full justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={pay.isPending} onClick={async () => { setError(null); try { await pay.mutateAsync(undefined); onClose(); } catch (e) { setError(refusalOf(e).message); } }}>{pay.isPending ? 'Saving…' : 'Record'}</Button></div>}>
       <div className="space-y-3">
         <p className="text-[13px] text-ink-secondary">Outstanding {rm(inst.outstandingSen)} of {rm(inst.amountSen)}.</p>
         <Field label="Amount"><MoneyInput value={amount} onChange={(v) => setAmount(v ?? 0)} /></Field>

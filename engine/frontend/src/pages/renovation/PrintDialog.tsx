@@ -36,7 +36,7 @@ export function PrintDialog({ open, onClose, title, docNo, defaultFormat, build 
   return (
     <ModalOverlay open={open} onClose={onClose} title={`Print ${title}`} icon={<Printer size={16} />}
       footer={(
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex w-full flex-wrap justify-end gap-2">
           <Button variant="secondary" icon={<Eye size={15} />} disabled={busy !== null} onClick={() => run('preview')}>{busy === 'preview' ? 'Preparing…' : 'View PDF'}</Button>
           <Button variant="secondary" icon={<Download size={15} />} disabled={busy !== null} onClick={() => run('save')}>{busy === 'save' ? 'Preparing…' : 'Download'}</Button>
           <Button icon={<Printer size={15} />} disabled={busy !== null} onClick={() => run('print')}>{busy === 'print' ? 'Preparing…' : 'Print'}</Button>
