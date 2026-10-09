@@ -1,0 +1,183 @@
+/* Renovation SKU Master components (spec 2026-10-09 section 3): chips, the
+   group / sub-category picker, New SKU, the status badge, the SKU drawer, the
+   photo gallery on a SKU, the first-binding-is-main default and the six badges. */
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useState } from 'react';
+import { describe, expect, test, vi, beforeEach } from 'vitest';
+import type { MfgProductRow } from '../../../vendor/scm/lib/mfg-products-queries';
+
+const h = vi.hoisted(() => ({
+  create: vi.fn(),
+  patch: vi.fn(),
+  bind: vi.fn(),
+  rows: [] as unknown[],
+  fetched: [] as string[],
+}));
+
+vi.mock('../../../vendor/scm/lib/mfg-products-queries', async (orig) => ({
+  ...(await orig<typeof import('../../../vendor/scm/lib/mfg-products-queries')>()),
+  useCreateMfgProduct: () => ({ mutate: h.create, isPending: false }),
+  useUpdateMfgProductCatalog: () => ({ mutate: h.patch, isPending: false }),
+  useRenovationSkus: () => ({ data: h.rows, isLoading: false, error: null }),
+}));
+vi.mock('../../../vendor/scm/lib/suppliers-queries', () => ({
+  useSuppliers: () => ({ isLoading: false, data: [{ id: 'sup-1', code: 'S1', name: 'Ah Seng Renovation' }] }),
+  useCreateBinding: () => ({ mutate: h.bind, isPending: false }),
+}));
+vi.mock('../../../vendor/scm/lib/authed-fetch', async (orig) => ({
+  ...(await orig<typeof import('../../../vendor/scm/lib/authed-fetch')>()),
+  authedFetch: async (path: string) => { h.fetched.push(path); return { photos: [] }; },
+}));
+
+import { CatalogChips } from './CatalogChips';
+import { CatalogCategoryPicker } from './CatalogCategoryPicker';
+import { RenovationNewSku } from './RenovationNewSku';
+import { RenovationSkuMaster } from './RenovationSkuMaster';
+import { SkuStatusBadge, skuNeedsPhoto } from './renovationSkuColumns';
+import { AddSupplierBinding } from '../AddSupplierBinding';
+import { PhotoGallery } from '../../../components/scm-v2/PhotoGallery';
+import { badgeFor } from '../../../vendor/scm/lib/category-badges';
+import { NotifyProvider } from '../../../vendor/scm/components/NotifyDialog';
+import type { CatalogGroup } from '../../../vendor/shared/renovation-catalog';
+
+const wrap = (ui: React.ReactNode) =>
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <NotifyProvider>{ui}</NotifyProvider>
+    </QueryClientProvider>,
+  );
+
+const sku = (over: Partial<MfgProductRow>): MfgProductRow => ({
+  id: 'p1', code: 'X', name: 'X', category: 'WORKS', base_price_sen: null, price1_sen: null,
+  status: 'ACTIVE', unit_m3_milli: 0, ...over,
+});
+
+beforeEach(() => { h.create.mockReset(); h.patch.mockReset(); h.bind.mockReset(); h.fetched = []; h.rows = []; });
+
+describe('CatalogChips', () => {
+  function Harness() {
+    const [g, setG] = useState<CatalogGroup | null>(null);
+    const [s, setS] = useState<string | null>(null);
+    return (<><CatalogChips group={g} sub={s} onGroup={setG} onSub={setS} /><output>{`${g}|${s}`}</output></>);
+  }
+  test('shows the seven groups; a group shows its own sub-categories; picking a new group clears the sub', () => {
+    render(<Harness />);
+    const groups = within(screen.getByRole('group', { name: 'Category group' })).getAllByRole('button');
+    expect(groups.map((b) => b.textContent)).toEqual(['All', 'Works', 'Built-in', 'Furniture', 'Lighting', 'Appliances', 'Soft furnishing', 'Service']);
+    expect(screen.queryByRole('group', { name: 'Sub-category' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Works' }));
+    const subs = within(screen.getByRole('group', { name: 'Sub-category' })).getAllByRole('button').map((b) => b.textContent);
+    expect(subs.slice(1, 4)).toEqual(['Protection', 'Hacking', 'Plumbing']);
+    fireEvent.click(screen.getByRole('button', { name: 'Electrical' }));
+    expect(screen.getByText('WORKS|ELECTRICAL')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Lighting' }));
+    expect(screen.getByText('LIGHTING|null')).toBeTruthy();
+  });
+});
+
+describe('CatalogCategoryPicker', () => {
+  test('changing the group drops a sub-category that does not belong to it', () => {
+    const onChange = vi.fn();
+    render(<CatalogCategoryPicker group="WORKS" sub="ELECTRICAL" onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText('Group *'), { target: { value: 'BUILTIN' } });
+    expect(onChange).toHaveBeenCalledWith({ group: 'BUILTIN', sub: null });
+  });
+  test('names the photo rule for a photo group', () => {
+    render(<CatalogCategoryPicker group="APPLIANCE" sub={null} onChange={() => {}} />);
+    expect(screen.getByText(/need a photo before they can be active/)).toBeTruthy();
+  });
+});
+
+describe('RenovationNewSku', () => {
+  test('creates a Works SKU with its trade and the trade\'s unit', () => {
+    wrap(<RenovationNewSku initialGroup="WORKS" initialSub={null} onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Code'), { target: { value: 'EL-PT' } });
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Lighting point' } });
+    fireEvent.change(screen.getByLabelText('Trade *'), { target: { value: 'ELECTRICAL' } });
+    expect((screen.getByLabelText('Unit') as HTMLSelectElement).value).toBe('POINT');
+    fireEvent.click(screen.getByText('Create SKU'));
+    expect(h.create).toHaveBeenCalledTimes(1);
+    expect(h.create.mock.calls[0][0]).toMatchObject({ code: 'EL-PT', name: 'Lighting point', category: 'WORKS', subCategory: 'ELECTRICAL', uom: 'POINT' });
+  });
+  test('refuses without a sub-category and says why', () => {
+    wrap(<RenovationNewSku initialGroup="BUILTIN" initialSub={null} onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Code'), { target: { value: 'KC-1' } });
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Kitchen' } });
+    fireEvent.click(screen.getByText('Create SKU'));
+    expect(h.create).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toMatch(/sub-category/);
+  });
+});
+
+describe('status badge', () => {
+  test('a photo-group SKU with no photo reads Needs photo; Works never does', () => {
+    const builtin = sku({ category: 'BUILTIN', status: 'INACTIVE', photoCount: 0 });
+    expect(skuNeedsPhoto(builtin)).toBe(true);
+    render(<SkuStatusBadge row={builtin} />);
+    expect(screen.getByText('Needs photo')).toBeTruthy();
+    expect(skuNeedsPhoto(sku({ category: 'WORKS', photoCount: 0 }))).toBe(false);
+    expect(skuNeedsPhoto(sku({ category: 'SOFA', photoCount: 0 }))).toBe(false);
+  });
+});
+
+describe('RenovationSkuMaster', () => {
+  test('lists SKUs, counts those needing a photo, and the drawer activates through PATCH', () => {
+    h.rows = [
+      sku({ id: 'a', code: 'HK-1', name: 'Hacking', category: 'WORKS', category_group: 'WORKS', sub_category: 'HACKING', uom: 'LOT', mainSupplierName: 'Ah Seng Renovation', supplierCount: 1 }),
+      sku({ id: 'b', code: 'WR-1', name: 'Wardrobe', category: 'BUILTIN', category_group: 'BUILTIN', sub_category: 'WARDROBE', status: 'INACTIVE', photoCount: 0 }),
+    ];
+    wrap(<RenovationSkuMaster onImport={() => {}} onOpenSuppliers={() => {}} />);
+    expect(screen.getByText(/2 SKUs/)).toBeTruthy();
+    expect(screen.getByText(/1 need a photo/)).toBeTruthy();
+    expect(screen.getAllByText('Ah Seng Renovation').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByText('WR-1')[0]);
+    const drawer = screen.getByRole('dialog', { name: 'SKU WR-1' });
+    expect(within(drawer).getByText(/Add a photo to make this SKU active/)).toBeTruthy();
+    fireEvent.click(within(drawer).getByText('Make active'));
+    expect(h.patch.mock.calls[0][0]).toEqual({ id: 'b', status: 'ACTIVE' });
+  });
+
+  test('moving a SKU to another sub-category sends the pair', () => {
+    h.rows = [sku({ id: 'a', code: 'HK-1', category: 'WORKS', category_group: 'WORKS', sub_category: 'HACKING', uom: 'LOT' })];
+    wrap(<RenovationSkuMaster onImport={() => {}} onOpenSuppliers={() => {}} />);
+    fireEvent.click(screen.getAllByText('HK-1')[0]);
+    const drawer = screen.getByRole('dialog', { name: 'SKU HK-1' });
+    fireEvent.change(within(drawer).getByLabelText('Trade *'), { target: { value: 'PLUMBING' } });
+    fireEvent.click(within(drawer).getByText('Save'));
+    expect(h.patch.mock.calls[0][0]).toEqual({ id: 'a', category: 'WORKS', subCategory: 'PLUMBING' });
+  });
+});
+
+describe('PhotoGallery on a SKU', () => {
+  test('reads the SKU photo endpoint, not the model one', async () => {
+    wrap(<PhotoGallery productId="p-9" productName="TV 55" />);
+    await screen.findByText(/Gallery/);
+    expect(h.fetched).toContain('/mfg-products/p-9/photos');
+  });
+});
+
+describe('AddSupplierBinding — first supplier', () => {
+  test('defaults to main when the SKU has no supplier yet', () => {
+    wrap(<AddSupplierBinding productCode="HK-1" productName="Hacking" hasBindings={false} />);
+    fireEvent.click(screen.getByText('+ Add supplier binding'));
+    fireEvent.change(screen.getByLabelText('Supplier'), { target: { value: 'sup-1' } });
+    fireEvent.click(screen.getByText('Add'));
+    expect(h.bind.mock.calls[0][0]).toMatchObject({ isMainSupplier: true });
+  });
+  test('stays secondary by default once the SKU has a supplier', () => {
+    wrap(<AddSupplierBinding productCode="HK-1" productName="Hacking" hasBindings />);
+    fireEvent.click(screen.getByText('+ Add supplier binding'));
+    fireEvent.change(screen.getByLabelText('Supplier'), { target: { value: 'sup-1' } });
+    fireEvent.click(screen.getByText('Add'));
+    expect(h.bind.mock.calls[0][0]).toMatchObject({ isMainSupplier: false });
+  });
+});
+
+describe('badges for the six groups', () => {
+  test('each renovation group has its own label, not OTHERS', () => {
+    expect(['works', 'builtin', 'furniture', 'lighting', 'appliance', 'soft'].map((g) => badgeFor(g).label)).toEqual([
+      'WORKS', 'BUILT-IN', 'FURNITURE', 'LIGHTING', 'APPLIANCES', 'SOFT FURNISHING',
+    ]);
+  });
+});

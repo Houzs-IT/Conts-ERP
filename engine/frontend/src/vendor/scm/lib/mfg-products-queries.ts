@@ -154,6 +154,20 @@ export type MfgProductRow = {
   code: string;
   name: string;
   category: MfgCategory;
+  /* Renovation catalog (Conts, migration 0061): the derived group, the
+     sub-category (a Works SKU's trade) and the unit. */
+  category_group?: string | null;
+  sub_category?: string | null;
+  uom?: string | null;
+  /* Opt-in list extras (?withPhotos=1 / ?withMain=1). mainCostSen only reaches
+     cost viewers. */
+  primaryPhotoUrl?: string | null;
+  primaryThumbUrl?: string | null;
+  photoCount?: number;
+  mainSupplierId?: string | null;
+  mainSupplierName?: string | null;
+  mainCostSen?: number | null;
+  supplierCount?: number;
   size_code?: string | null;
   size_label?: string | null;
   // HOUZS VENDOR — Products wave. These four are REQUIRED in the source row and
@@ -256,6 +270,48 @@ export function useMfgProducts(opts?: {
     placeholderData: keepPreviousData,
     retry: retryUnlessClientError,
     retryDelay: 800,
+  });
+}
+
+/* Renovation SKU Master (Conts): every status (a photo-group SKU waits INACTIVE
+   for its photo), with the primary photo and the default PO party. Its own
+   cache key and never stale, so the SO/PO pickers' lean list is untouched. */
+export function useRenovationSkus(opts: { group?: string | null; sub?: string | null; search?: string }) {
+  return useQuery({
+    queryKey: ['mfg-products', activeCompanyKey(), 'renovation', opts.group ?? 'all', opts.sub ?? 'all', opts.search ?? ''],
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams({ status: 'all', withPhotos: '1', withMain: '1' });
+      if (opts.group) params.set('group', opts.group);
+      if (opts.sub) params.set('sub', opts.sub);
+      if (opts.search) params.set('search', opts.search);
+      const res = await authedFetch<{ products: MfgProductRow[] }>(`/mfg-products?${params.toString()}`, { signal });
+      return res.products;
+    },
+    placeholderData: keepPreviousData,
+    retry: retryUnlessClientError,
+    retryDelay: 800,
+  });
+}
+
+/* Catalog fields of one SKU: group / sub-category / unit / status / name.
+   The server refuses ACTIVE for a photo-group SKU with no photo (409
+   photo_required); the message rides the thrown error. */
+export type MfgProductCatalogPatch = {
+  category?: MfgCategory;
+  subCategory?: string | null;
+  uom?: string;
+  status?: 'ACTIVE' | 'INACTIVE';
+  name?: string;
+  description?: string;
+};
+export function useUpdateMfgProductCatalog() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...patch }: MfgProductCatalogPatch & { id: string }) =>
+      authedFetch<{ ok: boolean }>(`/mfg-products/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mfg-products'] });
+    },
   });
 }
 
@@ -724,13 +780,16 @@ export type NewMfgProductInput = {
   branding?: string;
   fabricColor?: string;
   barcode?: string;
+  /** Renovation catalog: required for a new group (WORKS, BUILTIN, ...). */
+  subCategory?: string;
+  uom?: string;
 };
 
 export function useCreateMfgProduct() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: NewMfgProductInput) =>
-      authedFetch<{ id: string; code: string }>(`/mfg-products`, {
+      authedFetch<{ id: string; code: string; status?: 'ACTIVE' | 'INACTIVE'; needsPhoto?: boolean }>(`/mfg-products`, {
         method: 'POST', body: JSON.stringify(body),
       }),
     onSuccess: () => {
@@ -753,6 +812,9 @@ export type BatchImportRow = {
   price1_sen?: number;
   unit_m3_milli?: number;
   seatHeightPrices?: SeatHeightPrice[];
+  /** Renovation catalog columns ("sub category", "uom"), read as typed. */
+  sub_category?: string;
+  uom?: string;
 };
 
 export type BatchImportResult = {

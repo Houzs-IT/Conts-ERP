@@ -45,6 +45,14 @@ export const CATEGORY_BADGE: Record<string, CategoryBadgeSpec> = {
      first-class SO lines now; muted slate keeps them visually quiet next to
      the goods categories. */
   service:   { bg: 'rgba(90, 96, 102, 0.12)',  fg: 'var(--fg-muted)',                label: 'SERVICE' },
+  /* Conts renovation groups (migration 0060). Furniture and Soft furnishing reuse
+     the furniture swatches they absorb; Works and Built-in take the brand gold. */
+  works:     { bg: 'rgba(138, 106, 47, 0.14)', fg: '#6b5223',                         label: MFG_CATEGORY_LABELS.WORKS.toUpperCase() },
+  builtin:   { bg: 'rgba(138, 106, 47, 0.10)', fg: '#8a6a2f',                         label: MFG_CATEGORY_LABELS.BUILTIN.toUpperCase() },
+  furniture: { bg: 'rgba(47, 93, 79, 0.12)',   fg: 'var(--c-secondary-a, #2F5D4F)',  label: MFG_CATEGORY_LABELS.FURNITURE.toUpperCase() },
+  lighting:  { bg: 'rgba(199, 127, 62, 0.16)', fg: 'var(--c-festive-a, #C77F3E)',    label: MFG_CATEGORY_LABELS.LIGHTING.toUpperCase() },
+  appliance: { bg: 'rgba(52, 84, 122, 0.12)',  fg: '#34547a',                         label: MFG_CATEGORY_LABELS.APPLIANCE.toUpperCase() },
+  soft:      { bg: 'rgba(166, 71, 30, 0.10)',  fg: 'var(--c-burnt)',                 label: MFG_CATEGORY_LABELS.SOFT.toUpperCase() },
 };
 
 /** Resolve a badge spec for any item_group string, case-insensitively.
