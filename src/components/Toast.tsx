@@ -43,7 +43,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 }}>
-              <span style={{ fontSize: 13.5, fontWeight: 600, color: TONE[t.tone].fg }}>{t.title}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: TONE[t.tone].fg }}>{t.title}</span>
               <button
                 onClick={() => setItems(xs => xs.filter(x => x.id !== t.id))}
                 aria-label="Dismiss"

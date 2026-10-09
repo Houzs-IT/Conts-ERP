@@ -34,7 +34,7 @@ export default function AirbnbListingPicker({ unitId, channelId, onDone, onCance
           <label key={l.id} className={cx('flex items-start gap-3 p-3 border border-solid rounded-card cursor-pointer', pick === l.id ? 'border-gold bg-gold-tint' : 'border-line', l.linkedTo && 'opacity-50 cursor-not-allowed')}>
             <input type="radio" name="airbnb-listing" value={l.id} disabled={!!l.linkedTo} checked={pick === l.id} onChange={() => setPick(l.id)} className="mt-1" />
             <span className="flex flex-col gap-0.5">
-              <span className="text-[14px] font-semibold">{l.title}</span>
+              <span className="text-copy font-semibold">{l.title}</span>
               <span className="text-[12px] text-muted-ink">{[l.type, l.city, l.maxGuests ? `up to ${l.maxGuests} guests` : ''].filter(Boolean).join(' · ')}{l.linkedTo ? ` · already linked to ${l.linkedTo}` : ''}</span>
             </span>
           </label>

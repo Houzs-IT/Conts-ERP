@@ -69,7 +69,7 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
   return (
     <Card>
       <div className="pt-[18px] px-[22px] pb-[14px] flex items-center justify-between gap-3">
-        <span className="text-[18px] font-semibold">Channels</span>
+        <span className="text-title font-semibold">Channels</span>
         <Badge tone={linked ? 'success' : 'neutral'} label={linked ? 'In Channex' : 'Not in Channex'} />
       </div>
       <div className="px-[22px] pb-[18px] flex flex-col gap-3 text-[13px] text-muted-ink">
@@ -80,7 +80,7 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
               : connected.map(c => (
                 <div key={c.id} className="flex items-center justify-between gap-3 py-2 [border-top:1px_solid_var(--color-line-soft)]">
                   <span className="flex flex-col gap-0.5">
-                    <span className="text-[13.5px] font-semibold text-ink">{OTA_LABEL[c.ota]}</span>
+                    <span className="text-copy font-semibold text-ink">{OTA_LABEL[c.ota]}</span>
                     <span className="text-[12px]">{c.ota === 'airbnb' ? c.title : [c.title, c.room, c.rate].filter(Boolean).join(' · ')} · since {date(c.connectedAt)}</span>
                   </span>
                   {canManage && <button onClick={() => void disconnect(c)} className="bg-transparent border-none cursor-pointer text-[12px] text-muted-ink hover:text-ink">Disconnect</button>}
@@ -112,7 +112,7 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
 
       <Drawer open={!!connecting} onClose={() => setConnecting(null)} width={560}>
         <div className="flex items-center justify-between px-6 pt-[18px] pb-3">
-          <h2 className="m-0 text-[18px] font-semibold">Connect {connecting === 'booking_com' ? 'Booking.com' : connecting === 'agoda' ? 'Agoda' : 'Airbnb'}</h2>
+          <h2 className="m-0 text-title font-semibold">Connect {connecting === 'booking_com' ? 'Booking.com' : connecting === 'agoda' ? 'Agoda' : 'Airbnb'}</h2>
           <button onClick={() => setConnecting(null)} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
         </div>
         <div className="px-6 pb-6 overflow-y-auto grow">
@@ -171,7 +171,7 @@ function HotelConnect({ unitId, ota, onDone, onCancel }: { unitId: string; ota: 
                 <label key={`${room.id}-${rate.id}`} className={cx('flex items-start gap-3 p-3 border border-solid rounded-card cursor-pointer', on ? 'border-gold bg-gold-tint' : 'border-line')}>
                   <input type="radio" name="hotel-rate" checked={on} onChange={() => setPick({ room, rate })} className="mt-1" />
                   <span className="flex flex-col gap-0.5">
-                    <span className="text-[14px] font-semibold">{room.title}</span>
+                    <span className="text-copy font-semibold">{room.title}</span>
                     <span className="text-[12px] text-muted-ink">{rate.title}{rate.maxPersons ? ` · up to ${rate.maxPersons} guests` : ''}</span>
                   </span>
                 </label>

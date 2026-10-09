@@ -17,14 +17,14 @@ export function PageControls({ page, pageSize, total, onPage, onSize, sizes = [2
   const to = Math.min(total, page * pageSize);
   const btn = 'w-8 h-8 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer disabled:cursor-not-allowed disabled:text-faint disabled:bg-muted';
   return (
-    <div className={cx('flex items-center justify-between gap-3 flex-wrap py-[10px] px-[22px] text-[12.5px] text-muted-ink', className)}>
+    <div className={cx('flex items-center justify-between gap-3 flex-wrap py-[10px] px-[22px] text-meta text-muted-ink', className)}>
       <span className="[font-variant-numeric:tabular-nums]">{total ? `${n(from)}–${n(to)} of ${n(total)} ${noun}` : `0 ${noun}`}</span>
       <div className="flex items-center gap-2">
         {onSize && (
           <label className="flex items-center gap-[6px]">
             <span className="max-sm:hidden">Rows</span>
             <select value={pageSize} onChange={e => onSize(Number(e.target.value))} aria-label="Rows per page"
-              className="h-8 px-2 rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-[12.5px] cursor-pointer">
+              className="h-8 px-2 rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-meta cursor-pointer">
               {sizes.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>
