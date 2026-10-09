@@ -50,7 +50,7 @@ export function StatusPill({ state, size = 'md' }: { state: ReservationState; si
   const s = STATUS[state], t = TONE[s.tone];
   return (
     <span className={cx('inline-flex items-center gap-[6px] rounded-pill font-semibold whitespace-nowrap border border-solid',
-      size === 'sm' ? 'h-[22px] px-[9px] text-[11.5px]' : 'h-[26px] px-[11px] text-[12px]')}
+      size === 'sm' ? 'h-[22px] px-[9px] text-caption' : 'h-[26px] px-[11px] text-meta')}
       style={{ background: s.outline ? 'transparent' : t.bg, color: t.fg, borderColor: s.outline ? t.line : 'transparent' }}>
       <span className="w-[6px] h-[6px] rounded-full flex-none" style={{ background: t.line }} />
       {s.label}
@@ -81,8 +81,8 @@ function StatusMenu({ state, moves, busy, onPick }: { state: ReservationState; m
         title={locked ? 'No further status changes for this booking' : 'Change status'}
         className={cx('inline-flex items-center gap-1 p-0 bg-transparent border-none [font:inherit]', locked || !moves ? 'cursor-default' : 'cursor-pointer')}>
         <StatusPill state={state} />
-        {busy ? <span className="text-[12px] text-muted-ink">Saving…</span>
-          : locked ? <span className="inline-flex items-center gap-1 text-[11.5px] text-muted-ink"><Icon name="Lock" size="sm" />Locked</span>
+        {busy ? <span className="text-meta text-muted-ink">Saving…</span>
+          : locked ? <span className="inline-flex items-center gap-1 text-meta text-muted-ink"><Icon name="Lock" size="sm" />Locked</span>
           : moves ? <Icon name="ChevronDown" size="sm" color="var(--color-text-muted)" /> : null}
       </button>
       {open && moves && (
@@ -94,8 +94,8 @@ function StatusMenu({ state, moves, busy, onPick }: { state: ReservationState; m
                 m.allowed ? 'cursor-pointer hover:bg-muted' : 'cursor-not-allowed opacity-60')}>
               <span className="mt-[1px]" style={{ color: TONE[STATUS[m.to].tone].fg }}><Icon name={MOVE_ICON[m.to] ?? 'ArrowRight'} size="sm" /></span>
               <span className="flex flex-col gap-[2px] min-w-0">
-                <span className={cx('text-[13px] font-semibold', m.to === 'cancelled' || m.to === 'no_show' ? 'text-[var(--color-critical-fg)]' : 'text-ink')}>{m.label}</span>
-                <span className="text-[11.5px] text-muted-ink leading-[1.4]">{m.allowed ? m.hint : m.reason}</span>
+                <span className={cx('text-copy font-semibold', m.to === 'cancelled' || m.to === 'no_show' ? 'text-[var(--color-critical-fg)]' : 'text-ink')}>{m.label}</span>
+                <span className="text-meta text-muted-ink leading-[1.4]">{m.allowed ? m.hint : m.reason}</span>
               </span>
             </button>
           ))}
@@ -113,10 +113,10 @@ function Line({ label, value, sub, strong, minus, muted }: { label: ReactNode; v
   return (
     <div className={cx('flex justify-between items-baseline gap-3 py-[8px] px-[14px]', strong && 'bg-muted')}>
       <span className="flex flex-col min-w-0">
-        <span className={cx(strong ? 'text-[13px] font-semibold text-ink' : 'text-[12.5px] text-muted-ink')}>{label}</span>
-        {sub && <span className="text-[11px] text-muted-ink">{sub}</span>}
+        <span className={cx(strong ? 'text-copy font-semibold text-ink' : 'text-copy text-muted-ink')}>{label}</span>
+        {sub && <span className="text-caption text-muted-ink">{sub}</span>}
       </span>
-      <span className={cx('[font-variant-numeric:tabular-nums] whitespace-nowrap', strong ? 'text-[13px] font-semibold' : 'text-[12.5px]', muted && 'text-muted-ink')}>
+      <span className={cx('[font-variant-numeric:tabular-nums] whitespace-nowrap', strong ? 'text-copy font-semibold' : 'text-copy', muted && 'text-muted-ink')}>
         {minus && typeof value === 'string' ? `− ${value}` : value}
       </span>
     </div>
@@ -124,7 +124,7 @@ function Line({ label, value, sub, strong, minus, muted }: { label: ReactNode; v
 }
 const Group = ({ title, children }: { title: string; children: ReactNode }) => (
   <div className="[border-top:1px_solid_var(--color-line-soft)] first:border-t-0 py-1">
-    <div className="px-[14px] pt-[6px] pb-[2px] text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-ink">{title}</div>
+    <div className="px-[14px] pt-[6px] pb-[2px] text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">{title}</div>
     {children}
   </div>
 );
@@ -188,7 +188,7 @@ function MoneyPanel({ d }: { d: Detail }) {
 /* ------------------------------------------------------------------ */
 
 function Timeline({ events }: { events: TimelineEvent[] }) {
-  if (!events.length) return <div className="text-[12px] text-muted-ink">Nothing recorded yet.</div>;
+  if (!events.length) return <div className="text-meta text-muted-ink">Nothing recorded yet.</div>;
   return (
     <ol className="list-none m-0 p-0 flex flex-col">
       {events.map((e, i) => (
@@ -199,11 +199,11 @@ function Timeline({ events }: { events: TimelineEvent[] }) {
             {i < events.length - 1 && <span className="w-0.5 flex-1 min-h-[18px] bg-line" />}
           </div>
           <div className="pb-[14px] min-w-0">
-            <div className={cx('text-[13px] font-medium', e.upcoming ? 'text-muted-ink' : 'text-ink')}>{e.label}</div>
-            <div className="text-[11.5px] text-muted-ink">
+            <div className={cx('text-copy font-medium', e.upcoming ? 'text-muted-ink' : 'text-ink')}>{e.label}</div>
+            <div className="text-meta text-muted-ink">
               {e.upcoming ? `${date(e.at)} · ${time(e.at)}` : dateTime(e.at)}{e.actor ? ` · ${e.actor}` : ''}
             </div>
-            {e.detail && <div className="text-[11.5px] text-muted-ink break-words">{e.detail}</div>}
+            {e.detail && <div className="text-meta text-muted-ink break-words">{e.detail}</div>}
           </div>
         </li>
       ))}
@@ -229,8 +229,8 @@ export function CentreModal({ title, sub, onClose, children, maxWidth = 460 }: {
       <div onClick={onClose} className="absolute inset-0" />
       <div style={{ maxWidth }} className="relative w-full bg-card rounded-card shadow-[var(--shadow-overlay)] max-h-[90vh] flex flex-col [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
         <div className="px-[22px] pt-[22px] pb-1 flex-none">
-          <h2 className="m-0 text-[18px] font-semibold">{title}</h2>
-          {sub && <p className="mt-[6px] mx-0 mb-0 text-[13px] text-muted-ink">{sub}</p>}
+          <h2 className="m-0 text-title font-semibold">{title}</h2>
+          {sub && <p className="mt-[6px] mx-0 mb-0 text-copy text-muted-ink">{sub}</p>}
         </div>
         {children}
       </div>
@@ -255,12 +255,12 @@ function ReasonModal({ title, body, meta, confirmLabel, keepLabel, onClose, onCo
   return (
     <CentreModal title={title} sub={body} onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
-        <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-[12px]">{meta}</div>
+        <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-meta">{meta}</div>
         <div className="flex flex-col gap-[6px]">
-          <label htmlFor="bk-reason" className="text-[12px] font-medium text-muted-ink">Reason (required)</label>
+          <label htmlFor="bk-reason" className="text-meta font-medium text-muted-ink">Reason (required)</label>
           <textarea id="bk-reason" autoFocus required value={reason} onChange={e => setReason(e.target.value)} rows={3} maxLength={300}
             placeholder="e.g. Guest asked to cancel by WhatsApp"
-            className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit] text-[13px] p-[10px_12px] resize-y" />
+            className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit] text-copy p-[10px_12px] resize-y" />
         </div>
         <div className="flex justify-end gap-[9px] flex-wrap">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>{keepLabel}</Button>
@@ -293,10 +293,10 @@ export function MessageGuestModal({ r, onClose, onSent }: { r: { id: string; gue
     <CentreModal title={`Message ${r.guestName || 'guest'}`} sub={`Goes to the guest's ${thread} conversation when that channel is connected.`} onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
         <div className="flex flex-col gap-[6px]">
-          <label htmlFor="bk-msg" className="text-[12px] font-medium text-muted-ink">Message</label>
+          <label htmlFor="bk-msg" className="text-meta font-medium text-muted-ink">Message</label>
           <textarea id="bk-msg" required value={body} onChange={e => setBody(e.target.value)} rows={4}
             placeholder={`Hi ${(r.guestName || 'there').split(' ')[0]}, checking in on your upcoming stay…`}
-            className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit] text-[13px] p-[10px_12px] resize-y" />
+            className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit] text-copy p-[10px_12px] resize-y" />
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Close</Button>
@@ -342,7 +342,7 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
   return (
     <CentreModal title="Change dates" sub="Checked against the unit's other bookings before it is saved. The guest is not messaged." onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
-        <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-[12px] text-muted-ink">
+        <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-meta text-muted-ink">
           Now: {dateRange(d.checkIn, d.checkOut)} · {fmtNights(d.nights)}{d.money.gross > 0 ? ` · ${rm(d.money.gross)}` : ''}
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3">
@@ -358,9 +358,9 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
               ? `At the current ${rm(Math.round(perNight))} a night, ${fmtNights(n)} would be ${rm(Math.round(perNight * n))}. Change the total if the price changes.`
               : 'Stays the same unless you change it.'} />
         ) : !isBlock(d.channel) && (
-          <p className="m-0 text-[12px] text-muted-ink">The price is set by {CHANNEL_META[d.channel].label}, so it stays as recorded. Change the booking on the site too.</p>
+          <p className="m-0 text-meta text-muted-ink">The price is set by {CHANNEL_META[d.channel].label}, so it stays as recorded. Change the booking on the site too.</p>
         )}
-        {error && <p role="alert" className="m-0 text-[12.5px] text-[var(--color-critical-fg)]">{error}</p>}
+        {error && <p role="alert" className="m-0 text-meta text-[var(--color-critical-fg)]">{error}</p>}
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Close</Button>
           <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason="Pick a new, valid date range first.">{busy ? 'Saving…' : 'Save new dates'}</Button>
@@ -406,7 +406,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
     return (
       <div className="p-5 flex flex-col gap-3">
         <div className="flex justify-end"><CloseButton onClose={onClose} /></div>
-        <div className="text-[13px] text-muted-ink">{error ?? 'Loading the booking…'}</div>
+        <div className="text-copy text-muted-ink">{error ?? 'Loading the booking…'}</div>
       </div>
     );
   }
@@ -470,13 +470,13 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
           <div className="flex items-center gap-[10px] min-w-0">
             <ChannelMark ch={s.channel} size={24} />
             <div className="flex flex-col min-w-0">
-              <span className="text-[15px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{s.channel === 'owner_stay' ? (s.guestName ? `Owner stay · ${s.guestName}` : 'Owner stay') : block ? 'Blocked dates' : (s.guestName || 'No guest name')}</span>
-              <span className="text-[12px] text-[rgba(255,255,255,0.72)] whitespace-nowrap overflow-hidden text-ellipsis">{s.propertyName} {s.unitNumber}</span>
+              <span className="text-heading font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{s.channel === 'owner_stay' ? (s.guestName ? `Owner stay · ${s.guestName}` : 'Owner stay') : block ? 'Blocked dates' : (s.guestName || 'No guest name')}</span>
+              <span className="text-meta text-[rgba(255,255,255,0.72)] whitespace-nowrap overflow-hidden text-ellipsis">{s.propertyName} {s.unitNumber}</span>
             </div>
           </div>
           <CloseButton onClose={onClose} dark />
         </div>
-        <div className="flex items-center gap-2 flex-wrap text-[12px] text-[rgba(255,255,255,0.72)]">
+        <div className="flex items-center gap-2 flex-wrap text-meta text-[rgba(255,255,255,0.72)]">
           <span className="font-semibold text-white">{ch.label}</span>
           {s.externalRef && <span className="font-mono">{s.externalRef}</span>}
         </div>
@@ -485,7 +485,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
       <div className="p-5 flex flex-col gap-5 flex-1">
         {!block && (
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <span className="text-[12px] font-medium text-muted-ink">Status</span>
+            <span className="text-meta font-medium text-muted-ink">Status</span>
             <StatusMenu state={s.state} moves={d ? d.moves : null} busy={busy} onPick={pick} />
           </div>
         )}
@@ -498,22 +498,22 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
             [s.guestsCount > 0 ? fmtGuests(s.guestsCount) : '—', 'Guests'],
           ] as const).map(([v, l]) => (
             <div key={l} className="bg-card py-[11px] px-[13px] flex flex-col gap-0.5">
-              <span className="text-[13px] font-semibold">{v}</span>
-              <span className="text-[11px] text-muted-ink">{l}</span>
+              <span className="text-copy font-semibold">{v}</span>
+              <span className="text-caption text-muted-ink">{l}</span>
             </div>
           ))}
         </div>
 
         {block ? (
-          <div className="text-[12.5px] text-muted-ink">
+          <div className="text-copy text-muted-ink">
             <div>{d?.notes ? <>Note: <span className="text-ink">{d.notes}</span></> : 'No note recorded.'}</div>
             {d && <div className="mt-1">{d.money.gross > 0 ? <>Recorded value: <span className="text-ink [font-variant-numeric:tabular-nums]">{rm(d.money.gross)}</span></> : 'No money is recorded on it.'}</div>}
           </div>
         ) : d ? <MoneyPanel d={d} /> : <div className="h-[120px] rounded-card bg-muted animate-pulse" />}
 
         <div>
-          <div className="text-[12px] font-semibold text-muted-ink mb-3">Timeline</div>
-          {d ? <Timeline events={d.timeline} /> : <div className="text-[12px] text-muted-ink">{error ?? 'Loading…'}</div>}
+          <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink mb-3">Timeline</div>
+          {d ? <Timeline events={d.timeline} /> : <div className="text-meta text-muted-ink">{error ?? 'Loading…'}</div>}
         </div>
       </div>
 

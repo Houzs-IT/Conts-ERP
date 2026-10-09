@@ -7,7 +7,11 @@ import Icon from '../components/Icon';
 import { ListPager } from '../components/ListPager';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { rm, percent, rating as fmtRating, todayMyt, monthLabel } from '../lib/format';
+import { rm, percent, rating as fmtRating, todayMyt, monthLabel, plural, count, titleCase } from '../lib/format';
+import { Button } from '../components/Button';
+import { Select } from '../components/Select';
+import { EmptyState } from '../components/States';
+import { Chip, SearchBox } from './finance/listKit';
 import { cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
@@ -60,9 +64,12 @@ const NUMERIC = (r: PortfolioRow, k: SortKey): number => {
 };
 const PAGE_SIZE = 25;
 
-/* Unit, owner, occupancy, ADR, RevPAR, revenue, rating, exception — one literal so header, rows and the
- * totals row stay in lockstep (and Tailwind can see it). */
-const COLS = 'grid-cols-[minmax(180px,1.8fr)_minmax(120px,1.1fr)_minmax(92px,0.8fr)_minmax(88px,0.8fr)_minmax(88px,0.8fr)_minmax(110px,1fr)_minmax(64px,0.6fr)_minmax(120px,1.1fr)]';
+/* Unit, owner, occupancy, ADR, RevPAR, revenue, then rating and exception only when some unit has one.
+ * Built once per render so header, rows and the totals row stay in lockstep. */
+const colTemplate = (withRating: boolean, withException: boolean) => [
+  'minmax(180px,1.8fr)', 'minmax(120px,1.1fr)', 'minmax(92px,0.8fr)', 'minmax(88px,0.8fr)', 'minmax(88px,0.8fr)', 'minmax(110px,1fr)',
+  ...(withRating ? ['minmax(64px,0.6fr)'] : []), ...(withException ? ['minmax(120px,1.1fr)'] : []),
+].join(' ');
 const NUM = 'text-right [font-variant-numeric:tabular-nums] whitespace-nowrap';
 
 export default function PortfolioPage() {
@@ -127,6 +134,9 @@ export default function PortfolioPage() {
   const revpar = n ? Math.round(revenue / (n * days)) : 0;
   const money = rows.some(r => r.revenue > 0);
   const narrowed = building !== 'all' || !!q.trim();
+  const withRating = rows.some(r => r.rating != null);
+  const withException = rows.some(r => !!r.exception);
+  const cols = { gridTemplateColumns: colTemplate(withRating, withException) };
 
   function toggleSort(key: SortKey) {
     const next: Dir = sortKey === key ? (dir === 'desc' ? 'asc' : 'desc') : key === 'unit' ? 'asc' : 'desc';
@@ -134,7 +144,7 @@ export default function PortfolioPage() {
   }
 
   const tiles = [
-    { label: narrowed ? 'Units shown' : 'Listed units', value: n.toLocaleString('en-MY') },
+    { label: narrowed ? 'Units shown' : 'Listed units', value: count(n) },
     { label: 'Occupancy', value: percent(occ) },
     { label: 'ADR', value: money ? rm(adr, { cents: false }) : '—' },
     { label: 'Revenue', value: money ? rm(revenue, { cents: false }) : '—' },
@@ -144,21 +154,12 @@ export default function PortfolioPage() {
     <>
       <PageHeader
         title="Portfolio performance"
-        sub={`${data?.units ?? rows.length} listed units · ${data?.buildings ?? buildings.length} buildings · ${caption}`}
-        right={
-          <div role="group" aria-label="Period" className="inline-flex max-w-full overflow-x-auto [scrollbar-width:none] border border-solid border-line rounded-control flex-none">
-            {PERIODS.map((p, i) => {
-              const on = p.key === period;
-              return (
-                <button key={p.key} onClick={() => set({ period: i === 0 ? null : p.key })} aria-pressed={on}
-                  className={cx('h-8 px-[13px] py-0 cursor-pointer [font:inherit] whitespace-nowrap flex-none',
-                    '[border-top:0] [border-right:0] [border-bottom:0]',
-                    i === 0 ? '[border-left:0]' : '[border-left:1px_solid_var(--color-line)]',
-                    on ? 'bg-black text-white' : 'bg-card text-muted-ink')}>
-                  {p.label}
-                </button>
-              );
-            })}
+        sub={`${plural(data?.units ?? rows.length, 'listed unit')} · ${plural(data?.buildings ?? buildings.length, 'building')} · ${caption}`}
+        actions={
+          <div role="group" aria-label="Period" className="flex items-center gap-2 max-w-full overflow-x-auto [scrollbar-width:none]">
+            {PERIODS.map((p, i) => (
+              <Chip key={p.key} on={p.key === period} onClick={() => set({ period: i === 0 ? null : p.key })}>{p.label}</Chip>
+            ))}
           </div>
         }
       />
@@ -168,8 +169,8 @@ export default function PortfolioPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-[10px] sm:gap-[14px]">
         {tiles.map(t => (
           <div key={t.label} className="bg-card border border-solid border-line rounded-card p-[14px] sm:p-[18px] flex flex-col gap-2 min-w-0">
-            <div className="text-[12px] text-muted-ink">{t.label}</div>
-            <div className="text-[20px] sm:text-[26px] leading-[1.15] font-semibold tracking-[-0.01em] [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">{t.value}</div>
+            <div className="text-meta text-muted-ink">{t.label}</div>
+            <div className="text-title sm:text-headline leading-[1.15] font-semibold tracking-[-0.01em] [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">{t.value}</div>
           </div>
         ))}
       </div>
@@ -177,82 +178,79 @@ export default function PortfolioPage() {
       <Card>
         <div className="pt-4 px-4 sm:px-5 pb-3 flex flex-col gap-3">
           <div className="flex items-baseline justify-between gap-3 flex-wrap">
-            <span className="text-[16px] font-semibold">Every listed unit, {caption}</span>
-            <span className="text-[12px] text-muted-ink">Sorted by {SORT_LABEL[sortKey]}, {dir === 'desc' ? 'high to low' : 'low to high'}</span>
+            <span className="text-heading font-semibold">Every listed unit, {caption}</span>
+            <span className="text-meta text-muted-ink">Sorted by {SORT_LABEL[sortKey]}, {dir === 'desc' ? 'high to low' : 'low to high'}</span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative flex items-center flex-1 min-w-[200px] max-w-[360px]">
-              <span className="absolute left-[10px] text-muted-ink flex pointer-events-none"><Icon name="Search" size="sm" /></span>
-              <input value={q} onChange={e => set({ q: e.target.value })} placeholder="Search unit, building or owner" aria-label="Search units"
-                className="field-input h-[36px]! w-full pl-[32px]! text-[13px]!" />
-            </div>
-            <select value={building} onChange={e => set({ b: e.target.value === 'all' ? null : e.target.value })} aria-label="Building"
-              className="h-[36px] px-2.5 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer max-w-full sm:max-w-[240px]">
-              <option value="all">All buildings</option>
-              {buildings.map(b => <option key={b.id} value={b.id}>{b.name} ({b.n})</option>)}
-            </select>
+            <SearchBox value={q} onChange={v => set({ q: v })} placeholder="Search unit, building or owner" label="Search units"
+              className="flex-1 min-w-[200px] max-w-[360px]" />
+            <Select label="Building" value={building} onChange={v => set({ b: v === 'all' ? null : v })} className="w-full sm:w-[240px]"
+              options={[{ value: 'all', label: 'All buildings' }, ...buildings.map(b => ({ value: b.id, label: `${b.name} (${b.n})` }))]} />
             {/* Phones have no column headers to tap, so sorting is a menu there. */}
-            <select value={`${sortKey}:${dir}`} aria-label="Sort"
-              onChange={e => { const [k, d] = e.target.value.split(':') as [SortKey, Dir]; set({ sort: k === 'revenue' ? null : k, dir: d === (k === 'unit' ? 'asc' : 'desc') ? null : d }); }}
-              className="md:hidden h-[36px] px-2.5 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
-              <option value="revenue:desc">Revenue, high to low</option>
-              <option value="revenue:asc">Revenue, low to high</option>
-              <option value="occupancy:desc">Occupancy, high to low</option>
-              <option value="occupancy:asc">Occupancy, low to high</option>
-              <option value="adr:desc">ADR, high to low</option>
-              <option value="unit:asc">Unit, A to Z</option>
-            </select>
+            <Select label="Sort" value={`${sortKey}:${dir}`} className="md:hidden"
+              onChange={v => { const [k, d] = v.split(':') as [SortKey, Dir]; set({ sort: k === 'revenue' ? null : k, dir: d === (k === 'unit' ? 'asc' : 'desc') ? null : d }); }}
+              options={[
+                { value: 'revenue:desc', label: 'Revenue, high to low' },
+                { value: 'revenue:asc', label: 'Revenue, low to high' },
+                { value: 'occupancy:desc', label: 'Occupancy, high to low' },
+                { value: 'occupancy:asc', label: 'Occupancy, low to high' },
+                { value: 'adr:desc', label: 'ADR, high to low' },
+                { value: 'unit:asc', label: 'Unit, A to Z' },
+              ]} />
             {narrowed && (
-              <button type="button" onClick={() => set({ q: null, b: null })}
-                className="inline-flex items-center gap-1 h-[36px] px-1.5 bg-transparent border-none cursor-pointer font-sans text-[12.5px] font-medium text-muted-ink hover:text-ink">
-                <Icon name="RotateCcw" size="sm" />Reset
-              </button>
+              <Button variant="tertiary" size="sm" icon={<Icon name="RotateCcw" size="sm" />} onClick={() => set({ q: null, b: null })}>Clear filters</Button>
             )}
           </div>
         </div>
 
         {loading && rows.length === 0 ? <TableSkeleton rows={8} cols={6} /> : sorted.length === 0 ? (
-          <EmptyState filtered={rows.length > 0} onReset={() => set({ q: null, b: null })} />
+          <div className="[border-top:1px_solid_var(--color-line)]">
+            {rows.length > 0
+              ? <EmptyState bare kind="filtered" title="No units match these filters." action={{ label: 'Clear filters', onClick: () => set({ q: null, b: null }) }} />
+              : <EmptyState bare icon="BarChart3" title="No listed units for this period."
+                  body="Units appear here once they are listed and have nights in the period."
+                  action={{ label: 'View all units', onClick: () => { window.location.hash = '#/properties/units'; } }} />}
+          </div>
         ) : (
           <div className={cx('transition-opacity duration-150', stale && 'opacity-60')} aria-busy={stale}>
             {/* Desktop: the table scrolls inside the card so its header stays in view. */}
             <div className="hidden md:block max-h-[70vh] overflow-auto [scrollbar-width:thin] [border-top:1px_solid_var(--color-line)]">
               <div className="min-w-[1000px]">
-                <div className={cx(COLS, 'sticky top-0 z-[1] grid gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-[12px] font-semibold text-muted-ink')}>
+                <div style={cols} className="sticky top-0 z-[1] grid gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink">
                   <SortHead label="Unit" col="unit" sortKey={sortKey} dir={dir} onSort={toggleSort} />
                   <div>Owner</div>
                   <SortHead label="Occupancy" col="occupancy" align="right" sortKey={sortKey} dir={dir} onSort={toggleSort} />
                   <SortHead label="ADR" col="adr" align="right" sortKey={sortKey} dir={dir} onSort={toggleSort} />
                   <SortHead label="RevPAR" col="revpar" align="right" sortKey={sortKey} dir={dir} onSort={toggleSort} />
                   <SortHead label="Revenue" col="revenue" align="right" sortKey={sortKey} dir={dir} onSort={toggleSort} />
-                  <SortHead label="Rating" col="rating" align="right" sortKey={sortKey} dir={dir} onSort={toggleSort} />
-                  <div>Exception</div>
+                  {withRating && <SortHead label="Rating" col="rating" align="right" sortKey={sortKey} dir={dir} onSort={toggleSort} />}
+                  {withException && <div>Exception</div>}
                 </div>
                 {pageRows.map(u => (
                   <a key={u.unitId} href={`#/properties/units/${encodeURIComponent(u.unitId)}`}
-                    className={cx(COLS, 'grid gap-[14px] items-center min-h-[50px] py-2 px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] no-underline text-inherit hover:text-inherit hover:bg-page')}>
+                    style={cols} className={cx('grid gap-[14px] items-center min-h-[50px] py-2 px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] no-underline text-inherit hover:text-inherit hover:bg-page')}>
                     <div className="flex flex-col gap-px min-w-0">
-                      <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={u.unitNumber}>{u.unitNumber}</span>
-                      <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={u.propertyName}>{u.propertyName}</span>
+                      <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={u.unitNumber}>{u.unitNumber}</span>
+                      <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={u.propertyName}>{u.propertyName}</span>
                     </div>
-                    <span className="text-[12.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={u.ownerName}>{u.ownerName}</span>
-                    <span className={cx(NUM, 'text-[13px]')}>{percent(u.occupancy)}</span>
-                    <span className={cx(NUM, 'text-[13px]')}>{money ? rm(u.adr, { cents: false }) : '—'}</span>
-                    <span className={cx(NUM, 'text-[13px]')}>{money ? rm(u.revpar, { cents: false }) : '—'}</span>
-                    <span className={cx(NUM, 'text-[13px] font-medium')}>{money ? rm(u.revenue, { cents: false }) : '—'}</span>
-                    <span className={cx(NUM, 'text-[13px]')}>{u.rating != null ? fmtRating(u.rating) : '—'}</span>
-                    <div className="min-w-0">{u.exception ? <Badge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-[12px] text-faint">None</span>}</div>
+                    <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={titleCase(u.ownerName)}>{titleCase(u.ownerName)}</span>
+                    <span className={cx(NUM, 'text-copy')}>{percent(u.occupancy)}</span>
+                    <span className={cx(NUM, 'text-copy')}>{money ? rm(u.adr, { cents: false }) : '—'}</span>
+                    <span className={cx(NUM, 'text-copy')}>{money ? rm(u.revpar, { cents: false }) : '—'}</span>
+                    <span className={cx(NUM, 'text-copy font-medium')}>{money ? rm(u.revenue, { cents: false }) : '—'}</span>
+                    {withRating && <span className={cx(NUM, 'text-copy')}>{u.rating != null ? fmtRating(u.rating) : '—'}</span>}
+                    {withException && <div className="min-w-0">{u.exception ? <Badge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-meta text-faint">None</span>}</div>}
                   </a>
                 ))}
                 {/* Totals for every unit that matches, not just this page. */}
-                <div className={cx(COLS, 'sticky bottom-0 grid gap-[14px] items-center min-h-[46px] py-2 px-[22px] bg-page [border-top:1px_solid_var(--color-line)] text-[13px] font-semibold')}>
-                  <span>{narrowed ? `${n} matching ${n === 1 ? 'unit' : 'units'}` : `All ${n} units`}</span>
+                <div style={cols} className="sticky bottom-0 grid gap-[14px] items-center min-h-[46px] py-2 px-[22px] bg-page [border-top:1px_solid_var(--color-line)] text-copy font-semibold">
+                  <span>{narrowed ? `${plural(n, 'matching unit')}` : `All ${plural(n, 'unit')}`}</span>
                   <span />
                   <span className={NUM}>{percent(occ)}</span>
                   <span className={NUM}>{money ? rm(adr, { cents: false }) : '—'}</span>
                   <span className={NUM}>{money ? rm(revpar, { cents: false }) : '—'}</span>
                   <span className={NUM}>{money ? rm(revenue, { cents: false }) : '—'}</span>
-                  <span /><span />
+                  {withRating && <span />}{withException && <span />}
                 </div>
               </div>
             </div>
@@ -263,19 +261,19 @@ export default function PortfolioPage() {
                 <a key={u.unitId} href={`#/properties/units/${encodeURIComponent(u.unitId)}`}
                   className="flex flex-col gap-1.5 py-3 px-4 [border-bottom:1px_solid_var(--color-line-soft)] no-underline text-inherit hover:text-inherit">
                   <div className="flex items-baseline justify-between gap-3">
-                    <span className="min-w-0 text-[14px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber} <span className="font-normal text-muted-ink text-[12px]">· {u.propertyName}</span></span>
-                    <span className="flex-none text-[14px] font-semibold [font-variant-numeric:tabular-nums]">{money ? rm(u.revenue, { cents: false }) : percent(u.occupancy)}</span>
+                    <span className="min-w-0 text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber} <span className="font-normal text-muted-ink text-meta">· {u.propertyName}</span></span>
+                    <span className="flex-none text-copy font-semibold [font-variant-numeric:tabular-nums]">{money ? rm(u.revenue, { cents: false }) : percent(u.occupancy)}</span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-[12px] text-muted-ink [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">
+                    <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">
                       {percent(u.occupancy)} occupied{money ? ` · ADR ${rm(u.adr, { cents: false })}` : ''}
                     </span>
                     {u.exception && <Badge tone={u.exception.tone} label={u.exception.label} size="sm" />}
                   </div>
                 </a>
               ))}
-              <div className="flex items-baseline justify-between gap-3 py-3 px-4 bg-page text-[13px] font-semibold">
-                <span>{narrowed ? `${n} matching` : `All ${n} units`}</span>
+              <div className="flex items-baseline justify-between gap-3 py-3 px-4 bg-page text-copy font-semibold">
+                <span>{narrowed ? `${count(n)} matching` : `All ${plural(n, 'unit')}`}</span>
                 <span className="[font-variant-numeric:tabular-nums]">{money ? rm(revenue, { cents: false }) : ''} · {percent(occ)}</span>
               </div>
             </div>
@@ -297,21 +295,10 @@ function SortHead({ label, col, align = 'left', sortKey, dir, onSort }: {
     <button onClick={() => onSort(col)} aria-label={`Sort by ${label}`}
       aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
       className={cx('flex items-center gap-[3px]', align === 'right' ? 'justify-end' : 'justify-start',
-        'bg-transparent [border:none] p-0 cursor-pointer [font:inherit] text-[12px] font-semibold', active ? 'text-gold-ink' : 'text-muted-ink')}>
+        'bg-transparent [border:none] p-0 cursor-pointer [font:inherit] text-meta font-semibold', active ? 'text-gold-ink' : 'text-muted-ink')}>
       <span>{label}</span>
       <Icon name={active ? (dir === 'asc' ? 'ChevronUp' : 'ChevronDown') : 'ChevronsUpDown'} size="sm" style={{ opacity: active ? 1 : 0.4 }} />
     </button>
   );
 }
 
-function EmptyState({ filtered, onReset }: { filtered: boolean; onReset: () => void }) {
-  return (
-    <div className="py-12 px-[22px] flex flex-col items-center gap-3 text-center [border-top:1px_solid_var(--color-line)]">
-      <span className="text-muted-ink"><Icon name="BarChart3" /></span>
-      <div className="text-[14px] text-muted-ink max-w-[360px]">{filtered ? 'No unit matches that search.' : 'No listed units for this period.'}</div>
-      {filtered
-        ? <button type="button" onClick={onReset} className="bg-transparent border-none cursor-pointer font-sans text-[12px] font-semibold text-gold-ink">Clear the search</button>
-        : <a href="#/properties/units" className="text-[12px] font-semibold text-gold-ink! no-underline">View all units</a>}
-    </div>
-  );
-}

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import Icon from '../Icon';
 import ChannelMark from '../ChannelMark';
+import { Button } from '../Button';
+import { Select } from '../Select';
 import { CHANNEL, TONE } from '../../lib/vocabulary';
 import type { BookingChannel, Tone } from '../../lib/types';
-import { selectCls } from './types';
+import { plural } from '../../lib/format';
 
 export const ALL_CHANNELS: BookingChannel[] = ['airbnb', 'booking_com', 'agoda', 'direct', 'maintenance_block', 'owner_stay'];
 
@@ -31,11 +33,11 @@ export function CalendarFilters({ channels = ALL_CHANNELS, properties, property,
   const anyOff = channels.some(k => off[k]);
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
-      <select value={property} onChange={e => setProperty(e.target.value)} aria-label="Building"
-        className={`${selectCls} h-10 md:h-8 text-[13px] w-full sm:w-auto sm:max-w-[240px]`}>
-        <option value="all">All buildings ({properties.reduce((n, p) => n + p.units, 0)} units)</option>
-        {properties.map(p => <option key={p.id} value={p.id}>{p.name} ({p.units})</option>)}
-      </select>
+      <Select label="Building" value={property} onChange={setProperty} className="w-full sm:w-[240px]"
+        options={[
+          { value: 'all', label: `All buildings (${plural(properties.reduce((n, p) => n + p.units, 0), 'unit')})` },
+          ...properties.map(p => ({ value: p.id, label: `${p.name} (${p.units})` })),
+        ]} />
 
       <div role="group" aria-label="Channels" className="flex flex-wrap items-center gap-1.5">
         {channels.map(k => {
@@ -43,7 +45,7 @@ export function CalendarFilters({ channels = ALL_CHANNELS, properties, property,
           return (
             <button key={k} type="button" aria-pressed={on} onClick={() => setOff(o => ({ ...o, [k]: on }))}
               title={on ? `Hide ${c.label}` : `Show ${c.label}`}
-              className="inline-flex items-center gap-1.5 h-10 md:h-8 pl-1.5 md:pl-1 pr-2.5 rounded-pill border border-solid cursor-pointer font-sans text-[12.5px] font-medium transition-colors"
+              className="inline-flex items-center gap-1.5 h-10 md:h-8 pl-1.5 md:pl-1 pr-2.5 rounded-pill border border-solid cursor-pointer font-sans text-copy font-medium transition-colors"
               style={on
                 ? { background: c.tint, borderColor: `color-mix(in srgb, ${c.color} 35%, transparent)`, color: c.ink }
                 : { background: 'var(--color-surface-card)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-faint)' }}>
@@ -53,7 +55,7 @@ export function CalendarFilters({ channels = ALL_CHANNELS, properties, property,
           );
         })}
         <button type="button" onClick={() => setOff(() => (anyOff ? {} : Object.fromEntries(channels.map(k => [k, true]))))}
-          className="h-10 md:h-8 px-1.5 bg-transparent border-none cursor-pointer font-sans text-[12px] font-medium text-[var(--color-text-accent)]">
+          className="h-10 md:h-8 px-1.5 bg-transparent border-none cursor-pointer font-sans text-meta font-medium text-[var(--color-text-accent)]">
           {anyOff ? 'Select all' : 'Deselect all'}
         </button>
       </div>
@@ -61,10 +63,7 @@ export function CalendarFilters({ channels = ALL_CHANNELS, properties, property,
       <StatusMenu statusOff={statusOff} setStatusOff={setStatusOff} />
 
       {dirty && (
-        <button type="button" onClick={onReset}
-          className="inline-flex items-center gap-1 h-10 md:h-8 px-1.5 bg-transparent border-none cursor-pointer font-sans text-[12px] font-medium text-muted-ink hover:text-ink">
-          <Icon name="RotateCcw" size="sm" style={{ width: 13, height: 13 }} />Reset
-        </button>
+        <Button variant="tertiary" size="sm" icon={<Icon name="RotateCcw" size="sm" />} onClick={onReset}>Clear filters</Button>
       )}
     </div>
   );
@@ -89,7 +88,7 @@ function StatusMenu({ statusOff, setStatusOff }: {
   return (
     <div ref={ref} className="relative">
       <button type="button" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen(v => !v)}
-        className="inline-flex items-center gap-1.5 h-10 md:h-8 px-2.5 rounded-control border border-solid border-line bg-card cursor-pointer font-sans text-[12.5px] text-ink">
+        className="inline-flex items-center gap-1.5 h-10 md:h-9 px-2.5 rounded-control border border-solid border-line bg-card cursor-pointer font-sans text-copy text-ink">
         <span className="text-muted-ink">Status</span>
         <span className="font-semibold">{summary}</span>
         <Icon name="ChevronDown" size="sm" style={{ width: 14, height: 14 }} />
@@ -101,7 +100,7 @@ function StatusMenu({ statusOff, setStatusOff }: {
             return (
               <button key={s.key} type="button" role="menuitemcheckbox" aria-checked={on}
                 onClick={() => setStatusOff(o => ({ ...o, [s.key]: on }))}
-                className="w-full flex items-center gap-2.5 h-10 md:h-8 px-2 rounded-[6px] bg-transparent hover:bg-muted border-none cursor-pointer font-sans text-[13px] text-ink text-left">
+                className="w-full flex items-center gap-2.5 h-10 md:h-8 px-2 rounded-[6px] bg-transparent hover:bg-muted border-none cursor-pointer font-sans text-copy text-ink text-left">
                 <span className={`w-4 h-4 flex-none rounded-[4px] grid place-items-center box-border border border-solid ${on ? 'bg-black border-black' : 'bg-card border-line-strong'}`}>
                   {on && <Icon name="Check" size="sm" color="#FFFFFF" style={{ width: 12, height: 12 }} />}
                 </span>
@@ -110,9 +109,9 @@ function StatusMenu({ statusOff, setStatusOff }: {
               </button>
             );
           })}
-          <div className="mt-1 pt-1 [border-top:1px_solid_var(--color-line-soft)] flex justify-between px-1">
-            <button type="button" onClick={() => setStatusOff(() => ({}))} className="h-7 px-1 bg-transparent border-none cursor-pointer font-sans text-[12px] font-medium text-[var(--color-text-accent)]">Show all</button>
-            <button type="button" onClick={() => setOpen(false)} className="h-7 px-1 bg-transparent border-none cursor-pointer font-sans text-[12px] font-medium text-muted-ink">Done</button>
+          <div className="mt-1 pt-1 [border-top:1px_solid_var(--color-line-soft)] flex items-center justify-between px-1">
+            <button type="button" onClick={() => setStatusOff(() => ({}))} className="h-7 px-1 bg-transparent border-none cursor-pointer font-sans text-meta font-medium text-[var(--color-text-accent)]">Show all</button>
+            <Button variant="secondary" size="sm" onClick={() => setOpen(false)}>Done</Button>
           </div>
         </div>
       )}

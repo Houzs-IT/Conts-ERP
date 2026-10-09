@@ -11,12 +11,14 @@ import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
 import { Field } from '../components/Field';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { EmptyState } from '../components/States';
+import { Select } from '../components/Select';
 import { PageControls } from '../components/PageControls';
 import { useApi } from '../lib/useApi';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
 import { api, notifyFailure, downloadFile } from '../lib/api';
-import { rm, dateRange, nights as fmtNights, guests as fmtGuests, todayMyt } from '../lib/format';
+import { rm, dateRange, nights as fmtNights, guests as fmtGuests, todayMyt, plural } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { BookingChannel, ReservationState } from '../lib/types';
 
@@ -234,8 +236,8 @@ export default function BookingsPage() {
     const rejected = importRows.length - valid.length + refused;
     toast({
       tone: created ? 'success' : 'warning',
-      title: created ? `Imported ${created} ${created === 1 ? 'reservation' : 'reservations'}.` : 'Nothing imported.',
-      body: rejected ? `${rejected} ${rejected === 1 ? 'row was' : 'rows were'} rejected and left out.` : 'Every row was accepted.',
+      title: created ? `Imported ${plural(created, 'reservation')}.` : 'Nothing imported.',
+      body: rejected ? `${plural(rejected, 'row')} ${rejected === 1 ? 'was' : 'were'} rejected and left out.` : 'Every row was accepted.',
     });
     setImportRows(null);
     reload();
@@ -246,25 +248,25 @@ export default function BookingsPage() {
     setExporting(true);
     try {
       await downloadFile('/reservations/export', Object.fromEntries(API_PARAMS.filter(k => k !== 'page' && k !== 'size').map(k => [k, params.get(k)])));
-      toast({ tone: 'success', title: 'Export ready.', body: `${num(total)} ${total === 1 ? 'booking' : 'bookings'}. The first lines of the file name the filters and totals.` });
+      toast({ tone: 'success', title: 'Export ready.', body: `${plural(total, 'booking')}. The first lines of the file name the filters and totals.` });
     } catch (e) { notifyFailure(e); }
     setExporting(false);
   }
 
   const viewMeta = VIEWS.find(v => v.key === view)!;
   const sub = counts
-    ? `${num(counts.upcoming)} upcoming or in house · ${num(counts.all)} bookings in total${searching ? ' matching your search' : ''}`
+    ? `${num(counts.upcoming)} upcoming or in house · ${plural(counts.all, 'booking')} in total${searching ? ' matching your search' : ''}`
     : 'Loading bookings';
 
   return (
     <>
       <PageHeader title="Bookings" sub={sub}
-        right={<div className="flex gap-[9px] flex-wrap">
+        actions={<>
           <Button size="sm" variant="secondary" icon={<Icon name="Upload" size="sm" />} onClick={pickImportFile}>Import</Button>
           <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportCsv} loading={exporting}
             disabled={!data || total === 0} disabledReason="Nothing to export for this tab and search.">Download CSV</Button>
-          <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Create reservation</Button>
-        </div>} />
+        </>}
+        primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Create reservation</Button>} />
 
       <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onImportFile} className="hidden" aria-hidden />
 
@@ -280,7 +282,7 @@ export default function BookingsPage() {
             return (
               <button key={v.key} role="tab" aria-selected={on} onClick={() => setView(v.key)}
                 className={cx(
-                  'flex-none h-8 inline-flex items-center gap-[6px] px-[13px] py-0 rounded-pill cursor-pointer [font-family:inherit] text-[12.5px] border border-solid whitespace-nowrap',
+                  'flex-none h-8 inline-flex items-center gap-[6px] px-[13px] py-0 rounded-pill cursor-pointer [font-family:inherit] text-copy border border-solid whitespace-nowrap',
                   on ? 'font-semibold border-transparent bg-black text-white' : 'font-medium border-line bg-page text-muted-ink',
                 )}>
                 {v.label}
@@ -292,20 +294,17 @@ export default function BookingsPage() {
 
         {/* One search across reference, guest, phone, unit and building */}
         <div className="flex items-center gap-3 flex-wrap py-[10px] px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
-          <label className="relative flex-[1_1_260px] max-w-[420px]">
-            <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid"><Icon name="Search" size="sm" /></span>
+          <label className="relative flex-[1_1_260px] min-w-[200px] max-w-[420px]">
+            <span className="absolute left-[11px] top-1/2 -translate-y-1/2 text-muted-ink grid pointer-events-none"><Icon name="Search" size="sm" /></span>
             <input value={drafts.q} onChange={e => setSearch('q', e.target.value)} placeholder="Guest, phone, reference or unit"
               aria-label="Search bookings"
-              className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-[13px] pl-[32px] pr-3 py-0 outline-none" />
+              className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink font-sans text-copy pl-[33px] pr-3 py-0 outline-none" />
           </label>
           {searching && (
-            <button type="button" onClick={clearSearches}
-              className="h-8 inline-flex items-center gap-1 px-[10px] rounded-control border-none bg-transparent text-muted-ink [font:inherit] text-[12.5px] cursor-pointer hover:bg-muted">
-              <Icon name="X" size="sm" /> Clear search
-            </button>
+            <Button variant="tertiary" size="sm" icon={<Icon name="X" size="sm" />} onClick={clearSearches}>Clear search</Button>
           )}
           {/* Totals of the whole filtered set, so the owner reads the figure for the tab, not one page */}
-          <dl className="m-0 ml-auto flex items-center gap-x-5 gap-y-1 flex-wrap text-[12.5px] min-h-[20px] max-md:ml-0 max-md:w-full">
+          <dl className="m-0 ml-auto flex items-center gap-x-5 gap-y-1 flex-wrap text-meta min-h-[20px] max-md:ml-0 max-md:w-full">
             {totals && <>
               <Total label="Bookings" value={num(totals.bookings)} />
               <Total label="Nights" value={num(totals.nights)} />
@@ -321,25 +320,25 @@ export default function BookingsPage() {
         <div ref={scrollRef} className="max-md:hidden overflow-auto max-h-[calc(100dvh-330px)] min-h-[360px]" aria-busy={loading}>
           <div className="min-w-[1010px]">
             <div className="sticky top-0 z-[2]">
-              <div className={cx(COLS, 'grid gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)]')}>
+              <div className={cx(COLS, 'grid gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink')}>
                 {COLUMNS.map(c => {
                   const active = sortKey === c.key;
                   return (
                     <button key={c.key} type="button" onClick={() => toggleSort(c.key)} title={`Sort by ${c.label}`}
-                      className={cx('flex items-center gap-1 [font:inherit] text-[12px] font-semibold text-muted-ink bg-transparent border-none cursor-pointer p-0', c.align === 'right' && 'justify-end')}>
+                      className={cx('flex items-center gap-1 [font:inherit] text-meta font-semibold text-muted-ink bg-transparent border-none cursor-pointer p-0', c.align === 'right' && 'justify-end')}>
                       <span>{c.label}</span>
                       <Icon name={active ? (sortDir === 'desc' ? 'ChevronDown' : 'ChevronUp') : 'ChevronsUpDown'} size="sm"
                         color={active ? 'var(--color-ink)' : 'var(--color-line)'} />
                     </button>
                   );
                 })}
-                <div className="flex items-center justify-center text-[12px] font-semibold text-muted-ink">Chat</div>
+                <div className="flex items-center justify-center">Chat</div>
               </div>
               <div className={cx(COLS, 'grid gap-[14px] py-[7px] px-[22px] bg-page [border-bottom:1px_solid_var(--color-line-soft)]')}>
                 {COLUMNS.map(c => (
                   <input key={c.key} value={drafts[c.param]} onChange={e => setSearch(c.param, e.target.value)}
                     placeholder={c.hint} aria-label={`Search ${c.label}`}
-                    className={cx('h-7 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-[12px] px-2 py-0 outline-none', c.align === 'right' && 'text-right')} />
+                    className={cx('h-7 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-meta px-2 py-0 outline-none', c.align === 'right' && 'text-right')} />
                 ))}
                 <div aria-hidden />
               </div>
@@ -357,24 +356,24 @@ export default function BookingsPage() {
                       className={cx(COLS, 'grid gap-[14px] items-center min-h-[54px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-page')}>
                       <div className="flex items-center gap-[9px] min-w-0">
                         <ChannelMark ch={b.channel} size={20} />
-                        <span className="font-mono text-[12px] whitespace-nowrap overflow-hidden text-ellipsis" title={b.externalRef ?? undefined}>{b.externalRef ?? '—'}</span>
+                        <span className="font-mono text-meta whitespace-nowrap overflow-hidden text-ellipsis" title={b.externalRef ?? undefined}>{b.externalRef ?? '—'}</span>
                       </div>
                       <div className="flex flex-col gap-px min-w-0">
-                        <span className="text-[13.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={b.guestName}>{b.guestName || '—'}</span>
-                        <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.guestsCount > 0 ? fmtGuests(b.guestsCount) : 'No guest count'}</span>
+                        <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={b.guestName}>{b.guestName || '—'}</span>
+                        <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.guestsCount > 0 ? fmtGuests(b.guestsCount) : 'No guest count'}</span>
                       </div>
                       <div className="flex flex-col gap-px min-w-0">
-                        <span className="text-[13px] whitespace-nowrap overflow-hidden text-ellipsis" title={b.unitNumber}>{b.unitNumber}</span>
-                        <span className="text-[11.5px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={b.propertyName}>{b.propertyName}</span>
+                        <span className="text-copy whitespace-nowrap overflow-hidden text-ellipsis" title={b.unitNumber}>{b.unitNumber}</span>
+                        <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={b.propertyName}>{b.propertyName}</span>
                       </div>
                       <div>
-                        <span className="inline-flex items-center h-[22px] px-[9px] rounded-pill text-[11.5px] font-semibold whitespace-nowrap" style={{ background: ch.tint, color: ch.ink }}>{ch.label}</span>
+                        <span className="inline-flex items-center h-[22px] px-[9px] rounded-pill text-caption font-semibold whitespace-nowrap" style={{ background: ch.tint, color: ch.ink }}>{ch.label}</span>
                       </div>
                       <div className="flex flex-col gap-px min-w-0">
-                        <span className="text-[12.5px] whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span>
-                        <span className="text-[11.5px] text-muted-ink">{fmtNights(b.nights)}</span>
+                        <span className="text-copy whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span>
+                        <span className="text-meta text-muted-ink">{fmtNights(b.nights)}</span>
                       </div>
-                      <div className="text-right text-[13px] font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</div>
+                      <div className="text-right text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</div>
                       <div><StatusPill state={b.state} size="sm" /></div>
                       <div className="flex justify-center">
                         <button type="button" title="Message guest" aria-label={`Message ${b.guestName}`}
@@ -404,12 +403,12 @@ export default function BookingsPage() {
                     <ChannelMark ch={b.channel} size={22} />
                     <span className="flex flex-col gap-[3px] min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
-                        <span className="text-[14px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{b.guestName || '—'}</span>
-                        <span className="text-[13px] font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>
+                        <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{b.guestName || '—'}</span>
+                        <span className="text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>
                       </span>
-                      <span className="text-[12px] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.unitNumber} · {b.propertyName}</span>
+                      <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.unitNumber} · {b.propertyName}</span>
                       <span className="flex items-center justify-between gap-2 pt-[2px]">
-                        <span className="text-[12px] whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)} · {fmtNights(b.nights)}</span>
+                        <span className="text-meta whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)} · {fmtNights(b.nights)}</span>
                         <StatusPill state={b.state} size="sm" />
                       </span>
                     </span>
@@ -445,12 +444,9 @@ function Total({ label, value, title }: { label: string; value: string; title?: 
 }
 
 function EmptyList({ searching, message, onClear }: { searching: boolean; message: string; onClear: () => void }) {
-  return (
-    <div className="py-[42px] px-[22px] flex flex-col items-center gap-3 text-center">
-      <span className="text-[13.5px] text-muted-ink">{searching ? 'No bookings match this search in this tab.' : message}</span>
-      {searching && <Button size="sm" variant="secondary" onClick={onClear}>Clear search</Button>}
-    </div>
-  );
+  return searching
+    ? <EmptyState bare kind="filtered" title="No bookings match this search in this tab." action={{ label: 'Clear search', onClick: onClear }} />
+    : <EmptyState bare icon="CalendarDays" title={message} />;
 }
 
 
@@ -521,8 +517,6 @@ function buildImport(text: string, UNITS: RosterUnit[]): ParsedRow[] {
 /* Modals                                                              */
 /* ------------------------------------------------------------------ */
 
-const selectCls = 'h-10 px-3 py-0 rounded-control border border-solid border-line bg-white text-ink [font:inherit] cursor-pointer';
-const labelCls = 'text-[12px] font-medium text-muted-ink';
 
 interface CreatePrefill { guestName?: string; phone?: string; email?: string; unitId?: string; checkIn?: string; checkOut?: string }
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -566,12 +560,8 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
     <CentreModal title="Create reservation" sub="Checked against the unit's other bookings before it is saved." onClose={() => { if (!busy) onClose(); }} maxWidth={500}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto">
         <UnitPicker units={UNITS} value={unitId} onChange={setUnitId} />
-        <div className="flex flex-col gap-[7px]">
-          <label htmlFor="cr-channel" className={labelCls}>Channel</label>
-          <select id="cr-channel" value={channel} onChange={e => setChannel(e.target.value as BookingChannel)} className={selectCls}>
-            {CREATE_CHANNELS.map(c => <option key={c} value={c}>{CHANNEL_META[c].label}</option>)}
-          </select>
-        </div>
+        <Select label="Channel" showLabel size="md" value={channel} onChange={v => setChannel(v as BookingChannel)}
+          options={CREATE_CHANNELS.map(c => ({ value: c, label: CHANNEL_META[c].label }))} />
         <Field label="Guest name" placeholder="Jane Tan" value={guestName} onChange={e => setGuestName(e.target.value)} required />
         <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
           <Field label="Phone" placeholder="+60 12-345 6789" value={phone} onChange={e => setPhone(e.target.value)} />
@@ -602,29 +592,29 @@ function ImportPreviewModal({ rows, onClose, onConfirm }: { rows: ParsedRow[]; o
   return (
     <CentreModal title="Import reservations" sub="Review the parsed rows before committing. Rejected rows are left out." onClose={onClose} maxWidth={620}>
       <div className="px-[22px] pt-1 pb-3 flex items-center gap-2 flex-wrap flex-none">
-        <span className="text-[12.5px] text-muted-ink">{rows.length} {rows.length === 1 ? 'row' : 'rows'} parsed</span>
-        <Badge tone="success" label={`${ok} ready`} size="sm" />
-        {bad > 0 && <Badge tone="critical" label={`${bad} with ${bad === 1 ? 'an error' : 'errors'}`} size="sm" />}
+        <span className="text-meta text-muted-ink">{plural(rows.length, 'row')} parsed</span>
+        <Badge tone="success" label={`${num(ok)} ready`} size="sm" />
+        {bad > 0 && <Badge tone="critical" label={`${num(bad)} with ${bad === 1 ? 'an error' : 'errors'}`} size="sm" />}
       </div>
       <div className="mx-[22px] mb-2 border border-solid border-line rounded-card overflow-y-auto">
         {rows.map((r, i) => (
           <div key={i} className={cx('flex items-start gap-3 py-[10px] px-[13px]', i < rows.length - 1 && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
             <Icon name={r.row ? 'CheckCircle2' : 'AlertCircle'} size="sm" color={r.row ? 'var(--color-success-fg)' : 'var(--color-critical-fg)'} style={{ marginTop: 2 }} />
             <div className="flex flex-col gap-px min-w-0 flex-1">
-              <span className="text-[13px] font-medium">{r.line ? `Line ${r.line} · ` : ''}{r.label}</span>
+              <span className="text-copy font-medium">{r.line ? `Line ${r.line} · ` : ''}{r.label}</span>
               {r.row
-                ? <span className="text-[11.5px] text-muted-ink">{CHANNEL_META[r.row.channel].label} · {dateRange(r.row.checkIn, r.row.checkOut)} · {r.row.grossBookingValue > 0 ? rm(r.row.grossBookingValue, { cents: false }) : 'no rate'}</span>
-                : <span className="text-[11.5px] text-[var(--color-critical-fg)]">{r.error}</span>}
+                ? <span className="text-meta text-muted-ink">{CHANNEL_META[r.row.channel].label} · {dateRange(r.row.checkIn, r.row.checkOut)} · {r.row.grossBookingValue > 0 ? rm(r.row.grossBookingValue, { cents: false }) : 'no rate'}</span>
+                : <span className="text-meta text-[var(--color-critical-fg)]">{r.error}</span>}
             </div>
           </div>
         ))}
       </div>
       <div className="px-[22px] py-[14px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-between gap-[9px] flex-wrap flex-none">
-        <span className="text-[11.5px] text-muted-ink">Columns: unit, guest, channel, checkin, checkout, guests, rate, phone</span>
+        <span className="text-meta text-muted-ink">Columns: unit, guest, channel, checkin, checkout, guests, rate, phone</span>
         <div className="flex gap-[9px]">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" onClick={onConfirm} disabled={ok === 0} disabledReason="No valid rows to import.">
-            {ok > 0 ? `Import ${ok} ${ok === 1 ? 'reservation' : 'reservations'}` : 'Import'}
+            {ok > 0 ? `Import ${plural(ok, 'reservation')}` : 'Import'}
           </Button>
         </div>
       </div>
