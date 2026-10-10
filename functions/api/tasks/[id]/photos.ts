@@ -1,9 +1,9 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
+import { mediaKind } from '../../../_lib/media';
 
-const MAX_BYTES = 8 * 1024 * 1024;
-
-/** POST /api/tasks/:id/photos — multipart `file`. Stored in R2 (binding MEDIA). Without that binding the request is refused, not faked. */
+/** POST /api/tasks/:id/photos — multipart `file`, a photo or a video (proof of work). Stored in R2 (binding MEDIA).
+ *  Without that binding the request is refused, not faked. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -17,17 +17,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
 
   const form = await request.formData().catch(() => null);
   const file = form?.get('file');
-  if (!(file instanceof File)) return fail('VALIDATION', 'Attach a photo.', 422);
-  if (!file.type.startsWith('image/')) return fail('VALIDATION', 'Only photos can be attached.', 422);
-  if (file.size > MAX_BYTES) return fail('VALIDATION', 'That photo is too large (8 MB limit).', 422);
+  if (!(file instanceof File)) return fail('VALIDATION', 'Attach a photo or a video.', 422);
+  const media = mediaKind(file);
+  if ('error' in media) return fail('VALIDATION', media.error, 422);
 
   const docId = crypto.randomUUID();
   const key = `tasks/${id}/${docId}`;
-  await env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
+  await env.MEDIA.put(key, file, { httpMetadata: { contentType: file.type } });
   await run(env, `
     INSERT INTO documents (id, kind, file_name, mime_type, byte_size, storage_key, unit_id, task_id, uploaded_by, captured_at, created_at)
-    VALUES (?, 'photo', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    docId, file.name.slice(0, 120), file.type, file.size, key, t.unit_id, id, session.userId, nowIso(), nowIso());
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'task.photo', entityTable: 'tasks', entityId: id, after: { documentId: docId } });
-  return json({ documentId: docId }, 201);
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    docId, media.kind, file.name.slice(0, 120), file.type, file.size, key, t.unit_id, id, session.userId, nowIso(), nowIso());
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'task.photo', entityTable: 'tasks', entityId: id, after: { documentId: docId, kind: media.kind } });
+  return json({ documentId: docId, kind: media.kind }, 201);
 };

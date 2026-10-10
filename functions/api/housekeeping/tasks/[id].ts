@@ -1,5 +1,46 @@
-import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
+import { type Env, all, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
+import { checklistOf, cleanPrice } from '../../../_lib/cleaning';
+import { mayEditCredentials } from '../../../_lib/credentials';
+
+/** GET /api/housekeeping/tasks/:id — what the clean's detail panel needs in one answer: the checklist, the proof
+ *  photos and videos, the unit's access (masked; the code itself is a separate audited reveal, for the roles that
+ *  may see it), what the clean costs the unit and whether it has been charged, and the damage reported from it. */
+export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return response!;
+  const id = String(params.id);
+  const t = await one<any>(env, `
+    SELECT t.id, t.kind, t.state, t.unit_id, t.assignee_id, t.instructions, t.started_at, t.completed_at, t.guest_left_at,
+           u.unit_number, p.name AS property_name
+    FROM tasks t JOIN units u ON u.id = t.unit_id JOIN properties p ON p.id = u.property_id WHERE t.id = ?`, id);
+  if (!t) return fail('NOT_FOUND', 'That clean no longer exists. Refresh the list.', 404);
+  const field = isFieldRole(session.role);
+  if (field && t.assignee_id !== session.userId) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
+
+  const media = await all<any>(env, `
+    SELECT d.id, d.kind, d.file_name, d.mime_type, d.byte_size, d.created_at, u.full_name AS uploader
+    FROM documents d LEFT JOIN users u ON u.id = d.uploaded_by
+    WHERE d.task_id = ? AND d.kind IN ('photo','video') ORDER BY d.created_at`, id);
+  const creds = await all<any>(env, `SELECT id, kind, label, instruction, secret FROM access_credentials WHERE unit_id = ? ORDER BY label`, t.unit_id);
+  const charged = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE task_id = ? LIMIT 1`, id);
+  const price = await cleanPrice(env, t.unit_id, t.kind);
+  const damage = await all<any>(env, `SELECT id, title, state, reported_at FROM maintenance_issues WHERE source_task_id = ? ORDER BY reported_at`, id);
+  const mask = (s: string | null) => (s ? '•'.repeat(Math.max(2, s.length - 2)) + s.slice(-2) : '');
+
+  return json({
+    id, kind: t.kind, state: t.state, unitId: t.unit_id, unitNumber: t.unit_number, propertyName: t.property_name,
+    instructions: t.instructions ?? null, startedAt: t.started_at ?? null, completedAt: t.completed_at ?? null, guestLeftAt: t.guest_left_at ?? null,
+    checklist: await checklistOf(env, id, t.kind),
+    media: media.map(m => ({ id: m.id, kind: m.kind, url: `/api/documents/${m.id}/download`, fileName: m.file_name, mimeType: m.mime_type, byteSize: Number(m.byte_size), uploadedAt: m.created_at, uploader: m.uploader ?? null })),
+    // Field staff get the instruction only, not even the masked tail (same rule as /api/access-credentials).
+    access: creds.map(c => ({ id: c.id, kind: c.kind, label: c.label, instruction: c.instruction, masked: field ? '' : mask(c.secret), hasCode: !!c.secret })),
+    mayReveal: mayEditCredentials(session),
+    // Amounts are for the office only.
+    cost: field ? null : { amount: charged ? Number(charged.amount) : price.amount, source: price.source, charged: !!charged },
+    damage: damage.map(d => ({ id: d.id, title: d.title, state: d.state, reportedAt: d.reported_at })),
+  });
+};
 
 const CLEAN_KINDS = ['turnover', 'deep_clean', 'light_clean'];
 
