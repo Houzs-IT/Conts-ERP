@@ -1,23 +1,25 @@
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { color, channel } from '../theme';
+import { channel } from '../theme';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Dialog } from '../components/Dialog';
+import { Field } from '../components/Field';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { PageControls } from '../components/PageControls';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
+import { CentreModal } from '../components/booking/BookingDrawer';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
-import { useUnitRoster } from '../lib/useUnitRoster';
-import { api, notifyFailure } from '../lib/api';
+import { api, ApiFailure } from '../lib/api';
 import { useSession } from '../lib/session';
+import { deliveryToast } from '../lib/bookingStatus';
 import { RESERVATION, READINESS } from '../lib/vocabulary';
 import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount } from '../lib/format';
-import { Select, SearchSelect } from '../components/Select';
+import { Select, Menu } from '../components/Select';
 import { EmptyState } from '../components/States';
 import { Chip as FilterChip } from './finance/listKit';
 import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } from '../lib/types';
@@ -26,11 +28,10 @@ import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } 
 /* Model                                                               */
 /* ------------------------------------------------------------------ */
 
-/** One past or current stay in a guest's history. */
 interface Stay {
-  reservationId?: string;
+  reservationId: string; externalRef: string | null;
   checkIn: string; checkOut: string; unitNumber: string; propertyName: string;
-  nights: number; channel: BookingChannel; value: number; state: ReservationState;
+  nights: number; channel: BookingChannel; value: number; state: ReservationState; rating: number | null;
 }
 
 /** An arrival or departure the guest has on the board today or tomorrow. */
@@ -45,88 +46,82 @@ interface GuestMovement {
   preparedAt: string | null; accessSentAt: string | null;
 }
 
-/** A directory row: lifetime figures only. Contact is null-masked away from operations roles. */
+interface Tag { key: string; label: string; tone: Tone }
+
+/** A directory row. Contact is null away from operations roles. */
 interface GuestSummary {
-  id: string; fullName: string; email: string | null; phone: string | null;
-  channel: BookingChannel;
-  tag: { label: string; tone: Tone };
+  id: string; fullName: string; email: string | null; phone: string | null; countryCode: string | null;
+  channel: BookingChannel; tags: Tag[]; missingId: boolean;
   since: string;
-  stays: number; nights: number; lifetimeValue: number;
+  stays: number; upcoming: number; nights: number; lifetimeValue: number;
   lastCheckIn?: string | null;
 }
 
 /** The full profile, read from GET /guests/:id when a guest is selected. */
-interface Guest extends GuestSummary {
-  ratingScore: number | null;
+interface Guest {
+  id: string; fullName: string; email: string | null; phone: string | null; language: string | null;
+  channel: BookingChannel; tags: Tag[]; manualTags: string[]; since: string;
+  stays: number; upcoming: number; nights: number; lifetimeValue: number; ratingScore: number | null;
+  registration: { idType: string | null; idNumberMasked: string | null; hasIdNumber: boolean; dateOfBirth: string | null; countryCode: string | null; missing: string[]; required: boolean };
+  notes: string | null;
+  can: { edit: boolean; reveal: boolean; merge: boolean };
   history: Stay[];
   movement?: GuestMovement;
-  /** Internal operations notes, when the payload carries them. Ops roles only. */
-  notes?: string | null;
+  redirectTo?: string;
 }
 
-type Filter = 'all' | 'arriving_today' | 'departing_today' | 'tomorrow';
+const FILTERS = [
+  { key: 'all', label: 'All guests', empty: 'No guests yet.' },
+  { key: 'arriving_today', label: 'Arriving today', empty: 'Nobody arrives today.' },
+  { key: 'departing_today', label: 'Departing today', empty: 'Nobody departs today.' },
+  { key: 'tomorrow', label: 'Tomorrow', empty: 'No arrivals or departures tomorrow.' },
+  { key: 'missing_id', label: 'Missing ID', empty: 'Every guest with a stay coming has their registration details.' },
+  { key: 'repeat', label: 'Repeat', empty: 'No repeat guests yet.' },
+  { key: 'vip', label: 'VIP', empty: 'No guest is tagged VIP.' },
+  { key: 'blacklist', label: 'Blacklist', empty: 'No guest is blacklisted.' },
+] as const;
+type Filter = typeof FILTERS[number]['key'];
 interface ListPayload {
-  data: GuestSummary[]; total: number; page: number; pageSize: number; generatedAt: string;
+  data: GuestSummary[]; total: number; page: number; pageSize: number; generatedAt: string; registrationReady: boolean;
   counts: Record<Filter, number>;
 }
 
-// Times are anchored at load so the two-hour access window is genuinely live in dev.
-const NOW = Date.now();
-const at = (min: number) => new Date(NOW + min * 60000).toISOString();
-
-const GUESTS: Guest[] = [
-  {
-    id: 'g1', fullName: 'Nadia Abdullah', email: 'nadia@example.com', phone: '+60 12-111 0001',
-    channel: 'airbnb', tag: { label: 'Repeat guest', tone: 'success' }, since: 'Guest since Mar 2025',
-    stays: 4, nights: 17, lifetimeValue: 482000, ratingScore: 5.0,
-    history: [
-      { checkIn: '2026-09-13', checkOut: '2026-09-16', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', nights: 3, channel: 'airbnb', value: 85200, state: 'checked_in' },
-      { checkIn: '2026-08-02', checkOut: '2026-08-05', unitNumber: '#2207', propertyName: 'The Establishment', nights: 3, channel: 'direct', value: 95400, state: 'checked_out' },
-    ],
-    movement: { reservationId: 'r1', kind: 'arrival', day: 'today', checkInAt: at(95), checkOutAt: '', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', channel: 'airbnb', nights: 3, guestsCount: 2, state: 'confirmed', readiness: 'ready', preparedAt: null, accessSentAt: null },
-  },
-  {
-    id: 'g2', fullName: 'Aaron Lee', email: 'aaron@example.com', phone: '+60 12-111 0002',
-    channel: 'direct', tag: { label: 'Direct', tone: 'info' }, since: 'Guest since Jun 2025',
-    stays: 3, nights: 11, lifetimeValue: 486000, ratingScore: 4.8,
-    history: [
-      { checkIn: '2026-05-09', checkOut: '2026-05-11', unitNumber: '#B-08-11', propertyName: 'Arcoris Mont Kiara', nights: 2, channel: 'direct', value: 262000, state: 'checked_out' },
-    ],
-  },
-];
-
 const LIST_FALLBACK: ListPayload = {
-  data: GUESTS, total: GUESTS.length, page: 1, pageSize: 50, generatedAt: '',
-  counts: { all: GUESTS.length, arriving_today: 1, departing_today: 0, tomorrow: 0 },
+  data: [], total: 0, page: 1, pageSize: 50, generatedAt: '', registrationReady: true,
+  counts: { all: 0, arriving_today: 0, departing_today: 0, tomorrow: 0, missing_id: 0, repeat: 0, vip: 0, blacklist: 0 },
 };
+
+// Latest stay first: the guest an operator is looking for is usually the one who just booked or stayed.
+const SORTS = [
+  { key: 'recent', label: 'Latest stay' },
+  { key: 'name', label: 'Name A to Z' },
+  { key: 'value', label: 'Booking value' },
+  { key: 'stays', label: 'Most stays' },
+] as const;
 
 const OPS_ROLES: UserRole[] = ['management', 'operations_manager', 'operations_staff'];
 const TWO_HOURS = 2 * 60 * 60 * 1000;
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
 const threadName = (ch: BookingChannel) => (ch === 'direct' ? 'WhatsApp' : channel[ch].label);
+const failMessage = (e: unknown) => (e instanceof Error ? e.message : 'Try again in a moment.');
 
-const FILTERS: { key: Filter; label: string; empty: string }[] = [
-  { key: 'all', label: 'All guests', empty: 'No guests yet.' },
-  { key: 'arriving_today', label: 'Arriving today', empty: 'Nobody arrives today.' },
-  { key: 'departing_today', label: 'Departing today', empty: 'Nobody departs today.' },
-  { key: 'tomorrow', label: 'Tomorrow', empty: 'No arrivals or departures tomorrow.' },
-];
-// Latest stay first: the guest an operator is looking for is usually the one who just booked or stayed,
-// not "A Yoon Kim, 0 stays" at the top of 3,400 names.
-const SORTS = [
-  { key: 'recent', label: 'Latest stay' },
-  { key: 'name', label: 'Name A to Z' },
-  { key: 'value', label: 'Lifetime value' },
-  { key: 'stays', label: 'Most stays' },
-] as const;
+const ID_TYPES: Record<string, string> = { mykad: 'MyKad', passport: 'Passport', other: 'Other ID' };
+/** Common guest nationalities; any other ISO code still shows by name. */
+const COUNTRY_CODES = ['MY', 'SG', 'ID', 'TH', 'PH', 'VN', 'BN', 'CN', 'HK', 'TW', 'JP', 'KR', 'IN', 'PK', 'BD', 'LK', 'AU', 'NZ', 'GB', 'IE', 'US', 'CA',
+  'DE', 'FR', 'NL', 'IT', 'ES', 'CH', 'SE', 'NO', 'DK', 'RU', 'SA', 'AE', 'QA', 'KW', 'OM', 'EG', 'TR', 'IR', 'MV', 'NG', 'ZA'];
+const countryName = (code: string | null | undefined) => {
+  if (!code) return null;
+  try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code; } catch { return code; }
+};
+const COUNTRIES = COUNTRY_CODES.map(c => ({ value: c, label: countryName(c) ?? c })).sort((a, b) => a.label.localeCompare(b.label));
+const LANGUAGES = ['English', 'Malay', 'Chinese', 'Tamil', 'Arabic', 'Japanese', 'Korean', 'Indonesian', 'Thai', 'Other'];
 
-/** null → allowed. A string → the reason "Send access" is disabled. */
+/** null means allowed; a string is the reason "Send access details" is off. */
 function accessGuard(m: GuestMovement): string | null {
   if (m.accessSentAt) return 'Access details already sent.';
   if (m.state === 'checked_in' || m.state === 'checked_out') return 'Guest is already checked in.';
   if (m.readiness !== 'ready') return 'Send access once the unit is Ready.';
-  if (Date.now() < new Date(m.checkInAt).getTime() - TWO_HOURS)
-    return 'Access details unlock 2 hours before check-in.';
+  if (Date.now() < new Date(m.checkInAt).getTime() - TWO_HOURS) return 'Access details unlock 2 hours before check-in.';
   return null;
 }
 
@@ -140,7 +135,6 @@ export default function GuestsPage() {
   const navigate = useNavigate();
   const toast = useToast();
 
-  // URL-as-state: search, filter, sort, page and the selected guest survive a refresh or a shared link.
   const [params, setParams] = useSearchParams();
   function updateParams(mut: (p: URLSearchParams) => void) {
     setParams(prev => { const next = new URLSearchParams(prev); mut(next); return next; }, { replace: true });
@@ -154,7 +148,7 @@ export default function GuestsPage() {
     for (const k of ['q', 'filter', 'page']) { const v = params.get(k); if (v) p.set(k, v); }
     p.set('sort', sort);
     return p.toString();
-  }, [params]);
+  }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
   const list = useApi<ListPayload>(`/guests${listQuery ? `?${listQuery}` : ''}`, LIST_FALLBACK);
   const rows = list.data?.data ?? [];
   const counts = list.data?.counts;
@@ -163,7 +157,9 @@ export default function GuestsPage() {
   // Phones show the list or a profile, never both: only an explicit pick (g in the URL) opens a profile there.
   const pickedId = params.get('g');
   const selectedId = pickedId ?? rows[0]?.id ?? null;
-  const detail = useApi<Guest>(selectedId ? `/guests/${selectedId}` : null, GUESTS.find(g => g.id === selectedId) ?? GUESTS[0]);
+  const detail = useApi<Guest>(selectedId ? `/guests/${selectedId}` : null);
+  // A merged duplicate opens as the guest it was merged into.
+  useEffect(() => { if (detail.data?.redirectTo) updateParams(p => p.set('g', detail.data!.redirectTo!)); }, [detail.data?.redirectTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [draft, setDraft] = useState(params.get('q') ?? '');
   const timer = useRef<number | undefined>(undefined);
@@ -177,92 +173,92 @@ export default function GuestsPage() {
   }
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
-  // Optimistic overlays on today's movement, rolled back if the server refuses.
-  const [mEdits, setMEdits] = useState<Record<string, Partial<GuestMovement>>>({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Guest | null>(null);
   const [checkout, setCheckout] = useState<Guest | null>(null);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Guest | null>(null);
+  const [merging, setMerging] = useState<Guest | null>(null);
 
-  const mergeGuest = (g: Guest): Guest =>
-    g.movement && mEdits[g.movement.reservationId]
-      ? { ...g, movement: { ...g.movement, ...mEdits[g.movement.reservationId] } }
-      : g;
-  const mPatch = (rid: string, p: Partial<GuestMovement>) =>
-    setMEdits(e => ({ ...e, [rid]: { ...e[rid], ...p } }));
-
-  // While the next profile loads the previous one stays, dimmed, instead of blanking the panel.
-  const selected = detail.data ? mergeGuest(detail.data) : null;
+  const selected = detail.data && !detail.data.redirectTo ? detail.data : null;
   const profileStale = !!selected && selected.id !== selectedId;
 
   function reloadAll() { list.reload(); detail.reload(); }
   function select(id: string) {
     updateParams(p => p.set('g', id));
-    // On a phone the profile replaces the list, so it should open at its top, not at the list's scroll position.
     if (window.matchMedia('(max-width: 767.98px)').matches) document.querySelector('main')?.scrollTo({ top: 0 });
   }
   function setFilter(key: Filter) { updateParams(p => { if (key === 'all') p.delete('filter'); else p.set('filter', key); p.delete('page'); p.delete('g'); }); }
   function setSort(key: string) { updateParams(p => { if (key === 'recent') p.delete('sort'); else p.set('sort', key); p.delete('page'); p.delete('g'); }); }
   function goPage(n: number) { updateParams(p => { if (n <= 1) p.delete('page'); else p.set('page', String(n)); p.delete('g'); }); }
 
-  // ---- actions: a change shows at once and is rolled back if the server refuses it ----
-  function tryMove(rid: string, p: Partial<GuestMovement>, call: () => Promise<unknown>, ok: () => void) {
-    const prev = mEdits[rid];
-    mPatch(rid, p);
-    call().then(() => { ok(); reloadAll(); }).catch(err => { setMEdits(e => ({ ...e, [rid]: prev ?? {} })); notifyFailure(err); });
-  }
-  function prepareEarly(g: Guest) {
+  // ---- actions: each toast says what the server did, never what was hoped for ----
+  async function prepareEarly(g: Guest) {
     const m = g.movement; if (!m) return;
-    tryMove(m.reservationId, { preparedAt: new Date().toISOString(), accessSentAt: new Date().toISOString(), readiness: 'ready' },
-      () => api.post(`/reservations/${m.reservationId}/prepare`, {}),
-      () => toast({ tone: 'success', title: `${m.propertyName} ${m.unitNumber} prepared.`, body: 'Access sent and the unit is confirmed ready.' }));
+    setBusy(true);
+    try {
+      const r = await api.post<{ taskCreated: boolean }>(`/reservations/${m.reservationId}/prepare`, {});
+      toast({ tone: 'success', title: r.taskCreated ? `A clean was queued for ${m.propertyName} ${m.unitNumber}.` : `A clean is already open for ${m.propertyName} ${m.unitNumber}.`,
+        body: 'Nothing was sent to the guest. Send access details once the unit is Ready.' });
+      reloadAll();
+    } catch (e) { toast({ tone: 'critical', title: 'Arrival not prepared.', body: failMessage(e) }); }
+    setBusy(false);
   }
-  function sendAccess(g: Guest) {
+  async function sendAccess(g: Guest) {
     const m = g.movement; if (!m) return;
-    tryMove(m.reservationId, { accessSentAt: new Date().toISOString() },
-      () => api.post('/messages', { reservationId: m.reservationId, kind: 'access_details' }),
-      () => toast({ tone: 'success', title: `Access details sent to ${g.fullName}.`, body: `Delivered on ${threadName(m.channel)}.` }));
+    setBusy(true);
+    try {
+      const r = await api.post<{ delivery?: string; reason?: string }>('/messages', { reservationId: m.reservationId, kind: 'access_details' });
+      toast(deliveryToast(r?.delivery, g.fullName, r?.reason));
+      reloadAll();
+    } catch (e) { toast({ tone: 'critical', title: 'Access details not sent.', body: failMessage(e) }); }
+    setBusy(false);
   }
-  function markCheckedIn(g: Guest) {
+  async function markCheckedIn(g: Guest) {
     const m = g.movement; if (!m) return;
-    tryMove(m.reservationId, { state: 'checked_in', readiness: 'occupied' },
-      () => api.patch(`/reservations/${m.reservationId}`, { state: 'checked_in' }),
-      () => toast({ tone: 'success', title: `${g.fullName} checked in.`, body: `${m.propertyName} ${m.unitNumber} is now occupied.` }));
+    setBusy(true);
+    try {
+      await api.patch(`/reservations/${m.reservationId}`, { state: 'checked_in' });
+      toast({ tone: 'success', title: `${g.fullName} checked in.`, body: `${m.propertyName} ${m.unitNumber} is now occupied.` });
+      reloadAll();
+    } catch (e) { toast({ tone: 'critical', title: 'Not checked in.', body: failMessage(e) }); }
+    setBusy(false);
   }
   async function confirmCheckout() {
     if (!checkout?.movement) return;
     const g = checkout, m = checkout.movement;
     setBusy(true);
     try {
-      await api.patch(`/reservations/${m.reservationId}`, { state: 'checked_out' });
-      mPatch(m.reservationId, { state: 'checked_out', readiness: 'dirty' });
-      toast({ tone: 'success', title: `${g.fullName} checked out.`, body: `A cleaning task was created for ${m.propertyName} ${m.unitNumber}.` });
+      const r = await api.patch<{ effects?: { turnoverCreated?: boolean } }>(`/reservations/${m.reservationId}`, { state: 'checked_out' });
+      toast({ tone: 'success', title: `${g.fullName} checked out.`, body: r?.effects?.turnoverCreated ? `A cleaning task was created for ${m.propertyName} ${m.unitNumber}.` : `${m.propertyName} ${m.unitNumber} already had a clean planned.` });
       setCheckout(null);
       reloadAll();
-    } catch (e) { notifyFailure(e); } finally { setBusy(false); }
+    } catch (e) { toast({ tone: 'critical', title: 'Not checked out.', body: failMessage(e) }); } finally { setBusy(false); }
   }
   async function sendMessage(body: string) {
     if (!message) return;
     const g = message;
     try {
-      await api.post('/messages', { guestId: g.id, body });
+      const r = await api.post<{ delivery?: string; reason?: string }>('/messages', { guestId: g.id, body });
       setMessage(null);
-      toast({ tone: 'success', title: `Message sent to ${g.fullName}.`, body: `Thread opened on ${threadName(g.channel)}.` });
-    } catch (e) { notifyFailure(e); }
+      toast(deliveryToast(r?.delivery, g.fullName, r?.reason));
+    } catch (e) { toast({ tone: 'critical', title: 'Message not sent.', body: failMessage(e) }); }
   }
   // A booking needs a unit and dates, so this opens the Bookings form with the guest filled in.
-  function bookAgain(g: Guest) {
+  function bookStay(g: Guest) {
     navigate('/reservations/bookings?create=1', { state: { guestName: g.fullName, phone: g.phone ?? '', email: g.email ?? '' } });
   }
-  async function addWalkIn(input: { fullName: string; phone: string; email: string; unitNumber: string; propertyName: string; guestsCount: number }) {
+  async function addGuest(input: { fullName: string; phone: string; email: string; countryCode: string; language: string }) {
     try {
-      const r = await api.post<{ id: string; reservationId: string }>('/guests', input);
+      const r = await api.post<{ id: string; created: boolean; existingName?: string }>('/guests', input);
       setAdding(false);
       setDraft('');
       updateParams(p => { ['q', 'filter', 'page'].forEach(k => p.delete(k)); p.set('g', r.id); });
-      toast({ tone: 'success', title: `${input.fullName} added.`, body: 'Walk-in placed in today’s arrivals.' });
+      toast(r.created
+        ? { tone: 'success', title: `${input.fullName} added.`, body: 'Only the guest record was created. Use Book a stay to give them a unit and dates.' }
+        : { tone: 'warning', title: 'This guest is already on file.', body: `${r.existingName} has the same ${input.email ? 'email' : 'phone'}. Their record is open; nothing new was created.` });
       reloadAll();
-    } catch (e) { notifyFailure(e); }
+    } catch (e) { toast({ tone: 'critical', title: 'Guest not added.', body: failMessage(e) }); }
   }
 
   const searching = !!params.get('q');
@@ -272,21 +268,21 @@ export default function GuestsPage() {
     <>
       <PageHeader
         title="Guests"
-        sub={counts ? `${plural(counts.all, 'guest')}${searching ? ' match your search' : ''}` : 'Loading guests'}
-        primary={<Button variant="primary" size="sm" onClick={() => setAdding(true)}>Add guest</Button>}
+        sub={counts ? `${plural(counts.all, 'guest')}${searching ? ' match your search' : ''}${counts.missing_id ? ` · ${counts.missing_id} with a stay coming are missing ID details` : ''}` : 'Loading guests'}
+        primary={canSeeContact ? <Button variant="primary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Add guest</Button> : undefined}
       />
 
       {list.error && <StaleBanner message={`Showing the last guest list we have. ${list.error}`} onRetry={list.reload} />}
 
       <div className="flex gap-5 items-start max-w-[1600px] max-md:flex-col max-md:items-stretch">
         {/* -------- left: directory list -------- */}
-        <div className={cx('md:flex-[0_1_400px] md:min-w-[320px] md:max-w-[440px] w-full bg-card border border-solid border-line rounded-card overflow-hidden', pickedId && 'max-md:hidden')}>
+        <div className={cx('md:flex-[0_1_420px] md:min-w-[320px] md:max-w-[440px] w-full bg-card border border-solid border-line rounded-card overflow-hidden', pickedId && 'max-md:hidden')}>
           <div className="py-4 px-4 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-3">
             <div className="flex gap-2 flex-wrap">
               <label className="relative flex-[1_1_180px] min-w-0">
                 <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid"><Icon name="Search" size="sm" /></span>
                 <input value={draft} onChange={e => setSearch(e.target.value)} aria-label="Search guests"
-                  placeholder={canSeeContact ? 'Name, phone or email' : 'Guest name'}
+                  placeholder={canSeeContact ? 'Name, phone, email or booking reference' : 'Guest name'}
                   className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-copy pl-[32px] pr-3 py-0 outline-none" />
               </label>
               <Select label="Sort guests" value={sort} onChange={setSort} className="flex-[1_1_150px] sm:flex-none sm:w-[150px]"
@@ -294,24 +290,21 @@ export default function GuestsPage() {
             </div>
             <div role="group" aria-label="Filter guests" className="flex gap-2 flex-wrap">
               {FILTERS.map(f => (
-                <FilterChip key={f.key} on={f.key === filter} onClick={() => setFilter(f.key)} count={counts?.[f.key]}>{f.label}</FilterChip>
+                <FilterChip key={f.key} on={f.key === filter} onClick={() => setFilter(f.key)} count={counts?.[f.key]}>
+                  {f.key === 'missing_id' && !!counts?.missing_id && f.key !== filter ? <span className="text-[var(--color-critical-fg)]">{f.label}</span> : f.label}
+                </FilterChip>
               ))}
             </div>
           </div>
 
-          <div className="md:max-h-[calc(100dvh-380px)] md:min-h-[320px] overflow-y-auto" aria-busy={list.loading}>
+          <div className="md:max-h-[calc(100dvh-400px)] md:min-h-[320px] overflow-y-auto" aria-busy={list.loading}>
             {!list.data ? <TableSkeleton rows={8} cols={2} /> : rows.length === 0 ? (
               searching
                 ? <EmptyState bare kind="filtered" title={emptyText} action={{ label: 'Clear search', onClick: () => setSearch('') }} />
                 : <EmptyState bare title={emptyText} />
             ) : (
               <div className={cx('transition-opacity duration-150', list.loading && 'opacity-55')}>
-                {rows.map(g => (
-                  <GuestRow
-                    key={g.id} g={g} selected={selectedId === g.id} canSeeContact={canSeeContact}
-                    onSelect={() => select(g.id)}
-                  />
-                ))}
+                {rows.map(g => <GuestRow key={g.id} g={g} selected={selectedId === g.id} canSeeContact={canSeeContact} onSelect={() => select(g.id)} />)}
               </div>
             )}
           </div>
@@ -328,15 +321,19 @@ export default function GuestsPage() {
             <Icon name="ChevronLeft" size="sm" /> All guests
           </button>
           {selected ? (
-            <div className={cx('flex flex-col gap-5 transition-opacity duration-150', profileStale && 'opacity-55')} aria-busy={profileStale}>
+            <div className={cx('flex flex-col gap-5 transition-opacity duration-150', profileStale && 'opacity-55')} aria-busy={profileStale || busy}>
               <ProfilePanel
-                g={selected} canSeeContact={canSeeContact}
+                g={selected} canSeeContact={canSeeContact} busy={busy}
                 onMessage={() => setMessage(selected)}
-                onBookAgain={() => bookAgain(selected)}
+                onBookStay={() => bookStay(selected)}
+                onEdit={() => setEditing(selected)}
+                onMerge={() => setMerging(selected)}
                 onPrepare={() => prepareEarly(selected)}
                 onSendAccess={() => sendAccess(selected)}
                 onCheckIn={() => markCheckedIn(selected)}
                 onCheckOut={() => setCheckout(selected)}
+                onOpenStay={id => navigate(`/reservations/bookings?view=all&open=${encodeURIComponent(id)}`)}
+                onSaved={reloadAll}
               />
             </div>
           ) : (
@@ -347,14 +344,13 @@ export default function GuestsPage() {
         </div>
       </div>
 
-      {/* Mark checked out — confirmation, states the auto cleaning task */}
       <Dialog
         busy={busy}
         onClose={() => setCheckout(null)}
         spec={!checkout?.movement ? null : {
           title: `Mark ${checkout.fullName} checked out?`,
           body: `${checkout.movement.propertyName} ${checkout.movement.unitNumber} moves to Dirty and the stay is closed.`,
-          meta: 'A cleaning task is created automatically, its window set from the next arrival.',
+          meta: 'A cleaning task is created if the unit has none planned.',
           confirmLabel: 'Mark checked out',
           busyLabel: 'Checking out…',
           onConfirm: confirmCheckout,
@@ -362,7 +358,10 @@ export default function GuestsPage() {
       />
 
       {message && <MessageModal g={message} onClose={() => setMessage(null)} onSend={sendMessage} />}
-      {adding && <AddGuestModal onClose={() => setAdding(false)} onAdd={addWalkIn} />}
+      {adding && <AddGuestModal onClose={() => setAdding(false)} onAdd={addGuest} />}
+      {editing && <EditGuestModal g={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reloadAll(); }} />}
+      {merging && <MergeModal g={merging} onClose={() => setMerging(null)}
+        onMerged={intoId => { setMerging(null); updateParams(p => p.set('g', intoId)); reloadAll(); }} />}
     </>
   );
 }
@@ -371,30 +370,24 @@ export default function GuestsPage() {
 /* Directory row                                                       */
 /* ------------------------------------------------------------------ */
 
-function GuestRow({ g, selected, canSeeContact, onSelect }: {
-  g: GuestSummary; selected: boolean; canSeeContact: boolean; onSelect: () => void;
-}) {
-  const lastStay = g.lastCheckIn ? `Last stay ${fmtDate(g.lastCheckIn)}` : 'No stays yet';
+function GuestRow({ g, selected, canSeeContact, onSelect }: { g: GuestSummary; selected: boolean; canSeeContact: boolean; onSelect: () => void }) {
+  const lastStay = g.upcoming ? 'Stay coming up' : g.lastCheckIn ? `Last stay ${fmtDate(g.lastCheckIn)}` : 'No stays yet';
   const meta = canSeeContact ? [g.phone, g.email].filter(Boolean).join(' · ') || lastStay : lastStay;
+  const tag = g.tags[0];
   return (
-    <button
-      onClick={onSelect}
-      aria-current={selected}
+    <button onClick={onSelect} aria-current={selected}
       className={cx(
         'flex items-center gap-3 w-full text-left [font:inherit] min-h-[62px] py-[11px] px-4 cursor-pointer [border-top:0] [border-right:0] [border-left:0] [border-bottom:1px_solid_var(--color-line-soft)]',
         selected ? 'bg-gold-tint shadow-[inset_3px_0_0_var(--color-gold)]' : 'bg-card shadow-none',
-      )}
-    >
-      <span className="w-[34px] h-[34px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-meta font-semibold">
-        {initials(g.fullName)}
-      </span>
+      )}>
+      <span className="w-[34px] h-[34px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-meta font-semibold">{initials(g.fullName)}</span>
       <span className="flex flex-col gap-[2px] min-w-0 flex-1">
         <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={g.fullName}>{g.fullName}</span>
         <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={meta}>{meta}</span>
       </span>
       <span className="flex flex-col items-end gap-1 flex-none">
-        <Badge tone={g.tag.tone} label={g.tag.label} size="sm" />
-        <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{plural(g.stays, 'stay')}</span>
+        {g.missingId ? <Badge tone="critical" label="Missing ID" size="sm" /> : tag && <Badge tone={tag.tone} label={tag.label} size="sm" />}
+        <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{plural(g.stays, 'stay')}{g.upcoming ? ` (${g.upcoming} upcoming)` : ''}</span>
       </span>
     </button>
   );
@@ -404,147 +397,215 @@ function GuestRow({ g, selected, canSeeContact, onSelect }: {
 /* Profile                                                             */
 /* ------------------------------------------------------------------ */
 
-function ProfilePanel({ g, canSeeContact, onMessage, onBookAgain, onPrepare, onSendAccess, onCheckIn, onCheckOut }: {
-  g: Guest; canSeeContact: boolean;
-  onMessage: () => void; onBookAgain: () => void;
+function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, onMerge, onPrepare, onSendAccess, onCheckIn, onCheckOut, onOpenStay, onSaved }: {
+  g: Guest; canSeeContact: boolean; busy: boolean;
+  onMessage: () => void; onBookStay: () => void; onEdit: () => void; onMerge: () => void;
   onPrepare: () => void; onSendAccess: () => void; onCheckIn: () => void; onCheckOut: () => void;
+  onOpenStay: (reservationId: string) => void; onSaved: () => void;
 }) {
+  const country = countryName(g.registration.countryCode);
   const contact = canSeeContact
-    ? [g.email, g.phone].filter(Boolean).join(' · ') || '—'
+    ? [g.phone, g.email, g.language, country, `from ${channel[g.channel]?.label ?? 'Direct'}`].filter(Boolean).join(' · ')
     : 'Contact restricted to operations roles';
   return (
     <>
-      {/* header + stats card */}
       <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-4">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-[14px] min-w-0">
-            <span className="w-[46px] h-[46px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-heading font-semibold">
-              {initials(g.fullName)}
-            </span>
+            <span className="w-[46px] h-[46px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-heading font-semibold">{initials(g.fullName)}</span>
             <div className="min-w-0 flex flex-col gap-[3px]">
-              <h2 className="m-0 text-title leading-[1.25] font-semibold">{g.fullName}</h2>
-              <span className="text-meta text-muted-ink">{contact}</span>
+              <h2 className="m-0 text-title leading-[1.25] font-semibold break-words">{g.fullName}</h2>
+              <span className="text-meta text-muted-ink break-words">{contact}</span>
               <div className="flex items-center gap-[7px] flex-wrap pt-[2px]">
-                <Badge tone={g.tag.tone} label={g.tag.label} size="sm" />
+                {g.tags.map(t => <Badge key={t.key} tone={t.tone} label={t.label} size="sm" />)}
+                {g.registration.required && g.registration.missing.length > 0 && <Badge tone="critical" label="Missing ID" size="sm" />}
                 <span className="text-meta text-muted-ink">{g.since}</span>
               </div>
             </div>
           </div>
           <div className="flex gap-2 flex-wrap">
             <Button size="sm" variant="secondary" icon={<Icon name="MessageSquare" size="sm" />} onClick={onMessage}>Message</Button>
-            <Button size="sm" variant="primary" onClick={onBookAgain}>Book again</Button>
+            <Button size="sm" variant="primary" onClick={onBookStay}>Book a stay</Button>
+            {(g.can.edit || g.can.merge) && (
+              <Menu label="More actions" trigger={<span className="h-8 inline-flex items-center gap-1 px-3 rounded-control border border-solid border-line bg-card text-copy text-ink">More<Icon name="ChevronDown" size="sm" /></span>}
+                items={[
+                  ...(g.can.edit ? [{ key: 'edit', label: 'Edit details', hint: 'Contact, language and registration details', icon: 'Pencil', onSelect: onEdit }] : []),
+                  ...(g.can.merge ? [{ key: 'merge', label: 'Merge into another guest', hint: 'For a duplicate record of the same person', icon: 'GitMerge', onSelect: onMerge }] : []),
+                ]} />
+            )}
           </div>
         </div>
 
         <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-[14px] pt-4 [border-top:1px_solid_var(--color-line-soft)]">
-          <Stat label="Stays" value={fmtCount(g.stays)} />
+          <Stat label="Stays" value={fmtCount(g.stays)} sub={g.upcoming ? `incl. ${g.upcoming} upcoming` : undefined} />
           <Stat label="Nights" value={fmtCount(g.nights)} />
-          <Stat label="Lifetime value" value={rm(g.lifetimeValue, { cents: false })} />
+          <Stat label="Booking value" value={rm(g.lifetimeValue, { cents: false })} sub="Guest totals, upcoming included" />
           <Stat label="Rating given" value={g.ratingScore != null ? g.ratingScore.toFixed(1) : '—'} />
         </div>
       </div>
 
-      {/* today's arrival / departure — ops controls on the relevant guest */}
-      {g.movement && <MovementStrip g={g} onPrepare={onPrepare} onSendAccess={onSendAccess} onCheckIn={onCheckIn} onCheckOut={onCheckOut} />}
+      {g.movement && <MovementStrip g={g} busy={busy} onPrepare={onPrepare} onSendAccess={onSendAccess} onCheckIn={onCheckIn} onCheckOut={onCheckOut} />}
 
-      {/* stay history */}
+      {canSeeContact && (
+        <div className="grid grid-cols-2 gap-5 max-lg:grid-cols-1">
+          <Registration g={g} onEdit={onEdit} />
+          <NotesAndTags g={g} onSaved={onSaved} />
+        </div>
+      )}
+
       <div className="bg-card border border-solid border-line rounded-card overflow-hidden">
-        <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-heading font-semibold">Stay history</div>
+        <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-heading font-semibold">Stays</div>
         {g.history.length === 0 ? (
           <div className="py-[18px] px-5 text-copy text-muted-ink">No stays yet. Cancelled bookings are not listed here.</div>
         ) : (
           g.history.map((s, i) => (
-            <div key={i} className={cx('flex items-center gap-[14px] py-[13px] px-5 flex-wrap', i < g.history.length - 1 ? '[border-bottom:1px_solid_var(--color-line-soft)]' : '')}>
-              <span aria-hidden className="w-[44px] h-[44px] flex-none rounded-[6px] bg-muted grid place-items-center">
-                <Icon name="Image" size="sm" color={color.faint} />
-              </span>
-              <div className="flex flex-col gap-[2px] min-w-[140px] flex-1">
-                <span className="text-copy font-medium">{s.propertyName} {s.unitNumber}</span>
-                <span className="text-meta text-muted-ink">{dateRange(s.checkIn, s.checkOut)} · {fmtNights(s.nights)}</span>
+            <button key={s.reservationId} type="button" onClick={() => onOpenStay(s.reservationId)}
+              className={cx('w-full text-left [font:inherit] bg-transparent border-none cursor-pointer hover:bg-page flex items-center gap-[14px] py-[13px] px-5 flex-wrap', i < g.history.length - 1 ? '[border-bottom:1px_solid_var(--color-line-soft)]' : '')}>
+              <ChannelMark ch={s.channel} size={24} />
+              <div className="flex flex-col gap-[2px] min-w-[150px] flex-1">
+                <span className="text-copy font-medium text-ink">{s.propertyName} {s.unitNumber}</span>
+                <span className="text-meta text-muted-ink">{dateRange(s.checkIn, s.checkOut)} · {fmtNights(s.nights)}{s.externalRef ? ` · ${s.externalRef}` : ''}{s.rating != null ? ` · rated ${s.rating.toFixed(1)}` : ''}</span>
               </div>
-              <ChannelChip ch={s.channel} />
-              <span className="text-copy font-medium w-[92px] text-right [font-variant-numeric:tabular-nums]">{rm(s.value, { cents: false })}</span>
+              <span className="text-copy font-medium w-[92px] text-right [font-variant-numeric:tabular-nums] text-ink">{rm(s.value, { cents: false })}</span>
               <Badge tone={RESERVATION[s.state].tone} label={RESERVATION[s.state].label} size="sm" />
-            </div>
+            </button>
           ))
-        )}
-      </div>
-
-      {/* contact / notes footnote */}
-      <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-2">
-        <span className="text-heading font-semibold">Contact</span>
-        {canSeeContact ? (
-          <div className="flex flex-col gap-[3px]">
-            <span className="text-copy">{g.email ?? '—'}</span>
-            <span className="text-copy text-muted-ink">{g.phone ?? '—'}</span>
-          </div>
-        ) : (
-          <span className="text-copy text-faint">
-            Guest contact details are visible to operations roles only. Field roles see the guest name where a task requires it.
-          </span>
-        )}
-      </div>
-
-      {/* operations notes — internal, restricted to operations roles like contact */}
-      <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-2">
-        <span className="text-heading font-semibold">Operations notes</span>
-        {canSeeContact ? (
-          g.notes ? (
-            <span className="text-copy [text-wrap:pretty]">{g.notes}</span>
-          ) : (
-            <span className="text-copy text-muted-ink">No operations notes.</span>
-          )
-        ) : (
-          <span className="text-copy text-faint">
-            Operations notes are visible to operations roles only.
-          </span>
         )}
       </div>
     </>
   );
 }
 
-function MovementStrip({ g, onPrepare, onSendAccess, onCheckIn, onCheckOut }: {
-  g: Guest; onPrepare: () => void; onSendAccess: () => void; onCheckIn: () => void; onCheckOut: () => void;
+function Registration({ g, onEdit }: { g: Guest; onEdit: () => void }) {
+  const toast = useToast();
+  const r = g.registration;
+  const [revealed, setRevealed] = useState<string | null>(null);
+  useEffect(() => setRevealed(null), [g.id]);
+  const missing = r.missing.length > 0;
+  async function reveal() {
+    try {
+      const x = await api.post<{ idNumber: string }>(`/guests/${g.id}/reveal`, {});
+      setRevealed(x.idNumber);
+    } catch (e) { toast({ tone: 'critical', title: 'ID number not shown.', body: failMessage(e) }); }
+  }
+  const row = (label: string, value: ReactNode, empty: boolean) => (
+    <>
+      <span className="text-muted-ink">{label}</span>
+      <span className={cx('min-w-0 break-words', empty && (r.required ? 'text-[var(--color-critical-fg)]' : 'text-muted-ink'))}>{value}</span>
+    </>
+  );
+  return (
+    <div className={cx('bg-card border border-solid rounded-card p-5 flex flex-col gap-3', missing && r.required ? 'border-[var(--color-critical-line)]' : 'border-line')}>
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-heading font-semibold">Registration details</span>
+        {missing && r.required && <span className="text-meta text-[var(--color-critical-fg)] text-right">Needed before check-in</span>}
+      </div>
+      <div className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-2 text-copy">
+        {row('ID type', r.idType ? ID_TYPES[r.idType] ?? r.idType : 'Not given', !r.idType)}
+        {row('ID number', r.hasIdNumber ? (
+          <span className="inline-flex items-center gap-2 flex-wrap">
+            <span className="font-mono">{revealed ?? r.idNumberMasked}</span>
+            {g.can.reveal && !revealed && <button type="button" onClick={reveal} className="p-0 border-none bg-transparent [font:inherit] text-meta text-ink underline cursor-pointer">Show</button>}
+          </span>
+        ) : 'Not given', !r.hasIdNumber)}
+        {row('Date of birth', r.dateOfBirth ? fmtDate(r.dateOfBirth) : 'Not given', !r.dateOfBirth)}
+        {row('Nationality', countryName(r.countryCode) ?? 'Not given', !r.countryCode)}
+      </div>
+      {g.can.edit && <Button size="sm" variant="secondary" onClick={onEdit} style={{ alignSelf: 'flex-start' }}>{missing ? 'Fill in details' : 'Edit details'}</Button>}
+      {g.can.reveal && <span className="text-caption text-muted-ink">Showing a full ID number is recorded in the audit log.</span>}
+    </div>
+  );
+}
+
+function NotesAndTags({ g, onSaved }: { g: Guest; onSaved: () => void }) {
+  const toast = useToast();
+  const [notes, setNotes] = useState(g.notes ?? '');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setNotes(g.notes ?? ''), [g.id, g.notes]);
+  const dirty = notes.trim() !== (g.notes ?? '').trim();
+  async function save(body: Record<string, unknown>, done: string) {
+    setBusy(true);
+    try { await api.patch(`/guests/${g.id}`, body); toast({ tone: 'success', title: done }); onSaved(); }
+    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: failMessage(e) }); }
+    setBusy(false);
+  }
+  const toggle = (t: string) => {
+    const next = g.manualTags.includes(t) ? g.manualTags.filter(x => x !== t) : [...g.manualTags, t];
+    void save({ tags: next }, g.manualTags.includes(t) ? `${t === 'vip' ? 'VIP' : 'Blacklist'} tag removed.` : `Tagged ${t === 'vip' ? 'VIP' : 'Blacklist'}.`);
+  };
+  return (
+    <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-3">
+      <span className="text-heading font-semibold">Internal notes and tags</span>
+      <div className="flex gap-2 flex-wrap items-center">
+        {g.tags.filter(t => t.key !== 'vip' && t.key !== 'blacklist').map(t => <Badge key={t.key} tone={t.tone} label={t.label} size="sm" />)}
+        {(['vip', 'blacklist'] as const).map(t => {
+          const on = g.manualTags.includes(t);
+          return (
+            <button key={t} type="button" onClick={() => toggle(t)} disabled={busy || !g.can.edit} aria-pressed={on}
+              className={cx('h-7 inline-flex items-center gap-1 px-[10px] rounded-full [font:inherit] text-meta cursor-pointer border border-solid',
+                on ? (t === 'blacklist' ? 'bg-[var(--color-critical-bg)] border-[var(--color-critical-line)] text-[var(--color-critical-fg)] font-semibold' : 'bg-[var(--color-warning-bg)] border-[var(--color-warning-line)] text-[var(--color-warning-fg)] font-semibold')
+                  : 'bg-card border-dashed border-line text-muted-ink')}>
+              <Icon name={on ? 'Check' : 'Plus'} size="sm" />{t === 'vip' ? 'VIP' : 'Blacklist'}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex flex-col gap-[6px]">
+        <label htmlFor="g-notes" className="text-meta font-medium text-muted-ink">Notes for the team</label>
+        <textarea id="g-notes" value={notes} onChange={e => setNotes(e.target.value)} rows={3} maxLength={4000} disabled={!g.can.edit}
+          placeholder="e.g. Prefers a high floor, arrives late"
+          className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
+      </div>
+      {dirty && (
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="tertiary" onClick={() => setNotes(g.notes ?? '')} disabled={busy}>Discard</Button>
+          <Button size="sm" variant="primary" loading={busy} onClick={() => save({ notes: notes.trim() || null }, 'Notes saved.')}>Save notes</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MovementStrip({ g, busy, onPrepare, onSendAccess, onCheckIn, onCheckOut }: {
+  g: Guest; busy: boolean; onPrepare: () => void; onSendAccess: () => void; onCheckIn: () => void; onCheckOut: () => void;
 }) {
   const m = g.movement!;
   const arrival = m.kind === 'arrival';
   const when = arrival ? m.checkInAt : m.checkOutAt;
-  const dayLabel = m.day === 'today' ? 'today' : 'tomorrow';
-  const heading = `${arrival ? 'Arriving' : 'Departing'} ${dayLabel} · ${time(when)}`;
+  const heading = `${arrival ? 'Arriving' : 'Departing'} ${m.day} · ${time(when)}`;
   const guard = accessGuard(m);
   const checkedIn = m.state === 'checked_in';
   const checkedOut = m.state === 'checked_out';
-
   return (
     <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-[14px]">
       <div className="flex items-center gap-3 flex-wrap">
         <ChannelMark ch={m.channel} size={24} />
         <div className="flex flex-col gap-[2px] min-w-0 flex-1">
           <span className="text-heading font-semibold">{heading}</span>
-          <span className="text-meta text-muted-ink">
-            {m.propertyName} {m.unitNumber} · {fmtGuests(m.guestsCount)} · {fmtNights(m.nights)}
-          </span>
+          <span className="text-meta text-muted-ink">{m.propertyName} {m.unitNumber} · {fmtGuests(m.guestsCount)} · {fmtNights(m.nights)}</span>
         </div>
         <div className="flex items-center gap-[7px]">
           <Badge tone={RESERVATION[m.state].tone} label={RESERVATION[m.state].label} size="sm" />
           <Badge tone={READINESS[m.readiness].tone} label={READINESS[m.readiness].label} size="sm" />
         </div>
       </div>
-
       <div className="flex items-center gap-2 flex-wrap">
         {arrival && !checkedIn && (
           <>
-            <Button size="sm" variant="tertiary" onClick={onPrepare} disabled={!!m.preparedAt} disabledReason="Arrival is already prepared.">Prepare early</Button>
-            <Button size="sm" variant="secondary" onClick={onSendAccess} disabled={!!guard} disabledReason={guard ?? undefined}>Send access details</Button>
-            <Button size="sm" variant="primary" onClick={onCheckIn}>Mark checked in</Button>
-            {m.preparedAt && <Chip label="Prepared" />}
-            {m.accessSentAt && !m.preparedAt && <Chip label="Access sent" />}
+            <Button size="sm" variant="tertiary" onClick={onPrepare} disabled={busy || !!m.preparedAt} disabledReason="A clean is already queued for this arrival.">Queue a clean</Button>
+            <Button size="sm" variant="secondary" onClick={onSendAccess} disabled={busy || !!guard} disabledReason={guard ?? undefined}>Send access details</Button>
+            {/* Checking in is for the arrival day itself: tomorrow's guest is not in yet. */}
+            {m.day === 'today'
+              ? <Button size="sm" variant="primary" onClick={onCheckIn} disabled={busy}>Mark checked in</Button>
+              : <span className="text-meta text-muted-ink">Check-in opens on the arrival day.</span>}
+            {m.preparedAt && <Chip label="Clean queued" />}
+            {m.accessSentAt && <Chip label="Access sent" />}
           </>
         )}
         {arrival && checkedIn && <span className="text-meta text-muted-ink">Checked in.</span>}
         {!arrival && (
-          <Button size="sm" variant="secondary" onClick={onCheckOut} disabled={checkedOut} disabledReason="Guest is already checked out.">
+          <Button size="sm" variant="secondary" onClick={onCheckOut} disabled={busy || checkedOut || m.day !== 'today'}
+            disabledReason={checkedOut ? 'Guest is already checked out.' : 'Check-out opens on the departure day.'}>
             {checkedOut ? 'Checked out' : 'Mark checked out'}
           </Button>
         )}
@@ -553,31 +614,19 @@ function MovementStrip({ g, onPrepare, onSendAccess, onCheckIn, onCheckOut }: {
   );
 }
 
-function ChannelChip({ ch }: { ch: BookingChannel }) {
-  const c = channel[ch];
-  return (
-    <span
-      className="inline-flex items-center h-[22px] px-[9px] py-0 rounded-full border border-solid border-line text-caption font-semibold whitespace-nowrap"
-      style={{ background: c.tint, color: c.ink }}>
-      {c.label}
-    </span>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="flex flex-col gap-[3px]">
       <span className="text-meta text-muted-ink">{label}</span>
       <span className="text-title font-semibold [font-variant-numeric:tabular-nums]">{value}</span>
+      {sub && <span className="text-caption text-muted-ink">{sub}</span>}
     </div>
   );
 }
 
 function Chip({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center h-[22px] px-[9px] py-0 rounded-full bg-gold-tint text-gold-ink border border-solid border-[var(--color-gold-200)] text-caption font-semibold">
-      {label}
-    </span>
+    <span className="inline-flex items-center h-[22px] px-[9px] py-0 rounded-full bg-gold-tint text-gold-ink border border-solid border-[var(--color-gold-200)] text-caption font-semibold">{label}</span>
   );
 }
 
@@ -585,105 +634,181 @@ function Chip({ label }: { label: string }) {
 /* Modals                                                              */
 /* ------------------------------------------------------------------ */
 
-/** Shared field visuals minus height/padding, so per-control sizing composes cleanly.
- *  `font:inherit` (last shorthand) intentionally resets the size/weight to the
- *  inherited 16px / 400 — the controls genuinely render at that, not text-body. */
 const fieldBase = 'block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy';
-const inputClass = cx(fieldBase, 'h-10 px-3 py-0');
 const labelClass = 'text-meta font-medium text-muted-ink';
 
-function ModalShell({ title, sub, onClose, children }: { title: string; sub?: string; onClose: () => void; children: ReactNode }) {
+function MessageModal({ g, onClose, onSend }: { g: Guest; onClose: () => void; onSend: (body: string) => Promise<void> }) {
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
   return (
-    <div role="dialog" aria-modal="true" aria-label={title}
-      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
-      <div onClick={onClose} className="absolute inset-0" />
-      <div className="relative w-full max-w-[460px] bg-white rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
-        <div className="pt-5 px-[22px] pb-[6px]">
-          <h2 className="m-0 text-title font-semibold">{title}</h2>
-          {sub && <p className="mt-[6px] mx-0 mb-0 text-copy text-muted-ink">{sub}</p>}
+    <CentreModal title={`Message ${g.fullName}`} sub={`Goes to the guest's latest stay conversation on ${threadName(g.channel)}.`} onClose={() => { if (!busy) onClose(); }}>
+      <form onSubmit={async (e: FormEvent) => { e.preventDefault(); if (!body.trim()) return; setBusy(true); await onSend(body.trim()); setBusy(false); }} className="px-[22px] py-4 flex flex-col gap-[14px]">
+        <div className="flex flex-col gap-[6px]">
+          <label htmlFor="msg-body" className={labelClass}>Message</label>
+          <textarea id="msg-body" required value={body} onChange={e => setBody(e.target.value)} rows={4}
+            placeholder={`Hi ${g.fullName.split(' ')[0]}, checking in on your stay…`} className={cx(fieldBase, 'p-[10px_12px] resize-y')} />
         </div>
-        {children}
-      </div>
+        <div className="flex justify-end gap-[9px]">
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!body.trim()} disabledReason="Write a message first.">Send message</Button>
+        </div>
+      </form>
+    </CentreModal>
+  );
+}
+
+function NativeSelect({ id, label, value, onChange, options, placeholder }: { id: string; label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; placeholder: string }) {
+  return (
+    <div className="flex flex-col gap-[6px] min-w-0">
+      <label htmlFor={id} className={labelClass}>{label}</label>
+      <select id={id} value={value} onChange={e => onChange(e.target.value)} className={cx(fieldBase, 'h-10 px-3')}>
+        <option value="">{placeholder}</option>
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
     </div>
   );
 }
 
-function MessageModal({ g, onClose, onSend }: { g: Guest; onClose: () => void; onSend: (body: string) => void }) {
-  const [body, setBody] = useState('');
-  return (
-    <ModalShell title={`Message ${g.fullName}`} sub={`Thread opens on ${threadName(g.channel)}.`} onClose={onClose}>
-      <form onSubmit={(e: FormEvent) => { e.preventDefault(); if (body.trim()) onSend(body.trim()); }} className="pt-3 px-[22px] pb-5 flex flex-col gap-[14px]">
-        <div className="flex flex-col gap-[6px]">
-          <label htmlFor="msg-body" className={labelClass}>Message</label>
-          <textarea id="msg-body" required value={body} onChange={e => setBody(e.target.value)} rows={4}
-            placeholder={`Hi ${g.fullName.split(' ')[0]}, checking in on your upcoming stay…`}
-            className={cx(fieldBase, 'p-[10px_12px] resize-y')} />
-        </div>
-        <div className="flex justify-end gap-[9px]">
-          <Button type="button" size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" size="sm" variant="primary" disabled={!body.trim()} disabledReason="Write a message first.">Send message</Button>
-        </div>
-      </form>
-    </ModalShell>
-  );
-}
-
-function AddGuestModal({ onClose, onAdd }: {
-  onClose: () => void;
-  onAdd: (input: { fullName: string; phone: string; email: string; unitNumber: string; propertyName: string; guestsCount: number }) => void;
-}) {
+/** The guest record only: a stay is booked separately, with a unit and dates. */
+function AddGuestModal({ onClose, onAdd }: { onClose: () => void; onAdd: (input: { fullName: string; phone: string; email: string; countryCode: string; language: string }) => Promise<void> }) {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [guestsCount, setGuestsCount] = useState(1);
-
-  // The real unit list, sorted by building so a portfolio of 100+ units stays findable.
-  const roster = useUnitRoster();
-  const UNITS = useMemo(() => [...roster].sort((a, b) => a.propertyName.localeCompare(b.propertyName) || a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true })), [roster]);
-  const [unitId, setUnitId] = useState('');
-  const unit = UNITS.find(u => u.id === unitId) ?? UNITS[0];
-
-  function submit(e: FormEvent) {
+  const [countryCode, setCountryCode] = useState('');
+  const [language, setLanguage] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!fullName.trim() || !unit) return;
-    onAdd({ fullName: fullName.trim(), phone, email, unitNumber: unit.unitNumber, propertyName: unit.propertyName, guestsCount });
+    if (!fullName.trim()) return;
+    setBusy(true);
+    await onAdd({ fullName: fullName.trim(), phone: phone.trim(), email: email.trim(), countryCode, language });
+    setBusy(false);
   }
-
   return (
-    <ModalShell title="Add guest" sub="For walk-ins and direct bookings. Placed in today’s arrivals." onClose={onClose}>
-      <form onSubmit={submit} className="pt-3 px-[22px] pb-5 flex flex-col gap-[14px]">
-        <div className="flex flex-col gap-[6px]">
-          <label htmlFor="ag-name" className={labelClass}>Full name</label>
-          <input id="ag-name" required value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" className={inputClass} />
+    <CentreModal title="Add guest" sub="Creates the guest's record only. To give them a unit and dates, use Book a stay on their profile." onClose={() => { if (!busy) onClose(); }}>
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
+        <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" required />
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+          <Field label="Phone" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+60 12-345 6789" />
+          <Field label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com" />
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
-          <div className="flex flex-col gap-[6px]">
-            <label htmlFor="ag-phone" className={labelClass}>Phone</label>
-            <input id="ag-phone" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+60 12-345 6789" className={inputClass} />
-          </div>
-          <div className="flex flex-col gap-[6px]">
-            <label htmlFor="ag-email" className={labelClass}>Email</label>
-            <input id="ag-email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com" className={inputClass} />
-          </div>
-        </div>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
-          <div className="flex flex-col gap-[6px]">
-            {UNITS.length === 0
-              ? <Select label="Unit" showLabel size="md" value="" onChange={() => {}} disabled placeholder="Loading units…" options={[]} />
-              : <SearchSelect label="Unit" showLabel value={unit?.id ?? ''} onChange={setUnitId} placeholder="Search units"
-                  options={UNITS.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName }))} />}
-          </div>
-          <div className="flex flex-col gap-[6px]">
-            <label htmlFor="ag-guests" className={labelClass}>Guests</label>
-            <input id="ag-guests" type="number" min={1} max={12} value={guestsCount}
-              onChange={e => setGuestsCount(Math.max(1, Number(e.target.value) || 1))} className={cx(inputClass, 'text-right [font-variant-numeric:tabular-nums]!')} />
-          </div>
+          <NativeSelect id="ag-country" label="Nationality" value={countryCode} onChange={setCountryCode} options={COUNTRIES} placeholder="Not known yet" />
+          <NativeSelect id="ag-lang" label="Language" value={language} onChange={setLanguage} options={LANGUAGES.map(l => ({ value: l, label: l }))} placeholder="Not known yet" />
         </div>
         <div className="flex justify-end gap-[9px]">
-          <Button type="button" size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" size="sm" variant="primary" disabled={!fullName.trim() || !unit} disabledReason={unit ? 'A name is required.' : 'The unit list is still loading.'}>Add guest</Button>
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!fullName.trim()} disabledReason="A name is required.">Add guest</Button>
         </div>
       </form>
-    </ModalShell>
+    </CentreModal>
+  );
+}
+
+function EditGuestModal({ g, onClose, onSaved }: { g: Guest; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
+  const r = g.registration;
+  const [fullName, setFullName] = useState(g.fullName);
+  const [phone, setPhone] = useState(g.phone ?? '');
+  const [email, setEmail] = useState(g.email ?? '');
+  const [language, setLanguage] = useState(g.language ?? '');
+  const [countryCode, setCountryCode] = useState(r.countryCode ?? '');
+  const [idType, setIdType] = useState(r.idType ?? '');
+  const [idNumber, setIdNumber] = useState('');
+  const [dob, setDob] = useState(r.dateOfBirth ?? '');
+  const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const countries = useMemo(() => (countryCode && !COUNTRY_CODES.includes(countryCode) ? [...COUNTRIES, { value: countryCode, label: countryName(countryCode) ?? countryCode }] : COUNTRIES), [countryCode]);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true); setErrors({});
+    try {
+      await api.patch(`/guests/${g.id}`, {
+        fullName, phone, email, language: language || null, countryCode: countryCode || null, idType: idType || null,
+        ...(idNumber.trim() ? { idNumber: idNumber.trim() } : {}), dateOfBirth: dob || null,
+      });
+      toast({ tone: 'success', title: `${fullName} updated.` });
+      onSaved();
+    } catch (err) {
+      if (err instanceof ApiFailure && err.fields) setErrors(err.fields);
+      toast({ tone: 'critical', title: 'Not saved.', body: failMessage(err) });
+    }
+    setBusy(false);
+  }
+  return (
+    <CentreModal title="Edit guest details" sub="Registration details are what Malaysian short-stay rules ask for: ID, its number, date of birth and nationality." onClose={() => { if (!busy) onClose(); }} maxWidth={540}>
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto">
+        <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} required error={errors.fullName} />
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+          <Field label="Phone" value={phone} onChange={e => setPhone(e.target.value)} />
+          <Field label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} error={errors.email} />
+        </div>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+          <NativeSelect id="eg-country" label="Nationality" value={countryCode} onChange={setCountryCode} options={countries} placeholder="Not given" />
+          <NativeSelect id="eg-lang" label="Language" value={language} onChange={setLanguage} options={(LANGUAGES.includes(language) || !language ? LANGUAGES : [...LANGUAGES, language]).map(l => ({ value: l, label: l }))} placeholder="Not given" />
+        </div>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+          <NativeSelect id="eg-idtype" label="ID type" value={idType} onChange={setIdType} options={Object.entries(ID_TYPES).map(([value, label]) => ({ value, label }))} placeholder="Not given" />
+          <Field label="ID number" value={idNumber} onChange={e => setIdNumber(e.target.value)} autoComplete="off"
+            placeholder={r.hasIdNumber ? `${r.idNumberMasked} on file` : 'e.g. 900101-14-5678'} help={r.hasIdNumber ? 'Leave empty to keep the one on file.' : undefined} />
+          <Field label="Date of birth" type="date" value={dob} onChange={e => setDob(e.target.value)} error={errors.dateOfBirth} />
+        </div>
+        <div className="flex justify-end gap-[9px]">
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!fullName.trim()} disabledReason="A name is required.">Save details</Button>
+        </div>
+      </form>
+    </CentreModal>
+  );
+}
+
+/** This guest is a duplicate: its stays and conversations move to the guest picked here, which is kept. */
+function MergeModal({ g, onClose, onMerged }: { g: Guest; onClose: () => void; onMerged: (intoId: string) => void }) {
+  const toast = useToast();
+  const [q, setQ] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [into, setInto] = useState<GuestSummary | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { const t = window.setTimeout(() => setDebounced(q.trim()), 250); return () => window.clearTimeout(t); }, [q]);
+  const found = useApi<ListPayload>(debounced.length >= 2 ? `/guests?q=${encodeURIComponent(debounced)}&except=${encodeURIComponent(g.id)}&size=25&sort=recent` : null);
+  async function merge() {
+    if (!into) return;
+    setBusy(true);
+    try {
+      const r = await api.post<{ reservationsMoved: number; threadsMoved: number }>(`/guests/${g.id}/merge`, { intoId: into.id });
+      toast({ tone: 'success', title: `${g.fullName} merged into ${into.fullName}.`, body: `${plural(r.reservationsMoved, 'stay')} and ${plural(r.threadsMoved, 'conversation')} moved. The duplicate is hidden from the list.` });
+      onMerged(into.id);
+    } catch (e) { toast({ tone: 'critical', title: 'Guests not merged.', body: failMessage(e) }); }
+    setBusy(false);
+  }
+  return (
+    <CentreModal title={`Merge ${g.fullName}`} sub={`Pick the guest to keep. ${g.fullName}'s ${plural(g.stays, 'stay')} and conversations move to them, and details they lack are filled in.`} onClose={() => { if (!busy) onClose(); }} maxWidth={520}>
+      <div className="px-[22px] py-4 flex flex-col gap-[14px]">
+        <label className="relative">
+          <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid"><Icon name="Search" size="sm" /></span>
+          <input autoFocus value={q} onChange={e => { setQ(e.target.value); setInto(null); }} placeholder="Name, phone, email or booking reference" aria-label="Find the guest to keep"
+            className={cx(fieldBase, 'h-10 pl-[32px] pr-3')} />
+        </label>
+        <div className="max-h-[260px] overflow-y-auto border border-solid border-line rounded-control">
+          {debounced.length < 2 ? <div className="p-3 text-meta text-muted-ink">Type at least two letters.</div>
+            : !found.data ? <div className="p-3 text-meta text-muted-ink">Searching…</div>
+            : found.data.data.length === 0 ? <div className="p-3 text-meta text-muted-ink">No other guest matches.</div>
+            : found.data.data.map(x => (
+              <button key={x.id} type="button" onClick={() => setInto(x)} aria-pressed={into?.id === x.id}
+                className={cx('w-full text-left [font:inherit] flex items-center gap-3 px-3 py-2 border-none cursor-pointer [border-bottom:1px_solid_var(--color-line-soft)]', into?.id === x.id ? 'bg-gold-tint' : 'bg-card hover:bg-page')}>
+                <span className="flex flex-col min-w-0 flex-1">
+                  <span className="text-copy font-medium truncate">{x.fullName}</span>
+                  <span className="text-meta text-muted-ink truncate">{[x.phone, x.email].filter(Boolean).join(' · ') || x.since}</span>
+                </span>
+                <span className="text-meta text-muted-ink whitespace-nowrap">{plural(x.stays, 'stay')}</span>
+              </button>
+            ))}
+        </div>
+        <div className="flex justify-end gap-[9px]">
+          <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button size="sm" variant="primary" loading={busy} disabled={!into} disabledReason="Pick the guest to keep." onClick={merge}>{into ? `Merge into ${into.fullName}` : 'Merge'}</Button>
+        </div>
+      </div>
+    </CentreModal>
   );
 }

@@ -10,7 +10,7 @@
 import {
   type ListingPlan, type ReservationPlan, type WorkbookUnitIn, type AirbnbEarningIn, type CleaningIn, type ExpenseIn, type CreditIn,
   type PayoutMonthIn, type KnownUnit, type KnownProperty, type RowError,
-  PLACEHOLDER_OWNER, RESERVATION_MONEY_COLUMNS, normaliseLocation, canonicalState, canonicalCity, slug, hash, unitKey, workbookMatcher, matchWorkbookUnitHow, buildingForPrefix, splitWorkbookId, workbookOwnerId, listingOwnerId, stayState,
+  PLACEHOLDER_OWNER, RESERVATION_MONEY_COLUMNS, CHANNEL_LABEL, placeholderGuestName, guestId as guestIdFor, type Channel, normaliseLocation, canonicalState, canonicalCity, slug, hash, unitKey, workbookMatcher, matchWorkbookUnitHow, buildingForPrefix, splitWorkbookId, workbookOwnerId, listingOwnerId, stayState,
 } from './hostplatformImport';
 
 /** The three helpers of db.ts, bound to an environment. Lets the test script run the same SQL on PGlite. */
@@ -251,6 +251,12 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
       notes = CASE WHEN ${wb} THEN reservations.notes ELSE EXCLUDED.notes END,
       updated_at = EXCLUDED.updated_at`));
 
+  // A guest someone merged into another (Guests > Merge) stays merged: the bookings that name the old id follow the merge.
+  if (keep.length && await hasColumn(db, 'guests', 'merged_into')) {
+    await db.run(`UPDATE reservations r SET guest_id = g.merged_into FROM guests g
+      WHERE r.guest_id = g.id AND g.merged_into IS NOT NULL AND r.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(keep.map(k => String(k.id))));
+  }
+
   const facts = [...unitFacts.entries()].map(([id, f]) => ({ id, max_guests: f.max, size_sqft: f.size }));
   if (facts.length) {
     await db.run(`UPDATE units u SET max_guests = COALESCE(x.max_guests, u.max_guests), size_sqft = COALESCE(x.size_sqft, u.size_sqft)
@@ -444,7 +450,13 @@ export async function importAirbnbEarnings(db: Db, earnings: AirbnbEarningIn[], 
     WHERE r.state <> 'cancelled'`, JSON.stringify(resolved.filter(r => r.unit).map(r => ({ unit_id: r.unit!.id, check_in: r.e.checkIn, check_out: r.e.checkOut })))) : [];
   const taken = new Set<string>();
 
-  const money: Record<string, unknown>[] = [], fresh: Record<string, unknown>[] = [];
+  const money: Record<string, unknown>[] = [], fresh: Record<string, unknown>[] = [], lines: Record<string, unknown>[] = [];
+  const instalments = (e: AirbnbEarningIn, reservationId: string) => {
+    for (const x of e.instalments) lines.push({
+      id: `wb-pay-${x.key}`, reservation_id: reservationId, amount: x.amount, received_on: x.received ? x.paidOutOn : null,
+      status: x.received ? 'received' : 'expected', reference: e.code, note: `Payout line for ${x.checkIn} to ${x.checkOut}`, created_at: now,
+    });
+  };
   for (const { e, unit } of resolved) {
     if (!unit) { res.errors.push({ row: e.row, reason: `${e.code}: unit ${e.workbookId} is not in Property OS. Import the workbook units first.` }); continue; }
     const same = existing.filter(x => x.external_ref === e.code && !FROM_WORKBOOK.test(x.id));
@@ -456,11 +468,14 @@ export async function importAirbnbEarnings(db: Db, earnings: AirbnbEarningIn[], 
       if (e.gross === null && e.amount === null) { res.skippedRows.push({ row: e.row, reason: `${e.code}: no amounts in the workbook; HostPlatform amounts kept.` }); continue; }
       money.push({ id: match.id, gross: e.gross ?? 0, fee: e.fee ?? 0, amount: e.amount ?? 0, updated_at: now,
         cleaning: e.cleaningFee, tax: e.tax, fast_pay: e.fastPay, payout: e.amount, paid_on: e.paidOutOn });
+      instalments(e, match.id);
       continue;
     }
     // Not on HostPlatform (e.g. stays before May): recorded as a booking from the workbook.
+    const freshId = `hp-res-${e.site === 'airbnb' ? 'ab' : 'bc'}-${e.code}${e.idSuffix}`;
+    instalments(e, freshId);
     fresh.push({
-      id: `hp-res-${e.site === 'airbnb' ? 'ab' : 'bc'}-${e.code}${e.idSuffix}`, unit_id: unit.id, channel: e.site, external_ref: e.code, state: stayState(e.checkIn, e.checkOut, today),
+      id: freshId, unit_id: unit.id, channel: e.site, external_ref: e.code, state: stayState(e.checkIn, e.checkOut, today),
       check_in: e.checkIn, check_out: e.checkOut, guests_count: 1, gross_booking_value: e.gross ?? 0, channel_fee: e.fee ?? 0, collected_revenue: e.amount ?? 0,
       currency: 'MYR', notes: `Imported from owner workbook (earnings sheet, ${WORKBOOK_MONEY_MARK})`, created_at: now, updated_at: now,
       guest_cleaning_fee: e.cleaningFee, ota_tax: e.tax, payment_processing_fee: e.fastPay, payout_amount: e.amount, payout_date: e.paidOutOn,
@@ -485,8 +500,74 @@ export async function importAirbnbEarnings(db: Db, earnings: AirbnbEarningIn[], 
       gross_booking_value = EXCLUDED.gross_booking_value, channel_fee = EXCLUDED.channel_fee, collected_revenue = EXCLUDED.collected_revenue,
       guest_cleaning_fee = EXCLUDED.guest_cleaning_fee, ota_tax = EXCLUDED.ota_tax, payment_processing_fee = EXCLUDED.payment_processing_fee,
       payout_amount = EXCLUDED.payout_amount, payout_date = EXCLUDED.payout_date, updated_at = EXCLUDED.updated_at`));
-  res.stats = { matchedHostPlatform: money.length, createdFromWorkbook: fresh.length };
+  await writeInstalments(db, res, lines, [...money, ...fresh].map(x => String(x.id)));
+  res.stats = { matchedHostPlatform: money.length, createdFromWorkbook: fresh.length, payoutLines: lines.length };
   return finish(res, 'reservations');
+}
+
+async function hasColumn(db: Db, table: string, column: string): Promise<boolean> {
+  const r = await db.all<{ n: number }>(`SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_name = ? AND column_name = ? AND table_schema = ANY(current_schemas(false))`, table, column);
+  return Number(r[0]?.n) > 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* One-off: split the collapsed "Airbnb guest" records                 */
+/* ------------------------------------------------------------------ */
+
+const COLLAPSED_SQL = `'^(Airbnb|Booking\\.com|Agoda|Direct|OTA) guest$'`;
+
+/** Before 10 Oct 2026 a booking with no guest name was given the guest "Airbnb guest" (or "Booking.com guest" ...),
+ *  and every such booking hashed to the same record: 23 stays under one guest. This gives each of those bookings its
+ *  own guest, named like the import now names them ("Airbnb guest HM...") and with the id the import would give, so a
+ *  later re-import finds the same record. The emptied placeholder is deleted once nothing points at it. Runs from
+ *  the import page; a second run finds nothing to do. */
+export async function splitCollapsedGuests(db: Db, now: string): Promise<ImportResult> {
+  const res = empty();
+  const rows = await db.all<{ rid: string; external_ref: string | null; channel: string; gid: string; email: string | null; phone: string | null; country_code: string | null }>(`
+    SELECT r.id AS rid, r.external_ref, r.channel, g.id AS gid, g.email, g.phone, g.country_code
+    FROM reservations r JOIN guests g ON g.id = r.guest_id WHERE g.full_name ~ ${COLLAPSED_SQL}`);
+  const guests = new Map<string, Record<string, unknown>>(), moves: { rid: string; gid: string }[] = [];
+  for (const r of rows) {
+    const ref = r.external_ref?.trim() || r.rid.slice(-8);
+    const name = placeholderGuestName(CHANNEL_LABEL[r.channel as Channel] ?? 'OTA', ref);
+    const id = isOurs(r.gid) ? guestIdFor(name, r.phone, r.email) : `${r.gid}-${slug(ref)}`;
+    guests.set(id, { id, full_name: name, email: r.email, phone: r.phone, country_code: r.country_code, created_at: now });
+    moves.push({ rid: r.rid, gid: id });
+  }
+  add(res, 'guests', await upsert(db, 'guests',
+    [['id', 'text'], ['full_name', 'text'], ['email', 'text'], ['phone', 'text'], ['country_code', 'text'], ['created_at', 'text']],
+    [...guests.values()], 'DO UPDATE SET full_name = EXCLUDED.full_name'));
+  if (moves.length) {
+    const out = await db.all(`UPDATE reservations r SET guest_id = x.gid, updated_at = ? FROM jsonb_to_recordset(?::text::jsonb) AS x(rid text, gid text)
+      WHERE r.id = x.rid RETURNING r.id`, now, JSON.stringify(moves));
+    add(res, 'reservations', { created: 0, updated: out.length });
+    await db.run(`UPDATE message_threads t SET guest_id = x.gid FROM jsonb_to_recordset(?::text::jsonb) AS x(rid text, gid text) WHERE t.reservation_id = x.rid`, JSON.stringify(moves));
+  }
+  const removed = await db.all(`DELETE FROM guests g WHERE g.full_name ~ ${COLLAPSED_SQL}
+    AND NOT EXISTS (SELECT 1 FROM reservations r WHERE r.guest_id = g.id) AND NOT EXISTS (SELECT 1 FROM message_threads t WHERE t.guest_id = g.id)
+    RETURNING g.id`);
+  res.stats = { bookingsGivenTheirOwnGuest: moves.length, placeholderGuestsRemoved: removed.length };
+  if (!moves.length && !removed.length) res.notes.push('Nothing to split: no booking is under a nameless placeholder guest.');
+  return finish(res, 'guests');
+}
+
+/** Each payout line of a booking becomes a booking_payments row (source owner_workbook), so the booking shows every
+ *  monthly instalment of a long Airbnb stay and what is still to come. Lines the workbook no longer has are removed;
+ *  rows people typed in (source manual) are never touched. Before migration 0091 there is no table: skipped with a note. */
+async function writeInstalments(db: Db, res: ImportResult, lines: Record<string, unknown>[], reservationIds: string[]) {
+  if (!reservationIds.length) return;
+  const has = await db.all<{ n: number }>(`SELECT COUNT(*)::int AS n FROM information_schema.tables WHERE table_name = 'booking_payments' AND table_schema = ANY(current_schemas(false))`);
+  if (!Number(has[0]?.n)) { res.notes.push('Payout lines were not stored: the payments table (migration 0091) is not on this database yet.'); return; }
+  add(res, 'booking_payments', await upsert(db, 'booking_payments',
+    [['id', 'text'], ['reservation_id', 'text'], ['amount', 'int'], ['received_on', 'text'], ['status', 'text'], ['reference', 'text'], ['note', 'text'],
+     ['kind', 'text'], ['source', 'text'], ['created_at', 'text']],
+    lines.map(l => ({ ...l, kind: 'ota_payout', source: 'owner_workbook' })),
+    `DO UPDATE SET reservation_id = EXCLUDED.reservation_id, amount = EXCLUDED.amount, received_on = EXCLUDED.received_on, status = EXCLUDED.status,
+      reference = EXCLUDED.reference, note = EXCLUDED.note
+      WHERE booking_payments.source = 'owner_workbook'`));
+  await db.run(`DELETE FROM booking_payments WHERE source = 'owner_workbook'
+    AND reservation_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+    AND id NOT IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(reservationIds), JSON.stringify(lines.map(l => String(l.id))));
 }
 
 /* ------------------------------------------------------------------ */

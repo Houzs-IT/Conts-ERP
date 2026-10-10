@@ -1,47 +1,57 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { findClash, clashResponseBody, upsertGuest } from '../../_lib/reservations';
-import { syncAvailabilityIfLinked, channexMappingFor } from '../../_lib/channexSync';
-import { channexConfigured } from '../../_lib/channex';
-import { VIEWS, FROM, COLUMNS, parseListQuery, viewWhere, toRow, hasPayoutColumns, outstandingExpr } from '../../_lib/bookingList';
+import { findClash, clashResponseBody, upsertGuest, nextBookingRef, holdOnChannels } from '../../_lib/reservations';
+import { VIEWS, TODOS, fromSql, columnsSql, parseListQuery, viewWhere, todoWhere, toRow } from '../../_lib/bookingList';
+import { moneySchema, moneySql } from '../../_lib/bookingMoney';
 
-/** GET /api/reservations?view=&page=&size=&sort=&q=&ref=&guest=&unit=&channel=&stay=&gross=&status=
- *  One page of the Bookings list, every tab's count under the same searches, and the totals of the
- *  whole filtered set (not just the page). Blocks and owner stays appear only under view=blocks. */
+/** GET /api/reservations?view=&todo=&ch=&building=&from=&to=&page=&size=&sort=&q=&ref=&guest=&unit=&stay=&gross=&status=
+ *  One page of the Bookings list; each tab's count and each to-do card's count and amount under the same searches
+ *  and filters; and the totals of the whole filtered set (not just the page). Blocks and owner stays are not listed. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Bookings are not available to field roles.', 403);
 
   const q = parseListQuery(new URL(request.url));
-  const payoutCols = await hasPayoutColumns(env);
-  const current = viewWhere(q.view, q.today, payoutCols);
-  const owed = outstandingExpr(q.view, payoutCols);
+  const schema = await moneySchema(env);
+  const m = moneySql(schema);
+  const todo = q.todo ? todoWhere(q.todo, q.today, schema) : 'TRUE';
+  const current = `${viewWhere(q.view, q.today)} AND ${todo}`;
   const sums = await one<Record<string, number>>(env, `
-    SELECT ${VIEWS.map(v => `COUNT(*) FILTER (WHERE ${viewWhere(v, q.today, payoutCols)}) AS "${v}"`).join(',\n           ')},
-           ${owed ? `COALESCE(SUM(${owed}) FILTER (WHERE ${current}), 0)` : 'NULL'} AS outstanding,
+    SELECT ${VIEWS.map(v => `COUNT(*) FILTER (WHERE ${viewWhere(v, q.today)} AND ${todo}) AS "v_${v}"`).join(',\n           ')},
+           ${TODOS.map(t => `COUNT(*) FILTER (WHERE ${todoWhere(t, q.today, schema)}) AS "t_${t}", COALESCE(SUM(${m.outstanding}) FILTER (WHERE ${todoWhere(t, q.today, schema)}), 0) AS "o_${t}"`).join(',\n           ')},
            COUNT(*) FILTER (WHERE ${current}) AS n,
            COALESCE(SUM(r.check_out::date - r.check_in::date) FILTER (WHERE ${current}), 0) AS nights,
            COALESCE(SUM(r.gross_booking_value) FILTER (WHERE ${current}), 0) AS gross,
-           COALESCE(SUM(r.channel_fee) FILTER (WHERE ${current}), 0) AS fees
-    ${FROM} WHERE ${q.where}`, ...q.args);
+           COALESCE(SUM(r.channel_fee) FILTER (WHERE ${current}), 0) AS fees,
+           COALESCE(SUM(${m.outstanding}) FILTER (WHERE ${current} AND r.state NOT IN ('cancelled','no_show')), 0) AS outstanding
+    ${fromSql(schema)} WHERE ${q.where}`, ...q.args);
 
   const total = Number(sums?.n ?? 0);
   const page = Math.min(q.page, Math.max(1, Math.ceil(total / q.pageSize)));
   const rows = total ? await all<any>(env, `
-    SELECT ${COLUMNS} ${FROM} WHERE ${q.where} AND ${current}
+    SELECT ${columnsSql(schema)} ${fromSql(schema)} WHERE ${q.where} AND ${current}
     ORDER BY ${q.orderBy} LIMIT ${q.pageSize} OFFSET ${(page - 1) * q.pageSize}`, ...q.args) : [];
 
+  const buildings = await all<{ id: string; name: string }>(env, 'SELECT id, name FROM properties ORDER BY name');
   return json({
-    generatedAt: nowIso(), today: q.today, view: q.view, page, pageSize: q.pageSize, total,
-    counts: Object.fromEntries(VIEWS.map(v => [v, Number(sums?.[v] ?? 0)])),
-    totals: { bookings: total, nights: Number(sums?.nights ?? 0), gross: Number(sums?.gross ?? 0), fees: Number(sums?.fees ?? 0),
-      outstanding: sums?.outstanding == null ? null : Number(sums.outstanding) },
+    generatedAt: nowIso(), today: q.today, view: q.view, todo: q.todo, filters: q.filters, page, pageSize: q.pageSize, total,
+    counts: Object.fromEntries(VIEWS.map(v => [v, Number(sums?.[`v_${v}`] ?? 0)])),
+    todos: Object.fromEntries(TODOS.map(t => [t, { count: Number(sums?.[`t_${t}`] ?? 0), outstanding: Number(sums?.[`o_${t}`] ?? 0) }])),
+    totals: { bookings: total, nights: Number(sums?.nights ?? 0), gross: Number(sums?.gross ?? 0), fees: Number(sums?.fees ?? 0), outstanding: Number(sums?.outstanding ?? 0) },
+    paymentsReady: schema.payments,
+    buildings,
     data: rows.map(toRow),
   });
 };
 
-/** POST /api/reservations { unitId, channel, guest | guestId, checkIn, checkOut, guestsCount, grossBookingValue } */
+const CHANNELS = ['airbnb', 'booking_com', 'agoda', 'direct', 'owner_stay'];
+const OTA = ['airbnb', 'booking_com', 'agoda'];
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** POST /api/reservations { unitId, channel, guest | guestId, checkIn, checkOut, guestsCount, grossBookingValue, externalRef?, notes? }
+ *  A direct booking or an owner stay gets our own TC-YYMM-#### reference; a booking-site booking typed in by hand
+ *  keeps the site's reference when one is given. The nights are closed on the booking sites (when the unit is linked). */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -51,24 +61,27 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!b?.unitId || !b.checkIn || !b.checkOut) return fail('VALIDATION', 'Unit and dates are required.', 422);
   if (b.checkOut <= b.checkIn) return fail('VALIDATION', 'Check-out must be after check-in.', 422, { checkOut: 'Check-out must be after check-in.' });
   const channel = b.channel ?? 'direct';
-  if (!['airbnb', 'booking_com', 'agoda', 'direct', 'owner_stay'].includes(channel)) return fail('VALIDATION', 'Unknown channel.', 422, { channel: 'Pick a channel.' });
+  if (!CHANNELS.includes(channel)) return fail('VALIDATION', 'Unknown channel.', 422, { channel: 'Pick a channel.' });
   if (!(await one(env, 'SELECT 1 AS x FROM units WHERE id = ?', b.unitId))) return fail('NOT_FOUND', 'That unit does not exist.', 404);
+  for (const k of ['checkInTime', 'checkOutTime'] as const) if (b[k] != null && !TIME.test(String(b[k]))) return fail('VALIDATION', 'Times are HH:MM.', 422, { [k]: 'Use HH:MM, e.g. 15:00.' });
 
   const clash = await findClash(env, b.unitId, b.checkIn, b.checkOut, null);
   if (clash) return json(clashResponseBody(clash), 409);
 
   const guestId = b.guest?.fullName ? await upsertGuest(env, b.guest) : (b.guestId ?? null);
   const id = crypto.randomUUID(), now = nowIso();
+  const siteRef = typeof b.externalRef === 'string' && b.externalRef.trim() ? b.externalRef.trim().slice(0, 60) : null;
+  const ref = OTA.includes(channel) && siteRef ? siteRef : await nextBookingRef(env, id);
+  const staffNotes = typeof b.notes === 'string' && b.notes.trim() ? b.notes.trim().slice(0, 2000) : null;
   await run(env, `
-    INSERT INTO reservations (id, unit_id, guest_id, channel, external_ref, state, check_in, check_out, guests_count, gross_booking_value, currency, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, 'MYR', ?, ?)`,
-    id, b.unitId, guestId, channel, b.externalRef ?? `MAN-${id.slice(0, 6).toUpperCase()}`, b.checkIn, b.checkOut,
-    b.guestsCount ?? 1, b.grossBookingValue ?? 0, now, now);
+    INSERT INTO reservations (id, unit_id, guest_id, channel, external_ref, state, check_in, check_out, check_in_time, check_out_time, guests_count, gross_booking_value, currency, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, 'MYR', ?, ?)`,
+    id, b.unitId, channel === 'owner_stay' && !b.guest?.fullName ? null : guestId, channel, ref, b.checkIn, b.checkOut,
+    b.checkInTime ?? '15:00', b.checkOutTime ?? '11:00',
+    b.guestsCount ?? 1, channel === 'owner_stay' ? 0 : Math.max(0, Math.round(Number(b.grossBookingValue) || 0)), now, now);
+  if (staffNotes) await run(env, 'UPDATE reservations SET staff_notes = ? WHERE id = ?', staffNotes, id).catch(() => {});
 
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.create', entityTable: 'reservations', entityId: id, after: { unitId: b.unitId, checkIn: b.checkIn, checkOut: b.checkOut, channel } });
-  let sync: 'queued' | 'not_linked' | 'failed' = 'not_linked';
-  try {
-    if (channexConfigured(env) && await channexMappingFor(env, b.unitId)) { await syncAvailabilityIfLinked(env, b.unitId, b.checkIn, b.checkOut, false); sync = 'queued'; }
-  } catch { sync = 'failed'; }
-  return json({ id, effects: { channel: sync } }, 201);
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.create', entityTable: 'reservations', entityId: id, after: { unitId: b.unitId, checkIn: b.checkIn, checkOut: b.checkOut, channel, externalRef: ref } });
+  const sync = await holdOnChannels(env, b.unitId, b.checkIn, b.checkOut, false, id);
+  return json({ id, externalRef: ref, effects: { channel: sync } }, 201);
 };

@@ -1,8 +1,9 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
-import { findClash, clashResponseBody } from '../../../_lib/reservations';
+import { findClash, clashResponseBody, nextBookingRef, holdOnChannels } from '../../../_lib/reservations';
 
-/** POST /api/reservations/:id/duplicate — a pending copy placed straight after the original. */
+/** POST /api/reservations/:id/duplicate — a pending copy placed straight after the original. The copy is ours, so
+ *  it gets our own reference, and its nights are closed on the booking sites like any booking made here. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -18,11 +19,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (clash) return json(clashResponseBody(clash), 409);
 
   const id = crypto.randomUUID(), now = nowIso();
+  const ref = await nextBookingRef(env, id);
+  // A copy made here is not on the booking site the original came from, so it is a direct booking.
+  const channel = ['direct', 'owner_stay'].includes(src.channel) ? src.channel : 'direct';
   await run(env, `
     INSERT INTO reservations (id, unit_id, guest_id, channel, external_ref, state, check_in, check_out, check_in_time, check_out_time, guests_count, gross_booking_value, currency, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    id, src.unit_id, src.guest_id, src.channel, `MAN-${id.slice(0, 6).toUpperCase()}`, checkIn, checkOut,
+    id, src.unit_id, src.guest_id, channel, ref, checkIn, checkOut,
     src.check_in_time, src.check_out_time, src.guests_count, src.gross_booking_value, src.currency, now, now);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.duplicate', entityTable: 'reservations', entityId: id, after: { copiedFrom: src.id } });
-  return json({ id }, 201);
+  const sync = await holdOnChannels(env, src.unit_id, checkIn, checkOut, false, id);
+  return json({ id, externalRef: ref, checkIn, checkOut, channel, effects: { channel: sync } }, 201);
 };

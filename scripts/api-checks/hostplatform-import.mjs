@@ -48,6 +48,28 @@ const S = M.WORKBOOK_SHEETS;
 const wb = xlsxName ? await M.readXlsx(readFileSync(join(dir, xlsxName)), Object.values(S)) : null;
 const sheet = name => !wb ? [] : M.pick(name === S.pool ? M.poolSheetRows(wb.sheets[name] ?? []) : M.sheetObjects(wb.sheets[name] ?? [], M.WORKBOOK_HEADER_ROW[name] ?? 1, name), M.WORKBOOK_COLUMNS[name]);
 const W = Object.fromEntries(Object.entries(S).map(([k, name]) => [k, sheet(name)]));
+// Airbnb pays a stay of 28 nights or more in monthly instalments, one earnings line each, all under the same code.
+// The export here has none, so the longest Airbnb stay is split into two lines (the second not paid out yet, 待处理)
+// whose money adds up to the original line: the import must give back the original booking, with both instalments.
+let split = null;
+if (W.airbnb.length) {
+  // A stay HostPlatform also has, like the 58-night HMF4323EHS that showed the bug, so the matched-booking path is the one tested.
+  const onHp = new Set(reservations.flatMap(r => String(r['Confirmation Code'] ?? '').match(/HM[A-Z0-9]{6,}/g) ?? []));
+  const ok = r => /^HM/.test(String(r['确认码'])) && Number(r['晚数']) >= 40 && typeof r['金额(Amount)'] === 'number' && typeof r['入住日期'] === 'number' && typeof r['总收入(Gross earnings)'] === 'number';
+  let i = W.airbnb.findIndex(r => ok(r) && onHp.has(String(r['确认码'])));
+  if (i < 0) i = W.airbnb.findIndex(ok);
+  if (i >= 0) {
+    const r = W.airbnb[i], mid = Math.round((r['入住日期'] + r['退房日期']) / 2);
+    const part = (v, f) => (typeof v === 'number' ? Math.round(v * f * 100) / 100 : v);
+    const rest = (v, a) => (typeof v === 'number' ? Math.round((v - a) * 100) / 100 : v);
+    const keys = ['金额(Amount)', '服务费(Service fee)', '总收入(Gross earnings)', '清洁费(Cleaning fee)', 'Airbnb税费(Tax)'];
+    const a = { ...r, '退房日期': mid }, b = { ...r, '入住日期': mid, '数据来源': '待处理' };
+    for (const k of keys) { a[k] = part(r[k], 0.55); b[k] = rest(r[k], a[k]); }
+    W.airbnb.splice(i, 1, a, b);
+    split = { code: String(r['确认码']).toUpperCase(), gross: Math.round(r['总收入(Gross earnings)'] * 100), amount: Math.round(r['金额(Amount)'] * 100), first: Math.round(a['金额(Amount)'] * 100), nights: r['晚数'] };
+  }
+}
+
 console.log(`files: listing ${listing.length} rows, reservations ${reservations.length} rows from ${resFiles.length} files, workbook ${xlsxName ? 'yes' : 'no'}`);
 if (wb) console.log('workbook rows read:', Object.fromEntries(Object.entries(W).map(([k, v]) => [k, v.length])), '| login sheet read:', Object.keys(wb.sheets).includes('用户管理'));
 
@@ -184,7 +206,7 @@ async function runAll(label) {
     await step('workbook payouts', [await M.importPayoutHistory(db, pm.months, now)]);
   }
   const tables = ['properties', 'owners', 'owner_contracts', 'units', 'unit_expenses', 'guests', 'reservations', 'tasks', 'expenses',
-    'cleaners', 'unit_utility_accounts', 'owner_adjustments', 'guarantee_pool_months', 'owner_statements', 'statement_lines', 'payouts'];
+    'cleaners', 'unit_utility_accounts', 'owner_adjustments', 'guarantee_pool_months', 'owner_statements', 'statement_lines', 'payouts', 'booking_payments'];
   const counts = {};
   for (const t of tables) counts[t] = Number((await pg.query(`select count(*)::int as n from ${t}`)).rows[0].n);
   console.log('  table counts:', JSON.stringify(counts));
@@ -192,6 +214,35 @@ async function runAll(label) {
 }
 
 const first = await runAll('run 1');
+
+// Before 10 Oct 2026 every nameless booking of a channel shared one guest ("Airbnb guest"). Put production's state
+// back on this copy, then run the one-off split from the import page, twice.
+{
+  const nameless = await pg.query(`select r.id, r.channel, g.id gid from reservations r join guests g on g.id = r.guest_id where g.full_name ~ ' guest [A-Za-z0-9_-]+$' and r.channel = 'airbnb'`);
+  const n = nameless.rows.length;
+  if (n) {
+    const old = M.guestId('Airbnb guest', null, null);
+    await pg.query(`insert into guests (id, full_name, created_at) values ($1, 'Airbnb guest', now()::text) on conflict (id) do nothing`, [old]);
+    await pg.query(`update reservations set guest_id = $1 where id = any($2::text[])`, [old, nameless.rows.map(r => r.id)]);
+    await pg.query(`delete from guests g where g.full_name ~ ' guest [A-Za-z0-9_-]+$' and not exists (select 1 from reservations r where r.guest_id = g.id)`);
+    // --serve leaves the collapsed state in place, so the split can be run from the import page.
+    if (serve) console.log(`
+put ${n} nameless Airbnb bookings under one "Airbnb guest", as production has them`);
+  }
+  if (n && !serve) {
+    const s1 = await M.splitCollapsedGuests(db, new Date().toISOString());
+    const s2 = await M.splitCollapsedGuests(db, new Date().toISOString());
+    const left = Number((await pg.query(`select count(*)::int n from guests where full_name = 'Airbnb guest'`)).rows[0].n);
+    console.log(`
+split collapsed guests: ${n} nameless Airbnb bookings put under one "Airbnb guest"; run 1 ${JSON.stringify(s1.stats)}, run 2 ${JSON.stringify(s2.stats)}`);
+    check('split: every nameless booking gets its own guest again, and the placeholder is gone', s1.stats.bookingsGivenTheirOwnGuest === n && left === 0, `${s1.stats.bookingsGivenTheirOwnGuest} of ${n}, ${left} left`);
+    check('split run 2 changes nothing', s2.stats.bookingsGivenTheirOwnGuest === 0 && s2.stats.placeholderGuestsRemoved === 0, JSON.stringify(s2.stats));
+    const after = new Map((await pg.query(`select id, guest_id from reservations where id = any($1::text[])`, [nameless.rows.map(r => r.id)])).rows.map(r => [r.id, r.guest_id]));
+    const same = nameless.rows.filter(r => after.get(r.id) === r.gid).length;
+    check('split gives each booking the guest id the import gives it (a re-import finds the same record)', same === n, `${same} of ${n}`);
+  }
+  if (!n) console.log('split collapsed guests: no nameless Airbnb booking in these files');
+}
 if (serve) {
   // The app's role has search_path = pos; the wire connection here is the superuser, so set it on the database.
   await pg.exec(`alter database postgres set search_path = pos, public`);
@@ -213,6 +264,19 @@ const second = await runAll('run 2 (same files again)');
 
 const q = async sql => (await pg.query(sql)).rows;
 console.log('\nchecks');
+const collapsed = await q(`select g.full_name, count(*)::int n from reservations r join guests g on g.id = r.guest_id where g.full_name ~ ' guest' and g.full_name !~ ' guest [A-Za-z0-9_-]+$' group by 1 having count(*) > 1`);
+check('no nameless placeholder guest holds more than one booking', collapsed.length === 0, JSON.stringify(collapsed));
+if (split) {
+  const r = (await q(`select r.id, r.gross_booking_value::int gross, r.payout_amount::int payout, r.collected_revenue::int collected, r.check_in, r.check_out from reservations r where r.external_ref = '${split.code}' and r.state <> 'cancelled'`))[0];
+  const lines = r ? await q(`select amount::int amount, status, received_on from booking_payments where reservation_id = '${r.id}' order by id`) : [];
+  console.log(`  long stay ${split.code} (${split.nights} nights) split into 2 payout lines: booking gross ${rm(r?.gross ?? 0)}, payout ${rm(r?.payout ?? 0)}, ${r?.check_in} to ${r?.check_out}; lines ${JSON.stringify(lines)}`);
+  check('instalments: the booking keeps the whole stay\'s gross and payout, not the first line\'s', r && r.gross === split.gross && r.payout === split.amount && r.collected === split.amount, JSON.stringify(r));
+  check('instalments: every line is a payout row, the unpaid one expected', lines.length === 2 && lines.reduce((n, l) => n + l.amount, 0) === split.amount && lines.filter(l => l.status === 'expected').length === 1, JSON.stringify(lines));
+  const recv = lines.filter(l => l.status === 'received').reduce((n, l) => n + l.amount, 0);
+  check('instalments: received is the paid line only', recv === split.first, `${recv} vs ${split.first}`);
+}
+const wbLines = Number((await q(`select count(*)::int n from booking_payments where source = 'owner_workbook'`))[0].n);
+console.log(`  workbook payout lines stored: ${wbLines}`);
 check('run 2 adds no rows to any table', JSON.stringify(first.counts) === JSON.stringify(second.counts), `${JSON.stringify(first.counts)} vs ${JSON.stringify(second.counts)}`);
 check('run 2 creates nothing', Object.values(second.tally).every(s => s.created === 0), JSON.stringify(Object.fromEntries(Object.entries(second.tally).map(([k, v]) => [k, v.created]))));
 const hpUnits = Number((await q(`select count(*)::int n from units where id like 'hp-unit-%' or id = 'pilot-unit'`))[0].n);

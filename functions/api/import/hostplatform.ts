@@ -6,7 +6,7 @@ import {
   mapListing, mapReservations, mapWorkbookUnits, mapAirbnbEarnings, mapCleaning, mapWorkbookExpenses, mapPayoutHistory,
 } from '../../_lib/hostplatformImport';
 import {
-  type Db, type ImportResult, importListing, importReservations, importWorkbookUnits, importAirbnbEarnings, importCleaning, importExpenses, importPayoutHistory, fixLocations,
+  type Db, type ImportResult, importListing, importReservations, importWorkbookUnits, importAirbnbEarnings, importCleaning, importExpenses, importPayoutHistory, fixLocations, splitCollapsedGuests,
 } from '../../_lib/hostplatformImportDb';
 
 /**
@@ -80,6 +80,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         break;
       }
       case 'fix_locations': result = await fixLocations(db, now); break;
+      case 'fix_guests': result = await splitCollapsedGuests(db, now); break;
       case 'workbook_payouts': {
         // The whole OWNER PAYOUT sheet in one request: an owner's units are summed into one statement per month.
         const m = mapPayoutHistory(rows, list('report'), today);

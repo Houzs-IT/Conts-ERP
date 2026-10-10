@@ -1,6 +1,8 @@
 import { type Env, one, all, json, fail } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { FROM, COLUMNS, toRow } from '../../_lib/bookingList';
+import { fromSql, columnsSql, toRow } from '../../_lib/bookingList';
+import { moneySchema, ledger, toPayment, OTA_CHANNELS, MONEY_ROLES, type PaymentRow } from '../../_lib/bookingMoney';
+import { WORKBOOK_MONEY_MARK } from '../../_lib/hostplatformImportDb';
 import { applyMove, isRefusal, movesFor, enteredOn, mytDay, dayLabel, type State } from '../../_lib/bookingLifecycle';
 
 /** Per-booking money columns added by migration 0052. Read only where they exist, so this works before and after it. */
@@ -54,6 +56,9 @@ function describe(a: { action: string; actor_label: string; before_state: string
         ].filter(Boolean).join(' · ') || undefined,
       };
     case 'reservation.prepare': return { label: 'Arrival prepared', detail: 'A clean was queued for the unit', actor: a.actor_label };
+    case 'reservation.payment': return { label: after.kind === 'refund' ? 'Refund recorded' : after.kind === 'ota_payout' ? 'Payout recorded' : 'Payment recorded', detail: after.amount != null ? `${ringgit(after.amount)}${after.receivedOn ? ` on ${dayLabel(after.receivedOn)}` : ''}` : undefined, actor: a.actor_label };
+    case 'reservation.payment_removed': return { label: 'Payment removed', detail: before.amount != null ? ringgit(before.amount) : undefined, actor: a.actor_label };
+    case 'reservation.details': return { label: after.checkInTime || after.checkOutTime ? 'Check-in or check-out time changed' : 'Notes changed', detail: after.checkInTime || after.checkOutTime ? [after.checkInTime ? `Check-in from ${after.checkInTime}` : null, after.checkOutTime ? `Check-out by ${after.checkOutTime}` : null].filter(Boolean).join(' · ') : undefined, actor: a.actor_label };
     default: return null;
   }
 }
@@ -69,9 +74,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const present = await all<{ column_name: string }>(env, `
     SELECT column_name FROM information_schema.columns
     WHERE table_name = 'reservations' AND table_schema = ANY(current_schemas(false))
-      AND column_name IN (${Object.keys(OPTIONAL_MONEY).map(c => `'${c}'`).join(', ')})`);
+      AND column_name IN (${[...Object.keys(OPTIONAL_MONEY), 'staff_notes'].map(c => `'${c}'`).join(', ')})`);
   const extra = present.map(c => c.column_name).filter(c => c in OPTIONAL_MONEY);
-  const row = await one<any>(env, `SELECT ${COLUMNS}, r.unit_id, r.notes${extra.map(c => `, r.${c} AS x_${c}`).join('')} ${FROM} WHERE r.id = ?`, id);
+  const hasStaffNotes = present.some(c => c.column_name === 'staff_notes');
+  const schema = await moneySchema(env);
+  const row = await one<any>(env, `SELECT ${columnsSql(schema)}, r.unit_id, r.notes, r.guest_id, g.email AS guest_email${hasStaffNotes ? ', r.staff_notes' : ''}${extra.map(c => `, r.${c} AS x_${c}`).join('')}
+    ${fromSql(schema)} WHERE r.id = ?`, id);
   if (!row) return fail('NOT_FOUND', 'That reservation does not exist.', 404);
 
   const lines: Record<string, number | string | null> = {};
@@ -79,6 +87,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     const v = extra.includes(col) ? row[`x_${col}`] : null;
     lines[key] = v == null || v === '' ? null : v instanceof Date ? v.toISOString() : TEXT_FIELDS.has(col) ? String(v) : Number(v);
   }
+  const payments: PaymentRow[] = schema.payments ? (await all<any>(env, `
+    SELECT bp.*, u.full_name AS created_by_name FROM booking_payments bp LEFT JOIN users u ON u.id = bp.created_by
+    WHERE bp.reservation_id = ? ORDER BY bp.status = 'expected', COALESCE(bp.received_on, '9999'), bp.created_at, bp.id`, id)).map(toPayment) : [];
 
   const [auditRows, messages, notices] = await Promise.all([
     all<any>(env, `SELECT action, actor_label, before_state, after_state, occurred_at FROM audit_log
@@ -104,7 +115,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   for (const n of notices) {
     timeline.push({ at: n.sent_at ?? n.queued_at, label: `${n.template.replace(/[._]/g, ' ')} by ${n.channel}`, detail: n.state === 'sent' ? 'Sent' : n.state === 'failed' ? 'Failed to send' : 'Queued, not sent yet' });
   }
-  if (lines.payoutDate) timeline.push({ at: String(lines.payoutDate), label: 'Paid out to us' });
+  if (lines.payoutDate && !payments.some(p => p.source === 'owner_workbook')) timeline.push({ at: String(lines.payoutDate), label: 'Paid out to us' });
   timeline.sort((a, b) => a.at.localeCompare(b.at));
 
   const today = mytDay();
@@ -120,16 +131,34 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     manage: !!session.manage, enteredOn: await enteredOn(env, id, row.state),
   });
 
+  const n = toRow(row);
+  const fromWorkbook = String(row.notes ?? '').includes(WORKBOOK_MONEY_MARK);
+  const money = {
+    gross: Number(row.gross_booking_value), channelFee: Number(row.channel_fee), collected: Number(row.collected_revenue),
+    ...lines,
+  } as any;
+  const ota = OTA_CHANNELS.includes(row.channel);
+  const live = ['inquiry', 'pending', 'confirmed', 'checked_in'].includes(row.state);
   return json({
-    ...toRow(row),
+    ...n,
     unitId: row.unit_id,
+    guestId: row.guest_id ?? null,
+    guestEmail: row.guest_email ?? null,
+    nationality: lines.guestNationality ?? row.guest_country ?? null,
     notes: row.notes ?? null,
-    money: {
-      gross: Number(row.gross_booking_value), channelFee: Number(row.channel_fee), collected: Number(row.collected_revenue),
-      ...lines,
-    },
+    staffNotes: hasStaffNotes ? row.staff_notes ?? null : null,
+    money,
+    ledger: ledger({ ...money, channel: row.channel, state: row.state, nights: n.nights, fromWorkbook }, payments, CHANNEL_LABEL[row.channel] ?? row.channel),
     timeline,
     moves,
+    can: {
+      // A booking site owns its bookings' dates and price: they change on the site and come back through Channex.
+      changeDates: live && !ota,
+      changeDatesReason: !live ? 'A finished, cancelled or no-show booking cannot move.' : ota ? `This is a ${CHANNEL_LABEL[row.channel]} booking: its dates and price are set on ${CHANNEL_LABEL[row.channel]}. Change them there; the change comes back here through Channex.` : null,
+      recordPayment: schema.payments && MONEY_ROLES.includes(session.role) && row.channel !== 'maintenance_block' && row.channel !== 'owner_stay',
+      editDetails: true,
+      paymentsReady: schema.payments,
+    },
   });
 };
 

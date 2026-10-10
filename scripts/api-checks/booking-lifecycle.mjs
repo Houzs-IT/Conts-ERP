@@ -139,23 +139,21 @@ r = await call('POST', `/api/reservations/${blockId}/cancel`, { reason: 'Works f
 check('remove block (cancel with reason)', r.status === 200 && r.json.state === 'cancelled', r.text);
 
 /* ---------- OTA booking: price belongs to the site ---------- */
-const ota = (await call('GET', '/api/reservations?view=upcoming&channel=airbnb&status=confirmed&size=25')).json?.data?.find(x => x.state === 'confirmed');
+const ota = (await call('GET', '/api/reservations?view=upcoming&ch=airbnb&size=25')).json?.data?.find(x => x.state === 'confirmed');
 if (ota) {
   r = await call('PATCH', `/api/reservations/${ota.id}/dates`, { checkIn: ota.checkIn, checkOut: ota.checkOut, confirm: true, grossBookingValue: 1 });
-  check('booking-site price cannot be changed here -> 422', r.status === 422, r.text);
+  check('booking-site dates and price cannot be changed here -> 409 OTA_LOCKED', r.status === 409 && r.json.error.code === 'OTA_LOCKED', r.text);
   d = await detail(ota.id);
   check('airbnb detail: gross and commission straight from the record', d.money.gross === ota.grossBookingValue && d.money.channelFee === ota.channelFee, JSON.stringify(d.money));
 } else console.log('skip OTA checks (no upcoming confirmed Airbnb booking)');
 
-/* ---------- money tabs ---------- */
-r = await call('GET', '/api/reservations?view=unpaid&size=25');
-check('Direct, not paid tab: direct bookings only, outstanding total', r.status === 200 && r.json.data.every(x => x.channel === 'direct') && typeof r.json.totals.outstanding === 'number' && r.json.counts.unpaid === r.json.total, r.text.slice(0, 300));
-r = await call('GET', '/api/reservations?view=payout&size=25');
-check('Payout pending tab: finished booking-site stays only, outstanding total', r.status === 200 && r.json.data.every(x => ['airbnb', 'booking_com', 'agoda'].includes(x.channel) && x.checkOut <= MYT(0)) && typeof r.json.totals.outstanding === 'number', r.text.slice(0, 300));
+/* ---------- money cards (to-do filters on All) ---------- */
+r = await call('GET', '/api/reservations?todo=unpaid&size=25');
+check('Direct unpaid card: direct bookings still owed money, outstanding total', r.status === 200 && r.json.data.every(x => x.channel === 'direct' && x.outstanding > 0) && typeof r.json.totals.outstanding === 'number' && r.json.todos.unpaid.count === r.json.total, r.text.slice(0, 300));
+r = await call('GET', '/api/reservations?todo=payout&size=25');
+check('Payout pending card: finished booking-site stays still owed money', r.status === 200 && r.json.data.every(x => ['airbnb', 'booking_com', 'agoda'].includes(x.channel) && x.checkOut <= MYT(0) && x.outstanding > 0), r.text.slice(0, 300));
 r = await call('GET', '/api/reservations?view=pending&size=25');
-check('old "pending" links land on Direct, not paid', r.status === 200 && r.json.view === 'unpaid', r.text.slice(0, 200));
-r = await call('GET', '/api/reservations?view=upcoming&size=25');
-check('other tabs have no outstanding figure', r.json.totals.outstanding === null, JSON.stringify(r.json.totals));
+check('old "pending" links land on the Direct unpaid card', r.status === 200 && r.json.todo === 'unpaid', r.text.slice(0, 200));
 
 console.log(fails ? `\n${fails} FAILED` : '\nall ok');
 process.exit(fails ? 1 : 0);
