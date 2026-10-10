@@ -126,6 +126,13 @@ export const STATUS_VOCAB = {
     running: { label: 'Running', tone: 'success' },
     not_running: { label: 'Not running yet', tone: 'neutral' },
   },
+  /** A money action waiting for, or decided by, an approver. */
+  approval: {
+    pending: { label: 'Waiting', tone: 'warning' },
+    approved: { label: 'Approved', tone: 'success' },
+    rejected: { label: 'Rejected', tone: 'danger' },
+    cancelled: { label: 'Withdrawn', tone: 'neutral' },
+  },
   review: {
     replied: { label: 'Replied', tone: 'success' },
     needs_reply: { label: 'Needs reply', tone: 'warning' },

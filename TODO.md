@@ -162,7 +162,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner: link item groups WORKS, BUILTIN, FURNITURE, LIGHTING, APPLIANCE, SOFT, SERVICE and RENOVATION to sales and sales-return accounts (Accounting > Item Groups), or invoices for those lines post nothing and negative instalments refuse their credit note; upload the Dream Crafter and The Conts logos (Project Maintenance > Brands).
 - Owner questions, contract defaults in use: typed amount allowed when it differs from measure x rate (flagged *); rounding per line to the sen; QT-YYMM-NNN; PO split 30/65/5; credit note to the sales-return account; supply-by-owner goods get no PO; promotion column = unit price.
 - Observed on a local engine (10 Oct, scratch Postgres + PostgREST): SKU photo upload, site receipts, the whole project flow (scripts/api-checks/renovation-project.mjs all passed, scripts/demo seed + cleanup). Not observed: revenue and credit-note journals (the local database has no chart of accounts), the PO payment-schedule card.
-- Owner decision: a line with no PO (FOC, waived, supply-by-owner goods, in-house) can never get a proof of delivery, so the stage that owns it can never be completed. Exempt such lines from the POD rule, or give them a "delivered" tick.
 - Demo data for the live site: scripts/demo (seed + cleanup, browser snippet or terminal). Cleanup archives and cancels; billed contracts, cancelled documents and inactive DEMO SKUs/suppliers stay.
 - Site receipt POST goes through the REST goods-receipt core and counts toward the free plan's 50 outside calls per request. Engine ESLint cannot run in Conts (engine/scripts/eslint and lint-ratchet.mjs were not copied).
 
@@ -176,6 +175,14 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Migration 0092 (units.weekend_rate, reservations.block_reason) is not yet applied to staging or production. It backfills weekend_rate = round(base_rate x 1.22) for every priced unit so live Fri/Sat prices do not move; units created later sell the weekend at the base rate until a weekend rate is set (Pricing page).
 - Channex full sync (functions/_lib/channexQueue.ts) still counts inquiries as taken nights; the board and the clash check do not. Decide whether an inquiry should close the nights on the booking sites.
 - Rate update lists the units on the board, so with one building filtered it offers only that building; open it with All buildings to price across buildings.
+
+## Money approvals and guest documents (feat/s4-money-docs, migrations 0096-0097)
+- Migrations 0096 (approval_requests) and 0097 (document_counters, issued_documents) must be applied on production before this ships; until then refunds, payout runs, owner credits and charges, large expenses and write-offs answer with a database error.
+- Owner to set the approval limits in Settings > Approvals (defaults RM 500 for expenses, RM 2,000 for finance admins); they were chosen as placeholders, not by the owner.
+- OPEN: approvers are told only by the Approvals count in the menu and the bell. Wire notifyUsers (Stream 3, functions/_lib/notify.ts) at the two call sites notifyApprovers / notifyRequester in functions/_lib/approvals.ts once it is on main.
+- Expenses written by the system (finished cleans, utility bills from Record utilities, the workbook import) are not staged for approval; only expenses typed in on Expenses or an owner's page are.
+- Guest documents are print-ready pages (Save as PDF from the browser), not PDF files; same as owner statements.
+- Numbering under real concurrency is enforced by the database (counter row lock and one-live-document indexes); the local PGlite copy serves one connection at a time, so the parallel test there proves distinct consecutive numbers but not the index race. Re-run approvals-documents.mjs against staging Postgres before relying on it.
 
 ## Standards (docs/UI-STANDARDS.md, checked by npm run check and CI)
 - Done (s1-standards): one status vocabulary (src/lib/status.ts) and StatusBadge / StatusMenu everywhere; text-success / text-danger now render the text colour; ConfirmDialog for every confirm; dates, money, counts and phones through lib/format; plain-English API errors; no Change dates on OTA bookings.

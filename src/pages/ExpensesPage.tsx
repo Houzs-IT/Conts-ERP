@@ -7,6 +7,8 @@ import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, ApiFailure, errorMessage } from '../lib/api';
+import { isStaged, stagedToast } from '../lib/approvals';
+import { refreshNavCounts } from '../lib/navBadges';
 import { monthLabel, dateShort, date, todayMyt, plural, count as fmtCount, titleCase } from '../lib/format';
 import { MoneyText, moneyString } from '../components/MoneyText';
 import { Select, SearchSelect, type SelectOption } from '../components/Select';
@@ -154,8 +156,10 @@ export default function ExpensesPage() {
 
   async function createExpense(input: { unitId: string; category: Category; amount: number; incurredOn: string; reference: string; description: string }) {
     try {
-      await api.post('/expenses', input);
+      const res = await api.post<unknown>('/expenses', input);
       setCreating(false);
+      // Above the approval threshold it waits for a second person and is not on the list yet.
+      if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); return; }
       toast({ tone: 'success', title: 'Expense added.', body: `${catLabel(input.category)} · ${moneyString(input.amount, 'exact')} on ${dateShort(input.incurredOn)}.` });
       refresh();
     } catch (e) {
@@ -165,7 +169,8 @@ export default function ExpensesPage() {
 
   async function saveEdit(id: string, delta: Partial<Expense>) {
     try {
-      await api.patch(`/expenses/${id}`, delta);
+      const res = await api.patch<unknown>(`/expenses/${id}`, delta);
+      if (isStaged(res)) { setEditing(null); toast(stagedToast(res)); void refreshNavCounts(); return; }
       setEdits(e => ({ ...e, [id]: { ...e[id], ...delta } }));
       setEditing(null);
       toast({ tone: 'success', title: 'Expense updated.', body: 'The change lands on this period’s statement.' });

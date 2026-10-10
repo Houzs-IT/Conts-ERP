@@ -5,7 +5,7 @@ import { billingPrompts, instalmentOneReceived, paymentSummary, type BillingProm
 import { boardConditions, unitKeyStatus, type ConditionSummary, type UnitKeyStatus } from "./conditions";
 import { evaluateHardwareGate, isSoConfirmed, permitStateOf, type GateResult } from "./gate";
 import type { ProjectFacts, TaskRow } from "./load";
-import { podCoverage, type PodCoverage } from "./pod";
+import { podCoverage, podQtyBySoItem, type PodCoverage } from "./pod";
 import { redFlags, type RedFlag } from "./redFlags";
 import { currentStage, deriveStageViews, type StageView } from "./stages";
 import { tradeTaskStatus, type TaskStatus } from "./tradeTasks";
@@ -47,7 +47,7 @@ export function computeProjectView(f: ProjectFacts, today: string): ProjectView 
   });
   const prompts = billingPrompts(f.billing, views, soConfirmed);
 
-  const qtyBySoItem = new Map((f.lines ?? []).map((l) => [l.soItemId, l.qty]));
+  const qtyBySoItem = podQtyBySoItem(f.lines ?? []);
   const poLinesByItem = new Map<string, Array<{ id: string; qty: number; received_qty: number }>>();
   for (const pl of f.poLines) {
     const list = poLinesByItem.get(pl.so_item_id) ?? [];
