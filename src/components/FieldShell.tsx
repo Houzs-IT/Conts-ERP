@@ -16,7 +16,7 @@ export default function FieldShell({ children }: { children: ReactNode }) {
   return (
     <div style={{ flex: 1, minHeight: '100vh', display: 'flex', flexDirection: 'column', background: color.page }}>
       <header style={{
-        flex: 'none', background: color.black, color: '#FFFFFF',
+        flex: 'none', background: color.black, color: 'var(--color-text-inverse)',
         padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
       }}>
         <Logo variant="mark" size="sm" onDark />

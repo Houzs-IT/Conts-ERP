@@ -8,12 +8,14 @@ import { EmptyState } from './States';
 import { StaleBanner, TableSkeleton } from './DataState';
 import { PageControls } from './PageControls';
 import { useToast } from './Toast';
+import { PhoneText } from './PhoneText';
 import { Floating, ToolButton, PanelItem, PanelHeading, StatusCell, ChannelCell, PersonCell, channelLabel } from './DataTableParts';
 import { useTableViews, type TableLayout, type SavedView } from './DataTableViews';
-import { rm, date as fmtDate, dateTime as fmtDateTime, count as fmtCount, plural } from '../lib/format';
+import { rm, date as fmtDate, dateTime as fmtDateTime, count as fmtCount, plural, phone as fmtPhone } from '../lib/format';
 import { downloadTable, type ExportColumn, type ExportCell, type ExportKind } from '../lib/export';
 import { cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { statusOf, type AnyTone, type StatusEntity } from '../lib/status';
+import { errorMessage } from '../lib/api';
 
 /**
  * The one table every list in the app uses (like Houzs's DataTable and Hookka's DataGrid).
@@ -31,7 +33,7 @@ import type { Tone } from '../lib/types';
  *  - The previous rows stay on screen while the next ones load. Phones get one card per row.
  */
 
-export type ColumnType = 'text' | 'date' | 'datetime' | 'money' | 'number' | 'ref' | 'status' | 'channel' | 'person';
+export type ColumnType = 'text' | 'date' | 'datetime' | 'money' | 'number' | 'ref' | 'status' | 'channel' | 'person' | 'phone';
 export type FilterKind = 'text' | 'select' | 'date' | 'number';
 export type Raw = string | number | boolean | null | undefined;
 
@@ -59,8 +61,11 @@ export interface Column<R> {
   render?: (r: R) => ReactNode;
   /** A muted second line under the cell. */
   sub?: (r: R) => ReactNode;
-  /** status columns: label and tone. The label is also what is sorted, filtered on and exported. */
-  status?: (r: R) => { label: string; tone: Tone } | null;
+  /** status columns: the stored value's entity in src/lib/status.ts; words and colour come from there. */
+  entity?: StatusEntity;
+  /** status columns that are not a stored status (a flag, a computed state): label and tone. The label is also what is
+   *  sorted, filtered on and exported. */
+  status?: (r: R) => { label: string; tone: AnyTone; outline?: boolean } | null;
   /** What a text filter searches and an export writes, when it differs from `value`. */
   text?: (r: R) => string | null | undefined;
   /** Export cell override (money in sen, dates ISO). */
@@ -159,18 +164,21 @@ export interface DataTableProps<R> {
 /* helpers                                                             */
 /* ------------------------------------------------------------------ */
 
-const MIN_WIDTH: Record<ColumnType, number> = { text: 160, date: 120, datetime: 150, money: 130, number: 96, ref: 130, status: 130, channel: 130, person: 160 };
+const MIN_WIDTH: Record<ColumnType, number> = { text: 160, date: 120, datetime: 150, money: 130, number: 96, ref: 130, status: 130, channel: 130, person: 160, phone: 150 };
 const RIGHT: ColumnType[] = ['money', 'number'];
 
-const typeOf = <R,>(c: Column<R>): ColumnType => c.type ?? 'text';
+const typeOf = <R,>(c: Column<R>): ColumnType => c.type ?? (c.entity ? 'status' : 'text');
 const rawOf = <R,>(c: Column<R>, r: R): Raw => (c.value ? c.value(r) : (r as Record<string, Raw>)[c.key]);
+/** A status cell's words and colour: the column's own status(), or its entity's entry for the stored value. */
+const statusFor = <R,>(c: Column<R>, r: R) => c.status?.(r) ?? (c.entity ? statusOf(c.entity, String(rawOf(c, r) ?? '')) : null);
 
 /** Text a filter matches and a CSV writes for a column that is not a number or a date. */
 function textOf<R>(c: Column<R>, r: R): string {
   if (c.text) return c.text(r) ?? '';
   const t = typeOf(c);
-  if (t === 'status') return c.status?.(r)?.label ?? String(rawOf(c, r) ?? '');
+  if (t === 'status') return statusFor(c, r)?.label ?? String(rawOf(c, r) ?? '');
   if (t === 'channel') { const v = rawOf(c, r); return v ? channelLabel(String(v)) : ''; }
+  if (t === 'phone') { const v = rawOf(c, r); return v ? fmtPhone(String(v)) : ''; }
   const v = rawOf(c, r);
   return v === null || v === undefined ? '' : String(v);
 }
@@ -235,9 +243,10 @@ function cellFace<R>(c: Column<R>, r: R): ReactNode {
     case 'number': return v === null || v === undefined || v === '' ? none : <span className="tabular-nums">{typeof v === 'number' ? fmtCount(v) : String(v)}</span>;
     case 'date': return v ? <span className="whitespace-nowrap">{fmtDate(String(v))}</span> : none;
     case 'datetime': return v ? <span className="whitespace-nowrap">{fmtDateTime(String(v))}</span> : none;
-    case 'status': { const s = c.status?.(r); return s ? <StatusCell label={s.label} tone={s.tone} /> : none; }
+    case 'status': { const s = statusFor(c, r); return s ? <StatusCell label={s.label} tone={s.tone} outline={s.outline} /> : none; }
     case 'channel': return v ? <ChannelCell channel={String(v)} /> : none;
     case 'person': return <PersonCell name={v ? String(v) : null} />;
+    case 'phone': return <PhoneText value={v ? String(v) : null} whatsapp={false} />;
     case 'ref': return v ? <span className="font-mono text-meta whitespace-nowrap">{String(v)}</span> : none;
     default: {
       const s = v !== null && v !== undefined && v !== '' ? String(v) : textOf(c, r);
@@ -445,7 +454,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
           : `${plural(cols.length, 'column')}, as shown on screen${only ? ', ticked rows only' : ''}.`,
       });
     } catch (e) {
-      toast({ tone: 'critical', title: 'Export failed.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Export failed.', body: errorMessage(e, 'Try again in a moment.') });
     }
     setExporting(null);
   }
@@ -518,7 +527,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
 
   const toneClass = (r: R) => {
     const t = rowTone?.(r);
-    return t === 'gold' ? 'bg-gold-tint' : t === 'warning' ? 'bg-[var(--color-warning-bg)]' : t === 'critical' ? 'bg-[var(--color-critical-bg)]' : t === 'muted' ? 'text-muted-ink' : '';
+    return t === 'gold' ? 'bg-gold-tint' : t === 'warning' ? 'bg-warning-bg' : t === 'critical' ? 'bg-danger-bg' : t === 'muted' ? 'text-muted-ink' : '';
   };
 
   const body = (
@@ -845,7 +854,7 @@ function optionsFor<R>(c: Column<R>, spec: FilterSpec, rows: R[]): { value: stri
     const t = typeOf(c);
     const v = t === 'status' && !c.value ? textOf(c, r) : String(rawOf(c, r) ?? '');
     if (!v || seen.has(v)) continue;
-    seen.set(v, t === 'status' ? (c.status?.(r)?.label ?? v) : t === 'channel' ? channelLabel(v) : textOf(c, r) || v);
+    seen.set(v, t === 'status' ? (statusFor(c, r)?.label ?? v) : t === 'channel' ? channelLabel(v) : textOf(c, r) || v);
   }
   return [...seen].map(([value, label]) => ({ value, label })).sort((a, b) => collator.compare(a.label, b.label));
 }
@@ -1014,10 +1023,10 @@ function ViewsPanel({ views, activeId, onApply, onSaveNew, onUpdate, onReset }: 
           {confirming === v.id ? (
             <button type="button" onClick={() => { setConfirming(null); void views.remove(v.id); }}
               title={v.scope === 'company' ? 'It disappears for everyone.' : undefined}
-              className="h-7 px-2 rounded-[6px] border-none bg-[var(--color-critical-solid)] text-white text-meta font-medium cursor-pointer whitespace-nowrap">Delete</button>
+              className="h-7 px-2 rounded-[6px] border-none bg-danger text-white text-meta font-medium cursor-pointer whitespace-nowrap">Delete</button>
           ) : (
             <button type="button" title="Delete this view" aria-label={`Delete ${v.name}`} onClick={() => setConfirming(v.id)}
-              className="w-7 h-7 grid place-items-center rounded-[6px] border-none bg-transparent cursor-pointer text-muted-ink hover:text-[var(--color-critical-fg)]">
+              className="w-7 h-7 grid place-items-center rounded-[6px] border-none bg-transparent cursor-pointer text-muted-ink hover:text-danger">
               <Icon name="Trash2" size="sm" />
             </button>
           )}
@@ -1028,7 +1037,7 @@ function ViewsPanel({ views, activeId, onApply, onSaveNew, onUpdate, onReset }: 
   return (
     <div className="py-1">
       {!d && views.loading && <div className="px-3 py-3 text-meta text-muted-ink">Loading views…</div>}
-      {views.error && !d && <div className="px-3 py-3 text-meta text-[var(--color-critical-fg)]">{views.error}</div>}
+      {views.error && !d && <div className="px-3 py-3 text-meta text-danger">{views.error}</div>}
       {d && (
         <>
           <PanelHeading>My views</PanelHeading>

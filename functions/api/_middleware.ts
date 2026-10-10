@@ -38,7 +38,7 @@ const PUBLIC = new Set([
 /** What someone who must still set up two-step sign-in can reach. */
 const SETUP_ALLOWED = /^(GET \/api\/auth\/session|POST \/api\/auth\/(logout|change-password)|GET \/api\/account|POST \/api\/account\/.+)$/;
 
-export const onRequest: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => {
+const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => {
   const route = `${request.method} ${new URL(request.url).pathname.replace(/\/+$/, '')}`;
   if (request.method === 'OPTIONS' || PUBLIC.has(route)) return next();
 
@@ -107,4 +107,15 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, next, waitUn
   const headers = new Headers(response.headers);
   headers.append('set-cookie', cookie(request, refreshed, ttlHours * 3600));
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+};
+
+/** An endpoint that throws (a database error, a bug) would otherwise reach the browser as the platform's own error
+ *  page or a raw message. It is logged here and answered in the standard envelope with a plain sentence instead. */
+export const onRequest: PagesFunction<Env> = async (ctx) => {
+  try {
+    return await handle(ctx);
+  } catch (e) {
+    console.error('Unhandled error', ctx.request.method, new URL(ctx.request.url).pathname, e);
+    return fail('INTERNAL', 'Something went wrong on our side and nothing was saved. Try again; if it keeps happening, tell IT.', 500);
+  }
 };

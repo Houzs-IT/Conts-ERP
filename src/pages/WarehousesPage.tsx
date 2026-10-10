@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
@@ -53,7 +54,7 @@ export default function WarehousesPage() {
       render: w => w.isDefault
         ? <span className="inline-flex items-center text-[12px] font-semibold px-2.5 py-0.5 rounded-full bg-[var(--color-gold-50)] text-gold-ink">Default</span>
         : <span className="text-muted-ink">—</span> },
-    { key: 'status', label: 'Status', type: 'status', value: w => (w.isActive ? 'ACTIVE' : 'INACTIVE'), status: w => (w.isActive ? { label: 'Active', tone: 'success' } : { label: 'Inactive', tone: 'neutral' }) },
+    { key: 'status', label: 'Status', type: 'status', value: w => (w.isActive ? 'ACTIVE' : 'INACTIVE'), entity: 'active_flag' },
   ], []);
 
   function save(d: Draft) {
@@ -131,8 +132,8 @@ function WarehouseDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; o
           </div>
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete warehouse ${draft.name}?`, body: 'It is deleted for good and drops off the warehouse list.', confirmLabel: 'Delete warehouse', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name" onClick={() => onSave(f)}>{draft.isNew ? 'Create' : 'Save'}</Button>

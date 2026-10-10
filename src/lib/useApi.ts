@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, ApiFailure } from './api';
+import { api, ApiFailure, errorMessage } from './api';
 
 export interface Query<T> {
   data: T | null;
@@ -34,7 +34,7 @@ export function useApi<T>(path: string | null, fallback?: T): Query<T> {
         if (!live) return;
         // With a fallback present the page still renders; the banner explains why
         // the figures are not live rather than blanking the screen.
-        setError(e instanceof ApiFailure ? e.message : 'This list could not load. Check your connection and try again.');
+        setError(errorMessage(e, 'This list could not load. Check your connection and try again.'));
       })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };

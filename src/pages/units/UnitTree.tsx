@@ -2,13 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Card } from '../../components/Card';
 import Icon from '../../components/Icon';
-import { tone as T } from '../../theme';
 import { cx } from '../../lib/design-tokens';
 import type { UnitReadiness } from '../../lib/types';
-import { READINESS } from '../../lib/vocabulary';
 import { titleCase } from '../../lib/format';
-import { READY_TONE, type Building, type Unit } from './shared';
+import type { Building, Unit } from './shared';
 import { MODEL } from '../../lib/revenueModel';
+import { statusLabel, statusOf, TONE_STYLE } from '../../lib/status';
 
 interface Props {
   buildings: Building[];
@@ -103,7 +102,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
 
   const dot = (id: string) => {
     const r = readiness[id];
-    return r ? <span title={READINESS[r].label} aria-label={READINESS[r].label} className="w-2 h-2 rounded-full flex-none" style={{ background: T[READY_TONE[r]].line }} /> : null;
+    return r ? <span title={statusLabel('readiness', r)} aria-label={statusLabel('readiness', r)} className="w-2 h-2 rounded-full flex-none" style={{ background: TONE_STYLE[statusOf('readiness', r).tone].line }} /> : null;
   };
 
   return (

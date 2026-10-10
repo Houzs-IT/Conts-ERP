@@ -1,15 +1,8 @@
 import type { ReservationState, Tone } from './types';
+import { statusOptions } from './status';
 
-/** One label and one look per booking status, shared by the Bookings list, the booking drawer and the Calendar. */
-export const STATUS: Record<ReservationState, { label: string; tone: Tone; outline?: boolean }> = {
-  inquiry: { label: 'Inquiry', tone: 'neutral' },
-  pending: { label: 'Pending', tone: 'warning' },
-  confirmed: { label: 'Confirmed', tone: 'info' },
-  checked_in: { label: 'Checked in', tone: 'success' },
-  checked_out: { label: 'Checked out', tone: 'neutral' },
-  cancelled: { label: 'Cancelled', tone: 'critical', outline: true },
-  no_show: { label: 'No show', tone: 'warning', outline: true },
-};
+/** One label and one look per booking status, from src/lib/status.ts (shared by Bookings, the drawer and Calendar). */
+export const STATUS = Object.fromEntries(statusOptions('booking').map(o => [o.value, { label: o.label, tone: (o.tone === 'danger' ? 'critical' : o.tone === 'accent' ? 'neutral' : o.tone) as Tone, outline: o.outline }])) as Record<ReservationState, { label: string; tone: Tone; outline?: boolean }>;
 
 /** What the server did on the booking sites, as returned in `effects.channel`. */
 export type ChannelSync = 'queued' | 'not_linked' | 'failed' | null | undefined;

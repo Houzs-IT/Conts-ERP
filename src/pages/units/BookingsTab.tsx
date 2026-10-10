@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Badge } from '../../components/Badge';
+import { StatusBadge } from '../../components/StatusBadge';
 import ChannelMark from '../../components/ChannelMark';
 import { DataTable, type Column } from '../../components/DataTable';
 import { channel as CH } from '../../theme';
@@ -8,8 +8,7 @@ import { cx } from '../../lib/design-tokens';
 import { useApi } from '../../lib/useApi';
 import { api } from '../../lib/api';
 import { fetchAllPages } from '../../lib/export';
-import { rm, dateRange, dateShort } from '../../lib/format';
-import { STATUS } from '../../lib/bookingStatus';
+import { rm, dateRange, dateShort, count } from '../../lib/format';
 import { type UnitDetail } from './shared';
 
 type When = 'upcoming' | 'past' | 'cancelled' | 'all';
@@ -59,7 +58,7 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
 
   const money = d?.rows.some(r => r.grossBookingValue !== undefined) ?? false;
   const summary = d && d.total > 0
-    ? `${d.total.toLocaleString('en-MY')} ${d.total === 1 ? 'booking' : 'bookings'}${d.totalGross != null ? ` · ${rm(d.totalGross, { cents: false })} gross` : ''}`
+    ? `${count(d.total)} ${d.total === 1 ? 'booking' : 'bookings'}${d.totalGross != null ? ` · ${rm(d.totalGross, { cents: false })} gross` : ''}`
     : null;
 
   const columns = useMemo<Column<Stay>[]>(() => [
@@ -80,8 +79,8 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
     { key: 'nights', label: 'Nights', type: 'number', value: s => nightsOf(s), width: 70 },
     ...(money ? [{ key: 'gross', label: 'Gross', type: 'money', value: s => (s.grossBookingValue != null && s.grossBookingValue > 0 ? s.grossBookingValue : null), width: 110,
       render: s => <span className="font-medium tabular-nums whitespace-nowrap">{s.grossBookingValue != null && s.grossBookingValue > 0 ? rm(s.grossBookingValue, { cents: false }) : '—'}</span> }] as Column<Stay>[] : []),
-    { key: 'status', label: 'Status', type: 'status', value: s => s.state, status: s => ({ label: STATUS[s.state].label, tone: STATUS[s.state].tone }), width: 130,
-      render: s => <Badge tone={STATUS[s.state].tone} label={STATUS[s.state].label} /> },
+    { key: 'status', label: 'Status', type: 'status', value: s => s.state, entity: 'booking', width: 130,
+      render: s => <StatusBadge entity="booking" value={s.state} /> },
   ], [money]);
 
   return (
@@ -126,7 +125,7 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
             {s.grossBookingValue != null && s.grossBookingValue > 0 && (
               <span className="text-copy font-medium [font-variant-numeric:tabular-nums]">{rm(s.grossBookingValue, { cents: false })}</span>
             )}
-            <Badge tone={STATUS[s.state].tone} label={STATUS[s.state].label} size="sm" />
+            <StatusBadge entity="booking" value={s.state} size="sm" />
           </span>
         </span>
       )}

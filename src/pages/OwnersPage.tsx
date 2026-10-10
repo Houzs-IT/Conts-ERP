@@ -7,7 +7,7 @@ import Icon from '../components/Icon';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
-import { api } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { rmShort, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
 import { MoneyText } from '../components/MoneyText';
 import { Select } from '../components/Select';
@@ -101,7 +101,7 @@ export default function OwnersPage() {
       setModal(false);
       navigate(`/owners/${encodeURIComponent(made.id)}`);
     } catch (e) {
-      toast({ tone: 'critical', title: 'Owner was not added.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Owner was not added.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
 
@@ -118,7 +118,7 @@ export default function OwnersPage() {
         </span>
       ) },
     { key: 'email', label: 'Email', value: o => o.email || null, hidden: true, filter: false, width: 200 },
-    { key: 'phone', label: 'Phone', value: o => o.phone, hidden: true, filter: false, width: 140 },
+    { key: 'phone', label: 'Phone', type: 'phone', value: o => o.phone, hidden: true, filter: false, width: 140 },
     { key: 'units', label: 'Units', type: 'number', align: 'left', value: o => o.units.length, width: 140, filter: false,
       render: o => <span className="text-copy text-muted-ink truncate block" title={o.units.map(u => u.unitLabel).join(', ')}>{unitsText(o)}</span> },
     { key: 'unitList', label: 'Unit list', value: o => o.units.map(u => u.unitLabel).join(', ') || null, hidden: true, filter: false, width: 220 },

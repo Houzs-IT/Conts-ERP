@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from './Icon';
-import { Badge } from './Badge';
+import { StatusBadge } from './StatusBadge';
 import ChannelMark from './ChannelMark';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
-import type { BookingChannel, Tone } from '../lib/types';
+import type { BookingChannel } from '../lib/types';
+import type { AnyTone } from '../lib/status';
 
 /**
  * Pieces of the shared table (DataTable.tsx): a floating panel that is not clipped by the table's scroll box,
@@ -87,9 +88,9 @@ export function PanelItem({ icon, label, hint, onClick, danger, disabledReason, 
       role={checked === undefined ? 'menuitem' : 'menuitemcheckbox'} aria-checked={checked}
       className={cx('w-full flex items-start gap-2.5 px-3 py-2 bg-transparent border-none text-left font-sans rounded-[8px]',
         off ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-muted')}>
-      {icon && <span className={cx('mt-px', off ? 'text-faint' : danger ? 'text-[var(--color-critical-fg)]' : 'text-ink-2')}><Icon name={icon} size="sm" /></span>}
+      {icon && <span className={cx('mt-px', off ? 'text-faint' : danger ? 'text-danger' : 'text-ink-2')}><Icon name={icon} size="sm" /></span>}
       <span className="flex flex-col gap-px min-w-0 flex-1">
-        <span className={cx('text-copy font-medium', off ? 'text-faint' : danger ? 'text-[var(--color-critical-fg)]' : 'text-ink')}>{label}</span>
+        <span className={cx('text-copy font-medium', off ? 'text-faint' : danger ? 'text-danger' : 'text-ink')}>{label}</span>
         {(disabledReason || hint) && <span className="text-meta text-muted-ink">{disabledReason ?? hint}</span>}
       </span>
       {right}
@@ -105,8 +106,8 @@ export const PanelHeading = ({ children }: { children: ReactNode }) => (
  * Status in a table cell. Stream 1 is building a shared StatusBadge; until it lands every table reads status
  * through this one adapter, so switching over is a change here only.
  */
-export function StatusCell({ label, tone }: { label: string; tone: Tone }) {
-  return <Badge label={label} tone={tone} size="sm" />;
+export function StatusCell({ label, tone, outline }: { label: string; tone: AnyTone; outline?: boolean }) {
+  return <StatusBadge label={label} tone={tone} outline={outline} size="sm" dot />;
 }
 
 export function ChannelCell({ channel }: { channel: string }) {

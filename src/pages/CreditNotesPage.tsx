@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Search, Plus, X, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { MoneyInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
@@ -12,7 +13,9 @@ import { api, notifyFailure, ApiFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
+import { statusLabel } from '../lib/status';
 
 /** Credit / debit notes — copied from Houzs ERP (Finance › Money in), drawn in Conts.
  *  A note is a draft until posted; only a posted note changes what a customer or supplier owes
@@ -26,8 +29,6 @@ const KIND_HELP: Record<Kind, string> = {
   DN: 'To a customer — they owe more (e.g. an undercharge corrected).',
   SCN: 'From a supplier — we owe them less (e.g. goods sent back).',
 };
-const STATUS_LABEL: Record<Status, string> = { DRAFT: 'Draft', POSTED: 'Posted', CANCELLED: 'Cancelled' };
-const STATUS_TONE: Record<Status, keyof typeof TONE> = { DRAFT: 'warning', POSTED: 'success', CANCELLED: 'neutral' };
 
 interface NoteLine { description: string; amountSen: number }
 interface Note {
@@ -68,7 +69,7 @@ export default function CreditNotesPage() {
     { key: 'party', label: 'Customer / supplier', value: n => n.partyName },
     { key: 'against', label: 'Against', value: n => against(n) || null },
     { key: 'noteDate', label: 'Date', type: 'date', value: n => n.noteDate || null },
-    { key: 'status', label: 'Status', type: 'status', value: n => n.status, status: n => ({ label: STATUS_LABEL[n.status], tone: STATUS_TONE[n.status] }) },
+    { key: 'status', label: 'Status', type: 'status', value: n => n.status, entity: 'credit_note' },
     { key: 'amount', label: 'Amount', type: 'money', value: n => n.totalSen, render: n => n.status === 'CANCELLED' ? <span className="tabular-nums text-muted-ink line-through">{rm(n.totalSen)}</span> : <span className="tabular-nums">{rm(n.totalSen)}</span> },
   ], []);
 
@@ -91,7 +92,7 @@ export default function CreditNotesPage() {
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as Status | 'all')} aria-label="Status"
             className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
             <option value="all">All statuses</option>
-            {(['DRAFT', 'POSTED', 'CANCELLED'] as const).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+            {(['DRAFT', 'POSTED', 'CANCELLED'] as const).map(s => <option key={s} value={s}>{statusLabel('credit_note', s)}</option>)}
           </select>
           <div className="relative">
             <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
@@ -113,10 +114,6 @@ const against = (n: Note) => [n.salesInvoiceNumber, n.soDocNo, n.purchaseInvoice
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-function StatusPill({ status }: { status: Status }) {
-  const t = TONE[STATUS_TONE[status]];
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', t.bg, t.text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}</span>;
 }
 
 /* ---------- new note ---------- */
@@ -225,7 +222,7 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
           <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">Lines</div>
           <div className="border border-solid border-line rounded-card overflow-hidden">
             {lines.map((l, i) => (
-              <div key={i} className={cx('grid grid-cols-[1fr_140px_36px] gap-2.5 items-center py-2 px-3', i > 0 && '[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]')}>
+              <div key={i} className={cx('grid grid-cols-[1fr_140px_36px] gap-2.5 items-center py-2 px-3', i > 0 && '[border-top:1px_solid_var(--color-line-soft)]')}>
                 <input value={l.description} onChange={e => setLine(i, { description: e.target.value })} placeholder="Description" aria-label={`Line ${i + 1} description`}
                   className="h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" />
                 <MoneyInput valueSen={l.amountSen} onChangeSen={v => setLine(i, { amountSen: v })} placeholder="Amount (RM)" aria-label={`Line ${i + 1} amount`} error={errors[`amount.${i}`]}
@@ -241,7 +238,7 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
           </div>
         </div>
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="secondary" disabled={!canSave} disabledReason="Name who it's for and add a line with an amount" onClick={() => void save(false)}>Save draft</Button>
         <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Name who it's for and add a line with an amount" loading={busy} onClick={() => void save(true)}>Save and post</Button>
@@ -274,7 +271,7 @@ function ViewNoteDrawer({ id, canWrite, onClose, onDone }: { id: string; canWrit
   return (
     <Drawer open onClose={onClose} width={620}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
-        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{n?.noteNumber ?? 'Note'}</h2>{n && <StatusPill status={n.status} />}</div>
+        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{n?.noteNumber ?? 'Note'}</h2>{n && <StatusBadge entity="credit_note" value={n.status} />}</div>
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
@@ -299,8 +296,8 @@ function ViewNoteDrawer({ id, canWrite, onClose, onDone }: { id: string; canWrit
           </>
         )}
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{canWrite && n && n.status !== 'CANCELLED' && <Button size="sm" variant="danger" disabled={busy} onClick={() => void setStatus('CANCELLED')}>Cancel note</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{canWrite && n && n.status !== 'CANCELLED' && <ConfirmButton disabled={busy} confirm={{ title: `Cancel ${n.noteNumber}?`, body: n.status === 'POSTED' ? 'It is marked Cancelled and its effect on the balance is removed.' : 'It is marked Cancelled and can no longer be posted.', confirmLabel: 'Cancel note', cancelLabel: 'Keep note' }} onConfirm={() => setStatus('CANCELLED')}>Cancel note</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
           {canWrite && n?.status === 'DRAFT' && <Button size="sm" variant="primary" loading={busy} onClick={() => void setStatus('POSTED')}>Post</Button>}

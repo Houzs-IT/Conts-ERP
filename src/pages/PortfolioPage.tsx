@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import Icon from '../components/Icon';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
@@ -116,7 +116,7 @@ export default function PortfolioPage() {
     ...(withRating ? [{ key: 'rating', label: 'Rating', type: 'number', value: r => r.rating, width: 80,
       render: r => <span className={NUM}>{r.rating != null ? fmtRating(r.rating) : '—'}</span> }] as Column<PortfolioRow>[] : []),
     ...(withException ? [{ key: 'exception', label: 'Exception', type: 'status', value: r => r.exception?.label ?? null, width: 130,
-      status: r => r.exception, render: r => (r.exception ? <Badge tone={r.exception.tone} label={r.exception.label} size="sm" /> : <span className="text-meta text-faint">None</span>) }] as Column<PortfolioRow>[] : []),
+      status: r => r.exception, render: r => (r.exception ? <StatusBadge tone={r.exception.tone} label={r.exception.label} size="sm" /> : <span className="text-meta text-faint">None</span>) }] as Column<PortfolioRow>[] : []),
   ], [money, withRating, withException]);
 
   const tiles = [

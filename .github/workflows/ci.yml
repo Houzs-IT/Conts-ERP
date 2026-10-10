@@ -1,0 +1,31 @@
+# Checks every pull request into Property OS before it can merge: types, the production build, and the standards
+# checks in scripts/checks (docs/UI-STANDARDS.md). The deploy workflow only builds and uploads, so this is the gate.
+name: CI
+on:
+  pull_request:
+    paths-ignore:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'engine/**'
+      - 'docs/**'
+      - '**/*.md'
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  property-os:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit -p .
+      - name: Build
+        run: npx vite build
+      - name: Standards checks
+        run: npm run check

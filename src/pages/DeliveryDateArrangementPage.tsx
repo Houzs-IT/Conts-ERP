@@ -6,7 +6,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { STATUS_LABEL, STATUS_TONE, schedFallback, type Sched, type SchedPayload } from '../lib/schedule';
+import { schedFallback, type Sched, type SchedPayload } from '../lib/schedule';
 
 /** Delivery Date Arrangement — set/amend the planned delivery date per queued sales order.
  *  A focused view over delivery_schedule; ported from 2990's SCM (manual). */
@@ -36,7 +36,7 @@ export default function DeliveryDateArrangementPage() {
   const columns = useMemo<Column<Sched>[]>(() => [
     { key: 'so', label: 'Sales order', type: 'ref', value: r => r.soDocNo, hideable: false, render: r => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold whitespace-nowrap">{r.soDocNo}</span> },
     { key: 'customer', label: 'Customer', value: r => r.customerName },
-    { key: 'status', label: 'Status', type: 'status', value: r => r.status, status: r => ({ label: STATUS_LABEL[r.status], tone: STATUS_TONE[r.status] }) },
+    { key: 'status', label: 'Status', type: 'status', value: r => r.status, entity: 'delivery_schedule' },
     { key: 'date', label: 'Planned date', type: 'date', value: r => r.plannedDate, align: 'right', width: 170, render: r => <span onClick={e => e.stopPropagation()}><DateField aria-label={`Planned date for ${r.soDocNo}`} disabled={!canWrite} value={r.plannedDate} onChange={v => setDate(r, v)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-60" /></span> },
   ], [canWrite]); // eslint-disable-line react-hooks/exhaustive-deps
 

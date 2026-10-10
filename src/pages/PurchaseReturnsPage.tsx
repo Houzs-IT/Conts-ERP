@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Search, Plus, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
@@ -12,15 +13,14 @@ import { ShortStockPrompt } from '../components/ShortStockPrompt';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
+import { statusLabel } from '../lib/status';
 
 /** Purchase Returns — ported from 2990's SCM, drawn in Conts. Returns GRN-received goods
  *  to the supplier; reduces the GRN net and the PO received qty. Money integer sen. */
 
 type Status = 'POSTED' | 'COMPLETED' | 'CANCELLED';
-const STATUS_LABEL: Record<Status, string> = { POSTED: 'Posted', COMPLETED: 'Completed', CANCELLED: 'Cancelled' };
-const STATUS_TONE: Record<Status, Tone> = { POSTED: 'info', COMPLETED: 'success', CANCELLED: 'neutral' };
 const FILTERS: (Status | 'all')[] = ['all', 'POSTED', 'COMPLETED', 'CANCELLED'];
 
 interface PretLine { itemCode: string; description: string; uom: string; qtyReturned: number; unitPriceSen: number; lineTotalSen: number; reason: string }
@@ -66,7 +66,7 @@ export default function PurchaseReturnsPage() {
     { key: 'grnNumber', label: 'GRN', type: 'ref', value: p => p.grnNumber || null },
     { key: 'returnDate', label: 'Return date', type: 'date', value: p => p.returnDate || null },
     { key: 'reason', label: 'Reason', value: p => p.reason || null, render: p => p.reason ? <span className="block max-w-[200px] truncate text-muted-ink" title={p.reason}>{p.reason}</span> : <span className="text-muted-ink">—</span> },
-    { key: 'status', label: 'Status', type: 'status', value: p => p.status, status: p => ({ label: STATUS_LABEL[p.status], tone: STATUS_TONE[p.status] }) },
+    { key: 'status', label: 'Status', type: 'status', value: p => p.status, entity: 'purchase_return' },
     { key: 'refund', label: 'Refund', type: 'money', value: p => p.status === 'CANCELLED' ? null : p.refundSen },
   ], []);
 
@@ -89,7 +89,7 @@ export default function PurchaseReturnsPage() {
         onRowClick={p => setDrawer({ mode: 'view', pret: p })}
         noun={['purchase return', 'purchase returns']} exportName="purchase-returns"
         toolbar={<>
-          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('purchase_return', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
           <div className="relative">
             <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
             <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search return, GRN or supplier..." aria-label="Search purchase returns"
@@ -108,10 +108,6 @@ export default function PurchaseReturnsPage() {
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-function StatusPill({ status }: { status: Status }) {
-  const t = STATUS_TONE[status];
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}</span>;
 }
 
 /* ---------- return (create) drawer ---------- */
@@ -200,7 +196,7 @@ function ReturnDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Op
                 <tbody>
                   {lines.length === 0 ? <tr><td colSpan={5} className="py-6 text-center text-[12.5px] text-muted-ink">This GRN has nothing left to return.</td></tr>
                   : lines.map((l, i) => (
-                    <tr key={l.grnLineId} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                    <tr key={l.grnLineId} className="[border-top:1px_solid_var(--color-line-soft)]">
                       <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.returnable}</td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.unitPriceSen)}</td>
@@ -222,7 +218,7 @@ function ReturnDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Op
         </div>
         {shortStock && <ShortStockPrompt message={shortStock} actionLabel="Return anyway" busy={busy} onCancel={() => setShortStock(null)} onConfirm={() => void submit(true)} />}
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave || !!shortStock} disabledReason={shortStock ? 'Answer the stock question above first' : 'Pick a GRN and return at least one line'} loading={busy && !shortStock} onClick={() => void submit()}>Post return</Button>
       </div>
@@ -243,7 +239,7 @@ function ViewDrawer({ pret, canWrite, onClose, onComplete, onCancel }: { pret: P
   return (
     <Drawer open onClose={onClose} width={720}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
-        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{pret.returnNumber}</h2><StatusPill status={pret.status} /></div>
+        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{pret.returnNumber}</h2><StatusBadge entity="purchase_return" value={pret.status} /></div>
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
@@ -262,8 +258,8 @@ function ViewDrawer({ pret, canWrite, onClose, onComplete, onCancel }: { pret: P
         </div>
         <div className="flex justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Refund value</span><span className="tabular-nums w-[120px] text-right">{rm(pret.refundSen)}</span></div></div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{canWrite && pret.status === 'POSTED' && <Button size="sm" variant="danger" onClick={() => onCancel(pret)}>Cancel return</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{canWrite && pret.status === 'POSTED' && <ConfirmButton confirm={{ title: `Cancel ${pret.returnNumber}?`, body: 'It is marked Cancelled and the returned goods are put back into stock.', meta: pret.supplierName, confirmLabel: 'Cancel return', cancelLabel: 'Keep return' }} onConfirm={() => onCancel(pret)}>Cancel return</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           {canWrite && pret.status === 'POSTED' && <Button size="sm" variant="secondary" onClick={() => onComplete(pret)}>Mark completed</Button>}
           <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>

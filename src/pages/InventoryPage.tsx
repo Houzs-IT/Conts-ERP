@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import { SearchSelect, Select } from '../components/Select';
-import { Dot } from '../components/Badge';
+import { StatusDot } from '../components/StatusBadge';
 import { DataTable, type Column } from '../components/DataTable';
 import { Chip } from './finance/listKit';
 import { Button } from '../components/Button';
@@ -19,7 +19,6 @@ import type { Tone } from '../lib/types';
 
 type Condition = 'good' | 'fair' | 'replace_soon' | 'damaged';
 const COND_LABEL: Record<Condition, string> = { good: 'Good', fair: 'Fair', replace_soon: 'Replace soon', damaged: 'Damaged' };
-const COND_TONE: Record<Condition, Tone> = { good: 'success', fair: 'neutral', replace_soon: 'warning', damaged: 'critical' };
 const CONDITIONS = Object.keys(COND_LABEL) as Condition[];
 
 type Category = 'furniture' | 'appliance' | 'electronics' | 'linen' | 'kitchenware' | 'fittings';
@@ -126,7 +125,7 @@ export default function InventoryPage() {
 
   const conditionPicker = (i: Item) => (
     <div className="flex items-center gap-2 min-w-0">
-      <Dot tone={COND_TONE[i.condition]} />
+      <StatusDot entity="condition" value={i.condition} />
       <Select label={`Condition of ${i.name}`} className="flex-1" value={i.condition} onChange={v => setCondition(i, v as Condition)}
         options={CONDITIONS.map(c => ({ value: c, label: COND_LABEL[c] }))} />
     </div>
@@ -141,7 +140,7 @@ export default function InventoryPage() {
     { key: 'unit', label: 'Unit', value: i => i.unitNumber, text: i => `${i.unitNumber} ${i.propertyName}`, sub: i => i.propertyName, width: 150,
       render: i => <span className="text-copy">{i.unitNumber}</span> },
     { key: 'category', label: 'Category', value: i => i.category, text: i => CAT_LABEL[i.category], width: 120, filter: { kind: 'select', options: CATEGORIES.map(c => ({ value: c, label: CAT_LABEL[c] })) } },
-    { key: 'condition', label: 'Condition', type: 'status', value: i => i.condition, status: i => ({ label: COND_LABEL[i.condition], tone: COND_TONE[i.condition] }),
+    { key: 'condition', label: 'Condition', type: 'status', value: i => i.condition, entity: 'condition',
       filter: false, width: 170, render: conditionPicker },
     { key: 'value', label: 'Value', type: 'money', value: i => i.purchaseCost, width: 110, render: i => <span className="tabular-nums">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span> },
     { key: 'replaceBy', label: 'Replace by', type: 'date', value: i => i.replaceBy, width: 130, render: replaceFace },
@@ -337,7 +336,7 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
 
             <Field label="Notes" placeholder="Optional — condition detail, warranty, supplier" value={f.notes} onChange={set('notes')} />
           </div>
-          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page flex justify-end gap-[9px]">
+          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
             <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
             <Button size="sm" variant="primary" type="submit" disabled={!canSubmit} disabledReason="Add an item name and pick a unit first">Add item</Button>
           </div>

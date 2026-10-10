@@ -2,70 +2,23 @@ import type {
   ReservationState, UnitReadiness, TaskState, BookingChannel,
   StatementState, PayoutState, IntegrationState, SyncState, Tone,
 } from './types';
+import { statusOptions, statusLabel, type StatusEntity } from './status';
 
 /**
- * The closed status vocabulary from copy.md section 1. One label per state,
- * one tone per state. Never introduce a synonym.
+ * Status words and colours come from src/lib/status.ts (the one vocabulary); these older names read from it so
+ * every screen agrees. New code uses <StatusBadge entity value /> or statusLabel() directly.
  */
-
 type Entry<T extends string> = Record<T, { label: string; tone: Tone }>;
+const legacy = <T extends string>(entity: StatusEntity) => Object.fromEntries(statusOptions(entity)
+  .map(o => [o.value, { label: o.label, tone: o.tone === 'danger' ? 'critical' : o.tone === 'accent' ? 'neutral' : o.tone }])) as Entry<T>;
 
-export const RESERVATION: Entry<ReservationState> = {
-  inquiry:     { label: 'Inquiry',     tone: 'neutral' },
-  pending:     { label: 'Pending',     tone: 'warning' },
-  confirmed:   { label: 'Confirmed',   tone: 'info' },
-  checked_in:  { label: 'Checked in',  tone: 'success' },
-  checked_out: { label: 'Checked out', tone: 'neutral' },
-  cancelled:   { label: 'Cancelled',   tone: 'neutral' },
-  no_show:     { label: 'No show',     tone: 'critical' },
-};
-
-export const READINESS: Entry<UnitReadiness> = {
-  occupied:    { label: 'Occupied',    tone: 'info' },
-  dirty:       { label: 'Dirty',       tone: 'warning' },
-  cleaning:    { label: 'Cleaning',    tone: 'info' },
-  inspection:  { label: 'Inspection',  tone: 'warning' },
-  ready:       { label: 'Ready',       tone: 'success' },
-  maintenance: { label: 'Maintenance', tone: 'critical' },
-  blocked:     { label: 'Blocked',     tone: 'neutral' },
-};
-
-export const TASK: Entry<TaskState> = {
-  open:        { label: 'Open',        tone: 'neutral' },
-  assigned:    { label: 'Assigned',    tone: 'info' },
-  in_progress: { label: 'In progress', tone: 'info' },
-  waiting:     { label: 'Waiting',     tone: 'warning' },
-  resolved:    { label: 'Resolved',    tone: 'success' },
-  overdue:     { label: 'Overdue',     tone: 'critical' },
-  reopened:    { label: 'Reopened',    tone: 'critical' },
-};
-
-export const STATEMENT: Entry<StatementState> = {
-  provisional: { label: 'Provisional', tone: 'neutral' },
-  finalised:   { label: 'Finalised',   tone: 'info' },
-  sent:        { label: 'Sent',        tone: 'warning' },
-  paid:        { label: 'Paid',        tone: 'success' },
-};
-
-export const PAYOUT: Entry<PayoutState> = {
-  pending:    { label: 'Pending',    tone: 'neutral' },
-  processing: { label: 'Processing', tone: 'info' },
-  paid:       { label: 'Paid',       tone: 'success' },
-  failed:     { label: 'Failed',     tone: 'critical' },
-};
-
-export const INTEGRATION: Entry<IntegrationState> = {
-  connected: { label: 'Connected', tone: 'success' },
-  expired:   { label: 'Expired',   tone: 'critical' },
-  degraded:  { label: 'Degraded',  tone: 'warning' },
-  failed:    { label: 'Failed',    tone: 'critical' },
-};
-
-export const SYNC: Entry<SyncState> = {
-  queued: { label: 'Queued',         tone: 'warning' },
-  synced: { label: 'Synced',         tone: 'success' },
-  failed: { label: 'Failed to sync', tone: 'critical' },
-};
+export const RESERVATION = legacy<ReservationState>('booking');
+export const READINESS = legacy<UnitReadiness>('readiness');
+export const TASK = legacy<TaskState>('task');
+export const STATEMENT = legacy<StatementState>('statement');
+export const PAYOUT = legacy<PayoutState>('payout');
+export const INTEGRATION = legacy<IntegrationState>('integration');
+export const SYNC = legacy<SyncState>('sync');
 
 /**
  * Channel identity. `border` keeps non-revenue holds readable without colour —
@@ -111,7 +64,5 @@ export const bankName = (code: string | null | undefined) => {
 };
 
 /** One state label per status the search and lists show, so nothing prints a raw lower-case code. */
-export const stateLabel = (domain: 'reservation' | 'readiness' | 'task', state: string) => {
-  const map: Record<string, { label: string }> = domain === 'reservation' ? RESERVATION : domain === 'readiness' ? READINESS : TASK;
-  return map[state]?.label ?? state.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
-};
+export const stateLabel = (domain: 'reservation' | 'readiness' | 'task', state: string) =>
+  statusLabel(domain === 'reservation' ? 'booking' : domain, state);

@@ -224,7 +224,7 @@ export default function SystemHealthPage() {
               <div className="flex items-center gap-2">
                 <button type="button" onClick={() => { setSensitiveOnly(v => !v); setLimit(100); }} title="Only accounts and passwords, settings, payouts, deletions and failures"
                   className={cx('inline-flex h-7 items-center gap-1.5 rounded-control border border-solid px-2.5 text-caption font-semibold cursor-pointer [font-family:inherit]',
-                    sensitiveOnly ? 'border-[var(--color-warning-line)] bg-[var(--color-warning)] text-[var(--color-warning-fg)]' : 'border-line bg-card text-muted-ink')}>
+                    sensitiveOnly ? 'border-warning-line bg-warning-bg text-warning' : 'border-line bg-card text-muted-ink')}>
                   <Icon name="ShieldAlert" size="sm" /> Sensitive only
                 </button>
                 <div className="inline-flex rounded-control border border-solid border-line bg-card p-0.5">

@@ -27,7 +27,7 @@ export default function AirbnbListingPicker({ unitId, channelId, onDone, onCance
     <div className="flex flex-col gap-3">
       <span className="text-[13px] text-muted-ink">Pick the Airbnb listing that is this unit. Airbnb takes about 30 seconds to confirm the link.</span>
       {loading && !data && <span className="text-[13px] text-muted-ink">Loading your Airbnb listings…</span>}
-      {error && <div className="flex items-center gap-3 text-[13px]"><span className="text-[var(--color-text-critical,#B42318)]">{error}</span><Button size="sm" variant="secondary" onClick={reload}>Try again</Button></div>}
+      {error && <div className="flex items-center gap-3 text-[13px]"><span className="text-danger">{error}</span><Button size="sm" variant="secondary" onClick={reload}>Try again</Button></div>}
       {data && listings.length === 0 && <span className="text-[13px]">No listings found on this Airbnb account.</span>}
       <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto">
         {listings.map(l => (

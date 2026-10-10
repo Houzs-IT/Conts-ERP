@@ -1,5 +1,6 @@
 import { useId, useState, type CSSProperties, type ReactNode } from 'react';
 import { cx } from '../../lib/design-tokens';
+import { phone } from '../../lib/format';
 import { InputShell, PHONE_SIZING } from './InputShell';
 
 export interface PhoneInputProps {
@@ -30,7 +31,8 @@ export function phoneProblem(value: string): string | undefined {
   return undefined;
 }
 
-/** Phone keypad on a phone, tel autofill, and a plain-English note when the number cannot be right. */
+/** Phone keypad on a phone, tel autofill, and a plain-English note when the number cannot be right. On leaving the
+ *  field a usable number is written the way the app shows phones everywhere: 0123456789 becomes +60 12-345 6789. */
 export function PhoneInput({ value, onChange, label, help, error, placeholder = '+60 12-345 6789', className, style, ...rest }: PhoneInputProps) {
   const id = useId();
   const [touched, setTouched] = useState(false);
@@ -48,7 +50,7 @@ export function PhoneInput({ value, onChange, label, help, error, placeholder = 
         aria-invalid={!!shown || undefined}
         aria-describedby={shown || help ? `${id}-help` : undefined}
         onChange={e => onChange(cleanPhone(e.target.value))}
-        onBlur={() => { setTouched(true); const tidy = value.replace(/\s+/g, ' ').trim(); if (tidy !== value) onChange(tidy); }}
+        onBlur={() => { setTouched(true); const tidy = phoneProblem(value) ? value.replace(/\s+/g, ' ').trim() : phone(value); if (tidy !== value) onChange(tidy); }}
         className={cx(className ?? 'field-input', PHONE_SIZING)}
         style={{ ...(shown ? { borderColor: 'var(--color-critical-line)' } : {}), ...style }}
       />

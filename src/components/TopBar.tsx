@@ -108,7 +108,7 @@ export default function TopBar({
   return (
     <div data-print-hide style={compact
       ? { flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }
-      : { flex: 'none', background: '#FFFFFF', borderBottom: `1px solid ${color.border}`, padding: '14px 28px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+      : { flex: 'none', background: color.card, borderBottom: `1px solid ${color.border}`, padding: '14px 28px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
       {!compact && <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '0 1 auto', overflow: 'hidden' }}>
         {(() => {
           const crumbs = nav ? [nav.group, ...(nav.group !== nav.item ? [nav.item] : []), ...(nav.label !== nav.item ? [nav.label] : []), ...(nav.page ? [nav.page] : [])] : [path === '/account' ? 'My account' : path === '/notifications' ? 'Notifications' : 'Home'];
@@ -124,8 +124,8 @@ export default function TopBar({
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: compact ? 'none' : '1 1 auto', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
         <button type="button" onClick={() => setSearchOpen(true)} aria-label="Search" aria-keyshortcuts="/"
           style={compact
-            ? { width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', padding: 0, border: `1px solid ${color.border}`, borderRadius: radius.control, background: '#FFFFFF', color: color.ink, cursor: 'pointer' }
-            : { display: 'flex', alignItems: 'center', gap: 8, height: shell.controlSm, padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: radius.control, background: '#FFFFFF', color: color.textMuted, flex: '0 1 260px', minWidth: 44, overflow: 'hidden', cursor: 'text', font: 'inherit', textAlign: 'left' }}>
+            ? { width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', padding: 0, border: `1px solid ${color.border}`, borderRadius: radius.control, background: color.card, color: color.ink, cursor: 'pointer' }
+            : { display: 'flex', alignItems: 'center', gap: 8, height: shell.controlSm, padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: radius.control, background: color.card, color: color.textMuted, flex: '0 1 260px', minWidth: 44, overflow: 'hidden', cursor: 'text', font: 'inherit', textAlign: 'left' }}>
           <Icon name="Search" size={compact ? 'nav' : 'sm'} />
           {!compact && <span style={{ fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Search booking ref, guest, unit</span>}
           {!compact && <span style={{ marginLeft: 'auto', fontSize: text.micro, color: color.faint, flex: 'none' }}>/</span>}
@@ -138,7 +138,7 @@ export default function TopBar({
             style={compact
               ? { width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', boxSizing: 'border-box', border: `1px solid ${color.border}`, borderRadius: radius.control }
               : { display: 'flex', alignItems: 'center', gap: 7, height: shell.controlSm, flex: 'none', padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: radius.control, fontSize: text.small, whiteSpace: 'nowrap', color: color.textMuted, textDecoration: 'none' }}>
-            <span className={channelSync.failed ? undefined : 'animate-live'} style={{ width: compact ? 8 : 6, height: compact ? 8 : 6, borderRadius: radius.pill, background: channelSync.failed ? '#B7791F' : '#16845B' }} />
+            <span className={channelSync.failed ? undefined : 'animate-live'} style={{ width: compact ? 8 : 6, height: compact ? 8 : 6, borderRadius: radius.pill, background: channelSync.failed ? 'var(--color-warning-line)' : 'var(--color-success-line)' }} />
             {!compact && <span>{channelSync.failed
               ? 'Channel sync needs attention'
               : channelSync.lastSentAt ? `Channels synced ${relative(channelSync.lastSentAt)}` : 'Channels connected'}</span>}
@@ -149,7 +149,7 @@ export default function TopBar({
 
         {action && (
           <button onClick={action.onClick} aria-label={compact ? action.label : undefined} title={compact ? action.label : undefined}
-            style={{ height: ctl, width: compact ? ctl : undefined, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: compact ? 0 : '0 14px', borderRadius: radius.control, background: color.black, color: '#FFFFFF', fontSize: text.copy, fontWeight: 500, whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', transition: `background ${motion.fast} ease-out` }}>
+            style={{ height: ctl, width: compact ? ctl : undefined, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: compact ? 0 : '0 14px', borderRadius: radius.control, background: color.black, color: 'var(--color-text-inverse)', fontSize: text.copy, fontWeight: 500, whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', transition: `background ${motion.fast} ease-out` }}>
             <Icon name="Plus" size="sm" />
             {!compact && <span style={{ whiteSpace: 'nowrap' }}>{action.label}</span>}
           </button>
@@ -161,7 +161,7 @@ export default function TopBar({
         <div onClick={closeSearch}
           style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(21,21,21,0.24)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '12vh 16px 16px' }}>
           <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Search"
-            style={{ width: 600, maxWidth: '100%', background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: shadow.overlay, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            style={{ width: 600, maxWidth: '100%', background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: shadow.overlay, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: `1px solid ${color.borderMuted}` }}>
               <Icon name="Search" size="nav" color={color.textMuted} />
               <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)} onKeyDown={onSearchKeyDown}

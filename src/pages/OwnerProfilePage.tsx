@@ -4,18 +4,17 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { EmptyState } from '../components/States';
 import { MoneyText } from '../components/MoneyText';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { PercentInput } from '../components/inputs';
-import { Dialog, type DialogSpec } from '../components/Dialog';
+import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
-import { api } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { rm, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
-import { STATEMENT } from '../lib/vocabulary';
 import { MODEL, type RevenueModel } from '../lib/revenueModel';
 import { PayoutDetails } from './owners/PayoutDetails';
 import { OwnerAdjustments } from './owners/Adjustments';
@@ -28,6 +27,8 @@ import {
   type Owner, type UnitLine, type Payload,
   FALLBACK, terms, Section, StatementHistory, LinkUnitModal,
 } from './owners/shared';
+import { statusLabel } from '../lib/status';
+import { PhoneText } from '../components/PhoneText';
 
 /**
  * The OWNER PROFILE (`#/owners/:id`): one card per unit with its revenue model and the month's figures (income,
@@ -53,7 +54,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
   const { data, loading, error, reload } = useApi<Payload>(`/owners?id=${encodeURIComponent(ownerId)}&month=${month}`, FALLBACK);
   const [edits, setEdits] = useState<Partial<Owner>>({});
   const [modal, setModal] = useState<null | 'link' | 'defaultFee'>(null);
-  const [dialog, setDialog] = useState<DialogSpec | null>(null);
+  const [dialog, setDialog] = useState<ConfirmSpec | null>(null);
   const [busy, setBusy] = useState(false);
 
   const base = (data?.data ?? []).find(o => o.id === ownerId) ?? null;
@@ -88,7 +89,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       toast({ tone: 'success', title: 'Unit linked.', body: `${titleCase(u.unitLabel)} assigned to ${titleCase(o.displayName)}.` });
       setModal(null); reload();
     } catch (e) {
-      toast({ tone: 'critical', title: 'Unit was not linked.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Unit was not linked.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
   async function saveDefaultFee(pct: number | null) {
@@ -101,7 +102,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       toast({ tone: 'success', title: 'Default fee saved.', body: pct == null ? 'Cleared the owner default.' : `Units without their own fee now use ${pct}%.` });
     } catch (e) {
       patch({ defaultManagementFeePct: prev });
-      toast({ tone: 'critical', title: 'Default fee was not saved.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Default fee was not saved.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
   function invite() {
@@ -117,7 +118,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
           patch({ portalInvited: true });
           toast({ tone: 'success', title: 'Invite sent.', body: `${titleCase(o.displayName)} can now sign in to the owner portal.` });
         } catch (e) {
-          toast({ tone: 'critical', title: 'Invite was not sent.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+          toast({ tone: 'critical', title: 'Invite was not sent.', body: errorMessage(e, 'Try again in a moment.') });
         } finally { setBusy(false); setDialog(null); }
       },
     });
@@ -135,7 +136,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
           toast({ tone: 'success', title: 'Owner deleted.', body: `${titleCase(o.displayName)} was removed.` });
           navigate('/owners');
         } catch (e) {
-          toast({ tone: 'critical', title: 'Owner was not deleted.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+          toast({ tone: 'critical', title: 'Owner was not deleted.', body: errorMessage(e, 'Try again in a moment.') });
         } finally { setBusy(false); setDialog(null); }
       },
     });
@@ -148,12 +149,12 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       <PageHeader
         title={titleCase(o.displayName)}
         back={{ label: 'All owners', onClick: () => navigate('/owners') }}
-        badge={o.portalInvited ? <Badge tone="success" label="Portal active" /> : <Badge tone="neutral" label="Not invited" />}
+        badge={o.portalInvited ? <StatusBadge tone="success" label="Portal active" /> : <StatusBadge tone="neutral" label="Not invited" />}
         sub={
           <span className="flex flex-wrap gap-x-3 gap-y-1">
             <span>{identity}</span>
             {o.email ? <a href={`mailto:${o.email}`} className="text-ink underline underline-offset-2">{o.email}</a> : <span>No email on file</span>}
-            {o.phone && <a href={`tel:${o.phone.replace(/[^+0-9]/g, '')}`} className="text-ink underline underline-offset-2">{o.phone}</a>}
+            {o.phone && <PhoneText value={o.phone} className="text-ink" />}
           </span>
         }
         primary={o.portalInvited ? undefined : <Button size="sm" variant="secondary" icon={<Icon name="Mail" size="sm" />} onClick={invite}>Invite to portal</Button>}
@@ -195,8 +196,8 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
         <section aria-label={`${monthLabel(month)} total`} className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-4 px-[22px] rounded-card bg-black text-white">
           <span className="text-copy">{monthLabel(month, { long: true })} total · {plural(o.units.length, 'unit')}</span>
           <MoneyText sen={total} mode="exact" className="text-title font-semibold text-white!" />
-          <span className="text-copy text-[#D9D6CF]">
-            Statement: {st ? STATEMENT[st.state].label : 'not generated yet'}
+          <span className="text-copy text-[var(--color-text-on-dark)]">
+            Statement: {st ? statusLabel('statement', st.state) : 'not generated yet'}
             {st && <> · <a href={`#/finance/statements/${encodeURIComponent(st.id)}`} style={{ color: "var(--color-gold)" }}>Open statement</a></>}
           </span>
         </section>
@@ -231,7 +232,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
           </Card>
           <Card>
             <div className="py-4 px-5 flex flex-col gap-1.5">
-              <span className="text-meta font-semibold text-[var(--color-critical-fg)]">Danger zone</span>
+              <span className="text-meta font-semibold text-danger">Danger zone</span>
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <span className="text-meta text-muted-ink text-pretty max-w-[300px]">{canDelete ? 'Removes this owner and their portal login. Cannot be undone.' : 'An owner with units or a contract cannot be deleted. Reassign or remove those first.'}</span>
                 <Button size="sm" variant="tertiary" onClick={deleteOwner} disabled={!canDelete} disabledReason="This owner has units or a contract on file."
@@ -248,7 +249,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
 
       {modal === 'link' && <LinkUnitModal owner={o.displayName} units={rosterUnits} onClose={() => setModal(null)} onSubmit={linkUnit} />}
       {modal === 'defaultFee' && <DefaultFeeModal current={o.defaultManagementFeePct} owner={o.displayName} onClose={() => setModal(null)} onSubmit={saveDefaultFee} />}
-      <Dialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
+      <ConfirmDialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
     </div>
   );
 }

@@ -37,6 +37,8 @@ export const WORKBOOK_SHEETS = {
   water: '水费', electricity: '电费', internet: '网络费', sewerage: 'INDAH WATER', misc: '杂费扣款',
   payouts: 'OWNER PAYOUT', report: '整体报告',
 } as const;
+/** Column names the import screen reads directly (the workbook is in Chinese; these never show on screen). */
+export const WORKBOOK_KEY = { airbnbConfirmation: '确认码' } as const;
 /** Header row per sheet (1-based); 水池 has a title line above its header. */
 export const WORKBOOK_HEADER_ROW: Record<string, number> = { '水池': 2 };
 /** Workbook columns that are sent to the server, per sheet. */

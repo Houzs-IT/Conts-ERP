@@ -3,7 +3,7 @@ import { Card } from './Card';
 import { Button } from './Button';
 import { useToast } from './Toast';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import type { AccessLevel } from '../lib/types';
 
 interface Cell { level: AccessLevel; builtIn: AccessLevel; chosen: boolean }
@@ -21,8 +21,8 @@ const LEVEL_NOTE: Record<AccessLevel, string> = {
   full: 'Everything, including management-only actions such as deleting and approving.',
 };
 const LEVEL_COLOR: Record<AccessLevel, string> = {
-  none: 'var(--color-neutral-fg, #6B6558)', view: 'var(--color-info-fg, #2E6DA4)',
-  edit: 'var(--color-warning-fg, #8A5A12)', full: 'var(--color-success-fg, #16845B)',
+  none: 'var(--color-neutral-fg)', view: 'var(--color-info-fg)',
+  edit: 'var(--color-warning-fg)', full: 'var(--color-success-fg)',
 };
 /** The other four of the seven roles: their access is fixed, so they have no column. */
 const FIXED_ROLES = [
@@ -82,7 +82,7 @@ export default function PermissionsChart() {
       toast({ tone: 'success', title: `${changes.length} permission ${changes.length === 1 ? 'change' : 'changes'} saved.`, body: 'People in that role see it the next time they open or refresh the system.' });
       reload();
     } catch (e) {
-      toast({ tone: 'critical', title: 'The changes were not saved.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'The changes were not saved.', body: errorMessage(e, 'Try again in a moment.') });
     } finally {
       setSaving(false);
     }
@@ -90,11 +90,11 @@ export default function PermissionsChart() {
 
   return (
     <Card>
-      <div className="py-[13px] px-5 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-meta text-muted-ink leading-[1.5]">
+      <div className="py-[13px] px-5 [border-bottom:1px_solid_var(--color-line)] text-meta text-muted-ink leading-[1.5]">
         What each role can do in each part of the system. {data.canEdit ? 'Pick a level, then save.' : 'Only management can change this.'} Management
         always has full access and is not listed, so nobody can be locked out. Housekeepers, technicians and owners use their own apps and are fixed.
       </div>
-      <div className="flex gap-x-5 gap-y-1.5 flex-wrap py-[11px] px-5 [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
+      <div className="flex gap-x-5 gap-y-1.5 flex-wrap py-[11px] px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
         {data.levels.map(l => (
           <span key={l} className="text-caption text-muted-ink">
             <b style={{ color: LEVEL_COLOR[l] }}>{LEVEL_LABEL[l]}</b> — {LEVEL_NOTE[l]}
@@ -103,7 +103,7 @@ export default function PermissionsChart() {
       </div>
       <div className="overflow-x-auto">
         <div className="min-w-[820px]">
-          <div className={`${GRID} py-2.5 bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-caption font-semibold text-muted-ink`}>
+          <div className={`${GRID} py-2.5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-caption font-semibold text-muted-ink`}>
             <div>Area</div>
             <div>Management</div>
             {data.roles.map(r => <div key={r}>{ROLE_LABEL[r] ?? r}</div>)}
@@ -112,7 +112,7 @@ export default function PermissionsChart() {
             <div key={g.group}>
               <div className="px-5 pt-3 pb-1.5 text-caption font-semibold tracking-[0.08em] uppercase text-muted-ink">{g.group}</div>
               {g.areas.map(a => (
-                <div key={a.key} className={`${GRID} py-[7px] [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]`}>
+                <div key={a.key} className={`${GRID} py-[7px] [border-bottom:1px_solid_var(--color-line-soft)]`}>
                   <div className="text-copy font-medium">{a.label}</div>
                   <div className="text-meta font-semibold" style={{ color: LEVEL_COLOR.full }}>Full</div>
                   {data.roles.map(r => {
@@ -125,7 +125,7 @@ export default function PermissionsChart() {
                           value={level} disabled={!data.canEdit || saving}
                           onChange={e => pick(a, r, e.target.value as AccessLevel)}
                           className="h-8 w-full max-w-[150px] px-2 py-0 [font-family:inherit] text-copy font-semibold bg-card border border-solid rounded-control outline-none"
-                          style={{ color: LEVEL_COLOR[level], borderColor: changed ? 'var(--color-gold, #B08D57)' : 'var(--color-line, #DEDAD3)' }}
+                          style={{ color: LEVEL_COLOR[level], borderColor: changed ? 'var(--color-gold)' : 'var(--color-line)' }}
                         >
                           {data.levels.map(l => (
                             <option key={l} value={l}>{LEVEL_LABEL[l]}{l === a.roles[r].builtIn ? ' (standard)' : ''}</option>
@@ -140,7 +140,7 @@ export default function PermissionsChart() {
           ))}
         </div>
       </div>
-      <div className="px-5 py-3 [border-top:1px_solid_var(--color-line,#DEDAD3)]">
+      <div className="px-5 py-3 [border-top:1px_solid_var(--color-line)]">
         <div className="text-caption font-semibold tracking-[0.08em] uppercase text-muted-ink mb-1.5">Roles not on this chart</div>
         {FIXED_ROLES.map(r => (
           <div key={r.name} className="text-copy leading-[1.7]"><b>{r.name}</b> <span className="text-muted-ink">— {r.note}</span></div>

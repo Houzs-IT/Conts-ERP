@@ -1,12 +1,12 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure, ApiFailure } from '../lib/api';
+import { api, notifyFailure, ApiFailure, errorMessage } from '../lib/api';
 import { isStaged, stagedToast } from '../lib/approvals';
 import { refreshNavCounts } from '../lib/navBadges';
 import { monthLabel, dateShort, todayMyt, plural, count as fmtCount, titleCase } from '../lib/format';
@@ -168,7 +168,7 @@ export default function ExpensesPage() {
       refresh();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFormFields(e.fields);
-      toast({ tone: 'critical', title: 'Expense was not added.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Expense was not added.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
 
@@ -184,7 +184,7 @@ export default function ExpensesPage() {
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFormFields(e.fields);
       const locked = e instanceof ApiFailure && e.status === 409;
-      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'That period is locked.' : 'Expense was not updated.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'That period is locked.' : 'Expense was not updated.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
 
@@ -388,7 +388,7 @@ function ExpenseCard({ e }: { e: Expense }) {
       </span>
       <span className="flex flex-col items-end gap-[5px] shrink-0">
         <MoneyText sen={e.amount} mode="exact" strong className="text-copy" />
-        <Badge tone={catTone(e.category)} label={catLabel(e.category)} size="sm" />
+        <StatusBadge tone={catTone(e.category)} label={catLabel(e.category)} size="sm" />
       </span>
     </span>
   );
@@ -540,7 +540,7 @@ function Modal({ title, sub, onClose, footer, children, width = 520 }: {
           {sub && <p className="m-0 text-copy leading-[1.55] text-muted-ink [text-wrap:pretty]">{sub}</p>}
         </div>
         <div className="px-[22px] pb-5 flex flex-col gap-[14px]">{children}</div>
-        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
+        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
           {footer}
         </div>
       </div>
@@ -631,7 +631,7 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
         )}
       </>}>
       {readOnly && (
-        <div className={cx('py-[10px] px-3 rounded-control', TONE.warning.bg, 'text-[var(--color-warning-fg)] text-meta [text-wrap:pretty]')}>
+        <div className={cx('py-[10px] px-3 rounded-control', TONE.warning.bg, 'text-warning text-meta [text-wrap:pretty]')}>
           {lockReason}
         </div>
       )}

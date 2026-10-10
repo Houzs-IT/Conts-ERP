@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { MoneyInput, PhoneInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
@@ -12,14 +13,12 @@ import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
 import { cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { statusLabel } from '../lib/status';
 
 /** Customers (debtors) — sell-side counterpart of Suppliers, drawn in Conts. Money sen. */
 
 type Status = 'ACTIVE' | 'INACTIVE' | 'BLOCKED';
 const STATUSES: Status[] = ['ACTIVE', 'INACTIVE', 'BLOCKED'];
-const STATUS_LABEL: Record<Status, string> = { ACTIVE: 'Active', INACTIVE: 'Inactive', BLOCKED: 'Blocked' };
-const STATUS_TONE: Record<Status, Tone> = { ACTIVE: 'success', INACTIVE: 'neutral', BLOCKED: 'critical' };
 
 interface Customer {
   id: string; code: string; name: string; status: Status; contactPerson: string; phone: string; email: string;
@@ -61,10 +60,10 @@ export default function CustomersPage() {
     { key: 'code', label: 'Code', type: 'ref', value: c => c.code, hideable: false },
     { key: 'name', label: 'Name', value: c => c.name },
     { key: 'contact', label: 'Contact', value: c => c.contactPerson },
-    { key: 'phone', label: 'Phone', value: c => c.phone },
+    { key: 'phone', label: 'Phone', type: 'phone', value: c => c.phone },
     { key: 'terms', label: 'Terms', value: c => c.paymentTerms },
     { key: 'credit', label: 'Credit limit', type: 'money', value: c => c.creditLimitSen, render: c => c.creditLimitSen ? <span className="tabular-nums">{rm(c.creditLimitSen, { cents: false })}</span> : <span className="text-muted-ink">—</span> },
-    { key: 'status', label: 'Status', type: 'status', value: c => c.status, status: c => ({ label: STATUS_LABEL[c.status], tone: STATUS_TONE[c.status] }) },
+    { key: 'status', label: 'Status', type: 'status', value: c => c.status, entity: 'customer' },
   ], []);
 
   function save(draft: Draft, isNew: boolean) {
@@ -86,7 +85,7 @@ export default function CustomersPage() {
         onRowClick={canWrite ? c => setDrawer({ draft: toDraft(c), isNew: false }) : undefined}
         noun={['customer', 'customers']} exportName="customers"
         toolbar={<>
-          <div className="flex gap-2 flex-wrap"><Chip label="All" active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />{STATUSES.map(s => <Chip key={s} label={STATUS_LABEL[s]} active={statusFilter === s} onClick={() => setStatusFilter(s)} />)}</div>
+          <div className="flex gap-2 flex-wrap"><Chip label="All" active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />{STATUSES.map(s => <Chip key={s} label={statusLabel('customer', s)} active={statusFilter === s} onClick={() => setStatusFilter(s)} />)}</div>
           <div className="relative">
             <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
             <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customers..." aria-label="Search customers"
@@ -115,7 +114,7 @@ function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
         <Section title="Identity">
           <Field label="Code" placeholder="e.g. CUST-VJ" value={f.code} onChange={set('code')} />
           <Field label="Name" value={f.name} onChange={set('name')} />
-          <Sel label="Status" value={f.status} onChange={set('status')} options={STATUSES.map(s => ({ value: s, label: STATUS_LABEL[s] }))} />
+          <Sel label="Status" value={f.status} onChange={set('status')} options={STATUSES.map(s => ({ value: s, label: statusLabel('customer', s) }))} />
           <Field label="Type" placeholder="Individual / Company" value={f.customerType} onChange={set('customerType')} />
         </Section>
         <Section title="Contact">
@@ -134,8 +133,8 @@ function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
           <div className="col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
         </Section>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete customer ${draft.name}?`, body: 'It is deleted for good and drops off the customer list.', confirmLabel: 'Delete customer', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name first" onClick={() => onSave(f, isNew)}>{isNew ? 'Create customer' : 'Save'}</Button>

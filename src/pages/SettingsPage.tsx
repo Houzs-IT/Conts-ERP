@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { MoneyInput, NumberInput, PercentInput, PhoneInput, TimeField } from '../components/inputs';
@@ -9,7 +9,7 @@ import { Select, type SelectOption } from '../components/Select';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import { useSession } from '../lib/session';
 import { ROLE_LABEL } from '../lib/vocabulary';
@@ -69,7 +69,7 @@ const TWO_STEP_ROLES = ['management', 'finance_admin', 'operations_manager', 'op
 const LOCALES = [
   { value: 'en-MY', label: 'English (Malaysia)' },
   { value: 'ms-MY', label: 'Bahasa Melayu (planned)', disabled: true },
-  { value: 'zh-Hans', label: '简体中文 (planned)', disabled: true },
+  { value: 'zh-Hans', label: 'Chinese, simplified (planned)', disabled: true },
 ];
 const TIMEZONES = ['Asia/Kuala_Lumpur', 'Asia/Singapore', 'Asia/Bangkok', 'Asia/Jakarta'];
 const CURRENCIES = [
@@ -154,18 +154,18 @@ function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveL
 }) {
   return (
     <Card>
-      <div className="px-5 py-4 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] flex items-start justify-between gap-4 flex-wrap">
+      <div className="px-5 py-4 [border-bottom:1px_solid_var(--color-line)] flex items-start justify-between gap-4 flex-wrap">
         <div className="flex flex-col gap-1 min-w-0 flex-1">
           <span className="flex items-center gap-2 flex-wrap">
             <span className="text-heading font-semibold">{title}</span>
-            {notUsed && <Badge tone="warning" label={notUsedLabel} size="sm" />}
+            {notUsed && <StatusBadge tone="warning" label={notUsedLabel} size="sm" />}
           </span>
           <span className="text-meta text-muted-ink leading-[1.45]">{description}</span>
-          {notUsed && <span className="text-meta text-[var(--color-warning-fg)] leading-[1.45] text-pretty">{notUsed}</span>}
+          {notUsed && <span className="text-meta text-warning leading-[1.45] text-pretty">{notUsed}</span>}
         </div>
-        {readOnly ? <Badge tone="neutral" label="Management changes these" size="sm" /> : <div className="flex items-center gap-2 flex-wrap">
+        {readOnly ? <StatusBadge tone="neutral" label="Management changes these" size="sm" /> : <div className="flex items-center gap-2 flex-wrap">
           {dirty && (
-            <Badge tone="warning" label="Unsaved changes" size="sm" />
+            <StatusBadge tone="warning" label="Unsaved changes" size="sm" />
           )}
           {dirty && <Button variant="tertiary" size="sm" onClick={onDiscard} disabled={busy}>Discard</Button>}
           <Button
@@ -308,7 +308,7 @@ export default function SettingsPage() {
       setSaved(s => ({ ...s, [k]: value }) as Partial<Settings>);
       toast({ tone: 'success', ...MESSAGES[k] });
     } catch (e) {
-      toast({ tone: 'critical', title: 'Settings were not saved.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Settings were not saved.', body: errorMessage(e, 'Try again in a moment.') });
     }
     setBusy(null);
   }
@@ -435,7 +435,7 @@ export default function SettingsPage() {
                 onChange={v => patch('operations', { linenSets: held(v) }, 'operations.linenSets')}
               />
             </Grid>
-            <div className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)] pt-4">
+            <div className="[border-top:1px_solid_var(--color-line-soft)] pt-4">
               <ToggleField
                 label="Require a photo to mark a unit ready"
                 description="A cleaning task cannot be completed without at least one photo. Enforced in the field app."
@@ -463,7 +463,7 @@ export default function SettingsPage() {
               />
               <SelectField label="Payout method" value={draft.statements.payoutMethod} onChange={v => patch('statements', { payoutMethod: v })} options={PAYOUT_METHODS} />
             </Grid>
-            <div className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)] pt-4">
+            <div className="[border-top:1px_solid_var(--color-line-soft)] pt-4">
               <ToggleField
                 label="Generate statements automatically"
                 description="On the cycle day, statements are generated as provisional for review. Turn off to generate them by hand each period."

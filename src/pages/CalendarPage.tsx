@@ -6,15 +6,15 @@ import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
-import { Dialog, type DialogSpec } from '../components/Dialog';
+import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { BookingDrawer } from '../components/booking/BookingDrawer';
 import { channelNote, type ChannelSync } from '../lib/bookingStatus';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { api, notifyFailure } from '../lib/api';
-import { todayMyt, rm, date, dateRange, dateShort, dateTime, time, timeWithZone, monthLabel, weekdayDay, year, plural } from '../lib/format';
+import { api, notifyFailure, errorMessage } from '../lib/api';
+import { todayMyt, rm, date, dateRange, dateShort, dateTime, time, timeWithZone, monthLabel, weekdayDay, year, plural, rmShort, amount } from '../lib/format';
 import { CHANNEL, TONE } from '../lib/vocabulary';
 import type { BookingChannel, Tone } from '../lib/types';
 import { CalendarFilters } from '../components/calendar/CalendarFilters';
@@ -77,7 +77,6 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 const addDays = (d: Date, n: number) => new Date(d.getTime() + n * 864e5);
 /** Fri and Sat nights: the nights a unit's weekend rate applies to. */
 const isWeekendNight = (d: Date) => d.getUTCDay() === 5 || d.getUTCDay() === 6;
-const ringgit = (sen: number) => Math.round(sen / 100).toLocaleString('en-MY');
 
 // Dev-only sample board (useApi drops it in a real build), laid out around today so the today column shows.
 const T = (n: number) => todayMyt(n);
@@ -162,7 +161,7 @@ export default function CalendarPage() {
   // Prices set on the board before the reload brings them back, keyed `${unitId}:${channel}:${date}`: by date, not
   // by column, so they stay on their night when the board pages to another 30 days.
   const [rateEdits, setRateEdits] = useState<Record<string, number>>({});
-  const [dialog, setDialog] = useState<DialogSpec | null>(null);
+  const [dialog, setDialog] = useState<ConfirmSpec | null>(null);
   const [priceModal, setPriceModal] = useState<null | { unit: Unit; channel: string; dayIso: string; current: number }>(null);
   const [blockWizard, setBlockWizard] = useState(false);
   const [blockPrefill, setBlockPrefill] = useState<{ unitId?: string; from?: string; to?: string; kind?: BlockKind }>({});
@@ -340,7 +339,7 @@ export default function CalendarPage() {
         } catch (e) {
           // Put the bar back where it was: the server kept the old dates.
           setDateEdits(x => { const n = { ...x }; delete n[b.id]; return n; });
-          toast({ tone: 'critical', title: 'Booking not moved.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+          toast({ tone: 'critical', title: 'Booking not moved.', body: errorMessage(e, 'Try again in a moment.') });
         }
         setBusy(false); setDialog(null);
       },
@@ -371,7 +370,7 @@ export default function CalendarPage() {
       toast({ tone: 'success', title: 'Channels synced.', body: n ? `${plural(n, 'booking update')} pulled from Channex.` : 'Nothing new from Channex.' });
       reload(); reloadIntegrations();
     } catch (e) {
-      toast({ tone: 'critical', title: 'Channels were not synced.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Channels were not synced.', body: errorMessage(e, 'Try again in a moment.') });
     } finally {
       setSyncing(false);
     }
@@ -555,10 +554,10 @@ export default function CalendarPage() {
                                 return (
                                   <>
                                     <span className="hidden md:block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis [font-variant-numeric:tabular-nums]">
-                                      Web RM {ringgit(w.base)}{w.weekend !== w.base ? ` · Weekend RM ${ringgit(w.weekend)}` : ''}
+                                      Web {rmShort(w.base)}{w.weekend !== w.base ? ` · Weekend ${rmShort(w.weekend)}` : ''}
                                     </span>
-                                    <span className="md:hidden text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]">Web RM {ringgit(w.base)}</span>
-                                    {w.weekend !== w.base && <span className="md:hidden text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]">Wknd RM {ringgit(w.weekend)}</span>}
+                                    <span className="md:hidden text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]">Web {rmShort(w.base)}</span>
+                                    {w.weekend !== w.base && <span className="md:hidden text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]">Wknd {rmShort(w.weekend)}</span>}
                                   </>
                                 );
                               })()}
@@ -739,10 +738,10 @@ export default function CalendarPage() {
                                   const none = !custom && (price <= 0 || unlinked);
                                   return (
                                     <button key={i} type="button" disabled={!canSetRates} onClick={() => setPriceModal({ unit: u, channel: r.key, dayIso: dayIso(i), current: price })}
-                                      title={`${r.label} · ${date(dayIso(i))} · ${none ? (unlinked ? `not linked to ${r.label}, so no price is sent` : 'no rate set') : `RM ${ringgit(price)}`}${custom ? ' · set by hand' : ''}${canSetRates ? ' · click to set' : ''}`}
+                                      title={`${r.label} · ${date(dayIso(i))} · ${none ? (unlinked ? `not linked to ${r.label}, so no price is sent` : 'no rate set') : rmShort(price)}${custom ? ' · set by hand' : ''}${canSetRates ? ' · click to set' : ''}`}
                                       style={{ width: COL }}
                                       className={`flex-none box-border h-10 md:h-8 p-0 pr-2 border-none bg-transparent enabled:hover:bg-sunken/80 enabled:cursor-pointer disabled:cursor-default font-sans text-meta text-right [font-variant-numeric:tabular-nums] ${none ? 'text-faint' : custom ? 'font-semibold text-ink' : 'text-ink-2'}`}>
-                                      {none ? '—' : ringgit(price)}
+                                      {none ? '—' : amount(price, { cents: false })}
                                     </button>
                                   );
                                 })}
@@ -772,7 +771,7 @@ export default function CalendarPage() {
           grossBookingValue: openBlock.grossBookingValue,
         }; })() : null} />
 
-      <Dialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
+      <ConfirmDialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
       {priceModal && <SetPriceModal m={priceModal} onClose={() => setPriceModal(null)}
         onSave={rmValue => { const i = dayIndex(priceModal.dayIso); setPrice(priceModal.unit.id, priceModal.channel, i, rmValue); setPriceModal(null); }} />}
       {popover && (() => {
@@ -803,7 +802,7 @@ export default function CalendarPage() {
           if (clash) { toast({ tone: 'critical', title: 'Dates unavailable.', body: `${clash.guestName || CHANNEL[clash.channel].label} already holds ${dateRange(clash.checkIn, clash.checkOut)} on this unit.` }); return; }
           api.post<{ effects?: { channel: ChannelSync } }>('/blocks', { unitId: v.unitId, from: v.from, to: v.to, kind: v.kind, reason: v.reason })
             .then(res => { setBlockWizard(false); toast({ tone: 'success', title: v.kind === 'owner_stay' ? 'Owner stay added.' : 'Dates blocked.', body: `${dateRange(v.from, v.to)}. ${channelNote(res?.effects?.channel, 'held')}`.trim() }); reload(); })
-            .catch(e => toast({ tone: 'critical', title: 'Dates not blocked.', body: e instanceof Error ? e.message : 'Try again in a moment.' }));
+            .catch(e => toast({ tone: 'critical', title: 'Dates not blocked.', body: errorMessage(e, 'Try again in a moment.') }));
         }} />}
       {rateUpdate && <RateUpdate units={rateSource?.units ?? allUnits} initial={rateUpdate} busy={rateBusy} onClose={() => { if (!rateBusy) setRateUpdate(false); }}
         loadingAll={property !== 'all' && !everyUnit.data} building={property !== 'all' ? property : undefined}

@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { color } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
-import { api, downloadFile } from '../lib/api';
+import { api, downloadFile, errorMessage } from '../lib/api';
 import { date, percent, rating, monthLabel, count, plural } from '../lib/format';
-import { TASK, PAYOUT } from '../lib/vocabulary';
+import { TASK } from '../lib/vocabulary';
 import type { TaskState, PayoutState } from '../lib/types';
-import { Badge } from '../components/Badge';
-import { Dialog } from '../components/Dialog';
+import { StatusBadge } from '../components/StatusBadge';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Button } from '../components/Button';
 import PageHeader from '../components/PageHeader';
 import { EmptyState } from '../components/States';
@@ -176,7 +176,7 @@ export default function OwnerPortalPage() {
       health.reload();
       toast({ tone: 'success', title: 'Quote approved.', body: 'The Conts will schedule the work and confirm the date.' });
     } catch (e) {
-      toast({ tone: 'critical', title: 'Quote was not approved.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Quote was not approved.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
 
@@ -188,7 +188,7 @@ export default function OwnerPortalPage() {
     try {
       await downloadFile(`/documents/${d.id}/download`);
     } catch (e) {
-      toast({ tone: 'critical', title: 'Could not download.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Could not download.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
 
@@ -223,7 +223,7 @@ export default function OwnerPortalPage() {
           <span className="text-meta text-[var(--color-text-on-dark-muted)]">Net payout · {monthLabel(st.period)}</span>
           <MoneyText sen={st.payout.amount} mode="exact" className="text-headline leading-[1.1] font-semibold tracking-[-0.01em] text-gold" />
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge label={PAYOUT[st.payout.state].label} tone={PAYOUT[st.payout.state].tone} size="sm" />
+            <StatusBadge entity="payout" value={st.payout.state} size="sm" />
             {payoutLine && <span className="text-meta text-[var(--color-text-on-dark)]">{payoutLine}</span>}
           </div>
           <span className={cx('mt-1 text-meta', st.isFinal ? 'text-[var(--color-text-on-dark-muted)]' : 'text-[var(--color-gold-300)]')}>
@@ -289,7 +289,7 @@ export default function OwnerPortalPage() {
             return (
               <div key={i.id} className="px-5 py-3 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Badge label={v.label} tone={v.tone} size="sm" />
+                  <StatusBadge label={v.label} tone={v.tone} size="sm" />
                   <span className="text-copy font-medium">{i.title}</span>
                 </div>
                 <span className="text-meta text-muted-ink text-pretty">{issueLine(i, multiUnit)}</span>
@@ -322,7 +322,7 @@ export default function OwnerPortalPage() {
         ))}
       </section>
 
-      <Dialog
+      <ConfirmDialog
         busy={false}
         onClose={() => setApprove(null)}
         spec={!approve ? null : {
@@ -461,7 +461,7 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
       <line x1={padX} y1={baseY} x2={W - padX} y2={baseY} stroke={color.borderMuted} strokeWidth="1" />
       <path d={area} fill="url(#owner-trend-fill)" />
       <path d={line} fill="none" stroke={color.gold} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={lastX} cy={lastY} r="4.5" fill={color.gold} stroke="#FFFFFF" strokeWidth="2" />
+      <circle cx={lastX} cy={lastY} r="4.5" fill={color.gold} stroke={color.card} strokeWidth="2" />
       <text x={lastX} y={Math.max(14, lastY - 12)} textAnchor="end" fontSize="12" fontWeight="600" fill={color.goldInk}>{moneyString(last.netPayout, 'whole')}</text>
       {points.map((p, i) => (points.length - 1 - i) % every === 0 && (
         <text key={p.period} x={x(i)} y={H - 12} textAnchor={i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'} fontSize="11" fill={color.textMuted}>{monthLabel(p.period)}</text>

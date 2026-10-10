@@ -113,7 +113,7 @@ function LeaveDrawer({ drivers, canWrite, onClose, onCreate }: { drivers: Driver
         </div>
         <Field label="Reason" placeholder="e.g. Annual leave" value={reason} onChange={e => setReason(e.target.value)} />
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a driver and a valid date range" onClick={submit}>Record leave</Button>
       </div>

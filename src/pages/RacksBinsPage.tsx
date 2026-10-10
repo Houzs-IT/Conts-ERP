@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
@@ -49,7 +50,7 @@ export default function RacksBinsPage() {
     { key: 'warehouse', label: 'Warehouse', value: r => r.warehouseName || r.warehouseCode, filter: { kind: 'select' } },
     { key: 'position', label: 'Position', value: r => r.position },
     { key: 'reserved', label: 'Reserved', type: 'status', align: 'center', width: 120, value: r => (r.reserved ? 'Reserved' : 'Not reserved'), status: r => (r.reserved ? { label: 'Reserved', tone: 'warning' } : null) },
-    { key: 'status', label: 'Status', type: 'status', value: r => r.status, status: r => (r.status === 'ACTIVE' ? { label: 'Active', tone: 'success' } : { label: 'Inactive', tone: 'neutral' }) },
+    { key: 'status', label: 'Status', type: 'status', value: r => r.status, entity: 'active_flag' },
   ], []);
 
   function save(draft: Rack, isNew: boolean) {
@@ -113,8 +114,8 @@ function RackDrawer({ draft, isNew, warehouses, onClose, onSave, onDelete }: { d
           </select>
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete rack ${draft.rack}?`, body: 'It is deleted for good and drops off the rack list.', confirmLabel: 'Delete rack', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a warehouse and enter a code" onClick={() => onSave(f, isNew)}>{isNew ? 'Add rack' : 'Save'}</Button>

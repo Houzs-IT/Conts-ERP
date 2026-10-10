@@ -2,9 +2,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { channel } from '../theme';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
-import { Dialog } from '../components/Dialog';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { DateField, PhoneInput } from '../components/inputs';
 import { useToast } from '../components/Toast';
@@ -16,11 +16,10 @@ import ChannelMark from '../components/ChannelMark';
 import { CentreModal } from '../components/booking/BookingDrawer';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
-import { api, ApiFailure } from '../lib/api';
+import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { deliveryToast } from '../lib/bookingStatus';
-import { RESERVATION, READINESS } from '../lib/vocabulary';
-import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, todayMyt } from '../lib/format';
+import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, phone, todayMyt } from '../lib/format';
 import { Select, Menu } from '../components/Select';
 import { Chip as FilterChip } from './finance/listKit';
 import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } from '../lib/types';
@@ -105,7 +104,7 @@ const OPS_ROLES: UserRole[] = ['management', 'operations_manager', 'operations_s
 const TWO_HOURS = 2 * 60 * 60 * 1000;
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
 const threadName = (ch: BookingChannel) => (ch === 'direct' ? 'WhatsApp' : channel[ch].label);
-const failMessage = (e: unknown) => (e instanceof Error ? e.message : 'Try again in a moment.');
+const failMessage = (e: unknown) => (errorMessage(e, 'Try again in a moment.'));
 
 const ID_TYPES: Record<string, string> = { mykad: 'MyKad', passport: 'Passport', other: 'Other ID' };
 /** Common guest nationalities; any other ISO code still shows by name. */
@@ -244,7 +243,7 @@ export default function GuestsPage() {
       sub: g => (g.upcoming ? `${fmtCount(g.upcoming)} upcoming` : null) },
     ...(canSeeContact ? [
       { key: 'email', label: 'Email', value: (g: GuestSummary) => g.email, hidden: true, width: 190 },
-      { key: 'phone', label: 'Phone', value: (g: GuestSummary) => g.phone, hidden: true, width: 140 },
+      { key: 'phone', label: 'Phone', type: 'phone' as const, value: (g: GuestSummary) => g.phone, hidden: true, width: 140 },
     ] : []),
     { key: 'country', label: 'Nationality', value: g => countryName(g.countryCode), hidden: true, width: 130 },
     { key: 'channel', label: 'Latest channel', type: 'channel', value: g => g.channel, hidden: true },
@@ -364,7 +363,7 @@ export default function GuestsPage() {
               <div role="group" aria-label="Filter guests" className="flex gap-2 flex-wrap py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
                 {FILTERS.map(f => (
                   <FilterChip key={f.key} on={f.key === filter} onClick={() => setFilter(f.key)} count={counts?.[f.key]}>
-                    {f.key === 'missing_id' && !!counts?.missing_id && f.key !== filter ? <span className="text-[var(--color-critical-fg)]">{f.label}</span> : f.label}
+                    {f.key === 'missing_id' && !!counts?.missing_id && f.key !== filter ? <span className="text-danger">{f.label}</span> : f.label}
                   </FilterChip>
                 ))}
               </div>
@@ -412,7 +411,7 @@ export default function GuestsPage() {
         </div>
       </div>
 
-      <Dialog
+      <ConfirmDialog
         busy={busy}
         onClose={() => setCheckout(null)}
         spec={!checkout?.movement ? null : {
@@ -440,7 +439,7 @@ export default function GuestsPage() {
 
 const guestMeta = (g: GuestSummary, canSeeContact: boolean) => {
   const lastStay = g.upcoming ? 'Stay coming up' : g.lastCheckIn ? `Last stay ${fmtDate(g.lastCheckIn)}` : 'No stays yet';
-  return canSeeContact ? [g.phone, g.email].filter(Boolean).join(' · ') || lastStay : lastStay;
+  return canSeeContact ? [phone(g.phone), g.email].filter(Boolean).join(' · ') || lastStay : lastStay;
 };
 
 /** The phone card: the face the directory rows had before the list became a table. */
@@ -455,7 +454,7 @@ function GuestCard({ g, canSeeContact }: { g: GuestSummary; canSeeContact: boole
         <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={meta}>{meta}</span>
       </span>
       <span className="flex flex-col items-end gap-1 flex-none">
-        {g.missingId ? <Badge tone="critical" label="Missing ID" size="sm" /> : tag && <Badge tone={tag.tone} label={tag.label} size="sm" />}
+        {g.missingId ? <StatusBadge tone="critical" label="Missing ID" size="sm" /> : tag && <StatusBadge tone={tag.tone} label={tag.label} size="sm" />}
         <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{plural(g.stays, 'stay')}{g.upcoming ? ` (${g.upcoming} upcoming)` : ''}</span>
       </span>
     </span>
@@ -474,7 +473,7 @@ function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, o
 }) {
   const country = countryName(g.registration.countryCode);
   const contact = canSeeContact
-    ? [g.phone, g.email, g.language, country, `from ${channel[g.channel]?.label ?? 'Direct'}`].filter(Boolean).join(' · ')
+    ? [phone(g.phone), g.email, g.language, country, `from ${channel[g.channel]?.label ?? 'Direct'}`].filter(Boolean).join(' · ')
     : 'Contact restricted to operations roles';
   return (
     <>
@@ -486,8 +485,8 @@ function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, o
               <h2 className="m-0 text-title leading-[1.25] font-semibold break-words">{g.fullName}</h2>
               <span className="text-meta text-muted-ink break-words">{contact}</span>
               <div className="flex items-center gap-[7px] flex-wrap pt-[2px]">
-                {g.tags.map(t => <Badge key={t.key} tone={t.tone} label={t.label} size="sm" />)}
-                {g.registration.required && g.registration.missing.length > 0 && <Badge tone="critical" label="Missing ID" size="sm" />}
+                {g.tags.map(t => <StatusBadge key={t.key} tone={t.tone} label={t.label} size="sm" />)}
+                {g.registration.required && g.registration.missing.length > 0 && <StatusBadge tone="critical" label="Missing ID" size="sm" />}
                 <span className="text-meta text-muted-ink">{g.since}</span>
               </div>
             </div>
@@ -536,7 +535,7 @@ function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, o
                 <span className="text-meta text-muted-ink">{dateRange(s.checkIn, s.checkOut)} · {fmtNights(s.nights)}{s.externalRef ? ` · ${s.externalRef}` : ''}{s.rating != null ? ` · rated ${s.rating.toFixed(1)}` : ''}</span>
               </div>
               <span className="text-copy font-medium w-[92px] text-right [font-variant-numeric:tabular-nums] text-ink">{rm(s.value, { cents: false })}</span>
-              <Badge tone={RESERVATION[s.state].tone} label={RESERVATION[s.state].label} size="sm" />
+              <StatusBadge entity="booking" value={s.state} size="sm" />
             </button>
           ))
         )}
@@ -562,14 +561,14 @@ function Registration({ g, onEdit }: { g: Guest; onEdit: () => void }) {
   const row = (label: string, value: ReactNode, empty: boolean) => (
     <>
       <span className="text-muted-ink">{label}</span>
-      <span className={cx('min-w-0 break-words', empty && (r.required ? 'text-[var(--color-critical-fg)]' : 'text-muted-ink'))}>{value}</span>
+      <span className={cx('min-w-0 break-words', empty && (r.required ? 'text-danger' : 'text-muted-ink'))}>{value}</span>
     </>
   );
   return (
-    <div className={cx('bg-card border border-solid rounded-card p-5 flex flex-col gap-3', missing && r.required ? 'border-[var(--color-critical-line)]' : 'border-line')}>
+    <div className={cx('bg-card border border-solid rounded-card p-5 flex flex-col gap-3', missing && r.required ? 'border-danger-line' : 'border-line')}>
       <div className="flex items-start justify-between gap-2">
         <span className="text-heading font-semibold">Registration details</span>
-        {missing && r.required && <span className="text-meta text-[var(--color-critical-fg)] text-right">Needed before check-in</span>}
+        {missing && r.required && <span className="text-meta text-danger text-right">Needed before check-in</span>}
       </div>
       <div className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-2 text-copy">
         {row('ID type', r.idType ? ID_TYPES[r.idType] ?? r.idType : 'Not given', !r.idType)}
@@ -608,13 +607,13 @@ function NotesAndTags({ g, onSaved }: { g: Guest; onSaved: () => void }) {
     <div className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-3">
       <span className="text-heading font-semibold">Internal notes and tags</span>
       <div className="flex gap-2 flex-wrap items-center">
-        {g.tags.filter(t => t.key !== 'vip' && t.key !== 'blacklist').map(t => <Badge key={t.key} tone={t.tone} label={t.label} size="sm" />)}
+        {g.tags.filter(t => t.key !== 'vip' && t.key !== 'blacklist').map(t => <StatusBadge key={t.key} tone={t.tone} label={t.label} size="sm" />)}
         {(['vip', 'blacklist'] as const).map(t => {
           const on = g.manualTags.includes(t);
           return (
             <button key={t} type="button" onClick={() => toggle(t)} disabled={busy || !g.can.edit} aria-pressed={on}
               className={cx('h-7 inline-flex items-center gap-1 px-[10px] rounded-full [font:inherit] text-meta cursor-pointer border border-solid',
-                on ? (t === 'blacklist' ? 'bg-[var(--color-critical-bg)] border-[var(--color-critical-line)] text-[var(--color-critical-fg)] font-semibold' : 'bg-[var(--color-warning-bg)] border-[var(--color-warning-line)] text-[var(--color-warning-fg)] font-semibold')
+                on ? (t === 'blacklist' ? 'bg-danger-bg border-danger-line text-danger font-semibold' : 'bg-warning-bg border-warning-line text-warning font-semibold')
                   : 'bg-card border-dashed border-line text-muted-ink')}>
               <Icon name={on ? 'Check' : 'Plus'} size="sm" />{t === 'vip' ? 'VIP' : 'Blacklist'}
             </button>
@@ -656,8 +655,8 @@ function MovementStrip({ g, busy, onPrepare, onSendAccess, onCheckIn, onCheckOut
           <span className="text-meta text-muted-ink">{m.propertyName} {m.unitNumber} · {fmtGuests(m.guestsCount)} · {fmtNights(m.nights)}</span>
         </div>
         <div className="flex items-center gap-[7px]">
-          <Badge tone={RESERVATION[m.state].tone} label={RESERVATION[m.state].label} size="sm" />
-          <Badge tone={READINESS[m.readiness].tone} label={READINESS[m.readiness].label} size="sm" />
+          <StatusBadge entity="booking" value={m.state} size="sm" />
+          <StatusBadge entity="readiness" value={m.readiness} size="sm" />
         </div>
       </div>
       <div className="flex items-center gap-2 flex-wrap">
@@ -871,7 +870,7 @@ function MergeModal({ g, onClose, onMerged }: { g: Guest; onClose: () => void; o
                 className={cx('w-full text-left [font:inherit] flex items-center gap-3 px-3 py-2 border-none cursor-pointer [border-bottom:1px_solid_var(--color-line-soft)]', into?.id === x.id ? 'bg-gold-tint' : 'bg-card hover:bg-page')}>
                 <span className="flex flex-col min-w-0 flex-1">
                   <span className="text-copy font-medium truncate">{x.fullName}</span>
-                  <span className="text-meta text-muted-ink truncate">{[x.phone, x.email].filter(Boolean).join(' · ') || x.since}</span>
+                  <span className="text-meta text-muted-ink truncate">{[phone(x.phone), x.email].filter(Boolean).join(' · ') || x.since}</span>
                 </span>
                 <span className="text-meta text-muted-ink whitespace-nowrap">{plural(x.stays, 'stay')}</span>
               </button>

@@ -4,16 +4,16 @@ import { color } from '../theme';
 import { channel as CH } from '../theme';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { DateField, MoneyInput } from '../components/inputs';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
-import { Dialog, type DialogSpec } from '../components/Dialog';
+import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
-import { api, notifyFailure } from '../lib/api';
+import { api, notifyFailure, errorMessage } from '../lib/api';
 import { rm, dateRange, todayMyt, plural } from '../lib/format';
 import { Select, SearchSelect } from '../components/Select';
 import { usePhone, SearchBox } from './finance/listKit';
@@ -149,7 +149,7 @@ function Tag({ label, kind }: { label: string; kind: 'internal' | 'external' }) 
   return (
     <span className={cx(
       'inline-flex items-center h-[18px] px-[7px] py-0 rounded-pill text-caption font-semibold tracking-[0.03em] border border-solid',
-      external ? 'bg-gold-tint text-gold-ink border-[#EADCBD]' : 'bg-muted text-muted-ink border-line',
+      external ? 'bg-gold-tint text-gold-ink border-[var(--color-gold-200)]' : 'bg-muted text-muted-ink border-line',
     )}>{label}</span>
   );
 }
@@ -180,7 +180,7 @@ export default function PricingPage() {
   const phone = usePhone();
   const [q, setQ] = useState('');
   const [building, setBuilding] = useState('');
-  const [dialog, setDialog] = useState<DialogSpec | null>(null);
+  const [dialog, setDialog] = useState<ConfirmSpec | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Effective units after overlays.
@@ -249,7 +249,7 @@ export default function PricingPage() {
           });
           toast({ tone: 'success', title: 'Rates saved.', body: `${names} prices saved for ${range}. Units connected to a booking site are updated there automatically.` });
         } catch (e) {
-          toast({ tone: 'critical', title: 'Rates were not saved.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+          toast({ tone: 'critical', title: 'Rates were not saved.', body: errorMessage(e, 'Try again in a moment.') });
         }
         setBusy(false); setDialog(null);
       },
@@ -284,7 +284,7 @@ export default function PricingPage() {
       render: r => <span className={cx('tabular-nums', r.belowFloor ? TONE.critical.text : 'text-ink')}>{rm(r.youKeep, { cents: false })}</span>,
       sub: r => (r.belowFloor ? <span className={cx('text-caption', TONE.critical.text)}>Below floor</span> : null) },
     { key: 'sync', label: 'Sync', type: 'status', value: r => r.sync, status: r => ({ label: r.syncLabel, tone: r.syncTone }), width: 130,
-      render: r => <Badge tone={r.syncTone} label={r.syncLabel} size="sm" /> },
+      render: r => <StatusBadge tone={r.syncTone} label={r.syncLabel} size="sm" /> },
   ];
 
   return (
@@ -395,7 +395,7 @@ export default function PricingPage() {
                         <span className="text-copy">{CH[r.channel].label}</span>
                         <span className="text-caption text-faint">{r.commission}% fee</span>
                       </span>
-                      <Badge tone={r.syncTone} label={r.syncLabel} size="sm" />
+                      <StatusBadge tone={r.syncTone} label={r.syncLabel} size="sm" />
                     </span>
                     <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-2">
                       <div className="flex flex-col gap-0.5"><dt className="text-caption text-muted-ink">Uplift</dt>
@@ -465,7 +465,7 @@ export default function PricingPage() {
         </div>
       )}
 
-      <Dialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
+      <ConfirmDialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
     </>
   );
 }

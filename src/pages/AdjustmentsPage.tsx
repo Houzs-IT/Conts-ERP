@@ -138,7 +138,7 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onCreate }: { warehouses:
         <Field label="Note" placeholder="Optional detail" value={note} onChange={e => setNote(e.target.value)} />
         <div className="text-[12.5px] text-muted-ink">Posts <span className={cx('font-semibold', direction === 'in' ? TONE.success.text : TONE.critical.text)}>{direction === 'in' ? '+' : '−'}{magnitude}</span> to the stock ledger for <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{itemCode || '—'}</span>.</div>
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter an item, warehouse and quantity" loading={busy} onClick={() => void submit()}>Post adjustment</Button>
       </div>

@@ -6,12 +6,12 @@ import { EmptyState, Skeleton } from '../components/States';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useNow } from '../lib/useMedia';
-import { api, ApiFailure } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import {
-  Chip, TimeLeft, KIND_LABEL, MediaGrid, MediaDrop, uploadTo, Checklist, ReportDamageModal, Segmented, hm, dayLabel, mytDay,
-  type ChecklistItem, type MediaItem,
+  TimeLeft, KIND_LABEL, MediaGrid, MediaDrop, uploadTo, Checklist, ReportDamageModal, Segmented, hm, dayLabel, mytDay, type ChecklistItem, type MediaItem,
 } from '../components/ops/OpsUi';
+import { StatusBadge } from '../components/StatusBadge';
 
 /* GET /api/field/tasks (functions/api/field/tasks.ts) */
 interface Job {
@@ -74,11 +74,11 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
   async function act(key: string, fn: () => Promise<unknown>, ok: string) {
     setBusy(key);
     try { await fn(); toast({ tone: 'success', title: ok }); onChanged(); detail.reload(); }
-    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: e instanceof ApiFailure ? e.message : 'Check your signal and try again.' }); }
+    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Check your signal and try again.') }); }
     finally { setBusy(null); }
   }
-  const status = j.done ? <Chip tone="success">Done</Chip> : j.state === 'in_progress' ? <Chip tone="info">Cleaning</Chip>
-    : j.guestOut ? <Chip tone="gold">Guest out, ready</Chip> : j.previous ? <Chip tone="neutral">Guest not out yet</Chip> : <Chip tone="warning">To do</Chip>;
+  const status = j.done ? <StatusBadge tone="success">Done</StatusBadge> : j.state === 'in_progress' ? <StatusBadge tone="info">Cleaning</StatusBadge>
+    : j.guestOut ? <StatusBadge tone="gold">Guest out, ready</StatusBadge> : j.previous ? <StatusBadge tone="neutral">Guest not out yet</StatusBadge> : <StatusBadge tone="warning">To do</StatusBadge>;
 
   return (
     <article className={cx('bg-card rounded-card border border-solid overflow-hidden', open ? 'border-gold' : 'border-line')}>
@@ -88,7 +88,7 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
           {status}
         </div>
         <div className="grid grid-cols-2 gap-2 text-copy">
-          <div className="rounded-control bg-[#F4F1EB] px-2.5 py-2"><span className="block text-meta text-muted-ink">Leaving</span>{j.previous ? <><b>{j.previous.checkOutTime}</b> {j.previous.guestName}</> : <span className="text-muted-ink">Nobody</span>}</div>
+          <div className="rounded-control bg-muted px-2.5 py-2"><span className="block text-meta text-muted-ink">Leaving</span>{j.previous ? <><b>{j.previous.checkOutTime}</b> {j.previous.guestName}</> : <span className="text-muted-ink">Nobody</span>}</div>
           <div className="rounded-control bg-gold-tint px-2.5 py-2"><span className="block text-meta text-muted-ink">Arriving</span>{j.next ? <><b>{j.next.checkInTime}</b> {j.next.guestName}</> : <span className="text-muted-ink">No arrival</span>}</div>
         </div>
         {j.next && !j.done && <div className="text-copy">Time left <TimeLeft at={j.next.checkInAt} now={now} /></div>}
@@ -97,7 +97,7 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
       {open && (
         <div className="px-4 pb-4 flex flex-col gap-4 [border-top:1px_solid_var(--color-line-soft)] pt-3">
           {(detail.data?.access.length ? detail.data.access : j.accessInstruction ? [{ id: 'a', label: 'Access', instruction: j.accessInstruction }] : []).map(a => (
-            <div key={a.id} className="rounded-control bg-[#F4F1EB] p-2.5 text-copy"><b>{a.label}</b><div className="text-muted-ink">{a.instruction}</div></div>
+            <div key={a.id} className="rounded-control bg-muted p-2.5 text-copy"><b>{a.label}</b><div className="text-muted-ink">{a.instruction}</div></div>
           ))}
           {j.addressLine && <div className="text-meta text-muted-ink">{j.addressLine}</div>}
 
@@ -128,7 +128,7 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
               Mark complete
             </Button>
           )}
-          {j.done && <span className="text-copy text-[var(--color-success-fg)]">Finished{j.startedAt ? `, started ${hm(j.startedAt)}` : ''}.</span>}
+          {j.done && <span className="text-copy text-success">Finished{j.startedAt ? `, started ${hm(j.startedAt)}` : ''}.</span>}
         </div>
       )}
       {damage && <ReportDamageModal unitId={j.unitId} unitLabel={`${j.unit.propertyName} ${j.unit.unitNumber}`} taskId={j.id} onClose={() => setDamage(false)}

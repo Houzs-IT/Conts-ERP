@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Search, Plus, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { MoneyInput, NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
@@ -12,15 +13,14 @@ import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { StatusBadge } from '../components/StatusBadge';
+import { statusLabel } from '../lib/status';
 
 /** Sales Order Amendment — ported from 2990's SCM (core workflow), drawn in Conts. Amend a
  *  confirmed SO through REQUESTED -> APPROVED -> APPLIED (or REJECTED / CANCELLED); applying
  *  rewrites the SO lines. Money integer sen. */
 
 type Status = 'REQUESTED' | 'APPROVED' | 'APPLIED' | 'REJECTED' | 'CANCELLED';
-const STATUS_LABEL: Record<Status, string> = { REQUESTED: 'Requested', APPROVED: 'Approved', APPLIED: 'Applied', REJECTED: 'Rejected', CANCELLED: 'Cancelled' };
-const STATUS_TONE: Record<Status, Tone> = { REQUESTED: 'info', APPROVED: 'warning', APPLIED: 'success', REJECTED: 'critical', CANCELLED: 'neutral' };
 const FILTERS: (Status | 'all')[] = ['all', 'REQUESTED', 'APPROVED', 'APPLIED', 'REJECTED', 'CANCELLED'];
 
 interface AmdLine { id?: string; salesOrderLineId: string; action: 'CHANGE' | 'ADD' | 'REMOVE'; itemCode: string; description: string; uom: string; oldQty: number | null; oldUnitPriceSen: number | null; newQty: number; newUnitPriceSen: number }
@@ -61,7 +61,7 @@ export default function SalesOrderAmendmentPage() {
     { key: 'so', label: 'Sales order', type: 'ref', value: a => a.soDocNo },
     { key: 'customer', label: 'Customer', value: a => a.customerName },
     { key: 'reason', label: 'Reason', value: a => a.reason, render: a => a.reason ? <span className="text-[12.5px] text-muted-ink">{a.reason}</span> : <span className="text-muted-ink">—</span> },
-    { key: 'status', label: 'Status', type: 'status', value: a => a.status, status: a => ({ label: STATUS_LABEL[a.status], tone: STATUS_TONE[a.status] }) },
+    { key: 'status', label: 'Status', type: 'status', value: a => a.status, entity: 'so_amendment' },
   ], []);
 
   function created(a: Amd) { setAdded(x => [a, ...x]); toast({ tone: 'success', title: 'Amendment raised.', body: `${a.amendmentNo} · ${a.soDocNo}` }); setDrawer(null); }
@@ -82,7 +82,7 @@ export default function SalesOrderAmendmentPage() {
         onRowClick={a => setDrawer({ mode: 'view', amd: a })}
         noun={['amendment', 'amendments']} exportName="so-amendments"
         toolbar={<>
-          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('so_amendment', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
           <div className="relative">
             <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
             <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search amendment, SO or customer..." aria-label="Search amendments"
@@ -99,10 +99,6 @@ export default function SalesOrderAmendmentPage() {
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-function StatusPill({ status }: { status: Status }) {
-  const t = STATUS_TONE[status];
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}</span>;
 }
 
 /* ---------- create ---------- */
@@ -163,7 +159,7 @@ function NewDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[
                 <tbody>
                   {rows.length === 0 ? <tr><td colSpan={5} className="py-6 text-center text-[12.5px] text-muted-ink">This sales order has no lines.</td></tr>
                   : rows.map((r, i) => (
-                    <tr key={r.line.id} className={cx('[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]', r.remove ? 'opacity-55' : '')}>
+                    <tr key={r.line.id} className={cx('[border-top:1px_solid_var(--color-line-soft)]', r.remove ? 'opacity-55' : '')}>
                       <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{r.line.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{r.line.itemCode}{r.line.deliveredQty > 0 ? ` · ${r.line.deliveredQty} delivered` : ''}</span></div></td>
                       <td className="py-2 px-3 text-right tabular-nums text-[12.5px] text-muted-ink">{r.line.qty} × {rm(r.line.unitPriceSen)}</td>
                       <td className="py-2 px-3 text-right"><NumberInput aria-label={`New quantity for ${r.line.itemCode}`} min={0} disabled={r.remove} value={r.newQty} error={qtyError(r)} onChange={v => setRows(rs => rs.map((x, j) => j === i ? { ...x, newQty: v } : x))} className="h-8 w-[72px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-50" /></td>
@@ -178,7 +174,7 @@ function NewDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[
           </div>
         )}
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick an SO and change at least one line" onClick={submit}>Request amendment</Button>
       </div>
@@ -201,7 +197,7 @@ function ViewDrawer({ amd, canWrite, onClose, onAct }: { amd: Amd; canWrite: boo
   return (
     <Drawer open onClose={onClose} width={760}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
-        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{full.amendmentNo}</h2><StatusPill status={full.status} /></div>
+        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{full.amendmentNo}</h2><StatusBadge entity="so_amendment" value={full.status} /></div>
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
@@ -219,8 +215,8 @@ function ViewDrawer({ amd, canWrite, onClose, onAct }: { amd: Amd; canWrite: boo
             empty={{ title: 'No line changes recorded.' }} />
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{canWrite && (full.status === 'REQUESTED' || full.status === 'APPROVED') && <Button size="sm" variant="danger" onClick={() => onAct(full, 'reject', 'REJECTED', 'Amendment rejected.')}>Reject</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{canWrite && (full.status === 'REQUESTED' || full.status === 'APPROVED') && <ConfirmButton confirm={{ title: `Reject ${full.amendmentNo}?`, body: 'It is marked Rejected and the sales order stays as it is.', meta: `${full.soDocNo} · ${full.customerName}`, confirmLabel: 'Reject amendment', cancelLabel: 'Keep it' }} onConfirm={() => onAct(full, 'reject', 'REJECTED', 'Amendment rejected.')}>Reject</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
           {canWrite && full.status === 'REQUESTED' && <Button size="sm" variant="secondary" onClick={() => onAct(full, 'approve', 'APPROVED', 'Amendment approved.')}>Approve</Button>}

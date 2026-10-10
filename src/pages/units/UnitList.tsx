@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { DataTable, type Column } from '../../components/DataTable';
-import { READY_TONE, cap, type Building, type Unit } from './shared';
+import { type Building, type Unit } from './shared';
 import type { UnitReadiness } from '../../lib/types';
+import { statusOf } from '../../lib/status';
 
 /** Every unit as one table (Units > List): the same records as the tree, for sorting, filtering, saved views
  *  and exporting the portfolio. Clicking a row opens the unit's record. */
@@ -30,7 +31,7 @@ export function UnitList({ units, buildings, readiness, loading, error, onRetry,
     { key: 'started', label: 'Contract start', type: 'date', value: u => u.contract?.startedOn || null, hidden: true },
     { key: 'renews', label: 'Renews', type: 'date', value: u => u.contract?.renewsOn || null, hidden: true },
     { key: 'readiness', label: 'Today', type: 'status', value: u => readiness[u.id] ?? null, width: 120,
-      status: u => (readiness[u.id] ? { label: cap(readiness[u.id]), tone: READY_TONE[readiness[u.id]] } : null) },
+      status: u => (readiness[u.id] ? statusOf('readiness', readiness[u.id]) : null) },
   ], [byId, buildings, readiness]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <DataTable<Unit> id="units" columns={columns} rows={units.length || !loading ? units : null} rowKey={u => u.id}

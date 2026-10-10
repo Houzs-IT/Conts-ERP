@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Button } from './Button';
 import Icon from './Icon';
 import { useToast } from './Toast';
-import { ApiFailure } from '../lib/api';
+import { errorMessage } from '../lib/api';
 import { decide, type Approval, type Decision } from '../lib/approvals';
 import { rm, date, dateTime } from '../lib/format';
 import { refreshNavCounts } from '../lib/navBadges';
@@ -17,11 +17,11 @@ export default function ApprovalBanner({ items, onChanged, compact }: { items: A
   const [open, setOpen] = useState<{ a: Approval; decision: Decision } | null>(null);
   if (!items.length) return null;
   return (
-    <div role="status" className="rounded-card border border-solid border-[var(--color-warning-line)] bg-[var(--color-warning-bg)] flex flex-col">
+    <div role="status" className="rounded-card border border-solid border-warning-line bg-warning-bg flex flex-col">
       {items.map((a, i) => (
         <div key={a.id} className={`flex flex-col gap-[6px] px-[14px] py-[11px] ${i ? '[border-top:1px_solid_var(--color-warning-line)]' : ''}`}>
           <div className="flex items-start gap-2">
-            <span className="mt-[2px] text-[var(--color-warning-fg)]"><Icon name="ShieldAlert" size="sm" /></span>
+            <span className="mt-[2px] text-warning"><Icon name="ShieldAlert" size="sm" /></span>
             <div className="flex flex-col gap-[2px] min-w-0 flex-1">
               <span className="text-copy font-semibold text-ink">{a.kindLabel} waiting for approval · {rm(a.amount)}</span>
               <span className="text-meta text-ink text-pretty">{a.summary}</span>
@@ -80,7 +80,7 @@ export function DecisionDialog({ a, decision, onClose, onDone }: { a: Approval; 
       void refreshNavCounts();
       onDone(done);
     } catch (err) {
-      setError(err instanceof ApiFailure ? err.message : 'Try again in a moment.');
+      setError(errorMessage(err, 'Try again in a moment.'));
     }
     setBusy(false);
   }
@@ -111,7 +111,7 @@ export function DecisionDialog({ a, decision, onClose, onDone }: { a: Approval; 
             <textarea id="ap-note" autoFocus={needsNote} value={note} onChange={e => setNote(e.target.value)} rows={3} maxLength={500} required={needsNote}
               className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
           </div>
-          {error && <p role="alert" className="m-0 text-meta text-[var(--color-critical-fg)]">{error}</p>}
+          {error && <p role="alert" className="m-0 text-meta text-danger">{error}</p>}
         </div>
         <div className="px-[22px] py-[14px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px] flex-wrap rounded-b-card">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Keep it waiting</Button>

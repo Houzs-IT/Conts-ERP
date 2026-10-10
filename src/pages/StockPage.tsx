@@ -56,7 +56,7 @@ export default function StockPage() {
     { key: 'name', label: 'Description', value: r => r.itemName, width: 220 },
     { key: 'warehouse', label: 'Warehouse', value: r => r.warehouseName, filter: { kind: 'select' } },
     { key: 'onhand', label: 'On hand', type: 'number', value: r => r.onHand,
-      render: r => <span className={cx('tabular-nums font-semibold', r.onHand < 0 ? 'text-[var(--color-critical-fg)]' : '')}>{r.onHand}</span> },
+      render: r => <span className={cx('tabular-nums font-semibold', r.onHand < 0 ? 'text-danger' : '')}>{r.onHand}</span> },
   ], []);
   const moveColumns = useMemo<Column<Movement>[]>(() => [
     { key: 'date', label: 'Date', type: 'date', value: m => m.movedAt },
@@ -65,7 +65,7 @@ export default function StockPage() {
     { key: 'type', label: 'Type', value: m => m.movementType, text: m => MV_LABEL[m.movementType] ?? m.movementType, filter: { kind: 'select' } },
     { key: 'ref', label: 'Ref', value: m => m.refType, width: 90 },
     { key: 'qty', label: 'Qty', type: 'number', value: m => m.qtyDelta, width: 90,
-      render: m => <span className={cx('tabular-nums font-semibold', m.qtyDelta < 0 ? 'text-[var(--color-critical-fg)]' : 'text-[var(--color-success-fg)]')}>{m.qtyDelta > 0 ? `+${m.qtyDelta}` : m.qtyDelta}</span> },
+      render: m => <span className={cx('tabular-nums font-semibold', m.qtyDelta < 0 ? 'text-danger' : 'text-success')}>{m.qtyDelta > 0 ? `+${m.qtyDelta}` : m.qtyDelta}</span> },
     { key: 'note', label: 'Note', value: m => m.note, width: 200 },
   ], []);
 
@@ -156,7 +156,7 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onDone }: { warehouses: O
           <div className="col-span-2"><Field label="Note" placeholder="Reason for the adjustment" value={note} onChange={e => setNote(e.target.value)} /></div>
         </div>
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter an item, warehouse and a non-zero quantity" onClick={submit}>Post adjustment</Button>
       </div>

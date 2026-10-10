@@ -58,7 +58,7 @@ export function formatScaled(n: number, decimals: number, opts: { grouping: bool
   const whole = Math.floor(abs / scale);
   let frac = decimals ? String(abs % scale).padStart(decimals, '0') : '';
   if (!opts.fixed) frac = frac.replace(/0+$/, '');
-  const wholeText = opts.grouping ? whole.toLocaleString('en-MY') : String(whole);
+  const wholeText = opts.grouping ? String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : String(whole);
   return (neg ? '-' : '') + wholeText + (frac ? `.${frac}` : '');
 }
 
