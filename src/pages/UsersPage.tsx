@@ -132,13 +132,13 @@ export default function UsersPage() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<UserRole>('operations_staff');
-  const [managerId, setManagerId] = useState<string>('u1');
+  const [managerId, setManagerId] = useState<string>('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [lastTempPassword, setLastTempPassword] = useState<{ name: string; password: string } | null>(null);
 
   function resetInvite() {
     setInviteOpen(false); setFullName(''); setEmail(''); setRole('operations_staff');
-    setManagerId('u1'); setFieldErrors({}); setBusy(false);
+    setManagerId(''); setFieldErrors({}); setBusy(false);
   }
 
   async function submitInvite(e: FormEvent) {
