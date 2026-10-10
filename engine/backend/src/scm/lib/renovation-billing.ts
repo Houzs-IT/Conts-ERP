@@ -14,8 +14,7 @@
    showed; if a VO moved it meanwhile the bill is refused (409) with the new one. */
 
 import { auditSo, mintDocNo, refuse, todayKl, yymmOf, type RenoDb, type UnsafeRunner, renoDbOf } from './renovation-db';
-import { readInstalments } from './renovation-doc-lines';
-import { readContractHead, revisedContractSen, RENO_LIVE_STATUSES } from './renovation-so';
+import { readContractHead, RENO_LIVE_STATUSES } from './renovation-so';
 import type { RenoActor } from './renovation-quotation';
 import { instalmentPreview, nextInstalmentAmount } from '../shared/renovation-money';
 import { fmtSen } from '../shared/format';
@@ -39,28 +38,67 @@ export interface BillingView {
 }
 
 export async function billingView(runner: RenoDb | UnsafeRunner, soDocNo: string, companyId?: number): Promise<BillingView> {
+  const view = (await billingViews(runner, [soDocNo], companyId)).get(soDocNo);
+  if (!view) throw refuse(404, 'so_not_found', `Sales order ${soDocNo} does not exist.`);
+  return view;
+}
+
+/** billingView for many contracts in four queries (the project board reads every
+    project's contract at once). SOs that do not exist are absent from the map. */
+export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: readonly string[], companyId?: number): Promise<Map<string, BillingView>> {
   const db = renoDbOf(runner);
-  const [so] = await db.q<{ status: string; company_id: number; original_contract_sen: number | null }>(
-    `select o.status::text as status, o.company_id, c.original_contract_sen from scm.mfg_sales_orders o
-       left join scm.reno_so_contracts c on c.so_doc_no = o.doc_no where o.doc_no = $1 and ($2::bigint is null or o.company_id = $2)`,
-    [soDocNo, companyId ?? null],
+  const out = new Map<string, BillingView>();
+  const docs = [...new Set(soDocNos)];
+  if (docs.length === 0) return out;
+  const docsJson = JSON.stringify(docs);
+  const sos = await db.q<{ doc_no: string; status: string; original_contract_sen: number | null; revised_sen: number }>(
+    `select o.doc_no, o.status::text as status, c.original_contract_sen,
+            (select coalesce(sum(i.total_sen), 0)::int from scm.mfg_sales_order_items i where i.doc_no = o.doc_no and not i.cancelled) as revised_sen
+       from scm.mfg_sales_orders o
+       left join scm.reno_so_contracts c on c.so_doc_no = o.doc_no
+      where o.doc_no in (select jsonb_array_elements_text($1::text::jsonb)) and ($2::bigint is null or o.company_id = $2)`,
+    [docsJson, companyId ?? null],
   );
-  if (!so) throw refuse(404, 'so_not_found', `Sales order ${soDocNo} does not exist.`);
-  const instalments = await readInstalments(db, { kind: 'so', id: soDocNo });
+  if (sos.length === 0) return out;
+  const instRows = await db.q<{ id: string; so_doc_no: string; seq: number; label: string; pct_bp: number; description: string; stage_code: string | null; trigger: string }>(
+    `select id, so_doc_no, seq, label, pct_bp, description, stage_code, trigger from scm.reno_doc_instalments
+      where so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) order by so_doc_no, seq`,
+    [docsJson],
+  );
   const bills = await db.q<{
-    instalment_id: string; seq: number; kind: BillRow['kind']; amount_sen: number; invoice_date: string; invoice_number: string | null;
+    so_doc_no: string; instalment_id: string; seq: number; kind: BillRow['kind']; amount_sen: number; invoice_date: string; invoice_number: string | null;
     sales_invoice_id: string | null; note_number: string | null; credit_note_id: string | null; paid_sen: number | null; si_status: string | null; cn_status: string | null;
   }>(
-    `select b.instalment_id, b.seq, b.kind, b.amount_sen, b.invoice_date::text as invoice_date, b.invoice_number, b.sales_invoice_id,
+    `select b.so_doc_no, b.instalment_id, b.seq, b.kind, b.amount_sen, b.invoice_date::text as invoice_date, b.invoice_number, b.sales_invoice_id,
             b.note_number, b.credit_note_id, si.paid_sen, si.status::text as si_status, cn.status as cn_status
        from scm.reno_instalment_bills b
        left join scm.sales_invoices si on si.id = b.sales_invoice_id
        left join scm.acc_credit_notes cn on cn.id = b.credit_note_id
-      where b.so_doc_no = $1 order by b.seq`,
-    [soDocNo],
+      where b.so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) order by b.so_doc_no, b.seq`,
+    [docsJson],
   );
+  for (const so of sos) {
+    const instalments = instRows
+      .filter((r) => r.so_doc_no === so.doc_no)
+      .map((r) => ({ id: r.id, seq: Number(r.seq), label: r.label, pctBp: Number(r.pct_bp), description: r.description, stageCode: r.stage_code, trigger: r.trigger }));
+    const soBills = bills.filter((b) => b.so_doc_no === so.doc_no);
+    out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills));
+  }
+  return out;
+}
+
+function assembleView(
+  soDocNo: string,
+  status: string,
+  originalContractSen: number | null,
+  revised: number,
+  instalments: Array<{ id: string; seq: number; label: string; pctBp: number; description: string; stageCode: string | null; trigger: string }>,
+  bills: Array<{
+    instalment_id: string; seq: number; kind: BillRow['kind']; amount_sen: number; invoice_date: string; invoice_number: string | null;
+    sales_invoice_id: string | null; note_number: string | null; credit_note_id: string | null; paid_sen: number | null; si_status: string | null; cn_status: string | null;
+  }>,
+): BillingView {
   const billByInst = new Map(bills.map((b) => [b.instalment_id, b]));
-  const revised = await revisedContractSen(db, soDocNo);
   const billedMap = new Map<number, number>();
   for (const i of instalments) {
     const b = billByInst.get(i.id);
@@ -85,9 +123,9 @@ export async function billingView(runner: RenoDb | UnsafeRunner, soDocNo: string
   });
   const billedSen = bills.reduce((s, b) => s + Number(b.amount_sen), 0);
   const receivedSen = bills.reduce((s, b) => s + (b.kind === 'INVOICE' ? Number(b.paid_sen ?? 0) : 0), 0);
-  const original = so.original_contract_sen === null ? revised : Number(so.original_contract_sen);
+  const original = originalContractSen === null ? revised : Number(originalContractSen);
   return {
-    soDocNo, status: so.status, originalContractSen: original, revisedContractSen: revised, voTotalSen: revised - original,
+    soDocNo, status, originalContractSen: original, revisedContractSen: revised, voTotalSen: revised - original,
     billedSen, receivedSen, nextSeq, instalments: rows,
   };
 }

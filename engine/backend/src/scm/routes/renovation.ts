@@ -144,10 +144,10 @@ renovation.post('/quotations/:id/status', handle(PERM.quote, async (c, { tx }) =
   return c.json(await tx((db) => setQuotationStatus(db, actorOf(c), param(c, 'id'), status.data as QuotationStatus, intParam(b.version, 'version'))));
 }));
 
-renovation.post('/quotations/:id/convert', handle(PERM.quote, async (c, { tx }) => {
+renovation.post('/quotations/:id/convert', handle(PERM.quote, async (c, { tx, sqlRead }) => {
   const b = await json(c);
   const out = await tx((db) => convertQuotationToSo(db, actorOf(c), param(c, 'id'), { version: intParam(b.version, 'version'), soDate: b.soDate ?? null }));
-  await onRenovationSoLinesChanged(out.docNo);
+  await onRenovationSoLinesChanged(out.docNo, sqlRead);
   return c.json(out, 201);
 }));
 
@@ -337,12 +337,12 @@ renovation.post('/variation-orders/:id/status', handle(PERM.quote, async (c, { t
   return c.json(await tx((db) => setVoStatus(db, actorOf(c), param(c, 'id'), s.data, intParam(b.version, 'version'))));
 }));
 
-renovation.post('/variation-orders/:id/approve', handle(PERM.voApply, async (c, { tx }) => {
+renovation.post('/variation-orders/:id/approve', handle(PERM.voApply, async (c, { tx, sqlRead }) => {
   const b = await json(c);
   const out = await tx((db) => applyVo(db, actorOf(c), param(c, 'id'), {
     version: intParam(b.version, 'version'), signedName: typeof b.signedName === 'string' ? b.signedName : null, signedAt: b.signedAt ?? null,
   }));
-  await onRenovationSoLinesChanged(out.soDocNo);
+  await onRenovationSoLinesChanged(out.soDocNo, sqlRead);
   return c.json(out);
 }));
 

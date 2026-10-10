@@ -52,6 +52,7 @@ import { API_URL, authedFetch } from "../../vendor/scm/lib/authed-fetch";
 import { writeFailed } from "../../vendor/scm/lib/mutation-error";
 import { cn } from "../../lib/utils";
 import { prepareImageForUpload } from "../../lib/imagePipeline";
+import { HEIC_ACCEPT, isHeicFile, toUploadableImage } from "../../lib/heicToJpeg";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -80,7 +81,8 @@ type PendingUpload = {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 const MAX_BYTES = 5 * 1024 * 1024;
-const ACCEPT = "image/jpeg,image/png,image/webp";
+// HEIC / HEIF (iPhone) is accepted here and converted to JPEG before upload; the server keeps JPEG / PNG / WebP.
+const ACCEPT = `image/jpeg,image/png,image/webp,${HEIC_ACCEPT}`;
 
 type LoadStatus = "ok" | "not-configured" | "error";
 
@@ -212,9 +214,18 @@ export function PhotoGallery(props: PhotoGalleryProps) {
         p.rid === rid ? { ...p, state: { phase: "uploading", progress: 0 } } : p,
       ),
     );
+    let source: File;
+    try {
+      source = await toUploadableImage(file);
+    } catch (e) {
+      setPending((prev) =>
+        prev.map((p) => (p.rid === rid ? { ...p, state: { phase: "error", message: errMsg(e) } } : p)),
+      );
+      return;
+    }
     // WO-7 — downscale/re-encode + generate the thumbnail client-side.
     // Falls back to the original file (no thumb part) when unavailable.
-    const prepared = await prepareImageForUpload(file);
+    const prepared = await prepareImageForUpload(source);
     if (prepared.file.size > MAX_BYTES) {
       // Compression could not bring it under the server's 5 MB gate —
       // fail here with a clear message instead of burning the upload.
@@ -251,7 +262,7 @@ export function PhotoGallery(props: PhotoGalleryProps) {
     const arr = Array.from(files);
     const accepted: PendingUpload[] = [];
     for (const f of arr) {
-      if (!/^image\/(jpeg|png|webp)$/.test(f.type)) {
+      if (!/^image\/(jpeg|png|webp)$/.test(f.type) && !isHeicFile(f)) {
         accepted.push({
           rid: newRid(),
           file: f,

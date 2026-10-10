@@ -1,5 +1,6 @@
 import { ProjectTypeManager } from "./projects/renovation/ProjectTypeManager";
 import { useProjectsMode } from "./projects/renovation/RenovationRoutes";
+import { SectionStageSelect } from "./projects/renovation/SectionStageSelect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, ChevronUp, ChevronDown, Plus, Pencil, Trash2, ShieldCheck, Eye, EyeOff, Upload, Image as ImageIcon } from "lucide-react";
 import { useReorderable } from "../hooks/useReorderable";
@@ -92,6 +93,8 @@ interface ChecklistTemplateSection {
   sort_order: number;
   /** mig 085 — "list" (default) or "documents" (column-headed layout). */
   display_mode?: "list" | "documents";
+  /** Renovation (mig 0077): the stage this section belongs to; only staged sections clone into a new project. */
+  stage_key?: string | null;
 }
 
 export function ProjectMaintenanceView() {
@@ -840,6 +843,8 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
   const [dragOverSectionKey, setDragOverSectionKey] = useState<string | null>(null);
 
   // Section management state
+  const reno = useProjectsMode() === "renovation";
+  const [newSectionStage, setNewSectionStage] = useState<string | null>(null);
   const [newSectionName, setNewSectionName] = useState("");
   const [editingSectionId, setEditingSectionId] = useState<number | null>(null);
   const [editingSectionName, setEditingSectionName] = useState("");
@@ -854,8 +859,10 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
     try {
       await api.post(`/api/projects/checklist-templates/${templateId}/sections`, {
         name: n,
+        ...(reno ? { stage_key: newSectionStage } : {}),
       });
       setNewSectionName("");
+      setNewSectionStage(null);
       q.reload();
       toast.success("Section added");
     } catch (e: any) {
@@ -875,6 +882,16 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
       setEditingSectionId(null);
       setEditingSectionName("");
       q.reload();
+    } catch (e: any) {
+      toast.error(e?.message || "Something went wrong. Please try again.");
+    }
+  }
+
+  async function setSectionStage(id: number, stageKey: string | null) {
+    try {
+      await api.patch(`/api/projects/checklist-templates/sections/${id}`, { stage_key: stageKey });
+      q.reload();
+      toast.success(stageKey ? "Stage set" : "Stage cleared: this section is no longer copied into new projects");
     } catch (e: any) {
       toast.error(e?.message || "Something went wrong. Please try again.");
     }
@@ -1176,6 +1193,14 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
                   <ChevronDown size={10} className="-rotate-90" />
                 </button>
                 <span>{s.name}</span>
+                {reno && (
+                  <SectionStageSelect
+                    label={`Stage of ${s.name}`}
+                    value={s.stage_key}
+                    onChange={(k) => setSectionStage(s.id, k)}
+                    className={`h-5 max-w-[9rem] rounded border bg-surface px-1 text-[10.5px] outline-none ${s.stage_key ? "border-border text-ink-secondary" : "border-warning-text text-warning-text"}`}
+                  />
+                )}
                 <button
                   onClick={() => {
                     setEditingSectionId(s.id);
@@ -1203,15 +1228,21 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
             placeholder="New section…"
             className="h-7 w-44 rounded-md border border-dashed border-border bg-surface px-2 text-[11.5px] outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
           />
+          {reno && <SectionStageSelect label="Stage of the new section" value={newSectionStage} onChange={setNewSectionStage} />}
           <button
             onClick={addSection}
-            disabled={addingSection || !newSectionName.trim()}
+            disabled={addingSection || !newSectionName.trim() || (reno && !newSectionStage)}
             className="rounded-md border border-border bg-surface px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-ink-secondary hover:border-accent/40 hover:text-accent disabled:opacity-50"
           >
             <Plus size={10} className="inline-block mr-0.5" />
             Add
           </button>
         </div>
+        {reno && (
+          <p className="mt-1 text-[10px] text-ink-muted">
+            Each section belongs to a stage; a new project gets the sections of the stages its type runs. A section with no stage is not copied.
+          </p>
+        )}
         {sections.length === 0 && (
           <p className="mt-1 text-[10px] text-ink-muted">
             No sections yet. Without sections, all template items land in

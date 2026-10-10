@@ -1,6 +1,7 @@
 /* Wire types and calls for the renovation project screens (/api/renovation,
    /api/scm/site-receipts). Shapes mirror engine/backend/src/routes/renovation.ts. */
 
+import { toUploadableImage } from "../../../lib/heicToJpeg";
 import { api } from "../../../api/client";
 import type { StageKey } from "../../../vendor/shared/renovation-stages";
 
@@ -221,7 +222,12 @@ export const renovationApi = {
   addSnag: (id: number, b: { location?: string; description: string; photoR2Key?: string | null }) => api.post<{ id: number }>(`${R}/${id}/snags`, b),
   closeSnag: (defectId: number) => api.post<{ ok: true }>(`${R}/snags/${defectId}/close`),
   handover: (id: number, b: Record<string, unknown>) => api.post<{ ok: true }>(`${R}/${id}/handover`, b),
-  upload: (id: number, kind: string, blob: Blob) => api.postBinary<{ key: string }>(`${R}/${id}/files?kind=${encodeURIComponent(kind)}`, blob, blob.type || "image/jpeg"),
+  /* The server takes JPEG / PNG / WebP / PDF only: an iPhone HEIC file is converted to JPEG first
+     (throws HeicConversionError, with a message for the screen, when it cannot be). */
+  upload: async (id: number, kind: string, blob: Blob) => {
+    const body = blob instanceof File ? await toUploadableImage(blob) : blob;
+    return api.postBinary<{ key: string }>(`${R}/${id}/files?kind=${encodeURIComponent(kind)}`, body, body.type || "image/jpeg");
+  },
   fileUrl: (id: number, key: string) => `${R}/${id}/files?key=${encodeURIComponent(key)}`,
   bill: (docNo: string, instalmentId: string, expectedAmountSen: number | null, invoiceDate: string) =>
     api.post<unknown>(`/api/scm/renovation/sales-orders/${encodeURIComponent(docNo)}/instalments/${encodeURIComponent(instalmentId)}/bill`, { invoiceDate, expectedAmountSen }),

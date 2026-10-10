@@ -1,16 +1,25 @@
 /* Seams between the renovation sales documents (phase 2) and the renovation
-   project (phase 3). Phase 2 owns this file's shape; phase 3 fills it in.
+   project (phase 3).
 
-   - onRenovationSoLinesChanged(docNo): called AFTER COMMIT whenever a renovation
-     contract's lines change (quotation converted, VO applied). Phase 3 registers
-     a listener (stage auto-skip / re-open, trade tasks). A listener that throws
-     is logged and never fails the sale.
+   - onRenovationSoLinesChanged(docNo, db): called AFTER COMMIT whenever a
+     renovation contract's lines change (quotation converted, VO applied). With a
+     connection it runs phase 3's onContractLinesChanged: the project's trade
+     tasks are synced (a VO omitting a trade auto-skips its task, bringing it
+     back re-opens it) and its cached current stage is rewritten. Stage
+     auto-skip / re-open itself needs no write: stage views are derived from the
+     contract lines on every read (services/renovation/stages.ts). Extra
+     listeners may register too. Anything that throws is logged and never fails
+     the sale.
    - projectHandoverState(db, projectId): whether the project was handed over,
-     read by the PO payment schedule to make retention payable. Answers 'unknown'
-     until phase 3 replaces the body with a read of public.project_handovers;
-     'unknown' keeps retention closed (fail closed). */
+     read by the PO payment schedule to make retention payable. Phase 3's
+     readProjectHandoverState reads public.project_handovers; no project, no
+     connection or a failed read answers 'unknown', which keeps retention closed
+     (fail closed). */
 
-import type { RenoDb } from './renovation-db';
+import { renoDbOf, type RenoDb, type UnsafeRunner } from './renovation-db';
+import { d1FromRenoDb } from '../../services/renovation/dbBridge';
+import { onContractLinesChanged } from '../../services/renovation/contractSync';
+import { readProjectHandoverState } from '../../services/renovation/handover';
 
 export type RenovationSoLinesListener = (docNo: string) => Promise<void> | void;
 
@@ -24,7 +33,14 @@ export function registerRenovationSoLinesListener(fn: RenovationSoLinesListener)
   };
 }
 
-export async function onRenovationSoLinesChanged(docNo: string): Promise<void> {
+export async function onRenovationSoLinesChanged(docNo: string, db?: RenoDb | UnsafeRunner | null): Promise<void> {
+  if (db) {
+    try {
+      await onContractLinesChanged(d1FromRenoDb(renoDbOf(db)), docNo);
+    } catch (err) {
+      console.error(`[renovation] project refresh after lines changed failed for ${docNo}:`, err);
+    }
+  }
   for (const fn of [...listeners]) {
     try {
       await fn(docNo);
@@ -36,7 +52,12 @@ export async function onRenovationSoLinesChanged(docNo: string): Promise<void> {
 
 export type HandoverState = 'handed_over' | 'not_handed_over' | 'unknown';
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function projectHandoverState(_db: RenoDb | unknown, _projectId: number | null): Promise<HandoverState> {
-  return 'unknown';
+export async function projectHandoverState(db: RenoDb | UnsafeRunner | null | undefined, projectId: number | null): Promise<HandoverState> {
+  if (!db || projectId == null) return 'unknown';
+  try {
+    return await readProjectHandoverState(d1FromRenoDb(renoDbOf(db)), Number(projectId));
+  } catch (err) {
+    console.error('[renovation] handover state read failed', err);
+    return 'unknown';
+  }
 }

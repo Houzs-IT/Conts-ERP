@@ -14,6 +14,7 @@ import { renovationApi, type OpenLine } from "../pages/projects/renovation/renov
 import { errorText } from "../pages/projects/renovation/renovationModel";
 import { SignaturePad, canvasBlob, readGps, type GpsFix } from "../pages/projects/renovation/renovationUi";
 import { useQuery } from "../hooks/useQuery";
+import { HEIC_ACCEPT, toUploadableImage } from "../lib/heicToJpeg";
 
 export type PhotoKind = "in_place" | "supplier_do" | "after" | "before" | "defect";
 
@@ -56,10 +57,24 @@ export function MobileSiteReceipt({ projectId, projectName, onBack, onDone }: { 
 
   const problems = siteReceiptProblems(lines, picks, photos, supSigned, custSigned, custName);
 
-  function addPhotos(kind: PhotoKind, files: FileList | null) {
+  /* iPhone HEIC photos become JPEG here, when picked, so a photo that cannot be
+     converted is refused at once instead of at "Confirm received". */
+  async function addPhotos(kind: PhotoKind, files: FileList | null) {
     if (!files) return;
     const room = rooms[0] ?? "";
-    setPhotos((xs) => [...xs, ...[...files].map((f, i) => ({ id: `${Date.now()}-${i}-${f.name}`, kind, file: f, room }))]);
+    const picked = [...files];
+    const ready: StagedPhoto[] = [];
+    const failures: string[] = [];
+    for (const [i, f] of picked.entries()) {
+      try {
+        const file = await toUploadableImage(f);
+        ready.push({ id: `${Date.now()}-${i}-${file.name}`, kind, file, room });
+      } catch (e) {
+        failures.push(e instanceof Error ? e.message : String(e));
+      }
+    }
+    if (ready.length > 0) setPhotos((xs) => [...xs, ...ready]);
+    setError(failures[0] ?? null);
   }
 
   async function submit() {
@@ -186,14 +201,14 @@ export function MobileSiteReceipt({ projectId, projectName, onBack, onDone }: { 
   );
 }
 
-function PhotoButton({ label, onFiles }: { label: string; onFiles: (f: FileList | null) => void }) {
+function PhotoButton({ label, onFiles }: { label: string; onFiles: (f: FileList | null) => void | Promise<void> }) {
   const ref = useRef<HTMLInputElement>(null);
   return (
     <>
       <button type="button" onClick={() => ref.current?.click()} className="flex items-center justify-center gap-1 rounded-md border border-border py-3 text-sm text-ink">
         <Camera size={16} />{label}
       </button>
-      <input ref={ref} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} aria-label={label} />
+      <input ref={ref} type="file" accept={`image/*,${HEIC_ACCEPT}`} capture="environment" multiple className="hidden" onChange={(e) => { const files = e.target.files; void onFiles(files); e.target.value = ""; }} aria-label={label} />
     </>
   );
 }
