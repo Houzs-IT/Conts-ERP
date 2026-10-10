@@ -105,7 +105,7 @@ const TONE_FG: Record<Tone, string> = {
 };
 
 /* ------------------------------ local modal ------------------------------ */
-const inputCls = 'block w-full box-border h-10 py-0 px-3 text-ink bg-white border border-line rounded-control outline-none [font:inherit]';
+const inputCls = 'block w-full box-border h-10 py-0 px-3 text-ink bg-white border border-line rounded-control outline-none [font-family:inherit] text-copy';
 const labelCls = 'text-meta font-medium text-muted-ink';
 
 function Modal({ title, sub, onClose, children, footer, busy }: {
@@ -373,7 +373,7 @@ export default function TasksPage() {
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <Card style={{ overflow: 'visible' }}>
-        <div className="flex gap-2 flex-wrap items-center py-3 px-4 md:px-5 [border-bottom:1px_solid_var(--color-line-soft)] bg-page">
+        <div className="flex gap-2 flex-wrap items-center py-3 px-4 md:px-5 [border-bottom:1px_solid_var(--color-line-soft)] bg-page rounded-t-card">
           <div className="relative flex-[1_1_200px] min-w-[200px]">
             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-ink flex"><Icon name="Search" size="sm" /></span>
             <input value={qDraft} onChange={e => setQDraft(e.target.value)} placeholder="Unit, building or work" aria-label="Search tasks"

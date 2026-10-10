@@ -1,5 +1,6 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { stayMonths, metrics, groupBy } from '../../_lib/revenue';
 
 /** GET /api/portfolio/performance?period=2026-09 (a month) or ?period=2026-q3 (a quarter, to
  *  today if the quarter isn't over yet) — one row per listed unit. */
@@ -37,20 +38,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const rows = await all<any>(env, `
     SELECT u.id, u.unit_number, u.readiness, p.id AS property_id, p.name AS property_name, o.display_name AS owner_name,
-           COALESCE(SUM(r.collected_revenue), 0) AS revenue,
-           COALESCE(SUM(r.check_out::date - r.check_in::date), 0) AS nights,
            (SELECT ROUND(AVG(v.rating)::numeric, 2) FROM reviews v WHERE v.unit_id = u.id) AS rating,
            (SELECT COUNT(*) FROM maintenance_issues mi WHERE mi.unit_id = u.id AND mi.state != 'resolved') AS open_issues
     FROM units u
     JOIN properties p ON p.id = u.property_id
     JOIN owners o ON o.id = u.owner_id
-    LEFT JOIN reservations r ON r.unit_id = u.id
-      AND r.state IN ('confirmed','checked_in','checked_out')
-      AND r.channel NOT IN ('maintenance_block','owner_stay')
-      AND r.check_in >= ? AND r.check_in < ?
     WHERE u.is_listed = 1
-    GROUP BY u.id, p.id, p.name, o.display_name
-    ORDER BY p.name, u.unit_number`, dateFrom, dateToExclusive);
+    ORDER BY p.name, u.unit_number`);
+  // functions/_lib/revenue.ts: gross value and nights split by night into the window (a quarter to date stops today).
+  const byUnit = groupBy(await stayMonths(env, dateFrom, dateToExclusive, { listedOnly: true }), r => r.unit_id);
 
   const exception = (r: any) =>
     r.readiness === 'maintenance' || r.readiness === 'blocked' ? { label: 'Off sale', tone: 'warning' }
@@ -64,14 +60,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     units: rows.length,
     buildings: new Set(rows.map(r => r.property_id)).size,
     rows: rows.map(r => {
-      const revenue = Number(r.revenue), nights = Number(r.nights);
+      const m = metrics(byUnit.get(r.id) ?? [], days);
       return {
         unitId: r.id, unitNumber: r.unit_number, propertyId: r.property_id, propertyName: r.property_name, ownerName: r.owner_name,
-        nights,
-        occupancy: Math.min(100, Number(((nights / days) * 100).toFixed(1))),
-        adr: finance && nights ? Math.round(revenue / nights) : 0,
-        revpar: finance ? Math.round(revenue / days) : 0,
-        revenue: finance ? revenue : 0,
+        nights: m.nights,
+        occupancy: m.occupancy,
+        adr: finance ? m.adr : 0,
+        revpar: finance ? m.revpar : 0,
+        revenue: finance ? m.gross : 0,
         rating: r.rating === null ? null : Number(r.rating),
         exception: exception(r),
       };

@@ -62,7 +62,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       state: r.state, method: METHOD_LABEL[r.method] ?? r.method,
       // Never the full account number, only the tail.
       bankName: r.bank_name, bankLast4: r.bank_account_last4,
-      paidAt: r.paid_at, failureReason: r.failure_reason,
+      paidAt: r.paid_at, failureReason: r.failure_reason, source: r.source ?? 'generated',
     })),
   });
 };

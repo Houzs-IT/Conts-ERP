@@ -72,12 +72,14 @@ export const SYNC: Entry<SyncState> = {
  * brand guide 14.4. Every calendar block also prints its label.
  */
 export const CHANNEL: Record<BookingChannel, { label: string; color: string; border: 'solid' | 'dashed' | 'dotted'; tint: string; ink: string }> = {
-  airbnb:            { label: 'Airbnb',       color: '#242424', border: 'solid',  tint: '#F1F0ED', ink: '#252525' },
-  booking_com:       { label: 'Booking.com',  color: '#2E6DA4', border: 'solid',  tint: '#EAF2FA', ink: '#255C8A' },
-  agoda:             { label: 'Agoda',        color: '#6B4E9E', border: 'solid',  tint: '#F1ECF8', ink: '#54397F' },
-  direct:            { label: 'Direct',       color: '#16845B', border: 'solid',  tint: '#E9F5EF', ink: '#11694A' },
+  // The design's real platform colours (Desktop design, calendar), so a block's source reads before its name.
+  // Direct is gold on purpose: it is The Conts' own channel. ink is AA on tint for every channel.
+  airbnb:            { label: 'Airbnb',       color: '#FF5A5F', border: 'solid',  tint: '#FFF0F0', ink: '#B3383C' },
+  booking_com:       { label: 'Booking.com',  color: '#003B95', border: 'solid',  tint: '#EAF0FA', ink: '#003B95' },
+  agoda:             { label: 'Agoda',        color: '#5C2D91', border: 'solid',  tint: '#F2ECF9', ink: '#4A2475' },
+  direct:            { label: 'Direct',       color: '#C8A46A', border: 'solid',  tint: '#FBF7F0', ink: '#8A6A2F' },
   maintenance_block: { label: 'Block',        color: '#C2413B', border: 'dashed', tint: '#FCECEB', ink: '#A8352F' },
-  owner_stay:        { label: 'Owner stay',   color: '#706D67', border: 'dotted', tint: '#FAF9F6', ink: '#706D67' },
+  owner_stay:        { label: 'Owner stay',   color: '#706D67', border: 'dotted', tint: '#FAF9F6', ink: '#5C5952' },
 };
 
 /** Tone → the three token roles. -fg is the only one legal for text. */

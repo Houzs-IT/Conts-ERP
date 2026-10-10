@@ -139,6 +139,15 @@ export function ContractFields({ u, canEdit, onChange }: { u: Unit; canEdit: boo
         <Labeled label="Start date" hint="DATE"><Field label="" aria-label="Contract start date" type="date" value={c.startedOn} onChange={e => onChange({ contract: { ...c, startedOn: e.target.value } })} /></Labeled>
         <Labeled label="Renews on" hint="DATE"><Field label="" aria-label="Contract renewal date" type="date" value={c.renewsOn} onChange={e => onChange({ contract: { ...c, renewsOn: e.target.value } })} /></Labeled>
       </Grid3>
+      {c.minimumGuarantee !== undefined && (u.pkg === 'Package D' || c.minimumGuarantee > 0) && (
+        <Grid3>
+          <Labeled label="Package D monthly minimum" hint="AMOUNT" help="The owner is paid at least this a month. From the owner workbook; read-only here.">
+            <ReadOnly>{c.minimumGuarantee > 0 ? rm(c.minimumGuarantee) : 'Not set'}{c.minimumGuaranteeAnnual ? ` (${rm(c.minimumGuaranteeAnnual)} a year)` : ''}</ReadOnly>
+          </Labeled>
+          <Labeled label="Minimum applies from" hint="DATE"><ReadOnly>{c.guaranteeStartsOn ? date(c.guaranteeStartsOn) : 'Not set'}</ReadOnly></Labeled>
+          <Labeled label="Minimum applies until" hint="DATE"><ReadOnly>{c.guaranteeEndsOn ? date(c.guaranteeEndsOn) : 'No end date'}</ReadOnly></Labeled>
+        </Grid3>
+      )}
     </fieldset>
   );
 }

@@ -5,7 +5,7 @@ import type { Tone, UnitReadiness, TaskState, BookingChannel, ReservationState }
 
 export const BANKS = ['MBBE', 'PBBB', 'CIBB', 'RHBB', 'HLBB', 'AMBB', 'BIMB', 'UOVB', 'OCBC'];
 export const STATES = ['Kuala Lumpur', 'Selangor', 'Penang', 'Johor', 'Melaka', 'Perak', 'Negeri Sembilan'];
-export const PACKAGES = ['Package A', 'Package B', 'Package C'];
+export const PACKAGES = ['Package A', 'Package B', 'Package C', 'Package D'];
 export const TERMS = ['Long term', 'Short term'];
 export const SPLITS = ['Not set', 'Profit share', 'GRR — guaranteed rent'];
 
@@ -41,7 +41,11 @@ export interface Unit {
   /** Sen. Present only for roles that see money; saved through PUT /api/rates, not the unit PATCH. */
   baseRate?: number;
   expenses: Expense[];
-  contract: { feePct: number; startedOn: string; renewsOn: string; documents: { id: string; name: string }[] };
+  contract: {
+    feePct: number; startedOn: string; renewsOn: string; documents: { id: string; name: string }[];
+    /** Package D's monthly minimum, sen, from the contract (read-only). Only for roles that see money. */
+    minimumGuarantee?: number; minimumGuaranteeAnnual?: number | null; guaranteeStartsOn?: string | null; guaranteeEndsOn?: string | null;
+  };
 }
 export interface Building { id: string; name: string; city: string; state: string }
 export interface PropertiesPayload { buildings: Building[]; units: Unit[]; generatedAt: string }
