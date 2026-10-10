@@ -1,0 +1,44 @@
+# Publishes the supply chain engine (engine/) to PRODUCTION from GitHub, by hand only.
+# Runs the same steps as `node scripts/engine-production.mjs deploy` / `screens` on the owner's machine,
+# so the same safety check applies: the script refuses unless engine/backend/wrangler.production.toml names
+# only Conts's production worker, bucket and settings. Uses the repository secret CLOUDFLARE_API_TOKEN
+# (Conts ERP account). "screens" needs Pages > Edit; "server" needs Workers Scripts > Edit on that token,
+# and fails with an authentication error until the owner adds it.
+name: Deploy engine to production
+on:
+  workflow_dispatch:
+    inputs:
+      part:
+        description: 'What to publish'
+        required: true
+        default: both
+        type: choice
+        options: [both, screens, server]
+concurrency: deploy-engine-production
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 3a9ff01edda85702f9e2649fb340f1cc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install engine server
+        if: inputs.part != 'screens'
+        run: npm ci
+        working-directory: engine/backend
+      - name: Publish engine server
+        if: inputs.part != 'screens'
+        # A token without Workers permission must not stop the screens from publishing; the run still shows red.
+        continue-on-error: true
+        run: node scripts/engine-production.mjs deploy
+      - name: Install and build engine screens
+        if: inputs.part != 'server'
+        run: npm ci && npm run build
+        working-directory: engine/frontend
+      - name: Publish engine screens
+        if: inputs.part != 'server'
+        run: node scripts/engine-production.mjs screens
