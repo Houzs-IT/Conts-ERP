@@ -1,14 +1,14 @@
 import { call, check, done } from './harness.mjs';
 const U1 = '55555555-5555-4555-8555-000000000001';
 // pricing
-let r = await call('GET', '/api/pricing/rules'); check('pricing rules shape', r.status === 200 && r.json.units.every(u => 'costFloor' in u && u.rates.length === 3 && u.rates.every(x => 'upliftSen' in x && x.sync)) && r.json.weekendMultiplier > 1, r.text.slice(0, 300));
+let r = await call('GET', '/api/pricing/rules'); check('pricing rules shape', r.status === 200 && r.json.units.every(u => 'costFloor' in u && u.rates.length === 3 && u.rates.every(x => 'upliftSen' in x && x.sync)) && r.json.units.every(u => 'weekendRate' in u), r.text.slice(0, 300));
 r = await call('PUT', '/api/rates', { unitId: U1, baseRate: 30000 }); check('set base rate', r.status === 200, r.text);
 r = await call('PUT', '/api/rates', { unitId: U1, baseRate: 0 }); check('zero base rate 422', r.status === 422, r.text);
 r = await call('PUT', '/api/rates', { unitId: U1, costFloor: 12000 }); check('set cost floor', r.status === 200, r.text);
 r = await call('PUT', '/api/rates', { unitId: U1, channel: 'airbnb', uplift: 4000 }); check('set uplift', r.status === 200, r.text);
 r = await call('PUT', '/api/rates', { unitId: U1, channel: 'direct', uplift: 4000 }); check('uplift on direct 422', r.status === 422, r.text);
 r = await call('GET', '/api/pricing/rules'); const pu = r.json.units.find(u => u.unitId === U1); check('pricing persisted', pu.baseRate === 30000 && pu.costFloor === 12000 && pu.rates.find(x => x.channel === 'airbnb').upliftSen === 4000, JSON.stringify(pu));
-r = await call('POST', '/api/rates/bulk', { unitIds: [U1], channels: ['direct', 'airbnb'], from: '2026-12-04', to: '2026-12-06', baseRate: 30000, uplifts: { airbnb: 4000 } }); check('pricing push (held, not sent)', r.status === 200 && r.json.written === 6, r.text);
+r = await call('POST', '/api/rates/bulk', { unitIds: [U1], channels: ['direct', 'airbnb'], from: '2026-12-04', to: '2026-12-06', baseRate: 30000, uplifts: { airbnb: 4000 } }); check('pricing push (held, not sent; Airbnb skipped, not connected)', r.status === 200 && r.json.written === 3 && r.json.skipped?.airbnb === 1, r.text);
 r = await call('GET', '/api/reservations/calendar?from=2026-12-04&to=2026-12-07'); check('weekend uplift applied (Fri 4 Dec airbnb = (30000+4000)*1.22)', r.json.rates[`${U1}:airbnb:2026-12-04`] === Math.round(34000 * 1.22) && r.json.rates[`${U1}:web:2026-12-06`] === 30000, JSON.stringify(r.json.rates));
 r = await call('PUT', '/api/rates', { unitId: U1, baseRate: 1 }, 'housekeeper'); check('field role cannot price 403', r.status === 403, r.text);
 // reviews
