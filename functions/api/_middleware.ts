@@ -3,6 +3,7 @@ import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimit
 import { doorFor, doorRefusal } from '../_lib/door';
 import { accessFor, refusalFor } from '../_lib/access';
 import { flushWhenQuiet, FLUSH_DELAY_MS } from '../_lib/channexQueue';
+import { twoStepSetupDue } from '../_lib/signIn';
 
 /**
  * Runs before every /api endpoint. Most endpoints only check that someone is signed
@@ -13,6 +14,9 @@ const OWNER_ALLOWED: [string, RegExp][] = [
   ['GET', /^\/api\/auth\/session$/],
   ['POST', /^\/api\/auth\/logout$/],
   ['POST', /^\/api\/auth\/change-password$/],
+  // My account: their own password, two-step sign-in, recent sign-ins, signing out other devices.
+  ['GET', /^\/api\/account$/],
+  ['POST', /^\/api\/account\/[a-z0-9/-]+$/],
   ['GET', /^\/api\/owner\/(summary|trend|property-health|documents)$/],
   ['GET', /^\/api\/owner\/statements\/[^/]+(\/pdf)?$/],
   // The Owner Income Report: the handler resolves the owner from the session (ownerFor) and shows only their final statements.
@@ -27,9 +31,12 @@ const SUPPLY_CHAIN = /^\/api\/(consignment-notes|customers|delivery-orders|deliv
 const MONEY_ONLY = /^\/api\/(payment-vouchers|purchase-invoices|sales-invoices|unbilled-deliveries|credit-notes|accounting)(\/|$)/;
 
 const PUBLIC = new Set([
-  'POST /api/auth/login', 'POST /api/auth/forgot-password',
+  'POST /api/auth/login', 'POST /api/auth/login-2fa', 'POST /api/auth/forgot-password',
   'GET /api/auth/reset-password', 'POST /api/auth/reset-password',
 ]);
+
+/** What someone who must still set up two-step sign-in can reach. */
+const SETUP_ALLOWED = /^(GET \/api\/auth\/session|POST \/api\/auth\/(logout|change-password)|GET \/api\/account|POST \/api\/account\/.+)$/;
 
 export const onRequest: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => {
   const route = `${request.method} ${new URL(request.url).pathname.replace(/\/+$/, '')}`;
@@ -42,7 +49,8 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, next, waitUn
   // users on every request (one query, shared with the security settings below), so switching someone
   // off or changing their role on Users and roles takes effect on their very next click.
   const live = await sessionState(env, signed.userId);
-  if (!live.user?.active) {
+  // A cookie signed before management's "Sign out everywhere" (or a password reset) is refused the same way.
+  if (!live.user?.active || signed.iat < live.user.revokedAt) {
     return new Response(JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: 'This account has been switched off or changed. Sign in again, or ask management.' } }),
       { status: 401, headers: { 'content-type': 'application/json; charset=utf-8', 'set-cookie': clearCookie(request) } });
   }
@@ -56,6 +64,12 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, next, waitUn
     const headers = new Headers(request.headers);
     headers.set('cookie', (request.headers.get('cookie') ?? '').replace(/tc_session=[^;]+/, `tc_session=${token}`));
     forward = new Request(request, { headers }) as typeof request;
+  }
+
+  // Management requires two-step sign-in for this role and this person has not set it up: until they do,
+  // only their own account screen answers.
+  if (!SETUP_ALLOWED.test(route) && await twoStepSetupDue(env, live.settings, session.role, live.user.twoFactorOn)) {
+    return fail('TWO_STEP_REQUIRED', 'Set up two-step sign-in on My account before using the rest of the system.', 403);
   }
 
   const refusal = doorRefusal(doorFor(request), session.role);

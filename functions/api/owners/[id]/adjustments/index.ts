@@ -1,4 +1,5 @@
-import { type Env, all, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
+import { type Env, all, one, json, fail, nowIso } from '../../../../_lib/db';
+import { stage } from '../../../../_lib/approvals';
 import { requireSession } from '../../../../_lib/auth';
 import { mayChangeAdjustments as mayChange } from '../../../../_lib/ownerScope';
 
@@ -40,7 +41,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 };
 
 /** POST /api/owners/:id/adjustments { kind: 'credit'|'charge', amount (sen, > 0), description, occurredOn, unitId? }
- *  A manual credit (adds to the payout) or charge (deducts). It is open, so the next statement generated for a
+ *  A manual credit (adds to the payout) or charge (deducts), staged for approval (202). Once approved it is open, so the next statement generated for a
  *  month ending on or after occurredOn carries it. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
@@ -60,10 +61,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (unitId && !await one(env, 'SELECT 1 AS x FROM units WHERE id = ? AND owner_id = ?', unitId, ownerId)) fields.unitId = 'That unit is not this owner\'s.';
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the highlighted fields.', 422, fields);
 
-  const id = crypto.randomUUID(), now = nowIso(), signed = kind === 'credit' ? amount : -amount;
-  await run(env, `INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, state, source, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'open', 'manual', ?, ?, ?)`, id, ownerId, unitId, kind, signed, description, occurredOn, session.userId, now, now);
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'owner_adjustment.create', entityTable: 'owner_adjustments', entityId: id,
-    after: { ownerId, kind, amount: signed, occurredOn, state: 'open' } });
-  return json({ id }, 201);
+  // A credit pays the owner more and a charge changes what they are paid: both wait for a second person
+  // (functions/_lib/approvals.ts), which creates the open adjustment once approved.
+  const signed = kind === 'credit' ? amount : -amount;
+  const owner = await one<{ display_name: string }>(env, 'SELECT display_name FROM owners WHERE id = ?', ownerId);
+  const reason = String(b?.reason ?? '').trim() || description;
+  const staged = await stage(env, session, {
+    kind: 'owner_adjustment', entity: 'owners', entityId: ownerId, amount, reason,
+    summary: `${kind === 'credit' ? 'Credit' : 'Charge'} RM ${(amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })} ${kind === 'credit' ? 'to' : 'against'} ${owner?.display_name ?? 'owner'}: ${description}`,
+    payload: { ownerId, unitId, kind, amount: signed, description, occurredOn },
+  });
+  return json(staged, 202);
 };

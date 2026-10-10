@@ -1,7 +1,7 @@
 import type { UserRole, AccessLevel } from './types';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
-export type BadgeKey = 'today' | 'maintenance' | 'inbox' | 'statements';
+export type BadgeKey = 'today' | 'maintenance' | 'inbox' | 'statements' | 'approvals';
 /** The sidebar shows one workspace at a time. Rental is the daily work; supply chain sits behind the switch. */
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
@@ -52,6 +52,8 @@ export const NAV: NavGroup[] = [
     { key: 'statements', label: 'Owner statements', icon: 'receipt', path: '/finance/statements', area: 'finance', badge: 'statements' },
     { key: 'payouts', label: 'Payouts', icon: 'banknote', path: '/finance/payouts', area: 'finance' },
     { key: 'expenses', label: 'Expenses', icon: 'wallet', path: '/finance/expenses', area: 'finance' },
+    { key: 'approvals', label: 'Approvals', icon: 'stamp', path: '/finance/approvals', area: 'finance', badge: 'approvals' },
+    { key: 'guestDocuments', label: 'Guest documents', icon: 'file-text', path: '/finance/documents', area: 'finance' },
   ] },
   { label: 'GROWTH', workspace: 'rental', items: [
     { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'performance' },

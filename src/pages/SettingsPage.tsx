@@ -11,6 +11,7 @@ import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import { useSession } from '../lib/session';
+import { ROLE_LABEL } from '../lib/vocabulary';
 
 /* ------------------------------------------------------------------ *
  * Settings — organisation-wide defaults (routes.json → SYSTEM →
@@ -25,7 +26,7 @@ import { useSession } from '../lib/session';
  * always visible whether or not the endpoint answers.
  * ------------------------------------------------------------------ */
 
-type SectionKey = 'company' | 'locale' | 'operations' | 'statements' | 'report' | 'security';
+type SectionKey = 'company' | 'locale' | 'operations' | 'statements' | 'report' | 'approvals' | 'security';
 
 interface Settings {
   company: { legalName: string; companyNumber: string; address: string; supportPhone: string; supportEmail: string };
@@ -34,9 +35,13 @@ interface Settings {
   statements: { cycleDay: number; autoGenerate: boolean; payoutMethod: string };
   /** The Owner Income Report's wording; miscChargeMonthly is sen. Terms are one per line. */
   report: { paymentTerms: string; monthlyTerms: string; yearTerms: string; miscChargeMonthly: number };
+  /** Maker-checker limits, sen (functions/_lib/approvals.ts). */
+  approvals: { expenseThreshold: number; financeAdminLimit: number };
   security: {
     staffInactivityTimeoutMins: number; ownerInactivityTimeoutMins: number;
     absoluteTimeoutHours: number; lockoutAttempts: number; lockoutMinutes: number;
+    /** Comma-separated roles that must use two-step sign-in. */
+    require2faRoles: string;
   };
   generatedAt: string;
 }
@@ -54,10 +59,12 @@ const FALLBACK: Settings = {
   operations: { checkIn: '15:00', checkOut: '11:00', cleaningWindowHours: 4, linenSets: 2, photoRequiredToMarkReady: true },
   statements: { cycleDay: 1, autoGenerate: true, payoutMethod: 'bank_transfer' },
   report: { paymentTerms: '7th every month', monthlyTerms: '', yearTerms: '', miscChargeMonthly: 10000 },
-  security: { staffInactivityTimeoutMins: 10080, ownerInactivityTimeoutMins: 480, absoluteTimeoutHours: 720, lockoutAttempts: 5, lockoutMinutes: 15 },
+  approvals: { expenseThreshold: 50000, financeAdminLimit: 200000 },
+  security: { staffInactivityTimeoutMins: 10080, ownerInactivityTimeoutMins: 480, absoluteTimeoutHours: 720, lockoutAttempts: 5, lockoutMinutes: 15, require2faRoles: '' },
 };
 
 /* -------------------------------- options -------------------------------- */
+const TWO_STEP_ROLES = ['management', 'finance_admin', 'operations_manager', 'operations_staff', 'housekeeper', 'technician', 'owner'];
 const LOCALES = [
   { value: 'en-MY', label: 'English (Malaysia)' },
   { value: 'ms-MY', label: 'Bahasa Melayu (planned)', disabled: true },
@@ -221,6 +228,7 @@ export default function SettingsPage() {
     operations: { ...base.operations, ...saved.operations },
     statements: { ...base.statements, ...saved.statements },
     report: { ...base.report, ...saved.report },
+    approvals: { ...FALLBACK.approvals, ...base.approvals, ...saved.approvals },
     security: { ...base.security, ...saved.security },
   }), [base, saved]);
 
@@ -261,7 +269,7 @@ export default function SettingsPage() {
   }
 
   const MESSAGES: Record<SectionKey, { title: string; body?: string }> = {
-    company: { title: 'Company details saved.', body: 'They appear on statements, invoices and guest messages.' },
+    company: { title: 'Company details saved.', body: 'They appear on the letterhead of statements, invoices and receipts.' },
     locale: { title: 'Locale and money settings saved.', body: 'New documents use the updated timezone, currency and date format.' },
     operations: { title: 'Operations defaults saved.', body: 'New reservations and cleaning tasks use these times.' },
     statements: {
@@ -271,6 +279,7 @@ export default function SettingsPage() {
         : 'Automatic generation is off. Generate statements manually each period.',
     },
     report: { title: 'Owner report wording saved.', body: 'Reports opened from now on use it. The miscellaneous charge applies to statements generated from now on.' },
+    approvals: { title: 'Approval limits saved.', body: 'New requests and decisions use them from now on.' },
     security: { title: 'Security settings saved.', body: 'Takes effect immediately, including for anyone already signed in.' },
   };
 
@@ -305,7 +314,7 @@ export default function SettingsPage() {
           {/* --------------------------- Company --------------------------- */}
           <SectionCard
             title="Company"
-            description="Legal identity and support contacts. The Owner Income Report prints these on its letterhead."
+            description="Legal identity and support contacts, printed on the letterhead of every owner statement, guest invoice and official receipt."
             readOnly={readOnly} dirty={dirty('company')} busy={busy === 'company'} saveLabel="Save company"
             onSave={() => save('company')} onDiscard={() => discard('company')}
           >
@@ -497,10 +506,37 @@ export default function SettingsPage() {
             />
           </SectionCard>
 
+          {/* --------------------------- Approvals -------------------------- */}
+          <SectionCard
+            title="Approvals"
+            description="Money leaving the company needs a second person: guest refunds, payout runs, owner credits and charges, debt write-offs, and expenses above the amount below. Nobody approves their own request, except the only management user, with a written reason."
+            readOnly={readOnly} dirty={dirty('approvals')} busy={busy === 'approvals'} saveLabel="Save approvals"
+            onSave={() => save('approvals')} onDiscard={() => discard('approvals')}
+          >
+            <Grid>
+              <Field
+                label="Expenses need approval above (RM)"
+                type="number" numeric min={0} step="0.01"
+                value={draft.approvals.expenseThreshold / 100}
+                error={errors['approvals.expenseThreshold']}
+                help="An expense of this amount or less is recorded at once."
+                onChange={e => patch('approvals', { expenseThreshold: Math.max(0, Math.round(Number(e.target.value) * 100) || 0) }, 'approvals.expenseThreshold')}
+              />
+              <Field
+                label="Finance admins approve below (RM)"
+                type="number" numeric min={0} step="0.01"
+                value={draft.approvals.financeAdminLimit / 100}
+                error={errors['approvals.financeAdminLimit']}
+                help="From this amount up, only management can approve. Management approves any amount."
+                onChange={e => patch('approvals', { financeAdminLimit: Math.max(0, Math.round(Number(e.target.value) * 100) || 0) }, 'approvals.financeAdminLimit')}
+              />
+            </Grid>
+          </SectionCard>
+
           {/* --------------------------- Security --------------------------- */}
           <SectionCard
             title="Security"
-            description="Session lifetimes and the account lockout threshold. Staff and owners are timed out separately — the owner portal is a brief, occasional check-in, so it defaults much shorter."
+            description="Session lifetimes, the account lockout threshold and who must use two-step sign-in. Staff and owners are timed out separately — the owner portal is a brief, occasional check-in, so it defaults much shorter."
             readOnly={readOnly} dirty={dirty('security')} busy={busy === 'security'} saveLabel="Save security"
             onSave={() => save('security')} onDiscard={() => discard('security')}
           >
@@ -547,6 +583,28 @@ export default function SettingsPage() {
                 onChange={e => patch('security', { lockoutMinutes: clampInt(e.target.value, 1, 120, draft.security.lockoutMinutes) })}
               />
             </Grid>
+            <fieldset className="m-0 mt-5 p-0 border-none flex flex-col gap-2.5">
+              <legend className="p-0 mb-2.5 text-meta font-medium text-muted-ink">Require two-step sign-in for</legend>
+              <div className="flex flex-wrap gap-x-5 gap-y-2">
+                {TWO_STEP_ROLES.map(r => {
+                  const on = draft.security.require2faRoles.split(',').includes(r);
+                  return (
+                    <label key={r} className={cx('flex items-center gap-2 min-h-8 text-copy', readOnly ? 'cursor-default text-muted-ink' : 'cursor-pointer')}>
+                      <input type="checkbox" className="w-4 h-4" checked={on} disabled={readOnly}
+                        onChange={() => {
+                          const set = new Set(draft.security.require2faRoles.split(',').filter(Boolean));
+                          if (on) set.delete(r); else set.add(r);
+                          patch('security', { require2faRoles: TWO_STEP_ROLES.filter(x => set.has(x)).join(',') });
+                        }} />
+                      {ROLE_LABEL[r] ?? r}
+                    </label>
+                  );
+                })}
+              </div>
+              <span className="text-meta text-muted-ink leading-[1.5]">
+                People in a ticked role who have not set it up are asked to at their next click, and can do nothing else until they have. Each person sets it up on My account; management can reset it for a lost phone from Users and roles.
+              </span>
+            </fieldset>
           </SectionCard>
 
         </div>

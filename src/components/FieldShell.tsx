@@ -1,4 +1,5 @@
 import { type ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
 import { color, radius, text } from '../theme';
 import { useSession } from '../lib/session';
 import { Logo } from './Logo';
@@ -10,6 +11,7 @@ import { humanize } from '../lib/format';
  *  One column, 44px targets, and the whole page scrolls normally. */
 export default function FieldShell({ children }: { children: ReactNode }) {
   const { user, logout } = useSession();
+  const atAccount = useLocation().pathname === '/account';
   return (
     <div style={{ flex: 1, minHeight: '100vh', display: 'flex', flexDirection: 'column', background: color.page }}>
       <header style={{
@@ -21,6 +23,10 @@ export default function FieldShell({ children }: { children: ReactNode }) {
           <span style={{ fontSize: text.copy, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user!.fullName}</span>
           <span style={{ fontSize: text.caption, color: color.dim }}>{ROLE_LABEL[user!.role] ?? humanize(user!.role)}</span>
         </div>
+        <a href={atAccount ? '#/' : '#/account'} aria-label={atAccount ? 'Back to today' : 'My account'} title={atAccount ? 'Back to today' : 'My account'}
+          style={{ width: 44, height: 44, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.control, border: '1px solid rgba(255,255,255,0.14)', color: color.onDark }}>
+          <Icon name={atAccount ? 'House' : 'ShieldCheck'} size="nav" />
+        </a>
         <button onClick={logout} aria-label="Log out"
           style={{ width: 44, height: 44, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.control, background: 'transparent', border: '1px solid rgba(255,255,255,0.14)', color: color.onDark, cursor: 'pointer' }}>
           <Icon name="LogOut" size="nav" />

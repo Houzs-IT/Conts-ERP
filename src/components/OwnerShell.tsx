@@ -1,4 +1,5 @@
 import { type ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
 import { color, text } from '../theme';
 import { useSession } from '../lib/session';
 import { Logo } from './Logo';
@@ -8,6 +9,7 @@ import { Button } from './Button';
 /** Owners get one page and no staff navigation: a dark bar, their name, log out. */
 export default function OwnerShell({ children }: { children: ReactNode }) {
   const { user, logout } = useSession();
+  const atAccount = useLocation().pathname === '/account';
   return (
     <div style={{ flex: 1, minHeight: '100vh', display: 'flex', flexDirection: 'column', background: color.page }}>
       <header style={{
@@ -19,6 +21,10 @@ export default function OwnerShell({ children }: { children: ReactNode }) {
           <span style={{ fontSize: text.caption, fontWeight: 600, letterSpacing: '0.06em', color: color.gold }}>OWNER PORTAL</span>
           <span style={{ fontSize: text.copy, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user!.fullName}</span>
         </div>
+        <a href={atAccount ? '#/' : '#/account'} aria-label={atAccount ? 'Back to my portal' : 'My account'} title={atAccount ? 'Back to my portal' : 'My account'}
+          style={{ width: 44, height: 44, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 'var(--radius-control)', border: '1px solid rgba(255,255,255,0.14)', color: color.onDark }}>
+          <Icon name={atAccount ? 'House' : 'ShieldCheck'} size="nav" />
+        </a>
         <Button variant="tertiary" size="touch" onClick={logout} icon={<Icon name="LogOut" size="nav" />}
           style={{ flex: 'none', fontSize: text.copy, color: color.onDark, borderColor: 'rgba(255,255,255,0.14)' }}>
           Log out
