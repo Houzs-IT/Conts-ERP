@@ -3,9 +3,9 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import PermissionsChart from '../components/PermissionsChart';
 import UsersSignIns from './UsersSignIns';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
-import { Dialog, type DialogSpec } from '../components/Dialog';
+import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import Icon from '../components/Icon';
 import { Field } from '../components/Field';
 import { Select } from '../components/Select';
@@ -14,7 +14,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
-import { api, ApiFailure } from '../lib/api';
+import { api, ApiFailure, errorMessage } from '../lib/api';
 import { count, date, plural } from '../lib/format';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import { TONE, cx } from '../lib/design-tokens';
@@ -82,11 +82,11 @@ const initials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).jo
 // the border so it does not change the card geometry). Static per-tone literals so
 // the JIT scanner sees each class.
 const ORG_ACCENT: Record<Tone, string> = {
-  success:  '[box-shadow:inset_3px_0_0_var(--color-success-line,#16845B)]',
-  warning:  '[box-shadow:inset_3px_0_0_var(--color-warning-line,#B7791F)]',
-  critical: '[box-shadow:inset_3px_0_0_var(--color-critical-line,#C2413B)]',
-  info:     '[box-shadow:inset_3px_0_0_var(--color-info-line,#2E6DA4)]',
-  neutral:  '[box-shadow:inset_3px_0_0_var(--color-neutral-line,#C7C1B6)]',
+  success:  '[box-shadow:inset_3px_0_0_var(--color-success-line)]',
+  warning:  '[box-shadow:inset_3px_0_0_var(--color-warning-line)]',
+  critical: '[box-shadow:inset_3px_0_0_var(--color-critical-line)]',
+  info:     '[box-shadow:inset_3px_0_0_var(--color-info-line)]',
+  neutral:  '[box-shadow:inset_3px_0_0_var(--color-neutral-line)]',
 };
 
 /** Local modal shell — the shared Dialog is confirmation-only, so form-bearing
@@ -109,7 +109,7 @@ function Modal({ title, sub, onClose, children, footer, width = 460 }: {
           {sub && <p className="m-0 text-copy leading-[1.5] text-muted-ink">{sub}</p>}
         </div>
         <div className="py-4 px-[22px]">{children}</div>
-        <div className="py-3.5 px-[22px] [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page flex justify-end gap-2 flex-wrap sticky bottom-0">{footer}</div>
+        <div className="py-3.5 px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-2 flex-wrap sticky bottom-0">{footer}</div>
       </div>
     </div>
   );
@@ -146,7 +146,7 @@ export default function UsersPage() {
         </span>
       ) },
     { key: 'email', label: 'Email', value: u => u.email, width: 210 },
-    { key: 'phone', label: 'Phone', value: u => u.phone || null, hidden: true, width: 140 },
+    { key: 'phone', label: 'Phone', type: 'phone', value: u => u.phone || null, hidden: true, width: 140 },
     { key: 'role', label: 'Role', type: 'status', value: u => u.role, status: u => ({ label: roleLabel(u.role), tone: roleTone[u.role] }), width: 150 },
     { key: 'manager', label: 'Reports to', type: 'person', value: u => (u.managerId ? nameById[u.managerId] ?? null : null), width: 150 },
     { key: 'lastLogin', label: 'Last sign-in', type: 'date', value: u => u.lastLoginAt, width: 120,
@@ -193,7 +193,7 @@ export default function UsersPage() {
       resetInvite();
     } catch (err) {
       if (err instanceof ApiFailure && err.fields) setFieldErrors(err.fields);
-      toast({ tone: 'critical', title: 'The invitation was not sent.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'The invitation was not sent.', body: errorMessage(err, 'Try again in a moment.') });
       setBusy(false);
     }
   }
@@ -224,7 +224,7 @@ export default function UsersPage() {
       else toast({ tone: 'warning', title: 'Invitation queued, not yet delivered.', body: res.reason ?? 'It will send shortly.' });
       setEditing(null); setConfirm(null);
     } catch (err) {
-      toast({ tone: 'critical', title: 'Could not re-send the invitation.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Could not re-send the invitation.', body: errorMessage(err, 'Try again in a moment.') });
     } finally {
       setBusy(false);
     }
@@ -239,7 +239,7 @@ export default function UsersPage() {
       const res = await api.post<{ link: string; expiresAt: string; email: string }>(`/users/${u.id}/reset-link`, {});
       setResetLink(res);
     } catch (err) {
-      toast({ tone: 'critical', title: 'Could not make a reset link.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Could not make a reset link.', body: errorMessage(err, 'Try again in a moment.') });
     } finally {
       setBusy(false);
     }
@@ -250,7 +250,7 @@ export default function UsersPage() {
   // See functions/api/users/[id]/security.ts.
   const { user: me } = useSession();
   const canManage = me?.role === 'management';
-  const [confirm, setConfirm] = useState<DialogSpec | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   const [tempShown, setTempShown] = useState<{ name: string; email: string; password: string } | null>(null);
 
   async function act(u: Row, call: () => Promise<unknown>, done: string, body?: string) {
@@ -265,7 +265,7 @@ export default function UsersPage() {
       reload();
       setConfirm(null);
     } catch (err) {
-      toast({ tone: 'critical', title: `Nothing changed for ${u.fullName}.`, body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: `Nothing changed for ${u.fullName}.`, body: errorMessage(err, 'Try again in a moment.') });
     } finally {
       setBusy(false);
     }
@@ -370,7 +370,7 @@ export default function UsersPage() {
       setEditing(null);
     } catch (err) {
       if (err instanceof ApiFailure && err.fields) setEditErrors(err.fields);
-      toast({ tone: 'critical', title: `${editing.fullName} was not updated.`, body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: `${editing.fullName} was not updated.`, body: errorMessage(err, 'Try again in a moment.') });
     }
     setBusy(false);
   }
@@ -407,7 +407,7 @@ export default function UsersPage() {
       if (changed) reload();
       setOrgOpen(false);
     } catch (err) {
-      toast({ tone: 'critical', title: 'Reporting line was not saved.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Reporting line was not saved.', body: errorMessage(err, 'Try again in a moment.') });
     }
     setBusy(false);
   }
@@ -432,7 +432,7 @@ export default function UsersPage() {
         )}
       />
 
-      <div role="tablist" aria-label="Users and roles sections" className="flex shrink-0 gap-1 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] overflow-x-auto mt-0.5">
+      <div role="tablist" aria-label="Users and roles sections" className="flex shrink-0 gap-1 [border-bottom:1px_solid_var(--color-line)] overflow-x-auto mt-0.5">
         {tabs.map(t => {
           const on = tab === t.key;
           return (
@@ -443,7 +443,7 @@ export default function UsersPage() {
               onClick={() => setTab(t.key)}
               className={cx(
                 'px-1.5 py-3 mr-4 bg-transparent border-none cursor-pointer font-sans text-copy whitespace-nowrap',
-                on ? 'font-semibold text-ink [box-shadow:inset_0_-2px_0_var(--color-gold,#C8A46A)]' : 'font-normal text-muted-ink',
+                on ? 'font-semibold text-ink [box-shadow:inset_0_-2px_0_var(--color-gold)]' : 'font-normal text-muted-ink',
               )}
             >{t.label}</button>
           );
@@ -474,7 +474,7 @@ export default function UsersPage() {
                 <span className="flex flex-col gap-1 min-w-0 flex-1">
                   <span className="text-copy font-medium truncate" title={u.fullName}>{u.fullName}</span>
                   <span className="text-meta text-muted-ink truncate" title={u.email}>{u.email}</span>
-                  <span className="flex items-center gap-1.5 flex-wrap"><Badge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /><Badge tone={s.tone} label={s.label} size="sm" /></span>
+                  <span className="flex items-center gap-1.5 flex-wrap"><StatusBadge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /><StatusBadge tone={s.tone} label={s.label} size="sm" /></span>
                 </span>
                 <RowActions name={u.fullName} items={actionsFor(u)} />
               </span>
@@ -579,7 +579,7 @@ export default function UsersPage() {
         </Modal>
       )}
 
-      <Dialog spec={confirm} busy={busy} onClose={() => setConfirm(null)} />
+      <ConfirmDialog spec={confirm} busy={busy} onClose={() => setConfirm(null)} />
 
       {resetLink && (
         <Modal
@@ -695,7 +695,7 @@ function RowActions({ name, items }: { name: string; items: RowAction[] }) {
           {items.map(a => (
             <button key={a.key} type="button" role="menuitem" onClick={() => { setAt(null); a.run(); }}
               className={cx('w-full text-left flex gap-2.5 items-center px-2.5 py-2 rounded-[8px] border-none bg-transparent [font:inherit] text-copy cursor-pointer hover:bg-muted',
-                a.danger ? 'text-[var(--color-critical-fg)]' : 'text-ink')}>
+                a.danger ? 'text-danger' : 'text-ink')}>
               <Icon name={a.icon} size="sm" />{a.label}
             </button>
           ))}
@@ -737,7 +737,7 @@ function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, 
         <div key={l.label} className="flex flex-col gap-2.5">
           <div className="flex items-center gap-2.5">
             <span className="text-caption font-semibold tracking-[0.06em] uppercase text-muted-ink">{l.label}</span>
-            <span className="flex-1 h-px bg-[var(--color-line-soft,#EDEAE4)]" />
+            <span className="flex-1 h-px bg-[var(--color-line-soft)]" />
           </div>
           <div className="flex gap-3 flex-wrap">
             {l.people.map(p => {

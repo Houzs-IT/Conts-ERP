@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
-import { BookingDrawer, MessageGuestModal, StatusPill, CentreModal } from '../components/booking/BookingDrawer';
+import { StatusBadge } from '../components/StatusBadge';
+import { BookingDrawer, MessageGuestModal, CentreModal } from '../components/booking/BookingDrawer';
 import { UnitPicker } from '../components/booking/UnitPicker';
 import { channelNote, STATUS } from '../lib/bookingStatus';
 import { Button } from '../components/Button';
@@ -17,10 +17,11 @@ import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
-import { api, notifyFailure, downloadFile } from '../lib/api';
-import { rm, dateRange, nights as fmtNights, guests as fmtGuests, todayMyt, plural } from '../lib/format';
+import { api, notifyFailure, downloadFile, errorMessage } from '../lib/api';
+import { rm, dateRange, nights as fmtNights, guests as fmtGuests, todayMyt, plural, count as countLabel } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { BookingChannel, ReservationState } from '../lib/types';
+import { statusOptions } from '../lib/status';
 
 interface Row {
   id: string; externalRef: string | null; guestName: string; guestsCount: number;
@@ -79,7 +80,7 @@ const MONEY_ROLES = ['management', 'finance_admin', 'operations_manager'];
 const OPS_ROLES = ['management', 'operations_manager', 'operations_staff'];
 
 const nightsBetween = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 864e5);
-const num = (v: number) => v.toLocaleString('en-MY');
+const num = (v: number) => countLabel(v);
 const countryName = (code: string | null) => {
   if (!code) return null;
   try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code; } catch { return code; }
@@ -202,7 +203,7 @@ export default function BookingsPage() {
       });
       if (!owner) setOpenId(res.id);
       reload();
-    } catch (e) { toast({ tone: 'critical', title: 'Reservation not created.', body: e instanceof Error ? e.message : 'Try again in a moment.' }); }
+    } catch (e) { toast({ tone: 'critical', title: 'Reservation not created.', body: errorMessage(e, 'Try again in a moment.') }); }
   }
 
   function pickImportFile() { fileRef.current?.click(); }
@@ -291,20 +292,20 @@ export default function BookingsPage() {
     { key: 'checkOut', label: 'Check-out', type: 'date', value: r => r.checkOut, hidden: true, filter: false },
     { key: 'nights', label: 'Nights', type: 'number', value: r => r.nights, hidden: true, sortKey: 'nights', filter: false, width: 80 },
     { key: 'guests', label: 'Guests', type: 'number', value: r => r.guestsCount, hidden: true, sortKey: 'guests', filter: false, width: 80 },
-    { key: 'phone', label: 'Phone', value: r => r.guestPhone, hidden: true, filter: false, width: 140 },
+    { key: 'phone', label: 'Phone', type: 'phone', value: r => r.guestPhone, hidden: true, filter: false, width: 140 },
     { key: 'nationality', label: 'Nationality', value: r => nationalityOf(r), hidden: true, filter: false, width: 130 },
     { key: 'gross', label: 'Guest total', type: 'money', value: r => (r.grossBookingValue > 0 ? r.grossBookingValue : null), sortKey: 'gross', width: 120,
       title: 'What the guest paid for the stay: room, fees and the taxes we collect. Tax a booking site keeps is not included.',
       filter: { kind: 'number', params: ['grossMin', 'grossMax'] },
       render: b => <span className="font-medium tabular-nums whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>,
-      sub: b => (moneyTodo && b.outstanding > 0 ? <span className="text-[var(--color-warning-fg)] tabular-nums">{rm(b.outstanding, { cents: false })} owed</span> : null) },
+      sub: b => (moneyTodo && b.outstanding > 0 ? <span className="text-warning tabular-nums">{rm(b.outstanding, { cents: false })} owed</span> : null) },
     { key: 'fee', label: 'Commission', type: 'money', value: r => r.channelFee, hidden: true, sortKey: 'fee', filter: false },
     { key: 'expected', label: 'Expected to receive', type: 'money', value: r => r.expectedPayout, hidden: true, filter: false },
     { key: 'received', label: 'Received', type: 'money', value: r => r.received, hidden: true, filter: false },
     { key: 'outstanding', label: 'Outstanding', type: 'money', value: r => (['cancelled', 'no_show'].includes(r.state) ? 0 : r.outstanding), hidden: true, filter: false },
     { key: 'status', label: 'Status', type: 'status', value: r => r.state, text: r => STATUS[r.state]?.label ?? r.state, sortKey: 'status', width: 130,
-      filter: { kind: 'select', param: 'status', multi: false, options: (Object.keys(STATUS) as ReservationState[]).map(s => ({ value: STATUS[s].label, label: STATUS[s].label })) },
-      render: b => <StatusPill state={b.state} size="sm" /> },
+      filter: { kind: 'select', param: 'status', multi: false, options: statusOptions('booking').map(o => ({ value: o.label, label: o.label })) },
+      render: b => <StatusBadge entity="booking" value={b.state} size="sm" /> },
     { key: 'created', label: 'Booked on', type: 'datetime', value: r => r.createdAt, hidden: true, sortKey: 'created', filter: false },
     { key: 'chat', label: 'Chat', width: 56, align: 'center', noExport: true, sortable: false, filter: false,
       render: b => (
@@ -345,8 +346,8 @@ export default function BookingsPage() {
           return (
             <button key={t.key} type="button" onClick={() => setTodo(t.key)} aria-pressed={on}
               className={cx('text-left [font:inherit] rounded-card border border-solid px-4 py-3 cursor-pointer flex flex-col gap-1 min-w-0 transition-colors',
-                on ? 'bg-black text-white border-black' : warn ? 'bg-[var(--color-warning-bg)] border-[var(--color-warning-line)] text-ink hover:border-[var(--color-warning-fg)]' : 'bg-card border-line text-ink hover:border-muted-ink')}>
-              <span className={cx('text-meta', on ? 'text-[rgba(255,255,255,0.75)]' : warn ? 'text-[var(--color-warning-fg)]' : 'text-muted-ink')}>{t.label}</span>
+                on ? 'bg-black text-white border-black' : warn ? 'bg-warning-bg border-warning-line text-ink hover:border-warning' : 'bg-card border-line text-ink hover:border-muted-ink')}>
+              <span className={cx('text-meta', on ? 'text-[rgba(255,255,255,0.75)]' : warn ? 'text-warning' : 'text-muted-ink')}>{t.label}</span>
               <span className="text-heading font-semibold [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">
                 {c ? num(c.count) : '–'}{t.money && c && c.count > 0 ? <span className="font-medium"> · {rm(c.outstanding, { cents: false })}</span> : null}
               </span>
@@ -428,9 +429,9 @@ export default function BookingsPage() {
               <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? '—'} · {b.unitNumber} · {b.propertyName}</span>
               <span className="flex items-center justify-between gap-2 pt-[2px]">
                 <span className="text-meta whitespace-nowrap min-w-0 overflow-hidden text-ellipsis">{dateRange(b.checkIn, b.checkOut)} · {fmtNights(b.nights)}</span>
-                <StatusPill state={b.state} size="sm" />
+                <StatusBadge entity="booking" value={b.state} size="sm" />
               </span>
-              {todoMeta?.money && b.outstanding > 0 && <span className="text-meta text-[var(--color-warning-fg)]">{rm(b.outstanding)} owed</span>}
+              {todoMeta?.money && b.outstanding > 0 && <span className="text-meta text-warning">{rm(b.outstanding)} owed</span>}
             </span>
           </span>
         )}
@@ -570,7 +571,7 @@ function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClo
         body: r.skipped.length ? `${plural(r.skipped.length, 'booking')} left alone: ${r.skipped.slice(0, 3).map(s => `${s.ref ?? 'one'} (${s.reason.replace(/\.$/, '').toLowerCase()})`).join(', ')}${r.skipped.length > 3 ? ' …' : ''}.` : 'They have left Booking-site payout pending.',
       });
       onDone();
-    } catch (err) { toast({ tone: 'critical', title: 'Payouts not recorded.', body: err instanceof Error ? err.message : 'Try again in a moment.' }); }
+    } catch (err) { toast({ tone: 'critical', title: 'Payouts not recorded.', body: errorMessage(err, 'Try again in a moment.') }); }
     setBusy(false);
   }
   return (
@@ -769,8 +770,8 @@ function ImportPreviewModal({ rows, onClose, onConfirm }: { rows: ParsedRow[]; o
     <CentreModal title="Import reservations" sub="Review the rows before importing. Rejected rows are left out. Each booking is closed on the booking sites its unit is sold on." onClose={onClose} maxWidth={620}>
       <div className="px-[22px] pt-1 pb-3 flex items-center gap-2 flex-wrap flex-none">
         <span className="text-meta text-muted-ink">{plural(rows.length, 'row')} read</span>
-        <Badge tone="success" label={`${num(ok)} ready`} size="sm" />
-        {bad > 0 && <Badge tone="critical" label={`${num(bad)} with ${bad === 1 ? 'an error' : 'errors'}`} size="sm" />}
+        <StatusBadge tone="success" label={`${num(ok)} ready`} size="sm" />
+        {bad > 0 && <StatusBadge tone="critical" label={`${num(bad)} with ${bad === 1 ? 'an error' : 'errors'}`} size="sm" />}
       </div>
       <div className="mx-[22px] mb-2 border border-solid border-line rounded-card overflow-y-auto">
         {rows.map((r, i) => (
@@ -780,7 +781,7 @@ function ImportPreviewModal({ rows, onClose, onConfirm }: { rows: ParsedRow[]; o
               <span className="text-copy font-medium">{r.line ? `Line ${r.line} · ` : ''}{r.label}</span>
               {r.row
                 ? <span className="text-meta text-muted-ink">{CHANNEL_META[r.row.channel].label} · {dateRange(r.row.checkIn, r.row.checkOut)} · {r.row.grossBookingValue > 0 ? rm(r.row.grossBookingValue, { cents: false }) : 'no rate'}</span>
-                : <span className="text-meta text-[var(--color-critical-fg)]">{r.error}</span>}
+                : <span className="text-meta text-danger">{r.error}</span>}
             </div>
           </div>
         ))}

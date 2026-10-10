@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { MoneyText, moneyString } from '../components/MoneyText';
 import { DataTable, type Column } from '../components/DataTable';
@@ -50,7 +50,7 @@ export default function GuestDocumentsPage() {
     </div>
   );
   const no = (d: GuestDocument) => <span className={cx('font-mono text-copy font-medium', d.voidedAt && 'line-through text-muted-ink')}>{d.docNo}</span>;
-  const status = (d: GuestDocument) => d.voidedAt ? <Badge tone="critical" label="Void" size="sm" /> : <Badge tone="success" label="Issued" size="sm" />;
+  const status = (d: GuestDocument) => d.voidedAt ? <StatusBadge tone="critical" label="Void" size="sm" /> : <StatusBadge tone="success" label="Issued" size="sm" />;
 
   async function fetchAll(onProgress: (got: number, of: number) => void) {
     const base = Object.fromEntries([...query.entries()].filter(([k]) => k !== 'page' && k !== 'pageSize'));
@@ -110,7 +110,7 @@ export default function GuestDocumentsPage() {
             <span className="flex items-center justify-between gap-3">{no(d)}<MoneyText sen={d.amount} mode="exact" strong className="text-copy" /></span>
             <span className="text-meta text-ink truncate">{d.typeLabel} · {d.guestName ?? 'Guest'}</span>
             <span className="text-caption text-muted-ink truncate">{[d.bookingRef, d.unit].filter(Boolean).join(' · ')} · {date(d.issuedAt)}</span>
-            {d.voidedAt && <span className="text-caption text-[var(--color-critical-fg)] text-pretty">Voided {date(d.voidedAt)}: {d.voidReason}</span>}
+            {d.voidedAt && <span className="text-caption text-danger text-pretty">Voided {date(d.voidedAt)}: {d.voidReason}</span>}
             <span className="flex items-center justify-between gap-2">{status(d)}{actions(d)}</span>
           </span>
         )} />

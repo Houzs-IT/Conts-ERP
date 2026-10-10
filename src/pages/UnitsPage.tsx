@@ -7,7 +7,7 @@ import PageHeader from '../components/PageHeader';
 import { EmptyState } from '../components/States';
 import { Select } from '../components/Select';
 import { MoneyText } from '../components/MoneyText';
-import { Badge, Dot } from '../components/Badge';
+import { StatusBadge, StatusDot } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
@@ -20,8 +20,6 @@ import { api, notifyFailure, downloadFile } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, dateRange, date, monthLabel, plural, humanize, titleCase } from '../lib/format';
-import { READINESS, TASK } from '../lib/vocabulary';
-import { STATUS } from '../lib/bookingStatus';
 import type { UnitReadiness } from '../lib/types';
 import UnitTree, { firstUnitId } from './units/UnitTree';
 import AccessTab from './units/AccessTab';
@@ -33,9 +31,10 @@ import { todayMyt } from '../lib/format';
 import { PROPERTIES_FALLBACK, DETAIL_FALLBACK, mkUnit } from './units/fallback';
 import { RecordHistory } from '../components/RecordHistory';
 import {
-  READY_TONE, TASK_TONE, COND_TONE, MASTER_ROLES, STATES, cap,
+  MASTER_ROLES, STATES,
   type Unit, type Building, type PropertiesPayload, type UnitDetail, type RosterRow,
 } from './units/shared';
+import { statusLabel } from '../lib/status';
 
 /** True at the width where the tree becomes a sticky pane (Tailwind xl). */
 function useWide() {
@@ -322,7 +321,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
     const prev = readiness;
     setReadiness(u.id, next);
     api.patch(`/units/${u.id}/readiness`, { readiness: next })
-      .then(() => { toast({ tone: 'success', title: 'Unit state updated.', body: `${unitLabel} is now ${cap(next)}.` }); reload(); })
+      .then(() => { toast({ tone: 'success', title: 'Unit state updated.', body: `${unitLabel} is now ${statusLabel('readiness', next)}.` }); reload(); })
       .catch(err => { setReadiness(u.id, prev === u.readiness ? null : prev); notifyFailure(err); });
   }
   function takeFile(file: File) {
@@ -372,18 +371,18 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
             <div className="flex items-center gap-3 flex-wrap">
               {/* One control for the state; the dot keeps its colour. A native select, so the list is never clipped by the card. */}
               <span className="inline-flex items-center gap-2" title="Change the unit state">
-                <Dot tone={READY_TONE[readiness]} />
+                <StatusDot entity="readiness" value={readiness} />
                 <Select label="Unit state" className="w-[150px]" value={readiness} onChange={v => changeReadiness(v as UnitReadiness)}
-                  options={READINESS_OPTIONS.map(r => ({ value: r, label: READINESS[r].label }))} />
+                  options={READINESS_OPTIONS.map(r => ({ value: r, label: statusLabel('readiness', r) }))} />
               </span>
-              {form?.parentUnitId && <Badge tone="warning" label="Sub-unit" />}
+              {form?.parentUnitId && <StatusBadge tone="warning" label="Sub-unit" />}
               {u.revenueModel && <span title={`Revenue model: ${u.revenueModelLabel}. Change it on the Contract tab.`}><ModelChip model={u.revenueModel} label={u.termsLabel ?? u.revenueModelLabel} /></span>}
               {u.channels.length > 0 && (
                 <span className="inline-flex items-center gap-1.5" aria-label={`Sold on ${u.channels.map(c => CH[c].label).join(', ')}`}>
                   {u.channels.map(c => <span key={c} title={CH[c].label} className="flex"><ChannelMark ch={c} size={22} /></span>)}
                 </span>
               )}
-              {!u.isListed && <span title="This unit is not for sale on Airbnb, Booking.com or any other channel, so no bookings come in through them. Connect it under Channels on the Overview tab."><Badge tone="neutral" label="Not listed on any channel" /></span>}
+              {!u.isListed && <span title="This unit is not for sale on Airbnb, Booking.com or any other channel, so no bookings come in through them. Connect it under Channels on the Overview tab."><StatusBadge tone="neutral" label="Not listed on any channel" /></span>}
             </div>
           </div>
           {/* Owner names run long (several co-owners, company names); they wrap instead of running off a phone. */}
@@ -432,7 +431,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
                   <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{s.guestName ?? 'No guest'}</span>
                   <span className="text-meta text-muted-ink"><span className="sr-only">{CH[s.channel].label} · </span>{dateRange(s.checkIn, s.checkOut)}</span>
                 </div>
-                <Badge tone={STATUS[s.state].tone} label={STATUS[s.state].label} />
+                <StatusBadge entity="booking" value={s.state} />
               </div>
             ))}
           </Card>
@@ -571,7 +570,7 @@ const TASK_COLUMNS: Column<TaskRow>[] = [
   { key: 'assignee', label: 'Assigned to', type: 'person', value: t => t.assigneeName ?? 'Unassigned', width: 160 },
   { key: 'when', label: 'Due or done', type: 'datetime', value: t => t.completedAt ?? t.dueAt, width: 160,
     sub: t => (t.completedAt ? 'Done' : t.dueAt ? 'Due' : null) },
-  { key: 'state', label: 'Status', type: 'status', value: t => t.state, status: t => ({ label: TASK[t.state].label, tone: TASK_TONE[t.state] }), width: 130 },
+  { key: 'state', label: 'Status', type: 'status', value: t => t.state, entity: 'task', width: 130 },
 ];
 
 const JOB_COLUMNS: Column<JobRow>[] = [
@@ -579,7 +578,7 @@ const JOB_COLUMNS: Column<JobRow>[] = [
     render: m => (
       <span className="flex items-center gap-2 min-w-0">
         <span className="font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={m.title}>{m.title}</span>
-        {m.blocksUnit && <Badge tone="critical" label="Blocks the unit" size="sm" />}
+        {m.blocksUnit && <StatusBadge tone="critical" label="Blocks the unit" size="sm" />}
       </span>
     ),
     sub: m => (m.detail ? <span title={m.detail}>{m.detail}</span> : null) },
@@ -587,7 +586,7 @@ const JOB_COLUMNS: Column<JobRow>[] = [
   { key: 'reported', label: 'Reported', type: 'date', value: m => m.reportedAt, width: 116 },
   { key: 'vendor', label: 'Vendor', value: m => m.vendorName, width: 140 },
   { key: 'charge', label: 'Charged to', value: m => CHARGE_LABEL[m.chargeTo] ?? humanize(m.chargeTo), width: 130 },
-  { key: 'state', label: 'Status', type: 'status', value: m => m.state, status: m => ({ label: TASK[m.state].label, tone: TASK_TONE[m.state] }), width: 130 },
+  { key: 'state', label: 'Status', type: 'status', value: m => m.state, entity: 'task', width: 130 },
   { key: 'amount', label: 'Amount', type: 'money', value: m => m.finalAmount ?? m.quotedAmount ?? null, width: 120,
     sub: m => (m.finalAmount != null ? 'Final' : m.quotedAmount != null ? 'Quoted' : null) },
 ];
@@ -595,7 +594,7 @@ const JOB_COLUMNS: Column<JobRow>[] = [
 const ITEM_COLUMNS: Column<ItemRow>[] = [
   { key: 'name', label: 'Item', value: i => i.name, hideable: false, width: 220, sub: i => (i.suppliedInHouse ? 'Supplied by The Conts' : null) },
   { key: 'quantity', label: 'Quantity', value: i => i.quantity, width: 90 },
-  { key: 'condition', label: 'Condition', type: 'status', value: i => i.condition, status: i => ({ label: cap(i.condition), tone: COND_TONE[i.condition] ?? 'neutral' }), width: 130 },
+  { key: 'condition', label: 'Condition', type: 'status', value: i => i.condition, entity: 'condition', width: 130 },
   { key: 'cost', label: 'Cost', type: 'money', value: i => i.purchaseCost ?? null, width: 110,
     render: i => <span className="tabular-nums whitespace-nowrap">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span> },
 ];

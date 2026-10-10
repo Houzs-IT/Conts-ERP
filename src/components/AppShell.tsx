@@ -117,13 +117,13 @@ export default function AppShell({
         {isNarrow && (
           // One row on phones: menu, logo, then search / bell / page action. The desk top bar's crumbs are
           // dropped here because each page's own title sits right below.
-          <div data-print-hide style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', background: '#FFFFFF', borderBottom: `1px solid ${color.border}` }}>
+          <div data-print-hide style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', background: color.card, borderBottom: `1px solid ${color.border}` }}>
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
               aria-label="Open navigation"
               aria-expanded={drawerOpen}
-              style={{ width: 40, height: 40, flex: 'none', display: 'grid', placeItems: 'center', border: `1px solid ${color.border}`, borderRadius: radius.control, background: '#FFFFFF', color: color.ink, cursor: 'pointer' }}
+              style={{ width: 40, height: 40, flex: 'none', display: 'grid', placeItems: 'center', border: `1px solid ${color.border}`, borderRadius: radius.control, background: color.card, color: color.ink, cursor: 'pointer' }}
             >
               <Icon name="Menu" size="base" />
             </button>

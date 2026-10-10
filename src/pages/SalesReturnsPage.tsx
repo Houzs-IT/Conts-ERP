@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Search, Plus, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
@@ -10,16 +11,15 @@ import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
+import { statusLabel } from '../lib/status';
 
 /** Sales Returns — ported from 2990's SCM, drawn in Conts. Sell-side twin of Purchase
  *  Returns: a customer returns goods delivered on a DO; reduces the SO delivered qty and
  *  puts stock back into the dispatch warehouse. Money integer sen. */
 
 type Status = 'POSTED' | 'COMPLETED' | 'CANCELLED';
-const STATUS_LABEL: Record<Status, string> = { POSTED: 'Posted', COMPLETED: 'Completed', CANCELLED: 'Cancelled' };
-const STATUS_TONE: Record<Status, Tone> = { POSTED: 'info', COMPLETED: 'success', CANCELLED: 'neutral' };
 const FILTERS: (Status | 'all')[] = ['all', 'POSTED', 'COMPLETED', 'CANCELLED'];
 
 interface SretLine { itemCode: string; description: string; uom: string; qtyReturned: number; unitPriceSen: number; lineTotalSen: number; reason: string }
@@ -65,7 +65,7 @@ export default function SalesReturnsPage() {
     { key: 'do', label: 'DO', type: 'ref', value: p => p.doNumber || null },
     { key: 'returnDate', label: 'Return date', type: 'date', value: p => p.returnDate || null },
     { key: 'reason', label: 'Reason', value: p => p.reason, render: p => p.reason ? <span className="text-[12.5px] text-muted-ink">{p.reason}</span> : <span className="text-muted-ink">—</span> },
-    { key: 'status', label: 'Status', type: 'status', value: p => p.status, status: p => ({ label: STATUS_LABEL[p.status], tone: STATUS_TONE[p.status] }) },
+    { key: 'status', label: 'Status', type: 'status', value: p => p.status, entity: 'sales_return' },
     { key: 'refund', label: 'Refund', type: 'money', value: p => p.status === 'CANCELLED' ? null : p.refundSen, render: p => p.status === 'CANCELLED' ? <span className="text-muted-ink">—</span> : <span className="tabular-nums font-semibold">{rm(p.refundSen)}</span> },
   ], []);
 
@@ -88,7 +88,7 @@ export default function SalesReturnsPage() {
         onRowClick={p => setDrawer({ mode: 'view', sret: p })}
         noun={['sales return', 'sales returns']} exportName="sales-returns"
         toolbar={<>
-          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('sales_return', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
           <div className="relative">
             <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
             <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search return, DO or customer..." aria-label="Search sales returns"
@@ -106,10 +106,6 @@ export default function SalesReturnsPage() {
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-function StatusPill({ status }: { status: Status }) {
-  const t = STATUS_TONE[status];
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}</span>;
 }
 
 /* ---------- return (create) drawer ---------- */
@@ -181,7 +177,7 @@ function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: Open
                 <tbody>
                   {lines.length === 0 ? <tr><td colSpan={5} className="py-6 text-center text-[12.5px] text-muted-ink">This delivery order has nothing left to return.</td></tr>
                   : lines.map((l, i) => (
-                    <tr key={l.doLineId} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                    <tr key={l.doLineId} className="[border-top:1px_solid_var(--color-line-soft)]">
                       <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.returnable}</td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.unitPriceSen)}</td>
@@ -202,7 +198,7 @@ function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: Open
           <div className="flex items-end justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Refund value</span><span className="tabular-nums w-[120px] text-right">{rm(refund)}</span></div></div>
         </div>
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a delivery order and return at least one line" onClick={submit}>Post return</Button>
       </div>
@@ -224,7 +220,7 @@ function ViewDrawer({ sret, canWrite, onClose, onComplete, onCancel }: { sret: S
   return (
     <Drawer open onClose={onClose} width={720}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
-        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{sret.returnNumber}</h2><StatusPill status={sret.status} /></div>
+        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{sret.returnNumber}</h2><StatusBadge entity="sales_return" value={sret.status} /></div>
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
@@ -244,8 +240,8 @@ function ViewDrawer({ sret, canWrite, onClose, onComplete, onCancel }: { sret: S
         </div>
         <div className="flex justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Refund value</span><span className="tabular-nums w-[120px] text-right">{rm(sret.refundSen)}</span></div></div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{canWrite && sret.status === 'POSTED' && <Button size="sm" variant="danger" onClick={() => onCancel(sret)}>Cancel return</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{canWrite && sret.status === 'POSTED' && <ConfirmButton confirm={{ title: `Cancel ${sret.returnNumber}?`, body: 'It is marked Cancelled, the returned goods come back out of stock and count as delivered again.', meta: sret.customerName, confirmLabel: 'Cancel return', cancelLabel: 'Keep return' }} onConfirm={() => onCancel(sret)}>Cancel return</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           {canWrite && sret.status === 'POSTED' && <Button size="sm" variant="secondary" onClick={() => onComplete(sret)}>Mark completed</Button>}
           <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>

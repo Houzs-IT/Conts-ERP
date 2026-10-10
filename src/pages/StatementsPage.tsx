@@ -1,22 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
-import { Dialog } from '../components/Dialog';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { EmptyState } from '../components/States';
 import { StaleBanner } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
-import { api, ApiFailure } from '../lib/api';
+import { api, ApiFailure, errorMessage } from '../lib/api';
 import { fetchAllPages } from '../lib/export';
 import { rm, todayMyt, monthLabel, plural } from '../lib/format';
-import { STATEMENT } from '../lib/vocabulary';
 import { TONE, cx } from '../lib/design-tokens';
 import type { StatementState } from '../lib/types';
 import { useUrlState, usePhone, SearchBox, Chip, shiftMonth } from './finance/listKit';
+import { statusLabel } from '../lib/status';
 
 interface Statement {
   id: string; period?: string; ownerName: string; unitsLabel: string; state: StatementState;
@@ -114,7 +114,7 @@ export default function StatementsPage() {
       });
     } catch (e) {
       const locked = e instanceof ApiFailure && e.status === 409;
-      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'That period is locked.' : 'Statements were not generated.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'That period is locked.' : 'Statements were not generated.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
 
@@ -129,7 +129,7 @@ export default function StatementsPage() {
         ? { tone: 'warning', title: `${res.finalised} finalised, ${res.failed.length} not.`, body: res.failed[0].reason }
         : { tone: 'success', title: `${res.finalised} ${res.finalised === 1 ? 'statement' : 'statements'} finalised.`, body: 'The figures are now frozen and ready to send.' });
     } catch (e) {
-      toast({ tone: 'critical', title: 'Not finalised.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Not finalised.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
 
@@ -150,7 +150,7 @@ export default function StatementsPage() {
         toast({ tone: 'success', title: `${res.sent} ${res.sent === 1 ? 'statement' : 'statements'} sent.`, body: 'Owners were emailed and the statements are live on their portals.' });
       }
     } catch (e) {
-      toast({ tone: 'critical', title: 'Statements were not sent.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Statements were not sent.', body: errorMessage(e, 'Try again in a moment.') });
     } finally {
       setBusy(false);
       sendTargets?.clear();
@@ -170,7 +170,7 @@ export default function StatementsPage() {
       toast({ tone: 'success', title: 'Adjustment recorded.', body: `${target.ownerName} — net payout is now ${rm(res.netPayout)}.` });
     } catch (e) {
       const locked = e instanceof ApiFailure && e.status === 409;
-      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'This statement is locked.' : 'Adjustment was not recorded.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'This statement is locked.' : 'Adjustment was not recorded.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
 
@@ -199,7 +199,7 @@ export default function StatementsPage() {
     { key: 'net', label: 'Net payout', type: 'money', value: r => r.netPayout, width: 130,
       render: r => <span className={cx('tabular-nums whitespace-nowrap font-semibold', r.netPayout < 0 ? TONE.critical.text : '')}>{rm(r.netPayout)}</span> },
     { key: 'status', label: 'Status', type: 'status', value: r => r.state, width: 120,
-      status: r => ({ label: STATEMENT[r.state].label, tone: STATEMENT[r.state].tone }) },
+      entity: 'statement' },
     { key: 'actions', label: '', width: 84, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
       render: s => (
         <span className="flex justify-end gap-[6px]" onClick={e => e.stopPropagation()}>
@@ -275,7 +275,7 @@ export default function StatementsPage() {
             <div className={cx('flex gap-[7px] py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]', phone ? 'overflow-x-auto' : 'flex-wrap')}>
               <Chip on={!stateFilter} onClick={() => url.set({ state: null, page: null })} count={current?.count}>All</Chip>
               {STATE_ORDER.map(st => (
-                <Chip key={st} on={stateFilter === st} onClick={() => url.set({ state: stateFilter === st ? null : st, page: null })} count={current ? current[st] : undefined}>{STATEMENT[st].label}</Chip>
+                <Chip key={st} on={stateFilter === st} onClick={() => url.set({ state: stateFilter === st ? null : st, page: null })} count={current ? current[st] : undefined}>{statusLabel('statement', st)}</Chip>
               ))}
             </div>
           }
@@ -289,7 +289,7 @@ export default function StatementsPage() {
               </span>
               <span className="flex flex-col items-end gap-[5px] shrink-0">
                 <span className="text-[13.5px] font-semibold tabular-nums">{rm(s.netPayout, { cents: false })}</span>
-                <Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} size="sm" />
+                <StatusBadge entity="statement" value={s.state} size="sm" />
               </span>
             </span>
           )}
@@ -327,7 +327,7 @@ export default function StatementsPage() {
         />
       )}
 
-      <Dialog
+      <ConfirmDialog
         busy={busy}
         onClose={() => { if (!busy) setSendTargets(null); }}
         spec={!sendTargets ? null : {

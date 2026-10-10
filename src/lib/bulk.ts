@@ -1,4 +1,4 @@
-import { ApiFailure } from './api';
+import { errorMessage } from './api';
 
 /**
  * Runs one existing endpoint per ticked row, a few at a time, for bulk actions that have no bulk endpoint of their
@@ -12,7 +12,7 @@ export async function runEach<T>(items: T[], fn: (item: T) => Promise<unknown>, 
     while (next < items.length) {
       const item = items[next++];
       try { await fn(item); ok++; }
-      catch (e) { failed.push({ label: label(item), reason: e instanceof ApiFailure ? e.message : 'Failed.' }); }
+      catch (e) { failed.push({ label: label(item), reason: errorMessage(e, 'Failed.') }); }
     }
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, ApiFailure } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { useToast } from './Toast';
 
@@ -23,7 +23,7 @@ export function useTableViews(table: string | null) {
   const q = useApi<Payload>(table ? `/table-layouts?table=${encodeURIComponent(table)}` : null);
   const toast = useToast();
   const [busy, setBusy] = useState(false);
-  const failed = (title: string, e: unknown) => toast({ tone: 'critical', title, body: e instanceof ApiFailure ? e.message : 'Try again in a moment.' });
+  const failed = (title: string, e: unknown) => toast({ tone: 'critical', title, body: errorMessage(e, 'Try again in a moment.') });
 
   async function create(input: { name: string; scope: 'mine' | 'company'; isDefault: boolean; layout: TableLayout }): Promise<SavedView | null> {
     if (!table) return null;

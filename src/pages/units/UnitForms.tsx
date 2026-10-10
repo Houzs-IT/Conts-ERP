@@ -1,6 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Button } from '../../components/Button';
+import { ConfirmButton } from '../../components/ConfirmDialog';
 import { Field } from '../../components/Field';
 import Icon from '../../components/Icon';
 import { Card } from '../../components/Card';
@@ -190,7 +191,7 @@ export function BuildingModal({ initial, onClose, onSubmit, onDelete }: { initia
   const ok = name.trim() !== '' && city.trim() !== '';
   return (
     <CentreModal title={initial ? 'Edit building' : 'Add building'} sub={initial ? 'Correct the name or location. Its units stay as they are.' : 'A building holds units. Add units to it next.'} onClose={onClose}
-      footer={<>{onDelete && <Button size="sm" variant="danger" onClick={onDelete}>Delete building</Button>}<Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" disabled={!ok} disabledReason="Fill name and city" onClick={() => onSubmit({ name: name.trim(), city: city.trim(), state })}>{initial ? 'Save' : 'Add building'}</Button></>}>
+      footer={<>{onDelete && <ConfirmButton confirm={{ title: `Delete ${initial ? initial.name : 'this building'}?`, body: 'It has no units, and it is deleted for good.', confirmLabel: 'Delete building', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete building</ConfirmButton>}<Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" disabled={!ok} disabledReason="Fill name and city" onClick={() => onSubmit({ name: name.trim(), city: city.trim(), state })}>{initial ? 'Save' : 'Add building'}</Button></>}>
       <Field label="Building name" placeholder="e.g. Arte Mont Kiara" value={name} onChange={e => setName(e.target.value)} />
       <Field label="City / area" placeholder="e.g. Mont Kiara, 50480 KL" value={city} onChange={e => setCity(e.target.value)} />
       <Labeled label="State" hint="DROPDOWN" help={initial ? 'Every unit in the building is in this state.' : undefined}><Select label="State" value={state} onChange={setState} options={STATES.map(s => ({ value: s, label: s }))} /></Labeled>

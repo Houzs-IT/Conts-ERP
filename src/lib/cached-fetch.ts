@@ -5,6 +5,7 @@
  * background-refetches, and swaps in fresh data. Mutations must invalidate.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { errorMessage } from './api';
 
 const NS = 'conts';
 
@@ -36,7 +37,7 @@ export function useCachedJson<T>(url: string, fetcher: (signal: AbortSignal) => 
       setData(fresh); write(key, fresh); setError(null);
     } catch (e: unknown) {
       if (controller.signal.aborted) return;
-      setError(e instanceof Error ? e.message : 'Failed to load');
+      setError(errorMessage(e, 'Failed to load'));
     } finally {
       if (!controller.signal.aborted) { setFetching(false); setLoading(false); }
     }

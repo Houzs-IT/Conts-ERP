@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, ApiFailure } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { rm, date, dateTime, relative, humanize, titleCase, monthLabel, count, plural } from '../lib/format';
 import { ROLE_LABEL, CHANNEL, stateLabel } from '../lib/vocabulary';
 import { cx } from '../lib/design-tokens';
@@ -212,7 +212,7 @@ export function RecordHistory({ entity, id, also, title = 'History', bare = fals
         setNames(prev => ({ ...(page === 1 ? {} : prev), ...(r.names ?? {}) }));
         setTotal(r.total); setError(null);
       })
-      .catch(e => { if (live) setError(e instanceof ApiFailure ? e.message : 'The history could not load. Check your connection and try again.'); })
+      .catch(e => { if (live) setError(errorMessage(e, 'The history could not load. Check your connection and try again.')); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, [entity, id, alsoParam, page, pageSize, refreshKey]);
@@ -228,7 +228,7 @@ export function RecordHistory({ entity, id, also, title = 'History', bare = fals
         </div>
       )}
       {first && <div className="py-4 px-5 flex flex-col gap-3" aria-busy="true">{[0, 1, 2].map(i => <Skeleton key={i} height={34} />)}</div>}
-      {error && <div className="py-4 px-5 text-copy text-[var(--color-critical-fg)]" role="alert">{error}</div>}
+      {error && <div className="py-4 px-5 text-copy text-danger" role="alert">{error}</div>}
       {!first && !error && rows.length === 0 && !origin && <div className="py-4 px-5 text-copy text-muted-ink">No changes recorded yet. Every edit from now on shows here, with who made it.</div>}
       {rows.length > 0 && (
         <ul className="list-none m-0 p-0">

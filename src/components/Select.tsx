@@ -161,9 +161,9 @@ export function Menu({ trigger, items, label, align = 'right' }: { trigger: Reac
                 onClick={() => { if (off) return; setOpen(false); it.onSelect(); }}
                 className={cx('w-full flex items-start gap-2.5 px-3 py-2 bg-transparent border-none text-left font-sans',
                   off ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-muted')}>
-                {it.icon && <span className={cx('mt-px', off ? 'text-faint' : it.danger ? 'text-[var(--color-critical-fg)]' : 'text-ink-2')}><Icon name={it.icon} size="sm" /></span>}
+                {it.icon && <span className={cx('mt-px', off ? 'text-faint' : it.danger ? 'text-danger' : 'text-ink-2')}><Icon name={it.icon} size="sm" /></span>}
                 <span className="flex flex-col gap-px min-w-0">
-                  <span className={cx('text-copy font-medium', off ? 'text-faint' : it.danger ? 'text-[var(--color-critical-fg)]' : 'text-ink')}>{it.label}</span>
+                  <span className={cx('text-copy font-medium', off ? 'text-faint' : it.danger ? 'text-danger' : 'text-ink')}>{it.label}</span>
                   {(it.disabledReason || it.hint) && <span className="text-meta text-muted-ink">{it.disabledReason ?? it.hint}</span>}
                 </span>
               </button>

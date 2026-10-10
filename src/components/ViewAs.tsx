@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { useToast } from './Toast';
 
 interface Account { id: string; fullName: string; email: string; role: string }
@@ -26,7 +26,7 @@ export default function ViewAs() {
       window.location.reload();
     } catch (e) {
       setBusy(false);
-      toast({ tone: 'critical', title: 'Could not switch account.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Could not switch account.', body: errorMessage(e, 'Try again in a moment.') });
     }
   };
 
@@ -36,7 +36,7 @@ export default function ViewAs() {
     <div className="fixed right-3 bottom-3 z-[70] flex flex-col items-end [font-family:inherit] text-meta">
       {open && (
         <div className="mb-2 w-[300px] max-h-[60vh] overflow-y-auto bg-card rounded-card border border-solid border-line [box-shadow:var(--shadow-overlay)]">
-          <div className="px-3 py-2 text-[11px] text-muted-ink [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
+          <div className="px-3 py-2 text-[11px] text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]">
             Staging only. Opens the system exactly as that account sees it.
           </div>
           <button type="button" disabled={busy || !viewing} onClick={() => go(state.me!.id)}
@@ -59,7 +59,7 @@ export default function ViewAs() {
       )}
       <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
         className="inline-flex items-center gap-2 h-9 px-3.5 rounded-full border border-solid cursor-pointer [font-family:inherit] text-meta font-semibold [box-shadow:var(--shadow-overlay)]"
-        style={{ background: 'var(--color-warning, #FBEFD5)', color: 'var(--color-warning-fg, #8A5A12)', borderColor: 'var(--color-warning-line, #B7791F)' }}>
+        style={{ background: 'var(--color-warning)', color: 'var(--color-warning-fg)', borderColor: 'var(--color-warning-line)' }}>
         View as: {viewing ? `${viewing.fullName} (${viewing.role.replace(/_/g, ' ')})` : 'Me'} {open ? '▴' : '▾'}
       </button>
     </div>

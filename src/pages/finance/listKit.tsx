@@ -3,6 +3,7 @@ import Icon from '../../components/Icon';
 import { useSearchParams } from 'react-router-dom';
 import { cx } from '../../lib/design-tokens';
 import { useApi } from '../../lib/useApi';
+import { count as countLabel } from '../../lib/format';
 
 /**
  * Small pieces the finance and owner lists share so thousands of rows read the same way on every screen:
@@ -118,7 +119,7 @@ export function Chip({ on, onClick, children, count }: { on: boolean; onClick: (
       {children}
       {count !== undefined && (
         <span className={cx('text-caption font-semibold py-px px-[6px] rounded-full tabular-nums', on ? 'bg-[rgba(255,255,255,0.18)] text-white' : 'bg-muted text-muted-ink')}>
-          {count.toLocaleString('en-MY')}
+          {countLabel(count)}
         </span>
       )}
     </button>

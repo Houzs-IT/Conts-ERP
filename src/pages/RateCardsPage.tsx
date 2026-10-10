@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
@@ -68,7 +69,7 @@ export default function RateCardsPage() {
     { key: 'rules', label: 'Rules', type: 'number', value: c => c.ruleCount, width: 80 },
     { key: 'min', label: 'Min', type: 'money', value: c => c.minChargeSen },
     { key: 'cap', label: 'Cap', type: 'money', value: c => c.capSen },
-    { key: 'status', label: 'Status', type: 'status', value: c => (c.isActive ? 'active' : 'inactive'), status: c => (c.isActive ? { label: 'Active', tone: 'success' } : { label: 'Inactive', tone: 'neutral' }) },
+    { key: 'status', label: 'Status', type: 'status', value: c => (c.isActive ? 'active' : 'inactive'), entity: 'active_flag' },
   ], []);
 
   async function openNew() { setDrawer({ card: { id: '', name: '', carrierCompanyId: '', carrierLabel: '', carrierName: '', basis: 'SET', aggregation: 'UNIT', minChargeSen: null, capSen: null, rounding: 'NONE', isActive: true, notes: '', ruleCount: 0, rules: [] }, isNew: true }); }
@@ -148,7 +149,7 @@ function CardDrawer({ card, isNew, carriers, onClose, onSave, onDelete }: { card
               <tbody>
                 {rules.length === 0 ? <tr><td colSpan={4} className="py-6 text-center text-[12.5px] text-muted-ink">No rules yet. Add tiers, sofa brackets, outstation surcharges or occurrence charges.</td></tr>
                 : rules.map((r, i) => (
-                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)] align-top">
+                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)] align-top">
                     <td className="py-2 px-3">
                       <select value={r.ruleType} onChange={e => setRule(i, { ruleType: e.target.value as RuleType })} className="h-8 box-border px-2 py-0 font-sans text-[12.5px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
                         {RULE_TYPES.map(t => <option key={t} value={t}>{RULE_LABEL[t]}</option>)}
@@ -176,8 +177,8 @@ function CardDrawer({ card, isNew, carriers, onClose, onSave, onDelete }: { card
           <Sel label="Status" value={f.isActive ? '1' : '0'} onChange={v => set('isActive', v === '1')} options={[{ value: '1', label: 'Active' }, { value: '0', label: 'Inactive' }]} />
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete rate card ${card.name}?`, body: 'The card and all its rates are deleted for good.', confirmLabel: 'Delete rate card', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a card name first" onClick={() => onSave({ ...f, rules }, isNew)}>{isNew ? 'Create card' : 'Save'}</Button>

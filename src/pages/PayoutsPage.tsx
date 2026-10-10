@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
-import { Dialog, type DialogSpec } from '../components/Dialog';
+import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { HistoryDrawer } from '../components/RecordHistory';
 import { useToast } from '../components/Toast';
 import { Select } from '../components/Select';
@@ -13,17 +13,18 @@ import { TableSkeleton } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
-import { api } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { fetchAllPages } from '../lib/export';
 import { runEach, skippedNote } from '../lib/bulk';
 import { refreshNavCounts } from '../lib/navBadges';
-import { masked, date as fmtDate, monthLabel, plural, titleCase } from '../lib/format';
+import { masked, date as fmtDate, monthLabel, plural, titleCase, count } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { PAYOUT, bankName } from '../lib/vocabulary';
 import type { PayoutState } from '../lib/types';
 import { useUrlState, SearchBox, FilterSelect } from './finance/listKit';
 import ApprovalBanner from '../components/ApprovalBanner';
 import { stagedToast, type Approval, type Staged } from '../lib/approvals';
+import { statusLabel } from '../lib/status';
 
 interface Payout {
   id: string; ref?: string; period?: string | null; ownerName: string; amount: number; state: PayoutState; method: string;
@@ -119,7 +120,7 @@ export default function PayoutsPage() {
         ? { tone: 'success', title: 'Payout back to processing.', body: `${titleCase(p.ownerName)}: make the transfer at the bank, then mark it paid.` }
         : { tone: 'success', title: 'Recorded as paid.', body: `${titleCase(p.ownerName)}: ${moneyString(p.amount, 'exact')} recorded as transferred.` });
     } catch (e) {
-      toast({ tone: 'critical', title: 'Payout was not updated.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Payout was not updated.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
 
@@ -162,7 +163,7 @@ export default function PayoutsPage() {
     { key: 'amount', label: 'Amount', type: 'money', value: r => r.amount, width: 130,
       render: r => <MoneyText sen={r.amount} mode="exact" strong className="text-copy" /> },
     { key: 'status', label: 'Status', type: 'status', value: r => r.state, width: 120,
-      status: r => ({ label: PAYOUT[r.state].label, tone: PAYOUT[r.state].tone }) },
+      entity: 'payout' },
     { key: 'failure', label: 'Failure reason', value: r => r.failureReason, hidden: true, width: 220 },
     { key: 'action', label: 'Action', width: 170, align: 'right', noExport: true, sortable: false, filter: false,
       render: r => (
@@ -176,7 +177,7 @@ export default function PayoutsPage() {
       ) },
   ], []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const spec: DialogSpec | null = bulkPaid
+  const spec: ConfirmSpec | null = bulkPaid
     ? {
         title: `Mark ${plural(bulkPaid.rows.length, 'payout')} as paid?`,
         body: 'Only once the bank confirms each transfer left the account. Each owner statement moves to Paid and each owner is told by email.',
@@ -190,14 +191,14 @@ export default function PayoutsPage() {
           title: `Try ${moneyString(confirm.payout.amount, 'exact')} to ${titleCase(confirm.payout.ownerName)} again?`,
           body: 'Confirm the bank details were corrected first. This moves the payout back to Processing; it does not send money. Make the transfer at the bank, then mark it paid.',
           meta: `${destination(confirm.payout)} · ${confirm.payout.method}`,
-          confirmLabel: 'Move to processing', busyLabel: 'Saving...',
+          danger: true, confirmLabel: 'Move to processing', busyLabel: 'Saving...',
           onConfirm: () => transition(confirm.payout, 'retry'),
         }
       : {
           title: `Mark ${moneyString(confirm.payout.amount, 'exact')} to ${titleCase(confirm.payout.ownerName)} as paid?`,
           body: 'Only once the bank confirms the transfer left the account. The owner statement moves to Paid and the owner is told by email.',
           meta: `${destination(confirm.payout)} · ${confirm.payout.method}`,
-          confirmLabel: 'Mark paid', busyLabel: 'Saving...',
+          danger: true, confirmLabel: 'Mark paid', busyLabel: 'Saving...',
           onConfirm: () => transition(confirm.payout, 'paid'),
         };
 
@@ -219,7 +220,7 @@ export default function PayoutsPage() {
             <div className="flex flex-col gap-1 flex-1 min-w-[220px]">
               <div className="flex items-center gap-[9px]">
                 <span className="text-copy font-semibold">{titleCase(p.ownerName)}</span>
-                <Badge tone={PAYOUT.failed.tone} label={PAYOUT.failed.label} />
+                <StatusBadge tone={PAYOUT.failed.tone} label={PAYOUT.failed.label} />
               </div>
               <span className="text-meta text-muted-ink text-pretty">{p.failureReason}</span>
               <span className="text-caption text-faint">{`${destination(p)} · ${p.method}`}</span>
@@ -246,7 +247,7 @@ export default function PayoutsPage() {
           <FilterSelect className="flex-[1_1_180px]" label="Statement month" all="All statement months" value={period} onChange={v => url.set({ period: v || null, page: null })}
             options={(data?.periods ?? []).map(p => ({ value: p, label: monthLabel(p) }))} />
           <Select label="Filter by status" value={filter} onChange={v => setFilter(v as Filter)} className="flex-[1_1_180px]"
-            options={[{ value: 'all', label: `All statuses · ${allCount}` }, ...GROUP_ORDER.map(s => ({ value: s, label: `${PAYOUT[s].label} · ${counts[s]}` }))]} />
+            options={[{ value: 'all', label: `All statuses · ${allCount}` }, ...GROUP_ORDER.map(s => ({ value: s, label: `${statusLabel('payout', s)} · ${counts[s]}` }))]} />
         </>}
         renderCard={r => (
           <span className="flex items-start gap-3 text-ink">
@@ -258,20 +259,20 @@ export default function PayoutsPage() {
             </span>
             <span className="flex flex-col items-end gap-[5px] shrink-0">
               <MoneyText sen={r.amount} mode="exact" strong className="text-copy" />
-              <Badge tone={PAYOUT[r.state].tone} label={PAYOUT[r.state].label} size="sm" />
+              <StatusBadge entity="payout" value={r.state} size="sm" />
               <span onClick={e => e.stopPropagation()}>{historyButton(r)}</span>
             </span>
           </span>
         )}
         footer={
           <div className="flex items-center justify-between gap-3 flex-wrap px-[22px] max-md:px-4 py-[11px] [border-top:1px_solid_var(--color-line)] bg-page text-meta text-muted-ink">
-            <span>{total.toLocaleString('en-MY')} of {allCount.toLocaleString('en-MY')} payouts</span>
+            <span>{count(total)} of {count(allCount)} payouts</span>
             <span>Only the last four digits of any account are shown. Nothing here sends money: transfers are made at the bank.</span>
           </div>
         }
       />
 
-      <Dialog spec={spec} busy={busy} onClose={() => { if (!busy) { setConfirm(null); setBulkPaid(null); } }} />
+      <ConfirmDialog spec={spec} busy={busy} onClose={() => { if (!busy) { setConfirm(null); setBulkPaid(null); } }} />
       <HistoryDrawer onClose={() => setHistoryOf(null)}
         target={historyOf && { entity: 'payouts', id: historyOf.id, title: `Payout to ${titleCase(historyOf.ownerName)}`, sub: `${moneyString(historyOf.amount, 'exact')}${historyOf.period ? ` · ${monthLabel(historyOf.period)} statement` : ''}` }} />
       {runOpen && <RunDialog onClose={() => setRunOpen(false)} onDone={() => { setRunOpen(false); reload(); runs.reload(); void refreshNavCounts(); }} />}
@@ -305,7 +306,7 @@ function RunDialog({ onClose, onDone }: { onClose: () => void; onDone: () => voi
         : { ...stagedToast(res), title: `Run ${res.run} sent for approval: ${plural(res.queued, 'payout')}, ${moneyString(res.total, 'exact')}.` });
       onDone();
     } catch (e) {
-      toast({ tone: 'critical', title: 'The run was not started.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'The run was not started.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
 
@@ -322,11 +323,11 @@ function RunDialog({ onClose, onDone }: { onClose: () => void; onDone: () => voi
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto [border-top:1px_solid_var(--color-line-soft)]">
           {loading && !data ? <TableSkeleton rows={4} cols={3} />
-            : error ? <div className="p-5 text-copy text-[var(--color-critical-fg)]">{error}</div>
+            : error ? <div className="p-5 text-copy text-danger">{error}</div>
             : rows.length === 0 ? <div className="p-5 text-copy text-muted-ink">No payouts are waiting.</div>
             : rows.map(p => (
               <label key={p.id} className={cx('flex items-center gap-3 px-[22px] py-[10px] [border-bottom:1px_solid_var(--color-line-soft)]', can(p) ? 'cursor-pointer' : 'cursor-not-allowed opacity-70')}>
-                <input type="checkbox" disabled={!can(p) || busy} checked={can(p) && !off[p.id]} onChange={() => setOff(o => ({ ...o, [p.id]: !o[p.id] }))} className="w-4 h-4 accent-[#151515]" />
+                <input type="checkbox" disabled={!can(p) || busy} checked={can(p) && !off[p.id]} onChange={() => setOff(o => ({ ...o, [p.id]: !o[p.id] }))} className="w-4 h-4 accent-black" />
                 <span className="flex flex-col min-w-0 flex-1">
                   <span className="text-copy font-medium truncate">{titleCase(p.ownerName)}</span>
                   <span className="text-meta text-muted-ink truncate">{can(p) ? destination(p) : 'No bank account on file. Add it on the owner profile first.'}{p.period ? ` · ${monthLabel(p.period)}` : ''}</span>

@@ -3,6 +3,7 @@ import { Plus, Trash2, X } from 'lucide-react';
 import { DataTable, type Column } from '../components/DataTable';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner } from '../components/DataState';
@@ -10,8 +11,10 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { TONE, cx } from '../lib/design-tokens';
-import { STATUS_LABEL, STATUS_TONE, SLOT_LABEL, DRIVERS_FALLBACK, VEHICLES_FALLBACK, SO_FALLBACK, schedFallback, type Sched, type SchedPayload, type SchedStatus, type TimeSlot } from '../lib/schedule';
+import { cx } from '../lib/design-tokens';
+import { SLOT_LABEL, DRIVERS_FALLBACK, VEHICLES_FALLBACK, SO_FALLBACK, schedFallback, type Sched, type SchedPayload, type SchedStatus, type TimeSlot } from '../lib/schedule';
+import { statusLabel } from '../lib/status';
+import { StatusBadge } from '../components/StatusBadge';
 
 /** DP Orders — the delivery-planning queue. One row per sales order to be delivered; the entry
  *  point for the Transportation scheduling cluster. Ported from 2990's SCM (manual). */
@@ -46,7 +49,7 @@ export default function DpOrdersPage() {
     { key: 'slot', label: 'Slot', value: r => (r.timeSlot ? SLOT_LABEL[r.timeSlot] : null), text: r => `${r.timeSlot ? SLOT_LABEL[r.timeSlot] : ''}${r.plannedTime ? ` ${r.plannedTime}` : ''}`.trim(),
       render: r => <span className="text-muted-ink">{r.timeSlot ? SLOT_LABEL[r.timeSlot] : '—'}{r.plannedTime ? ` · ${r.plannedTime}` : ''}</span>, width: 120, filter: { kind: 'select' } },
     { key: 'driver', label: 'Driver / vehicle', value: r => (r.driverName || r.vehicleCode ? `${r.driverName || '—'}${r.vehicleCode ? ` · ${r.vehicleCode}` : ''}` : 'Unassigned'), width: 180 },
-    { key: 'status', label: 'Status', type: 'status', value: r => STATUS_LABEL[r.status], text: r => STATUS_LABEL[r.status], render: r => <StatusPill status={r.status} />, width: 130 },
+    { key: 'status', label: 'Status', type: 'status', value: r => r.status, entity: 'delivery_schedule', width: 130 },
   ], []);
 
   function created(r: Sched) { setAdded(a => [r, ...a]); toast({ tone: 'success', title: 'Added to the schedule.', body: `${r.soDocNo} · ${r.customerName}` }); setDrawer(null); }
@@ -59,7 +62,7 @@ export default function DpOrdersPage() {
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>Schedule a sales order</Button> : undefined} />
       {error && <StaleBanner message={`Showing the last schedule we have. ${error}`} onRetry={reload} />}
       <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('delivery_schedule', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
         <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search SO or customer..." aria-label="Search DP orders"
           className="h-9 box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
       </div>
@@ -76,10 +79,6 @@ export default function DpOrdersPage() {
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-export function StatusPill({ status }: { status: SchedStatus }) {
-  const t = STATUS_TONE[status];
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}</span>;
 }
 
 function NewDrawer({ openSos, onClose, onCreated }: { openSos: { id: string; docNo: string; customerName: string }[]; onClose: () => void; onCreated: (r: Sched) => void }) {
@@ -104,7 +103,7 @@ function NewDrawer({ openSos, onClose, onCreated }: { openSos: { id: string; doc
         <Field label="Planned date (optional)" type="date" value={plannedDate} onChange={e => setPlannedDate(e.target.value)} />
         <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={soId === ''} disabledReason="Pick a sales order" onClick={submit}>Add to schedule</Button>
       </div>
@@ -125,7 +124,7 @@ function EditDrawer({ row, onClose, onSaved, onDelete }: { row: Sched; onClose: 
   }
   return (
     <Drawer open onClose={onClose} width={560}>
-      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{row.soDocNo}</h2><StatusPill status={f.status} /></div><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{row.soDocNo}</h2><StatusBadge entity="delivery_schedule" value={f.status} /></div><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <div className="text-[13px] text-muted-ink">{row.customerName}</div>
         <div className="grid grid-cols-2 gap-3.5">
@@ -148,8 +147,8 @@ function EditDrawer({ row, onClose, onSaved, onDelete }: { row: Sched; onClose: 
         </div>
         <Field label="Notes" placeholder="Optional" value={f.notes} onChange={e => setF(s => ({ ...s, notes: e.target.value }))} />
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Remove</Button>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Remove ${row.soDocNo} from the schedule?`, body: 'It comes off the delivery planning queue for good. The sales order itself does not change.', meta: row.customerName, confirmLabel: 'Remove from schedule', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Remove</ConfirmButton>
         <div className="flex gap-2.5"><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" onClick={save}>Save</Button></div>
       </div>
     </Drawer>

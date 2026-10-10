@@ -8,7 +8,7 @@ import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { date } from '../lib/format';
 import { cx } from '../lib/design-tokens';
-import { STATUS_LABEL, STATUS_TONE, SLOT_LABEL, schedFallback, type Sched, type SchedPayload, type SchedStatus } from '../lib/schedule';
+import { SLOT_LABEL, schedFallback, type Sched, type SchedPayload, type SchedStatus } from '../lib/schedule';
 
 /** Last Mile Delivery — dispatch scheduled deliveries and mark them delivered. A focused view
  *  over delivery_schedule; ported from 2990's SCM (manual). */
@@ -42,7 +42,7 @@ export default function LastMileDeliveryPage() {
     { key: 'customer', label: 'Customer', value: r => r.customerName },
     { key: 'date', label: 'Date / slot', type: 'date', value: r => r.plannedDate, render: r => <span className="text-[12.5px] text-muted-ink tabular-nums whitespace-nowrap">{r.plannedDate ? date(r.plannedDate) : '—'}{r.timeSlot ? ` · ${SLOT_LABEL[r.timeSlot]}` : ''}</span> },
     { key: 'crew', label: 'Driver / vehicle', value: r => (r.driverName || r.vehicleCode ? `${r.driverName || '—'}${r.vehicleCode ? ` · ${r.vehicleCode}` : ''}` : 'Unassigned') },
-    { key: 'status', label: 'Status', type: 'status', value: r => r.status, status: r => ({ label: STATUS_LABEL[r.status], tone: STATUS_TONE[r.status] }) },
+    { key: 'status', label: 'Status', type: 'status', value: r => r.status, entity: 'delivery_schedule' },
     { key: 'act', label: '', noExport: true, sortable: false, filter: false, width: 150, align: 'right', render: r => <>
       {canWrite && r.status === 'SCHEDULED' && <Button size="sm" variant="secondary" onClick={e => { e.stopPropagation(); act(r, 'dispatch', 'DISPATCHED', 'Dispatched.'); }}>Dispatch</Button>}
       {canWrite && r.status === 'DISPATCHED' && <Button size="sm" variant="primary" onClick={e => { e.stopPropagation(); act(r, 'deliver', 'DELIVERED', 'Marked delivered.'); }}>Mark delivered</Button>}

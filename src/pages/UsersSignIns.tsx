@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { DataTable, type Column } from '../components/DataTable';
 import { FilterSelect } from './finance/listKit';
 import { useApi } from '../lib/useApi';
@@ -79,7 +79,7 @@ export default function UsersSignIns({ people }: { people: { id: string; fullNam
             <span className="flex flex-col gap-1">
               <span className="flex items-center justify-between gap-2">
                 <span className="text-copy font-medium truncate" title={who}>{who}</span>
-                <Badge tone={r.tone} label={r.label} size="sm" />
+                <StatusBadge tone={r.tone} label={r.label} size="sm" />
               </span>
               <span className="text-meta text-muted-ink tabular-nums">{dateTime(s.at)}</span>
               <span className="text-meta text-muted-ink truncate">{SIGN_IN_METHOD[s.method] ?? s.method} · {deviceOf(s.userAgent)}{s.ip ? ` · ${s.ip}` : ''}</span>

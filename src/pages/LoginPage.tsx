@@ -98,7 +98,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
       {/* The photograph is optional. Drop one at public/brand/login-hero.jpg and it
           appears; without it the blueprint grid carries the panel on its own, so a
           clean install never shows a broken image. */}
-      <div className="hidden lg:block bg-blueprint relative min-h-full [background:#151515]!">
+      <div className="hidden lg:block bg-blueprint relative min-h-full [background:var(--color-black)]!">
         <div
           aria-hidden
           className="absolute inset-0 bg-[url(/brand/login-hero.jpg)] bg-cover bg-center"
@@ -142,8 +142,8 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
             <div className="text-copy text-muted-ink text-pretty">{c.sub}</div>
           </div>
 
-          {error && <div role="alert" className="[border-left:2px_solid_var(--color-critical-line)] bg-critical-bg py-3 px-3.5 text-meta text-[var(--color-critical-fg)]">{error}</div>}
-          {sent && <div className="[border-left:2px_solid_var(--color-success-line)] bg-success-bg py-3 px-3.5 text-meta text-[var(--color-success-fg)]">Reset link sent. It expires in 60 minutes.</div>}
+          {error && <div role="alert" className="[border-left:2px_solid_var(--color-critical-line)] bg-critical-bg py-3 px-3.5 text-meta text-danger">{error}</div>}
+          {sent && <div className="[border-left:2px_solid_var(--color-success-line)] bg-success-bg py-3 px-3.5 text-meta text-success">Reset link sent. It expires in 60 minutes.</div>}
 
           <div className="flex flex-col gap-5">
             {screen === 'code' && (
@@ -182,7 +182,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
               <div className="flex flex-col gap-2 p-4 border border-solid border-line rounded-control bg-page">
                 {policy.map(p => (
                   <div key={p.label} className="flex items-center gap-2 text-meta">
-                    <span className={`w-[13px] text-center ${p.ok ? 'text-[var(--color-success-fg)]' : 'text-muted-ink'}`}>{p.ok ? '✓' : '○'}</span>
+                    <span className={`w-[13px] text-center ${p.ok ? 'text-success' : 'text-muted-ink'}`}>{p.ok ? '✓' : '○'}</span>
                     <span className={p.ok ? 'text-ink' : 'text-muted-ink'}>{p.label}</span>
                   </div>
                 ))}
@@ -192,7 +192,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
             {screen === 'signin' && (
               <div className="flex items-center justify-between gap-3">
                 <label className="flex items-center gap-2 min-h-10 cursor-pointer text-meta text-muted-ink">
-                  <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} className="accent-[var(--color-success-fg)] w-4 h-4" />
+                  <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} className="accent-success w-4 h-4" />
                   Keep me signed in
                 </label>
                 <Button type="button" variant="tertiary" size="md" style={{ paddingInline: 8, marginRight: -8 }}

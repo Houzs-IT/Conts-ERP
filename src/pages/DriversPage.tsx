@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
@@ -41,9 +42,9 @@ export default function DriversPage() {
   const columns = useMemo<Column<Driver>[]>(() => [
     { key: 'code', label: 'Code', type: 'ref', value: d => d.driverCode, hideable: false },
     { key: 'name', label: 'Name', value: d => d.name },
-    { key: 'phone', label: 'Phone', value: d => d.phone || null },
+    { key: 'phone', label: 'Phone', type: 'phone', value: d => d.phone || null },
     { key: 'vehicle', label: 'Vehicle', value: d => d.vehicle || null },
-    { key: 'status', label: 'Status', type: 'status', value: d => (d.active ? 'ACTIVE' : 'INACTIVE'), status: d => d.active ? { label: 'Active', tone: 'success' } : { label: 'Inactive', tone: 'neutral' } },
+    { key: 'status', label: 'Status', type: 'status', value: d => (d.active ? 'ACTIVE' : 'INACTIVE'), entity: 'active_flag' },
   ], []);
 
   function save(d: Draft) {
@@ -94,8 +95,8 @@ function DriverDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onCl
           </div>
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete driver ${draft.name}?`, body: 'It is deleted for good and drops off the driver list.', confirmLabel: 'Delete driver', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name" onClick={() => onSave(f)}>{draft.isNew ? 'Create' : 'Save'}</Button>

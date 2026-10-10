@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import Icon from '../components/Icon';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner } from '../components/DataState';
 import { EmptyState } from '../components/States';
 import { Chip } from './finance/listKit';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
@@ -344,7 +344,7 @@ export default function AutomationsPage() {
       setOverrides(o => ({ ...o, [r.id]: next }));
       toast({ tone: 'success', title: next ? `${r.name}: wanted.` : `${r.name}: not wanted.`, body: 'Your choice is saved. This rule is not running yet, so nothing is sent either way.' });
     } catch (e) {
-      toast({ tone: 'critical', title: `${r.name} was not changed.`, body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: `${r.name} was not changed.`, body: errorMessage(e, 'Try again in a moment.') });
     }
   }
 
@@ -357,7 +357,7 @@ export default function AutomationsPage() {
         sub={`${running} of ${total} run today · ${total - running} not running yet${qh ? ` · quiet hours ${qh.from}–${qh.to} MYT` : ''}`}
       />
 
-      <div className="flex items-start gap-2.5 py-3 px-3.5 rounded-control bg-[var(--color-warning)] text-[var(--color-warning-fg)] text-pretty" style={{ borderLeft: '2px solid var(--color-warning-line)' }}>
+      <div className="flex items-start gap-2.5 py-3 px-3.5 rounded-control bg-warning-bg text-warning text-pretty" style={{ borderLeft: '2px solid var(--color-warning-line)' }}>
         <Icon name="CircleAlert" size="sm" style={{ marginTop: 1 }} />
         <span className="text-meta">
           <strong className="font-semibold">Most rules do not run yet.</strong> {running} are sent by the system when they happen (owner statements and payouts, staff and account emails).
@@ -438,17 +438,15 @@ function Switch({ on, label, onToggle }: { on: boolean; label: string; onToggle:
       onClick={e => { e.stopPropagation(); onToggle(); }}
       className={cx(
         'w-11 h-[26px] flex-none rounded-full border-none cursor-pointer p-[3px] flex [transition:background_120ms_ease-out]',
-        on ? 'justify-end bg-[var(--color-success-solid)]' : 'justify-start bg-line-strong',
+        on ? 'justify-end bg-success' : 'justify-start bg-line-strong',
       )}>
       <span className="w-5 h-5 rounded-full bg-white" />
     </button>
   );
 }
 
-function StatusBadge({ r }: { r: Rule }) {
-  return r.running
-    ? <Badge tone="success" label="Running" size="sm" />
-    : <Badge tone="neutral" label="Not running yet" size="sm" />;
+function RuleStatus({ r }: { r: Rule }) {
+  return <StatusBadge entity="automation" value={r.running ? "running" : "not_running"} size="sm" />;
 }
 
 function RuleRow({ r, onOpen, onToggle }: { r: Rule; onOpen: () => void; onToggle: () => void }) {
@@ -461,8 +459,8 @@ function RuleRow({ r, onOpen, onToggle }: { r: Rule; onOpen: () => void; onToggl
       <div className="flex items-start gap-3">
         <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
           <span className="text-copy font-semibold">{r.name}</span>
-          <StatusBadge r={r} />
-          {r.quietHours === 'override' && <Badge tone="warning" label="Overrides quiet hours" size="sm" />}
+          <RuleStatus r={r} />
+          {r.quietHours === 'override' && <StatusBadge tone="warning" label="Overrides quiet hours" size="sm" />}
         </div>
         {r.running
           ? <span className="text-caption text-muted-ink whitespace-nowrap pt-0.5 hidden sm:inline">Always sent</span>
@@ -500,8 +498,8 @@ function RulePanel({ r, onClose, onToggle }: { r: Rule; onClose: () => void; onT
         <div className="flex flex-col gap-1.5 flex-1 min-w-0">
           <span className="text-heading font-semibold text-pretty">{r.name}</span>
           <div className="flex items-center gap-2 flex-wrap">
-            <StatusBadge r={r} />
-            {r.quietHours === 'override' && <Badge tone="warning" label="Overrides quiet hours" size="sm" />}
+            <RuleStatus r={r} />
+            {r.quietHours === 'override' && <StatusBadge tone="warning" label="Overrides quiet hours" size="sm" />}
           </div>
         </div>
         <button onClick={onClose} aria-label="Close" className="w-[30px] h-[30px] flex-none grid place-items-center rounded-full bg-muted border-none text-muted-ink cursor-pointer">

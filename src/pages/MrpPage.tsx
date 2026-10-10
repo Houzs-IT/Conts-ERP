@@ -38,7 +38,7 @@ export default function MrpPage() {
     { key: 'demand', label: 'Demand', type: 'number', value: r => r.demand },
     { key: 'onHand', label: 'On hand', type: 'number', value: r => r.onHand, render: r => <span className="tabular-nums text-muted-ink">{r.onHand}</span> },
     { key: 'onOrder', label: 'On order', type: 'number', value: r => r.onOrder, render: r => <span className="tabular-nums text-muted-ink">{r.onOrder}</span> },
-    { key: 'net', label: 'Net to buy', type: 'number', value: r => r.net, render: r => <span className={cx('tabular-nums text-[14px] font-semibold', r.net > 0 ? 'text-[var(--color-critical-fg)]' : 'text-muted-ink')}>{r.net > 0 ? r.net : '—'}</span> },
+    { key: 'net', label: 'Net to buy', type: 'number', value: r => r.net, render: r => <span className={cx('tabular-nums text-[14px] font-semibold', r.net > 0 ? 'text-danger' : 'text-muted-ink')}>{r.net > 0 ? r.net : '—'}</span> },
   ], []);
 
   return (

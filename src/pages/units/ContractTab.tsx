@@ -5,11 +5,12 @@ import { Field } from '../../components/Field';
 import { MoneyText } from '../../components/MoneyText';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
-import { api, ApiFailure } from '../../lib/api';
+import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { date, monthLabel, rm } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
-import { MODELS, MODEL, MODEL_CHIP, type RevenueModel } from '../../lib/revenueModel';
+import { MODELS, MODEL, MODEL_TONE, type RevenueModel } from '../../lib/revenueModel';
 import { DataTable, type Column } from '../../components/DataTable';
+import { StatusBadge } from '../../components/StatusBadge';
 
 /** The Contract tab: pick ONE revenue model, then fill only that model's fields. Below, last month's statement for
  *  this unit worked out on the terms as they stand in the form (the statement engine, on the server), and the
@@ -83,7 +84,7 @@ const HISTORY_COLUMNS: Column<ContractView>[] = [
 ];
 
 export function ModelChip({ model, label }: { model: RevenueModel; label?: string }) {
-  return <span className={cx('inline-flex items-center rounded-pill px-[10px] py-[3px] text-meta font-medium whitespace-nowrap', MODEL_CHIP[model])}>{label ?? MODEL[model].label}</span>;
+  return <StatusBadge tone={MODEL_TONE[model]} label={label ?? MODEL[model].label} />;
 }
 
 export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unitId: string; canEdit: boolean; onSaved: () => void; footer?: ReactNode }) {
@@ -133,7 +134,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
       setMode('update'); reload(); onSaved();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFields(e.fields);
-      toast({ tone: 'critical', title: 'Contract was not saved.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Contract was not saved.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setSaving(false); }
   }
 

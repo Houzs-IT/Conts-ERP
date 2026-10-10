@@ -2,15 +2,15 @@ import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import qrcode from 'qrcode-generator';
 import PageHeader from '../components/PageHeader';
 import { Card, CardHeader } from '../components/Card';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { Field, PasswordField } from '../components/Field';
-import { Dialog, type DialogSpec } from '../components/Dialog';
+import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
-import { api, ApiFailure } from '../lib/api';
+import { api, ApiFailure, errorMessage } from '../lib/api';
 import { date, dateTime, plural } from '../lib/format';
 import { SIGN_IN_METHOD, SIGN_IN_RESULT, deviceOf } from '../lib/signIns';
 
@@ -29,7 +29,7 @@ export default function AccountPage({ gate = false }: { gate?: boolean }) {
   const { data, loading, reload } = useApi<Account>('/account');
   const toast = useToast();
   const [busy, setBusy] = useState(false);
-  const [confirm, setConfirm] = useState<DialogSpec | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
 
   async function signOutOthers() {
     setBusy(true);
@@ -38,7 +38,7 @@ export default function AccountPage({ gate = false }: { gate?: boolean }) {
       toast({ tone: 'success', title: 'Signed out of every other device.', body: 'This browser stays signed in.' });
       setConfirm(null);
     } catch (err) {
-      toast({ tone: 'critical', title: 'Other devices were not signed out.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Other devices were not signed out.', body: errorMessage(err, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
 
@@ -84,14 +84,14 @@ export default function AccountPage({ gate = false }: { gate?: boolean }) {
                     <span className="text-copy">{deviceOf(s.userAgent)}</span>
                     <span className="text-caption text-muted-ink">{SIGN_IN_METHOD[s.method] ?? s.method}{s.ip ? ` · ${s.ip}` : ''}</span>
                   </span>
-                  <Badge tone={r.tone} label={r.label} size="sm" />
+                  <StatusBadge tone={r.tone} label={r.label} size="sm" />
                 </div>
               );
             })}
           </div>
         )}
       </Card>
-      <Dialog spec={confirm} busy={busy} onClose={() => setConfirm(null)} />
+      <ConfirmDialog spec={confirm} busy={busy} onClose={() => setConfirm(null)} />
     </div>
   );
 }
@@ -113,7 +113,7 @@ function TwoStepCard({ data, loading, gate, onChanged }: { data: Account | null;
   async function start() {
     setBusy(true);
     try { setSetup(await api.post<{ secret: string; uri: string }>('/account/2fa/setup')); setCode(''); setCodeError(''); }
-    catch (err) { toast({ tone: 'critical', title: 'Two-step sign-in could not start.', body: err instanceof Error ? err.message : 'Try again in a moment.' }); }
+    catch (err) { toast({ tone: 'critical', title: 'Two-step sign-in could not start.', body: errorMessage(err, 'Try again in a moment.') }); }
     finally { setBusy(false); }
   }
   async function confirmCode(e: FormEvent) {
@@ -124,7 +124,7 @@ function TwoStepCard({ data, loading, gate, onChanged }: { data: Account | null;
       const res = await api.post<{ backupCodes: string[] }>('/account/2fa/confirm', { code });
       setSetup(null); setCodes(res.backupCodes);
       await onChanged();
-    } catch (err) { setCodeError(err instanceof Error ? err.message : 'Try again.'); }
+    } catch (err) { setCodeError(errorMessage(err, 'Try again.')); }
     finally { setBusy(false); }
   }
   async function withPassword(e: FormEvent) {
@@ -143,13 +143,13 @@ function TwoStepCard({ data, loading, gate, onChanged }: { data: Account | null;
       await onChanged();
     } catch (err) {
       if (err instanceof ApiFailure && err.fields?.password) setPasswordError(err.fields.password);
-      else toast({ tone: 'critical', title: 'Nothing changed.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      else toast({ tone: 'critical', title: 'Nothing changed.', body: errorMessage(err, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
 
   const status = !t ? null : t.enabled
-    ? <Badge tone="success" label={`On since ${date(t.enabledAt!)}`} size="sm" />
-    : <Badge tone={t.requiredForRole ? 'warning' : 'neutral'} label={t.requiredForRole ? 'Off, required for your role' : 'Off'} size="sm" />;
+    ? <StatusBadge tone="success" label={`On since ${date(t.enabledAt!)}`} size="sm" />
+    : <StatusBadge tone={t.requiredForRole ? 'warning' : 'neutral'} label={t.requiredForRole ? 'Off, required for your role' : 'Off'} size="sm" />;
 
   return (
     <Card>
@@ -252,15 +252,15 @@ function QrCode({ text }: { text: string }) {
   return (
     <svg role="img" aria-label="QR code to scan with your authenticator app" viewBox={`0 0 ${size} ${size}`} width={184} height={184}
       shapeRendering="crispEdges" className="flex-none rounded-control border border-solid border-line bg-white">
-      <path d={path} fill="#151515" />
+      <path d={path} fill="var(--color-brand-black)" />
     </svg>
   );
 }
 
 const NOTE_TONE = {
-  info: '[border-left:2px_solid_var(--color-info-line)] bg-info-bg text-[var(--color-info-fg)]',
-  warning: '[border-left:2px_solid_var(--color-warning-line)] bg-warning-bg text-[var(--color-warning-fg)]',
-  success: '[border-left:2px_solid_var(--color-success-line)] bg-success-bg text-[var(--color-success-fg)]',
+  info: '[border-left:2px_solid_var(--color-info-line)] bg-info-bg text-info',
+  warning: '[border-left:2px_solid_var(--color-warning-line)] bg-warning-bg text-warning',
+  success: '[border-left:2px_solid_var(--color-success-line)] bg-success-bg text-success',
 };
 function Note({ tone, children }: { tone: keyof typeof NOTE_TONE; children: ReactNode }) {
   return <div className={`py-3 px-3.5 text-meta leading-[1.5] ${NOTE_TONE[tone]}`}>{children}</div>;
@@ -289,7 +289,7 @@ function PasswordCard() {
       setCurrent(''); setNext('');
     } catch (err) {
       if (err instanceof ApiFailure && err.fields) setErrors(err.fields);
-      else toast({ tone: 'critical', title: 'Password not changed.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      else toast({ tone: 'critical', title: 'Password not changed.', body: errorMessage(err, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
   return (
@@ -300,7 +300,7 @@ function PasswordCard() {
         <PasswordField label="New password" value={next} required autoComplete="new-password" onChange={e => setNext(e.target.value)} error={errors.password} />
         <div className="flex flex-col gap-1.5">
           {policy.map(p => (
-            <span key={p.label} className={`text-meta ${p.ok ? 'text-[var(--color-success-fg)]' : 'text-muted-ink'}`}>{p.ok ? '✓' : '○'} {p.label}</span>
+            <span key={p.label} className={`text-meta ${p.ok ? 'text-success' : 'text-muted-ink'}`}>{p.ok ? '✓' : '○'} {p.label}</span>
           ))}
         </div>
         <div><Button type="submit" variant="primary" size="sm" loading={busy} disabled={!policy.every(p => p.ok) || !current}>Change password</Button></div>

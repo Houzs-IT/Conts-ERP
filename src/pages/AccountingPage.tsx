@@ -32,7 +32,7 @@ export default function AccountingPage() {
   const d = data ?? FALLBACK;
   const net = d.arTotalSen - d.apTotalSen;
 
-  const overdueCell = (n: number): ReactNode => <span className={cx('tabular-nums', n ? 'text-[var(--color-critical-fg)] font-semibold' : 'text-muted-ink')}>{n || '—'}</span>;
+  const overdueCell = (n: number): ReactNode => <span className={cx('tabular-nums', n ? 'text-danger font-semibold' : 'text-muted-ink')}>{n || '—'}</span>;
   const apColumns = useMemo<Column<Payable>[]>(() => [
     { key: 'supplier', label: 'Supplier', value: p => p.name, hideable: false, width: 260, sub: p => p.code },
     { key: 'code', label: 'Supplier code', type: 'ref', value: p => p.code, hidden: true },

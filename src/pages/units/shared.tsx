@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { cx } from '../../lib/design-tokens';
 import { Select as UiSelect } from '../../components/Select';
-import type { Tone, UnitReadiness, TaskState, BookingChannel, ReservationState } from '../../lib/types';
+import type { UnitReadiness, TaskState, BookingChannel, ReservationState } from '../../lib/types';
 import type { RevenueModel } from '../../lib/revenueModel';
 
 export const BANKS = ['MBBE', 'PBBB', 'CIBB', 'RHBB', 'HLBB', 'AMBB', 'BIMB', 'UOVB', 'OCBC'];
@@ -13,21 +13,6 @@ export const SPLITS = ['Not set', 'Profit share', 'GRR — guaranteed rent'];
 /** Roles that may edit unit master data: MASTER_ROLES in functions/_lib/properties.ts. */
 export const MASTER_ROLES = ['management', 'operations_manager', 'finance_admin'];
 
-export const READY_TONE: Record<UnitReadiness, Tone> = {
-  occupied: 'info', dirty: 'warning', cleaning: 'info', inspection: 'warning',
-  ready: 'success', maintenance: 'critical', blocked: 'neutral',
-};
-export const TASK_TONE: Record<TaskState, Tone> = {
-  open: 'neutral', assigned: 'info', in_progress: 'info', waiting: 'warning',
-  resolved: 'success', overdue: 'critical', reopened: 'critical',
-};
-export const RES_TONE: Record<ReservationState, Tone> = {
-  inquiry: 'neutral', pending: 'warning', confirmed: 'info', checked_in: 'success',
-  checked_out: 'neutral', cancelled: 'neutral', no_show: 'critical',
-};
-export const COND_TONE: Record<string, Tone> = {
-  good: 'success', fair: 'neutral', replace_soon: 'warning', damaged: 'critical',
-};
 export const cap = (s: string) => s.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 
 /* ---- GET /api/properties: the tree and the editable unit master data ---- */

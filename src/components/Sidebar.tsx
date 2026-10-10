@@ -8,6 +8,7 @@ import { ROLE_LABEL } from '../lib/vocabulary';
 import Icon, { toPascal } from './Icon';
 import { Logo } from './Logo';
 import { cx } from '../lib/design-tokens';
+import { count as countLabel } from '../lib/format';
 
 interface Props { path: string; navigate: (p: string) => void; open: boolean; onToggle: () => void }
 
@@ -77,7 +78,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   return (
     <div data-print-hide style={{
       width: open ? shell.sidebar : shell.sidebarCollapsed, flex: 'none', height: '100dvh',
-      display: 'flex', flexDirection: 'column', background: color.black, color: '#FFFFFF',
+      display: 'flex', flexDirection: 'column', background: color.black, color: 'var(--color-text-inverse)',
       transition: `width ${motion.standard} ${motion.ease}`,
     }}>
       {/* Expanded: logo then the collapse control on the right. Collapsed: the mark, and the expand control
@@ -101,7 +102,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
             {(['rental', 'supply'] as Workspace[]).map(w => (
               <button key={w} role="tab" aria-selected={ws === w} onClick={() => pick(w)}
                 style={{ height: 28, borderRadius: 6, border: 'none', cursor: 'pointer', font: 'inherit', fontSize: text.meta, fontWeight: 500,
-                  background: ws === w ? color.black : 'transparent', color: ws === w ? '#FFFFFF' : color.dim,
+                  background: ws === w ? color.black : 'transparent', color: ws === w ? 'var(--color-text-inverse)' : color.dim,
                   boxShadow: ws === w ? `inset 0 0 0 1px rgba(200,164,106,0.35)` : 'none' }}>
                 {WORKSPACE_LABEL[w]}
               </button>
@@ -167,14 +168,14 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                       borderRadius: radius.control, cursor: 'pointer', border: 'none', width: '100%',
                       font: 'inherit', textAlign: 'left',
                       transition: `background ${motion.fast} ease-out`,
-                      color: selfActive ? '#FFFFFF' : color.onDark,
+                      color: selfActive ? 'var(--color-text-inverse)' : color.onDark,
                       background: selfActive ? color.charcoal : 'transparent',
                       boxShadow: selfActive ? `inset 2px 0 0 ${color.gold}` : 'none',
                     }}
                   >
                     <Icon name={toPascal(it.icon)} size="nav" />
                     {open && <span style={{ flex: 1, minWidth: 0, fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.label}</span>}
-                    {open && !it.children && n > 0 && <span style={badge(selfActive)}>{n.toLocaleString('en-MY')}</span>}
+                    {open && !it.children && n > 0 && <span style={badge(selfActive)}>{countLabel(n)}</span>}
                     {/* The rail shows a dot where the full menu shows a count. */}
                     {!open && n > 0 && <span aria-hidden style={{ position: 'absolute', top: 6, right: 10, width: 7, height: 7, borderRadius: 999, background: color.gold, boxShadow: `0 0 0 2px ${color.black}` }} />}
                     {open && it.children && (
@@ -194,7 +195,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                               display: 'flex', alignItems: 'center', gap: 8, height: shell.navItemL3,
                               padding: '0 9px', borderRadius: 7, cursor: 'pointer', border: 'none', width: '100%',
                               font: 'inherit', textAlign: 'left',
-                              color: on ? '#FFFFFF' : color.faint,
+                              color: on ? 'var(--color-text-inverse)' : color.faint,
                               background: on ? 'rgba(200,164,106,0.14)' : 'transparent',
                               fontWeight: on ? 500 : 400,
                             }}>
@@ -215,7 +216,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
 
       <div style={{ flex: 'none', padding: 10, borderTop: `1px solid ${color.charcoal}`, position: 'relative' }}>
         {profileOpen && (
-          <div style={{ position: 'absolute', left: 10, bottom: 62, width: Math.max(224, open ? shell.sidebar - 20 : 224), zIndex: 30, background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: '0 12px 32px rgba(21,21,21,0.24)', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', left: 10, bottom: 62, width: Math.max(224, open ? shell.sidebar - 20 : 224), zIndex: 30, background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: '0 12px 32px rgba(21,21,21,0.24)', overflow: 'hidden' }}>
             <div style={{ padding: '14px 16px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', flexDirection: 'column', gap: 3 }}>
               <span style={{ fontSize: text.copy, fontWeight: 600, color: color.ink }}>{user!.fullName}</span>
               <span style={{ fontSize: text.small, color: color.textMuted }}>{user!.email}</span>
@@ -227,7 +228,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
               { label: 'Log out', icon: 'LogOut', danger: true, go: logout },
             ].map(m => (
               <button key={m.label} onClick={m.go}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', width: '100%', border: 'none', borderBottom: `1px solid ${color.borderMuted}`, background: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left', color: m.danger ? '#A8352F' : color.ink }}>
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', width: '100%', border: 'none', borderBottom: `1px solid ${color.borderMuted}`, background: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left', color: m.danger ? 'var(--color-critical-fg)' : color.ink }}>
                 <Icon name={m.icon} size="sm" />
                 <span style={{ fontSize: text.copy }}>{m.label}</span>
               </button>
@@ -235,7 +236,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
           </div>
         )}
         <button onClick={() => setProfileOpen(v => !v)} aria-label={open ? undefined : `${user!.fullName}, account menu`}
-          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8, borderRadius: radius.control, cursor: 'pointer', width: '100%', border: 'none', font: 'inherit', textAlign: 'left', justifyContent: open ? 'flex-start' : 'center', background: profileOpen ? 'rgba(255,255,255,0.06)' : 'transparent', color: '#FFFFFF' }}>
+          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8, borderRadius: radius.control, cursor: 'pointer', width: '100%', border: 'none', font: 'inherit', textAlign: 'left', justifyContent: open ? 'flex-start' : 'center', background: profileOpen ? 'rgba(255,255,255,0.06)' : 'transparent', color: 'var(--color-text-inverse)' }}>
           <span style={{ width: 30, height: 30, flex: 'none', borderRadius: radius.pill, background: color.charcoal, color: color.gold, display: 'grid', placeItems: 'center', fontSize: text.micro, fontWeight: 600 }}>
             {user!.fullName.split(' ').map(n => n[0]).slice(0, 2).join('')}
           </span>

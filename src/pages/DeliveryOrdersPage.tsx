@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Search, Plus, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
@@ -11,15 +12,14 @@ import { ShortStockPrompt } from '../components/ShortStockPrompt';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { date } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { cx } from '../lib/design-tokens';
+import { statusLabel } from '../lib/status';
+import { StatusBadge } from '../components/StatusBadge';
 
 /** Delivery Orders — ported from 2990's SCM, drawn in Conts. Delivers a sales order's
  *  lines (fills SO delivered_qty; advances the SO to DELIVERED when complete). */
 
 type Status = 'LOADED' | 'DISPATCHED' | 'IN_TRANSIT' | 'SIGNED' | 'DELIVERED' | 'INVOICED' | 'CANCELLED';
-const STATUS_LABEL: Record<Status, string> = { LOADED: 'Loaded', DISPATCHED: 'Dispatched', IN_TRANSIT: 'In transit', SIGNED: 'Signed', DELIVERED: 'Delivered', INVOICED: 'Invoiced', CANCELLED: 'Cancelled' };
-const STATUS_TONE: Record<Status, Tone> = { LOADED: 'info', DISPATCHED: 'info', IN_TRANSIT: 'warning', SIGNED: 'info', DELIVERED: 'success', INVOICED: 'success', CANCELLED: 'critical' };
 const FLOW: Status[] = ['LOADED', 'DISPATCHED', 'IN_TRANSIT', 'SIGNED', 'DELIVERED'];
 const FILTERS: (Status | 'all')[] = ['all', 'LOADED', 'DISPATCHED', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED'];
 
@@ -70,7 +70,7 @@ export default function DeliveryOrdersPage() {
     { key: 'customer', label: 'Customer', value: p => p.customerName },
     { key: 'doDate', label: 'DO date', type: 'date', value: p => p.doDate || null },
     { key: 'driver', label: 'Driver', value: p => p.driverName, text: p => `${p.driverName || '—'}${p.vehicle ? ` · ${p.vehicle}` : ''}`, render: p => <span className="text-[12.5px] text-[var(--color-ink-2)]">{p.driverName || '—'}{p.vehicle ? ` · ${p.vehicle}` : ''}</span> },
-    { key: 'status', label: 'Status', type: 'status', value: p => p.status, status: p => ({ label: STATUS_LABEL[p.status], tone: STATUS_TONE[p.status] }) },
+    { key: 'status', label: 'Status', type: 'status', value: p => p.status, entity: 'delivery_order' },
   ], []);
 
   function created(d: Do) { setAdded(a => [d, ...a]); toast({ tone: 'success', title: 'Delivery order raised.', body: `${d.doNumber} · ${d.customerName}` }); setDrawer(null); }
@@ -91,7 +91,7 @@ export default function DeliveryOrdersPage() {
         onRowClick={p => setDrawer({ mode: 'view', d: p })}
         noun={['delivery order', 'delivery orders']} exportName="delivery-orders"
         toolbar={<>
-          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('delivery_order', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
           <div className="relative">
             <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
             <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search DO, SO or customer..." aria-label="Search delivery orders"
@@ -108,10 +108,6 @@ export default function DeliveryOrdersPage() {
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-function StatusPill({ status }: { status: Status }) {
-  const t = STATUS_TONE[status];
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}</span>;
 }
 
 /* ---------- deliver (create) drawer ---------- */
@@ -199,7 +195,7 @@ function DeliverDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: Ope
                 <tbody>
                   {lines.length === 0 ? <tr><td colSpan={3} className="py-6 text-center text-[12.5px] text-muted-ink">This sales order has nothing left to deliver.</td></tr>
                   : lines.map((l, i) => (
-                    <tr key={l.soLineId} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                    <tr key={l.soLineId} className="[border-top:1px_solid_var(--color-line-soft)]">
                       <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.outstanding}</td>
                       <td className="py-2 px-3 text-right"><input type="number" min={0} value={l.qty} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} className="h-8 w-[80px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
@@ -213,7 +209,7 @@ function DeliverDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: Ope
         <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
         {shortStock && <ShortStockPrompt message={shortStock} actionLabel="Deliver anyway" busy={busy} onCancel={() => setShortStock(null)} onConfirm={() => void submit(true)} />}
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave || !!shortStock} disabledReason={shortStock ? 'Answer the stock question above first' : 'Pick a SO and deliver at least one line'} loading={busy && !shortStock} onClick={() => void submit()}>Raise delivery</Button>
       </div>
@@ -232,11 +228,11 @@ const lineColumns: Column<DoLine>[] = [
 
 function ViewDrawer({ d, canWrite, onClose, onAct }: { d: Do; canWrite: boolean; onClose: () => void; onAct: (d: Do, patch: Record<string, unknown>, optimistic: Partial<Do>, title: string) => void }) {
   const lineRows = useMemo(() => (d.lines ?? []).map((l, i) => ({ ...l, key: String(i) })), [d.lines]);
-  const advanceLabel = (() => { const i = FLOW.indexOf(d.status); return i >= 0 && i < FLOW.length - 1 ? STATUS_LABEL[FLOW[i + 1]] : null; })();
+  const advanceLabel = (() => { const i = FLOW.indexOf(d.status); return i >= 0 && i < FLOW.length - 1 ? statusLabel('delivery_order', FLOW[i + 1]) : null; })();
   return (
     <Drawer open onClose={onClose} width={720}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
-        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{d.doNumber}</h2><StatusPill status={d.status} /></div>
+        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{d.doNumber}</h2><StatusBadge entity="delivery_order" value={d.status} /></div>
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
@@ -256,8 +252,8 @@ function ViewDrawer({ d, canWrite, onClose, onAct }: { d: Do; canWrite: boolean;
         </div>
         {d.notes && <div className="text-[13px]"><span className="text-muted-ink">Notes: </span>{d.notes}</div>}
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{canWrite && d.status !== 'CANCELLED' && d.status !== 'DELIVERED' && d.status !== 'INVOICED' && <Button size="sm" variant="danger" onClick={() => onAct(d, { status: 'CANCELLED' }, { status: 'CANCELLED' }, 'Delivery cancelled.')}>Cancel</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{canWrite && d.status !== 'CANCELLED' && d.status !== 'DELIVERED' && d.status !== 'INVOICED' && <ConfirmButton confirm={{ title: `Cancel ${d.doNumber}?`, body: 'It is marked Cancelled, its items go back into stock and the sales order counts them as not delivered.', meta: d.customerName, confirmLabel: 'Cancel delivery', cancelLabel: 'Keep delivery' }} onConfirm={() => onAct(d, { status: 'CANCELLED' }, { status: 'CANCELLED' }, 'Delivery cancelled.')}>Cancel</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
           {canWrite && advanceLabel && <Button size="sm" variant="primary" onClick={() => onAct(d, { action: 'advance' }, { status: FLOW[FLOW.indexOf(d.status) + 1] }, `Advanced to ${advanceLabel}.`)}>Advance → {advanceLabel}</Button>}

@@ -4,7 +4,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useSession } from '../lib/session';
-import { STATUS_LABEL, STATUS_TONE, DRIVERS_FALLBACK, VEHICLES_FALLBACK, schedFallback, type Sched, type SchedPayload } from '../lib/schedule';
+import { DRIVERS_FALLBACK, VEHICLES_FALLBACK, schedFallback, type Sched, type SchedPayload } from '../lib/schedule';
 
 /** Delivery Planning — for a chosen day, assign a driver, vehicle and route sequence to each
  *  delivery. A focused planning board over delivery_schedule; ported from 2990's SCM as a
@@ -44,7 +44,7 @@ export default function DeliveryPlanningPage() {
     { key: 'customer', label: 'Customer / address', value: r => r.customerName, text: r => `${r.customerName} ${r.address}`, sub: r => r.address || null },
     { key: 'driver', label: 'Driver', value: r => r.driverName, render: r => <select disabled={!canWrite} value={r.driverId} onClick={e => e.stopPropagation()} onChange={e => patch(r, { driverId: e.target.value }, { driverId: e.target.value || null })} className="h-8 box-border px-2 py-0 font-sans text-[12.5px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer disabled:opacity-60"><option value="">Unassigned</option>{drivers.map((d: { id: string; driverCode: string; name: string }) => <option key={d.id} value={d.id}>{d.driverCode} · {d.name}</option>)}</select> },
     { key: 'vehicle', label: 'Vehicle', value: r => r.vehicleCode, render: r => <select disabled={!canWrite} value={r.vehicleId} onClick={e => e.stopPropagation()} onChange={e => patch(r, { vehicleId: e.target.value }, { vehicleId: e.target.value || null })} className="h-8 box-border px-2 py-0 font-sans text-[12.5px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer disabled:opacity-60"><option value="">Unassigned</option>{vehicles.map((v: { id: string; code: string }) => <option key={v.id} value={v.id}>{v.code}</option>)}</select> },
-    { key: 'status', label: 'Status', type: 'status', value: r => r.status, status: r => ({ label: STATUS_LABEL[r.status], tone: STATUS_TONE[r.status] }) },
+    { key: 'status', label: 'Status', type: 'status', value: r => r.status, entity: 'delivery_schedule' },
   ], [canWrite, drivers, vehicles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

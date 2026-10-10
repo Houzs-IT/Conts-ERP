@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Button } from '../Button';
 import Icon from '../Icon';
 import { useToast } from '../Toast';
-import { api, ApiFailure } from '../../lib/api';
+import { api, errorMessage } from '../../lib/api';
 import { rm, date } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 
@@ -15,7 +15,7 @@ export interface GuestDocument {
 }
 interface PaymentLite { id: string; amount: number; receivedOn: string | null; status: 'received' | 'expected'; kind: 'guest_payment' | 'ota_payout' | 'refund'; method: string | null }
 
-const failMessage = (e: unknown) => (e instanceof Error ? e.message : 'Try again in a moment.');
+const failMessage = (e: unknown) => (errorMessage(e, 'Try again in a moment.'));
 const open = (d: GuestDocument) => window.open(d.pdf, '_blank', 'noopener');
 
 /**
@@ -108,7 +108,7 @@ export function VoidDocumentDialog({ doc, onClose, onDone }: { doc: GuestDocumen
       toast({ tone: 'neutral', title: `${doc.docNo} voided.`, body: 'The number stays on record, struck through. Issue a new document if one is needed.' });
       onDone();
     } catch (err) {
-      setError(err instanceof ApiFailure ? err.message : failMessage(err));
+      setError(failMessage(err));
     }
     setBusy(false);
   }
@@ -129,7 +129,7 @@ export function VoidDocumentDialog({ doc, onClose, onDone }: { doc: GuestDocumen
               placeholder="e.g. Wrong guest name; reissued"
               className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
           </div>
-          {error && <p role="alert" className="m-0 text-meta text-[var(--color-critical-fg)]">{error}</p>}
+          {error && <p role="alert" className="m-0 text-meta text-danger">{error}</p>}
         </div>
         <div className="px-[22px] py-[14px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px] rounded-b-card">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Keep it</Button>

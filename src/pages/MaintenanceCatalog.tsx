@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { cx } from '../lib/design-tokens';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { DataTable, type Column } from '../components/DataTable';
 import { Select } from '../components/Select';
@@ -88,7 +88,7 @@ export function CatalogPanel({
     { key: 'category', label: 'Category', type: 'status', value: s => s.category, status: s => ({ label: CATEGORY_LABEL[s.category], tone: 'neutral' }), width: 120 },
     { key: 'price', label: 'Preset price', type: 'money', value: s => s.defaultPrice, sub: s => PER[s.unitLabel], width: 130 },
     { key: 'stock', label: 'In stock', type: 'number', value: s => (s.trackStock ? s.stockOnHand : null), width: 120,
-      render: s => (s.trackStock ? <Badge tone={stockTone(s.stockOnHand)} label={s.stockOnHand > 0 ? `${s.stockOnHand} in stock` : 'Out of stock'} size="sm" /> : <span className="text-muted-ink">Not stocked</span>) },
+      render: s => (s.trackStock ? <StatusBadge tone={stockTone(s.stockOnHand)} label={s.stockOnHand > 0 ? `${s.stockOnHand} in stock` : 'Out of stock'} size="sm" /> : <span className="text-muted-ink">Not stocked</span>) },
     { key: 'active', label: 'Status', type: 'status', value: s => (s.active ? 'active' : 'retired'), status: s => ({ label: s.active ? 'Active' : 'Retired', tone: s.active ? 'success' : 'warning' }), width: 110 },
     ...(canWrite ? [{ key: 'edit', label: '', noExport: true, sortable: false, filter: false as const, width: 80, align: 'right' as const,
       render: (s: Sku) => <Button size="sm" variant="secondary" onClick={() => setEditing(s)}>Edit</Button> }] : []),

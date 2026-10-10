@@ -46,7 +46,6 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Demo walkthrough data: scripts/demo-ops-seed.mjs (--apply --confirm=<ref>, --remove); not run on staging or production yet.
 - Done (feat/s3-history-notify): closing a repair job gives back its calendar block at once (cancelled if not started, ends today if under way), also for blocks made before migration 0095 (matched by the note); the scheduled job sweeps any left.
 - Videos are capped at 50 MB per file (Workers request memory); longer clips need direct-to-R2 upload.
-- `text-critical` / `text-warning` / `text-success` / `text-info` render the pale tint, not the text colour (tokens.css redefines --color-critical etc. as the tint); the new ops screens use the -fg tokens, other pages still use the classes.
 
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
@@ -153,7 +152,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Automations: 9 of 30 rules are sent by code today; the other 21 (every guest message) need a sender in the cron worker (theconts-cron, not deployed) plus email/WhatsApp keys. The page says so; the on/off switch is stored only. Owner decision: build the sender.
 - Units > owner details form (functions/api/properties) still returns the full IC and bank number for editing; mask it like the owner profile.
 - Imported owner ids embed the IC number (e.g. wb-owner-940413-13-6097, functions/_lib/hostplatformImport*), so it shows in URLs and the audit log. Data agent to switch to opaque ids.
-- Dashboard, Housekeeping, Operations Today and Tasks still print "Sept" through their own toLocaleDateString calls; switch them to lib/format helpers (Calendar: booking agent).
 - Settings: operations defaults and statement settings are saved but not read anywhere (marked "Not used yet"), nor the locale's language/timezone/currency; wire or remove. Company details and Owner report are used by the report; the default fee by statements.
 - Pricing: channel commission (15/15/18%) and the 22% weekend uplift are fixed in code; owner to decide whether they become settings.
 
@@ -184,7 +182,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 ## Calendar and rates (b3, 10 Oct)
 - Migration 0092 (units.weekend_rate, reservations.block_reason) is not yet applied to staging or production. It backfills weekend_rate = round(base_rate x 1.22) for every priced unit so live Fri/Sat prices do not move; units created later sell the weekend at the base rate until a weekend rate is set (Pricing page).
 - Channex full sync (functions/_lib/channexQueue.ts) still counts inquiries as taken nights; the board and the clash check do not. Decide whether an inquiry should close the nights on the booking sites.
-- The booking drawer (src/components/booking) still offers Change dates on Airbnb / Booking.com / Agoda bookings; the board now refuses dragging them.
+- Rate update lists the units on the board, so with one building filtered it offers only that building; open it with All buildings to price across buildings.
 
 ## Money approvals and guest documents (feat/s4-money-docs, migrations 0096-0097)
 - Migrations 0096 (approval_requests) and 0097 (document_counters, issued_documents) must be applied on production before this ships; until then refunds, payout runs, owner credits and charges, large expenses and write-offs answer with a database error.
@@ -199,3 +197,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Lists that stay outside the shared DataTable on purpose: Expenses Grouped view (category tree loaded on demand), Payouts' grouped section headers (now one list ordered by attention), Reviews (reply cards), Automations, Integrations, Settings, Operations today, unit tree.
 - DataTable has no expandable or grouped rows and no export header note; a page-computed total does not follow the table's own column filters (Owners turns column filters off for that reason).
 - Cleaning bulk Start makes the person pressing it the assignee of an unassigned clean (existing start endpoint behaviour).
+
+## Standards (docs/UI-STANDARDS.md, checked by npm run check and CI)
+- Done (s1-standards): one status vocabulary (src/lib/status.ts) and StatusBadge / StatusMenu everywhere; text-success / text-danger now render the text colour; ConfirmDialog for every confirm; dates, money, counts and phones through lib/format; plain-English API errors; no Change dates on OTA bookings.
+- Done: the 32 one-click Delete / Cancel buttons on the built-in supply chain screens now ask first (ConfirmButton).
+- Open: rejecting a sales order amendment asks no reason; the amendments API has no field to store one.
+- Open: make the CI workflow (.github/workflows/ci.yml) a required check on main (GitHub > Settings > Branches; owner, needs admin).

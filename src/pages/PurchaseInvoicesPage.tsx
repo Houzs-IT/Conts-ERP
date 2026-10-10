@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Search, Plus, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
@@ -10,15 +11,14 @@ import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
+import { statusLabel } from '../lib/status';
 
 /** Purchase Invoices — ported from 2990's SCM, drawn in Conts. Bills a GRN's accepted
  *  lines; payments post later via Payment Vouchers. Money integer sen. */
 
 type Status = 'POSTED' | 'PARTIALLY_PAID' | 'PAID' | 'CANCELLED';
-const STATUS_LABEL: Record<Status, string> = { POSTED: 'Posted', PARTIALLY_PAID: 'Part paid', PAID: 'Paid', CANCELLED: 'Cancelled' };
-const STATUS_TONE: Record<Status, Tone> = { POSTED: 'info', PARTIALLY_PAID: 'warning', PAID: 'success', CANCELLED: 'neutral' };
 const FILTERS: (Status | 'all')[] = ['all', 'POSTED', 'PARTIALLY_PAID', 'PAID', 'CANCELLED'];
 
 interface PiLine { itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; lineTotalSen: number }
@@ -71,7 +71,7 @@ export default function PurchaseInvoicesPage() {
     { key: 'grnNumber', label: 'GRN', type: 'ref', value: p => p.grnNumber || null },
     { key: 'invoiceDate', label: 'Invoice date', type: 'date', value: p => p.invoiceDate || null },
     { key: 'dueDate', label: 'Due', type: 'date', value: p => p.dueDate || null },
-    { key: 'status', label: 'Status', type: 'status', value: p => p.status, status: p => ({ label: STATUS_LABEL[p.status], tone: STATUS_TONE[p.status] }) },
+    { key: 'status', label: 'Status', type: 'status', value: p => p.status, entity: 'purchase_invoice' },
     { key: 'total', label: 'Total', type: 'money', value: p => p.totalSen },
     { key: 'outstanding', label: 'Outstanding', type: 'money', value: p => p.status === 'CANCELLED' ? null : p.outstandingSen },
   ], []);
@@ -97,7 +97,7 @@ export default function PurchaseInvoicesPage() {
         onRowClick={p => setDrawer({ mode: 'view', pi: p })}
         noun={['purchase invoice', 'purchase invoices']} exportName="purchase-invoices"
         toolbar={<>
-          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('purchase_invoice', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
           <div className="relative">
             <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
             <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search invoice or supplier..." aria-label="Search purchase invoices"
@@ -115,10 +115,6 @@ export default function PurchaseInvoicesPage() {
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-function StatusPill({ status }: { status: Status }) {
-  const t = STATUS_TONE[status];
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}</span>;
 }
 
 /* ---------- bill (create) drawer ---------- */
@@ -190,7 +186,7 @@ function BillDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Open
                 <tbody>
                   {lines.length === 0 ? <tr><td colSpan={5} className="py-6 text-center text-[12.5px] text-muted-ink">This GRN has nothing left to invoice.</td></tr>
                   : lines.map((l, i) => (
-                    <tr key={l.grnLineId} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                    <tr key={l.grnLineId} className="[border-top:1px_solid_var(--color-line-soft)]">
                       <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.outstanding}</td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.unitPriceSen)}</td>
@@ -210,7 +206,7 @@ function BillDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Open
           <div className="flex items-end justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Invoice total</span><span className="tabular-nums w-[120px] text-right">{rm(total)}</span></div></div>
         </div>
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a GRN and bill at least one line" onClick={submit}>Post invoice</Button>
       </div>
@@ -231,7 +227,7 @@ function ViewDrawer({ pi, canWrite, onClose, onCancel }: { pi: Pi; canWrite: boo
   return (
     <Drawer open onClose={onClose} width={760}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
-        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{pi.invoiceNumber}</h2><StatusPill status={pi.status} /></div>
+        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{pi.invoiceNumber}</h2><StatusBadge entity="purchase_invoice" value={pi.status} /></div>
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
@@ -253,8 +249,8 @@ function ViewDrawer({ pi, canWrite, onClose, onCancel }: { pi: Pi; canWrite: boo
           <div className="flex gap-8 text-[15px] font-semibold"><span>Outstanding</span><span className="tabular-nums w-[120px] text-right">{rm(pi.outstandingSen)}</span></div>
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{canWrite && pi.status !== 'CANCELLED' && pi.paidSen === 0 && <Button size="sm" variant="danger" onClick={() => onCancel(pi)}>Cancel invoice</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{canWrite && pi.status !== 'CANCELLED' && pi.paidSen === 0 && <ConfirmButton confirm={{ title: `Cancel ${pi.invoiceNumber}?`, body: 'It is marked Cancelled and the goods receipt it billed can be invoiced again.', meta: `${pi.supplierName} · ${rm(pi.totalSen)}`, confirmLabel: 'Cancel invoice', cancelLabel: 'Keep invoice' }} onConfirm={() => onCancel(pi)}>Cancel invoice</ConfirmButton>}</div>
         <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
       </div>
     </Drawer>

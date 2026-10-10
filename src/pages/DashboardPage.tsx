@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Card, CardHeader, LinkAction } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import Icon from '../components/Icon';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
-import { Dialog } from '../components/Dialog';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
@@ -234,7 +234,7 @@ const TOP_COLUMNS: Column<PortfolioRow>[] = [
   { key: 'revpar', label: 'RevPAR', type: 'money', value: u => u.revpar, width: 90, render: u => <span className={NUM}>{rm(u.revpar, { cents: false })}</span> },
   { key: 'revenue', label: 'Revenue', type: 'money', value: u => u.revenue, width: 100, render: u => <span className={`${NUM} font-medium`}>{rm(u.revenue, { cents: false })}</span> },
   { key: 'exception', label: 'Exception', type: 'status', value: u => u.exception?.label ?? null, status: u => u.exception, width: 130, align: 'right',
-    render: u => (u.exception ? <Badge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-meta text-faint">None</span>) },
+    render: u => (u.exception ? <StatusBadge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-meta text-faint">None</span>) },
 ];
 
 /* The exception tone drives the 3px left accent. It uses the design's -line
@@ -536,7 +536,7 @@ export default function DashboardPage() {
       )}
 
       {/* Notify owner — confirmation-only, so the shared Dialog fits. */}
-      <Dialog
+      <ConfirmDialog
         busy={false}
         onClose={() => setNotify(null)}
         spec={!notify || !notify.owner ? null : {

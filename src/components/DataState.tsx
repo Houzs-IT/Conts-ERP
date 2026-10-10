@@ -7,12 +7,12 @@ export function StaleBanner({ message, onRetry }: { message: string; onRetry: ()
     <div role="status" style={{
       display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
       padding: '11px 14px', borderRadius: radius.control,
-      background: '#FFF4D8', borderLeft: '2px solid #B7791F', color: '#8A5A12',
+      background: 'var(--color-warning)', borderLeft: '2px solid var(--color-warning-line)', color: 'var(--color-warning-fg)',
     }}>
       <span style={{ fontSize: text.small, flex: 1, minWidth: 200, textWrap: 'pretty' }}>{message}</span>
       <button onClick={onRetry} style={{
-        height: 30, padding: '0 12px', borderRadius: radius.control, border: '1px solid #B7791F',
-        background: 'transparent', color: '#8A5A12', font: 'inherit', fontSize: text.meta, fontWeight: 600, cursor: 'pointer',
+        height: 30, padding: '0 12px', borderRadius: radius.control, border: '1px solid var(--color-warning-line)',
+        background: 'transparent', color: 'var(--color-warning-fg)', font: 'inherit', fontSize: text.meta, fontWeight: 600, cursor: 'pointer',
       }}>Retry</button>
     </div>
   );

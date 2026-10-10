@@ -6,7 +6,7 @@ import { ListPager } from '../components/ListPager';
 import { Segmented } from '../components/ops/OpsUi';
 import { SkeletonRows } from '../components/States';
 import { NoticeRow, announceNoticesChanged, type Notice, type NoticePage } from '../components/NotificationBell';
-import { api, ApiFailure } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { plural } from '../lib/format';
 
 const PAGE_SIZE = 25;
@@ -27,7 +27,7 @@ export default function NotificationsPage() {
     setLoading(true);
     api.get<NoticePage>('/notifications', { page, pageSize: PAGE_SIZE, unread: show === 'unread' ? 1 : undefined })
       .then(r => { if (live) { setData(r); setError(null); } })
-      .catch(e => { if (live) setError(e instanceof ApiFailure ? e.message : 'Your notifications could not load. Check your connection and try again.'); })
+      .catch(e => { if (live) setError(errorMessage(e, 'Your notifications could not load. Check your connection and try again.')); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, [page, show, nonce]);
@@ -56,7 +56,7 @@ export default function NotificationsPage() {
       </div>
       <section aria-label="Notifications" className="bg-card border border-solid border-line rounded-card overflow-hidden flex-none">
         {loading && !data && <SkeletonRows rows={6} height={56} />}
-        {error && <div className="py-4 px-5 text-copy text-[var(--color-critical-fg)]" role="alert">{error}</div>}
+        {error && <div className="py-4 px-5 text-copy text-danger" role="alert">{error}</div>}
         {data && !error && data.data.length === 0 && (
           <div className="py-8 px-5 text-copy text-muted-ink text-center">
             {show === 'unread' ? 'Nothing unread.' : 'No notifications yet. New bookings, cancellations, cleans and repairs that concern you appear here.'}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from './Button';
-import { api, ApiFailure } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { color } from '../theme';
 
 const b64url = (s: string) => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -27,7 +27,7 @@ export default function SupplyChainEngine({ enginePath }: { enginePath: string }
         // In the fragment: never sent to a server, and the engine removes it as soon as it has read it.
         setSrc(`${r.site}/#conts=${b64url(JSON.stringify({ t: r.token, sp: r.sessionPass ?? undefined, p: wanted.current }))}`);
       })
-      .catch(e => { if (live) setError(e instanceof ApiFailure ? e.message : 'The supply chain screens could not be opened.'); });
+      .catch(e => { if (live) setError(errorMessage(e, 'The supply chain screens could not be opened.')); });
     return () => { live = false; };
   }, [attempt]);
 

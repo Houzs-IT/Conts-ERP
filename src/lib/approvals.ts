@@ -18,12 +18,6 @@ export interface Approval {
 export interface Staged { pendingApproval: { id: string; kind: ApprovalKind; amount: number; summary: string; selfApproval: boolean } }
 export const isStaged = (x: unknown): x is Staged => !!x && typeof x === 'object' && 'pendingApproval' in (x as object);
 
-export const STATUS_LABEL: Record<ApprovalStatus, { label: string; tone: Tone }> = {
-  pending: { label: 'Waiting', tone: 'warning' },
-  approved: { label: 'Approved', tone: 'success' },
-  rejected: { label: 'Rejected', tone: 'critical' },
-  cancelled: { label: 'Withdrawn', tone: 'neutral' },
-};
 
 export type Decision = 'approve' | 'reject' | 'cancel';
 export const decide = (id: string, decision: Decision, note?: string) => api.post<Approval>(`/approvals/${encodeURIComponent(id)}`, { decision, note: note || undefined });

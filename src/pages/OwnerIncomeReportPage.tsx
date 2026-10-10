@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
+import { amount, phone } from '../lib/format';
 
 /** `#/finance/statements/:id/report[?unit=|?view=owner]` — the Owner Income Report, laid out as the owner's own report:
  *  page 1 the unit's month (OWNER INCOME REPORT), page 2 its year to date. `view=owner` puts the owner's whole
@@ -30,7 +31,7 @@ const MON_TITLE = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'
 /** 4,998.81; a deduction in brackets (397.12); nothing as '-'. */
 const money = (sen: number | null, opts: { brackets?: boolean; dash?: boolean } = {}) => {
   if (sen === null || (sen === 0 && opts.dash !== false)) return '-';
-  const v = (Math.abs(sen) / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const v = amount(Math.abs(sen));
   return sen < 0 || opts.brackets ? `(${v})` : v;
 };
 const pct = (n: number) => `${Number(n.toFixed(2))}%`;
@@ -108,7 +109,7 @@ function Letterhead({ r }: { r: Report }) {
         <div className="oir-company">{c.legalName}</div>
         {c.companyNumber && <div className="oir-small">Company No: {c.companyNumber}</div>}
         {c.address && <div className="oir-addr">{c.address}</div>}
-        {(c.phone || c.email) && <div className="oir-addr oir-contact">{[c.phone && `TEL: ${c.phone}`, c.email && `EMAIL: ${c.email}`].filter(Boolean).join(' | ')}</div>}
+        {(c.phone || c.email) && <div className="oir-addr oir-contact">{[c.phone && `TEL: ${phone(c.phone)}`, c.email && `EMAIL: ${c.email}`].filter(Boolean).join(' | ')}</div>}
       </div>
       <img src={c.logo} alt="The Conts" className="oir-logo" />
     </header>

@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
@@ -48,9 +49,9 @@ export default function ThreePLCompaniesPage() {
     { key: 'code', label: 'Code', type: 'ref', value: c => c.code, hideable: false },
     { key: 'name', label: 'Name', value: c => c.name },
     { key: 'contact', label: 'Contact', value: c => c.contactName },
-    { key: 'phone', label: 'Phone', value: c => c.contactPhone || c.officePhone },
+    { key: 'phone', label: 'Phone', type: 'phone', value: c => c.contactPhone || c.officePhone },
     { key: 'email', label: 'Email', value: c => c.email },
-    { key: 'status', label: 'Status', type: 'status', value: c => (c.isActive ? 'active' : 'inactive'), status: c => (c.isActive ? { label: 'Active', tone: 'success' } : { label: 'Inactive', tone: 'neutral' }) },
+    { key: 'status', label: 'Status', type: 'status', value: c => (c.isActive ? 'active' : 'inactive'), entity: 'active_flag' },
   ], []);
 
   function save(draft: ThreePl, isNew: boolean) {
@@ -117,8 +118,8 @@ function ThreePlDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Thr
           <div className="col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
         </Section>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete 3PL company ${draft.name}?`, body: 'It is deleted for good and drops off the 3PL company list.', confirmLabel: 'Delete company', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name first" onClick={() => onSave(f, isNew)}>{isNew ? 'Create company' : 'Save'}</Button>

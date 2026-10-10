@@ -2,31 +2,13 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../Button';
 import Icon from '../Icon';
 import { cx } from '../../lib/design-tokens';
-import { api, ApiFailure } from '../../lib/api';
-import { MONTHS, weekdayDay, dateShort } from '../../lib/format';
+import { api, errorMessage } from '../../lib/api';
+import { time, weekdayDate, dateTimeShort } from '../../lib/format';
 
 /* ---------- small pieces shared by Cleaning, Maintenance, Today and the field app ---------- */
 
-export type ChipTone = 'success' | 'warning' | 'critical' | 'info' | 'neutral' | 'gold';
-const CHIP: Record<ChipTone, string> = {
-  success: 'bg-success-bg text-[var(--color-success-fg)]', warning: 'bg-warning-bg text-[var(--color-warning-fg)]', critical: 'bg-critical-bg text-[var(--color-critical-fg)]',
-  info: 'bg-info-bg text-[var(--color-info-fg)]', neutral: 'bg-muted text-muted-ink', gold: 'bg-gold-tint text-gold-ink [box-shadow:inset_0_0_0_1px_#EADCBD]',
-};
-export function Chip({ tone, children, className }: { tone: ChipTone; children: ReactNode; className?: string }) {
-  return <span className={cx('inline-flex items-center gap-1 px-2 py-[3px] rounded-pill text-meta font-medium', className?.includes('whitespace-normal') ? 'leading-snug' : 'whitespace-nowrap', CHIP[tone], className)}>{children}</span>;
-}
-
-/** The status of one clean, in words the office and the cleaner both use. */
+/** The status of one clean; its words and colour are entity "cleaning" in lib/status.ts. */
 export type CleanStatus = 'done' | 'cleaning' | 'ready' | 'guest_in' | 'unassigned' | 'waiting' | 'unplanned';
-export const CLEAN_STATUS: Record<CleanStatus, { label: string; tone: ChipTone }> = {
-  done: { label: 'Done', tone: 'success' },
-  cleaning: { label: 'Cleaning', tone: 'info' },
-  ready: { label: 'Guest out, ready to clean', tone: 'gold' },
-  guest_in: { label: 'Guest still in', tone: 'neutral' },
-  unassigned: { label: 'Unassigned', tone: 'critical' },
-  waiting: { label: 'To do', tone: 'warning' },
-  unplanned: { label: 'No clean planned', tone: 'critical' },
-};
 export const KIND_LABEL: Record<string, string> = { turnover: 'Standard', light_clean: 'Light', deep_clean: 'Deep' };
 
 /** "1 h 20 m" / "45 min". */
@@ -40,19 +22,16 @@ export function minutesLabel(min: number): string {
 export function TimeLeft({ at, now, done }: { at: string | null | undefined; now: number; done?: boolean }) {
   if (!at || done) return <span className="text-faint">—</span>;
   const min = (Date.parse(at) - now) / 60000;
-  if (min <= 0) return <span className="text-[var(--color-critical-fg)] font-semibold">Guest due now</span>;
-  return <span className={cx('[font-variant-numeric:tabular-nums]', min < 120 ? 'text-[var(--color-critical-fg)] font-semibold' : 'text-ink')}>{minutesLabel(min)}</span>;
+  if (min <= 0) return <span className="text-danger font-semibold">Guest due now</span>;
+  return <span className={cx('[font-variant-numeric:tabular-nums]', min < 120 ? 'text-danger font-semibold' : 'text-ink')}>{minutesLabel(min)}</span>;
 }
 
 /** HH:MM in Malaysia from an ISO instant. */
-export const hm = (iso: string | null | undefined) => iso
-  ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuala_Lumpur' }) : '';
+export const hm = (iso: string | null | undefined) => (iso ? time(iso) : '');
 /** "Sat 10 Oct" for a YYYY-MM-DD day. */
-// Built from format.ts, not Intl: en-GB now prints "Sept", which the date rules do not allow.
-export const dayLabel = (day: string) => `${weekdayDay(day)} ${MONTHS[Number(day.slice(5, 7)) - 1]}`;
+export const dayLabel = (day: string) => weekdayDate(day);
 /** "10 Oct 14:00" from an ISO instant. */
-export const stamp = (iso: string | null | undefined) => iso
-  ? `${dateShort(iso)} ${hm(iso)}` : '';
+export const stamp = (iso: string | null | undefined) => (iso ? dateTimeShort(iso) : '');
 /** YYYY-MM-DD in Malaysia, offset by days. */
 export const mytDay = (offset = 0) => new Date(Date.now() + 8 * 3600e3 + offset * 864e5).toISOString().slice(0, 10);
 
@@ -121,7 +100,7 @@ export function FormRow({ label, children, error, hint }: { label: string; child
     <label className="flex flex-col gap-1.5 min-w-0">
       <span className="text-meta font-medium text-muted-ink">{label}</span>
       {children}
-      {error ? <span className="text-meta text-[var(--color-critical-fg)]">{error}</span> : hint ? <span className="text-meta text-muted-ink">{hint}</span> : null}
+      {error ? <span className="text-meta text-danger">{error}</span> : hint ? <span className="text-meta text-muted-ink">{hint}</span> : null}
     </label>
   );
 }
@@ -153,7 +132,7 @@ export function MediaGrid({ items, cols = 4 }: { items: MediaItem[]; cols?: numb
           <button key={m.id} type="button" onClick={() => setView(m)} title={m.fileName}
             className="relative aspect-square rounded-[6px] overflow-hidden bg-sunken border-0 p-0 cursor-pointer">
             {m.kind === 'video'
-              ? <span className="absolute inset-0 grid place-items-center bg-charcoal text-white"><Icon name="Play" size="lg" /><span className="absolute bottom-1 left-1 right-1 text-caption truncate text-[#DEDAD3]">Video</span></span>
+              ? <span className="absolute inset-0 grid place-items-center bg-charcoal text-white"><Icon name="Play" size="lg" /><span className="absolute bottom-1 left-1 right-1 text-caption truncate text-[var(--color-text-on-dark)]">Video</span></span>
               : <img src={m.url} alt={m.fileName} loading="lazy" className="w-full h-full object-cover block" />}
             {m.stage && <span className="absolute top-1 left-1 px-1.5 rounded-pill text-caption bg-[rgba(21,21,21,0.7)] text-white capitalize">{m.stage}</span>}
           </button>
@@ -196,7 +175,7 @@ export function MediaDrop({ upload, onDone, label = 'Add photos or videos', capt
     const failed: string[] = [];
     for (let i = 0; i < files.length; i++) {
       try { await upload(files[i]); }
-      catch (e) { failed.push(`${files[i].name}: ${e instanceof ApiFailure ? e.message : 'upload failed, try again.'}`); }
+      catch (e) { failed.push(`${files[i].name}: ${errorMessage(e, 'upload failed, try again.')}`); }
       setProgress({ done: i + 1, total: files.length });
     }
     setProgress(null);
@@ -223,7 +202,7 @@ export function MediaDrop({ upload, onDone, label = 'Add photos or videos', capt
         <input ref={input} type="file" multiple accept="image/*,video/*" {...(capture ? { capture: 'environment' as const } : {})} className="hidden"
           onChange={e => { if (e.target.files?.length) void send(e.target.files); e.target.value = ''; }} />
       </div>
-      {errors.map((e, i) => <span key={i} className="text-meta text-[var(--color-critical-fg)]">{e}</span>)}
+      {errors.map((e, i) => <span key={i} className="text-meta text-danger">{e}</span>)}
     </div>
   );
 }
@@ -249,19 +228,19 @@ export function Checklist({ taskId, items, readOnly, onChange }: { taskId: strin
     const optimistic = items.map(x => x.key === it.key ? { ...x, done: !x.done } : x);
     onChange(optimistic);
     try { const r = await api.post<{ data: ChecklistItem[] }>(`/housekeeping/tasks/${taskId}/checklist`, { key: it.key, done: !it.done }); onChange(r.data); setError(null); }
-    catch (e) { onChange(items); setError(e instanceof ApiFailure ? e.message : 'Not saved. Try again.'); }
+    catch (e) { onChange(items); setError(errorMessage(e, 'Not saved. Try again.')); }
   }
   async function add() {
     const label = adding.trim();
     if (!label) return;
     try { const r = await api.post<{ data: ChecklistItem[] }>(`/housekeeping/tasks/${taskId}/checklist`, { label }); onChange(r.data); setAdding(''); setError(null); }
-    catch (e) { setError(e instanceof ApiFailure ? e.message : 'Not saved. Try again.'); }
+    catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); }
   }
   return (
     <div className="flex flex-col">
       {items.map(it => (
         <label key={it.key} className={cx('flex items-center gap-2.5 min-h-9 text-copy', readOnly ? 'cursor-default' : 'cursor-pointer')}>
-          <input type="checkbox" checked={it.done} disabled={readOnly} onChange={() => void toggle(it)} className="w-[18px] h-[18px] accent-[#151515] flex-none" />
+          <input type="checkbox" checked={it.done} disabled={readOnly} onChange={() => void toggle(it)} className="w-[18px] h-[18px] accent-black flex-none" />
           <span className={cx('flex-1', it.done && 'text-muted-ink line-through')}>{it.label}</span>
         </label>
       ))}
@@ -272,7 +251,7 @@ export function Checklist({ taskId, items, readOnly, onChange }: { taskId: strin
           <Button size="sm" variant="secondary" type="button" onClick={() => void add()} disabled={!adding.trim()} disabledReason="Write the item first.">Add</Button>
         </div>
       )}
-      {error && <span className="text-meta text-[var(--color-critical-fg)] mt-1">{error}</span>}
+      {error && <span className="text-meta text-danger mt-1">{error}</span>}
     </div>
   );
 }
@@ -299,7 +278,7 @@ export function ReportDamageModal({ unitId, unitLabel, taskId, onClose, onDone }
         reportSource: taskId ? 'cleaner' : 'staff', sourceTaskId: taskId, source: 'web',
       });
       onDone(r.id);
-    } catch (e) { setError(e instanceof ApiFailure ? e.message : 'Not saved. Try again.'); setBusy(false); }
+    } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); setBusy(false); }
   }
   return (
     <OpsModal title="Report damage" sub={`${unitLabel}. Opens a Maintenance job on this unit.`} onClose={onClose} busy={busy}

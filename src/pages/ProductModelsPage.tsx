@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
@@ -77,7 +78,7 @@ export default function ProductModelsPage() {
     { key: 'category', label: 'Category', value: m => m.category, text: m => CAT_LABEL[m.category], filter: { kind: 'select' },
       render: m => <span className="inline-block text-[11px] font-semibold uppercase tracking-[0.06em] bg-[var(--color-gold-50)] text-gold-ink px-2.5 py-0.5 rounded-full">{CAT_LABEL[m.category]}</span> },
     { key: 'branding', label: 'Branding', value: m => m.branding },
-    { key: 'status', label: 'Status', type: 'status', value: m => (m.active ? 'ACTIVE' : 'INACTIVE'), status: m => (m.active ? { label: 'Active', tone: 'success' } : { label: 'Inactive', tone: 'neutral' }) },
+    { key: 'status', label: 'Status', type: 'status', value: m => (m.active ? 'ACTIVE' : 'INACTIVE'), entity: 'active_flag' },
   ], []);
 
   function save(d: Draft, isNew: boolean) {
@@ -184,8 +185,8 @@ function ModelDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Draft
         </div>
         <p className="mt-4 text-[12px] text-muted-ink">Variant options (fabrics, sizes, compartments) are edited in the Variants tab — coming in a later slice.</p>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete model ${draft.modelCode}?`, body: 'It is deleted for good and drops off the model list.', confirmLabel: 'Delete model', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a model code and a name first" onClick={() => onSave(f, isNew)}>{isNew ? 'Create model' : 'Save'}</Button>

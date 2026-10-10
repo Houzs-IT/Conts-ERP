@@ -1,5 +1,6 @@
 import Icon from './Icon';
 import { cx } from '../lib/design-tokens';
+import { count } from '../lib/format';
 
 /** "21–40 of 312" with previous / next. Sits under a paged list; renders nothing for a single page. */
 export function ListPager({ page, pageSize, total, onPage, busy, noun = 'rows' }: {
@@ -12,7 +13,7 @@ export function ListPager({ page, pageSize, total, onPage, busy, noun = 'rows' }
   return (
     <div className="flex items-center justify-between gap-3 py-[10px] px-5 [border-top:1px_solid_var(--color-line-soft)]">
       <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]" aria-live="polite">
-        {from.toLocaleString('en-MY')}–{to.toLocaleString('en-MY')} of {total.toLocaleString('en-MY')} {noun}
+        {count(from)}–{count(to)} of {count(total)} {noun}
       </span>
       <div className={cx('flex items-center gap-2', busy && 'opacity-60')}>
         <span className="hidden sm:inline text-meta text-muted-ink [font-variant-numeric:tabular-nums]">Page {page} of {pages}</span>

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Plus, Trash2, X, Check } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
@@ -50,7 +51,7 @@ export default function DeliveryResidenceRulesPage() {
     { key: 'window', label: 'Delivery window', value: r => (r.earliestDeliveryTime || r.latestDeliveryTime ? `${r.earliestDeliveryTime || '—'} – ${r.latestDeliveryTime || '—'}` : 'Any time') },
     { key: 'lift', label: 'Lift booking', value: r => (r.requiresLiftBooking ? 'Yes' : 'No'), filter: { kind: 'select' }, align: 'center', width: 110, render: r => r.requiresLiftBooking ? <Check size={16} strokeWidth={2} className="inline text-gold-ink" /> : <span className="text-muted-ink">—</span> },
     { key: 'registration', label: 'Registration', value: r => (r.requiresRegistration ? 'Yes' : 'No'), filter: { kind: 'select' }, align: 'center', width: 110, render: r => r.requiresRegistration ? <Check size={16} strokeWidth={2} className="inline text-gold-ink" /> : <span className="text-muted-ink">—</span> },
-    { key: 'status', label: 'Status', type: 'status', value: r => (r.isActive ? 'active' : 'inactive'), status: r => (r.isActive ? { label: 'Active', tone: 'success' } : { label: 'Inactive', tone: 'neutral' }) },
+    { key: 'status', label: 'Status', type: 'status', value: r => (r.isActive ? 'active' : 'inactive'), entity: 'active_flag' },
   ], []);
 
   function save(draft: Rule, isNew: boolean) {
@@ -106,8 +107,8 @@ function RuleDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Rule; 
           </select>
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete the ${draft.buildingType} rule?`, body: 'It is deleted for good and drops off the residence rules list.', confirmLabel: 'Delete rule', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a building type first" onClick={() => onSave(f, isNew)}>{isNew ? 'Add rule' : 'Save'}</Button>

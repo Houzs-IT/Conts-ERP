@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { color } from '../theme';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { HistoryDisclosure } from '../components/RecordHistory';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
@@ -10,12 +10,12 @@ import { Field } from '../components/Field';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
-import { api } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { rm, date, todayMyt, titleCase, plural } from '../lib/format';
 import { Select } from '../components/Select';
 import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
 import { useUrlState, usePhone, SearchBox, Chip } from './finance/listKit';
+import { statusOf } from '../lib/status';
 
 type FeeModel = 'management' | 'grr';
 type ContractState = 'Active' | 'Ending soon' | 'Ended';
@@ -48,7 +48,8 @@ const FALLBACK: Payload = {
 
 /** A contract within this many days of its end date is flagged for a renewal conversation. */
 const ENDING_WINDOW_DAYS = 60;
-const STATE_TONE: Record<ContractState, Tone> = { Active: 'success', 'Ending soon': 'warning', Ended: 'neutral' };
+/** The stored-status key for each contract state (lib/status.ts, entity contract). */
+const STATE_KEY: Record<ContractState, string> = { Active: 'active', 'Ending soon': 'ending_soon', Ended: 'ended' };
 
 const DAY = 86_400_000;
 /** The date the agreement stops: its end date, else its renewal date. */
@@ -138,7 +139,7 @@ export default function ContractsPage() {
       toast({ tone: 'success', title: 'Contract added.', body: `Management agreement recorded for ${titleCase(input.ownerName)}.` });
       setModal(null); reload();
     } catch (e) {
-      toast({ tone: 'critical', title: 'Contract was not added.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Contract was not added.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
   async function saveEdit(id: string, input: Omit<Contract, 'id'>) {
@@ -148,7 +149,7 @@ export default function ContractsPage() {
       toast({ tone: 'success', title: 'Contract updated.', body: `Terms saved for ${titleCase(input.ownerName)}.` });
       setModal(null); reload();
     } catch (e) {
-      toast({ tone: 'critical', title: 'Contract was not updated.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Contract was not updated.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
 
@@ -161,7 +162,7 @@ export default function ContractsPage() {
       <div className="flex flex-col gap-[2px] min-w-0">
         <span className="text-copy tabular-nums whitespace-nowrap">{exp ? date(exp) : 'No end date'}</span>
         {d !== null && (s === 'Ending soon' || (d < 0 && d >= -ENDING_WINDOW_DAYS)) && (
-          <span className="self-start"><Badge tone={s === 'Ending soon' ? 'warning' : 'neutral'} label={inDays(d)} size="sm" /></span>
+          <span className="self-start"><StatusBadge tone={s === 'Ending soon' ? 'warning' : 'neutral'} label={inDays(d)} size="sm" /></span>
         )}
       </div>
     );
@@ -193,7 +194,7 @@ export default function ContractsPage() {
     { key: 'endsOn', label: 'End date', type: 'date', value: r => r.endsOn ?? null, hidden: true },
     { key: 'renewsOn', label: 'Renews on', type: 'date', value: r => r.renewsOn, hidden: true },
     { key: 'offer', label: 'Offer letter', value: r => r.offerLetter, hidden: true, width: 180 },
-    { key: 'status', label: 'Status', type: 'status', value: r => stateOf(r), status: r => ({ label: stateOf(r), tone: STATE_TONE[stateOf(r)] }), width: 120 },
+    { key: 'status', label: 'Status', type: 'status', value: r => stateOf(r), status: r => statusOf('contract', STATE_KEY[stateOf(r)]), width: 120 },
     { key: 'edit', label: '', width: 56, noExport: true, sortable: false, filter: false, align: 'right',
       render: r => (
         <button
@@ -215,7 +216,7 @@ export default function ContractsPage() {
       />
 
       {soonList.length > 0 && filter !== 'soon' && (
-        <div role="status" className={cx('flex items-start gap-3 flex-wrap py-[12px] px-[16px] rounded-control [border-left:3px_solid_var(--color-warning-line,#E2B04A)]', TONE.warning.bg)}>
+        <div role="status" className={cx('flex items-start gap-3 flex-wrap py-[12px] px-[16px] rounded-control [border-left:3px_solid_var(--color-warning-line)]', TONE.warning.bg)}>
           <div className="flex flex-col gap-[3px] min-w-0 flex-1">
             <span className={cx('text-copy font-semibold', TONE.warning.text)}>
               {soonList.length} {soonList.length === 1 ? 'contract ends' : 'contracts end'} within {ENDING_WINDOW_DAYS} days
@@ -259,7 +260,7 @@ export default function ContractsPage() {
             <span className="flex flex-col gap-1 min-w-0">
               <span className="flex items-start justify-between gap-2 w-full">
                 <span className="text-copy font-medium min-w-0 [overflow-wrap:anywhere]">{titleCase(r.ownerName)}</span>
-                <span className="shrink-0"><Badge tone={STATE_TONE[state]} label={state} size="sm" /></span>
+                <span className="shrink-0"><StatusBadge entity="contract" value={STATE_KEY[state]} size="sm" /></span>
               </span>
               <span className="text-meta text-muted-ink truncate w-full" title={r.unitsLabel}>{r.unitsLabel}</span>
               <span className="flex items-center justify-between gap-2 w-full flex-wrap">

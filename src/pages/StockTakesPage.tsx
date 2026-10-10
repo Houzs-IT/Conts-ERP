@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
@@ -10,14 +11,12 @@ import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { date } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
 
 /** Stock Takes — count stock in a warehouse; posting adjusts on-hand to the counted qty. */
 
 type Status = 'OPEN' | 'POSTED' | 'CANCELLED';
-const STATUS_LABEL: Record<Status, string> = { OPEN: 'Open', POSTED: 'Posted', CANCELLED: 'Cancelled' };
-const STATUS_TONE: Record<Status, Tone> = { OPEN: 'info', POSTED: 'success', CANCELLED: 'neutral' };
 
 interface TakeLine { id?: string; itemCode: string; description: string; systemQty: number; countedQty: number | null; variance: number | null }
 interface Take { id: string; takeNumber: string; warehouseName: string; warehouseId: string; takeDate: string; status: Status; notes: string; lines?: TakeLine[] }
@@ -44,7 +43,7 @@ export default function StockTakesPage() {
     { key: 'take', label: 'Take', type: 'ref', value: k => k.takeNumber, hideable: false },
     { key: 'warehouse', label: 'Warehouse', value: k => k.warehouseName },
     { key: 'date', label: 'Date', type: 'date', value: k => k.takeDate || null },
-    { key: 'status', label: 'Status', type: 'status', value: k => k.status, status: k => ({ label: STATUS_LABEL[k.status], tone: STATUS_TONE[k.status] }) },
+    { key: 'status', label: 'Status', type: 'status', value: k => k.status, entity: 'stock_take' },
   ], []);
 
   function created(k: Take) { setAdded(a => [k, ...a]); toast({ tone: 'success', title: 'Stock take started.', body: k.takeNumber }); setDrawer(null); }
@@ -100,10 +99,10 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
           <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">Items to count</div>
           <div className="overflow-x-auto border border-solid border-line rounded-card">
             <table className="w-full border-collapse min-w-[420px]"><thead><tr className="bg-muted">{['Item code', 'Description', ''].map((th, i) => <th key={th || i} className="py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink">{th}</th>)}</tr></thead>
-              <tbody>{items.map((it, i) => (<tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+              <tbody>{items.map((it, i) => (<tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
                 <td className="p-1.5"><input value={it.itemCode} onChange={e => setItem(i, 'itemCode', e.target.value)} className="h-8 w-[150px] box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
                 <td className="p-1.5"><input value={it.description} onChange={e => setItem(i, 'description', e.target.value)} className="h-8 w-full box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
-                <td className="p-1.5 text-center"><button onClick={() => setItems(is => is.length > 1 ? is.filter((_, j) => j !== i) : is)} aria-label="Remove" className="text-muted-ink hover:text-[var(--color-critical-fg)] bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button></td>
+                <td className="p-1.5 text-center"><button onClick={() => setItems(is => is.length > 1 ? is.filter((_, j) => j !== i) : is)} aria-label="Remove" className="text-muted-ink hover:text-danger bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button></td>
               </tr>))}</tbody>
             </table>
           </div>
@@ -111,7 +110,7 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
         </div>
         <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a warehouse and add an item" onClick={submit}>Start take</Button>
       </div>
@@ -129,7 +128,7 @@ function CountDrawer({ k, canWrite, onClose, onAct }: { k: Take; canWrite: boole
 
   return (
     <Drawer open onClose={onClose} width={720}>
-      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{k.takeNumber}</h2><span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[STATUS_TONE[k.status]].bg, TONE[STATUS_TONE[k.status]].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[k.status]}</span></div><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{k.takeNumber}</h2><StatusBadge entity="stock_take" value={k.status} /></div><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="text-[13px] text-muted-ink">{k.warehouseName} · {k.takeDate ? date(k.takeDate) : ''}</div>
         <div className="overflow-x-auto border border-solid border-line rounded-card">
@@ -137,19 +136,19 @@ function CountDrawer({ k, canWrite, onClose, onAct }: { k: Take; canWrite: boole
             <thead><tr className="bg-muted">{['Item', 'System', 'Counted', 'Variance'].map((th, i) => <th key={th} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i === 0 ? 'text-left' : 'text-right')}>{th}</th>)}</tr></thead>
             <tbody>
               {lines.map((l, i) => (
-                <tr key={l.id ?? i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                <tr key={l.id ?? i} className="[border-top:1px_solid_var(--color-line-soft)]">
                   <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description || l.itemCode}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
                   <td className="py-2 px-3 text-right tabular-nums text-[13px] text-muted-ink">{l.systemQty}</td>
                   <td className="py-2 px-3 text-right">{editable ? <input type="number" value={l.countedQty ?? ''} onChange={e => setCount(i, e.target.value)} className="h-8 w-[80px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /> : <span className="tabular-nums text-[13px]">{l.countedQty ?? '—'}</span>}</td>
-                  <td className={cx('py-2 px-3 text-right tabular-nums text-[13px] font-semibold', l.variance == null ? 'text-muted-ink' : l.variance === 0 ? 'text-muted-ink' : l.variance > 0 ? 'text-[var(--color-success-fg)]' : 'text-[var(--color-critical-fg)]')}>{l.variance == null ? '—' : l.variance > 0 ? `+${l.variance}` : l.variance}</td>
+                  <td className={cx('py-2 px-3 text-right tabular-nums text-[13px] font-semibold', l.variance == null ? 'text-muted-ink' : l.variance === 0 ? 'text-muted-ink' : l.variance > 0 ? 'text-success' : 'text-danger')}>{l.variance == null ? '—' : l.variance > 0 ? `+${l.variance}` : l.variance}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{editable && <Button size="sm" variant="danger" onClick={() => onAct(k, { status: 'CANCELLED' }, { status: 'CANCELLED' }, 'Stock take cancelled.')}>Cancel</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{editable && <ConfirmButton confirm={{ title: `Cancel ${k.takeNumber}?`, body: 'It is marked Cancelled and its counts are not applied to stock.', meta: k.warehouseName, confirmLabel: 'Cancel stock take', cancelLabel: 'Keep stock take' }} onConfirm={() => onAct(k, { status: 'CANCELLED' }, { status: 'CANCELLED' }, 'Stock take cancelled.')}>Cancel</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           {editable && <Button size="sm" variant="secondary" onClick={saveCounts}>Save counts</Button>}
           {editable && <Button size="sm" variant="primary" onClick={post}>Post &amp; adjust</Button>}

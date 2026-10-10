@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
@@ -49,7 +50,7 @@ export default function DeliveryZonesPage() {
     { key: 'zone', label: 'Zone', value: z => z.zone, hideable: false, render: z => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{z.zone}</span> },
     { key: 'prefixes', label: 'Postcode prefixes', value: z => `${pad(z.prefixStart)}xxx – ${pad(z.prefixEnd)}xxx`, render: z => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] tabular-nums">{pad(z.prefixStart)}xxx – {pad(z.prefixEnd)}xxx</span> },
     { key: 'label', label: 'Label', value: z => z.label },
-    { key: 'status', label: 'Status', type: 'status', value: z => (z.isActive ? 'active' : 'inactive'), status: z => (z.isActive ? { label: 'Active', tone: 'success' } : { label: 'Inactive', tone: 'neutral' }) },
+    { key: 'status', label: 'Status', type: 'status', value: z => (z.isActive ? 'active' : 'inactive'), entity: 'active_flag' },
   ], []);
 
   function save(draft: Zone, isNew: boolean) {
@@ -70,7 +71,7 @@ export default function DeliveryZonesPage() {
       <PageHeader title="Delivery zones" sub={`${rows.length} postcode-prefix rules`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyZone(), isNew: true })}>New rule</Button> : undefined} />
       {usingDefault && (
-        <div className="flex items-center justify-between gap-4 flex-wrap p-4 rounded-card bg-[var(--color-gold-50)] [border:1px_solid_var(--color-line,#DEDAD3)]">
+        <div className="flex items-center justify-between gap-4 flex-wrap p-4 rounded-card bg-[var(--color-gold-50)] [border:1px_solid_var(--color-line)]">
           <div className="text-[13px] text-gold-ink">No custom map yet — postcodes classify by the built-in default. Load it to customise.</div>
           {canWrite && <Button size="sm" variant="secondary" onClick={loadDefault}>Load default map</Button>}
         </div>
@@ -113,8 +114,8 @@ function ZoneDrawer({ draft, isNew, knownZones, onClose, onSave, onDelete }: { d
         </div>
         <div className="text-[12.5px] text-muted-ink">Covers postcodes <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{String(f.prefixStart).padStart(2, '0')}xxx</span> to <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{String(f.prefixEnd).padStart(2, '0')}xxx</span>.</div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete the ${draft.zone} zone rule?`, body: 'It is deleted for good and drops off the zone map.', meta: `Postcode prefixes ${draft.prefixStart} to ${draft.prefixEnd}`, confirmLabel: 'Delete rule', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a zone and a valid prefix range" onClick={() => onSave(f, isNew)}>{isNew ? 'Add rule' : 'Save'}</Button>

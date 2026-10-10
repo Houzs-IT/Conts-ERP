@@ -3,6 +3,7 @@ import { Search, Plus, Download, Upload, Pencil, Trash2 } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
@@ -146,7 +147,7 @@ export default function ProductsPage() {
     { key: 'barcode', label: 'Barcode', value: p => p.barcode, width: 140 },
     { key: 'm3', label: 'Unit (m³)', type: 'number', value: p => (p.unitM3Milli ? p.unitM3Milli / 1000 : null), width: 100,
       render: p => p.unitM3Milli ? <span className="tabular-nums">{(p.unitM3Milli / 1000).toFixed(3)}</span> : <span className="text-muted-ink">—</span> },
-    { key: 'status', label: 'Status', type: 'status', value: p => p.status, status: p => (p.status === 'ACTIVE' ? { label: 'Active', tone: 'success' } : { label: 'Inactive', tone: 'neutral' }) },
+    { key: 'status', label: 'Status', type: 'status', value: p => p.status, entity: 'active_flag' },
   ], [editPrices, priceEdits]);
 
   function patch(id: string, optimistic: Partial<Product>, apiBody?: Record<string, unknown>) {
@@ -368,8 +369,8 @@ function ProductDrawer({ draft, onClose, onSubmit, onDelete }: { draft: Draft; o
           )}
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete product ${draft.code}?`, body: 'It is deleted for good and drops off the product list.', confirmLabel: 'Delete product', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSubmit} disabledReason="Enter a code and a name first" onClick={() => onSubmit(f)}>{f.id ? 'Save' : 'Create SKU'}</Button>

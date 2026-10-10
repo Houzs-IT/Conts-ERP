@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { StaleBanner } from '../components/DataState';
@@ -142,7 +142,7 @@ function RosterSection({ kind, title, hint, tone, emptyTitle, addLabel, onAdd, c
   const columns = useMemo<Column<Cleaner>[]>(() => [
     { key: 'name', label: 'Name', value: c => c.name, hideable: false, width: 200, render: c => <span className="font-semibold">{c.name}</span> },
     ...(kind === 'outsourced' ? [{ key: 'vendor', label: 'Vendor', value: (c: Cleaner) => c.vendorName, width: 180 }] : []),
-    { key: 'phone', label: 'Phone', value: c => c.phone, width: 150 },
+    { key: 'phone', label: 'Phone', type: 'phone', value: c => c.phone, width: 150 },
     ...(kind === 'internal' ? [{ key: 'login', label: 'Login', type: 'status' as const, value: (c: Cleaner) => (c.userId ? 'linked' : 'none'),
       status: (c: Cleaner) => ({ label: c.userId ? 'Linked login' : 'No login link', tone: c.userId ? 'success' as const : 'neutral' as const }), width: 140 }] : []),
     { key: 'busy', label: 'Open jobs today', type: 'number', value: c => c.busy, width: 120 },
@@ -167,7 +167,7 @@ function RosterSection({ kind, title, hint, tone, emptyTitle, addLabel, onAdd, c
       rowTone={c => (c.isActive ? null : 'muted')}
       header={
         <div className="py-[18px] px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line)]">
-          <span className="text-heading font-semibold flex items-center gap-2"><Badge tone={tone} label={String(cleaners?.length ?? 0)} size="sm" />{title}</span>
+          <span className="text-heading font-semibold flex items-center gap-2"><StatusBadge tone={tone} label={String(cleaners?.length ?? 0)} size="sm" />{title}</span>
           <span className="text-meta text-muted-ink">{hint}</span>
         </div>
       }
@@ -176,7 +176,7 @@ function RosterSection({ kind, title, hint, tone, emptyTitle, addLabel, onAdd, c
         <span className="flex flex-col gap-[3px] min-w-0">
           <span className="flex items-center gap-[9px] flex-wrap">
             <span className="text-copy font-semibold">{c.name}</span>
-            {!c.isActive && <Badge tone="neutral" label="Inactive" size="sm" />}
+            {!c.isActive && <StatusBadge tone="neutral" label="Inactive" size="sm" />}
           </span>
           <span className="text-meta text-muted-ink flex gap-x-3 flex-wrap">
             {c.vendorName && <span>Vendor: {c.vendorName}</span>}

@@ -5,12 +5,12 @@ import PageHeader from '../components/PageHeader';
 import { EmptyState } from '../components/States';
 import ChannelMark from '../components/ChannelMark';
 import Icon from '../components/Icon';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { rating as fmtRating, date as fmtDate, todayMyt, count, plural } from '../lib/format';
 import type { BookingChannel } from '../lib/types';
 import { Chip } from './finance/listKit';
@@ -110,7 +110,7 @@ export default function ReviewsPage() {
       toast({ tone: 'success', title: 'Reply saved.', body: 'Kept on the review. Posting it to the channel is not connected yet.' });
       reload();
     } catch (err) {
-      toast({ tone: 'critical', title: 'Reply was not saved.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Reply was not saved.', body: errorMessage(err, 'Try again in a moment.') });
     }
   }
 
@@ -185,7 +185,7 @@ export default function ReviewsPage() {
                   </div>
                   <div className="flex items-center gap-3">
                     <Stars n={r.rating} />
-                    <Badge tone={replied ? 'success' : 'warning'} label={replied ? 'Replied' : 'Needs reply'} size="sm" />
+                    <StatusBadge tone={replied ? 'success' : 'warning'} label={replied ? 'Replied' : 'Needs reply'} size="sm" />
                   </div>
                 </div>
 

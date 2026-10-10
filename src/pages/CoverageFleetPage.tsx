@@ -5,6 +5,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
+import { statusOf, statusLabel } from '../lib/status';
 
 /** Coverage & Fleet — ported from 2990's SCM (Coverage & Fleet), drawn in Conts. A read-only
  *  overview of which vehicles and drivers are available today, aggregating the fleet masters +
@@ -17,10 +18,6 @@ interface Drv { id: string; driverCode: string; name: string; phone: string; act
 interface Summary { vehiclesTotal: number; vehiclesAvailable: number; vehiclesMaintenance: number; driversTotal: number; driversAvailable: number; driversOnLeave: number }
 interface Payload { vehicles: Veh[]; drivers: Drv[]; summary: Summary; generatedAt: string }
 
-const V_TONE: Record<VState, Tone> = { AVAILABLE: 'success', MAINTENANCE: 'warning', INACTIVE: 'neutral' };
-const V_LABEL: Record<VState, string> = { AVAILABLE: 'Available', MAINTENANCE: 'In maintenance', INACTIVE: 'Inactive' };
-const D_TONE: Record<DState, Tone> = { AVAILABLE: 'success', ON_LEAVE: 'warning', INACTIVE: 'neutral' };
-const D_LABEL: Record<DState, string> = { AVAILABLE: 'Available', ON_LEAVE: 'On leave', INACTIVE: 'Inactive' };
 
 const FALLBACK: Payload = {
   generatedAt: '',
@@ -42,12 +39,12 @@ export default function CoverageFleetPage() {
   const vehicleColumns = useMemo<Column<Veh>[]>(() => [
     { key: 'vehicle', label: 'Vehicle', value: v => v.code, text: v => `${v.code} ${v.plate}`, hideable: false, render: v => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{v.code}</span>, sub: v => v.plate || null },
     { key: 'type', label: 'Type', value: v => v.vehicleType },
-    { key: 'status', label: 'Status', type: 'status', value: v => v.state, status: v => ({ label: V_LABEL[v.state], tone: V_TONE[v.state] }), render: v => <Pill tone={V_TONE[v.state]} label={V_LABEL[v.state]} extra={v.overdue > 0 ? `${v.overdue} overdue` : ''} /> },
+    { key: 'status', label: 'Status', type: 'status', value: v => v.state, status: v => ({ label: `${statusLabel('vehicle', v.state)}${v.overdue > 0 ? ` · ${v.overdue} overdue` : ''}`, tone: statusOf('vehicle', v.state).tone }) },
   ], []);
   const driverColumns = useMemo<Column<Drv>[]>(() => [
     { key: 'driver', label: 'Driver', value: d => d.name, text: d => `${d.name} ${d.driverCode}`, hideable: false, sub: d => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px]">{d.driverCode}</span> },
-    { key: 'phone', label: 'Phone', value: d => d.phone },
-    { key: 'status', label: 'Status', type: 'status', value: d => d.state, status: d => ({ label: D_LABEL[d.state], tone: D_TONE[d.state] }) },
+    { key: 'phone', label: 'Phone', type: 'phone', value: d => d.phone },
+    { key: 'status', label: 'Status', type: 'status', value: d => d.state, entity: 'driver' },
   ], []);
 
   return (
@@ -91,7 +88,4 @@ function Tile({ label, value, tone }: { label: string; value: string; tone: Tone
       </div>
     </Card>
   );
-}
-function Pill({ tone, label, extra }: { tone: Tone; label: string; extra?: string }) {
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[tone].bg, TONE[tone].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{label}{extra ? ` · ${extra}` : ''}</span>;
 }

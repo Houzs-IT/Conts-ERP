@@ -11,7 +11,7 @@ import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
-import { api, ApiFailure } from '../lib/api';
+import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useCleaners } from '../lib/useCleaners';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { useNow } from '../lib/useMedia';
@@ -19,14 +19,14 @@ import { useSession } from '../lib/session';
 import { runEach, skippedNote } from '../lib/bulk';
 import { fetchAllPages } from '../lib/export';
 import { cx } from '../lib/design-tokens';
-import { rm, plural } from '../lib/format';
+import { rm, plural, count } from '../lib/format';
 import type { Tone } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
 import {
-  Chip, CLEAN_STATUS, KIND_LABEL, TimeLeft, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton,
-  MediaGrid, MediaDrop, uploadTo, Checklist, ReportDamageModal, dayLabel, hm, stamp, minutesLabel, mytDay,
-  type CleanStatus, type ChecklistItem, type MediaItem,
+  KIND_LABEL, TimeLeft, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, MediaGrid, MediaDrop, uploadTo, Checklist, ReportDamageModal, dayLabel, hm, stamp, minutesLabel, mytDay, type CleanStatus, type ChecklistItem, type MediaItem,
 } from '../components/ops/OpsUi';
+import { statusOf } from '../lib/status';
+import { StatusBadge } from '../components/StatusBadge';
 
 /* ---------- what the board endpoint answers (functions/api/housekeeping/board.ts) ---------- */
 
@@ -153,7 +153,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   async function act(key: string, fn: () => Promise<unknown>, ok: { title: string; body?: string }) {
     setBusy(key);
     try { await fn(); toast({ tone: 'success', ...ok }); reload(); }
-    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: e instanceof ApiFailure ? e.message : 'Try again in a moment.' }); }
+    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); }
     finally { setBusy(null); }
   }
   const guestLeft = (body: { taskId?: string; reservationId?: string }, unit: string) =>
@@ -238,13 +238,13 @@ function BuildingCard({ group, now, selected, busy, onSelect, onGuestLeft, onPla
   const names = [...new Set(group.rows.map(r => r.assigneeName).filter(Boolean))];
   return (
     <section className="bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
-      <header className="flex items-center justify-between gap-3 flex-wrap px-4 md:px-[18px] py-3 bg-[#F4F1EB]">
+      <header className="flex items-center justify-between gap-3 flex-wrap px-4 md:px-[18px] py-3 bg-muted">
         <div className="min-w-0">
           <b className="text-heading">{group.name}</b>
           <span className="text-copy text-muted-ink"> · {count} {count === 1 ? 'unit' : 'units'} · {doneN} done</span>
         </div>
         <div className="flex items-center gap-2 text-copy flex-wrap">
-          {unassigned > 0 ? <span className="text-[var(--color-critical-fg)] font-medium">{unassigned} unassigned</span>
+          {unassigned > 0 ? <span className="text-danger font-medium">{unassigned} unassigned</span>
             : names.length ? <span className="text-muted-ink">Cleaner <b className="text-ink">{names.length === 1 ? names[0] : `${names.length} people`}</b></span> : null}
           {open.length > 0 && <Button size="sm" variant="secondary" onClick={onAssign}>Assign whole building</Button>}
         </div>
@@ -255,14 +255,14 @@ function BuildingCard({ group, now, selected, busy, onSelect, onGuestLeft, onPla
       {group.rows.map(r => <CleanRow key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} />)}
       {group.departures.map(d => (
         <div key={d.reservationId} className={cx('px-4 md:px-[18px] py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy flex flex-col gap-1.5', COLS)}>
-          <div className="flex items-center gap-2"><b>{d.unitNumber}</b><span className="md:hidden"><Chip tone="critical">No clean planned</Chip></span></div>
-          <div><b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b> · {d.guestName}{d.lateCheckOut && <Chip tone="warning" className="ml-1">Late check-out</Chip>}{d.state === 'checked_out' && <Chip tone="gold" className="ml-1">Out</Chip>}</div>
+          <div className="flex items-center gap-2"><b>{d.unitNumber}</b><span className="md:hidden"><StatusBadge tone="critical">No clean planned</StatusBadge></span></div>
+          <div><b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b> · {d.guestName}{d.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late check-out</StatusBadge>}{d.state === 'checked_out' && <StatusBadge tone="gold" className="ml-1">Out</StatusBadge>}</div>
           <div>{d.next ? <><b className="[font-variant-numeric:tabular-nums]">{d.next.checkInTime}</b> · {d.next.guestName}</> : <span className="text-muted-ink">No arrival</span>}</div>
           <div><span className="md:hidden text-muted-ink">Time left </span><TimeLeft at={d.next?.checkInAt} now={now} /></div>
           <div className="hidden md:block text-muted-ink">—</div>
           <div className="hidden md:block text-muted-ink">—</div>
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="hidden md:inline"><Chip tone="critical">No clean</Chip></span>
+            <span className="hidden md:inline"><StatusBadge tone="critical">No clean</StatusBadge></span>
             <Button size="sm" variant="primary" loading={busy === `plan-${d.reservationId}`} onClick={() => onPlan(d)}>Plan clean</Button>
             {d.state !== 'checked_out' && <Button size="sm" variant="secondary" loading={busy === `left-${d.reservationId}`} onClick={() => onGuestLeft({ reservationId: d.reservationId }, d.unitNumber)}>Guest left</Button>}
           </div>
@@ -274,7 +274,7 @@ function BuildingCard({ group, now, selected, busy, onSelect, onGuestLeft, onPla
             <div key={w.id} className="flex items-center gap-2 text-meta flex-wrap">
               <Icon name="Wrench" size="sm" color="var(--color-gold-ink)" />
               <span><b>{w.unitNumber}</b> repair window {hm(w.startsAt)}–{hm(w.endsAt)}: {w.title}{w.assigneeName ? ` (${w.assigneeName})` : ''}</span>
-              {w.overlaps.length > 0 && <Chip tone="critical">Overlaps a stay</Chip>}
+              {w.overlaps.length > 0 && <StatusBadge tone="critical">Overlaps a stay</StatusBadge>}
             </div>
           ))}
         </div>
@@ -284,7 +284,7 @@ function BuildingCard({ group, now, selected, busy, onSelect, onGuestLeft, onPla
 }
 
 function CleanRow({ r, now, active, busy, onSelect, onGuestLeft }: { r: Row; now: number; active: boolean; busy: boolean; onSelect: () => void; onGuestLeft: () => void }) {
-  const st = CLEAN_STATUS[r.status];
+  const st = statusOf('cleaning', r.status);
   const files = r.photoCount + r.videoCount;
   const canMarkLeft = r.previous && !r.guestOut && r.status !== 'done' && r.status !== 'cleaning';
   return (
@@ -293,25 +293,25 @@ function CleanRow({ r, now, active, busy, onSelect, onGuestLeft }: { r: Row; now
         active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'hover:bg-page', r.status === 'done' && 'text-muted-ink')}>
       <div className="flex items-center gap-2 flex-wrap">
         <b className="text-ink">{r.unitNumber}</b>
-        {r.carriedOver && <Chip tone="warning">From {dayLabel(r.day)}</Chip>}
-        <span className="md:hidden ml-auto"><Chip tone={st.tone}>{st.label}</Chip></span>
+        {r.carriedOver && <StatusBadge tone="warning">From {dayLabel(r.day)}</StatusBadge>}
+        <span className="md:hidden ml-auto"><StatusBadge tone={st.tone}>{st.label}</StatusBadge></span>
       </div>
       <div className="min-w-0">
         <span className="md:hidden text-muted-ink">Out </span>
         {r.previous ? <><b className="[font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b> · {r.previous.guestName}</> : <span className="text-muted-ink">No departing guest</span>}
-        {r.previous?.lateCheckOut && <Chip tone="warning" className="ml-1">Late check-out</Chip>}
+        {r.previous?.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late check-out</StatusBadge>}
         {r.guestOut && r.guestLeftAt && <div className="text-meta text-gold-ink">Left at {hm(r.guestLeftAt)}</div>}
       </div>
       <div className="min-w-0">
         <span className="md:hidden text-muted-ink">In </span>
         {r.next ? <><b className="[font-variant-numeric:tabular-nums]">{r.next.checkInTime}</b> · {r.next.guestName}</> : <span className="text-muted-ink">No arrival</span>}
-        {r.next?.earlyCheckIn && <Chip tone="warning" className="ml-1">Early check-in</Chip>}
+        {r.next?.earlyCheckIn && <StatusBadge tone="warning" className="ml-1">Early check-in</StatusBadge>}
       </div>
       <div><span className="md:hidden text-muted-ink">Time left </span><TimeLeft at={r.next?.checkInAt} now={now} done={r.status === 'done'} /></div>
       <div><span className="md:hidden text-muted-ink">Type </span>{KIND_LABEL[r.kind] ?? r.kind}</div>
-      <div className={cx('truncate', !r.assigneeName && 'text-[var(--color-critical-fg)]')}><span className="md:hidden text-muted-ink">Cleaner </span>{r.assigneeName ?? 'Unassigned'}</div>
+      <div className={cx('truncate', !r.assigneeName && 'text-danger')}><span className="md:hidden text-muted-ink">Cleaner </span>{r.assigneeName ?? 'Unassigned'}</div>
       <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="hidden md:inline"><Chip tone={st.tone} className="whitespace-normal">{r.status === 'done' && files ? `Done · ${files} ${files === 1 ? 'file' : 'files'}` : st.label}</Chip></span>
+        <span className="hidden md:inline"><StatusBadge tone={st.tone} className="whitespace-normal">{r.status === 'done' && files ? `Done · ${files} ${files === 1 ? 'file' : 'files'}` : st.label}</StatusBadge></span>
         {canMarkLeft && (
           <Button size="sm" variant="secondary" loading={busy} onClick={e => { e.stopPropagation(); onGuestLeft(); }}>Guest left</Button>
         )}
@@ -336,12 +336,12 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
   async function act(key: string, fn: () => Promise<unknown>, ok: string, body?: string) {
     setBusy(key);
     try { await fn(); toast({ tone: 'success', title: ok, body }); refresh(); }
-    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: e instanceof ApiFailure ? e.message : 'Try again in a moment.' }); }
+    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); }
     finally { setBusy(null); }
   }
   async function reveal(id: string) {
     try { const r = await api.get<{ secret: string }>(`/access-credentials/${id}?reveal=true`); setRevealed(x => ({ ...x, [id]: r.secret || '(no code set)' })); }
-    catch (e) { toast({ tone: 'critical', title: 'Code not shown.', body: e instanceof ApiFailure ? e.message : 'Try again.' }); }
+    catch (e) { toast({ tone: 'critical', title: 'Code not shown.', body: errorMessage(e, 'Try again.') }); }
   }
 
   const done = row.state === 'resolved';
@@ -367,10 +367,10 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
       {error && <StaleBanner message={error} onRetry={reload} />}
 
       <div className="grid grid-cols-2 gap-2.5">
-        <div className="rounded-control bg-[#F4F1EB] p-2.5 flex flex-col gap-0.5">
+        <div className="rounded-control bg-muted p-2.5 flex flex-col gap-0.5">
           <span className="text-meta text-muted-ink">Leaving</span>
           {row.previous ? <><span><b>{row.previous.checkOutTime}</b> {row.previous.guestName}</span>
-            {row.previous.lateCheckOut && <span className="text-meta text-[var(--color-warning-fg)]">Late check-out</span>}
+            {row.previous.lateCheckOut && <span className="text-meta text-warning">Late check-out</span>}
             {row.guestOut ? <span className="text-meta text-gold-ink font-medium">Guest out{row.guestLeftAt ? ` at ${hm(row.guestLeftAt)}` : ''}</span>
               : !done && <Button size="sm" variant="secondary" className="mt-1 self-start" onClick={onGuestLeft}>Guest left</Button>}</>
             : <span className="text-muted-ink">No departing guest</span>}
@@ -378,7 +378,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
         <div className="rounded-control bg-gold-tint p-2.5 flex flex-col gap-0.5">
           <span className="text-meta text-muted-ink">Arriving</span>
           {row.next ? <><span><b>{row.next.checkInTime}</b> {row.next.guestName}{row.next.guests ? ` · ${row.next.guests} ${row.next.guests === 1 ? 'guest' : 'guests'}` : ''}</span>
-            {row.next.earlyCheckIn && <span className="text-meta text-[var(--color-warning-fg)]">Early check-in</span>}
+            {row.next.earlyCheckIn && <span className="text-meta text-warning">Early check-in</span>}
             <span className="text-meta">Time left <TimeLeft at={row.next.checkInAt} now={now} done={done} /></span></>
             : <span className="text-muted-ink">No arrival</span>}
         </div>
@@ -388,7 +388,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
         <h3 className="m-0 text-copy font-semibold">Door access</h3>
         {!data ? <Skeleton height={36} /> : data.access.length === 0 ? <span className="text-muted-ink">No access details on this unit. Add them on the unit's Access tab.</span>
           : data.access.map(a => (
-            <div key={a.id} className="rounded-control bg-[#F4F1EB] p-2.5 flex flex-col gap-1">
+            <div key={a.id} className="rounded-control bg-muted p-2.5 flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 <span className="flex-1 font-medium">{a.label}</span>
                 {a.hasCode && (revealed[a.id]
@@ -488,7 +488,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
     try {
       await api.post('/housekeeping/tasks', { unitId, date: day, kind, cleanerId: cleanerId || undefined, instructions: notes.trim() || undefined, title: kind === 'deep_clean' ? 'Deep clean' : kind === 'light_clean' ? 'Light clean' : 'Turnover clean' });
       onDone();
-    } catch (e) { setError(e instanceof ApiFailure ? e.message : 'Not saved. Try again.'); setBusy(false); }
+    } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); setBusy(false); }
   }
   return (
     <OpsModal title="New clean" sub="For a deep clean, a refresh, or a turnover the bookings did not create." onClose={onClose} busy={busy}
@@ -527,7 +527,7 @@ function AssignBuildingModal({ building, date, onClose, onDone }: { building: { 
     try {
       const r = await api.post<{ assigned: number; assigneeName: string }>('/housekeeping/assign-building', { buildingId: building.buildingId, date, cleanerId, onlyUnassigned });
       onDone(r.assigned, r.assigneeName);
-    } catch (e) { setError(e instanceof ApiFailure ? e.message : 'Not saved. Try again.'); setBusy(false); }
+    } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); setBusy(false); }
   }
   return (
     <OpsModal title={`Assign ${building.name}`} sub={`Every unfinished clean in this building on ${dayLabel(date)} goes to one cleaner.`} onClose={onClose} busy={busy}
@@ -539,7 +539,7 @@ function AssignBuildingModal({ building, date, onClose, onDone }: { building: { 
         </select>
       </FormRow>
       <label className="flex items-center gap-2 text-copy cursor-pointer">
-        <input type="checkbox" checked={onlyUnassigned} onChange={e => setOnlyUnassigned(e.target.checked)} className="w-4 h-4 accent-[#151515]" />
+        <input type="checkbox" checked={onlyUnassigned} onChange={e => setOnlyUnassigned(e.target.checked)} className="w-4 h-4 accent-black" />
         Only cleans with no cleaner yet
       </label>
     </OpsModal>
@@ -647,7 +647,7 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Cleaning" sub={data ? `${data.total.toLocaleString('en-MY')} ${showLabel} from ${dayLabel(from)} to ${dayLabel(to)}` : 'Finished cleans'}
+      <PageHeader title="Cleaning" sub={data ? `${count(data.total)} ${showLabel} from ${dayLabel(from)} to ${dayLabel(to)}` : 'Finished cleans'}
         actions={<TabSwitch tab="history" onTab={onTab} />} />
       <DataTable<HistoryRow>
         id="cleaning.history" columns={columns} rows={data ? data.data : null} rowKey={r => r.id}

@@ -4,10 +4,10 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { EmptyState } from '../components/States';
 import ChannelMark, { channelLabel } from '../components/ChannelMark';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api, notifyFailure, errorMessage } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { relative, time, count } from '../lib/format';
 import { Button } from '../components/Button';
@@ -157,7 +157,7 @@ export default function InboxPage() {
     } catch (e) {
       setSentByThread(s => ({ ...s, [activeId]: (s[activeId] ?? []).filter(m => m.id !== id) }));
       setDraft(body);
-      toast({ tone: 'critical', title: 'Message was not sent.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Message was not sent.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
 
@@ -230,7 +230,7 @@ export default function InboxPage() {
                 <span className="text-copy font-semibold">{open.guestName ?? 'Unknown guest'}</span>
                 <span className="text-meta text-muted-ink">{open.propertyName} {open.unitNumber}{open.subject ? ` · ${open.subject}` : ''}</span>
               </div>
-              <Badge tone="neutral" label={threadChannelLabel(open.channel)} size="sm" />
+              <StatusBadge tone="neutral" label={threadChannelLabel(open.channel)} size="sm" />
             </div>
           ) : (
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line)] text-meta text-muted-ink">
@@ -260,7 +260,7 @@ export default function InboxPage() {
                       <span className="text-caption text-muted-ink">
                         {sending ? 'Sending…' : time(m.sentAt)}
                       </span>
-                      {m.isAutomated && <Badge tone="neutral" label="Automated" size="sm" />}
+                      {m.isAutomated && <StatusBadge tone="neutral" label="Automated" size="sm" />}
                     </div>
                   </div>
                 );

@@ -9,7 +9,6 @@ import { MoneyText } from '../../components/MoneyText';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Select, SearchSelect } from '../../components/Select';
 import { cx } from '../../lib/design-tokens';
-import { STATEMENT } from '../../lib/vocabulary';
 import type { StatementState } from '../../lib/types';
 import type { RevenueModel } from '../../lib/revenueModel';
 
@@ -134,7 +133,7 @@ export function StatementHistory({ o }: { o: Owner }) {
       render: s => <MoneyText sen={s.grossBookingValue} mode="exact" tone="muted" className="text-meta" /> },
     { key: 'net', label: 'Owner payout', type: 'money', value: s => s.netPayout, width: 120,
       render: s => <MoneyText sen={s.netPayout} mode="exact" strong className="text-copy" /> },
-    { key: 'state', label: 'Status', type: 'status', value: s => s.state, width: 110, status: s => STATEMENT[s.state] },
+    { key: 'state', label: 'Status', type: 'status', value: s => s.state, width: 110, entity: 'statement' },
   ], []);
   return (
     <Section title="Statement history">

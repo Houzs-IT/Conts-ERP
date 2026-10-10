@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { MoneyText, moneyString } from '../components/MoneyText';
 import { DataTable, type Column } from '../components/DataTable';
@@ -10,7 +10,8 @@ import { fetchAllPages } from '../lib/export';
 import { DecisionDialog } from '../components/ApprovalBanner';
 import { useApi } from '../lib/useApi';
 import { refreshNavCounts } from '../lib/navBadges';
-import { STATUS_LABEL, type Approval, type ApprovalStatus, type Decision } from '../lib/approvals';
+import { statusLabel } from '../lib/status';
+import { type Approval, type ApprovalStatus, type Decision } from '../lib/approvals';
 import { date, dateTime, plural } from '../lib/format';
 import { useUrlState, SearchBox, FilterSelect, Chip } from './finance/listKit';
 
@@ -60,7 +61,7 @@ export default function ApprovalsPage() {
     }, { size: 200, onProgress })).rows;
   }
   const decidedLine = (a: Approval) => a.status === 'pending' ? null
-    : `${STATUS_LABEL[a.status].label} by ${a.decidedBy?.name ?? 'someone'}${a.decidedAt ? `, ${dateTime(a.decidedAt)}` : ''}${a.selfApproved ? ' (self-approved, only management user)' : ''}${a.decisionNote ? ` · ${a.decisionNote}` : ''}`;
+    : `${statusLabel('approval', a.status)} by ${a.decidedBy?.name ?? 'someone'}${a.decidedAt ? `, ${dateTime(a.decidedAt)}` : ''}${a.selfApproved ? ' (self-approved, only management user)' : ''}${a.decisionNote ? ` · ${a.decisionNote}` : ''}`;
 
   const columns = useMemo<Column<Approval>[]>(() => [
     { key: 'type', label: 'Type', value: a => a.kindLabel, width: 140, hideable: false,
@@ -78,7 +79,7 @@ export default function ApprovalsPage() {
       render: a => <MoneyText sen={a.amount} mode="exact" strong className="text-copy" /> },
     { key: 'asked', label: 'Asked by', value: a => a.requestedBy.name, width: 150, sub: a => date(a.requestedAt) },
     { key: 'askedOn', label: 'Asked on', type: 'datetime', value: a => a.requestedAt, hidden: true },
-    { key: 'status', label: 'Status', type: 'status', value: a => STATUS_LABEL[a.status].label, status: a => STATUS_LABEL[a.status], width: 120 },
+    { key: 'status', label: 'Status', type: 'status', value: a => a.status, entity: 'approval', width: 120 },
     { key: 'decided', label: 'Decision', value: a => decidedLine(a), hidden: true, width: 240 },
     { key: 'action', label: 'Action', align: 'right', noExport: true, sortable: false, filter: false, width: 220, render: a => actions(a) },
   ], [view]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -98,7 +99,7 @@ export default function ApprovalsPage() {
           options={(data?.kinds ?? []).map(k => ({ value: k.value, label: `${k.label} · ${k.count}` }))} />
         {view === 'decided' && (
           <FilterSelect className="flex-[1_1_160px]" label="Outcome" all="All outcomes" value={status} onChange={v => url.set({ status: v || null, page: null })}
-            options={(['approved', 'rejected', 'cancelled'] as ApprovalStatus[]).map(s => ({ value: s, label: `${STATUS_LABEL[s].label} · ${data?.counts[s as 'approved'] ?? 0}` }))} />
+            options={(['approved', 'rejected', 'cancelled'] as ApprovalStatus[]).map(s => ({ value: s, label: `${statusLabel('approval', s)} · ${data?.counts[s as 'approved'] ?? 0}` }))} />
         )}
       </div>
       {r && (
@@ -123,7 +124,7 @@ export default function ApprovalsPage() {
             <span className="text-caption text-muted-ink text-pretty">{a.requestedBy.name}, {date(a.requestedAt)} · {a.reason}</span>
             {decidedLine(a) && <span className="text-caption text-muted-ink text-pretty">{decidedLine(a)}</span>}
             <span className="flex items-center justify-between gap-2 flex-wrap">
-              <Badge tone={STATUS_LABEL[a.status].tone} label={STATUS_LABEL[a.status].label} size="sm" />
+              <StatusBadge entity="approval" value={a.status} size="sm" />
               {actions(a)}
             </span>
           </span>
