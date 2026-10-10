@@ -34,6 +34,8 @@ export interface SessionUser {
   permissions: string[];
   /** Each area's level for this person's role (Users and roles > Permissions). Absent on an older session. */
   access?: Record<string, AccessLevel>;
+  /** Management requires two-step sign-in for this role and it is not set up yet: only My account opens until it is. */
+  twoStepSetupRequired?: boolean;
 }
 
 export type AccessLevel = 'none' | 'view' | 'edit' | 'full';

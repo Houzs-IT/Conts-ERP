@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Card } from './Card';
 import { Button } from './Button';
 import { Badge } from './Badge';
+import { PageControls } from './PageControls';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from './Toast';
@@ -21,8 +22,11 @@ export default function ChannexSyncPanel() {
   const canRun = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
   const [busy, setBusy] = useState(false);
   const [hookBusy, setHookBusy] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   if (!data || data.restricted) return null;
   const n = data.notifications;
+  const shown = data.recentCalls.slice((page - 1) * pageSize, page * pageSize);
 
   async function fullSync() {
     setBusy(true);
@@ -78,7 +82,7 @@ export default function ChannexSyncPanel() {
           <table className="w-full border-collapse min-w-[640px]">
             <thead><tr className="bg-muted">{['Sent', 'Unit', 'What', 'Changes', 'Result', 'Channex task id'].map(h => <th key={h} className="py-2 px-[22px] text-left text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink">{h}</th>)}</tr></thead>
             <tbody>
-              {data.recentCalls.map((c, i) => {
+              {shown.map((c, i) => {
                 const ok = c.status >= 200 && c.status < 300;
                 return (
                   <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
@@ -93,6 +97,17 @@ export default function ChannexSyncPanel() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+      {data.recentCalls.length > 0 && (
+        <div className="flex items-center justify-between gap-3 flex-wrap pl-[22px] [border-top:1px_solid_var(--color-line-soft)]">
+          <div className="flex items-center gap-1" role="group" aria-label="Rows per page">
+            {[10, 50, 100].map(s => (
+              <Button key={s} size="sm" variant={s === pageSize ? 'primary' : 'secondary'} aria-pressed={s === pageSize}
+                onClick={() => { setPageSize(s); setPage(1); }}>{s}</Button>
+            ))}
+          </div>
+          <PageControls page={page} pageSize={pageSize} total={data.recentCalls.length} onPage={setPage} noun="sends" />
         </div>
       )}
     </Card>

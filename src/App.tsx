@@ -96,6 +96,7 @@ const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
 const FieldTodayPage = lazy(() => import('./pages/FieldTodayPage'));
 const OwnerPortalPage = lazy(() => import('./pages/OwnerPortalPage'));
+const AccountPage = lazy(() => import('./pages/AccountPage'));
 
 const Fallback = () => null;
 
@@ -166,12 +167,23 @@ function Routed() {
     if (token) return <LoginPage resetToken={token} />;
   }
   if (!user) return <LoginPage />;
-  if (user.mustChangePassword && location.pathname !== '/change-password') {
-    return <LoginPage forceChangePassword />;
+  // A temporary password (invite, or management's Reset password) must be replaced before anything else. Sign-in
+  // sends the browser to #/change-password, which has no screen of its own, so this holds on every address.
+  if (user.mustChangePassword) {
+    return <LoginPage key="change-password" forceChangePassword />;
   }
+  // Management requires two-step sign-in for this role and it is not set up: nothing else answers until it is.
+  if (user.twoStepSetupRequired) {
+    return (
+      <div className="flex-1 min-h-screen bg-page box-border px-4 py-6 sm:px-10 sm:py-10">
+        <div className="max-w-[760px] mx-auto"><Suspense fallback={<Fallback />}><AccountPage gate /></Suspense></div>
+      </div>
+    );
+  }
+  const account = location.pathname === '/account';
   // Field roles: single-column 44px shell, not the desk nav.
   if (user.role === 'housekeeper' || user.role === 'technician') {
-    return <FieldShell><Suspense fallback={<Fallback />}><FieldTodayPage /></Suspense></FieldShell>;
+    return <FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : <FieldTodayPage />}</Suspense></FieldShell>;
   }
   // Owners see only their own portal, whatever the address bar says.
   if (user.role === 'owner') {
@@ -179,6 +191,7 @@ function Routed() {
       <Routes>
         {/* Their own Owner Income Report (the API checks it is theirs and final), printed without the shell. */}
         <Route path="/finance/statements/:id/report" element={<Suspense fallback={<Fallback />}><OwnerIncomeReportPage /></Suspense>} />
+        <Route path="/account" element={<OwnerShell><Suspense fallback={<Fallback />}><AccountPage /></Suspense></OwnerShell>} />
         <Route path="*" element={<OwnerShell><Suspense fallback={<Fallback />}><OwnerPortalPage /></Suspense></OwnerShell>} />
       </Routes>
     );
@@ -276,6 +289,8 @@ function Routed() {
         <Route path="/performance/reviews" element={<ReviewsPage />} />
         <Route path="/communication/inbox" element={<InboxPage />} />
         <Route path="/communication/automations" element={<AutomationsPage />} />
+        <Route path="/account" element={<AccountPage />} />
+        <Route path="/change-password" element={<Navigate to="/" replace />} />
         <Route path="/system/users" element={<UsersPage />} />
         <Route path="/system/integrations" element={<IntegrationsPage />} />
         <Route path="/system/integrations/hostplatform" element={<HostPlatformImportPage />} />
