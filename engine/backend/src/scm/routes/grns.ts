@@ -23,6 +23,7 @@ import { queueAcGrnEdit } from '../lib/ac-grn-outbox';
 import { buildGrnCancelReversals } from '../lib/grn-cancel-reversal';
 import { grnReverseWouldGoNegative } from '../lib/grn-reverse-guard';
 import { isMigratedNoStock } from '../lib/migrated-no-stock';
+import { grnBooksStock, readGrnSiteFlag, SITE_FLAG_UNREADABLE } from '../lib/renovation-site-receipt';
 import { loadGrnAuditMeta } from '../lib/grn-audit-meta';
 import { runScmPgCommand } from '../lib/pg-supabase-transaction';
 import { scheduleStockAllocationAfterCommand } from '../lib/stock-allocation-job';
@@ -383,7 +384,7 @@ async function checkGrnZeroCost(
    the single chokepoint that writes inventory IN and rolls PO received_qty, so
    an omitted scope here would let one company's confirm commit stock against
    another's GRN. Callers get it from requireActiveCompanyId and refuse first. */
-async function postGrnAndRollup(sb: any, grnId: string, userId: string, companyId: number): Promise<{ ok: true; movementErrors?: string[]; recountError?: string } | { ok: false; reason: string; status?: number; zeroCost?: ZeroCostRefusal }> {
+export async function postGrnAndRollup(sb: any, grnId: string, userId: string, companyId: number): Promise<{ ok: true; movementErrors?: string[]; recountError?: string } | { ok: false; reason: string; status?: number; zeroCost?: ZeroCostRefusal }> {
   const { data: grnHeader } = await scopeToCompanyId(sb.from('grns')
     .select('grn_number, warehouse_id, company_id, exchange_rate, allocation_method, received_at')
     .eq('id', grnId), companyId).maybeSingle();
@@ -399,7 +400,13 @@ async function postGrnAndRollup(sb: any, grnId: string, userId: string, companyI
      100% margin — and by then the unit has shipped and the COGS must never be
      rewritten. See zero-cost-receipt-guard.ts for why the discriminator is the
      SKU's own purchase history rather than a flag. */
-  const zeroCost = await checkGrnZeroCost(sb, (items ?? []) as GrnCostGateRow[], grnHeader);
+  /* SITE RECEIPT (renovation, mig 0079): goods received at the customer's unit
+     book no stock, so neither the zero-cost lot gate nor any movement applies.
+     Read BEFORE the CAS flip so an unreadable flag refuses with nothing written. */
+  const siteFlag = await readGrnSiteFlag(sb, grnId);
+  if (siteFlag === 'unknown') return { ok: false, reason: SITE_FLAG_UNREADABLE.error, status: 503 };
+  const booksStock = grnBooksStock(siteFlag);
+  const zeroCost = booksStock ? await checkGrnZeroCost(sb, (items ?? []) as GrnCostGateRow[], grnHeader) : null;
   if (zeroCost) {
     return { ok: false, reason: ZERO_COST_RECEIPT_ERROR, status: 409, zeroCost };
   }
@@ -537,7 +544,7 @@ async function postGrnAndRollup(sb: any, grnId: string, userId: string, companyI
   const itemRows = (items ?? []) as Array<{ id: string; purchase_order_item_id: string | null; qty_accepted: number; item_code: string; material_name: string | null; unit_price_sen: number | null; line_total_sen?: number | null; item_group?: string | null; variants?: VariantAttrs | null }>;
   const alloc = await computeAndStoreGrnAllocation(sb, itemRows, grnRate, method, companyId);
   const allocByItemId = new Map(alloc.goods.map((g) => [g.id, g]));
-  if (warehouseId && items) {
+  if (warehouseId && items && booksStock) {
     // Migration 0120 — stamp each IN with its source PO number as the batch.
     const batchByItem = await resolvePoBatchByItem(
       sb,
@@ -657,13 +664,13 @@ async function postGrnAndRollup(sb: any, grnId: string, userId: string, companyI
   }
   /* Physical rack placement — lines that chose a rack on the GRN form get
      placed onto that rack (separate ledger, migration 0151). Best-effort. */
-  try {
+  if (booksStock) try {
     const { placeGrnLinesOnRacks } = await import('../lib/grn-rack-sync');
     await placeGrnLinesOnRacks(sb, grnId, grnNo, userId);
   } catch (e) { /* eslint-disable-next-line no-console */ console.error('[grn-rack] place failed:', e); }
   /* B2C SO auto-allocation — stock just came in, re-walk every PENDING SO line
      and flip to READY where the new inventory covers it. Best-effort. */
-  try {
+  if (booksStock) try {
     const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
     await recomputeSoStockAllocation(sb);
   } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-grn failed:', e); }
@@ -2193,7 +2200,11 @@ export const cancelGrnCommand = async (
      POSTED but posted no stock, so un-posting it takes real units off the shelf.
      lib/migrated-no-stock.ts carries the rule and why the on-hand guard below
      cannot see it. */
-  const migratedNoStock = isMigratedNoStock(head);
+  /* A site receipt (renovation) booked no stock either, so it un-books none:
+     same suppression as a migrated receipt. */
+  const siteFlag = await readGrnSiteFlag(sb, id);
+  if (siteFlag === 'unknown') return refuseWithoutWriting(c, SITE_FLAG_UNREADABLE, 503);
+  const migratedNoStock = !grnBooksStock(siteFlag, isMigratedNoStock(head));
   // Idempotent — already cancelled, echo back without re-reversing.
   if (head.status === 'CANCELLED') {
     const { data } = await scopeToCompanyId(sb.from('grns').select(HEADER).eq('id', id), co.companyId).maybeSingle();
@@ -2285,7 +2296,9 @@ export const cancelGrnCommand = async (
     companyId: activeCompanyId(c),
     statusSnapshot: 'CANCELLED',
     note: migratedNoStock
-      ? `Migrated AutoCount paperwork (${lineList.length} line(s)) — no stock was posted by this receipt, so none was reversed`
+      ? (siteFlag === 'site'
+        ? `Site receipt (${lineList.length} line(s)) — received at the customer's unit, no stock was posted, so none was reversed`
+        : `Migrated AutoCount paperwork (${lineList.length} line(s)) — no stock was posted by this receipt, so none was reversed`)
       : `Reversing receipt of ${lineList.length} line(s)`,
     fieldChanges: compactChanges([
       ...statusChange(head.status, 'CANCELLED'),
@@ -2453,7 +2466,9 @@ grns.patch('/:id', async (c) => {
      old warehouse. The OUT/IN pair would drain units it never delivered there
      and mint them elsewhere — company-wide on-hand nets to zero, which is why
      it would go unnoticed. lib/migrated-no-stock.ts. */
-  const migratedNoStock = isMigratedNoStock(before as { migrated_no_stock?: boolean | null });
+  const siteFlag = await readGrnSiteFlag(sb, id);
+  if (siteFlag === 'unknown') return refuseWithoutWriting(c, SITE_FLAG_UNREADABLE, 503);
+  const migratedNoStock = !grnBooksStock(siteFlag, isMigratedNoStock(before as { migrated_no_stock?: boolean | null }));
   if (body.warehouseId !== undefined && !migratedNoStock) {
     const c0 = (beforeRow ?? null) as unknown as { grn_number: string; status: string | null; warehouse_id: string | null; exchange_rate?: string | number | null } | null;
     const oldWh = c0?.warehouse_id ?? null;
@@ -2666,7 +2681,9 @@ grns.post('/:id/items', async (c) => {
   const grnGateStatus = ((grnGate as { status?: string } | null)?.status ?? '').toUpperCase();
   // Migrated paperwork posts NO inventory, exactly like a DRAFT: a line added
   // to one must not write an IN for units the snapshot already counted.
-  const migratedNoStock = isMigratedNoStock(grnGate as { migrated_no_stock?: boolean | null } | null);
+  const siteFlag = await readGrnSiteFlag(sb, grnId);
+  if (siteFlag === 'unknown') return refuseWithoutWriting(c, SITE_FLAG_UNREADABLE, 503);
+  const migratedNoStock = !grnBooksStock(siteFlag, isMigratedNoStock(grnGate as { migrated_no_stock?: boolean | null } | null));
   if (grnGateStatus === 'CANCELLED' || grnGateStatus === 'CLOSED') {
     return refuseWithoutWriting(c, { error: 'grn_locked',
       message: `This GRN is ${grnGateStatus} — its lines can no longer be changed.` }, 409);
@@ -2921,7 +2938,9 @@ grns.patch('/:id/items/:itemId', async (c) => {
   const grnGateStatus = ((grnGate as { status?: string } | null)?.status ?? '').toUpperCase();
   // Migrated paperwork — same standing as DRAFT for stock. A qty REDUCTION here
   // writes a delta OUT, taking units this document never put on the shelf.
-  const migratedNoStock = isMigratedNoStock(grnGate as { migrated_no_stock?: boolean | null } | null);
+  const siteFlag = await readGrnSiteFlag(sb, grnId);
+  if (siteFlag === 'unknown') return refuseWithoutWriting(c, SITE_FLAG_UNREADABLE, 503);
+  const migratedNoStock = !grnBooksStock(siteFlag, isMigratedNoStock(grnGate as { migrated_no_stock?: boolean | null } | null));
   if (grnGateStatus === 'CANCELLED' || grnGateStatus === 'CLOSED') {
     return refuseWithoutWriting(c, { error: 'grn_locked',
       message: `This GRN is ${grnGateStatus} — its lines can no longer be changed.` }, 409);
@@ -3231,7 +3250,9 @@ grns.delete('/:id/items/:itemId', async (c) => runScmPgCommand(c, async (
   const grnGateStatus = ((grnGate as { status?: string } | null)?.status ?? '').toUpperCase();
   // The per-line twin of the cancel defect: this route reverses "the IN the post
   // wrote for THIS line", and a migrated receipt's post wrote none.
-  const migratedNoStock = isMigratedNoStock(grnGate as { migrated_no_stock?: boolean | null } | null);
+  const siteFlag = await readGrnSiteFlag(sb, grnId);
+  if (siteFlag === 'unknown') return refuseWithoutWriting(c, SITE_FLAG_UNREADABLE, 503);
+  const migratedNoStock = !grnBooksStock(siteFlag, isMigratedNoStock(grnGate as { migrated_no_stock?: boolean | null } | null));
   if (grnGateStatus === 'CANCELLED' || grnGateStatus === 'CLOSED') {
     return refuseWithoutWriting(c, { error: 'grn_locked',
       message: `This GRN is ${grnGateStatus} — its lines can no longer be changed.` }, 409);

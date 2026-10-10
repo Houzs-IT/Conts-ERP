@@ -19,6 +19,7 @@ import type { Env, Variables } from '../env';
 import { qtyCapRefusal } from '../lib/qty-cap';
 import { dateOrNull, coerceEmptyDates } from '../lib/date-coerce';
 import { writeMovements, reverseMovements, defaultWarehouseId } from '../lib/inventory-movements';
+import { readGrnSiteFlag, siteReceivedGrnIds } from '../lib/renovation-site-receipt';
 import { reconcileUncostedAfterIn } from '../lib/oversell-retrocost';
 import { mintMonthlyDocNo, insertWithDocNoRetry } from '../lib/doc-no';
 import { todayMyt } from '../lib/my-time';
@@ -492,8 +493,14 @@ async function writePurchaseReturnMovements(sb: any, prId: string, returnNumber:
     }
   }
 
+  /* SITE RECEIPT (renovation): a line received at the customer's unit never
+     entered stock, so returning it takes none out. Unreadable flag: no stock
+     moves for this return and the caller is told (fails closed). */
+  const siteGrns = await siteReceivedGrnIds(sb, [...lineGrnId.values()].filter((x): x is string => !!x));
+  if (siteGrns === null) return [`OUT ${returnNumber}: not written, could not tell whether the source receipt was taken on site`];
   const movements = itemList
     .filter((it) => it.qty_returned > 0)
+    .filter((it) => !siteGrns.has(lineGrnId.get(it.id) ?? ''))
     .map((it) => {
       const warehouseId = lineWh.get(it.id) ?? null;
       if (!warehouseId) return null;
@@ -561,7 +568,21 @@ async function checkPrStockAvailability(
   headerGrnId: string | null,
   companyId: number | undefined,
 ): Promise<StockShortage[]> {
-  const active = lines.filter((l) => Number(l.qty) > 0);
+  const requested = lines.filter((l) => Number(l.qty) > 0);
+  if (requested.length === 0) return [];
+  /* Lines received on site (renovation) were never in stock and take none out,
+     so they are not checked against the shelf. Unreadable flag: every line is
+     checked (the stricter answer). */
+  const giIds = [...new Set(requested.map((l) => l.grn_item_id).filter((x): x is string => !!x))];
+  const giToGrn = new Map<string, string>();
+  if (giIds.length > 0) {
+    const { data: giRows } = await sb.from('grn_items').select('id, grn_id').in('id', giIds);
+    for (const r of (giRows ?? []) as Array<{ id: string; grn_id: string }>) giToGrn.set(r.id, r.grn_id);
+  }
+  const siteGrns = await siteReceivedGrnIds(sb, [...giToGrn.values(), ...(headerGrnId ? [headerGrnId] : [])]);
+  const active = siteGrns
+    ? requested.filter((l) => !siteGrns.has((l.grn_item_id ? giToGrn.get(l.grn_item_id) : null) ?? headerGrnId ?? ''))
+    : requested;
   if (active.length === 0) return [];
   const lineWh = await resolvePrLineWarehouses(
     sb, active.map((l) => ({ id: l.id, grn_item_id: l.grn_item_id ?? null })), headerGrnId, companyId,
@@ -613,6 +634,20 @@ async function writePrLineDeltaMovement(
   },
 ): Promise<string[]> {
   if (!args.deltaQty) return [];
+  /* SITE RECEIPT guard, as in writePurchaseReturnMovements: no stock behind the
+     source line, so no delta either. */
+  {
+    let srcGrnId: string | null = args.headerGrnId;
+    if (args.line.grn_item_id) {
+      const { data: gi } = await sb.from('grn_items').select('grn_id').eq('id', args.line.grn_item_id).maybeSingle();
+      srcGrnId = (gi as { grn_id?: string | null } | null)?.grn_id ?? srcGrnId;
+    }
+    if (srcGrnId) {
+      const flag = await readGrnSiteFlag(sb, srcGrnId);
+      if (flag === 'site') return [];
+      if (flag === 'unknown') return [`${args.returnNumber}: stock not adjusted, could not tell whether the source receipt was taken on site`];
+    }
+  }
   const isOut = args.deltaQty > 0;
   const dir = isOut ? 'OUT' : 'IN';
   /* Set the moment writeMovements confirms the insert. A throw AFTER that point

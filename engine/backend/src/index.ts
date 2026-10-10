@@ -124,6 +124,8 @@ import { publicDoScan } from "./routes/publicDoScan";
 import { publicContractorCalendar } from "./routes/publicContractorCalendar";
 import { publicBrandCalendar } from "./routes/publicBrandCalendar";
 import { brandShare } from "./routes/brandShare";
+// Renovation projects (Conts renovation flow, phase 3). Own router: routes/projects.ts is at its size ceiling.
+import renovation from "./routes/renovation";
 import { drainEmailOutbox } from "./services/email";
 import { runClientErrorDigest } from "./services/clientErrors";
 import { runSlaEscalation } from "./services/assrEscalation";
@@ -444,6 +446,9 @@ app.route("/api/projects", projects);
 // The office side of a brand's share link (generate / revoke). Own file because
 // routes/projects.ts is at its size ceiling. See routes/brandShare.ts.
 app.route("/api/brand-share", brandShare);
+// Renovation projects: board, detail, stages, checklist skips, site tasks, calendar, handover, POD.
+app.use("/api/renovation/*", inboxBustAfterWrite);
+app.route("/api/renovation", renovation);
 app.route("/api/sales", sales);
 app.route("/api/finance", finance);
 app.route("/api/stockitems", stockItems);

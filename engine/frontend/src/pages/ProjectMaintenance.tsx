@@ -1,3 +1,5 @@
+import { ProjectTypeManager } from "./projects/renovation/ProjectTypeManager";
+import { useProjectsMode } from "./projects/renovation/RenovationRoutes";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, ChevronUp, ChevronDown, Plus, Pencil, Trash2, ShieldCheck, Eye, EyeOff, Upload, Image as ImageIcon } from "lucide-react";
 import { useReorderable } from "../hooks/useReorderable";
@@ -101,6 +103,28 @@ export function ProjectMaintenanceView() {
   // section AND must NOT fire the fetch (which would 403). Fail-open when the
   // flag is absent — the backend still enforces.
   const canProjectFinance = !!user?.project_finance_viewer;
+  // Renovation mode: project types and the stage checklist templates; the
+  // exhibition pickers (event types, organizers, venues, contractors, cost
+  // rates) are hidden, not deleted. Brands stay (letterheads).
+  const mode = useProjectsMode();
+  if (mode === "renovation") {
+    return (
+      <div>
+        <PageHeader
+          eyebrow="Operations · Projects"
+          title="Project Maintenance"
+          description="Project types and their stages, brands, and the stage checklist that clones into every new project."
+        />
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <ProjectTypeManager />
+          <BrandManager />
+        </div>
+        <div className="mt-6">
+          <ChecklistManager />
+        </div>
+      </div>
+    );
+  }
   return (
     <div>
       <PageHeader
