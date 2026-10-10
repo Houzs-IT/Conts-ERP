@@ -76,7 +76,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
         alignItems: 'center', gap: open ? 8 : 10, borderBottom: `1px solid ${color.charcoal}`,
       }}>
         <div style={{ flex: open ? 1 : 'none', minWidth: 0, overflow: 'hidden' }}>
-          {open ? <Logo variant="full" size="sm" onDark /> : <Logo variant="mark" size="sm" onDark />}
+          {open ? <Logo variant="full" size="sm" onDark product /> : <Logo variant="mark" size="sm" onDark />}
         </div>
         <button onClick={onToggle} aria-label={open ? 'Collapse navigation' : 'Expand navigation'} title={open ? 'Collapse navigation' : 'Expand navigation'}
           style={{ width: 30, height: 30, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.sm, color: color.onDark, background: open ? 'none' : 'rgba(255,255,255,0.06)', border: 'none', cursor: 'pointer' }}>

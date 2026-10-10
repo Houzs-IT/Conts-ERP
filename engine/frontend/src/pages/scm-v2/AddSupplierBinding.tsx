@@ -10,7 +10,9 @@ import { useSuppliers, useCreateBinding } from '../../vendor/scm/lib/suppliers-q
    binding still happens on the Supplier side (owner ruling); this only ADDS one.
    On success the drawer's supplier list + cost anchor refresh. Own file so
    Products.tsx stays under its size ceiling. */
-export const AddSupplierBinding = ({ productCode, productName }: { productCode: string; productName: string }) => {
+/* hasBindings === false: this SKU has no supplier yet, so the one being added
+   becomes its main supplier (its default PO party; the server does the same). */
+export const AddSupplierBinding = ({ productCode, productName, hasBindings }: { productCode: string; productName: string; hasBindings?: boolean }) => {
   const qc = useQueryClient();
   const suppliers = useSuppliers();
   const create = useCreateBinding();
@@ -18,11 +20,12 @@ export const AddSupplierBinding = ({ productCode, productName }: { productCode: 
   const [supplierId, setSupplierId] = useState('');
   const [supplierSku, setSupplierSku] = useState('');
   const [priceSen, setPriceSen] = useState<number | null>(null);
-  const [isMain, setIsMain] = useState(false);
+  const firstBinding = hasBindings === false;
+  const [isMain, setIsMain] = useState(firstBinding);
   const [error, setError] = useState<string | null>(null);
 
   const reset = () => {
-    setSupplierId(''); setSupplierSku(''); setPriceSen(null); setIsMain(false); setError(null);
+    setSupplierId(''); setSupplierSku(''); setPriceSen(null); setIsMain(firstBinding); setError(null);
   };
   const submit = () => {
     setError(null);
@@ -40,6 +43,8 @@ export const AddSupplierBinding = ({ productCode, productName }: { productCode: 
       {
         onSuccess: () => {
           void qc.invalidateQueries({ queryKey: ['mfg-product-suppliers'] });
+          // The SKU list shows the main supplier.
+          void qc.invalidateQueries({ queryKey: ['mfg-products'] });
           reset();
           setOpen(false);
         },
@@ -65,7 +70,7 @@ export const AddSupplierBinding = ({ productCode, productName }: { productCode: 
   if (!open) {
     return (
       <div style={{ marginTop: 'var(--space-2)' }}>
-        <button type="button" style={cta} onClick={() => setOpen(true)}>+ Add supplier binding</button>
+        <button type="button" style={cta} onClick={() => { setIsMain(firstBinding); setOpen(true); }}>+ Add supplier binding</button>
       </div>
     );
   }
@@ -110,7 +115,7 @@ export const AddSupplierBinding = ({ productCode, productName }: { productCode: 
         </div>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-12)', color: '#3a3f36', paddingBottom: 6 }}>
           <input type="checkbox" checked={isMain} onChange={(e) => setIsMain(e.target.checked)} />
-          Main supplier
+          Main supplier{firstBinding ? ' (first supplier of this item)' : ''}
         </label>
         <div style={{ display: 'flex', gap: 6, paddingBottom: 2 }}>
           <Button variant="primary" onClick={submit} disabled={create.isPending}>

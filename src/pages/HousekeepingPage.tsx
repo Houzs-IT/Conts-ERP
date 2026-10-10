@@ -160,7 +160,7 @@ const ACCENT: Record<Tone, string> = {
 /* ------------------------------ local modal ------------------------------ */
 /* font:inherit is the last shorthand key on the source input style, so the real
  * render is the inherited 16px/400 — no text-size/weight class is added here. */
-const inputCls = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit]';
+const inputCls = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy';
 const labelCls = 'text-meta font-medium text-muted-ink';
 
 function Modal({ title, sub, onClose, children, footer, busy }: {
@@ -969,7 +969,7 @@ export default function HousekeepingPage() {
             <label htmlFor="dmg-detail" className={labelCls}>Detail</label>
             <textarea id="dmg-detail" value={damage.detail} disabled={busy} rows={2} placeholder="Where it is, how bad, any temporary fix"
               onChange={e => setDamage(d => d && { ...d, detail: e.target.value })}
-              className="block w-full box-border h-auto py-[9px] px-3 text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit] resize-y" />
+              className="block w-full box-border h-auto py-[9px] px-3 text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy resize-y" />
           </div>
           <div className="flex gap-[14px]">
             <div className="flex-1 flex flex-col gap-[7px]">
@@ -1212,18 +1212,18 @@ function CreateCleaningModal({ crew, defaultDate, busy, onClose, onCreate }: {
         </div>
       </div>
 
-      <div className="flex gap-[14px]">
-        <div className="flex-1 flex flex-col gap-[7px]">
+      <div className="flex flex-wrap gap-[14px]">
+        <div className="flex-[1_1_120px] min-w-0 flex flex-col gap-[7px]">
           <label htmlFor="ck-start" className={labelCls}>Window start</label>
           <input id="ck-start" type="time" value={d.scheduledFor} disabled={busy}
             onChange={e => set({ scheduledFor: e.target.value })} className={inputCls} />
         </div>
-        <div className="flex-1 flex flex-col gap-[7px]">
+        <div className="flex-[1_1_120px] min-w-0 flex flex-col gap-[7px]">
           <label htmlFor="ck-end" className={labelCls}>Window end</label>
           <input id="ck-end" type="time" value={d.dueAt} disabled={busy}
             onChange={e => set({ dueAt: e.target.value })} className={inputCls} />
         </div>
-        <div className="flex-1 flex flex-col gap-[7px]">
+        <div className="flex-[1_1_120px] min-w-0 flex flex-col gap-[7px]">
           <label htmlFor="ck-next" className={labelCls}>Next guest (optional)</label>
           <input id="ck-next" type="time" value={d.nextGuestAt} disabled={busy}
             onChange={e => set({ nextGuestAt: e.target.value })} className={inputCls} />
@@ -1246,7 +1246,7 @@ function CreateCleaningModal({ crew, defaultDate, busy, onClose, onCreate }: {
         <label htmlFor="ck-notes" className={labelCls}>Instructions (optional)</label>
         <textarea id="ck-notes" value={d.instructions} disabled={busy} rows={2} placeholder="Restock coffee pods, descale the kettle…"
           onChange={e => set({ instructions: e.target.value })}
-          className="block w-full box-border h-auto py-[9px] px-3 text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit] resize-y" />
+          className="block w-full box-border h-auto py-[9px] px-3 text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy resize-y" />
       </div>
 
       <label className={`flex gap-[9px] items-center ${busy ? 'cursor-default' : 'cursor-pointer'} text-copy`}>
@@ -1290,7 +1290,7 @@ function EditDetailsModal({ task, busy, onClose, onSave }: {
         <label htmlFor="ed-notes" className={labelCls}>Instructions</label>
         <textarea id="ed-notes" value={instructions} disabled={busy} rows={3} placeholder="Anything the cleaner needs to know"
           onChange={e => setInstructions(e.target.value)}
-          className="block w-full box-border h-auto py-[9px] px-3 text-ink bg-white border border-solid border-line rounded-control outline-none [font:inherit] resize-y" />
+          className="block w-full box-border h-auto py-[9px] px-3 text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy resize-y" />
       </div>
     </Modal>
   );

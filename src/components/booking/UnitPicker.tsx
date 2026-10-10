@@ -58,7 +58,7 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
           onChange={e => { setQ(e.target.value); setOpen(true); }}
           onKeyDown={onKey}
           className="h-10 w-full box-border rounded-control border border-solid border-line bg-white text-ink [font-family:inherit] text-copy pl-[32px] pr-8 py-0 outline-none focus:border-ink" />
-        <span className="absolute right-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid pointer-events-none"><Icon name="ChevronsUpDown" size="sm" /></span>
+        <span className="absolute right-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid pointer-events-none"><Icon name="ChevronDown" size="sm" /></span>
       </div>
       {open && (
         <ul id={`${id}-list`} ref={listRef} role="listbox"

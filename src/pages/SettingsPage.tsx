@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
@@ -10,6 +10,7 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
 import { cx } from '../lib/design-tokens';
+import { useSession } from '../lib/session';
 
 /* ------------------------------------------------------------------ *
  * Settings — organisation-wide defaults (routes.json → SYSTEM →
@@ -24,13 +25,15 @@ import { cx } from '../lib/design-tokens';
  * always visible whether or not the endpoint answers.
  * ------------------------------------------------------------------ */
 
-type SectionKey = 'company' | 'locale' | 'operations' | 'statements' | 'security';
+type SectionKey = 'company' | 'locale' | 'operations' | 'statements' | 'report' | 'security';
 
 interface Settings {
   company: { legalName: string; companyNumber: string; address: string; supportPhone: string; supportEmail: string };
   locale: { default: string; timezone: string; currency: string; dateFormat: string; managementFeePct: number };
   operations: { checkIn: string; checkOut: string; cleaningWindowHours: number; linenSets: number; photoRequiredToMarkReady: boolean };
   statements: { cycleDay: number; autoGenerate: boolean; payoutMethod: string };
+  /** The Owner Income Report's wording; miscChargeMonthly is sen. Terms are one per line. */
+  report: { paymentTerms: string; monthlyTerms: string; yearTerms: string; miscChargeMonthly: number };
   security: {
     staffInactivityTimeoutMins: number; ownerInactivityTimeoutMins: number;
     absoluteTimeoutHours: number; lockoutAttempts: number; lockoutMinutes: number;
@@ -50,6 +53,7 @@ const FALLBACK: Settings = {
   locale: { default: 'en-MY', timezone: 'Asia/Kuala_Lumpur', currency: 'MYR', dateFormat: 'D MMM YYYY', managementFeePct: 25 },
   operations: { checkIn: '15:00', checkOut: '11:00', cleaningWindowHours: 4, linenSets: 2, photoRequiredToMarkReady: true },
   statements: { cycleDay: 1, autoGenerate: true, payoutMethod: 'bank_transfer' },
+  report: { paymentTerms: '7th every month', monthlyTerms: '', yearTerms: '', miscChargeMonthly: 10000 },
   security: { staffInactivityTimeoutMins: 10080, ownerInactivityTimeoutMins: 480, absoluteTimeoutHours: 720, lockoutAttempts: 5, lockoutMinutes: 15 },
 };
 
@@ -133,11 +137,12 @@ function ToggleField({ label, description, checked, onChange }: {
 }
 
 /** One saveable section. Owns its Save / Discard controls and dirty pill. */
-function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveLabel, children, notUsed }: {
-  title: string; description: string; dirty: boolean; busy: boolean;
+function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveLabel, children, notUsed, notUsedLabel = 'Not used yet', readOnly }: {
+  title: string; description: string; dirty: boolean; busy: boolean; readOnly?: boolean;
   onSave: () => void; onDiscard: () => void; saveLabel: string; children: ReactNode;
   /** Saved but nothing reads it yet: say so, so nobody believes changing it changes the system. */
   notUsed?: string;
+  notUsedLabel?: string;
 }) {
   return (
     <Card>
@@ -145,12 +150,12 @@ function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveL
         <div className="flex flex-col gap-1 min-w-0 flex-1">
           <span className="flex items-center gap-2 flex-wrap">
             <span className="text-heading font-semibold">{title}</span>
-            {notUsed && <Badge tone="warning" label="Not used yet" size="sm" />}
+            {notUsed && <Badge tone="warning" label={notUsedLabel} size="sm" />}
           </span>
           <span className="text-meta text-muted-ink leading-[1.45]">{description}</span>
           {notUsed && <span className="text-meta text-[var(--color-warning-fg)] leading-[1.45] text-pretty">{notUsed}</span>}
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        {readOnly ? <Badge tone="neutral" label="Management changes these" size="sm" /> : <div className="flex items-center gap-2 flex-wrap">
           {dirty && (
             <Badge tone="warning" label="Unsaved changes" size="sm" />
           )}
@@ -165,11 +170,11 @@ function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveL
           >
             {busy ? 'Saving…' : saveLabel}
           </Button>
-        </div>
+        </div>}
       </div>
-      <div className="p-5 flex flex-col gap-4">
+      <fieldset disabled={readOnly} className="p-5 m-0 border-0 min-w-0 flex flex-col gap-4">
         {children}
-      </div>
+      </fieldset>
     </Card>
   );
 }
@@ -177,6 +182,19 @@ function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveL
 /** Two-up responsive grid for the fields inside a section. */
 function Grid({ children }: { children: ReactNode }) {
   return <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">{children}</div>;
+}
+
+/** A multi-line field, labelled like Field. */
+function TextArea({ label, value, help, onChange }: { label: string; value: string; help?: string; onChange: (v: string) => void }) {
+  const id = useId();
+  return (
+    <div className="flex flex-col gap-[7px]">
+      <label htmlFor={id} className="text-[length:var(--text-small)] font-medium text-muted-ink">{label}</label>
+      <textarea id={id} value={value} rows={5} maxLength={4000} aria-describedby={help ? `${id}-help` : undefined} onChange={e => onChange(e.target.value)}
+        className="field-input h-auto! py-2.5 leading-[1.5] resize-y min-h-[110px]" />
+      {help && <span id={`${id}-help`} className="text-[length:var(--text-small)] text-muted-ink">{help}</span>}
+    </div>
+  );
 }
 
 const eq = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -189,6 +207,8 @@ const clampInt = (v: string, lo: number, hi: number, fallback: number) => {
 export default function SettingsPage() {
   const { data, loading, error, reload } = useApi<Settings>('/settings', FALLBACK);
   const toast = useToast();
+  // PUT /api/settings accepts management only; everyone else reads.
+  const readOnly = useSession().user?.role !== 'management';
 
   const base = data ?? FALLBACK;
   // Committed local state: the last-saved values overlaid on what the API returned.
@@ -200,6 +220,7 @@ export default function SettingsPage() {
     locale: { ...base.locale, ...saved.locale },
     operations: { ...base.operations, ...saved.operations },
     statements: { ...base.statements, ...saved.statements },
+    report: { ...base.report, ...saved.report },
     security: { ...base.security, ...saved.security },
   }), [base, saved]);
 
@@ -228,6 +249,10 @@ export default function SettingsPage() {
       if (draft.company.supportEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(draft.company.supportEmail))
         e['company.supportEmail'] = 'Enter a valid email or leave it blank.';
     }
+    if (k === 'report') {
+      if (!draft.report.paymentTerms.trim()) e['report.paymentTerms'] = 'Enter when owners are paid, e.g. 7th every month.';
+      if (!(draft.report.miscChargeMonthly >= 0)) e['report.miscChargeMonthly'] = 'Enter RM 0.00 or more.';
+    }
     if (k === 'locale') {
       if (draft.locale.managementFeePct < 0 || draft.locale.managementFeePct > 100)
         e['locale.managementFeePct'] = 'Fee must be between 0 and 100.';
@@ -245,6 +270,7 @@ export default function SettingsPage() {
         ? `Statements generate automatically on day ${draft.statements.cycleDay} of each month.`
         : 'Automatic generation is off. Generate statements manually each period.',
     },
+    report: { title: 'Owner report wording saved.', body: 'Reports opened from now on use it. The miscellaneous charge applies to statements generated from now on.' },
     security: { title: 'Security settings saved.', body: 'Takes effect immediately, including for anyone already signed in.' },
   };
 
@@ -279,9 +305,8 @@ export default function SettingsPage() {
           {/* --------------------------- Company --------------------------- */}
           <SectionCard
             title="Company"
-            description="Legal identity and support contacts for documents and guest messages."
-            notUsed="Saved, but statements, emails and the owner portal still print the details written into them. Changing these has no effect yet."
-            dirty={dirty('company')} busy={busy === 'company'} saveLabel="Save company"
+            description="Legal identity and support contacts. The Owner Income Report prints these on its letterhead."
+            readOnly={readOnly} dirty={dirty('company')} busy={busy === 'company'} saveLabel="Save company"
             onSave={() => save('company')} onDiscard={() => discard('company')}
           >
             <Grid>
@@ -323,8 +348,9 @@ export default function SettingsPage() {
           <SectionCard
             title="Locale and money"
             description="How dates, times and money are read. The system works in English, Malaysia time and ringgit."
-            notUsed="Saved, but not read anywhere yet: the language, timezone and currency are fixed, and the default fee here is not used by statements (they use each unit's contract, then the owner's default, then 25%)."
-            dirty={dirty('locale')} busy={busy === 'locale'} saveLabel="Save locale"
+            notUsedLabel="Partly used"
+            notUsed="The default fee is used by statements for a unit with no fee on its contract. The language, timezone and currency are fixed for now: changing them has no effect yet."
+            readOnly={readOnly} dirty={dirty('locale')} busy={busy === 'locale'} saveLabel="Save locale"
             onSave={() => save('locale')} onDiscard={() => discard('locale')}
           >
             <Grid>
@@ -354,7 +380,7 @@ export default function SettingsPage() {
             title="Operations defaults"
             description="Standard turnover timings."
             notUsed="Saved, but not read yet: new bookings use 15:00 and 11:00, and whether a photo is needed is set on each task. Housekeeping rules are on the Housekeeping screen."
-            dirty={dirty('operations')} busy={busy === 'operations'} saveLabel="Save operations"
+            readOnly={readOnly} dirty={dirty('operations')} busy={busy === 'operations'} saveLabel="Save operations"
             onSave={() => save('operations')} onDiscard={() => discard('operations')}
           >
             <Grid>
@@ -407,7 +433,7 @@ export default function SettingsPage() {
             title="Statements and payouts"
             description="When owner statements are cut and how owners are paid."
             notUsed="Saved, but not read yet: statements are generated by hand from Owner statements, and payouts are recorded on Payouts."
-            dirty={dirty('statements')} busy={busy === 'statements'} saveLabel="Save statements"
+            readOnly={readOnly} dirty={dirty('statements')} busy={busy === 'statements'} saveLabel="Save statements"
             onSave={() => save('statements')} onDiscard={() => discard('statements')}
           >
             <Grid>
@@ -430,11 +456,52 @@ export default function SettingsPage() {
             </div>
           </SectionCard>
 
+          {/* ------------------------- Owner report ------------------------- */}
+          <SectionCard
+            title="Owner report"
+            description="Wording on the Owner Income Report, and the monthly miscellaneous charge for contracts that carry it."
+            readOnly={readOnly} dirty={dirty('report')} busy={busy === 'report'} saveLabel="Save owner report"
+            onSave={() => save('report')} onDiscard={() => discard('report')}
+          >
+            <Grid>
+              <Field
+                label="Payment terms"
+                value={draft.report.paymentTerms}
+                error={errors['report.paymentTerms']}
+                help="Printed as TERMS on the monthly page."
+                onChange={e => patch('report', { paymentTerms: e.target.value }, 'report.paymentTerms')}
+              />
+              <Field
+                label="Miscellaneous charge a month (RM)"
+                type="number"
+                numeric
+                min={0}
+                step="0.01"
+                value={draft.report.miscChargeMonthly / 100}
+                error={errors['report.miscChargeMonthly']}
+                help="Deducted each month from units whose contract has miscellaneous charges."
+                onChange={e => patch('report', { miscChargeMonthly: Math.max(0, Math.round(Number(e.target.value) * 100) || 0) }, 'report.miscChargeMonthly')}
+              />
+            </Grid>
+            <TextArea
+              label="Monthly report terms"
+              value={draft.report.monthlyTerms}
+              help="One term per line. Printed, numbered, under the monthly page."
+              onChange={v => patch('report', { monthlyTerms: v })}
+            />
+            <TextArea
+              label="Year-to-date terms"
+              value={draft.report.yearTerms}
+              help="One term per line. Printed under the year-to-date page."
+              onChange={v => patch('report', { yearTerms: v })}
+            />
+          </SectionCard>
+
           {/* --------------------------- Security --------------------------- */}
           <SectionCard
             title="Security"
             description="Session lifetimes and the account lockout threshold. Staff and owners are timed out separately — the owner portal is a brief, occasional check-in, so it defaults much shorter."
-            dirty={dirty('security')} busy={busy === 'security'} saveLabel="Save security"
+            readOnly={readOnly} dirty={dirty('security')} busy={busy === 'security'} saveLabel="Save security"
             onSave={() => save('security')} onDiscard={() => discard('security')}
           >
             <Grid>

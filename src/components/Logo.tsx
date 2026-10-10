@@ -1,52 +1,44 @@
 import { color } from '../theme';
 
 /**
- * Every logo position in the product renders this. When the vector arrives, drop
- * it at /brand/logo.svg and /brand/mark.svg and delete the Placeholder branch —
- * no page changes anywhere.
- *
- * Brand guide clear space: at least the cap height of the T on every side.
- * Minimum 120px wide for the full lockup, 24px for the mark alone.
+ * Every logo position in the product renders this. The artwork is the company's own mark
+ * (public/brand/the-conts-logo.png, cropped from their report), recoloured to the brand gold by
+ * scripts/brand/make-logo-variants.py: mark-gold.png (the towers) and logo-gold.png (towers + THE CONTS).
+ * The gold reads on black; on a light surface the towers sit on a black tile so they never wash out.
  */
 
-const HAS_ARTWORK = false; // flip to true once /brand/logo.svg exists
+const MARK = { src: '/brand/mark-gold.png', w: 117, h: 136 };
+const LOCKUP = { src: '/brand/logo-gold.png', w: 195, h: 162 };
 
-export function Logo({ variant = 'full', size = 'md', onDark = false }: {
+export function Logo({ variant = 'full', size = 'md', onDark = false, product = false }: {
   variant?: 'full' | 'mark' | 'wordmark';
   size?: 'sm' | 'md' | 'lg';
   onDark?: boolean;
+  /** The app's own lockup (sidebar): "Property OS" under the wordmark, as in the desktop design. */
+  product?: boolean;
 }) {
   const height = { sm: 28, md: 40, lg: 50 }[size];
   const ink = onDark ? '#FFFFFF' : color.ink;
   const muted = onDark ? color.dim : color.textMuted;
 
-  if (HAS_ARTWORK) {
-    return (
-      <img
-        src={variant === 'mark' ? '/brand/mark.svg' : '/brand/logo.svg'}
-        alt="The Conts"
-        style={{ height, width: 'auto', display: 'block' }}
-      />
-    );
+  // The large lockup on dark (the login hero) is the company's artwork itself.
+  if (variant === 'full' && size === 'lg' && onDark && !product) {
+    const h = 112;
+    return <img src={LOCKUP.src} alt="The Conts" width={Math.round(LOCKUP.w * h / LOCKUP.h)} height={h} style={{ display: 'block' }} />;
   }
 
-  // Until the approved vector arrives: a TC monogram tile. On the black sidebar a faint gold
-  // hairline keeps the tile from dissolving into the background.
-  const mark = (
-    <div
-      aria-hidden
-      style={{
-        width: height, height, flex: 'none', borderRadius: Math.round(height * 0.24),
-        background: color.black,
-        boxShadow: onDark ? 'inset 0 0 0 1px rgba(200,164,106,0.4)' : 'none',
-        display: 'grid', placeItems: 'center',
-        fontSize: Math.round(height * 0.4), fontWeight: 600, lineHeight: 1,
-        color: color.gold, letterSpacing: '0.04em', userSelect: 'none',
-      }}
-    >TC</div>
+  const towers = (h: number) => (
+    <img src={MARK.src} alt="" aria-hidden width={Math.round(MARK.w * h / MARK.h)} height={h} style={{ display: 'block', flex: 'none' }} />
   );
+  const mark = onDark
+    ? <div aria-hidden style={{ width: height, height, flex: 'none', display: 'grid', placeItems: 'center' }}>{towers(height)}</div>
+    : (
+      <div aria-hidden style={{ width: height, height, flex: 'none', borderRadius: Math.round(height * 0.24), background: color.black, display: 'grid', placeItems: 'center' }}>
+        {towers(Math.round(height * 0.72))}
+      </div>
+    );
 
-  if (variant === 'mark') return mark;
+  if (variant === 'mark') return <span role="img" aria-label="The Conts" style={{ display: 'inline-flex' }}>{mark}</span>;
 
   const wordmark = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: size === 'sm' ? 2 : 4 }}>
@@ -54,10 +46,13 @@ export function Logo({ variant = 'full', size = 'md', onDark = false }: {
         fontSize: size === 'sm' ? 12 : size === 'lg' ? 16 : 14,
         fontWeight: 600, letterSpacing: '0.18em', color: onDark ? '#FFFFFF' : ink,
       }}>THE CONTS</span>
-      <span style={{
-        // The small lockup has to fit beside the sidebar's collapse button (about 136px).
-        fontSize: size === 'sm' ? 8.5 : 11, letterSpacing: size === 'sm' ? '0.17em' : '0.26em', color: muted, whiteSpace: 'nowrap',
-      }}>PROPERTY MANAGEMENT</span>
+      {product
+        // The sidebar lockup has to fit beside the collapse button (about 136px); the design names the
+        // product there instead of squeezing the tagline below the 11px minimum.
+        ? <span style={{ fontSize: 11, lineHeight: 1.35, color: muted, whiteSpace: 'nowrap' }}>Property OS</span>
+        : <span style={{
+            fontSize: 11, letterSpacing: size === 'sm' ? '0.17em' : '0.26em', color: muted, whiteSpace: 'nowrap',
+          }}>PROPERTY MANAGEMENT</span>}
     </div>
   );
 

@@ -470,7 +470,7 @@ function RuleRow({ r, onOpen, onToggle }: { r: Rule; onOpen: () => void; onToggl
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-meta text-ink-2">{whenOf(r)}</span>
-        <span className="text-faint">&middot;</span>
+        <span className="text-meta text-faint">&middot;</span>
         {r.channels.map(c => <ChannelChip key={c} label={c} />)}
       </div>
       <span className="text-meta text-muted-ink text-pretty line-clamp-2">{sample(r.preview)}</span>

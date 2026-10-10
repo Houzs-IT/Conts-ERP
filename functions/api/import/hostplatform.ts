@@ -3,10 +3,10 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MASTER_ROLES } from '../../_lib/properties';
 import {
   type Row, type ImportKind, IMPORT_KINDS, MAX_ROWS_PER_REQUEST, todayInKL,
-  mapListing, mapReservations, mapWorkbookUnits, mapAirbnbEarnings, mapCleaning, mapWorkbookExpenses,
+  mapListing, mapReservations, mapWorkbookUnits, mapAirbnbEarnings, mapCleaning, mapWorkbookExpenses, mapPayoutHistory,
 } from '../../_lib/hostplatformImport';
 import {
-  type Db, type ImportResult, importListing, importReservations, importWorkbookUnits, importAirbnbEarnings, importCleaning, importExpenses,
+  type Db, type ImportResult, importListing, importReservations, importWorkbookUnits, importAirbnbEarnings, importCleaning, importExpenses, importPayoutHistory, fixLocations,
 } from '../../_lib/hostplatformImportDb';
 
 /**
@@ -56,8 +56,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       case 'listing': result = await importListing(db, mapListing(rows), now); break;
       case 'reservations': result = await importReservations(db, mapReservations(rows, today), now); break;
       case 'workbook_units': {
-        const m = mapWorkbookUnits(rows, list('splits'), list('pool'));
-        result = await importWorkbookUnits(db, m.units, now);
+        const m = mapWorkbookUnits(rows, list('splits'), list('pool'), today);
+        result = await importWorkbookUnits(db, m.units, now, today);
         result.errors.unshift(...m.errors); result.notes.push(...m.notes);
         break;
       }
@@ -75,8 +75,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       }
       case 'workbook_expenses': {
         const m = mapWorkbookExpenses(rows);
-        result = await importExpenses(db, m.expenses, now);
+        result = await importExpenses(db, m.expenses, now, m.credits);
         result.errors.unshift(...m.errors); result.skippedRows.unshift(...m.skipped);
+        break;
+      }
+      case 'fix_locations': result = await fixLocations(db, now); break;
+      case 'workbook_payouts': {
+        // The whole OWNER PAYOUT sheet in one request: an owner's units are summed into one statement per month.
+        const m = mapPayoutHistory(rows, list('report'), today);
+        result = await importPayoutHistory(db, m.months, now);
+        result.errors.unshift(...m.errors); result.skippedRows.unshift(...m.skipped); result.notes.push(...m.notes);
         break;
       }
     }

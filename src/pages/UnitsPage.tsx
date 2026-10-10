@@ -350,9 +350,10 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               {!u.isListed && <Badge tone="neutral" label="Not listed" />}
             </div>
           </div>
-          <div className="flex flex-col gap-1 flex-none items-start">
+          {/* Owner names run long (several co-owners, company names); they wrap instead of running off a phone. */}
+          <div className="flex flex-col gap-1 min-w-0 max-w-full sm:max-w-[45%] items-start">
             <span className="text-meta text-muted-ink">Owner</span>
-            <a href={`#/owners/${encodeURIComponent(u.owner.id)}`} className="text-heading font-semibold no-underline text-ink!">{titleCase(u.owner.name)}</a>
+            <a href={`#/owners/${encodeURIComponent(u.owner.id)}`} className="text-heading font-semibold no-underline text-ink! [overflow-wrap:anywhere]">{titleCase(u.owner.name)}</a>
             {u.contract && <span className="text-meta text-muted-ink">{u.contract.managementFeePct}% · {u.contract.renewsOn ? `renews ${date(u.contract.renewsOn)}` : 'No renewal date'}</span>}
           </div>
         </div>

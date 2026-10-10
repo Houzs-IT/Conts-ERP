@@ -199,6 +199,27 @@ function validatePriceMatrix(
    be shape-validated. Returns null for non-mfg_product kinds (fabric/raw)
    or codes that aren't in the catalogue — those bindings should not carry
    a price_matrix. */
+/* One main supplier per SKU (renovation catalog "Binding", migration 0063
+   uq_smb_one_main). The main binding is the SKU's default PO party, so the first
+   binding a SKU gets becomes its main; a clash with the unique index (another
+   request promoted a main in between) is a 409 the screen can explain. */
+const MAIN_CONFLICT = {
+  error: 'main_supplier_conflict',
+  reason: 'Another supplier became the main supplier for this item at the same time. Refresh and try again.',
+};
+const isMainConflict = (e: { code?: string; message?: string } | null | undefined) =>
+  !!e && e.code === '23505' && /uq_smb_one_main/.test(e.message ?? '');
+
+/** Item codes (of one kind) that already have any binding in this company. */
+async function boundCodes(supabase: SupabaseClient, kind: string, codes: string[], companyId: number | null | undefined): Promise<Set<string> | null> {
+  if (codes.length === 0) return new Set();
+  let q = pgrestIn(supabase.from('supplier_material_bindings').select('item_code').eq('material_kind', kind), 'item_code', codes);
+  if (companyId != null) q = q.eq('company_id', companyId);
+  const { data, error } = await q;
+  if (error) return null;
+  return new Set(((data ?? []) as Array<{ item_code: string }>).map((r) => r.item_code));
+}
+
 async function categoryForMaterial(
   supabase: SupabaseClient,
   kind: string,
@@ -660,6 +681,13 @@ export const createSupplierBindingHandler = async (c: any) => {
   };
   if (priceMatrix !== undefined) row.price_matrix = priceMatrix;
 
+  // The first binding of a SKU is its main supplier. A failed read leaves the
+  // request as sent (not main): this is a default, not a gate.
+  if (!row.is_main_supplier) {
+    const bound = await boundCodes(supabase, kind, [String(body.itemCode)], activeCompanyId(c));
+    if (bound && bound.size === 0) row.is_main_supplier = true;
+  }
+
   // If marking as main supplier, demote any other main for the same material.
   if (row.is_main_supplier) {
     await supabase
@@ -673,6 +701,7 @@ export const createSupplierBindingHandler = async (c: any) => {
 
   const { data, error } = await supabase.from('supplier_material_bindings').insert({ ...row, company_id: activeCompanyId(c) }).select(BINDING_COLS).single();
   if (error) {
+    if (isMainConflict(error)) return c.json(MAIN_CONFLICT, 409);
     if (error.code === '42501') return c.json({ error: 'forbidden', reason: error.message }, 403);
     return c.json({ error: 'insert_failed', reason: error.message }, 500);
   }
@@ -768,11 +797,32 @@ export const createSupplierBindingsBatchHandler = async (c: any) => {
 
   if (rows.length === 0) return c.json({ inserted: 0, skipped });
 
+  /* One main per SKU: a row asking to be main demotes the current main of its
+     code first (the single create always did this; the batch did not); a code
+     with no binding at all gets this supplier as its main. */
+  const companyId = activeCompanyId(c);
+  for (const kind of new Set(rows.map((r) => String(r.material_kind)))) {
+    const ofKind = rows.filter((r) => r.material_kind === kind);
+    const bound = await boundCodes(supabase, kind, ofKind.map((r) => String(r.item_code)), companyId);
+    for (const r of ofKind) {
+      if (!r.is_main_supplier && bound && !bound.has(String(r.item_code))) r.is_main_supplier = true;
+    }
+    const promote = ofKind.filter((r) => r.is_main_supplier).map((r) => String(r.item_code));
+    if (promote.length > 0) {
+      let dq = pgrestIn(supabase.from('supplier_material_bindings').update({ is_main_supplier: false })
+        .eq('material_kind', kind).eq('is_main_supplier', true), 'item_code', promote);
+      if (companyId != null) dq = dq.eq('company_id', companyId);
+      const { error: dErr } = await dq;
+      if (dErr) return c.json({ error: 'update_failed', reason: dErr.message }, 500);
+    }
+  }
+
   const { data, error } = await supabase
     .from('supplier_material_bindings')
     .insert(stampCompany(rows, c))
     .select(BINDING_COLS);
   if (error) {
+    if (isMainConflict(error)) return c.json(MAIN_CONFLICT, 409);
     if (error.code === '42501') return c.json({ error: 'forbidden', reason: error.message }, 403);
     return c.json({ error: 'insert_failed', reason: error.message }, 500);
   }
@@ -872,6 +922,7 @@ export const patchSupplierBindingHandler = async (c: any) => {
 
   const { data, error } = await scopeToCompanyId(supabase.from('supplier_material_bindings').update(updates).eq('id', bindingId), co.companyId).select(BINDING_COLS).maybeSingle();
   if (error) {
+    if (isMainConflict(error)) return c.json(MAIN_CONFLICT, 409);
     if (error.code === '42501') return c.json({ error: 'forbidden', reason: error.message }, 403);
     return c.json({ error: 'update_failed', reason: error.message }, 500);
   }

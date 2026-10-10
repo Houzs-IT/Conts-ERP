@@ -20,7 +20,9 @@ describe('CategorySwapSelect', () => {
   it('offers every category, labelled, for any category — a sofa too', () => {
     wrap(<CategorySwapSelect kind="model" id="m1" category="SOFA" />);
     const opts = screen.getAllByRole('option').map((o) => o.textContent);
-    expect(opts).toEqual(['Sofa', 'Bedframe', 'Accessory', 'Sofa Accessory', 'Mattress', 'Bedlines', 'Dining', 'Diffuser', 'Carpet', 'Service']);
+    expect(opts).toEqual(['Sofa', 'Bedframe', 'Accessory', 'Sofa Accessory', 'Mattress', 'Bedlines', 'Dining', 'Diffuser', 'Carpet', 'Service',
+      // Conts renovation groups (migration 0060).
+      'Works', 'Built-in', 'Furniture', 'Lighting', 'Appliances', 'Soft furnishing']);
   });
 
   it('asks first, says open orders keep the old category, and PATCHes the model on Move', async () => {

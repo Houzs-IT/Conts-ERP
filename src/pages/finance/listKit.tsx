@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import Icon from '../../components/Icon';
 import { useSearchParams } from 'react-router-dom';
 import { cx } from '../../lib/design-tokens';
 import { useApi } from '../../lib/useApi';
@@ -63,7 +64,8 @@ export function BusyBar({ on }: { on: boolean }) {
 /** Classes for a header row that sticks to the top of the scrolling page. The page (AppShell's main) has
  *  24px top padding on desktop, and sticky offsets start inside it, so -24px puts the header flush with
  *  the top edge instead of letting rows show through above it. Phones use cards, not this header. */
-export const STICKY_HEAD = 'sticky -top-6 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink';
+// items-center: a header that wraps to two lines ("Booking revenue, month") stays level with its one-line neighbours.
+export const STICKY_HEAD = 'items-center sticky -top-6 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink';
 
 /** "51-100 of 977" with previous / next. Hidden when everything fits on one page. */
 export function Pager({ page, pageSize, total, onPage, unit = 'rows' }: {
@@ -115,15 +117,16 @@ export function SearchBox({ value, onChange, placeholder, label, className }: {
 export function FilterSelect({ label, value, onChange, all, options, className }: {
   label: string; value: string; onChange: (v: string) => void; all: string; options: { value: string; label: string }[]; className?: string;
 }) {
+  // Same face as the shared Select: no native arrow, one lucide chevron, "All ..." reads as a real choice.
   return (
     <label className={cx('relative flex items-center min-w-0', className)}>
       <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">{label}</span>
       <select value={value} onChange={e => onChange(e.target.value)} title={label}
-        className={cx('block w-full box-border h-9 pl-3 pr-7 border border-solid border-line rounded-control outline-none bg-card font-sans text-copy cursor-pointer min-w-0 text-ellipsis',
-          value ? 'text-ink' : 'text-muted-ink')}>
+        className="block w-full box-border h-9 pl-3 pr-8 appearance-none border border-solid border-line rounded-control outline-none bg-card font-sans text-copy text-ink cursor-pointer min-w-0 text-ellipsis">
         <option value="">{all}</option>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
+      <span className="absolute right-2.5 flex pointer-events-none text-muted-ink"><Icon name="ChevronDown" size="sm" /></span>
     </label>
   );
 }
@@ -148,9 +151,9 @@ export function Chip({ on, onClick, children, count }: { on: boolean; onClick: (
 export function MonthStepper({ label, onStep, note }: { label: string; onStep: (by: number) => void; note?: string }) {
   return (
     <div className="flex items-center h-9 rounded-control border border-solid border-line bg-card shrink-0">
-      <button aria-label="Previous month" onClick={() => onStep(-1)} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-heading">‹</button>
+      <button aria-label="Previous month" onClick={() => onStep(-1)} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink hover:text-ink"><Icon name="ChevronLeft" size="sm" /></button>
       <span className="px-1 min-w-[96px] text-center text-copy font-medium tabular-nums whitespace-nowrap">{label}{note ? <span className="text-muted-ink font-normal"> · {note}</span> : null}</span>
-      <button aria-label="Next month" onClick={() => onStep(1)} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-heading">›</button>
+      <button aria-label="Next month" onClick={() => onStep(1)} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink hover:text-ink"><Icon name="ChevronRight" size="sm" /></button>
     </div>
   );
 }

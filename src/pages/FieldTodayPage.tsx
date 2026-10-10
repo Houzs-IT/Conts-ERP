@@ -41,6 +41,9 @@ interface FieldTask {
   dueAt: string | null;        // ISO
   nextGuestAt: string | null;  // ISO — drives the "Next check-in is {time}" confirm
   readiness: UnitReadiness;
+  /** The job itself is finished (task resolved). The unit's readiness alone cannot say so: a unit can read
+   *  "ready" before today's clean, so it must never strike the job through. */
+  done?: boolean;
   flag: string | null;         // server-provided short hint, e.g. "Early check-in requested"
   requiresPhoto: boolean;
   photoCount: number;
@@ -85,7 +88,7 @@ export default function FieldTodayPage() {
   const rows = data?.rows ?? [];
   const photoCountOf = (t: FieldTask) => t.photoCount + (photos[t.id] ?? 0);
   const readinessOf = (t: FieldTask): UnitReadiness => (done[t.id] ? 'ready' : t.readiness);
-  const isComplete = (t: FieldTask) => readinessOf(t) === 'ready';
+  const isComplete = (t: FieldTask) => !!done[t.id] || (t.done ?? readinessOf(t) === 'ready');
   const syncOf = (t: FieldTask): { state: SyncState; at: string | null } | null => {
     const q = queue[t.id];
     if (q) return { state: q.state, at: q.at };

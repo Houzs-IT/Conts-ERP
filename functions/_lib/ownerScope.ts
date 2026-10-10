@@ -1,5 +1,6 @@
 import { type Env, one, fail } from './db';
 import { type Session, canSeeFinance } from './auth';
+import { MASTER_ROLES } from './properties';
 
 export interface OwnerRow { id: string; display_name: string; bank_name: string | null; bank_account_last4: string | null }
 
@@ -20,3 +21,6 @@ export async function ownerFor(env: Env, session: Session, url: URL): Promise<Ow
 
 /** Provisional figures are never shown to owners. */
 export const VISIBLE = `('finalised','sent','paid')`;
+
+/** Who may add, release, hold or settle an owner adjustment: a master role with manage access. */
+export const mayChangeAdjustments = (s: { role: string; manage?: boolean }) => !!s.manage && MASTER_ROLES.includes(s.role);

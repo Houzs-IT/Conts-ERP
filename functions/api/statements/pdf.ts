@@ -36,6 +36,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     return fail('FORBIDDEN', 'Statements are available to finance, management and the owner.', 403);
   }
 
+  // A statement built by the workbook rules (it has unit figures) opens as the Owner Income Report, so the owner
+  // portal button and any link sent earlier land on the same report finance sees. ?format=legacy keeps this page;
+  // months paid before Property OS (only a payout line) have no report and stay here.
+  const url = new URL(request.url);
+  if (url.searchParams.get('format') !== 'legacy' && await one(env, 'SELECT 1 AS x FROM statement_units WHERE statement_id = ? LIMIT 1', id)) {
+    return new Response(null, { status: 302, headers: { location: `${url.origin}/#/finance/statements/${encodeURIComponent(id)}/report`, 'cache-control': 'no-store' } });
+  }
+
   const lines = await all<any>(env, `
     SELECT l.*, u.unit_number, p.name AS property_name
     FROM statement_lines l

@@ -138,3 +138,14 @@ describe('what the file cannot say, the export now says', () => {
     expect(missingGridFacts(['product_code', 'description', 'category']).needsTier).toBe(false);
   });
 });
+
+describe('renovation catalog columns (Conts)', () => {
+  test('sub category and uom read however the sheet spells them', () => {
+    expect(normalizeImportHeader('Sub Category')).toBe('sub_category');
+    expect(normalizeImportHeader('Sub-category')).toBe('sub_category');
+    expect(normalizeImportHeader('Subcategory')).toBe('sub_category');
+    expect(normalizeImportHeader('Trade')).toBe('sub_category');
+    expect(normalizeImportHeader('UOM')).toBe('uom');
+    expect(mapGridHeaders(['Product Code', 'Sub-category', 'Unit'])).toEqual(['code', 'sub_category', 'uom']);
+  });
+});

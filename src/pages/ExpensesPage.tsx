@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
@@ -243,7 +244,7 @@ export default function ExpensesPage() {
 
         {/* Month — stepper plus a menu of the months that have expenses. */}
         <div className="flex flex-[1_0_150px] sm:flex-none sm:w-[168px] items-center h-9 rounded-control border border-solid border-line bg-card min-w-0">
-          <button aria-label="Previous month" onClick={() => stepMonth(-1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-heading">‹</button>
+          <button aria-label="Previous month" onClick={() => stepMonth(-1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink hover:text-ink"><Icon name="ChevronLeft" size="sm" /></button>
           <label className="relative flex-1 min-w-0 h-full">
             <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Month</span>
             <select value={monthAll ? 'all' : shownMonth} onChange={e => setFilter({ month: e.target.value })}
@@ -252,7 +253,7 @@ export default function ExpensesPage() {
               <option value="all">All months</option>
             </select>
           </label>
-          <button aria-label="Next month" onClick={() => stepMonth(1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-heading">›</button>
+          <button aria-label="Next month" onClick={() => stepMonth(1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink hover:text-ink"><Icon name="ChevronRight" size="sm" /></button>
         </div>
       </div>
 
@@ -491,7 +492,7 @@ function TreeRow({ depth, kind, label, sub, amount, tone, count, expanded, onTog
       onClick={expandable ? onToggle : undefined}
     >
       {expandable ? (
-        <span aria-hidden className="w-[18px] h-[18px] grid place-items-center shrink-0 text-muted-ink text-caption leading-none">{expanded ? '▾' : '▸'}</span>
+        <span aria-hidden className="w-[18px] h-[18px] grid place-items-center shrink-0 text-muted-ink"><Icon name={expanded ? 'ChevronDown' : 'ChevronRight'} size="sm" /></span>
       ) : <span className="w-[18px] shrink-0" aria-hidden />}
 
       {tone && !isTotal && <span className={cx('w-[7px] h-[7px] rounded-full shrink-0', TONE[tone].dot)} aria-hidden />}
@@ -631,9 +632,9 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
       <form onSubmit={submit} className="flex flex-col gap-[14px]">
         {mode === 'create' && (
           <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
-            <Select showLabel label="Building" value={buildingId} onChange={v => { setBuildingId(v); setUnitId(''); }}
+            <Select showLabel size="md" label="Building" value={buildingId} onChange={v => { setBuildingId(v); setUnitId(''); }}
               options={[{ value: '', label: 'All buildings' }, ...[...(filters?.buildings ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: b.name }))]} />
-            <SearchSelect showLabel label="Unit" allLabel="Pick a unit" placeholder="Search units" value={unitId} onChange={setUnitId}
+            <SearchSelect showLabel size="md" label="Unit" allLabel="Pick a unit" placeholder="Search units" value={unitId} onChange={setUnitId}
               options={unitChoices.map(u => ({ value: u.id, label: u.unitNumber, group: buildingName(u.buildingId) }))} />
           </div>
         )}

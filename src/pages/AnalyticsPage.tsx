@@ -223,7 +223,7 @@ export default function AnalyticsPage() {
     const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
     const head = ['Building', 'Unit', 'Revenue (RM)', 'Booked nights', 'Occupancy %', 'ADR (RM)', 'RevPAR (RM)', 'Rating'];
     const lines = [
-      `# Performance, ${RANGE_SUB[range]}${d.points.length ? ` (${monthLabel(d.points[0].period)} to ${monthLabel(d.points[d.points.length - 1].period)})` : ''}. Revenue = collected revenue on stays that start in the window.`,
+      `# Performance, ${RANGE_SUB[range]}${d.points.length ? ` (${monthLabel(d.points[0].period)} to ${monthLabel(d.points[d.points.length - 1].period)})` : ''}. Revenue = gross booking value, each stay split by night into the months it covers; occupancy = booked nights / nights available on listed units.`,
       head.map(esc).join(','),
       ...d.units.map(u => [u.propertyName, u.unitNumber, (u.revenue / 100).toFixed(2), u.nights ?? '', u.occupancy.toFixed(1), (u.adr / 100).toFixed(2), (u.revpar / 100).toFixed(2), u.rating ?? ''].map(esc).join(',')),
     ];
@@ -349,7 +349,7 @@ export default function AnalyticsPage() {
 
       {/* Channel mix ------------------------------------------------------- */}
       <Card>
-        <CardHeader title="Where revenue came from" right={<span className="text-meta text-muted-ink">share of collected revenue</span>} />
+        <CardHeader title="Where revenue came from" right={<span className="text-meta text-muted-ink">share of gross booking value</span>} />
         <div className="flex flex-col gap-0">
           {loading ? <TableSkeleton rows={4} cols={2} /> : (d.channelMix ?? []).map(c => (
             <div key={c.channel} className="flex items-center gap-[14px] px-5 py-[13px] [border-top:1px_solid_var(--color-line-soft)]">
