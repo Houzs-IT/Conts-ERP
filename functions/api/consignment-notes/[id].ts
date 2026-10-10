@@ -1,5 +1,6 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { checkInt, invalid, type Fields } from '../../_lib/validate';
 import { toCnHeaderPayload, toCnLinePayload, type CnHeaderRow, type CnLineRow } from '../../_lib/consignment-notes';
 import { intOrNull } from '../../_lib/scm-util';
 
@@ -35,6 +36,12 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   if (Array.isArray(b.lines)) {
     if (cur.status === 'CANCELLED' || cur.status === 'CLOSED') return fail('CONFLICT', 'This consignment note is closed.', 409);
+    const fields: Fields = {};
+    (b.lines as Record<string, unknown>[]).forEach((l, i) => {
+      checkInt(fields, `lines.${i}.qtySold`, l?.qtySold, { label: 'Sold quantity', min: 0 });
+      checkInt(fields, `lines.${i}.qtyReturned`, l?.qtyReturned, { label: 'Returned quantity', min: 0 });
+    });
+    const bad = invalid(fields); if (bad) return bad;
     const dbLines = await all<{ id: string; qty_consigned: number }>(env, 'SELECT id, qty_consigned FROM consignment_note_lines WHERE consignment_note_id = ?', id);
     const cap = new Map(dbLines.map(l => [l.id, l.qty_consigned]));
     for (const l of b.lines as Record<string, unknown>[]) {

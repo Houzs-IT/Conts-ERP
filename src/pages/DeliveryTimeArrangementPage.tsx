@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { TimeField } from '../components/inputs';
 import PageHeader from '../components/PageHeader';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
@@ -38,7 +39,7 @@ export default function DeliveryTimeArrangementPage() {
         <option value="">Any</option><option value="MORNING">Morning</option><option value="AFTERNOON">Afternoon</option><option value="EVENING">Evening</option>
       </select>
     ) },
-    { key: 'time', label: 'Specific time', value: r => r.plannedTime, filter: false, render: r => <input type="time" disabled={!canWrite} value={r.plannedTime} onClick={e => e.stopPropagation()} onChange={e => setTime(r, e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-60" /> },
+    { key: 'time', label: 'Specific time', value: r => r.plannedTime, filter: false, render: r => <span onClick={e => e.stopPropagation()}><TimeField aria-label={`Specific time for ${r.soDocNo}`} disabled={!canWrite} value={r.plannedTime} onChange={v => setTime(r, v)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-60" /></span> },
   ], [canWrite]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

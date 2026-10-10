@@ -2,6 +2,7 @@ import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { deriveStatus, isTimeSlot } from '../../_lib/delivery-schedule';
 import { strOrNull, intOrNull } from '../../_lib/scm-util';
+import { checkInt, checkDate, checkTime, invalid, type Fields } from '../../_lib/validate';
 
 interface Cur { status: string; planned_date: string | null; driver_id: string | null }
 
@@ -36,6 +37,11 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   }
 
   // ── Field edits (Date / Time / Planning) ─────────────────────────────────
+  const fields: Fields = {};
+  checkDate(fields, 'plannedDate', b.plannedDate, { label: 'Planned date' });
+  checkTime(fields, 'plannedTime', b.plannedTime, { label: 'Planned time' });
+  checkInt(fields, 'sequenceNo', b.sequenceNo, { label: 'Sequence', min: 0 });
+  const bad = invalid(fields); if (bad) return bad;
   const sets: string[] = []; const args: unknown[] = [];
   let nextDate = cur.planned_date, nextDriver = cur.driver_id;
   if (b.plannedDate !== undefined) { nextDate = strOrNull(b.plannedDate); sets.push('planned_date = ?'); args.push(nextDate); }

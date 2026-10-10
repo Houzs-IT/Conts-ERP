@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { DateField } from '../components/inputs';
 import PageHeader from '../components/PageHeader';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
@@ -36,7 +37,7 @@ export default function DeliveryDateArrangementPage() {
     { key: 'so', label: 'Sales order', type: 'ref', value: r => r.soDocNo, hideable: false, render: r => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold whitespace-nowrap">{r.soDocNo}</span> },
     { key: 'customer', label: 'Customer', value: r => r.customerName },
     { key: 'status', label: 'Status', type: 'status', value: r => r.status, entity: 'delivery_schedule' },
-    { key: 'date', label: 'Planned date', type: 'date', value: r => r.plannedDate, align: 'right', width: 170, render: r => <input type="date" disabled={!canWrite} value={r.plannedDate} onClick={e => e.stopPropagation()} onChange={e => setDate(r, e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-60" /> },
+    { key: 'date', label: 'Planned date', type: 'date', value: r => r.plannedDate, align: 'right', width: 170, render: r => <span onClick={e => e.stopPropagation()}><DateField aria-label={`Planned date for ${r.soDocNo}`} disabled={!canWrite} value={r.plannedDate} onChange={v => setDate(r, v)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-60" /></span> },
   ], [canWrite]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

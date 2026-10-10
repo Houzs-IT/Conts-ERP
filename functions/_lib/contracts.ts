@@ -1,3 +1,5 @@
+import { checkDate } from './validate';
+
 export interface ContractInput {
   ownerId?: string; ownerName?: string; model?: string; managementFeePct?: number; feePct?: number; grrAmount?: number;
   startsOn?: string; startedOn?: string; renewsOn?: string | null; endsOn?: string | null; offerLetter?: string | null;
@@ -19,5 +21,9 @@ export function invalidContract(b: ContractInput, requireAll: boolean): Record<s
   if (n.model === 'grr' && n.grr <= 0) f.grrAmount = 'Enter the guaranteed monthly rent.';
   if (requireAll && !n.starts) f.startsOn = 'A start date is required.';
   if (n.starts && n.renews && n.renews <= n.starts) f.renewsOn = 'Renewal must be after the start date.';
+  if (n.starts && n.ends && n.ends < n.starts) f.endsOn = 'The end date is before the start date.';
+  checkDate(f, 'startsOn', n.starts, { label: 'Start date' });
+  checkDate(f, 'renewsOn', n.renews, { label: 'Renewal date' });
+  checkDate(f, 'endsOn', n.ends, { label: 'End date' });
   return f;
 }

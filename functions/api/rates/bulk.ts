@@ -1,5 +1,6 @@
 import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { checkDate, invalid, type Fields } from '../../_lib/validate';
 import { syncRateIfLinked, syncRestrictionsIfLinked } from '../../_lib/channexSync';
 import { upliftFor, webRate, type SalesChannel } from '../../_lib/channelPrice';
 
@@ -54,6 +55,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const lines: Line[] = Array.isArray(b.lines) ? b.lines
     : [{ from: b.from, to: b.to, baseRate: b.baseRate ?? undefined, adjustPct: b.adjustPct ?? undefined, minStay: b.minStay, stopSell: b.stopSell }];
   if (!lines.length || lines.length > MAX_LINES) return fail('VALIDATION', `Add 1 to ${MAX_LINES} date ranges.`, 422);
+  const fields: Fields = {};
+  for (const [n, l] of lines.entries()) {
+    checkDate(fields, `lines.${n}.from`, l?.from, { label: 'First night', required: true });
+    checkDate(fields, `lines.${n}.to`, l?.to, { label: 'Last night', required: true });
+  }
+  const bad = invalid(fields); if (bad) return bad;
   for (const [n, l] of lines.entries()) {
     const at = lines.length > 1 ? ` (range ${n + 1})` : '';
     const hasRate = l.baseRate !== undefined && l.baseRate !== null, hasPct = l.adjustPct !== undefined && l.adjustPct !== null;

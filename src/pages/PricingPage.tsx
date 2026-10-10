@@ -6,6 +6,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
+import { DateField, MoneyInput } from '../components/inputs';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
 import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
@@ -96,37 +97,34 @@ function readUnitId(): string | null {
   } catch { return null; }
 }
 
-const toSen = (s: string): number | null => {
-  const n = parseFloat(s.replace(/[^0-9.]/g, ''));
-  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
-};
-
 /** Click-to-edit money value. Commits on Enter or blur, discards on Escape.
  *  Money is integer sen; the input only ever handles RM at the very edge. */
-function EditableMoney({ sen, onCommit, ariaLabel, tone }: {
-  sen: number; onCommit: (sen: number) => void; ariaLabel: string; tone?: 'floor' | 'warn';
+function EditableMoney({ sen, onCommit, ariaLabel, tone, minSen = 0 }: {
+  sen: number; onCommit: (sen: number) => void; ariaLabel: string; tone?: 'floor' | 'warn'; minSen?: number;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState<number | null>(null);
+  const tooLow = draft != null && draft < minSen;
 
-  function begin() { setDraft((sen / 100).toFixed(2)); setEditing(true); }
-  function commit() {
-    const next = toSen(draft);
-    if (next !== null && next !== sen) onCommit(next);
+  function begin() { setDraft(sen); setEditing(true); }
+  // Enter on a value below the minimum keeps the field open with its message; blur or Escape discards it.
+  function commit(keepOpenIfBad: boolean) {
+    if (draft == null || tooLow) { if (!keepOpenIfBad) setEditing(false); return; }
+    if (draft !== sen) onCommit(draft);
     setEditing(false);
   }
 
   if (editing) {
     return (
-      <input
-        autoFocus inputMode="decimal" value={draft} aria-label={ariaLabel}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={commit}
+      <MoneyInput
+        autoFocus valueSen={draft} onChangeSen={setDraft} aria-label={ariaLabel} minSen={minSen}
+        error={tooLow ? `Must be at least ${rm(minSen)}.` : undefined}
+        onBlur={() => commit(false)}
         onKeyDown={e => {
-          if (e.key === 'Enter') { e.preventDefault(); commit(); }
+          if (e.key === 'Enter') { e.preventDefault(); commit(true); }
           if (e.key === 'Escape') { e.preventDefault(); setEditing(false); }
         }}
-        className={cx(INPUT_CLASS, 'w-full max-w-[120px] ml-auto text-right border-line-strong')}
+        className={cx(INPUT_CLASS, 'w-full max-w-[120px] ml-auto border-line-strong')}
       />
     );
   }
@@ -361,7 +359,7 @@ export default function PricingPage() {
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-caption text-faint">Direct · per night</span>
-                    <EditableMoney sen={selected.baseRate} ariaLabel="base web rate" tone={selected.baseRate <= 0 ? 'warn' : undefined} onCommit={s => setBase(selected.unitId, s)} />
+                    <EditableMoney sen={selected.baseRate} ariaLabel="base web rate" minSen={1} tone={selected.baseRate <= 0 ? 'warn' : undefined} onCommit={s => setBase(selected.unitId, s)} />
                   </div>
                   {selected.baseRate <= 0 && <span className={cx('text-meta font-medium', TONE.critical.text)}>No base rate. Channels would be sent RM 0; set one before pushing.</span>}
                 </div>
@@ -442,12 +440,12 @@ export default function PricingPage() {
                 <div className="flex gap-[14px] flex-wrap items-end">
                   <label className="flex flex-col gap-[5px] text-meta text-muted-ink">
                     From
-                    <input type="date" value={from} min={TODAY()} onChange={e => setFrom(e.target.value)}
+                    <DateField aria-label="From" value={from} min={TODAY()} onChange={setFrom}
                       className={cx(INPUT_CLASS, 'w-[160px] text-left border-line')} />
                   </label>
                   <label className="flex flex-col gap-[5px] text-meta text-muted-ink">
                     To
-                    <input type="date" value={to} min={from} onChange={e => setTo(e.target.value)}
+                    <DateField aria-label="To" value={to} min={from} onChange={setTo}
                       className={cx(INPUT_CLASS, 'w-[160px] text-left border-line')} />
                   </label>
                   <div className="ml-auto">

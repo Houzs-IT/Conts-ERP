@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
+import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
@@ -119,7 +120,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 
 /* ---------- bill (create) drawer ---------- */
 
-interface BillLine { grnLineId: string; itemCode: string; description: string; uom: string; outstanding: number; unitPriceSen: number; qty: string }
+interface BillLine { grnLineId: string; itemCode: string; description: string; uom: string; outstanding: number; unitPriceSen: number; qty: number | null }
 
 function BillDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: OpenGrn[]; canWrite: boolean; onClose: () => void; onCreated: (p: Pi) => void }) {
   const [grnId, setGrnId] = useState('');
@@ -135,15 +136,19 @@ function BillDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Open
     const g = openGrns.find(x => x.id === id);
     let gl = g?.lines;
     if (!gl) { try { const r = await api.get<{ data: { lines: GrnLine[] } }>(`/goods-receipts/${id}`); gl = r.data.lines; } catch { gl = []; } }
-    setLines((gl ?? []).filter(l => l.qtyAccepted - l.invoicedQty > 0).map(l => ({ grnLineId: l.id, itemCode: l.itemCode, description: l.description, uom: l.uom, outstanding: l.qtyAccepted - l.invoicedQty, unitPriceSen: l.unitPriceSen, qty: String(l.qtyAccepted - l.invoicedQty) })));
+    setLines((gl ?? []).filter(l => l.qtyAccepted - l.invoicedQty > 0).map(l => ({ grnLineId: l.id, itemCode: l.itemCode, description: l.description, uom: l.uom, outstanding: l.qtyAccepted - l.invoicedQty, unitPriceSen: l.unitPriceSen, qty: l.qtyAccepted - l.invoicedQty })));
   }
 
-  const willBill = lines.filter(l => (Number(l.qty) || 0) > 0);
-  const total = willBill.reduce((s, l) => s + (Number(l.qty) || 0) * l.unitPriceSen, 0);
+  const willBill = lines.filter(l => (l.qty ?? 0) > 0);
+  const total = willBill.reduce((s, l) => s + (l.qty ?? 0) * l.unitPriceSen, 0);
   const canSave = canWrite && grnId !== '' && willBill.length > 0;
+  const [tried, setTried] = useState(false);
+  const dateError = tried && !invoiceDate ? 'Required.' : undefined;
 
   function submit() {
-    const payloadLines = willBill.map(l => ({ grnLineId: l.grnLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qty: Number(l.qty) || 0 }));
+    setTried(true);
+    if (!invoiceDate || willBill.some(l => (l.qty ?? 0) > l.outstanding)) return;
+    const payloadLines = willBill.map(l => ({ grnLineId: l.grnLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qty: l.qty ?? 0 }));
     api.post('/purchase-invoices', { grnId, supplierInvoiceRef: ref, invoiceDate, dueDate: dueDate || null, notes, lines: payloadLines }).catch(notifyFailure);
     onCreated({
       id: `pi-new-${crypto.randomUUID().slice(0, 8)}`, invoiceNumber: `PINV-${new Date().getFullYear()}-NEW`, supplierInvoiceRef: ref, supplierName: grn?.supplierName ?? '', supplierCode: '',
@@ -169,8 +174,8 @@ function BillDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Open
             </select>
           </div>
           <Field label="Supplier invoice ref" placeholder="Optional" value={ref} onChange={e => setRef(e.target.value)} />
-          <Field label="Invoice date" type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} />
-          <Field label="Due date" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+          <DateField label="Invoice date" required value={invoiceDate} onChange={setInvoiceDate} error={dateError} />
+          <DateField label="Due date" value={dueDate} min={invoiceDate || undefined} onChange={setDueDate} />
         </div>
 
         {grnId && (
@@ -190,9 +195,9 @@ function BillDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Open
                       <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.outstanding}</td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.unitPriceSen)}</td>
-                      <td className="py-2 px-3 text-right"><input type="number" min={0} value={l.qty} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))}
+                      <td className="py-2 px-3 text-right"><NumberInput aria-label="Bill quantity" min={0} max={l.outstanding} value={l.qty} onChange={v => setLines(ls => ls.map((x, j) => j === i ? { ...x, qty: v } : x))}
                         className="h-8 w-[80px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
-                      <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm((Number(l.qty) || 0) * l.unitPriceSen)}</td>
+                      <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm((l.qty ?? 0) * l.unitPriceSen)}</td>
                     </tr>
                   ))}
                 </tbody>

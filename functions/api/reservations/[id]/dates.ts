@@ -4,6 +4,7 @@ import { findClash, clashResponseBody } from '../../../_lib/reservations';
 import { syncAvailabilityIfLinked, channexMappingFor } from '../../../_lib/channexSync';
 import { channexConfigured } from '../../../_lib/channex';
 import { dayLabel } from '../../../_lib/bookingLifecycle';
+import { checkSen, checkDate, invalid, type Fields } from '../../../_lib/validate';
 import { bookingNotice } from '../../../_lib/notices';
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -21,6 +22,11 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);
   if (!b?.checkIn || !b.checkOut || !ISO_DAY.test(b.checkIn) || !ISO_DAY.test(b.checkOut)) return fail('VALIDATION', 'Both dates are required.', 422);
+  const fields: Fields = {};
+  checkDate(fields, 'checkIn', b.checkIn, { label: 'Check-in', required: true });
+  checkDate(fields, 'checkOut', b.checkOut, { label: 'Check-out', required: true });
+  checkSen(fields, 'grossBookingValue', b.grossBookingValue, { label: 'Total' });
+  const bad = invalid(fields); if (bad) return bad;
   if (b.checkOut <= b.checkIn) return fail('VALIDATION', 'Check-out must be after check-in.', 422, { checkOut: 'Check-out must be after check-in.' });
 
   const cur = await one<any>(env, `

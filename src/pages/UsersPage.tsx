@@ -8,6 +8,7 @@ import { Button } from '../components/Button';
 import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import Icon from '../components/Icon';
 import { Field } from '../components/Field';
+import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Select } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
@@ -206,7 +207,7 @@ export default function UsersPage() {
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editErrors, setEditErrors] = useState<{ fullName?: string; email?: string }>({});
+  const [editErrors, setEditErrors] = useState<{ fullName?: string; email?: string; phone?: string }>({});
 
   function openEdit(u: Row) {
     setEditing(u); setEditRole(u.role); setEditManager(u.managerId ?? ''); setEditActive(u.isActive);
@@ -345,9 +346,11 @@ export default function UsersPage() {
   async function submitEdit(e: FormEvent) {
     e.preventDefault();
     if (!editing || busy) return;
-    const errs: { fullName?: string; email?: string } = {};
+    const errs: { fullName?: string; email?: string; phone?: string } = {};
     if (!editName.trim()) errs.fullName = 'Enter a name.';
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(editEmail)) errs.email = 'Enter a valid email address.';
+    const phoneErr = phoneProblem(editPhone);
+    if (phoneErr) errs.phone = phoneErr;
     if (Object.keys(errs).length) { setEditErrors(errs); return; }
 
     setBusy(true); setEditErrors({});
@@ -556,7 +559,7 @@ export default function UsersPage() {
           <form id="edit-form" onSubmit={submitEdit} className="flex flex-col gap-4">
             <Field label="Full name" value={editName} onChange={e => setEditName(e.target.value)} error={editErrors.fullName} />
             <Field label="Email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} error={editErrors.email} />
-            <Field label="Phone" value={editPhone} onChange={e => setEditPhone(e.target.value)} placeholder="+60 12-345 6789" />
+            <PhoneInput label="Phone" value={editPhone} onChange={setEditPhone} error={editErrors.phone} />
             <div className="flex flex-col gap-1.5">
               <Select label="Role" showLabel size="md" value={editRole} onChange={v => setEditRole(v as UserRole)} options={ROLE_OPTIONS} />
               {editRole !== editing.role && (

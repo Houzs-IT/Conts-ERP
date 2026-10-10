@@ -9,7 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "check": "node scripts/checks/run.mjs",
+    "check": "node scripts/checks/run.mjs && node scripts/checks/input-parsing.mjs",
     "db:migrate": "node scripts/migrate-pg.mjs",
     "db:migrate:dry": "node scripts/migrate-pg.mjs --dry-run",
     "deploy": "npm run build && wrangler pages deploy dist --branch theconts-os",

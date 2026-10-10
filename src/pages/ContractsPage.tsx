@@ -7,6 +7,7 @@ import { HistoryDisclosure } from '../components/RecordHistory';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { Field } from '../components/Field';
+import { MoneyInput, PercentInput, DateField } from '../components/inputs';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
@@ -337,8 +338,8 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
   const [ownerName, setOwnerName] = useState(existing?.ownerName ?? '');
   const [unitsLabel, setUnitsLabel] = useState(existing?.unitsLabel ?? '');
   const [model, setModel] = useState<FeeModel>(existing?.model ?? 'management');
-  const [feePct, setFeePct] = useState(existing ? String(existing.managementFeePct) : '25');
-  const [grr, setGrr] = useState(existing && existing.grrAmount ? String(existing.grrAmount / 100) : '');
+  const [feePct, setFeePct] = useState<number | null>(existing ? existing.managementFeePct : 25);
+  const [grrSen, setGrrSen] = useState<number | null>(existing && existing.grrAmount ? existing.grrAmount : null);
   const [startsOn, setStartsOn] = useState(existing?.startsOn ?? '');
   const [renewsOn, setRenewsOn] = useState(existing?.renewsOn ?? '');
   const [endsOn, setEndsOn] = useState(existing?.endsOn ?? '');
@@ -346,14 +347,14 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
 
   const canSubmit =
     ownerName.trim() !== '' && unitsLabel.trim() !== '' && startsOn !== '' &&
-    (model === 'management' ? feePct !== '' : grr !== '');
+    (model === 'management' ? feePct != null : grrSen != null) && (!endsOn || endsOn >= startsOn);
 
   const submit = () => onSubmit({
     ownerName: ownerName.trim(),
     unitsLabel: unitsLabel.trim(),
     model,
-    managementFeePct: model === 'management' ? Number(feePct) || 0 : 0,
-    grrAmount: model === 'grr' ? Math.round(Number(grr) * 100) : 0,
+    managementFeePct: model === 'management' ? feePct ?? 0 : 0,
+    grrAmount: model === 'grr' ? grrSen ?? 0 : 0,
     startsOn,
     renewsOn: renewsOn || null,
     ...(endsOn ? { endsOn } : {}),
@@ -381,13 +382,13 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
       <Select showLabel size="md" label="Fee model" value={model} onChange={v => setModel(v as FeeModel)}
         options={[{ value: 'management', label: 'Management fee (% of revenue)' }, { value: 'grr', label: 'GRR — guaranteed monthly rent' }]} />
       {model === 'management'
-        ? <Field label="Management fee %" type="number" min={0} max={100} numeric value={feePct} onChange={e => setFeePct(e.target.value)} help="The Conts keeps this share; the owner receives the rest." />
-        : <Field label="Guaranteed rent (RM / month)" type="number" min={0} numeric placeholder="e.g. 3500" value={grr} onChange={e => setGrr(e.target.value)} help="The owner is paid this fixed amount regardless of occupancy." />}
+        ? <PercentInput label="Management fee %" value={feePct} onChange={setFeePct} help="The Conts keeps this share; the owner receives the rest." />
+        : <MoneyInput label="Guaranteed rent (RM / month)" placeholder="e.g. 3,500.00" valueSen={grrSen} onChangeSen={setGrrSen} help="The owner is paid this fixed amount regardless of occupancy." />}
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Start date" type="date" value={startsOn} onChange={e => setStartsOn(e.target.value)} />
-        <Field label="Ends on" type="date" value={endsOn} onChange={e => setEndsOn(e.target.value)} help={`Highlighted ${ENDING_WINDOW_DAYS} days before.`} />
+        <DateField label="Start date" value={startsOn} onChange={setStartsOn} />
+        <DateField label="Ends on" value={endsOn} onChange={setEndsOn} min={startsOn || undefined} help={`Highlighted ${ENDING_WINDOW_DAYS} days before.`} />
       </div>
-      <Field label="Renews on" type="date" value={renewsOn} onChange={e => setRenewsOn(e.target.value)} help="Optional. Used as the end date when no end date is recorded." />
+      <DateField label="Renews on" value={renewsOn} onChange={setRenewsOn} min={startsOn || undefined} help="Optional. Used as the end date when no end date is recorded." />
       <OfferLetterField value={offerLetter} onChange={setOfferLetter} />
       {existing && <HistoryDisclosure entity="owner_contracts" id={existing.id} />}
     </Modal>

@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
+import { NumberInput, TimeField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
@@ -82,7 +83,10 @@ export default function DeliveryResidenceRulesPage() {
 
 function RuleDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Rule; isNew: boolean; onClose: () => void; onSave: (d: Rule, isNew: boolean) => void; onDelete?: () => void }) {
   const [f, setF] = useState<Rule>(draft);
-  const canSave = f.buildingType.trim() !== '';
+  const [minutes, setMinutes] = useState<number | null>(draft.serviceDurationMinutes);
+  const windowBackwards = !!f.earliestDeliveryTime && !!f.latestDeliveryTime && f.latestDeliveryTime < f.earliestDeliveryTime;
+  const canSave = f.buildingType.trim() !== '' && minutes != null && !windowBackwards;
+  const blocker = f.buildingType.trim() === '' ? 'Enter a building type first' : minutes == null ? 'Enter the service duration' : 'Latest delivery cannot be before earliest delivery';
   const check = (k: 'requiresLiftBooking' | 'requiresRegistration') => (
     <label className="flex items-center gap-2.5 cursor-pointer text-[13.5px]">
       <input type="checkbox" checked={f[k]} onChange={e => setF(s => ({ ...s, [k]: e.target.checked }))} className="w-4 h-4 accent-black cursor-pointer" />
@@ -94,10 +98,10 @@ function RuleDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Rule; 
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New residence rule' : 'Edit residence rule'}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <Field label="Building type" placeholder="e.g. High-rise condo" value={f.buildingType} onChange={e => setF(s => ({ ...s, buildingType: e.target.value }))} />
-        <Field label="Service duration (minutes)" type="number" numeric min={0} value={String(f.serviceDurationMinutes)} onChange={e => setF(s => ({ ...s, serviceDurationMinutes: Math.max(0, Math.round(Number(e.target.value) || 0)) }))} />
+        <NumberInput label="Service duration (minutes)" required min={0} suffix="min" value={minutes} onChange={setMinutes} error={minutes == null ? 'Enter the service duration.' : undefined} />
         <div className="grid grid-cols-2 gap-3.5">
-          <Field label="Earliest delivery" type="time" value={f.earliestDeliveryTime} onChange={e => setF(s => ({ ...s, earliestDeliveryTime: e.target.value }))} />
-          <Field label="Latest delivery" type="time" value={f.latestDeliveryTime} onChange={e => setF(s => ({ ...s, latestDeliveryTime: e.target.value }))} />
+          <TimeField label="Earliest delivery" value={f.earliestDeliveryTime} onChange={v => setF(s => ({ ...s, earliestDeliveryTime: v }))} />
+          <TimeField label="Latest delivery" min={f.earliestDeliveryTime || undefined} value={f.latestDeliveryTime} onChange={v => setF(s => ({ ...s, latestDeliveryTime: v }))} />
         </div>
         <div className="flex flex-col gap-2.5 py-1">{check('requiresLiftBooking')}{check('requiresRegistration')}</div>
         <Field label="Notes" placeholder="Optional" value={f.notes} onChange={e => setF(s => ({ ...s, notes: e.target.value }))} />
@@ -111,7 +115,7 @@ function RuleDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Rule; 
         <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete the ${draft.buildingType} rule?`, body: 'It is deleted for good and drops off the residence rules list.', confirmLabel: 'Delete rule', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a building type first" onClick={() => onSave(f, isNew)}>{isNew ? 'Add rule' : 'Save'}</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason={blocker} onClick={() => onSave({ ...f, serviceDurationMinutes: minutes ?? 0 }, isNew)}>{isNew ? 'Add rule' : 'Save'}</Button>
         </div>
       </div>
     </Drawer>

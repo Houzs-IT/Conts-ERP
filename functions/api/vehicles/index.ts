@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { invalidVehicle, toVehiclePayload, type VehicleRow } from '../../_lib/transport';
 import { strOrNull, intOrNull, flag, genId } from '../../_lib/scm-util';
+import { checkInt, invalid, type Fields } from '../../_lib/validate';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -17,6 +18,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const bad = invalidVehicle(b);
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
+  const fields: Fields = {};
+  checkInt(fields, 'capacityM3Milli', b.capacityM3Milli, { label: 'Capacity', min: 0 });
+  const badNum = invalid(fields); if (badNum) return badNum;
   const code = (b.code as string).trim();
   if (await one(env, 'SELECT 1 AS x FROM vehicles WHERE lower(code) = lower(?)', code)) return fail('CONFLICT', 'A vehicle with this code already exists.', 409, { code: 'This code is already used.' });
   const id = genId('veh');

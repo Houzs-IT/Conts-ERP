@@ -1,10 +1,11 @@
 import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
+import { checkPhone } from '../../_lib/validate';
 import { ROLES } from '../../_lib/roles';
 
 const MANAGE = ['management'];
 
-type Field = { def: string | number | boolean; legacy?: string; kind: 'text' | 'longtext' | 'email' | 'choice' | 'number' | 'bool' | 'time' | 'roles'; min?: number; max?: number; integer?: boolean; options?: string[]; required?: boolean };
+type Field = { def: string | number | boolean; legacy?: string; kind: 'text' | 'longtext' | 'email' | 'phone' | 'choice' | 'number' | 'bool' | 'time' | 'roles'; min?: number; max?: number; integer?: boolean; options?: string[]; required?: boolean };
 
 /** Every setting, its default, and how to check a saved value. Stored as one row per setting, keyed "section.name". */
 const SPEC: Record<string, Record<string, Field>> = {
@@ -12,7 +13,7 @@ const SPEC: Record<string, Record<string, Field>> = {
     legalName: { def: 'The Conts Sdn Bhd', legacy: 'org.legal_name', kind: 'text', required: true },
     companyNumber: { def: '202301027399 (1521322-V)', legacy: 'org.company_number', kind: 'text', required: true },
     address: { def: 'C-41-06, Jaya One, Jalan Universiti, 46200 Petaling Jaya', legacy: 'org.address', kind: 'text' },
-    supportPhone: { def: '+60 17-465 8868', legacy: 'org.support_phone', kind: 'text' },
+    supportPhone: { def: '+60 17-465 8868', legacy: 'org.support_phone', kind: 'phone' },
     supportEmail: { def: 'support@theconts.com', kind: 'email' },
   },
   locale: {
@@ -25,8 +26,8 @@ const SPEC: Record<string, Record<string, Field>> = {
   operations: {
     checkIn: { def: '15:00', legacy: 'ops.check_in', kind: 'time' },
     checkOut: { def: '11:00', legacy: 'ops.check_out', kind: 'time' },
-    cleaningWindowHours: { def: 4, legacy: 'ops.turnover_sla_hours', kind: 'number', min: 1, max: 24 },
-    linenSets: { def: 2, kind: 'number', min: 1, max: 10 },
+    cleaningWindowHours: { def: 4, legacy: 'ops.turnover_sla_hours', kind: 'number', min: 1, max: 24, integer: true },
+    linenSets: { def: 2, kind: 'number', min: 1, max: 10, integer: true },
     photoRequiredToMarkReady: { def: true, legacy: 'ops.photo_required', kind: 'bool' },
     // Sen. A repair the owner pays above this waits for the owner's approval (functions/_lib/maintenance.ts).
     maintenanceApprovalThreshold: { def: 30000, kind: 'number', min: 0, max: 10_000_000, integer: true },
@@ -35,7 +36,7 @@ const SPEC: Record<string, Record<string, Field>> = {
     cleaningPriceDeep: { def: 13800, kind: 'number', min: 0, max: 1_000_000, integer: true },
   },
   statements: {
-    cycleDay: { def: 1, kind: 'number', min: 1, max: 28 },
+    cycleDay: { def: 1, kind: 'number', min: 1, max: 28, integer: true },
     autoGenerate: { def: true, kind: 'bool' },
     payoutMethod: { def: 'bank_transfer', kind: 'text' },
   },
@@ -59,8 +60,8 @@ const SPEC: Record<string, Record<string, Field>> = {
     staffInactivityTimeoutMins: { def: 10080, kind: 'number', min: 15, max: 43200 },
     ownerInactivityTimeoutMins: { def: 480, kind: 'number', min: 15, max: 43200 },
     absoluteTimeoutHours: { def: 720, kind: 'number', min: 1, max: 720 },
-    lockoutAttempts: { def: 5, kind: 'number', min: 3, max: 20 },
-    lockoutMinutes: { def: 15, kind: 'number', min: 1, max: 120 },
+    lockoutAttempts: { def: 5, kind: 'number', min: 3, max: 20, integer: true },
+    lockoutMinutes: { def: 15, kind: 'number', min: 1, max: 120, integer: true },
     // Comma-separated roles that must use two-step sign-in (functions/_lib/signIn.ts twoStepSetupDue).
     require2faRoles: { def: '', kind: 'roles' },
   },
@@ -83,6 +84,7 @@ function problem(f: Field, v: unknown): string | null {
   if (f.required && v.trim() === '') return 'This cannot be empty.';
   if (f.kind === 'choice') return f.options!.includes(v) ? null : 'Pick one of the options.';
   if (f.kind === 'time') return /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? null : 'Enter a time as HH:MM.';
+  if (f.kind === 'phone') { const fields: Record<string, string> = {}; checkPhone(fields, 'v', v); return fields.v ?? null; }
   if (f.kind === 'email') return v === '' || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) ? null : 'Enter a valid email or leave it blank.';
   return null;
 }

@@ -1,6 +1,7 @@
 import { type Env, all, one, json, fail, nowIso } from '../../../../_lib/db';
 import { stage } from '../../../../_lib/approvals';
 import { requireSession } from '../../../../_lib/auth';
+import { isIsoDate } from '../../../../_lib/validate';
 import { mayChangeAdjustments as mayChange } from '../../../../_lib/ownerScope';
 
 /** Money for or against an owner outside bookings and expenses (owner_adjustments, migration 0052): workbook
@@ -8,7 +9,6 @@ import { mayChangeAdjustments as mayChange } from '../../../../_lib/ownerScope';
  *  owner's payout, negative deducts. 'open' ones go on the next statement generated; 'held' ones wait until
  *  someone releases them; 'settled' ones were paid outside Property OS. */
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** GET /api/owners/:id/adjustments — every adjustment of this owner, newest first, with the statement that carries it. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -56,7 +56,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (kind !== 'credit' && kind !== 'charge') fields.kind = 'Pick credit or charge.';
   if (!Number.isInteger(amount) || amount <= 0 || amount > 100_000_000) fields.amount = 'Enter an amount above RM 0.00 and up to RM 1,000,000.';
   if (!description || description.length > 200) fields.description = 'Describe it in up to 200 characters.';
-  if (!DATE.test(occurredOn) || Number.isNaN(Date.parse(occurredOn))) fields.occurredOn = 'Enter the date.';
+  if (!isIsoDate(occurredOn)) fields.occurredOn = 'Enter the date.';
   const unitId = b?.unitId ? String(b.unitId) : null;
   if (unitId && !await one(env, 'SELECT 1 AS x FROM units WHERE id = ? AND owner_id = ?', unitId, ownerId)) fields.unitId = 'That unit is not this owner\'s.';
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the highlighted fields.', 422, fields);

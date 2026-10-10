@@ -3,6 +3,7 @@ import { requireSession } from '../../_lib/auth';
 import { nextGrnNumber, recomputePoStatus, toGrnHeaderPayload, type GrnHeaderRow } from '../../_lib/goods-receipts';
 import { postStockMovement } from '../../_lib/stock-ops';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
+import { checkDate, checkInt, checkSen, invalid, type Fields } from '../../_lib/validate';
 
 const LIST_SQL = `
   SELECT g.id, g.grn_number, g.purchase_order_id, g.supplier_id, g.received_at, g.delivery_note_ref, g.status, g.notes,
@@ -41,6 +42,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can receive goods.', 403);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkDate(fields, 'receivedAt', b.receivedAt, { label: 'Received date' });
+  if (Array.isArray(b.lines)) (b.lines as Record<string, unknown>[]).forEach((l, i) => {
+    checkInt(fields, `lines.${i}.qtyReceived`, l?.qtyReceived, { label: 'Received quantity', min: 0 });
+    checkInt(fields, `lines.${i}.qtyAccepted`, l?.qtyAccepted, { label: 'Accepted quantity', min: 0 });
+    checkSen(fields, `lines.${i}.unitPriceSen`, l?.unitPriceSen, { label: 'Unit price' });
+  });
+  const bad = invalid(fields); if (bad) return bad;
   const poId = String(b.purchaseOrderId ?? '').trim();
   const po = await one<{ id: string; supplier_id: string; status: string }>(env, 'SELECT id, supplier_id, status FROM purchase_orders WHERE id = ?', poId);
   if (!po) return fail('VALIDATION', 'Pick a purchase order.', 422, { purchaseOrderId: 'Unknown purchase order.' });

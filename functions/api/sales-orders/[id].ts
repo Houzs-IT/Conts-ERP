@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { normalizeLines, nextStatus, toSoHeaderPayload, toSoLinePayload, type SoHeaderRow, type SoLineRow } from '../../_lib/sales-orders';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
+import { checkSen, checkInt, checkDate, checkPhone, invalid, type Fields } from '../../_lib/validate';
 
 const COLS = `id, doc_no, customer_name, customer_phone, customer_po, so_date, target_date, status, currency,
               subtotal_sen, tax_sen, total_sen, deposit_sen, paid_sen, notes, created_at, updated_at`;
@@ -29,6 +30,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   // Record a payment.
   if (b.paySen !== undefined) {
+    const payFields: Fields = {};
+    checkSen(payFields, 'paySen', b.paySen, { label: 'Payment' });
+    const badPay = invalid(payFields); if (badPay) return badPay;
     const pay = Math.max(0, intOrNull(b.paySen) ?? 0);
     if (pay <= 0) return fail('VALIDATION', 'Enter a payment amount.', 422);
     if (cur.status === 'CANCELLED') return fail('CONFLICT', 'A cancelled order cannot take payment.', 409);
@@ -61,6 +65,18 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   // Edit (header + optional lines) — only while CONFIRMED.
   if (cur.status !== 'CONFIRMED') return fail('CONFLICT', 'Only a confirmed sales order can be edited.', 409);
+  const fields: Fields = {};
+  checkPhone(fields, 'customerPhone', b.customerPhone);
+  checkDate(fields, 'soDate', b.soDate, { label: 'SO date' });
+  checkDate(fields, 'targetDate', b.targetDate, { label: 'Target date' });
+  checkSen(fields, 'taxSen', b.taxSen, { label: 'Tax' });
+  checkSen(fields, 'depositSen', b.depositSen, { label: 'Deposit' });
+  if (Array.isArray(b.lines)) (b.lines as Record<string, unknown>[]).forEach((l, i) => {
+    checkInt(fields, `lines.${i}.qty`, l?.qty, { label: 'Quantity', min: 0 });
+    checkSen(fields, `lines.${i}.unitPriceSen`, l?.unitPriceSen, { label: 'Unit price' });
+    checkSen(fields, `lines.${i}.discountSen`, l?.discountSen, { label: 'Discount' });
+  });
+  const bad = invalid(fields); if (bad) return bad;
   const sets: string[] = [];
   const args: unknown[] = [];
   if (b.customerName !== undefined) { const n = String(b.customerName).trim(); if (!n) return fail('VALIDATION', 'Enter a customer name.', 422, { customerName: 'Enter a customer name.' }); sets.push('customer_name = ?'); args.push(n); }

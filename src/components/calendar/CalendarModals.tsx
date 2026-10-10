@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '../Button';
 import { Field } from '../Field';
+import { DateField, MoneyInput, PercentInput } from '../inputs';
 import ChannelMark from '../ChannelMark';
 import { date, dateShort, count, plural, rmShort, amount } from '../../lib/format';
 import { Select } from '../Select';
@@ -30,11 +31,11 @@ function CentreModal({ title, sub, onClose, onSave, saveLabel, canSave, disabled
 }
 
 export function SetPriceModal({ m, onClose, onSave }: { m: { unit: CalendarUnit; channel: string; dayIso: string; current: number }; onClose: () => void; onSave: (rm: number) => void }) {
-  const [v, setV] = useState(m.current > 0 ? String(Math.round(m.current / 100)) : '');
+  const [sen, setSen] = useState<number | null>(m.current > 0 ? m.current : null);
   const label = m.channel === 'web' ? 'Web rate' : CHANNEL[m.channel as BookingChannel].label;
   return (
-    <CentreModal title="Set price" sub={`${m.unit.unitNumber} · ${label} · ${date(m.dayIso)}`} onClose={onClose} saveLabel="Set price" canSave={v !== '' && Number(v) >= 0} onSave={() => onSave(Number(v))}>
-      <Field label="Price (RM / night)" type="number" min={0} step="0.01" numeric value={v} onChange={e => setV(e.target.value)} help="Pushed to the connected channel for this night. Confirmed bookings keep their original rate." />
+    <CentreModal title="Set price" sub={`${m.unit.unitNumber} · ${label} · ${date(m.dayIso)}`} onClose={onClose} saveLabel="Set price" canSave={sen != null && sen >= 0} disabledReason="Enter the price first" onSave={() => { if (sen != null) onSave(sen / 100); }}>
+      <MoneyInput label="Price (RM / night)" valueSen={sen} onChangeSen={setSen} required help="Pushed to the connected channel for this night. Confirmed bookings keep their original rate." />
     </CentreModal>
   );
 }
@@ -61,8 +62,8 @@ export function BlockWizard({ units, initial, onClose, onSave }: {
       onSave={() => onSave({ unitId: unit, from: fromD, to: toD, kind, reason: reason.trim() })}>
       <UnitPicker units={units} value={unit} onChange={setUnit} />
       <div className="grid grid-cols-2 gap-3">
-        <Field label="From" type="date" value={fromD} onChange={e => setFromD(e.target.value)} />
-        <Field label="To (check-out day)" type="date" value={toD} min={fromD || undefined} onChange={e => setToD(e.target.value)} />
+        <DateField label="From" value={fromD} onChange={setFromD} />
+        <DateField label="To (check-out day)" value={toD} min={fromD || undefined} onChange={setToD} />
       </div>
       <fieldset className="m-0 p-0 border-none flex flex-col gap-[7px]">
         <legend className="p-0 mb-[7px] text-meta font-medium text-muted-ink">Reason</legend>
@@ -135,7 +136,8 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
   const [ranges, setRanges] = useState<Range[]>([{ from: initial.from ?? '', to: initial.to ?? initial.from ?? '' }]);
   const [days, setDays] = useState<Set<number>>(new Set(ALL_DAYS));
   const [mode, setMode] = useState<PriceMode>('set');
-  const [value, setValue] = useState('');
+  const [priceSen, setPriceSen] = useState<number | null>(null);
+  const [pct, setPct] = useState<number | null>(null);
   const [chanOff, setChanOff] = useState<Record<string, boolean>>({});
   const [minStay, setMinStay] = useState('');
   const [stop, setStop] = useState<'same' | 'close' | 'open'>('same');
@@ -171,14 +173,15 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
   const linkedCount = (ch: string) => (ch === 'web' ? chosen.length : chosen.filter(u => u.linked?.includes(ch as BookingChannel)).length);
   const pricing_ = mode !== 'keep';
   const channels = PRICE_CHANNELS.filter(ch => linkedCount(ch) > 0 && !chanOff[ch]);
-  const num = Number(value);
-  const valueOk = !pricing_ || (value.trim() !== '' && Number.isFinite(num) && (mode === 'set' ? num > 0 : num > 0 && num <= (mode === 'down' ? 90 : 300)));
+  const pctMax = mode === 'down' ? 90 : 300;
+  const valueOk = !pricing_ || (mode === 'set' ? priceSen != null && priceSen > 0 : pct != null && pct > 0 && pct <= pctMax);
+  const num = pct ?? 0;
   const changesSomething = pricing_ || minStay !== '' || stop !== 'same';
 
   // The example the table prices: a weekday night of each chosen unit at its standard web rate, moved as asked.
   const exampleWeb = (u: CalendarUnit) => {
     const base = pricing.baseRate[u.id] ?? 0;
-    if (mode === 'set') return Math.round(num * 100) || 0;
+    if (mode === 'set') return priceSen ?? 0;
     if (mode === 'up' || mode === 'down') return Math.max(100, Math.round(base * (1 + (mode === 'up' ? num : -num) / 100) / 100) * 100);
     return base;
   };
@@ -199,7 +202,7 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
   function save() {
     const lines = ranges.map(r => ({
       from: r.from, to: r.to,
-      ...(mode === 'set' ? { baseRate: Math.round(num * 100) } : mode === 'up' ? { adjustPct: num } : mode === 'down' ? { adjustPct: -num } : {}),
+      ...(mode === 'set' ? { baseRate: priceSen ?? 0 } : mode === 'up' ? { adjustPct: num } : mode === 'down' ? { adjustPct: -num } : {}),
       ...(minStay !== '' ? { minStay: Number(minStay) } : {}),
       ...(stop !== 'same' ? { stopSell: stop === 'close' } : {}),
     }));
@@ -312,8 +315,8 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
                 <div className="flex flex-col gap-3">
                   {ranges.map((r, i) => (
                     <div key={i} className="grid grid-cols-[1fr_1fr_auto] items-end gap-3">
-                      <Field label={i === 0 ? 'First night' : `First night (range ${i + 1})`} type="date" value={r.from} onChange={e => setRanges(rs => rs.map((x, j) => (j === i ? { ...x, from: e.target.value, to: x.to && x.to >= e.target.value ? x.to : e.target.value } : x)))} />
-                      <Field label="Last night" type="date" value={r.to} min={r.from || undefined} onChange={e => setRanges(rs => rs.map((x, j) => (j === i ? { ...x, to: e.target.value } : x)))} />
+                      <DateField label={i === 0 ? 'First night' : `First night (range ${i + 1})`} value={r.from} onChange={v => setRanges(rs => rs.map((x, j) => (j === i ? { ...x, from: v, to: x.to && x.to >= v ? x.to : v } : x)))} />
+                      <DateField label="Last night" value={r.to} min={r.from || undefined} onChange={v => setRanges(rs => rs.map((x, j) => (j === i ? { ...x, to: v } : x)))} />
                       {ranges.length > 1
                         ? <Button size="md" variant="tertiary" type="button" aria-label={`Remove range ${i + 1}`} onClick={() => setRanges(rs => rs.filter((_, j) => j !== i))}><Icon name="X" size="sm" /></Button>
                         : <span className="w-10" />}
@@ -347,11 +350,13 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <Select label="Base price (Web / Direct)" showLabel size="md" value={mode} onChange={v => setMode(v as PriceMode)}
                     options={[{ value: 'set', label: 'Set to this price' }, { value: 'up', label: 'Raise the current price by %' }, { value: 'down', label: 'Lower the current price by %' }, { value: 'keep', label: 'Keep the prices' }]} />
-                  {pricing_ && (
-                    <Field label={mode === 'set' ? 'Price (RM / night)' : 'Percentage'} type="number" min={1} max={mode === 'set' ? undefined : mode === 'down' ? 90 : 300} step="1"
-                      numeric value={value} onChange={e => setValue(e.target.value)} placeholder={mode === 'set' ? 'e.g. 420' : 'e.g. 10'}
-                      error={value !== '' && !valueOk ? (mode === 'set' ? 'Enter a price above RM 0.' : `Enter 1 to ${mode === 'down' ? 90 : 300}.`) : undefined} />
-                  )}
+                  {pricing_ && (mode === 'set' ? (
+                    <MoneyInput label="Price (RM / night)" valueSen={priceSen} onChangeSen={setPriceSen} placeholder="e.g. 420.00"
+                      error={priceSen != null && !valueOk ? 'Enter a price above RM 0.' : undefined} />
+                  ) : (
+                    <PercentInput label="Percentage" value={pct} onChange={setPct} min={0} max={pctMax} placeholder="e.g. 10"
+                      error={pct != null && !valueOk ? `Enter 1 to ${pctMax}.` : undefined} />
+                  ))}
                 </div>
 
                 <div className="flex-none border border-solid border-line rounded-card overflow-x-auto">

@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { isPoStatus, normalizeLines, computeTotals, toPoHeaderPayload, type PoHeaderRow } from '../../_lib/purchase-orders';
+import { isPoStatus, normalizeLines, computeTotals, toPoHeaderPayload, checkPricedBody, type PoHeaderRow } from '../../_lib/purchase-orders';
+import { invalid, type Fields } from '../../_lib/validate';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
 const today = () => nowIso().slice(0, 10);
@@ -46,6 +47,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can raise purchase orders.', 403);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkPricedBody(fields, b, 'poDate', 'PO date');
+  const bad = invalid(fields); if (bad) return bad;
   const supplierId = String(b.supplierId ?? '').trim();
   if (!supplierId) return fail('VALIDATION', 'Pick a supplier.', 422, { supplierId: 'Pick a supplier.' });
   if (!await one(env, 'SELECT 1 AS x FROM suppliers WHERE id = ?', supplierId)) return fail('VALIDATION', 'That supplier does not exist.', 422, { supplierId: 'Unknown supplier.' });

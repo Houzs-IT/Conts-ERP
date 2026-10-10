@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
+import { NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
@@ -97,6 +98,7 @@ export default function CategoriesPage() {
 function CategoryDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onClose: () => void; onSave: (d: Draft) => void; onDelete?: () => void }) {
   const [f, setF] = useState<Draft>(draft);
   const set = <K extends keyof Draft>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value as Draft[K] }));
+  const [sortOrder, setSortOrder] = useState<number | null>(draft.sortOrder);
   const canSave = f.id.trim() !== '' && f.label.trim() !== '' && f.icon.trim() !== '';
 
   return (
@@ -108,7 +110,7 @@ function CategoryDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; on
       <div className="px-6 pb-5 overflow-y-auto grow">
         <div className="grid grid-cols-2 gap-3.5">
           <Field label="Id (slug)" placeholder="e.g. sofa" value={f.id} onChange={set('id')} disabled={!draft.isNew} help={draft.isNew ? undefined : 'Id is fixed once created.'} />
-          <Field label="Sort order" type="number" numeric value={String(f.sortOrder)} onChange={e => setF(s => ({ ...s, sortOrder: Math.round(Number(e.target.value) || 0) }))} />
+          <NumberInput label="Sort order" grouping={false} allowNegative value={sortOrder} onChange={setSortOrder} />
           <Field label="Label" placeholder="e.g. Sofa" value={f.label} onChange={set('label')} />
           <Field label="Icon name" placeholder="lucide icon, e.g. sofa" value={f.icon} onChange={set('icon')} />
           <div className="col-span-2"><Field label="Hero image key" placeholder="Optional" value={f.heroImageKey} onChange={set('heroImageKey')} /></div>
@@ -126,7 +128,7 @@ function CategoryDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; on
         <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete category ${draft.label}?`, body: 'It is deleted for good and drops off the category list.', confirmLabel: 'Delete category', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter an id, label and icon" onClick={() => onSave(f)}>{draft.isNew ? 'Create' : 'Save'}</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter an id, label and icon" onClick={() => onSave({ ...f, sortOrder: sortOrder ?? 0 })}>{draft.isNew ? 'Create' : 'Save'}</Button>
         </div>
       </div>
     </Drawer>

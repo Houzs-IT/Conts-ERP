@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE, SHEET_CLEANER, hhmm, linenSet, resolveUnit } from '../../_lib/ops';
+import { checkDate, invalid, type Fields } from '../../_lib/validate';
 import { cleaningNotice } from '../../_lib/notices';
 
 /** The three cleaning kinds a manual task may be. Inspection/maintenance/delivery
@@ -112,6 +113,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const unit = await resolveUnit(env, b?.unitId ?? b?.unitNumber, b?.propertyName);
   if (unit === 'ambiguous') return fail('VALIDATION', 'More than one unit has that number. Say which building.', 422, { unitNumber: 'Pick the building too.' });
   if (!unit) return fail('NOT_FOUND', 'That unit does not exist.', 404, { unitNumber: 'Pick a unit that exists.' });
+  const fields: Fields = {};
+  checkDate(fields, 'date', b?.date, { label: 'Day' });
+  const bad = invalid(fields); if (bad) return bad;
 
   // A manual task lands on a day (default today, Malaysia) with an optional window.
   const today = (await one<{ d: string }>(env, `SELECT to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS d`))!.d;

@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { isSupplierStatus, invalidSupplier, toSupplierPayload, strOrNull, intOrNull, normPhone, type SupplierRow } from '../../_lib/suppliers';
+import { isSupplierStatus, invalidSupplier, checkSupplierFields, toSupplierPayload, strOrNull, intOrNull, normPhone, type SupplierRow } from '../../_lib/suppliers';
+import { invalid, type Fields } from '../../_lib/validate';
 
 const COLS = `id, code, name, status, contact_person, attention, phone, mobile, whatsapp_number, fax, email, website,
               address, area, postcode, state, country, payment_terms, credit_limit_sen, currency, statement_type,
@@ -39,6 +40,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const bad = invalidSupplier(b);
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
+  const fields: Fields = {};
+  checkSupplierFields(fields, b);
+  const badField = invalid(fields); if (badField) return badField;
 
   const code = (b.code as string).trim();
   if (await one(env, 'SELECT 1 AS x FROM suppliers WHERE lower(code) = lower(?)', code)) {

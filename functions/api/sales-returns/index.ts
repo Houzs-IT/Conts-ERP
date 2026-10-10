@@ -3,6 +3,7 @@ import { requireSession } from '../../_lib/auth';
 import { isSretStatus, nextSalesReturnNumber, toSretHeaderPayload, type SretHeaderRow } from '../../_lib/sales-returns';
 import { postStockMovement } from '../../_lib/stock-ops';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
+import { checkSen, checkInt, checkDate, invalid, type Fields } from '../../_lib/validate';
 
 const LIST_SQL = `
   SELECT sr.id, sr.return_number, sr.sales_order_id, sr.delivery_order_id, sr.customer_name, sr.return_date, sr.reason, sr.status,
@@ -39,6 +40,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can raise sales returns.', 403);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkDate(fields, 'returnDate', b.returnDate, { label: 'Return date' });
+  if (Array.isArray(b.lines)) (b.lines as Record<string, unknown>[]).forEach((l, i) => {
+    checkInt(fields, `lines.${i}.qtyReturned`, l?.qtyReturned, { label: 'Return quantity', min: 0 });
+    checkSen(fields, `lines.${i}.unitPriceSen`, l?.unitPriceSen, { label: 'Unit price' });
+  });
+  const bad = invalid(fields); if (bad) return bad;
   const doId = String(b.deliveryOrderId ?? '').trim();
   const dord = await one<{ id: string; sales_order_id: string | null; customer_name: string; status: string; warehouse_id: string | null }>(env, 'SELECT id, sales_order_id, customer_name, status, warehouse_id FROM delivery_orders WHERE id = ?', doId);
   if (!dord) return fail('VALIDATION', 'Pick a delivery order.', 422, { deliveryOrderId: 'Unknown delivery order.' });

@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
+import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
@@ -110,7 +111,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 
 /* ---------- return (create) drawer ---------- */
 
-interface RetLine { doLineId: string; itemCode: string; description: string; uom: string; returnable: number; unitPriceSen: number; qty: string; reason: string }
+interface RetLine { doLineId: string; itemCode: string; description: string; uom: string; returnable: number; unitPriceSen: number; qty: number | null; reason: string }
 
 function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo[]; canWrite: boolean; onClose: () => void; onCreated: (p: Sret) => void }) {
   const [doId, setDoId] = useState('');
@@ -126,15 +127,21 @@ function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: Open
     const d = openDos.find(x => x.id === id);
     let dl = d?.lines;
     if (!dl) { try { const r = await api.get<{ data: { lines: DoLine[] } }>(`/delivery-orders/${id}`); dl = r.data.lines; } catch { dl = []; } }
-    setLines((dl ?? []).filter(l => l.qty - l.returnedQty > 0).map(l => ({ doLineId: l.id, itemCode: l.itemCode, description: l.description, uom: l.uom, returnable: l.qty - l.returnedQty, unitPriceSen: l.unitPriceSen, qty: '', reason: '' })));
+    setLines((dl ?? []).filter(l => l.qty - l.returnedQty > 0).map(l => ({ doLineId: l.id, itemCode: l.itemCode, description: l.description, uom: l.uom, returnable: l.qty - l.returnedQty, unitPriceSen: l.unitPriceSen, qty: null, reason: '' })));
   }
 
-  const willReturn = lines.filter(l => (Number(l.qty) || 0) > 0);
-  const refund = willReturn.reduce((s, l) => s + Math.min(Number(l.qty) || 0, l.returnable) * l.unitPriceSen, 0);
+  const [submitted, setSubmitted] = useState(false);
+  const willReturn = lines.filter(l => (l.qty ?? 0) > 0);
+  const refund = willReturn.reduce((s, l) => s + Math.min(l.qty ?? 0, l.returnable) * l.unitPriceSen, 0);
   const canSave = canWrite && doId !== '' && willReturn.length > 0;
+  const qtyError = (l: RetLine) => (l.qty ?? 0) > l.returnable ? `Only ${l.returnable} can be returned.` : undefined;
+  const today = new Date().toISOString().slice(0, 10);
+  const dateError = submitted && !returnDate ? 'Enter the return date.' : undefined;
 
   function submit() {
-    const payloadLines = willReturn.map(l => ({ deliveryOrderLineId: l.doLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qtyReturned: Math.min(Number(l.qty) || 0, l.returnable), reason: l.reason }));
+    setSubmitted(true);
+    if (!returnDate || willReturn.some(qtyError)) return;
+    const payloadLines = willReturn.map(l => ({ deliveryOrderLineId: l.doLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qtyReturned: l.qty ?? 0, reason: l.reason }));
     api.post('/sales-returns', { deliveryOrderId: doId, returnDate, reason, creditNoteRef, notes, lines: payloadLines }).catch(notifyFailure);
     onCreated({
       id: `sret-new-${crypto.randomUUID().slice(0, 8)}`, returnNumber: `SRET-${new Date().getFullYear()}-NEW`, customerName: dord?.customerName ?? '', doNumber: dord?.doNumber ?? '',
@@ -159,7 +166,7 @@ function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: Open
               {openDos.map(d => <option key={d.id} value={d.id}>{d.doNumber} · {d.customerName}</option>)}
             </select>
           </div>
-          <Field label="Return date" type="date" value={returnDate} onChange={e => setReturnDate(e.target.value)} />
+          <DateField label="Return date" required max={today} error={dateError} value={returnDate} onChange={setReturnDate} />
           <Field label="Reason" placeholder="e.g. Wrong item" value={reason} onChange={e => setReason(e.target.value)} />
           <Field label="Credit note ref" placeholder="Optional" value={creditNoteRef} onChange={e => setCreditNoteRef(e.target.value)} />
         </div>
@@ -181,7 +188,7 @@ function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: Open
                       <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.returnable}</td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.unitPriceSen)}</td>
-                      <td className="py-2 px-3 text-right"><input type="number" min={0} value={l.qty} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))}
+                      <td className="py-2 px-3 text-right"><NumberInput aria-label={`Return quantity for ${l.itemCode}`} min={0} max={l.returnable} value={l.qty} error={qtyError(l)} onChange={v => setLines(ls => ls.map((x, j) => j === i ? { ...x, qty: v } : x))}
                         className="h-8 w-[80px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
                       <td className="py-2 px-3"><input value={l.reason} placeholder="Optional" onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, reason: e.target.value } : x))}
                         className="h-8 w-full min-w-[120px] box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>

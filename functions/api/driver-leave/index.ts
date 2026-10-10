@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { invalidLeave, toDriverLeavePayload, type DriverLeaveRow } from '../../_lib/driver-leave';
 import { strOrNull, genId } from '../../_lib/scm-util';
+import { checkDate, invalid, type Fields } from '../../_lib/validate';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const LIST_SQL = `
@@ -32,6 +33,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const bad = invalidLeave(b);
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
+  const fields: Fields = {};
+  checkDate(fields, 'startDate', b.startDate, { label: 'From', required: true });
+  checkDate(fields, 'endDate', b.endDate, { label: 'To', required: true });
+  const badDate = invalid(fields); if (badDate) return badDate;
   const driverId = (b.driverId as string).trim();
   if (!await one(env, 'SELECT 1 AS x FROM drivers WHERE id = ?', driverId)) return fail('VALIDATION', 'Unknown driver.', 422, { driverId: 'Unknown driver.' });
   const id = genId('lve');

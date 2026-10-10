@@ -3,6 +3,7 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { findClash, clashResponseBody, upsertGuest, nextBookingRef, holdOnChannels } from '../../_lib/reservations';
 import { VIEWS, TODOS, fromSql, columnsSql, parseListQuery, viewWhere, todoWhere, toRow } from '../../_lib/bookingList';
 import { moneySchema, moneySql } from '../../_lib/bookingMoney';
+import { checkSen, checkInt, checkDate, checkPhone, invalid, type Fields } from '../../_lib/validate';
 import { bookingNotice } from '../../_lib/notices';
 
 /** GET /api/reservations?view=&todo=&ch=&building=&from=&to=&page=&size=&sort=&q=&ref=&guest=&unit=&stay=&gross=&status=
@@ -60,6 +61,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const b = await request.json<any>().catch(() => null);
   if (!b?.unitId || !b.checkIn || !b.checkOut) return fail('VALIDATION', 'Unit and dates are required.', 422);
+  const fields: Fields = {};
+  checkDate(fields, 'checkIn', b.checkIn, { label: 'Check-in', required: true });
+  checkDate(fields, 'checkOut', b.checkOut, { label: 'Check-out', required: true });
+  checkInt(fields, 'guestsCount', b.guestsCount, { label: 'Guests', min: 1 });
+  checkSen(fields, 'grossBookingValue', b.grossBookingValue, { label: 'Guest total' });
+  checkPhone(fields, 'guest.phone', b.guest?.phone, { label: 'Phone' });
+  const bad = invalid(fields); if (bad) return bad;
   if (b.checkOut <= b.checkIn) return fail('VALIDATION', 'Check-out must be after check-in.', 422, { checkOut: 'Check-out must be after check-in.' });
   const channel = b.channel ?? 'direct';
   if (!CHANNELS.includes(channel)) return fail('VALIDATION', 'Unknown channel.', 422, { channel: 'Pick a channel.' });

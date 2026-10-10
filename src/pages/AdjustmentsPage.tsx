@@ -3,10 +3,11 @@ import { Plus, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api, notifyFailure, ApiFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { TONE, cx } from '../lib/design-tokens';
@@ -53,13 +54,13 @@ export default function AdjustmentsPage() {
   ], []);
 
   // Waits for the server: a refused adjustment (e.g. more out than is on hand) must not show as posted.
-  async function create(m: Mv) {
+  async function create(m: Mv): Promise<Record<string, string> | undefined> {
     try {
       const r = await api.post<{ id: string }>('/stock', { itemCode: m.itemCode, warehouseId: m.warehouseId, qtyDelta: m.qtyDelta, note: m.note });
       setAdded(a => [{ ...m, id: r.id }, ...a]);
       toast({ tone: 'success', title: 'Adjustment posted.', body: `${m.itemCode} ${m.qtyDelta > 0 ? '+' : ''}${m.qtyDelta}` });
       setDrawer(false);
-    } catch (e) { notifyFailure(e); }
+    } catch (e) { notifyFailure(e); return e instanceof ApiFailure ? e.fields : undefined; }
   }
 
   return (
@@ -88,15 +89,16 @@ export default function AdjustmentsPage() {
   );
 }
 
-function AdjustDrawer({ warehouses, canWrite, onClose, onCreate }: { warehouses: Wh[]; canWrite: boolean; onClose: () => void; onCreate: (m: Mv) => Promise<void> }) {
+function AdjustDrawer({ warehouses, canWrite, onClose, onCreate }: { warehouses: Wh[]; canWrite: boolean; onClose: () => void; onCreate: (m: Mv) => Promise<Record<string, string> | undefined> }) {
   const [busy, setBusy] = useState(false);
   const [itemCode, setItemCode] = useState('');
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
   const [direction, setDirection] = useState<'in' | 'out'>('out');
-  const [qty, setQty] = useState('1');
+  const [qty, setQty] = useState<number | null>(1);
+  const [fields, setFields] = useState<Record<string, string>>({});
   const [reason, setReason] = useState(REASONS[0]);
   const [note, setNote] = useState('');
-  const magnitude = Math.abs(Math.round(Number(qty) || 0));
+  const magnitude = qty ?? 0;
   const canSave = canWrite && itemCode.trim() !== '' && warehouseId !== '' && magnitude > 0;
 
   async function submit() {
@@ -104,7 +106,9 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onCreate }: { warehouses:
     const delta = direction === 'in' ? magnitude : -magnitude;
     const fullNote = note.trim() ? `${reason} — ${note.trim()}` : reason;
     setBusy(true);
-    await onCreate({ id: '', itemCode: itemCode.trim(), warehouseId, warehouseCode: wh?.code ?? '', warehouseName: wh?.name ?? '', qtyDelta: delta, note: fullNote, movedAt: new Date().toISOString().slice(0, 10) });
+    setFields({});
+    const refused = await onCreate({ id: '', itemCode: itemCode.trim(), warehouseId, warehouseCode: wh?.code ?? '', warehouseName: wh?.name ?? '', qtyDelta: delta, note: fullNote, movedAt: new Date().toISOString().slice(0, 10) });
+    setFields(refused ?? {});
     setBusy(false);
   }
 
@@ -124,7 +128,7 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onCreate }: { warehouses:
               <option value="in">Increase (+)</option><option value="out">Decrease (−)</option>
             </select>
           </div>
-          <Field label="Quantity" type="number" numeric min={1} value={qty} onChange={e => setQty(e.target.value)} />
+          <NumberInput label="Quantity" min={1} value={qty} onChange={setQty} error={fields.qtyDelta} />
         </div>
         <div className="flex flex-col gap-[7px]"><label className="text-[12px] font-medium text-muted-ink">Reason</label>
           <select value={reason} onChange={e => setReason(e.target.value)} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">

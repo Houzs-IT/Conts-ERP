@@ -1,6 +1,7 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { strOrNull, flag } from '../../_lib/scm-util';
+import { checkPhone, invalid, type Fields } from '../../_lib/validate';
 
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
@@ -9,6 +10,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const id = String(params.id);
   if (!await one(env, 'SELECT 1 AS x FROM drivers WHERE id = ?', id)) return fail('NOT_FOUND', 'That driver does not exist.', 404);
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkPhone(fields, 'phone', b.phone, { label: 'Phone' });
+  const bad = invalid(fields); if (bad) return bad;
   const sets: string[] = []; const args: unknown[] = [];
   if (b.driverCode !== undefined) { const c = String(b.driverCode).trim(); if (!c) return fail('VALIDATION', 'Enter a driver code.', 422, { driverCode: 'Enter a driver code.' }); if (await one(env, 'SELECT 1 AS x FROM drivers WHERE lower(driver_code)=lower(?) AND id<>?', c, id)) return fail('CONFLICT', 'A driver with this code already exists.', 409, { driverCode: 'This code is already used.' }); sets.push('driver_code = ?'); args.push(c); }
   if (b.name !== undefined) { const n = String(b.name).trim(); if (!n) return fail('VALIDATION', 'Enter a name.', 422, { name: 'Enter a name.' }); sets.push('name = ?'); args.push(n); }

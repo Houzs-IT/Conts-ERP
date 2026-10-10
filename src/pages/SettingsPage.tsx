@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { MoneyInput, NumberInput, PercentInput, PhoneInput, TimeField } from '../components/inputs';
 import { Select, type SelectOption } from '../components/Select';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
@@ -205,11 +206,9 @@ function TextArea({ label, value, help, onChange }: { label: string; value: stri
 }
 
 const eq = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-const clampInt = (v: string, lo: number, hi: number, fallback: number) => {
-  const n = Math.round(Number(v));
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(hi, Math.max(lo, n));
-};
+// Number fields hold null while emptied for retyping; saving is refused until they are back in range.
+const inRange = (v: number | null, lo: number, hi: number) => v != null && Number.isInteger(v) && v >= lo && v <= hi;
+const held = (v: number | null) => v as number;
 
 export default function SettingsPage() {
   const { data, loading, error, reload } = useApi<Settings>('/settings', FALLBACK);
@@ -259,11 +258,25 @@ export default function SettingsPage() {
     }
     if (k === 'report') {
       if (!draft.report.paymentTerms.trim()) e['report.paymentTerms'] = 'Enter when owners are paid, e.g. 7th every month.';
-      if (!(draft.report.miscChargeMonthly >= 0)) e['report.miscChargeMonthly'] = 'Enter RM 0.00 or more.';
+      if (!inRange(draft.report.miscChargeMonthly, 0, 10_000_000)) e['report.miscChargeMonthly'] = 'Enter RM 0.00 or more.';
     }
     if (k === 'locale') {
-      if (draft.locale.managementFeePct < 0 || draft.locale.managementFeePct > 100)
-        e['locale.managementFeePct'] = 'Fee must be between 0 and 100.';
+      const fee = draft.locale.managementFeePct as number | null;
+      if (fee == null || fee < 0 || fee > 100) e['locale.managementFeePct'] = 'Enter a fee from 0 to 100%.';
+    }
+    if (k === 'operations') {
+      if (!inRange(draft.operations.cleaningWindowHours, 1, 24)) e['operations.cleaningWindowHours'] = 'Enter whole hours from 1 to 24.';
+      if (!inRange(draft.operations.linenSets, 1, 10)) e['operations.linenSets'] = 'Enter a whole number from 1 to 10.';
+      if (!draft.operations.checkIn) e['operations.checkIn'] = 'Enter the standard check-in time.';
+      if (!draft.operations.checkOut) e['operations.checkOut'] = 'Enter the standard check-out time.';
+    }
+    if (k === 'approvals') {
+      if (!inRange(draft.approvals.expenseThreshold, 0, 1e12)) e['approvals.expenseThreshold'] = 'Enter RM 0.00 or more.';
+      if (!inRange(draft.approvals.financeAdminLimit, 0, 1e12)) e['approvals.financeAdminLimit'] = 'Enter RM 0.00 or more.';
+    }
+    if (k === 'security') {
+      if (!inRange(draft.security.lockoutAttempts, 3, 10)) e['security.lockoutAttempts'] = 'Enter a whole number from 3 to 10.';
+      if (!inRange(draft.security.lockoutMinutes, 1, 120)) e['security.lockoutMinutes'] = 'Enter whole minutes from 1 to 120.';
     }
     return e;
   }
@@ -338,10 +351,11 @@ export default function SettingsPage() {
               onChange={e => patch('company', { address: e.target.value })}
             />
             <Grid>
-              <Field
+              <PhoneInput
                 label="Support phone"
                 value={draft.company.supportPhone}
-                onChange={e => patch('company', { supportPhone: e.target.value })}
+                error={errors['company.supportPhone']}
+                onChange={v => patch('company', { supportPhone: v }, 'company.supportPhone')}
               />
               <Field
                 label="Support email"
@@ -368,18 +382,12 @@ export default function SettingsPage() {
                 options={TIMEZONES.map(tz => ({ value: tz, label: tz.replace('_', ' ') }))} />
               <SelectField label="Currency" value={draft.locale.currency} onChange={v => patch('locale', { currency: v })} options={CURRENCIES} />
               <SelectField label="Date format" value={draft.locale.dateFormat} onChange={v => patch('locale', { dateFormat: v })} options={DATE_FORMATS} />
-              <Field
+              <PercentInput
                 label="Default management fee"
-                type="number"
-                numeric
-                min={0}
-                max={100}
-                step={0.5}
-                trailing={<span className="text-meta text-muted-ink">%</span>}
                 value={draft.locale.managementFeePct}
                 error={errors['locale.managementFeePct']}
                 help="Applied to new management agreements unless the owner's contract overrides it."
-                onChange={e => patch('locale', { managementFeePct: e.target.value === '' ? 0 : Number(e.target.value) }, 'locale.managementFeePct')}
+                onChange={v => patch('locale', { managementFeePct: held(v) }, 'locale.managementFeePct')}
               />
             </Grid>
           </SectionCard>
@@ -393,38 +401,38 @@ export default function SettingsPage() {
             onSave={() => save('operations')} onDiscard={() => discard('operations')}
           >
             <Grid>
-              <Field
+              <TimeField
                 label="Standard check-in"
-                type="time"
+                required
                 value={draft.operations.checkIn}
-                onChange={e => patch('operations', { checkIn: e.target.value })}
+                error={errors['operations.checkIn']}
+                onChange={v => patch('operations', { checkIn: v }, 'operations.checkIn')}
               />
-              <Field
+              <TimeField
                 label="Standard check-out"
-                type="time"
+                required
                 value={draft.operations.checkOut}
-                onChange={e => patch('operations', { checkOut: e.target.value })}
+                error={errors['operations.checkOut']}
+                onChange={v => patch('operations', { checkOut: v }, 'operations.checkOut')}
               />
-              <Field
+              <NumberInput
                 label="Cleaning window"
-                type="number"
-                numeric
                 min={1}
                 max={24}
-                trailing={<span className="text-meta text-muted-ink">h</span>}
+                suffix="h"
                 value={draft.operations.cleaningWindowHours}
+                error={errors['operations.cleaningWindowHours']}
                 help="Hours a turnover needs before the next check-in. The SLA counts down to it."
-                onChange={e => patch('operations', { cleaningWindowHours: clampInt(e.target.value, 1, 24, draft.operations.cleaningWindowHours) })}
+                onChange={v => patch('operations', { cleaningWindowHours: held(v) }, 'operations.cleaningWindowHours')}
               />
-              <Field
+              <NumberInput
                 label="Linen sets per unit"
-                type="number"
-                numeric
                 min={1}
                 max={10}
                 value={draft.operations.linenSets}
+                error={errors['operations.linenSets']}
                 help="Sets held per unit so a turnover always has fresh linen ready."
-                onChange={e => patch('operations', { linenSets: clampInt(e.target.value, 1, 10, draft.operations.linenSets) })}
+                onChange={v => patch('operations', { linenSets: held(v) }, 'operations.linenSets')}
               />
             </Grid>
             <div className="[border-top:1px_solid_var(--color-line-soft)] pt-4">
@@ -480,16 +488,12 @@ export default function SettingsPage() {
                 help="Printed as TERMS on the monthly page."
                 onChange={e => patch('report', { paymentTerms: e.target.value }, 'report.paymentTerms')}
               />
-              <Field
+              <MoneyInput
                 label="Miscellaneous charge a month (RM)"
-                type="number"
-                numeric
-                min={0}
-                step="0.01"
-                value={draft.report.miscChargeMonthly / 100}
+                valueSen={draft.report.miscChargeMonthly}
                 error={errors['report.miscChargeMonthly']}
                 help="Deducted each month from units whose contract has miscellaneous charges."
-                onChange={e => patch('report', { miscChargeMonthly: Math.max(0, Math.round(Number(e.target.value) * 100) || 0) }, 'report.miscChargeMonthly')}
+                onChangeSen={v => patch('report', { miscChargeMonthly: held(v) }, 'report.miscChargeMonthly')}
               />
             </Grid>
             <TextArea
@@ -514,21 +518,19 @@ export default function SettingsPage() {
             onSave={() => save('approvals')} onDiscard={() => discard('approvals')}
           >
             <Grid>
-              <Field
+              <MoneyInput
                 label="Expenses need approval above (RM)"
-                type="number" numeric min={0} step="0.01"
-                value={draft.approvals.expenseThreshold / 100}
+                valueSen={draft.approvals.expenseThreshold}
                 error={errors['approvals.expenseThreshold']}
                 help="An expense of this amount or less is recorded at once."
-                onChange={e => patch('approvals', { expenseThreshold: Math.max(0, Math.round(Number(e.target.value) * 100) || 0) }, 'approvals.expenseThreshold')}
+                onChangeSen={v => patch('approvals', { expenseThreshold: held(v) }, 'approvals.expenseThreshold')}
               />
-              <Field
+              <MoneyInput
                 label="Finance admins approve below (RM)"
-                type="number" numeric min={0} step="0.01"
-                value={draft.approvals.financeAdminLimit / 100}
+                valueSen={draft.approvals.financeAdminLimit}
                 error={errors['approvals.financeAdminLimit']}
                 help="From this amount up, only management can approve. Management approves any amount."
-                onChange={e => patch('approvals', { financeAdminLimit: Math.max(0, Math.round(Number(e.target.value) * 100) || 0) }, 'approvals.financeAdminLimit')}
+                onChangeSen={v => patch('approvals', { financeAdminLimit: held(v) }, 'approvals.financeAdminLimit')}
               />
             </Grid>
           </SectionCard>
@@ -562,25 +564,23 @@ export default function SettingsPage() {
                 onChange={v => patch('security', { absoluteTimeoutHours: Number(v) })}
                 options={ABSOLUTE.map(o => ({ value: String(o.value), label: o.label }))}
               />
-              <Field
+              <NumberInput
                 label="Lock account after failed attempts"
-                type="number"
-                numeric
                 min={3}
                 max={10}
                 value={draft.security.lockoutAttempts}
-                help={`The account locks for ${draft.security.lockoutMinutes} minutes after this many failed sign-ins.`}
-                onChange={e => patch('security', { lockoutAttempts: clampInt(e.target.value, 3, 10, draft.security.lockoutAttempts) })}
+                error={errors['security.lockoutAttempts']}
+                help={`The account locks for ${draft.security.lockoutMinutes ?? '-'} minutes after this many failed sign-ins.`}
+                onChange={v => patch('security', { lockoutAttempts: held(v) }, 'security.lockoutAttempts')}
               />
-              <Field
+              <NumberInput
                 label="Lockout length (minutes)"
-                type="number"
-                numeric
                 min={1}
                 max={120}
                 value={draft.security.lockoutMinutes}
+                error={errors['security.lockoutMinutes']}
                 help="How long a locked account stays locked before it can try again."
-                onChange={e => patch('security', { lockoutMinutes: clampInt(e.target.value, 1, 120, draft.security.lockoutMinutes) })}
+                onChange={v => patch('security', { lockoutMinutes: held(v) }, 'security.lockoutMinutes')}
               />
             </Grid>
             <fieldset className="m-0 mt-5 p-0 border-none flex flex-col gap-2.5">

@@ -4,6 +4,7 @@ import { findClash, clashResponseBody } from '../_lib/reservations';
 import { resolveUnit } from '../_lib/ops';
 import { syncAvailabilityIfLinked, channexMappingFor } from '../_lib/channexSync';
 import { channexConfigured } from '../_lib/channex';
+import { checkDate, invalid, type Fields } from '../_lib/validate';
 
 const KINDS = ['maintenance', 'owner_stay', 'other'] as const;
 const KIND_LABEL: Record<typeof KINDS[number], string> = { maintenance: 'Maintenance', owner_stay: 'Owner stay', other: 'Blocked' };
@@ -32,6 +33,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   let id: string | null = null;
   if (b.from || b.to) {
     if (!b.from || !b.to) return fail('VALIDATION', 'Give both dates.', 422);
+    const fields: Fields = {};
+    checkDate(fields, 'from', b.from, { label: 'From', required: true });
+    checkDate(fields, 'to', b.to, { label: 'To', required: true });
+    const bad = invalid(fields); if (bad) return bad;
     if (b.to <= b.from) return fail('VALIDATION', 'The end date must be after the start date.', 422, { to: 'Pick a later end date.' });
     const clash = await findClash(env, unit.id, b.from, b.to, null);
     if (clash) return json(clashResponseBody(clash), 409);

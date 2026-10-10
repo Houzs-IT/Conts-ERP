@@ -3,6 +3,7 @@ import { requireSession } from '../../_lib/auth';
 import { syncRateIfLinked } from '../../_lib/channexSync';
 import { queueFullSync } from '../../_lib/channexQueue';
 import type { SalesChannel } from '../../_lib/channelPrice';
+import { checkDate, invalid, type Fields } from '../../_lib/validate';
 
 const CHANNELS = ['web', 'airbnb', 'booking_com', 'agoda'];
 const OTAS = ['airbnb', 'booking_com', 'agoda'];
@@ -69,6 +70,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
 
   const channel = rateChannel(String(b.channel ?? ''));
   if (!b.date || !CHANNELS.includes(channel)) return fail('VALIDATION', 'Unit, channel and date are required.', 422);
+  const fields: Fields = {};
+  checkDate(fields, 'date', b.date, { label: 'Night', required: true });
+  const bad = invalid(fields); if (bad) return bad;
   if (!whole(b.rate)) return fail('VALIDATION', 'The rate must be a whole number of sen.', 422, { rate: 'Enter a valid rate.' });
   await run(env, `
     INSERT INTO channel_rates (unit_id, channel, rate_date, rate, updated_at) VALUES (?, ?, ?, ?, ?)

@@ -3,6 +3,7 @@ import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { Select } from '../../components/Select';
+import { MoneyInput, DateField } from '../../components/inputs';
 import { MoneyText } from '../../components/MoneyText';
 import Icon from '../../components/Icon';
 import { DataTable, type Column } from '../../components/DataTable';
@@ -55,15 +56,15 @@ export function ExpenseEntryModal({ units, defaultUnitId, month, onClose, onSave
   const fileRef = useRef<HTMLInputElement>(null);
   const today = todayMyt();
   const [f, setF] = useState({
-    unitId: defaultUnitId ?? units[0]?.id ?? '', category: 'electricity', amount: '', incurredOn: today.startsWith(month) ? today : lastDayOf(month),
+    unitId: defaultUnitId ?? units[0]?.id ?? '', category: 'electricity', incurredOn: today.startsWith(month) ? today : lastDayOf(month),
     chargeTo: 'owner', description: '',
   });
+  const [amount, setAmount] = useState<number | null>(null);
   const [receipt, setReceipt] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
   const set = (k: keyof typeof f) => (v: string) => setF(s => ({ ...s, [k]: v }));
-  const amount = Math.round(Number(f.amount || 0) * 100);
-  const ok = !!f.unitId && f.amount !== '' && Number.isFinite(Number(f.amount)) && amount >= 0 && /^\d{4}-\d{2}-\d{2}$/.test(f.incurredOn);
+  const ok = !!f.unitId && amount != null && /^\d{4}-\d{2}-\d{2}$/.test(f.incurredOn);
   const payer = PAYERS.find(p => p.value === f.chargeTo);
 
   async function save() {
@@ -97,8 +98,8 @@ export function ExpenseEntryModal({ units, defaultUnitId, month, onClose, onSave
       {units.length > 1 && <Select showLabel size="md" label="Unit" value={f.unitId} onChange={set('unitId')} options={units.map(u => ({ value: u.id, label: titleCase(u.label) }))} />}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Select showLabel size="md" label="Category" value={f.category} onChange={set('category')} options={ENTRY_CATEGORIES} />
-        <Field label="Amount (RM)" type="number" min={0} step="0.01" numeric placeholder="e.g. 120.50" value={f.amount} onChange={e => set('amount')(e.target.value)} error={fields.amount} />
-        <Field label="Date" type="date" value={f.incurredOn} onChange={e => set('incurredOn')(e.target.value)} error={fields.incurredOn} />
+        <MoneyInput label="Amount (RM)" placeholder="e.g. 120.50" valueSen={amount} onChangeSen={setAmount} error={fields.amount} />
+        <DateField label="Date" value={f.incurredOn} onChange={set('incurredOn')} error={fields.incurredOn} />
         <Select showLabel size="md" label="Paid by" value={f.chargeTo} onChange={set('chargeTo')} options={PAYERS.map(p => ({ value: p.value, label: p.label }))} />
       </div>
       {payer && <p className="m-0 -mt-1 text-meta text-muted-ink">{payer.help}</p>}
@@ -124,19 +125,19 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
   const [month, setMonth] = useState(initial);
   const scope = ownerId ? `&ownerId=${encodeURIComponent(ownerId)}` : unitId ? `&unitId=${encodeURIComponent(unitId)}` : '';
   const { data, loading, error } = useApi<{ data: UtilityRow[] }>(`/expenses/utilities?month=${month}${scope}`);
-  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [amounts, setAmounts] = useState<Record<string, number | null>>({});
   const [payers, setPayers] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   useEffect(() => { setAmounts({}); setPayers({}); }, [month]);
   const rows = data?.data ?? [];
-  const value = (r: UtilityRow) => amounts[r.accountId] ?? (r.amount != null && !r.recordedElsewhere ? (r.amount / 100).toFixed(2) : '');
-  const entered = rows.filter(r => !r.recordedElsewhere && value(r) !== '' && Number(value(r)) > 0);
+  const value = (r: UtilityRow): number | null => r.accountId in amounts ? amounts[r.accountId] : (r.amount != null && !r.recordedElsewhere ? r.amount : null);
+  const entered = rows.filter(r => !r.recordedElsewhere && (value(r) ?? 0) > 0);
 
   async function save() {
     setBusy(true);
     try {
       const r = await api.post<{ saved: number; locked: string[]; recordedElsewhere: string[] }>('/expenses/utilities', {
-        month, rows: entered.map(x => ({ accountId: x.accountId, amount: Math.round(Number(value(x)) * 100), chargeTo: payers[x.accountId] ?? x.chargeTo ?? 'owner' })),
+        month, rows: entered.map(x => ({ accountId: x.accountId, amount: value(x), chargeTo: payers[x.accountId] ?? x.chargeTo ?? 'owner' })),
       });
       const skipped = r.locked.length + r.recordedElsewhere.length;
       toast({ tone: skipped ? 'warning' : 'success', title: `${r.saved} ${r.saved === 1 ? 'bill' : 'bills'} recorded for ${monthLabel(month)}.`,
@@ -171,8 +172,8 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
                 {r.recordedElsewhere ? (
                   <MoneyText sen={r.amount ?? 0} mode="exact" tone="muted" className="text-copy text-right" />
                 ) : (
-                  <input aria-label={`${r.kindLabel} ${r.accountNo} amount in ringgit`} type="number" min={0} step="0.01" inputMode="decimal" placeholder="0.00"
-                    value={value(r)} onChange={e => setAmounts(a => ({ ...a, [r.accountId]: e.target.value }))} className="field-input h-[38px]! min-w-0 text-right tabular-nums" />
+                  <MoneyInput aria-label={`${r.kindLabel} ${r.accountNo} amount in ringgit`}
+                    valueSen={value(r)} onChangeSen={sen => setAmounts(a => ({ ...a, [r.accountId]: sen }))} className="field-input h-[38px]! min-w-0 text-right tabular-nums" />
                 )}
                 <div className="col-span-2 sm:col-span-1">
                   {!r.recordedElsewhere && <Select size="sm" label={`Who pays ${r.kindLabel} ${r.accountNo}`} className="w-full" value={payers[r.accountId] ?? r.chargeTo ?? 'owner'}

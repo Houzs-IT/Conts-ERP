@@ -1,6 +1,6 @@
 /** Purchase Consignment Orders, ported from 2990's SCM. Same shape as a purchase order,
  *  for consigned stock. Reuses the PO status set + line helpers. Money integer sen. */
-export { PO_STATUSES as PC_STATUSES, isPoStatus as isPcStatus, normalizeLines, computeTotals } from './purchase-orders';
+export { PO_STATUSES as PC_STATUSES, isPoStatus as isPcStatus, normalizeLines, computeTotals, checkPricedBody } from './purchase-orders';
 
 export interface PcHeaderRow {
   id: string; pc_number: string; supplier_id: string; status: string; pc_date: string; expected_at: string | null;

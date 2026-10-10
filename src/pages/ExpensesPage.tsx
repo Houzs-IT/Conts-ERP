@@ -15,6 +15,7 @@ import { fetchAllPages } from '../lib/export';
 import { MoneyText, moneyString } from '../components/MoneyText';
 import { Select, SearchSelect, type SelectOption } from '../components/Select';
 import { EmptyState } from '../components/States';
+import { MoneyInput, DateField } from '../components/inputs';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
@@ -83,15 +84,10 @@ const SORT_PARAM: Record<string, Sort> = {
   'date:desc': 'date', 'date:asc': 'date_asc', 'amount:desc': 'amount', 'amount:asc': 'amount_asc', 'unit:asc': 'unit', 'unit:desc': 'unit_desc',
 };
 
-const toSen = (s: string): number | null => {
-  const n = parseFloat(s.replace(/[^0-9.]/g, ''));
-  return Number.isFinite(n) ? Math.round(n * 100) : null;
-};
 const thisMonth = () => todayMyt().slice(0, 7);
 
 // Text inputs match the Select controls beside them (13px copy). Preflight is off in
 // this project, so borders carry border-solid.
-const field = 'block w-full box-border h-10 px-3 py-0 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy font-normal';
 const fieldMono = 'block w-full box-border h-10 px-3 py-0 border border-solid border-line rounded-control outline-none bg-card text-ink font-mono text-copy font-normal';
 const labelClass = 'text-meta font-medium text-muted-ink';
 
@@ -159,9 +155,11 @@ export default function ExpensesPage() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
   const [reporting, setReporting] = useState(false);
+  const [formFields, setFormFields] = useState<Record<string, string>>({});
 
   async function createExpense(input: { unitId: string; category: Category; amount: number; incurredOn: string; reference: string; description: string }) {
     try {
+      setFormFields({});
       const res = await api.post<unknown>('/expenses', input);
       setCreating(false);
       // Above the approval threshold it waits for a second person and is not on the list yet.
@@ -169,12 +167,14 @@ export default function ExpensesPage() {
       toast({ tone: 'success', title: 'Expense added.', body: `${catLabel(input.category)} · ${moneyString(input.amount, 'exact')} on ${dateShort(input.incurredOn)}.` });
       refresh();
     } catch (e) {
+      if (e instanceof ApiFailure && e.fields) setFormFields(e.fields);
       toast({ tone: 'critical', title: 'Expense was not added.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
 
   async function saveEdit(id: string, delta: Partial<Expense>) {
     try {
+      setFormFields({});
       const res = await api.patch<unknown>(`/expenses/${id}`, delta);
       if (isStaged(res)) { setEditing(null); toast(stagedToast(res)); void refreshNavCounts(); return; }
       setEdits(e => ({ ...e, [id]: { ...e[id], ...delta } }));
@@ -182,6 +182,7 @@ export default function ExpensesPage() {
       toast({ tone: 'success', title: 'Expense updated.', body: 'The change lands on this period’s statement.' });
       refresh();
     } catch (e) {
+      if (e instanceof ApiFailure && e.fields) setFormFields(e.fields);
       const locked = e instanceof ApiFailure && e.status === 409;
       toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'That period is locked.' : 'Expense was not updated.', body: errorMessage(e, 'Try again in a moment.') });
     }
@@ -339,7 +340,7 @@ export default function ExpensesPage() {
         </ListCard>
       )}
 
-      {creating && <ExpenseModal mode="create" filters={filters} defaultBuilding={building} defaultUnit={unit} onClose={() => setCreating(false)} onSubmit={createExpense} />}
+      {creating && <ExpenseModal mode="create" fieldErrors={formFields} filters={filters} defaultBuilding={building} defaultUnit={unit} onClose={() => { setCreating(false); setFormFields({}); }} onSubmit={createExpense} />}
       {editing && (
         <ExpenseModal
           mode="edit"
@@ -347,7 +348,8 @@ export default function ExpensesPage() {
           filters={filters}
           locked={!!editing.locked}
           lockReason={`The ${monthLabel(editing.incurredOn.slice(0, 7))} statement is final, so this expense can no longer be edited.`}
-          onClose={() => setEditing(null)}
+          fieldErrors={formFields}
+          onClose={() => { setEditing(null); setFormFields({}); }}
           onSave={delta => saveEdit(editing.id, delta)}
         />
       )}
@@ -557,7 +559,8 @@ function LabeledField({ label, children }: { label: string; children: ReactNode 
 
 // ---- Add / edit expense ----------------------------------------------------
 
-function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, locked, lockReason, onClose, onSubmit, onSave }: {
+function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, locked, lockReason, fieldErrors = {}, onClose, onSubmit, onSave }: {
+  fieldErrors?: Record<string, string>;
   mode: 'create' | 'edit';
   expense?: Expense;
   filters?: FinanceFilters | null;
@@ -573,13 +576,12 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
   const [buildingId, setBuildingId] = useState(startUnit?.buildingId ?? defaultBuilding ?? '');
   const [unitId, setUnitId] = useState(startUnit?.id ?? '');
   const [category, setCategory] = useState<Category>(expense?.category ?? 'internet');
-  const [amount, setAmount] = useState(expense ? (expense.amount / 100).toFixed(2) : '');
+  const [sen, setSen] = useState<number | null>(expense ? expense.amount : null);
   const [incurredOn, setIncurredOn] = useState(expense?.incurredOn ?? todayMyt());
   const [reference, setReference] = useState(expense?.reference ?? '');
   const [description, setDescription] = useState(expense?.description ?? '');
   const [busy, setBusy] = useState(false);
 
-  const sen = toSen(amount);
   const readOnly = mode === 'edit' && !!locked;
   // A new deduction needs a reference so the statement line can be traced. Imported
   // expenses arrived without one, so an edit does not insist on it.
@@ -645,13 +647,10 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
         <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
           <Select showLabel size="md" label="Category" disabled={readOnly} value={category} onChange={v => setCategory(v as Category)}
             options={catOptions.map(c => ({ value: c, label: catLabel(c) }))} />
-          <LabeledField label="Amount (RM)">
-            <input inputMode="decimal" disabled={readOnly} value={amount} onChange={e => setAmount(e.target.value)} placeholder="185.00"
-              className={cx(field, 'text-right tabular-nums')} />
-          </LabeledField>
+          <MoneyInput label="Amount (RM)" disabled={readOnly} valueSen={sen} onChangeSen={setSen} placeholder="185.00" error={fieldErrors.amount} />
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
-          <LabeledField label="Date"><input type="date" required disabled={readOnly} value={incurredOn} onChange={e => setIncurredOn(e.target.value)} className={field} /></LabeledField>
+          <DateField label="Date" required disabled={readOnly} value={incurredOn} onChange={setIncurredOn} error={fieldErrors.incurredOn} />
           <LabeledField label={needsRef ? 'Reference' : 'Reference (optional)'}><input required={needsRef} disabled={readOnly} value={reference} onChange={e => setReference(e.target.value)} placeholder="INV-2026-0912" className={fieldMono} /></LabeledField>
         </div>
         <LabeledField label="Description">

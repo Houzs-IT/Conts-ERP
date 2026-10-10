@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
+import { NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
@@ -85,7 +86,7 @@ function VehicleDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onC
           <Field label="Code" placeholder="e.g. LRY-01" value={f.code} onChange={set('code')} />
           <Field label="Plate" value={f.plate} onChange={set('plate')} />
           <Field label="Type" placeholder="e.g. 3-tonne lorry" value={f.vehicleType} onChange={set('vehicleType')} />
-          <Field label="Capacity (m³)" type="number" numeric step="0.1" value={f.capacityM3Milli ? String(f.capacityM3Milli / 1000) : ''} onChange={e => setF(s => ({ ...s, capacityM3Milli: e.target.value.trim() ? Math.round(Number(e.target.value) * 1000) : 0 }))} />
+          <NumberInput label="Capacity (m³)" min={0} decimals={3} value={f.capacityM3Milli ? f.capacityM3Milli / 1000 : null} onChange={n => setF(s => ({ ...s, capacityM3Milli: n == null ? 0 : Math.round(n * 1000) }))} />
           <div className="flex flex-col gap-[7px]">
             <label className="text-[12px] font-medium text-muted-ink">Status</label>
             <select value={f.active ? '1' : '0'} onChange={e => setF(s => ({ ...s, active: e.target.value === '1' }))} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">

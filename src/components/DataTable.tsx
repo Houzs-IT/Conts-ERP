@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import Icon from './Icon';
 import { Button } from './Button';
 import { Field } from './Field';
+import { DateField, MoneyInput, NumberInput, parseScaled, formatScaled } from './inputs';
 import { EmptyState } from './States';
 import { StaleBanner, TableSkeleton } from './DataState';
 import { PageControls } from './PageControls';
@@ -923,6 +924,13 @@ function TextFilter({ value, onChange, onDone, autoFocus, label }: { value: stri
   );
 }
 
+/** One end of a range filter. The filter keeps its value as text ("12.30", "2026-10-01") so saved views stay readable. */
+function RangeEnd({ kind, money, label, value, onChange, min, error }: { kind: 'date' | 'number'; money: boolean; label: string; value: string; onChange: (v: string) => void; min?: string; error?: string }) {
+  if (kind === 'date') return <DateField label={label} value={value} min={min} error={error} onChange={onChange} />;
+  if (money) return <MoneyInput label={label} allowNegative error={error} valueSen={parseScaled(value, 2)} onChangeSen={v => onChange(v == null ? '' : formatScaled(v, 2, { grouping: false, fixed: false }))} />;
+  return <NumberInput label={label} decimals={3} allowNegative error={error} value={value.trim() === '' || !Number.isFinite(Number(value)) ? null : Number(value)} onChange={v => onChange(v == null ? '' : String(v))} />;
+}
+
 function RangeFilter({ kind, money, hint, value, onChange, onDone }: { kind: 'date' | 'number'; money: boolean; hint?: string; value: string; onChange: (v: string) => void; onDone?: () => void }) {
   const [a0, b0] = splitRange(value);
   const [a, setA] = useState(a0), [b, setB] = useState(b0);
@@ -933,8 +941,8 @@ function RangeFilter({ kind, money, hint, value, onChange, onDone }: { kind: 'da
     <form className="flex flex-col gap-2" onSubmit={e => { e.preventDefault(); if (!bad) { onChange(a || b ? `${a}~${b}` : ''); onDone?.(); } }}>
       {hint && <span className="text-caption text-muted-ink">{hint}</span>}
       <div className="grid grid-cols-2 gap-2">
-        <Field label={kind === 'date' ? 'From' : `At least${unit}`} type={kind === 'date' ? 'date' : 'number'} value={a} onChange={e => setA(e.target.value)} step={money ? '0.01' : undefined} numeric={kind === 'number'} />
-        <Field label={kind === 'date' ? 'To' : `At most${unit}`} type={kind === 'date' ? 'date' : 'number'} value={b} onChange={e => setB(e.target.value)} step={money ? '0.01' : undefined} numeric={kind === 'number'}
+        <RangeEnd kind={kind} money={money} label={kind === 'date' ? 'From' : `At least${unit}`} value={a} onChange={setA} />
+        <RangeEnd kind={kind} money={money} label={kind === 'date' ? 'To' : `At most${unit}`} value={b} onChange={setB}
           min={kind === 'date' ? a || undefined : undefined} error={bad ? (kind === 'date' ? 'Before the start.' : 'Below the minimum.') : undefined} />
       </div>
       <div className="flex justify-between gap-2">

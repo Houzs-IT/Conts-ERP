@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { isAmendStatus, isAmendAction, nextAmendmentNumber, toAmendHeaderPayload, type AmendHeaderRow } from '../../_lib/so-amendments';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
+import { checkSen, checkInt, invalid, type Fields } from '../../_lib/validate';
 
 const LIST_SQL = `
   SELECT a.id, a.amendment_no, a.sales_order_id, a.so_doc_no, a.status, a.reason, a.requested_by, a.applied_at, a.created_at, a.updated_at,
@@ -31,6 +32,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can raise amendments.', 403);
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  if (Array.isArray(b.lines)) (b.lines as Record<string, unknown>[]).forEach((l, i) => {
+    checkInt(fields, `lines.${i}.newQty`, l?.newQty, { label: 'New quantity', min: 0 });
+    checkSen(fields, `lines.${i}.newUnitPriceSen`, l?.newUnitPriceSen, { label: 'New price' });
+  });
+  const bad = invalid(fields); if (bad) return bad;
   const soId = String(b.salesOrderId ?? '').trim();
   const so = await one<{ id: string; doc_no: string; status: string }>(env, 'SELECT id, doc_no, status FROM sales_orders WHERE id = ?', soId);
   if (!so) return fail('VALIDATION', 'Pick a sales order.', 422, { salesOrderId: 'Unknown sales order.' });

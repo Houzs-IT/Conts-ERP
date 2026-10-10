@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { isPcStatus, normalizeLines, computeTotals, toPcHeaderPayload, type PcHeaderRow } from '../../_lib/purchase-consignment';
+import { isPcStatus, normalizeLines, computeTotals, toPcHeaderPayload, checkPricedBody, type PcHeaderRow } from '../../_lib/purchase-consignment';
+import { invalid, type Fields } from '../../_lib/validate';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
 const today = () => nowIso().slice(0, 10);
@@ -41,6 +42,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can raise consignment orders.', 403);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkPricedBody(fields, b, 'pcDate', 'PC date');
+  const bad = invalid(fields); if (bad) return bad;
   const supplierId = String(b.supplierId ?? '').trim();
   if (!supplierId || !await one(env, 'SELECT 1 AS x FROM suppliers WHERE id = ?', supplierId)) return fail('VALIDATION', 'Pick a supplier.', 422, { supplierId: 'Unknown supplier.' });
   const lines = normalizeLines(b.lines);

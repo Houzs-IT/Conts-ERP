@@ -3,6 +3,7 @@ import { requireSession } from '../../_lib/auth';
 import { nextVoucherNumber, toPvHeaderPayload, PV_METHODS, type PvHeaderRow } from '../../_lib/payment-vouchers';
 import { recomputePiStatus } from '../../_lib/purchase-invoices';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
+import { checkDate, checkSen, invalid, type Fields } from '../../_lib/validate';
 
 const LIST_SQL = `
   SELECT pv.id, pv.voucher_number, pv.supplier_id, pv.payment_date, pv.method, pv.reference, pv.amount_sen, pv.notes,
@@ -35,6 +36,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can record payments.', 403);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkDate(fields, 'paymentDate', b.paymentDate, { label: 'Payment date' });
+  if (Array.isArray(b.allocations)) (b.allocations as Record<string, unknown>[]).forEach((a, i) => {
+    checkSen(fields, `allocations.${i}.amountSen`, a?.amountSen, { label: 'Payment amount' });
+  });
+  const bad = invalid(fields); if (bad) return bad;
   const supplierId = String(b.supplierId ?? '').trim();
   if (!supplierId || !await one(env, 'SELECT 1 AS x FROM suppliers WHERE id = ?', supplierId)) return fail('VALIDATION', 'Pick a supplier.', 422, { supplierId: 'Unknown supplier.' });
 

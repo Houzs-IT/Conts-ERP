@@ -1,6 +1,7 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { invalidResRule, toResRulePayload, type ResRuleRow } from '../../_lib/residence-rules';
+import { checkInt, invalid, type Fields } from '../../_lib/validate';
 import { strOrNull, intOrNull, flag } from '../../_lib/scm-util';
 
 const COLS = 'id, building_type, service_duration_minutes, earliest_delivery_time, latest_delivery_time, requires_lift_booking, requires_registration, notes, is_active';
@@ -24,6 +25,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     const bad = invalidResRule({ buildingType: b.buildingType ?? 'x', earliestDeliveryTime: b.earliestDeliveryTime, latestDeliveryTime: b.latestDeliveryTime });
     if (bad && bad.field !== 'buildingType') return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
   }
+  const fields: Fields = {};
+  checkInt(fields, 'serviceDurationMinutes', b.serviceDurationMinutes, { label: 'Service duration', min: 0 });
+  const badNum = invalid(fields); if (badNum) return badNum;
   const sets: string[] = []; const args: unknown[] = [];
   if (b.buildingType !== undefined) { const t = String(b.buildingType).trim(); if (!t) return fail('VALIDATION', 'Enter a building type.', 422, { buildingType: 'Enter a building type.' }); if (await one(env, 'SELECT 1 AS x FROM delivery_residence_rules WHERE lower(building_type)=lower(?) AND id<>?', t, id)) return fail('CONFLICT', 'A rule for that building type already exists.', 409, { buildingType: 'This building type already has a rule.' }); sets.push('building_type = ?'); args.push(t); }
   if (b.serviceDurationMinutes !== undefined) { sets.push('service_duration_minutes = ?'); args.push(Math.max(0, intOrNull(b.serviceDurationMinutes) ?? 0)); }

@@ -6,6 +6,7 @@ import { todayMyt } from '../../_lib/ops';
 import { loadInputs, computeMonth, statementSettings, type Query, type UnitRow } from '../../_lib/ownerStatement';
 import { contractView } from '../../_lib/unitContract';
 import { monthEndExclusive } from '../../_lib/revenue';
+import { checkPhone } from '../../_lib/validate';
 
 const READ_ROLES = [...MASTER_ROLES, 'operations_staff'];
 /** Last four characters, ignoring spaces and dashes ("680606-08-5101" -> "5101"). */
@@ -97,6 +98,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const fields: Record<string, string> = {};
   if (!b?.displayName?.trim()) fields.displayName = 'Enter the owner name.';
   if (b?.email && !String(b.email).includes('@')) fields.email = 'Enter a valid email address.';
+  checkPhone(fields, 'phone', b?.phone);
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the owner details.', 422, fields);
   if (b.email && await one(env, 'SELECT 1 AS x FROM owners WHERE lower(email) = lower(?)', b.email.trim())) return fail('DUPLICATE', 'An owner already uses that email address.', 409, { email: 'Already in use.' });
 

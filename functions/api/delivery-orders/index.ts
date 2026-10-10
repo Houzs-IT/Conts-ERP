@@ -3,6 +3,7 @@ import { requireSession } from '../../_lib/auth';
 import { isDoStatus, nextDoNumber, maybeMarkSoDelivered, toDoHeaderPayload, type DoHeaderRow } from '../../_lib/delivery-orders';
 import { postStockMovement, stockShortages, shortageText } from '../../_lib/stock-ops';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
+import { checkSen, checkInt, checkDate, invalid, type Fields } from '../../_lib/validate';
 
 const LIST_SQL = `
   SELECT d.id, d.do_number, d.sales_order_id, d.customer_name, d.do_date, d.expected_delivery_at, d.status,
@@ -36,6 +37,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can raise delivery orders.', 403);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkDate(fields, 'doDate', b.doDate, { label: 'DO date' });
+  // The column is a timestamp; only a bare date is checked here, a full timestamp passes through as before.
+  if (!(typeof b.expectedDeliveryAt === 'string' && b.expectedDeliveryAt.includes('T'))) checkDate(fields, 'expectedDeliveryAt', b.expectedDeliveryAt, { label: 'Expected delivery' });
+  if (Array.isArray(b.lines)) (b.lines as Record<string, unknown>[]).forEach((l, i) => {
+    checkInt(fields, `lines.${i}.qty`, l?.qty, { label: 'Deliver quantity', min: 0 });
+    checkSen(fields, `lines.${i}.unitPriceSen`, l?.unitPriceSen, { label: 'Unit price' });
+  });
+  const bad = invalid(fields); if (bad) return bad;
   const soId = String(b.salesOrderId ?? '').trim();
   const so = await one<{ id: string; customer_name: string; status: string }>(env, 'SELECT id, customer_name, status FROM sales_orders WHERE id = ?', soId);
   if (!so) return fail('VALIDATION', 'Pick a sales order.', 422, { salesOrderId: 'Unknown sales order.' });

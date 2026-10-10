@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
+import { MoneyInput, NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
@@ -50,9 +51,6 @@ const SUP_FALLBACK = { data: [
   { id: 's3', code: 'SUP-NORDIC', name: 'Nordic Woodcraft' }, { id: 's4', code: 'SUP-TEXTILE', name: 'KL Textile & Carpet Co' },
 ] };
 const WH_FALLBACK = { data: [{ id: 'w1', code: 'WH-MAIN', name: 'Main Warehouse' }, { id: 'w2', code: 'WH-KL', name: 'KL Transit Hub' }] };
-
-const senToRm = (sen: number) => (sen ? String(sen / 100) : '');
-const rmToSen = (v: string) => { const n = Number(v); return v.trim() && Number.isFinite(n) ? Math.round(n * 100) : 0; };
 
 export default function PurchaseOrdersPage() {
   const { data, loading, error, reload } = useApi<Payload>('/purchase-orders', FALLBACK);
@@ -172,10 +170,11 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 
 /* ---------- editor / viewer drawer ---------- */
 
-interface DraftLine { itemCode: string; description: string; uom: string; qty: string; unitPrice: string; discount: string }
-const toDraftLine = (l: Line): DraftLine => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qty: String(l.qty), unitPrice: senToRm(l.unitPriceSen), discount: senToRm(l.discountSen) });
-const blankLine = (): DraftLine => ({ itemCode: '', description: '', uom: 'UNIT', qty: '1', unitPrice: '', discount: '' });
-const lineTotal = (l: DraftLine) => Math.max(0, (Number(l.qty) || 0) * rmToSen(l.unitPrice) - rmToSen(l.discount));
+interface DraftLine { itemCode: string; description: string; uom: string; qty: number | null; unitPriceSen: number | null; discountSen: number | null }
+const toDraftLine = (l: Line): DraftLine => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qty: l.qty, unitPriceSen: l.unitPriceSen || null, discountSen: l.discountSen || null });
+const blankLine = (): DraftLine => ({ itemCode: '', description: '', uom: 'UNIT', qty: 1, unitPriceSen: null, discountSen: null });
+const lineTotal = (l: DraftLine) => Math.max(0, (l.qty ?? 0) * (l.unitPriceSen ?? 0) - (l.discountSen ?? 0));
+const isKept = (l: DraftLine) => !!(l.itemCode.trim() && l.description.trim());
 
 function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreate, onSave, onCancelPo }: {
   po: Po; isNew: boolean; suppliers: Opt[]; warehouses: Opt[]; canWrite: boolean;
@@ -185,14 +184,18 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
   const [h, setH] = useState<Po>(po);
   const [lines, setLines] = useState<DraftLine[]>((po.lines ?? []).map(toDraftLine));
   const setHf = <K extends keyof Po>(k: K) => (e: { target: { value: string } }) => setH(s => ({ ...s, [k]: e.target.value as Po[K] }));
-  const setLine = (i: number, k: keyof DraftLine, v: string) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
+  const setLine = <K extends keyof DraftLine>(i: number, k: K, v: DraftLine[K]) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
+  const [tried, setTried] = useState(false);
+  const qtyError = (l: DraftLine) => (tried && isKept(l) && l.qty == null ? 'Required.' : undefined);
 
   const subtotal = lines.reduce((s, l) => s + lineTotal(l), 0);
   const total = subtotal + Math.max(0, h.taxSen);
-  const built = (): Line[] => lines.filter(l => l.itemCode.trim() && l.description.trim()).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), uom: l.uom.trim() || 'UNIT', qty: Number(l.qty) || 0, unitPriceSen: rmToSen(l.unitPrice), discountSen: rmToSen(l.discount), lineTotalSen: lineTotal(l) }));
+  const built = (): Line[] => lines.filter(isKept).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), uom: l.uom.trim() || 'UNIT', qty: l.qty ?? 0, unitPriceSen: l.unitPriceSen ?? 0, discountSen: l.discountSen ?? 0, lineTotalSen: lineTotal(l) }));
   const canSave = h.supplierId !== '' && built().length > 0;
 
   function submit() {
+    setTried(true);
+    if (lines.some(l => isKept(l) && l.qty == null)) return;
     const l = built();
     const next = { ...h, ...totalsOf(l, h.taxSen) };
     isNew ? onCreate(next, l) : onSave(next, l);
@@ -218,8 +221,8 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
               {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
-          <Field label="PO date" type="date" value={h.poDate} onChange={setHf('poDate')} disabled={!editable} />
-          <Field label="Expected" type="date" value={h.expectedAt} onChange={setHf('expectedAt')} disabled={!editable} />
+          <DateField label="PO date" value={h.poDate} onChange={v => setH(s => ({ ...s, poDate: v }))} disabled={!editable} />
+          <DateField label="Expected" value={h.expectedAt} min={h.poDate || undefined} onChange={v => setH(s => ({ ...s, expectedAt: v }))} disabled={!editable} />
           <div className="flex flex-col gap-[7px]">
             <label className="text-[12px] font-medium text-muted-ink">Warehouse</label>
             <select value={h.warehouseId} disabled={!editable} onChange={setHf('warehouseId')}
@@ -246,9 +249,9 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
                     <td className="p-1.5"><CellInput value={l.itemCode} onChange={v => setLine(i, 'itemCode', v)} disabled={!editable} w="130px" /></td>
                     <td className="p-1.5"><CellInput value={l.description} onChange={v => setLine(i, 'description', v)} disabled={!editable} w="100%" /></td>
                     <td className="p-1.5"><CellInput value={l.uom} onChange={v => setLine(i, 'uom', v)} disabled={!editable} w="70px" /></td>
-                    <td className="p-1.5"><CellInput value={l.qty} onChange={v => setLine(i, 'qty', v)} disabled={!editable} w="64px" right num /></td>
-                    <td className="p-1.5"><CellInput value={l.unitPrice} onChange={v => setLine(i, 'unitPrice', v)} disabled={!editable} w="96px" right num /></td>
-                    <td className="p-1.5"><CellInput value={l.discount} onChange={v => setLine(i, 'discount', v)} disabled={!editable} w="90px" right num /></td>
+                    <td className="p-1.5"><NumberInput aria-label="Quantity" value={l.qty} onChange={v => setLine(i, 'qty', v)} min={0} error={qtyError(l)} disabled={!editable} className={CELL} style={{ width: '64px' }} /></td>
+                    <td className="p-1.5"><MoneyInput aria-label="Unit price" valueSen={l.unitPriceSen} onChangeSen={v => setLine(i, 'unitPriceSen', v)} disabled={!editable} className={CELL} style={{ width: '96px' }} /></td>
+                    <td className="p-1.5"><MoneyInput aria-label="Discount" valueSen={l.discountSen} onChangeSen={v => setLine(i, 'discountSen', v)} disabled={!editable} className={CELL} style={{ width: '90px' }} /></td>
                     <td className="p-1.5 text-right tabular-nums text-[13px] whitespace-nowrap">{rm(lineTotal(l))}</td>
                     <td className="p-1.5 text-center">{editable && <button onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} aria-label="Remove line" className="text-muted-ink hover:text-danger bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button>}</td>
                   </tr>
@@ -265,7 +268,7 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
           <div className="flex flex-col gap-1.5 items-end justify-end">
             <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Subtotal</span><span className="tabular-nums w-[110px] text-right">{rm(subtotal)}</span></div>
             <div className="flex gap-8 text-[13px] items-center"><span className="text-muted-ink">Tax</span>
-              <input type="number" step="0.01" disabled={!editable} value={senToRm(h.taxSen)} onChange={e => setH(s => ({ ...s, taxSen: rmToSen(e.target.value) }))}
+              <MoneyInput aria-label="Tax" disabled={!editable} valueSen={h.taxSen || null} onChangeSen={v => setH(s => ({ ...s, taxSen: v ?? 0 }))}
                 className="h-8 w-[110px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-70" /></div>
             <div className="flex gap-8 text-[15px] font-semibold"><span>Total</span><span className="tabular-nums w-[110px] text-right">{rm(total)}</span></div>
           </div>
@@ -284,10 +287,8 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
   );
 }
 
-function CellInput({ value, onChange, disabled, w, right, num }: { value: string; onChange: (v: string) => void; disabled?: boolean; w: string; right?: boolean; num?: boolean }) {
-  return (
-    <input value={value} disabled={disabled} type={num ? 'number' : 'text'} step={num ? '0.01' : undefined} onChange={e => onChange(e.target.value)}
-      style={{ width: w }}
-      className={cx('h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-70 disabled:bg-transparent disabled:border-transparent', right ? 'text-right tabular-nums' : '')} />
-  );
+const CELL = 'h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-70 disabled:bg-transparent disabled:border-transparent';
+
+function CellInput({ value, onChange, disabled, w }: { value: string; onChange: (v: string) => void; disabled?: boolean; w: string }) {
+  return <input value={value} disabled={disabled} onChange={e => onChange(e.target.value)} style={{ width: w }} className={CELL} />;
 }

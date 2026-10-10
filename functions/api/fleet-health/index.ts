@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { invalidFleetRecord, isFleetRecordType, toFleetRecordPayload, type FleetRecordRow } from '../../_lib/fleet-maintenance';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
+import { checkSen, checkInt, checkDate, invalid, type Fields } from '../../_lib/validate';
 
 const LIST_SQL = `
   SELECT r.id, r.vehicle_id, r.record_type, r.service_date, r.odometer_km, r.cost_sen, r.next_due_date, r.next_due_km,
@@ -32,6 +33,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const bad = invalidFleetRecord(b);
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
+  const fields: Fields = {};
+  checkDate(fields, 'serviceDate', b.serviceDate, { label: 'Service date', required: true });
+  checkInt(fields, 'odometerKm', b.odometerKm, { label: 'Odometer', min: 0 });
+  checkSen(fields, 'costSen', b.costSen, { label: 'Cost' });
+  checkDate(fields, 'nextDueDate', b.nextDueDate, { label: 'Next due date' });
+  checkInt(fields, 'nextDueKm', b.nextDueKm, { label: 'Next due (km)', min: 0 });
+  const badField = invalid(fields); if (badField) return badField;
   const vehicleId = (b.vehicleId as string).trim();
   if (!await one(env, 'SELECT 1 AS x FROM vehicles WHERE id = ?', vehicleId)) return fail('VALIDATION', 'Unknown vehicle.', 422, { vehicleId: 'Unknown vehicle.' });
   const id = genId('fmr');

@@ -1,5 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
+import { checkSen, invalid, type Fields } from '../../../_lib/validate';
 
 /** POST /api/statements/:id/adjust { label, amount }
  *  Records a manual adjustment line on a statement and rebalances the net payout.
@@ -23,6 +24,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const amount = Math.round(Number(b?.amount));
   if (!label) return fail('VALIDATION', 'Describe the adjustment so it is clear on the statement.', 422, { label: 'Required.' });
   if (!Number.isFinite(amount) || amount === 0) return fail('VALIDATION', 'Enter an amount that is not zero.', 422, { amount: 'Enter a non-zero amount.' });
+  const fields: Fields = {};
+  checkSen(fields, 'amount', b?.amount, { label: 'Amount', required: true, min: Number.MIN_SAFE_INTEGER });
+  const bad = invalid(fields); if (bad) return bad;
 
   const st = await one<any>(env, 'SELECT id, state, gross_booking_value, management_fee, expenses_total, adjustments_total, net_payout FROM owner_statements WHERE id = ?', id);
   if (!st) return fail('NOT_FOUND', 'That statement no longer exists.', 404);

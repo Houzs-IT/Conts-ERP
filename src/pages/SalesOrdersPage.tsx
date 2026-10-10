@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
+import { MoneyInput, NumberInput, PhoneInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
@@ -37,9 +38,6 @@ const FALLBACK: Payload = {
     { id: 'so2', docNo: 'SO-2026-0002', customerName: 'Arcoris Owner', customerPhone: '+60198887766', customerPo: '', soDate: '2026-09-12', targetDate: '2026-09-30', status: 'DELIVERED', subtotalSen: 420000, taxSen: 0, totalSen: 420000, depositSen: 420000, paidSen: 420000, outstandingSen: 0, notes: '', lines: [{ itemCode: 'MT-KG-HIL', description: 'Hilton Mattress, King', uom: 'UNIT', qty: 1, unitPriceSen: 420000, discountSen: 0, lineTotalSen: 420000 }] },
   ],
 };
-
-const senToRm = (sen: number) => (sen ? String(sen / 100) : '');
-const rmToSen = (v: string) => { const n = Number(v); return v.trim() && Number.isFinite(n) ? Math.round(n * 100) : 0; };
 
 export default function SalesOrdersPage() {
   const { data, loading, error, reload } = useApi<Payload>('/sales-orders', FALLBACK);
@@ -121,10 +119,12 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
 }
 
-interface DraftLine { itemCode: string; description: string; uom: string; qty: string; unitPrice: string; discount: string }
-const toDraftLine = (l: Line): DraftLine => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qty: String(l.qty), unitPrice: senToRm(l.unitPriceSen), discount: senToRm(l.discountSen) });
-const blankLine = (): DraftLine => ({ itemCode: '', description: '', uom: 'UNIT', qty: '1', unitPrice: '', discount: '' });
-const lineTotal = (l: DraftLine) => Math.max(0, (Number(l.qty) || 0) * rmToSen(l.unitPrice) - rmToSen(l.discount));
+interface DraftLine { itemCode: string; description: string; uom: string; qty: number | null; unitPriceSen: number | null; discountSen: number | null }
+const toDraftLine = (l: Line): DraftLine => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qty: l.qty, unitPriceSen: l.unitPriceSen, discountSen: l.discountSen || null });
+const blankLine = (): DraftLine => ({ itemCode: '', description: '', uom: 'UNIT', qty: 1, unitPriceSen: null, discountSen: null });
+const lineTotal = (l: DraftLine) => Math.max(0, (l.qty ?? 0) * (l.unitPriceSen ?? 0) - (l.discountSen ?? 0));
+const isUsed = (l: DraftLine) => l.itemCode.trim() !== '' && l.description.trim() !== '';
+const CELL_CLASS = 'h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-70 disabled:bg-transparent disabled:border-transparent text-right tabular-nums';
 
 function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
   so: So; isNew: boolean; canWrite: boolean; onClose: () => void; onSave: (s: So, l: Line[]) => void;
@@ -133,12 +133,24 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
   const editable = canWrite && (isNew || so.status === 'CONFIRMED');
   const [h, setH] = useState<So>(so);
   const [lines, setLines] = useState<DraftLine[]>((so.lines ?? []).map(toDraftLine));
-  const [pay, setPay] = useState('');
+  const [taxSen, setTaxSen] = useState<number | null>(so.taxSen || null);
+  const [paySen, setPaySen] = useState<number | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const setHf = <K extends keyof So>(k: K) => (e: { target: { value: string } }) => setH(s => ({ ...s, [k]: e.target.value as So[K] }));
-  const setLine = (i: number, k: keyof DraftLine, v: string) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
+  const setLine = <K extends keyof DraftLine>(i: number, k: K, v: DraftLine[K]) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
   const subtotal = lines.reduce((s, l) => s + lineTotal(l), 0);
-  const total = subtotal + Math.max(0, h.taxSen);
-  const built = (): Line[] => lines.filter(l => l.itemCode.trim() && l.description.trim()).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), uom: l.uom.trim() || 'UNIT', qty: Number(l.qty) || 0, unitPriceSen: rmToSen(l.unitPrice), discountSen: rmToSen(l.discount), lineTotalSen: lineTotal(l) }));
+  const total = subtotal + Math.max(0, taxSen ?? 0);
+  const built = (): Line[] => lines.filter(isUsed).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), uom: l.uom.trim() || 'UNIT', qty: l.qty ?? 0, unitPriceSen: l.unitPriceSen ?? 0, discountSen: l.discountSen ?? 0, lineTotalSen: lineTotal(l) }));
+  function problems() {
+    const e: Record<string, string> = {};
+    lines.forEach((l, i) => {
+      if (!isUsed(l)) return;
+      if (l.qty == null) e[`qty.${i}`] = 'Enter a quantity.';
+      if (l.unitPriceSen == null) e[`price.${i}`] = 'Enter a unit price.';
+    });
+    if (h.targetDate && h.soDate && h.targetDate < h.soDate) e.targetDate = 'Target date cannot be before the SO date.';
+    return e;
+  }
   const canSave = h.customerName.trim() !== '' && built().length > 0;
   const advanceLabel = (() => { const i = FLOW.indexOf(h.status); return i >= 0 && i < FLOW.length - 1 ? statusLabel('sales_order', FLOW[i + 1]) : null; })();
   const outstanding = Math.max(0, (isNew ? total : h.totalSen) - h.paidSen);
@@ -152,10 +164,10 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
           <div className="md:col-span-2"><Field label="Customer" placeholder="Customer name" value={h.customerName} onChange={setHf('customerName')} disabled={!editable} /></div>
-          <Field label="Phone" value={h.customerPhone} onChange={setHf('customerPhone')} disabled={!editable} />
+          <PhoneInput label="Phone" value={h.customerPhone} onChange={v => setH(s => ({ ...s, customerPhone: v }))} disabled={!editable} />
           <Field label="Customer PO" value={h.customerPo} onChange={setHf('customerPo')} disabled={!editable} />
-          <Field label="SO date" type="date" value={h.soDate} onChange={setHf('soDate')} disabled={!editable} />
-          <Field label="Target date" type="date" value={h.targetDate} onChange={setHf('targetDate')} disabled={!editable} />
+          <DateField label="SO date" value={h.soDate} onChange={v => setH(s => ({ ...s, soDate: v }))} disabled={!editable} />
+          <DateField label="Target date" value={h.targetDate} min={h.soDate || undefined} error={errors.targetDate} onChange={v => setH(s => ({ ...s, targetDate: v }))} disabled={!editable} />
         </div>
         <div className="flex flex-col gap-2">
           <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">Lines</div>
@@ -168,9 +180,9 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
                     <td className="p-1.5"><Cell value={l.itemCode} onChange={v => setLine(i, 'itemCode', v)} disabled={!editable} w="130px" /></td>
                     <td className="p-1.5"><Cell value={l.description} onChange={v => setLine(i, 'description', v)} disabled={!editable} w="100%" /></td>
                     <td className="p-1.5"><Cell value={l.uom} onChange={v => setLine(i, 'uom', v)} disabled={!editable} w="70px" /></td>
-                    <td className="p-1.5"><Cell value={l.qty} onChange={v => setLine(i, 'qty', v)} disabled={!editable} w="64px" right num /></td>
-                    <td className="p-1.5"><Cell value={l.unitPrice} onChange={v => setLine(i, 'unitPrice', v)} disabled={!editable} w="96px" right num /></td>
-                    <td className="p-1.5"><Cell value={l.discount} onChange={v => setLine(i, 'discount', v)} disabled={!editable} w="90px" right num /></td>
+                    <td className="p-1.5"><NumberInput aria-label={`Line ${i + 1} quantity`} value={l.qty} min={0} onChange={v => setLine(i, 'qty', v)} disabled={!editable} error={errors[`qty.${i}`]} className={CELL_CLASS} style={{ width: '64px' }} /></td>
+                    <td className="p-1.5"><MoneyInput aria-label={`Line ${i + 1} unit price`} valueSen={l.unitPriceSen} onChangeSen={v => setLine(i, 'unitPriceSen', v)} disabled={!editable} error={errors[`price.${i}`]} className={CELL_CLASS} style={{ width: '96px' }} /></td>
+                    <td className="p-1.5"><MoneyInput aria-label={`Line ${i + 1} discount`} valueSen={l.discountSen} onChangeSen={v => setLine(i, 'discountSen', v)} disabled={!editable} className={CELL_CLASS} style={{ width: '90px' }} /></td>
                     <td className="p-1.5 text-right tabular-nums text-[13px] whitespace-nowrap">{rm(lineTotal(l))}</td>
                     <td className="p-1.5 text-center">{editable && <button onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} aria-label="Remove line" className="text-muted-ink hover:text-danger bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button>}</td>
                   </tr>
@@ -185,7 +197,7 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
           <Field label="Notes" placeholder="Optional" value={h.notes} onChange={setHf('notes')} disabled={!editable} />
           <div className="flex flex-col gap-1.5 items-end justify-end">
             <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Subtotal</span><span className="tabular-nums w-[120px] text-right">{rm(subtotal)}</span></div>
-            <div className="flex gap-8 text-[13px] items-center"><span className="text-muted-ink">Tax</span><input type="number" step="0.01" disabled={!editable} value={senToRm(h.taxSen)} onChange={e => setH(s => ({ ...s, taxSen: rmToSen(e.target.value) }))} className="h-8 w-[120px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-70" /></div>
+            <div className="flex gap-8 text-[13px] items-center"><span className="text-muted-ink">Tax</span><MoneyInput aria-label="Tax (RM)" disabled={!editable} valueSen={taxSen} onChangeSen={setTaxSen} className="h-8 w-[120px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-70" /></div>
             <div className="flex gap-8 text-[15px] font-semibold"><span>Total</span><span className="tabular-nums w-[120px] text-right">{rm(total)}</span></div>
             {!isNew && <>
               <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Paid</span><span className="tabular-nums w-[120px] text-right">{rm(h.paidSen)}</span></div>
@@ -197,8 +209,8 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
         {!isNew && canWrite && h.status !== 'CANCELLED' && outstanding > 0 && (
           <div className="flex items-center gap-2.5 justify-end">
             <span className="text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink">Record payment</span>
-            <input type="number" step="0.01" value={pay} placeholder="0.00" onChange={e => setPay(e.target.value)} className="h-9 w-[130px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" />
-            <Button size="sm" variant="secondary" disabled={rmToSen(pay) <= 0} disabledReason="Enter an amount" onClick={() => { const amt = Math.min(rmToSen(pay), outstanding); onAct(h, { paySen: amt }, { paidSen: h.paidSen + amt, outstandingSen: outstanding - amt }, 'Payment recorded.'); setPay(''); }}>Record</Button>
+            <MoneyInput aria-label="Payment amount (RM)" valueSen={paySen} onChangeSen={setPaySen} className="h-9 w-[130px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" />
+            <Button size="sm" variant="secondary" disabled={!paySen || paySen <= 0} disabledReason="Enter an amount" onClick={() => { const amt = Math.min(paySen ?? 0, outstanding); onAct(h, { paySen: amt }, { paidSen: h.paidSen + amt, outstandingSen: outstanding - amt }, 'Payment recorded.'); setPaySen(null); }}>Record</Button>
           </div>
         )}
       </div>
@@ -212,7 +224,7 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
         </div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
-          {editable && <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a customer and add at least one line" onClick={() => { const l = built(); onSave({ ...h, ...totalsOf(l, h.taxSen) }, l); }}>{isNew ? 'Raise order' : 'Save'}</Button>}
+          {editable && <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a customer and add at least one line" onClick={() => { const e = problems(); setErrors(e); if (Object.keys(e).length) return; const l = built(); onSave({ ...h, ...totalsOf(l, taxSen ?? 0) }, l); }}>{isNew ? 'Raise order' : 'Save'}</Button>}
           {!isNew && canWrite && advanceLabel && h.status !== 'ON_HOLD' && <Button size="sm" variant="primary" onClick={() => onAct(h, { action: 'advance' }, { status: FLOW[FLOW.indexOf(h.status) + 1] }, `Advanced to ${advanceLabel}.`)}>Advance → {advanceLabel}</Button>}
         </div>
       </div>
@@ -220,7 +232,7 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
   );
 }
 
-function Cell({ value, onChange, disabled, w, right, num }: { value: string; onChange: (v: string) => void; disabled?: boolean; w: string; right?: boolean; num?: boolean }) {
-  return <input value={value} disabled={disabled} type={num ? 'number' : 'text'} step={num ? '0.01' : undefined} onChange={e => onChange(e.target.value)} style={{ width: w }}
-    className={cx('h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-70 disabled:bg-transparent disabled:border-transparent', right ? 'text-right tabular-nums' : '')} />;
+function Cell({ value, onChange, disabled, w }: { value: string; onChange: (v: string) => void; disabled?: boolean; w: string }) {
+  return <input value={value} disabled={disabled} onChange={e => onChange(e.target.value)} style={{ width: w }}
+    className="h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-70 disabled:bg-transparent disabled:border-transparent" />;
 }

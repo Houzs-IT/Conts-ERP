@@ -1,5 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { isIsoDate } from '../../_lib/validate';
 import { resolveUnit } from '../../_lib/ops';
 import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked } from '../../_lib/expenses';
 import { approvalSettings, stage } from '../../_lib/approvals';
@@ -16,7 +17,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!b?.unitId && !b?.unitNumber) fields.unitId = 'A unit is required.';
   if (!EXPENSE_CATEGORIES.includes(b?.category)) fields.category = 'Choose a category.';
   if (!Number.isInteger(b?.amount) || b.amount < 0) fields.amount = 'Enter an amount of RM 0.00 or more.';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b?.incurredOn ?? ''))) fields.incurredOn = 'A date is required.';
+  if (!isIsoDate(String(b?.incurredOn ?? ''))) fields.incurredOn = 'A date is required.';
   if (b?.chargeTo !== undefined && !CHARGE_TO.includes(b.chargeTo)) fields.chargeTo = 'Choose who pays.';
   if (b?.receiptDocumentId !== undefined && b.receiptDocumentId !== null && typeof b.receiptDocumentId !== 'string') fields.receipt = 'Upload the receipt again.';
   if (Object.keys(fields).length) return fail('VALIDATION', 'Every expense needs a category, amount and date.', 422, fields);

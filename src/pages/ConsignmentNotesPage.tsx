@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
+import { MoneyInput, NumberInput, PhoneInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
@@ -34,8 +35,6 @@ const FALLBACK: Payload = {
     ] },
   ],
 };
-
-const rmToSen = (v: string) => { const n = Number(v); return v.trim() && Number.isFinite(n) ? Math.round(n * 100) : 0; };
 
 export default function ConsignmentNotesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/consignment-notes', FALLBACK);
@@ -97,9 +96,10 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
 }
 
-interface DraftLine { itemCode: string; description: string; uom: string; qty: string; unitPrice: string }
-const blankLine = (): DraftLine => ({ itemCode: '', description: '', uom: 'UNIT', qty: '1', unitPrice: '' });
-const lineTotal = (l: DraftLine) => Math.max(0, (Number(l.qty) || 0) * rmToSen(l.unitPrice));
+interface DraftLine { itemCode: string; description: string; uom: string; qty: number | null; unitPriceSen: number | null }
+const blankLine = (): DraftLine => ({ itemCode: '', description: '', uom: 'UNIT', qty: 1, unitPriceSen: null });
+const lineTotal = (l: DraftLine) => Math.max(0, (l.qty ?? 0) * (l.unitPriceSen ?? 0));
+const CELL_NUM = 'h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none text-right tabular-nums';
 
 function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onClose: () => void; onCreated: (c: Cn) => void }) {
   const [consigneeName, setConsigneeName] = useState('');
@@ -107,12 +107,23 @@ function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onC
   const [cnDate, setCnDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([blankLine()]);
-  const setLine = (i: number, k: keyof DraftLine, v: string) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
-  const built = () => lines.filter(l => l.itemCode.trim() && l.description.trim() && (Number(l.qty) || 0) > 0).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), uom: l.uom.trim() || 'UNIT', qtyConsigned: Number(l.qty) || 0, unitPriceSen: rmToSen(l.unitPrice) }));
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const setLine = <K extends keyof DraftLine>(i: number, k: K, v: DraftLine[K]) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
+  const isUsed = (l: DraftLine) => l.itemCode.trim() !== '' && l.description.trim() !== '';
+  const built = () => lines.filter(l => isUsed(l) && (l.qty ?? 0) > 0).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), uom: l.uom.trim() || 'UNIT', qtyConsigned: l.qty ?? 0, unitPriceSen: l.unitPriceSen ?? 0 }));
   const total = lines.reduce((s, l) => s + lineTotal(l), 0);
   const canSave = canWrite && consigneeName.trim() !== '' && built().length > 0;
 
   function submit() {
+    const e: Record<string, string> = {};
+    lines.forEach((l, i) => {
+      if (!isUsed(l)) return;
+      if (l.qty == null) e[`qty.${i}`] = 'Enter a quantity.';
+      if (l.unitPriceSen == null) e[`price.${i}`] = 'Enter a unit price.';
+    });
+    if (!cnDate) e.cnDate = 'Enter the date.';
+    setErrors(e);
+    if (Object.keys(e).length) return;
     const b = built();
     api.post('/consignment-notes', { consigneeName, consigneePhone, cnDate, notes, lines: b }).catch(notifyFailure);
     onCreated({ id: `cn-new-${crypto.randomUUID().slice(0, 8)}`, cnNumber: `CN-${new Date().getFullYear()}-NEW`, consigneeName, consigneePhone, cnDate, status: 'OPEN', totalSen: total, notes,
@@ -128,8 +139,8 @@ function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onC
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
           <Field label="Consignee" placeholder="Showroom / retailer" value={consigneeName} onChange={e => setConsigneeName(e.target.value)} />
-          <Field label="Phone" value={consigneePhone} onChange={e => setConsigneePhone(e.target.value)} />
-          <Field label="Date" type="date" value={cnDate} onChange={e => setCnDate(e.target.value)} />
+          <PhoneInput label="Phone" value={consigneePhone} onChange={setConsigneePhone} />
+          <DateField label="Date" required value={cnDate} error={errors.cnDate} onChange={setCnDate} />
         </div>
         <div className="flex flex-col gap-2">
           <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">Lines to consign</div>
@@ -142,8 +153,8 @@ function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onC
                     <td className="p-1.5"><Cell value={l.itemCode} onChange={v => setLine(i, 'itemCode', v)} w="130px" /></td>
                     <td className="p-1.5"><Cell value={l.description} onChange={v => setLine(i, 'description', v)} w="100%" /></td>
                     <td className="p-1.5"><Cell value={l.uom} onChange={v => setLine(i, 'uom', v)} w="70px" /></td>
-                    <td className="p-1.5"><Cell value={l.qty} onChange={v => setLine(i, 'qty', v)} w="64px" right num /></td>
-                    <td className="p-1.5"><Cell value={l.unitPrice} onChange={v => setLine(i, 'unitPrice', v)} w="96px" right num /></td>
+                    <td className="p-1.5"><NumberInput aria-label={`Line ${i + 1} quantity`} min={0} value={l.qty} error={errors[`qty.${i}`]} onChange={v => setLine(i, 'qty', v)} className={CELL_NUM} style={{ width: '64px' }} /></td>
+                    <td className="p-1.5"><MoneyInput aria-label={`Line ${i + 1} unit price`} valueSen={l.unitPriceSen} error={errors[`price.${i}`]} onChangeSen={v => setLine(i, 'unitPriceSen', v)} className={CELL_NUM} style={{ width: '96px' }} /></td>
                     <td className="p-1.5 text-right tabular-nums text-[13px] whitespace-nowrap">{rm(lineTotal(l))}</td>
                     <td className="p-1.5 text-center"><button onClick={() => setLines(ls => ls.length > 1 ? ls.filter((_, j) => j !== i) : ls)} aria-label="Remove line" className="text-muted-ink hover:text-danger bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button></td>
                   </tr>
@@ -168,11 +179,18 @@ function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onC
 
 function SettleDrawer({ cn, canWrite, onClose, onAct }: { cn: Cn; canWrite: boolean; onClose: () => void; onAct: (c: Cn, patch: Record<string, unknown>, optimistic: Partial<Cn>, title: string) => void }) {
   const editable = canWrite && (cn.status === 'OPEN' || cn.status === 'PARTIALLY_SETTLED');
-  const [lines, setLines] = useState<Line[]>((cn.lines ?? []).map(l => ({ ...l })));
-  const setLine = (i: number, k: 'qtySold' | 'qtyReturned', v: number) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: Math.max(0, Math.min(l.qtyConsigned, v)) } : l));
+  const lines = cn.lines ?? [];
+  const [qty, setQty] = useState<{ sold: number | null; returned: number | null }[]>(lines.map(l => ({ sold: l.qtySold, returned: l.qtyReturned })));
+  const [submitted, setSubmitted] = useState(false);
+  const setLine = (i: number, k: 'sold' | 'returned', v: number | null) => setQty(qs => qs.map((q, j) => j === i ? { ...q, [k]: v } : q));
+  const overError = (i: number) => (qty[i].sold ?? 0) + (qty[i].returned ?? 0) > lines[i].qtyConsigned ? `Sold and returned cannot exceed ${lines[i].qtyConsigned}.` : undefined;
+  const emptyError = (v: number | null) => submitted && v == null ? 'Enter a number.' : undefined;
 
   function saveSettlement() {
-    onAct(cn, { lines: lines.map(l => ({ id: l.id, qtySold: l.qtySold, qtyReturned: l.qtyReturned })) }, { lines }, 'Settlement saved.');
+    setSubmitted(true);
+    if (qty.some((q, i) => q.sold == null || q.returned == null || overError(i))) return;
+    const settled = lines.map((l, i) => ({ ...l, qtySold: qty[i].sold ?? 0, qtyReturned: qty[i].returned ?? 0 }));
+    onAct(cn, { lines: settled.map(l => ({ id: l.id, qtySold: l.qtySold, qtyReturned: l.qtyReturned })) }, { lines: settled }, 'Settlement saved.');
   }
 
   return (
@@ -195,8 +213,8 @@ function SettleDrawer({ cn, canWrite, onClose, onAct }: { cn: Cn; canWrite: bool
                 <tr key={l.id ?? i} className="[border-top:1px_solid_var(--color-line-soft)]">
                   <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
                   <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.qtyConsigned}</td>
-                  <td className="py-2 px-3 text-right">{editable ? <NumCell value={l.qtySold} onChange={v => setLine(i, 'qtySold', v)} /> : <span className="tabular-nums text-[13px]">{l.qtySold}</span>}</td>
-                  <td className="py-2 px-3 text-right">{editable ? <NumCell value={l.qtyReturned} onChange={v => setLine(i, 'qtyReturned', v)} /> : <span className="tabular-nums text-[13px]">{l.qtyReturned}</span>}</td>
+                  <td className="py-2 px-3 text-right">{editable ? <NumCell label={`Sold quantity for ${l.itemCode}`} value={qty[i].sold} error={overError(i) ?? emptyError(qty[i].sold)} onChange={v => setLine(i, 'sold', v)} /> : <span className="tabular-nums text-[13px]">{l.qtySold}</span>}</td>
+                  <td className="py-2 px-3 text-right">{editable ? <NumCell label={`Returned quantity for ${l.itemCode}`} value={qty[i].returned} error={emptyError(qty[i].returned)} onChange={v => setLine(i, 'returned', v)} /> : <span className="tabular-nums text-[13px]">{l.qtyReturned}</span>}</td>
                 </tr>
               ))}
             </tbody>
@@ -216,12 +234,12 @@ function SettleDrawer({ cn, canWrite, onClose, onAct }: { cn: Cn; canWrite: bool
   );
 }
 
-function Cell({ value, onChange, w, right, num }: { value: string; onChange: (v: string) => void; w: string; right?: boolean; num?: boolean }) {
-  return <input value={value} type={num ? 'number' : 'text'} step={num ? '0.01' : undefined} onChange={e => onChange(e.target.value)} style={{ width: w }}
-    className={cx('h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none', right ? 'text-right tabular-nums' : '')} />;
+function Cell({ value, onChange, w }: { value: string; onChange: (v: string) => void; w: string }) {
+  return <input value={value} onChange={e => onChange(e.target.value)} style={{ width: w }}
+    className="h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" />;
 }
-function NumCell({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  return <input type="number" min={0} value={String(value)} onChange={e => onChange(Math.round(Number(e.target.value) || 0))} className="h-8 w-[70px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" />;
+function NumCell({ label, value, error, onChange }: { label: string; value: number | null; error?: string; onChange: (v: number | null) => void }) {
+  return <NumberInput aria-label={label} min={0} value={value} error={error} onChange={onChange} className="h-8 w-[70px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" />;
 }
 function Meta({ label, value }: { label: string; value: string }) {
   return <div className="flex flex-col gap-0.5"><span className="text-[11px] uppercase tracking-[0.08em] text-muted-ink">{label}</span><span className="text-[13.5px]">{value}</span></div>;

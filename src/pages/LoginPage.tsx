@@ -5,6 +5,7 @@ import Icon from '../components/Icon';
 import { Logo } from '../components/Logo';
 import { Button } from '../components/Button';
 import { Field, PasswordField } from '../components/Field';
+import { CodeInput } from '../components/inputs';
 
 type Screen = 'signin' | 'forgot' | 'change' | 'reset' | 'code';
 
@@ -148,11 +149,11 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
           <div className="flex flex-col gap-5">
             {screen === 'code' && (
               <>
-                <Field label={useBackup ? 'Backup code' : '6-digit code'} required autoFocus value={code}
-                  autoComplete="one-time-code" inputMode={useBackup ? 'text' : 'numeric'} maxLength={useBackup ? 11 : 6}
-                  onChange={e => setCode(useBackup ? e.target.value : e.target.value.replace(/\D/g, ''))}
-                  placeholder={useBackup ? 'xxxxx-xxxxx' : '123456'}
-                  style={{ letterSpacing: '0.2em', fontVariantNumeric: 'tabular-nums' }} />
+                {useBackup
+                  ? <Field label="Backup code" required autoFocus value={code} autoComplete="one-time-code" maxLength={11}
+                      onChange={e => setCode(e.target.value.trim())} placeholder="xxxxx-xxxxx"
+                      style={{ letterSpacing: '0.2em', fontVariantNumeric: 'tabular-nums' }} />
+                  : <CodeInput required autoFocus value={code} onChange={setCode} />}
                 {!twoStep?.backupOnly && (
                   <Button type="button" variant="tertiary" size="md" className="self-start" style={{ paddingInline: 0 }}
                     onClick={() => { setUseBackup(b => !b); setCode(''); setError(''); }}>

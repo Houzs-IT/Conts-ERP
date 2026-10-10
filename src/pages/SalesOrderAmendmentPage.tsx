@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
+import { MoneyInput, NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
@@ -101,12 +102,13 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 }
 
 /* ---------- create ---------- */
-interface Edit { line: SoLine; newQty: string; newPrice: string; remove: boolean }
+interface Edit { line: SoLine; newQty: number | null; newPriceSen: number | null; remove: boolean }
 
 function NewDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[]; canWrite: boolean; onClose: () => void; onCreated: (a: Amd) => void }) {
   const [soId, setSoId] = useState('');
   const [reason, setReason] = useState('');
   const [rows, setRows] = useState<Edit[]>([]);
+  const [submitted, setSubmitted] = useState(false);
   const so = openSos.find(s => s.id === soId);
 
   async function pick(id: string) {
@@ -114,16 +116,22 @@ function NewDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[
     const s = openSos.find(x => x.id === id);
     let sl = s?.lines;
     if (!sl) { try { const r = await api.get<{ data: { lines: SoLine[] } }>(`/sales-orders/${id}`); sl = r.data.lines; } catch { sl = []; } }
-    setRows((sl ?? []).map(l => ({ line: l, newQty: String(l.qty), newPrice: String(l.unitPriceSen / 100), remove: false })));
+    setRows((sl ?? []).map(l => ({ line: l, newQty: l.qty, newPriceSen: l.unitPriceSen, remove: false })));
   }
 
-  const changed = rows.filter(r => r.remove || Number(r.newQty) !== r.line.qty || Math.round(Number(r.newPrice) * 100) !== r.line.unitPriceSen);
+  const changed = rows.filter(r => r.remove || r.newQty !== r.line.qty || r.newPriceSen !== r.line.unitPriceSen);
   const canSave = canWrite && soId !== '' && changed.length > 0;
+  const qtyError = (r: Edit) => r.remove ? undefined
+    : r.newQty == null ? (submitted ? 'Enter a quantity.' : undefined)
+    : r.newQty < r.line.deliveredQty ? `At least ${r.line.deliveredQty} (already delivered).` : undefined;
+  const priceError = (r: Edit) => !r.remove && submitted && r.newPriceSen == null ? 'Enter a price.' : undefined;
 
   function submit() {
+    setSubmitted(true);
+    if (changed.some(r => !r.remove && (r.newQty == null || r.newPriceSen == null || r.newQty < r.line.deliveredQty))) return;
     const lines = changed.map(r => ({
       salesOrderLineId: r.line.id, action: r.remove ? 'REMOVE' : 'CHANGE', itemCode: r.line.itemCode, description: r.line.description, uom: r.line.uom,
-      newQty: r.remove ? 0 : Math.max(0, Math.round(Number(r.newQty) || 0)), newUnitPriceSen: r.remove ? r.line.unitPriceSen : Math.max(0, Math.round(Number(r.newPrice) * 100 || 0)),
+      newQty: r.remove ? 0 : r.newQty ?? 0, newUnitPriceSen: r.remove ? r.line.unitPriceSen : r.newPriceSen ?? 0,
     }));
     api.post('/so-amendments', { salesOrderId: soId, reason, lines }).catch(notifyFailure);
     onCreated({ id: `amd-new-${crypto.randomUUID().slice(0, 8)}`, amendmentNo: `AMD-${new Date().getFullYear()}-NEW`, salesOrderId: soId, soDocNo: so?.docNo ?? '', customerName: so?.customerName ?? '', status: 'REQUESTED', reason, appliedAt: '' });
@@ -154,8 +162,8 @@ function NewDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[
                     <tr key={r.line.id} className={cx('[border-top:1px_solid_var(--color-line-soft)]', r.remove ? 'opacity-55' : '')}>
                       <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{r.line.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{r.line.itemCode}{r.line.deliveredQty > 0 ? ` · ${r.line.deliveredQty} delivered` : ''}</span></div></td>
                       <td className="py-2 px-3 text-right tabular-nums text-[12.5px] text-muted-ink">{r.line.qty} × {rm(r.line.unitPriceSen)}</td>
-                      <td className="py-2 px-3 text-right"><input type="number" min={0} disabled={r.remove} value={r.newQty} onChange={e => setRows(rs => rs.map((x, j) => j === i ? { ...x, newQty: e.target.value } : x))} className="h-8 w-[72px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-50" /></td>
-                      <td className="py-2 px-3 text-right"><input type="number" min={0} step="0.01" disabled={r.remove} value={r.newPrice} onChange={e => setRows(rs => rs.map((x, j) => j === i ? { ...x, newPrice: e.target.value } : x))} className="h-8 w-[96px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-50" /></td>
+                      <td className="py-2 px-3 text-right"><NumberInput aria-label={`New quantity for ${r.line.itemCode}`} min={0} disabled={r.remove} value={r.newQty} error={qtyError(r)} onChange={v => setRows(rs => rs.map((x, j) => j === i ? { ...x, newQty: v } : x))} className="h-8 w-[72px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-50" /></td>
+                      <td className="py-2 px-3 text-right"><MoneyInput aria-label={`New price for ${r.line.itemCode} (RM)`} disabled={r.remove} valueSen={r.newPriceSen} error={priceError(r)} onChangeSen={v => setRows(rs => rs.map((x, j) => j === i ? { ...x, newPriceSen: v } : x))} className="h-8 w-[96px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-50" /></td>
                       <td className="py-2 px-3 text-center"><input type="checkbox" checked={r.remove} disabled={r.line.deliveredQty > 0} onChange={e => setRows(rs => rs.map((x, j) => j === i ? { ...x, remove: e.target.checked } : x))} className="w-4 h-4 accent-black cursor-pointer disabled:opacity-40" title={r.line.deliveredQty > 0 ? 'Delivered lines cannot be removed' : 'Remove this line'} /></td>
                     </tr>
                   ))}

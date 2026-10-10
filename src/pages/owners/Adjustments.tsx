@@ -4,6 +4,7 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
 import { Field } from '../../components/Field';
+import { MoneyInput, DateField } from '../../components/inputs';
 import { Select, Menu, type MenuItem } from '../../components/Select';
 import { ConfirmDialog, type ConfirmSpec } from '../../components/ConfirmDialog';
 import { MoneyText, moneyString } from '../../components/MoneyText';
@@ -213,21 +214,20 @@ function SettleModal({ a, busy, onClose, onSubmit }: { a: Adjustment; busy: bool
 
 function AddModal({ owner, busy, onClose, onSubmit }: { owner: Owner; busy: boolean; onClose: () => void; onSubmit: (b: { kind: 'credit' | 'charge'; amount: number; description: string; occurredOn: string; unitId: string | null }) => void }) {
   const [kind, setKind] = useState<'credit' | 'charge'>('charge');
-  const [amount, setAmount] = useState('');
+  const [sen, setSen] = useState<number | null>(null);
   const [description, setDescription] = useState('');
   const [occurredOn, setOccurredOn] = useState(todayMyt());
   const [unitId, setUnitId] = useState('');
-  const sen = Math.round(Number(amount) * 100);
-  const valid = Number.isFinite(sen) && sen > 0 && description.trim() !== '' && /^\d{4}-\d{2}-\d{2}$/.test(occurredOn);
+  const valid = sen != null && sen > 0 && description.trim() !== '' && /^\d{4}-\d{2}-\d{2}$/.test(occurredOn);
   return (
     <Modal title="Add credit or charge" sub={`For ${owner.displayName}. It goes on the next statement generated for a month ending on or after the date.`} onClose={onClose}
       submitLabel={busy ? 'Adding...' : 'Add'} canSubmit={valid && !busy}
-      onSubmit={() => onSubmit({ kind, amount: sen, description: description.trim(), occurredOn, unitId: unitId || null })}>
+      onSubmit={() => onSubmit({ kind, amount: sen ?? 0, description: description.trim(), occurredOn, unitId: unitId || null })}>
       <Select label="Kind" showLabel size="md" value={kind} onChange={v => setKind(v as 'credit' | 'charge')}
         options={[{ value: 'charge', label: 'Charge: deducted from the payout' }, { value: 'credit', label: 'Credit: added to the payout' }]} />
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Amount (RM)" type="number" min={0} step="0.01" numeric placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} />
-        <Field label="Date" type="date" value={occurredOn} onChange={e => setOccurredOn(e.target.value)} />
+        <MoneyInput label="Amount (RM)" minSen={1} valueSen={sen} onChangeSen={setSen} />
+        <DateField label="Date" value={occurredOn} onChange={setOccurredOn} />
       </div>
       <Field label="Description" placeholder="e.g. Replacement kettle" maxLength={200} value={description} onChange={e => setDescription(e.target.value)} />
       {owner.units.length > 1 && (

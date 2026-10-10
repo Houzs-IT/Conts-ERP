@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { nextNumber, onHandOf, toTakePayload, type TakeHeaderRow } from '../../_lib/stock-ops';
 import { strOrNull, genId } from '../../_lib/scm-util';
+import { checkDate, invalid, type Fields } from '../../_lib/validate';
 
 const LIST_SQL = `
   SELECT t.id, t.take_number, t.warehouse_id, t.take_date, t.status, t.notes, t.created_at, t.updated_at, w.name AS warehouse_name
@@ -21,6 +22,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can start a stock take.', 403);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkDate(fields, 'takeDate', b.takeDate, { label: 'Date' });
+  const bad = invalid(fields); if (bad) return bad;
   const warehouseId = String(b.warehouseId ?? '').trim();
   if (!warehouseId || !await one(env, 'SELECT 1 AS x FROM warehouses WHERE id = ?', warehouseId)) return fail('VALIDATION', 'Pick a warehouse.', 422, { warehouseId: 'Pick a warehouse.' });
   const raw = Array.isArray(b.lines) ? (b.lines as Record<string, unknown>[]) : [];

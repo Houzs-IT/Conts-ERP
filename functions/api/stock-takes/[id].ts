@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { toTakePayload, toTakeLinePayload, type TakeHeaderRow, type TakeLineRow } from '../../_lib/stock-ops';
 import { intOrNull, genId } from '../../_lib/scm-util';
+import { checkInt, invalid, type Fields } from '../../_lib/validate';
 
 const HEADER_SQL = `
   SELECT t.id, t.take_number, t.warehouse_id, t.take_date, t.status, t.notes, t.created_at, t.updated_at, w.name AS warehouse_name
@@ -36,6 +37,10 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   }
 
   if (cur.status !== 'OPEN') return fail('CONFLICT', 'Only an open stock take can be changed.', 409);
+
+  const fields: Fields = {};
+  if (Array.isArray(b.lines)) (b.lines as Record<string, unknown>[]).forEach((l, i) => checkInt(fields, `lines.${i}.countedQty`, l?.countedQty, { label: 'Counted quantity', min: 0 }));
+  const bad = invalid(fields); if (bad) return bad;
 
   if (Array.isArray(b.lines)) {
     const dbLines = await all<{ id: string; system_qty: number }>(env, 'SELECT id, system_qty FROM stock_take_lines WHERE stock_take_id = ?', id);

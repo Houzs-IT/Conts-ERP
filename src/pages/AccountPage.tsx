@@ -4,7 +4,8 @@ import PageHeader from '../components/PageHeader';
 import { Card, CardHeader } from '../components/Card';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
-import { Field, PasswordField } from '../components/Field';
+import { PasswordField } from '../components/Field';
+import { CodeInput } from '../components/inputs';
 import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
@@ -174,9 +175,7 @@ function TwoStepCard({ data, loading, gate, onChanged }: { data: Account | null;
               </ol>
             </div>
             <div className="max-w-[240px]">
-              <Field label="6-digit code" value={code} required autoComplete="one-time-code" inputMode="numeric" maxLength={6}
-                onChange={e => setCode(e.target.value.replace(/\D/g, ''))} error={codeError} placeholder="123456"
-                style={{ letterSpacing: '0.2em', fontVariantNumeric: 'tabular-nums' }} />
+              <CodeInput value={code} required onChange={setCode} error={codeError} />
             </div>
             <div className="flex gap-2 flex-wrap">
               <Button type="submit" variant="primary" size="sm" loading={busy} disabled={code.length !== 6}>Turn on two-step sign-in</Button>

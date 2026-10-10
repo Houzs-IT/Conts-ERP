@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { invalidResRule, toResRulePayload, type ResRuleRow } from '../../_lib/residence-rules';
+import { checkInt, invalid, type Fields } from '../../_lib/validate';
 import { strOrNull, intOrNull, flag, genId } from '../../_lib/scm-util';
 
 const COLS = 'id, building_type, service_duration_minutes, earliest_delivery_time, latest_delivery_time, requires_lift_booking, requires_registration, notes, is_active';
@@ -27,6 +28,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const bad = invalidResRule(b);
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
+  const fields: Fields = {};
+  checkInt(fields, 'serviceDurationMinutes', b.serviceDurationMinutes, { label: 'Service duration', min: 0 });
+  const badNum = invalid(fields); if (badNum) return badNum;
   const buildingType = (b.buildingType as string).trim();
   if (await one(env, 'SELECT 1 AS x FROM delivery_residence_rules WHERE lower(building_type) = lower(?)', buildingType)) return fail('CONFLICT', 'A rule for that building type already exists.', 409, { buildingType: 'This building type already has a rule.' });
   const id = genId('rr');

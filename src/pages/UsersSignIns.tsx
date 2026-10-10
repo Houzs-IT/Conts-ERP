@@ -9,6 +9,7 @@ import { fetchAllPages } from '../lib/export';
 import { dateTime, todayMyt } from '../lib/format';
 import { SIGN_IN_METHOD, SIGN_IN_RESULT, deviceOf } from '../lib/signIns';
 import { cx } from '../lib/design-tokens';
+import { DateField } from '../components/inputs';
 
 interface SignIn { id: string; userId: string | null; email: string; fullName: string | null; at: string; ip: string | null; userAgent: string | null; result: string; method: string }
 interface Page { data: SignIn[]; total: number; page: number; pageSize: number; notMigrated?: boolean }
@@ -66,10 +67,10 @@ export default function UsersSignIns({ people }: { people: { id: string; fullNam
             options={people.map(p => ({ value: p.id, label: p.fullName }))} />
           <FilterSelect label="Result" value={result} onChange={v => filter(() => setResult(v))} all="Every result" className="w-full sm:w-[160px]" options={RESULT_OPTIONS} />
           <label className="flex items-center gap-2 text-meta text-muted-ink flex-1 sm:flex-none min-w-0">
-            From <input type="date" value={from} max={to || undefined} onChange={e => filter(() => setFrom(e.target.value))} className={cx(dateInput, 'flex-1')} aria-label="From date" />
+            From <DateField value={from} max={to || undefined} onChange={v => filter(() => setFrom(v))} className={cx(dateInput, 'flex-1')} aria-label="From date" />
           </label>
           <label className="flex items-center gap-2 text-meta text-muted-ink flex-1 sm:flex-none min-w-0">
-            to <input type="date" value={to} min={from || undefined} onChange={e => filter(() => setTo(e.target.value))} className={cx(dateInput, 'flex-1')} aria-label="To date" />
+            to <DateField value={to} min={from || undefined} onChange={v => filter(() => setTo(v))} className={cx(dateInput, 'flex-1')} aria-label="To date" />
           </label>
         </>}
         renderCard={s => {

@@ -376,7 +376,9 @@ export function mapReservations(rows: Row[], today: string): ReservationPlan {
       // hashed to the same guest id and 23 stays collapsed into one "Airbnb guest" (fixed 10 Oct 2026).
       const name = opt(r['Guest Name']) ?? ([opt(r['First Name']), opt(r['Last Name'])].filter(Boolean).join(' ') || placeholderGuestName(CHANNEL_LABEL[channel], ota ?? code));
       gid = guestId(name, phone, email);
-      if (!guests.has(gid)) guests.set(gid, { id: gid, fullName: name.slice(0, 200), email, phone, countryCode: countryCode(r['Nationality']) });
+      // HostPlatform writes "No Contact from Airbnb" where there is no number. The id keeps hashing the raw value so
+      // re-imports still match existing guests; only the stored phone drops text that has no digits.
+      if (!guests.has(gid)) guests.set(gid, { id: gid, fullName: name.slice(0, 200), email, phone: phone && /\d/.test(phone) ? phone : null, countryCode: countryCode(r['Nationality']) });
     }
     const remarks = opt(r['Remarks']), rateName = opt(r['Rate Name']);
     const showRemarks = remarks && channel !== 'airbnb' && channel !== 'booking_com' && channel !== 'agoda';

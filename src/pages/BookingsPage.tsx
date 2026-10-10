@@ -9,6 +9,7 @@ import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
 import { Field } from '../components/Field';
+import { DateField, TimeField, NumberInput, MoneyInput, PhoneInput } from '../components/inputs';
 import { Select } from '../components/Select';
 import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
@@ -17,7 +18,7 @@ import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
-import { api, notifyFailure, downloadFile, errorMessage } from '../lib/api';
+import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../lib/api';
 import { rm, dateRange, nights as fmtNights, guests as fmtGuests, todayMyt, plural, count as countLabel } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { BookingChannel, ReservationState } from '../lib/types';
@@ -183,7 +184,7 @@ export default function BookingsPage() {
   }
   function setParam(k: string, v: string) { updateParams(p => { if (v) p.set(k, v); else p.delete(k); p.delete('page'); }); }
 
-  async function createReservation(input: CreateInput) {
+  async function createReservation(input: CreateInput): Promise<Record<string, string> | undefined> {
     const unit = UNITS.find(u => u.id === input.unitId);
     if (!unit) { toast({ tone: 'critical', title: 'Pick a unit first.' }); return; }
     try {
@@ -203,7 +204,10 @@ export default function BookingsPage() {
       });
       if (!owner) setOpenId(res.id);
       reload();
-    } catch (e) { toast({ tone: 'critical', title: 'Reservation not created.', body: errorMessage(e, 'Try again in a moment.') }); }
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Reservation not created.', body: errorMessage(e, 'Try again in a moment.') });
+      if (e instanceof ApiFailure && e.fields) return e.fields;
+    }
   }
 
   function pickImportFile() { fileRef.current?.click(); }
@@ -534,8 +538,8 @@ function DateFilter({ from, to, onChange }: { from: string; to: string; onChange
             ))}
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="From" type="date" value={f} onChange={e => setF(e.target.value)} />
-            <Field label="To" type="date" value={t} min={f || undefined} onChange={e => setT(e.target.value)} />
+            <DateField label="From" value={f} onChange={setF} />
+            <DateField label="To" value={t} min={f || undefined} onChange={setT} />
           </div>
           <div className="flex justify-between gap-2">
             <Button size="sm" variant="tertiary" onClick={() => { onChange('', ''); close(); }}>Any dates</Button>
@@ -586,7 +590,7 @@ function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClo
           ))}
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
-          <Field label="Arrived on" type="date" value={receivedOn} max={todayMyt()} onChange={e => setReceivedOn(e.target.value)} required />
+          <DateField label="Arrived on" value={receivedOn} max={todayMyt()} onChange={setReceivedOn} required />
           <Field label="Bank reference (optional)" value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. AIRBNB 2610" />
         </div>
         <div className="flex justify-end gap-[9px]">
@@ -667,7 +671,7 @@ interface CreateInput {
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
-  units: RosterUnit[]; prefill?: CreatePrefill | null; onClose: () => void; onCreate: (input: CreateInput) => Promise<void>;
+  units: RosterUnit[]; prefill?: CreatePrefill | null; onClose: () => void; onCreate: (input: CreateInput) => Promise<Record<string, string> | undefined>;
 }) {
   // No unit is chosen for the user: the list may still be loading, and a silent default books the wrong unit.
   const [kind, setKind] = useState<Kind>(prefill?.kind ?? 'direct');
@@ -680,8 +684,9 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
   const [checkOut, setCheckOut] = useState(prefill?.checkOut && ISO_DAY.test(prefill.checkOut) ? prefill.checkOut : '');
   const [inTime, setInTime] = useState('15:00');
   const [outTime, setOutTime] = useState('11:00');
-  const [guestsCount, setGuestsCount] = useState('2');
-  const [rate, setRate] = useState('');
+  const [guestsCount, setGuestsCount] = useState<number | null>(2);
+  const [rateSen, setRateSen] = useState<number | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [ref, setRef] = useState('');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
@@ -691,19 +696,22 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
   const unitOwner = UNITS.find(u => u.id === unitId)?.ownerName;
   const nights = checkIn && checkOut ? nightsBetween(checkIn, checkOut) : 0;
   const datesValid = !!checkIn && !!checkOut && nights >= 1;
-  const valid = unitKnown && (owner || !!guestName.trim()) && datesValid && Number(guestsCount) >= 1;
+  const guestsOk = guestsCount != null && guestsCount >= 1 && guestsCount <= 16;
+  const valid = unitKnown && (owner || !!guestName.trim()) && datesValid && guestsOk;
   const missing = !unitKnown ? 'Pick a unit first.' : !owner && !guestName.trim() ? 'Add the guest name.' : !datesValid ? 'Pick a valid date range.' : 'Check the number of guests.';
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!valid || busy) return;
     setBusy(true);
-    await onCreate({
+    setFieldErrors({});
+    const bad = await onCreate({
       unitId, channel: owner ? 'owner_stay' : kind === 'ota' ? site : 'direct',
       guestName: guestName.trim() || (owner && unitOwner ? unitOwner : ''), phone: phone.trim(), email: email.trim(),
-      checkIn, checkOut, checkInTime: inTime, checkOutTime: outTime, guestsCount: Number(guestsCount) || 1,
-      grossSen: owner ? 0 : Math.round((Number(rate) || 0) * 100), externalRef: kind === 'ota' ? ref.trim() : '', notes: notes.trim(),
+      checkIn, checkOut, checkInTime: inTime, checkOutTime: outTime, guestsCount: guestsCount ?? 1,
+      grossSen: owner ? 0 : rateSen ?? 0, externalRef: kind === 'ota' ? ref.trim() : '', notes: notes.trim(),
     });
+    if (bad) setFieldErrors(bad);
     setBusy(false);
   }
 
@@ -728,23 +736,24 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
         <Field label={owner ? 'Who is staying (optional)' : 'Guest name'} placeholder={owner ? unitOwner ?? 'The owner' : 'Jane Tan'} value={guestName} onChange={e => setGuestName(e.target.value)} required={!owner} />
         {!owner && (
           <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
-            <Field label="Phone" placeholder="+60 12-345 6789" value={phone} onChange={e => setPhone(e.target.value)} />
+            <PhoneInput label="Phone" value={phone} onChange={setPhone} error={fieldErrors['guest.phone']} />
             <Field label="Email" type="email" placeholder="jane@example.com" value={email} onChange={e => setEmail(e.target.value)} />
           </div>
         )}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-          <Field label="Check-in" type="date" value={checkIn} min={todayMyt(-1)} onChange={e => setCheckIn(e.target.value)} required />
-          <Field label="Check-out" type="date" value={checkOut} min={checkIn || undefined} onChange={e => setCheckOut(e.target.value)} required
-            error={checkIn && checkOut && nights < 1 ? 'Check-out must be after check-in.' : undefined} />
+          <DateField label="Check-in" value={checkIn} min={todayMyt(-1)} onChange={setCheckIn} required error={fieldErrors.checkIn} />
+          <DateField label="Check-out" value={checkOut} min={checkIn || undefined} onChange={setCheckOut} required
+            error={checkIn && checkOut && nights < 1 ? 'Check-out must be after check-in.' : fieldErrors.checkOut} />
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-          <Field label="Check-in from" type="time" value={inTime} onChange={e => setInTime(e.target.value)} help="Earlier for an early check-in." />
-          <Field label="Check-out by" type="time" value={outTime} onChange={e => setOutTime(e.target.value)} help="Later for a late check-out." />
+          <TimeField label="Check-in from" value={inTime} onChange={setInTime} help="Earlier for an early check-in." error={fieldErrors.checkInTime} />
+          <TimeField label="Check-out by" value={outTime} onChange={setOutTime} help="Later for a late check-out." error={fieldErrors.checkOutTime} />
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-          <Field label="Guests" type="number" min={1} max={16} numeric value={guestsCount} onChange={e => setGuestsCount(e.target.value)} />
+          <NumberInput label="Guests" min={1} max={16} value={guestsCount} onChange={setGuestsCount} required
+            error={fieldErrors.guestsCount} />
           {!owner && (
-            <Field label="Guest total for the stay (RM)" type="number" min={0} step="0.01" numeric value={rate} onChange={e => setRate(e.target.value)}
+            <MoneyInput label="Guest total for the stay (RM)" valueSen={rateSen} onChangeSen={setRateSen} error={fieldErrors.grossBookingValue}
               help={datesValid ? `${fmtNights(nights)} · ${dateRange(checkIn, checkOut)}` : 'What the guest pays for the whole stay.'} />
           )}
         </div>

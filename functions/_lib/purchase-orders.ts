@@ -1,6 +1,7 @@
 /** Purchase Orders, ported from 2990's SCM. Core priced document: header + lines.
  *  Money is integer sen. Furniture specials / MRP-SO linkage deferred to later tiers. */
 import { intOrNull } from './scm-util';
+import { checkDate, checkInt, checkSen, type Fields } from './validate';
 
 export const PO_STATUSES = ['SUBMITTED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED'] as const;
 export type PoStatus = typeof PO_STATUSES[number];
@@ -58,4 +59,17 @@ export function computeTotals(lines: NormLine[], taxSen = 0) {
   const subtotal = lines.reduce((s, l) => s + l.lineTotalSen, 0);
   const tax = Math.max(0, taxSen);
   return { subtotalSen: subtotal, taxSen: tax, totalSen: subtotal + tax };
+}
+
+/** Field checks for a PO or PC body (header dates, tax, line numbers). Absent values pass, so PATCH uses it too. */
+export function checkPricedBody(fields: Fields, b: Record<string, unknown>, dateKey: 'poDate' | 'pcDate', dateLabel: string) {
+  checkDate(fields, dateKey, b[dateKey], { label: dateLabel });
+  checkDate(fields, 'expectedAt', b.expectedAt, { label: 'Expected date' });
+  checkSen(fields, 'taxSen', b.taxSen, { label: 'Tax' });
+  if (!Array.isArray(b.lines)) return;
+  (b.lines as Record<string, unknown>[]).forEach((l, i) => {
+    checkInt(fields, `lines.${i}.qty`, l?.qty, { label: 'Quantity', min: 0 });
+    checkSen(fields, `lines.${i}.unitPriceSen`, l?.unitPriceSen, { label: 'Unit price' });
+    checkSen(fields, `lines.${i}.discountSen`, l?.discountSen, { label: 'Discount' });
+  });
 }

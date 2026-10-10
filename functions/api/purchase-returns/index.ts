@@ -4,6 +4,7 @@ import { nextReturnNumber, toPretHeaderPayload, type PretHeaderRow } from '../..
 import { recomputePoStatus } from '../../_lib/goods-receipts';
 import { postStockMovement, stockShortages, shortageText } from '../../_lib/stock-ops';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
+import { checkDate, checkInt, checkSen, invalid, type Fields } from '../../_lib/validate';
 
 const LIST_SQL = `
   SELECT pr.id, pr.return_number, pr.purchase_order_id, pr.grn_id, pr.supplier_id, pr.return_date, pr.reason, pr.status,
@@ -37,6 +38,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can raise purchase returns.', 403);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkDate(fields, 'returnDate', b.returnDate, { label: 'Return date' });
+  if (Array.isArray(b.lines)) (b.lines as Record<string, unknown>[]).forEach((l, i) => {
+    checkInt(fields, `lines.${i}.qtyReturned`, l?.qtyReturned, { label: 'Return quantity', min: 0 });
+    checkSen(fields, `lines.${i}.unitPriceSen`, l?.unitPriceSen, { label: 'Unit price' });
+  });
+  const bad = invalid(fields); if (bad) return bad;
   const grnId = String(b.grnId ?? '').trim();
   const grn = await one<{ supplier_id: string; purchase_order_id: string; status: string; warehouse_id: string | null }>(env, 'SELECT supplier_id, purchase_order_id, status, warehouse_id FROM goods_receipts WHERE id = ?', grnId);
   if (!grn) return fail('VALIDATION', 'Pick a goods receipt.', 422, { grnId: 'Unknown goods receipt.' });

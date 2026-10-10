@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { nextNumber, toTransferPayload, stockShortages, shortageText, type TransferHeaderRow } from '../../_lib/stock-ops';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
+import { checkDate, checkInt, invalid, type Fields } from '../../_lib/validate';
 
 const LIST_SQL = `
   SELECT t.id, t.transfer_number, t.from_warehouse_id, t.to_warehouse_id, t.transfer_date, t.status, t.notes,
@@ -21,6 +22,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can transfer stock.', 403);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkDate(fields, 'transferDate', b.transferDate, { label: 'Date' });
+  if (Array.isArray(b.lines)) (b.lines as Record<string, unknown>[]).forEach((l, i) => checkInt(fields, `lines.${i}.qty`, l?.qty, { label: 'Quantity', min: 0 }));
+  const bad = invalid(fields); if (bad) return bad;
   const from = String(b.fromWarehouseId ?? '').trim();
   const to = String(b.toWarehouseId ?? '').trim();
   if (!from || !to) return fail('VALIDATION', 'Pick both warehouses.', 422, { toWarehouseId: 'Pick a warehouse.' });

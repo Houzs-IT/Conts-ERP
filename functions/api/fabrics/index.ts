@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { invalidFabric, toFabricPayload, type FabricRow } from '../../_lib/fabric';
 import { strOrNull, intOrNull, flag } from '../../_lib/scm-util';
+import { checkSen, checkInt, invalid as invalidFields, type Fields } from '../../_lib/validate';
 
 const COLS = 'id, fabric_code, label, tier, default_surcharge_sen, sofa_tier, bedframe_tier, swatch_key, active, sort_order';
 
@@ -19,6 +20,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const bad = invalidFabric(b);
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
+  const fields: Fields = {};
+  checkSen(fields, 'defaultSurchargeSen', b.defaultSurchargeSen, { label: 'Surcharge' });
+  checkInt(fields, 'sortOrder', b.sortOrder, { label: 'Sort order' });
+  const badFields = invalidFields(fields); if (badFields) return badFields;
   const id = (b.id as string).trim();
   if (await one(env, 'SELECT 1 AS x FROM fabric_library WHERE lower(id) = lower(?)', id)) return fail('CONFLICT', 'A fabric with this id already exists.', 409, { id: 'This id is already used.' });
   const now = nowIso();

@@ -4,10 +4,11 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
+import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api, notifyFailure, ApiFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { date } from '../lib/format';
@@ -68,21 +69,41 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
   const [to, setTo] = useState(warehouses[1]?.id ?? '');
   const [tdate, setTdate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
-  const [lines, setLines] = useState<{ itemCode: string; description: string; qty: string }[]>([{ itemCode: '', description: '', qty: '1' }]);
-  const setLine = (i: number, k: 'itemCode' | 'description' | 'qty', v: string) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
-  const built = () => lines.filter(l => l.itemCode.trim() && (Number(l.qty) || 0) > 0).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), qty: Number(l.qty) || 0 }));
+  const [lines, setLines] = useState<{ itemCode: string; description: string; qty: number | null }[]>([{ itemCode: '', description: '', qty: 1 }]);
+  const setLine = (i: number, k: 'itemCode' | 'description', v: string) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
+  const setQty = (i: number, v: number | null) => setLines(ls => ls.map((l, j) => j === i ? { ...l, qty: v } : l));
+  // Draft row index of each line sent, so a server message for lines.N lands on the right row.
+  const keptRows = () => lines.flatMap((l, i) => (l.itemCode.trim() && (l.qty ?? 0) > 0 ? [i] : []));
+  const built = () => keptRows().map(i => ({ itemCode: lines[i].itemCode.trim(), description: lines[i].description.trim(), qty: lines[i].qty ?? 0 }));
   const canSave = canWrite && from !== '' && to !== '' && from !== to && built().length > 0;
 
   const [busy, setBusy] = useState(false);
+  const [tried, setTried] = useState(false);
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const qtyError = (i: number) => fields[`lines.${i}.qty`] ?? (tried && lines[i].itemCode.trim() && lines[i].qty == null ? 'Required.' : undefined);
 
   // Waits for the server: a refused transfer (source can't cover it) must not show as posted.
   async function submit() {
+    setTried(true);
+    if (!tdate || lines.some(l => l.itemCode.trim() && l.qty == null)) return;
+    const rows = keptRows();
     const b = built();
+    setFields({});
     setBusy(true);
     try {
       const r = await api.post<{ id: string; transferNumber: string }>('/stock-transfers', { fromWarehouseId: from, toWarehouseId: to, transferDate: tdate, notes, lines: b });
       onCreated({ id: r.id, transferNumber: r.transferNumber, fromName: warehouses.find(w => w.id === from)?.name ?? '', toName: warehouses.find(w => w.id === to)?.name ?? '', fromWarehouseId: from, toWarehouseId: to, transferDate: tdate, status: 'POSTED', notes, lines: b });
-    } catch (e) { notifyFailure(e); } finally { setBusy(false); }
+    } catch (e) {
+      if (e instanceof ApiFailure && e.fields) {
+        const f: Record<string, string> = {};
+        for (const [key, msg] of Object.entries(e.fields)) {
+          const m = /^lines\.(\d+)\.(.+)$/.exec(key);
+          f[m && rows[+m[1]] != null ? `lines.${rows[+m[1]]}.${m[2]}` : key] = msg;
+        }
+        setFields(f);
+      }
+      notifyFailure(e);
+    } finally { setBusy(false); }
   }
 
   return (
@@ -92,7 +113,7 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
           <Sel label="From warehouse" value={from} onChange={setFrom} options={warehouses} />
           <Sel label="To warehouse" value={to} onChange={setTo} options={warehouses} />
-          <Field label="Date" type="date" value={tdate} onChange={e => setTdate(e.target.value)} />
+          <DateField label="Date" required value={tdate} onChange={setTdate} error={fields.transferDate ?? (tried && !tdate ? 'Required.' : undefined)} />
         </div>
         {from !== '' && to !== '' && from === to && <div className="text-[12.5px] text-danger">Source and destination must differ.</div>}
         <div className="flex flex-col gap-2">
@@ -105,14 +126,14 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
                   <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
                     <td className="p-1.5"><input value={l.itemCode} onChange={e => setLine(i, 'itemCode', e.target.value)} className="h-8 w-[140px] box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
                     <td className="p-1.5"><input value={l.description} onChange={e => setLine(i, 'description', e.target.value)} className="h-8 w-full box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
-                    <td className="p-1.5 text-right"><input type="number" min={0} value={l.qty} onChange={e => setLine(i, 'qty', e.target.value)} className="h-8 w-[70px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
+                    <td className="p-1.5 text-right"><NumberInput aria-label="Quantity" min={0} value={l.qty} error={qtyError(i)} onChange={v => setQty(i, v)} className="h-8 w-[70px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
                     <td className="p-1.5 text-center"><button onClick={() => setLines(ls => ls.length > 1 ? ls.filter((_, j) => j !== i) : ls)} aria-label="Remove" className="text-muted-ink hover:text-danger bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div><Button size="sm" variant="secondary" icon={<Plus size={15} strokeWidth={1.75} />} onClick={() => setLines(ls => [...ls, { itemCode: '', description: '', qty: '1' }])}>Add line</Button></div>
+          <div><Button size="sm" variant="secondary" icon={<Plus size={15} strokeWidth={1.75} />} onClick={() => setLines(ls => [...ls, { itemCode: '', description: '', qty: 1 }])}>Add line</Button></div>
         </div>
         <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
       </div>
