@@ -27,6 +27,11 @@ const SPEC: Record<string, Record<string, Field>> = {
     cleaningWindowHours: { def: 4, legacy: 'ops.turnover_sla_hours', kind: 'number', min: 1, max: 24 },
     linenSets: { def: 2, kind: 'number', min: 1, max: 10 },
     photoRequiredToMarkReady: { def: true, legacy: 'ops.photo_required', kind: 'bool' },
+    // Sen. A repair the owner pays above this waits for the owner's approval (functions/_lib/maintenance.ts).
+    maintenanceApprovalThreshold: { def: 30000, kind: 'number', min: 0, max: 10_000_000, integer: true },
+    // Sen. What a clean costs a unit with no price of its own (functions/_lib/cleaning.ts cleanPrice).
+    cleaningPriceStandard: { def: 8000, kind: 'number', min: 0, max: 1_000_000, integer: true },
+    cleaningPriceDeep: { def: 13800, kind: 'number', min: 0, max: 1_000_000, integer: true },
   },
   statements: {
     cycleDay: { def: 1, kind: 'number', min: 1, max: 28 },

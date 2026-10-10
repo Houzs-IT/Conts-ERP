@@ -1,5 +1,26 @@
-import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
-import { requireSession } from '../../../../_lib/auth';
+import { type Env, all, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
+import { requireSession, isFieldRole } from '../../../../_lib/auth';
+
+/** GET /api/maintenance/issues/:id/documents — the job's files: before and after photos and videos, the proof of
+ *  work and the invoice, oldest first, each with its download address. */
+export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return response!;
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot open maintenance files here.', 403);
+  const id = String(params.id);
+  if (!(await one(env, 'SELECT 1 AS x FROM maintenance_issues WHERE id = ?', id))) return fail('NOT_FOUND', 'That job no longer exists.', 404);
+  const rows = await all<any>(env, `
+    SELECT d.id, d.kind, d.file_name, d.mime_type, d.byte_size, d.created_at, u.full_name AS uploader
+    FROM documents d LEFT JOIN users u ON u.id = d.uploaded_by WHERE d.maintenance_id = ? ORDER BY d.created_at`, id);
+  return json({
+    data: rows.map(r => ({
+      id: r.id, kind: r.kind, url: `/api/documents/${r.id}/download`, fileName: r.file_name, mimeType: r.mime_type,
+      byteSize: Number(r.byte_size), uploadedAt: r.created_at, uploader: r.uploader ?? null,
+      // Photos and videos carry their stage in the file name ("before-...", "after-...").
+      stage: r.kind === 'photo' || r.kind === 'video' ? (String(r.file_name).startsWith('after-') ? 'after' : 'before') : null,
+    })),
+  });
+};
 
 const MAX_BYTES = 15 * 1024 * 1024;
 
@@ -19,11 +40,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const file = form?.get('file');
   if (!(file instanceof File)) return fail('VALIDATION', 'Attach a file.', 422);
   if (file.size > MAX_BYTES) return fail('VALIDATION', 'That file is too large (15 MB limit).', 422);
-  const kind = String(form?.get('kind') ?? 'other'); // pod | invoice — counted as a document, not a photo, alongside it
+  const kind = ['pod', 'invoice'].includes(String(form?.get('kind'))) ? String(form?.get('kind')) : 'other'; // counted as a document, not a photo
 
   const docId = crypto.randomUUID();
   const key = `maintenance/${id}/${docId}`;
-  await env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type || 'application/octet-stream' } });
+  await env.MEDIA.put(key, file, { httpMetadata: { contentType: file.type || 'application/octet-stream' } });
   await run(env, `
     INSERT INTO documents (id, kind, file_name, mime_type, byte_size, storage_key, unit_id, maintenance_id, uploaded_by, captured_at, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

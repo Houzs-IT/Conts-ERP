@@ -40,6 +40,14 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Before production: a database role for the engine that cannot read schema `pos` (local testing uses the admin connection); reference data the screens need (dropdown options, categories, warehouses) entered or agreed with the owner.
 - Open with the owner: does Conts use AutoCount; which Houzs modules Conts does not need (accounting ledger, consignment, HR commission, POS).
 
+## Operations (Cleaning / Maintenance rework, feat/b1-ops)
+- Migration 0090 (guest_left_at, task_checklist_items, maintenance category/urgency/source/assignee kind, maintenance_windows) must be applied on staging, then production, before this ships.
+- A finished clean now charges its unit (cleaning expense, owner pays). While the owner workbook is still imported, a clean recorded in both could be charged twice if the workbook row is imported after the system clean; chargeClean skips a unit that already has a cleaning expense that day, the import does not check the other way.
+- Demo walkthrough data: scripts/demo-ops-seed.mjs (--apply --confirm=<ref>, --remove); not run on staging or production yet.
+- Calendar block made from "Block unit until fixed" is not removed when the job is done; remove it on the Calendar.
+- Videos are capped at 50 MB per file (Workers request memory); longer clips need direct-to-R2 upload.
+- `text-critical` / `text-warning` / `text-success` / `text-info` render the pale tint, not the text colour (tokens.css redefines --color-critical etc. as the tint); the new ops screens use the -fg tokens, other pages still use the classes.
+
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.

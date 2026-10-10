@@ -99,7 +99,7 @@ export default function AppShell({
             aria-modal={drawerOpen}
             aria-label="Navigation"
             style={{
-              position: 'fixed', top: 0, left: 0, height: '100vh', zIndex: 51,
+              position: 'fixed', top: 0, left: 0, height: '100dvh', zIndex: 51,
               transform: drawerOpen ? 'translateX(0)' : 'translateX(-100%)',
               transition: drawerTransition,
               boxShadow: drawerOpen ? '0 12px 32px 0 rgba(21,21,21,0.32)' : 'none',
