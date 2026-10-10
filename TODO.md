@@ -70,12 +70,20 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 
 ## Future (planning only, not started): security hardening
 Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
-1. Two-step login (2FA) with an authenticator app. Required for management and finance, optional for others. Backup codes, and an admin reset that is logged.
+1. Done (feat/s5-security-backup): two-step sign-in, sign-in record, sign out everywhere / other devices, My account. See "Security and backups" below.
 2. Login protection through Cloudflare: Turnstile on the login page, rate limiting on login, password reset and other sensitive endpoints. Check which Cloudflare plan includes each feature.
 3. Alerts: email management on a login from a new device, repeated failed logins, or a bank-detail change.
 5. Restrict the staff sign-in to office addresses or put it behind Cloudflare Access (needs office network details).
-6. Data safety: turn on Supabase point-in-time backups and test one restore; limit bulk data exports.
+6. Data safety: nightly encrypted backup with a tested restore is built (see below); Supabase point-in-time recovery (paid add-on) and limits on bulk exports still open.
 - To discuss later: what "bandwidth" should mean here (blocking floods of requests = item 2, or limiting how much data one user can download = item 6).
+
+## Security and backups (feat/s5-security-backup)
+- Production order: apply migration 0055, then 0098, then deploy. The code checks for both columns, so a deploy that lands first does not lock anyone out; sign out everywhere and two-step sign-in answer "needs a database update" until they are applied.
+- Owner: add a Pages secret TOTP_ENC_KEY (32+ random characters) on production and on preview (`wrangler pages secret put TOTP_ENC_KEY`, with `--env preview` for staging). Without it two-step sign-in cannot be set up; changing it later makes every enrolled authenticator stop working (backup codes still work, management resets).
+- Owner: add GitHub secrets PROD_DB_URL (Supabase session pooler string) and BACKUP_PASSPHRASE, then run Nightly database backup once by hand (docs/DR-RUNBOOK.md). Not yet run against production.
+- Not in the nightly backup: the supply chain engine (scm, public Houzs tables) and photos/documents in R2.
+- Requiring two-step sign-in per role is off for every role until management ticks roles in Settings > Security.
+- login_events keeps every attempt with no pruning; add a retention job once the cron worker is deployed.
 
 ## System health
 - System Health (feat/system-health): System > System health, laid out and shaped like the Hookka /admin/health page (banner, stat cards, audit feed with range and sensitive-only) so it can be moved between systems; `db`, `r2`, `counts` and the audit feed are the portable core, `checks` are Conts's own (email, Channex, booking notifications, sync queue, background jobs, problems). No migration. The separate Audit trail page is gone: the audit feed here opens each row to its before/after and pages up to 1000 events per range (/system/audit redirects; /api/audit stays for booking history). Tested: scripts/api-checks/system-health.mjs.

@@ -1,8 +1,9 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, revokeSessions, sendPasswordReset, hashPassword } from '../../../_lib/auth';
 import { doorFor } from '../../../_lib/door';
+import { twoFactorTables } from '../../../_lib/twoFactor';
 
-const ACTIONS = ['reset_email', 'temp_password', 'revoke_sessions', 'unlock'] as const;
+const ACTIONS = ['reset_email', 'temp_password', 'revoke_sessions', 'unlock', 'reset_2fa'] as const;
 type Action = typeof ACTIONS[number];
 
 /**
@@ -12,6 +13,8 @@ type Action = typeof ACTIONS[number];
  *                    signs them out everywhere, and they must choose their own at the next sign-in
  *   revoke_sessions  sign them out on every device (a lost phone, a shared laptop)
  *   unlock           clear the lock from too many wrong passwords
+ *   reset_2fa        turn off their two-step sign-in and delete their backup codes (a lost phone); they set it up
+ *                    again at their next sign-in if their role requires it
  * Switching an account off for a while is the existing Active checkbox (PATCH /api/users/:id): the password is kept.
  */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -22,7 +25,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const id = String(params.id);
   const action = (await request.json<{ action?: Action }>().catch(() => null))?.action;
   if (!action || !ACTIONS.includes(action)) return fail('VALIDATION', 'Unknown action.', 422);
-  if (id === session.userId && (action === 'temp_password' || action === 'revoke_sessions')) {
+  if (id === session.userId && (action === 'temp_password' || action === 'revoke_sessions' || action === 'reset_2fa')) {
     return fail('SELF_LOCKOUT', 'Use Change password on your own account instead.', 422);
   }
 
@@ -43,10 +46,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     const temp = tempPassword();
     await run(env, 'UPDATE users SET password_hash = ?, must_change_password = 1, failed_attempts = 0, locked_until = NULL, updated_at = ? WHERE id = ?',
       await hashPassword(temp), nowIso(), id);
-    await revokeSessions(env, id);
-    result = { tempPassword: temp };
+    const revoked = await revokeSessions(env, id);
+    result = { tempPassword: temp, signedOut: revoked };
   } else if (action === 'revoke_sessions') {
-    await revokeSessions(env, id);
+    if (!(await revokeSessions(env, id))) return fail('NOT_MIGRATED', 'Sign out everywhere needs a database update (migration 0055) that has not been applied yet.', 503);
+  } else if (action === 'reset_2fa') {
+    if (!(await twoFactorTables(env))) return fail('NOT_MIGRATED', 'Two-step sign-in needs a database update (migration 0098) that has not been applied yet.', 503);
+    await run(env, 'UPDATE users SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL, updated_at = ? WHERE id = ?', nowIso(), id);
+    await run(env, 'DELETE FROM user_backup_codes WHERE user_id = ?', id);
   } else {
     await run(env, 'UPDATE users SET failed_attempts = 0, locked_until = NULL, updated_at = ? WHERE id = ?', nowIso(), id);
   }

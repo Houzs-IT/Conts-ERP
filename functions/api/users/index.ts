@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/d
 import { requireSession, hashPassword } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { ROLES } from '../../_lib/roles';
+import { twoFactorTables } from '../../_lib/twoFactor';
 
 const MANAGE = ['management'];
 const VIEW = ['management', 'operations_manager'];
@@ -12,15 +13,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   if (!VIEW.includes(session.role)) return fail('FORBIDDEN', 'User accounts are managed by administrators.', 403);
 
+  const totp = await twoFactorTables(env);
   const rows = await all<any>(env, `
     SELECT id, full_name, email, phone, role, manager_id, is_active, must_change_password, last_login_at, locale, created_at,
-      COALESCE(locked_until::timestamptz > now(), false) AS is_locked
+      COALESCE(locked_until::timestamptz > now(), false) AS is_locked, ${totp ? 'totp_enabled_at IS NOT NULL' : 'false'} AS two_step
     FROM users ORDER BY role, full_name`);
   return json({
     generatedAt: nowIso(),
     data: rows.map(r => ({
       id: r.id, fullName: r.full_name, email: r.email, phone: r.phone ?? '—', role: r.role, managerId: r.manager_id,
-      isActive: !!r.is_active, mustChangePassword: !!r.must_change_password, isLocked: !!r.is_locked, lastLoginAt: r.last_login_at,
+      isActive: !!r.is_active, mustChangePassword: !!r.must_change_password, isLocked: !!r.is_locked, twoStep: !!r.two_step, lastLoginAt: r.last_login_at,
       locale: r.locale, createdAt: r.created_at,
     })),
   });

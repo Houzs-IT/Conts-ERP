@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import PermissionsChart from '../components/PermissionsChart';
+import UsersSignIns from './UsersSignIns';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Dialog, type DialogSpec } from '../components/Dialog';
@@ -25,6 +26,7 @@ import type { Tone, UserRole } from '../lib/types';
  *                     office role can do in each area, saved to role_access.
  *   3. Organisation — the reporting line (manager_id). Explicitly NOT a
  *                     permission source; permissions come from the role.
+ *   4. Sign-ins     — management only: every sign-in attempt (UsersSignIns).
  * There is no backend in dev, so every mutation is applied to a local
  * overlay first and the real call is attempted in a swallowed try/catch.
  * ------------------------------------------------------------------ */
@@ -42,7 +44,7 @@ const roleTone: Record<UserRole, Tone> = {
 interface Row {
   id: string; fullName: string; email: string; phone: string; role: UserRole;
   managerId: string | null;
-  isActive: boolean; mustChangePassword: boolean; isLocked?: boolean; lastLoginAt: string | null;
+  isActive: boolean; mustChangePassword: boolean; isLocked?: boolean; twoStep?: boolean; lastLoginAt: string | null;
 }
 interface Payload { data: Row[]; generatedAt: string }
 
@@ -116,7 +118,7 @@ export default function UsersPage() {
   const { data, loading, error, reload } = useApi<Payload>('/users', FALLBACK);
   const toast = useToast();
 
-  const [tab, setTab] = useState<'users' | 'permissions' | 'org'>('users');
+  const [tab, setTab] = useState<'users' | 'permissions' | 'org' | 'signins'>('users');
 
   // Optimistic overlay: invited users prepend, per-id edits merge on top.
   const [added] = useState<Row[]>([]);
@@ -285,6 +287,12 @@ export default function UsersPage() {
       confirmLabel: 'Sign out everywhere', busyLabel: 'Signing out…', danger: true,
       onConfirm: () => act(u, security(u, 'revoke_sessions'), `${u.fullName} has been signed out on every device.`),
     }) });
+    if (u.twoStep && !self) items.push({ key: '2fa', label: 'Reset two-step sign-in', icon: 'ShieldOff', run: () => setConfirm({
+      title: `Reset ${u.fullName}'s two-step sign-in?`,
+      body: 'Use this when they lost their phone. Their authenticator code and backup codes stop working, and they sign in with their password alone. If their role requires two-step sign-in, they are asked to set it up again straight after signing in.',
+      confirmLabel: 'Reset two-step sign-in', busyLabel: 'Resetting…', danger: true,
+      onConfirm: () => act(u, security(u, 'reset_2fa'), `${u.fullName}'s two-step sign-in was reset.`),
+    }) });
     if (u.isActive && u.isLocked) items.push({ key: 'unlock', label: 'Unlock account', icon: 'LockOpen', run: () => setConfirm({
       title: `Unlock ${u.fullName}'s account?`,
       body: 'Too many wrong passwords locked this account for a while. Unlocking lets them try again now instead of waiting.',
@@ -381,6 +389,7 @@ export default function UsersPage() {
     { key: 'users', label: 'Users' },
     { key: 'permissions', label: 'Permissions' },
     { key: 'org', label: 'Organisation chart' },
+    ...(canManage ? [{ key: 'signins' as const, label: 'Sign-ins' }] : []),
   ];
 
   return (
@@ -477,6 +486,9 @@ export default function UsersPage() {
           </div>
         </Card>
       )}
+
+      {/* ----------------------------- Sign-ins tab ----------------------------- */}
+      {tab === 'signins' && canManage && <UsersSignIns people={rows.map(r => ({ id: r.id, fullName: r.fullName }))} />}
 
       {/* --------------------------- Permissions tab --------------------------- */}
       {tab === 'permissions' && <PermissionsChart />}

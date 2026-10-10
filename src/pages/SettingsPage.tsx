@@ -11,6 +11,7 @@ import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import { useSession } from '../lib/session';
+import { ROLE_LABEL } from '../lib/vocabulary';
 
 /* ------------------------------------------------------------------ *
  * Settings — organisation-wide defaults (routes.json → SYSTEM →
@@ -37,6 +38,8 @@ interface Settings {
   security: {
     staffInactivityTimeoutMins: number; ownerInactivityTimeoutMins: number;
     absoluteTimeoutHours: number; lockoutAttempts: number; lockoutMinutes: number;
+    /** Comma-separated roles that must use two-step sign-in. */
+    require2faRoles: string;
   };
   generatedAt: string;
 }
@@ -54,10 +57,11 @@ const FALLBACK: Settings = {
   operations: { checkIn: '15:00', checkOut: '11:00', cleaningWindowHours: 4, linenSets: 2, photoRequiredToMarkReady: true },
   statements: { cycleDay: 1, autoGenerate: true, payoutMethod: 'bank_transfer' },
   report: { paymentTerms: '7th every month', monthlyTerms: '', yearTerms: '', miscChargeMonthly: 10000 },
-  security: { staffInactivityTimeoutMins: 10080, ownerInactivityTimeoutMins: 480, absoluteTimeoutHours: 720, lockoutAttempts: 5, lockoutMinutes: 15 },
+  security: { staffInactivityTimeoutMins: 10080, ownerInactivityTimeoutMins: 480, absoluteTimeoutHours: 720, lockoutAttempts: 5, lockoutMinutes: 15, require2faRoles: '' },
 };
 
 /* -------------------------------- options -------------------------------- */
+const TWO_STEP_ROLES = ['management', 'finance_admin', 'operations_manager', 'operations_staff', 'housekeeper', 'technician', 'owner'];
 const LOCALES = [
   { value: 'en-MY', label: 'English (Malaysia)' },
   { value: 'ms-MY', label: 'Bahasa Melayu (planned)', disabled: true },
@@ -500,7 +504,7 @@ export default function SettingsPage() {
           {/* --------------------------- Security --------------------------- */}
           <SectionCard
             title="Security"
-            description="Session lifetimes and the account lockout threshold. Staff and owners are timed out separately — the owner portal is a brief, occasional check-in, so it defaults much shorter."
+            description="Session lifetimes, the account lockout threshold and who must use two-step sign-in. Staff and owners are timed out separately — the owner portal is a brief, occasional check-in, so it defaults much shorter."
             readOnly={readOnly} dirty={dirty('security')} busy={busy === 'security'} saveLabel="Save security"
             onSave={() => save('security')} onDiscard={() => discard('security')}
           >
@@ -547,6 +551,28 @@ export default function SettingsPage() {
                 onChange={e => patch('security', { lockoutMinutes: clampInt(e.target.value, 1, 120, draft.security.lockoutMinutes) })}
               />
             </Grid>
+            <fieldset className="m-0 mt-5 p-0 border-none flex flex-col gap-2.5">
+              <legend className="p-0 mb-2.5 text-meta font-medium text-muted-ink">Require two-step sign-in for</legend>
+              <div className="flex flex-wrap gap-x-5 gap-y-2">
+                {TWO_STEP_ROLES.map(r => {
+                  const on = draft.security.require2faRoles.split(',').includes(r);
+                  return (
+                    <label key={r} className={cx('flex items-center gap-2 min-h-8 text-copy', readOnly ? 'cursor-default text-muted-ink' : 'cursor-pointer')}>
+                      <input type="checkbox" className="w-4 h-4" checked={on} disabled={readOnly}
+                        onChange={() => {
+                          const set = new Set(draft.security.require2faRoles.split(',').filter(Boolean));
+                          if (on) set.delete(r); else set.add(r);
+                          patch('security', { require2faRoles: TWO_STEP_ROLES.filter(x => set.has(x)).join(',') });
+                        }} />
+                      {ROLE_LABEL[r] ?? r}
+                    </label>
+                  );
+                })}
+              </div>
+              <span className="text-meta text-muted-ink leading-[1.5]">
+                People in a ticked role who have not set it up are asked to at their next click, and can do nothing else until they have. Each person sets it up on My account; management can reset it for a lost phone from Users and roles.
+              </span>
+            </fieldset>
           </SectionCard>
 
         </div>
