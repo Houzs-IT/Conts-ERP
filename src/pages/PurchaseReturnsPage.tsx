@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Search, Plus, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, ApiFailure } from '../lib/api';
 import { ShortStockPrompt } from '../components/ShortStockPrompt';
@@ -60,6 +59,16 @@ export default function PurchaseReturnsPage() {
   const q = search.trim().toLowerCase();
   const rows = all.filter(p => (statusFilter === 'all' || p.status === statusFilter) && (!q || `${p.returnNumber} ${p.grnNumber} ${p.supplierName}`.toLowerCase().includes(q)));
 
+  const columns = useMemo<Column<Pret>[]>(() => [
+    { key: 'returnNumber', label: 'Return', type: 'ref', value: p => p.returnNumber, hideable: false },
+    { key: 'supplier', label: 'Supplier', value: p => p.supplierName, sub: p => p.supplierCode, text: p => `${p.supplierName} ${p.supplierCode}` },
+    { key: 'grnNumber', label: 'GRN', type: 'ref', value: p => p.grnNumber || null },
+    { key: 'returnDate', label: 'Return date', type: 'date', value: p => p.returnDate || null },
+    { key: 'reason', label: 'Reason', value: p => p.reason || null, render: p => p.reason ? <span className="block max-w-[200px] truncate text-muted-ink" title={p.reason}>{p.reason}</span> : <span className="text-muted-ink">—</span> },
+    { key: 'status', label: 'Status', type: 'status', value: p => p.status, status: p => ({ label: STATUS_LABEL[p.status], tone: STATUS_TONE[p.status] }) },
+    { key: 'refund', label: 'Refund', type: 'money', value: p => p.status === 'CANCELLED' ? null : p.refundSen },
+  ], []);
+
   function created(pret: Pret) { setAdded(a => [pret, ...a]); toast({ tone: 'success', title: 'Return raised.', body: `${pret.returnNumber} · ${pret.supplierName}` }); setDrawer(null); }
   function patch(p: Pret, status: Status, label: string) {
     setEdits(e => ({ ...e, [p.id]: { ...e[p.id], status } }));
@@ -73,52 +82,21 @@ export default function PurchaseReturnsPage() {
       <PageHeader title="Purchase returns" sub={`${all.length} returns · to suppliers`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New return</Button> : undefined} />
 
-      {error && <StaleBanner message={`Showing the last return list we have. ${error}`} onRetry={reload} />}
-
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
-        <div className="relative">
-          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search return, GRN or supplier..." aria-label="Search purchase returns"
-            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
-        </div>
-      </div>
-
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[780px]">
-            <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-                {['Return', 'Supplier', 'GRN', 'Return date', 'Reason', 'Status', 'Refund'].map((h, i) => (
-                  <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 6 ? 'text-right' : 'text-left')}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading && all.length === 0 ? (
-                <tr><td colSpan={7}><TableSkeleton rows={5} cols={7} /></td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={7}>
-                  <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
-                    <span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No returns match.' : 'No purchase returns yet.'}</span>
-                    <span className="text-[12.5px] text-muted-ink max-w-[380px]">Return received goods to a supplier against a goods receipt.</span>
-                  </div>
-                </td></tr>
-              ) : rows.map(p => (
-                <tr key={p.id} onClick={() => setDrawer({ mode: 'view', pret: p })} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{p.returnNumber}</td>
-                  <td className="py-[13px] px-4"><div className="flex flex-col"><span className="text-[13.5px]">{p.supplierName}</span><span className="text-[11.5px] text-muted-ink">{p.supplierCode}</span></div></td>
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[12px] text-muted-ink">{p.grnNumber || '—'}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.returnDate ? date(p.returnDate) : '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink max-w-[200px] truncate">{p.reason || '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={p.status} /></td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{p.status === 'CANCELLED' ? '—' : rm(p.refundSen)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Pret>
+        id="scm.purchase-returns" columns={columns} rows={data ? rows : null} rowKey={p => p.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={p => setDrawer({ mode: 'view', pret: p })}
+        noun={['purchase return', 'purchase returns']} exportName="purchase-returns"
+        toolbar={<>
+          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+          <div className="relative">
+            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search return, GRN or supplier..." aria-label="Search purchase returns"
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
+          </div>
+        </>}
+        filtered={!!q || statusFilter !== 'all'} onClearFilters={() => { setSearch(''); setStatusFilter('all'); }}
+        empty={{ title: 'No purchase returns yet.', body: 'Return received goods to a supplier against a goods receipt.', action: canWrite ? { label: 'New return', onClick: () => setDrawer({ mode: 'new' }) } : undefined }} />
 
       {drawer?.mode === 'new' && <ReturnDrawer openGrns={openGrns} canWrite={canWrite} onClose={() => setDrawer(null)} onCreated={created} />}
       {drawer?.mode === 'view' && <ViewDrawer pret={drawer.pret} canWrite={canWrite} onClose={() => setDrawer(null)}
@@ -246,6 +224,13 @@ function ReturnDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Op
 
 /* ---------- view drawer ---------- */
 
+const LINE_COLUMNS: Column<PretLine & { i: number }>[] = [
+  { key: 'item', label: 'Item', value: l => l.description, sub: l => <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{l.itemCode}</span>, text: l => `${l.description} ${l.itemCode}`, hideable: false },
+  { key: 'qty', label: 'Qty', type: 'number', value: l => l.qtyReturned },
+  { key: 'unitPrice', label: 'Unit price', type: 'money', value: l => l.unitPriceSen },
+  { key: 'lineTotal', label: 'Line total', type: 'money', value: l => l.lineTotalSen },
+];
+
 function ViewDrawer({ pret, canWrite, onClose, onComplete, onCancel }: { pret: Pret; canWrite: boolean; onClose: () => void; onComplete: (p: Pret) => void; onCancel: (p: Pret) => void }) {
   return (
     <Drawer open onClose={onClose} width={720}>
@@ -261,20 +246,11 @@ function ViewDrawer({ pret, canWrite, onClose, onComplete, onCancel }: { pret: P
           <Meta label="Credit note" value={pret.creditNoteRef || '—'} />
         </div>
         {pret.reason && <div className="text-[13px]"><span className="text-muted-ink">Reason: </span>{pret.reason}</div>}
-        <div className="overflow-x-auto border border-solid border-line rounded-card">
-          <table className="w-full border-collapse min-w-[480px]">
-            <thead><tr className="bg-muted">{['Item', 'Qty', 'Unit price', 'Line total'].map((th, i) => <th key={th} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i === 0 ? 'text-left' : 'text-right')}>{th}</th>)}</tr></thead>
-            <tbody>
-              {(pret.lines ?? []).map((l, i) => (
-                <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
-                  <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.qtyReturned}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.unitPriceSen)}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.lineTotalSen)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="border border-solid border-line rounded-card overflow-hidden">
+          <DataTable<PretLine & { i: number }>
+            id="scm.purchase-return.lines" urlPrefix="lines." columns={LINE_COLUMNS} rows={(pret.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)}
+            bare noViews noToolbar pageSize={0} noun={['line', 'lines']} exportName={`${pret.returnNumber}-lines`}
+            empty={{ title: 'No lines on this return.' }} />
         </div>
         <div className="flex justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Refund value</span><span className="tabular-nums w-[120px] text-right">{rm(pret.refundSen)}</span></div></div>
       </div>

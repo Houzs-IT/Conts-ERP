@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -6,7 +6,7 @@ import Icon from '../components/Icon';
 import { TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { count, dateTime, relative } from '../lib/format';
-import { EmptyState } from '../components/States';
+import { DataTable, type Column } from '../components/DataTable';
 import { cx } from '../lib/design-tokens';
 
 // System Health, laid out like the Hookka /admin/health page so the two can be moved between systems:
@@ -146,6 +146,7 @@ export default function SystemHealthPage() {
   }, [d, live.error]);
 
   const rows = feed.data?.data ?? [];
+  const open = rows.find(r => r.id === openRow) ?? null;
   const attention = d?.checks.filter(c => c.detail && (c.status === 'warning' || c.status === 'critical' || c.status === 'off')) ?? [];
 
   return (
@@ -202,94 +203,84 @@ export default function SystemHealthPage() {
             </p>
           </div>
 
-          <div className={panel}>
-            <div className={cx(panelTitle, 'mb-3 flex items-center gap-2')}><Icon name="Bug" size="sm" /> Problems in the last 7 days</div>
-            {d.problems.length === 0
-              ? <EmptyState bare icon="CircleCheck" title="Nothing has failed." body="Failed messages, syncs and jobs from the last 7 days show here." />
-              : (
-                <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] border-collapse text-copy">
-                  <thead><tr className="text-left text-caption text-muted-ink">{['When', 'What happened', 'Unit', 'Reason given'].map(h => <th key={h} className="font-medium py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{h}</th>)}</tr></thead>
-                  <tbody>
-                    {d.problems.map((p, i) => (
-                      <tr key={i} className="align-top">
-                        <td className="py-2 pr-4 whitespace-nowrap [border-bottom:1px_solid_var(--color-line-soft)]">{dateTime(p.at)}</td>
-                        <td className="py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{p.what}</td>
-                        <td className="py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{p.where ?? '—'}</td>
-                        <td className="py-2 text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]">{p.error ?? '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                </div>
-              )}
-          </div>
+          <DataTable<Problem> id="health.problems" urlPrefix="prob." noViews pageSize={0} maxHeight="none"
+            columns={PROBLEM_COLUMNS} rows={d.problems} rowKey={p => `${p.at}|${p.what}|${p.where ?? ''}`} noun={['problem', 'problems']}
+            exportName="problems-7d"
+            header={<div className={cx(panelTitle, 'flex items-center gap-2 pt-4 px-[22px] max-md:px-4 pb-1')}><Icon name="Bug" size="sm" /> Problems in the last 7 days</div>}
+            empty={{ title: 'Nothing has failed.', body: 'Failed messages, syncs and jobs from the last 7 days show here.', icon: 'CircleCheck' }} />
         </>
       )}
 
-      <div className={panel}>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className={panelTitle}>Audit feed: recent changes</div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => { setSensitiveOnly(v => !v); setLimit(100); }} title="Only accounts and passwords, settings, payouts, deletions and failures"
-              className={cx('inline-flex h-7 items-center gap-1.5 rounded-control border border-solid px-2.5 text-caption font-semibold cursor-pointer [font-family:inherit]',
-                sensitiveOnly ? 'border-[var(--color-warning-line)] bg-[var(--color-warning)] text-[var(--color-warning-fg)]' : 'border-line bg-card text-muted-ink')}>
-              <Icon name="ShieldAlert" size="sm" /> Sensitive only
-            </button>
-            <div className="inline-flex rounded-control border border-solid border-line bg-card p-0.5">
-              {RANGES.map(r => (
-                <button key={r} type="button" onClick={() => { setRange(r); setLimit(100); }}
-                  className={cx('h-6 rounded-[4px] border-none px-2 text-caption font-semibold cursor-pointer [font-family:inherit]', range === r ? 'bg-ink text-white' : 'bg-transparent text-muted-ink')}>
-                  {r}
+      <DataTable<AuditRow> id="health.audit" urlPrefix="audit." columns={AUDIT_COLUMNS}
+        rows={feed.data ? rows : null} rowKey={r => String(r.id)} loading={feed.loading} error={feed.error} onRetry={reloadFeed}
+        onRowClick={r => setOpenRow(openRow === r.id ? null : r.id)} rowTone={r => (r.id === openRow ? 'gold' : null)}
+        noun={['event', 'events']} exportName={`audit-${range}${sensitiveOnly ? '-sensitive' : ''}`} selectionKey={`${range}|${sensitiveOnly}`}
+        filtered={sensitiveOnly} onClearFilters={() => { setSensitiveOnly(false); setLimit(100); }}
+        empty={{ title: `No events in the last ${range}.`, icon: 'ClipboardCheck' }}
+        header={
+          <div className="pt-4 px-[22px] max-md:px-4 pb-3 flex flex-col gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className={panelTitle}>Audit feed: recent changes</div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => { setSensitiveOnly(v => !v); setLimit(100); }} title="Only accounts and passwords, settings, payouts, deletions and failures"
+                  className={cx('inline-flex h-7 items-center gap-1.5 rounded-control border border-solid px-2.5 text-caption font-semibold cursor-pointer [font-family:inherit]',
+                    sensitiveOnly ? 'border-[var(--color-warning-line)] bg-[var(--color-warning)] text-[var(--color-warning-fg)]' : 'border-line bg-card text-muted-ink')}>
+                  <Icon name="ShieldAlert" size="sm" /> Sensitive only
                 </button>
-              ))}
+                <div className="inline-flex rounded-control border border-solid border-line bg-card p-0.5">
+                  {RANGES.map(r => (
+                    <button key={r} type="button" onClick={() => { setRange(r); setLimit(100); }}
+                      className={cx('h-6 rounded-[4px] border-none px-2 text-caption font-semibold cursor-pointer [font-family:inherit]', range === r ? 'bg-ink text-white' : 'bg-transparent text-muted-ink')}>
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
+            {(feed.data?.summary.byAction.length ?? 0) > 0 && (
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))]">
+                <Breakdown title="By action" items={feed.data!.summary.byAction.map(a => ({ label: words(a.action), count: a.n }))} />
+                <Breakdown title="By resource" items={feed.data!.summary.byResource.map(a => ({ label: words(a.resource), count: a.n }))} />
+              </div>
+            )}
           </div>
-        </div>
-        {(feed.data?.summary.byAction.length ?? 0) > 0 && (
-          <div className="mb-4 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))]">
-            <Breakdown title="By action" items={feed.data!.summary.byAction.map(a => ({ label: words(a.action), count: a.n }))} />
-            <Breakdown title="By resource" items={feed.data!.summary.byResource.map(a => ({ label: words(a.resource), count: a.n }))} />
+        }
+        above={open && (
+          <div className="px-[22px] max-md:px-4 py-3 bg-page [border-bottom:1px_solid_var(--color-line-soft)]">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-meta text-muted-ink">
+                <span className="font-semibold text-ink">{open.actor_label} · {words(open.action)}</span> · {dateTime(open.created_at)} · record {String(open.entity_id).length > 12 ? String(open.entity_id).slice(0, 6).toUpperCase() : open.entity_id}
+              </span>
+              <Button size="sm" variant="tertiary" icon={<Icon name="X" size="sm" />} onClick={() => setOpenRow(null)}>Close</Button>
+            </div>
+            <AuditDiff before={open.before} after={open.after} />
           </div>
         )}
-        {feed.loading && rows.length === 0 ? <TableSkeleton rows={4} cols={4} />
-          : feed.error && rows.length === 0 ? <div className="py-6 text-center text-copy text-[var(--color-critical-fg)]">{feed.error}</div>
-          : rows.length === 0 ? <EmptyState bare kind={sensitiveOnly ? 'filtered' : 'empty'} icon="ClipboardCheck" title={`No ${sensitiveOnly ? 'sensitive ' : ''}events in the last ${range}.`}
-              action={sensitiveOnly ? { label: 'Show all events', onClick: () => { setSensitiveOnly(false); setLimit(100); } } : undefined} />
-          : (
-            <>
-            <div className="max-h-[520px] overflow-auto">
-              <table className="w-full min-w-[480px] border-collapse text-copy">
-                <thead><tr className="text-left text-caption text-muted-ink">{['When', 'Who', 'Action', 'Resource'].map(h => <th key={h} className="sticky top-0 bg-card font-medium py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{h}</th>)}</tr></thead>
-                <tbody>
-                  {rows.map(r => (
-                    <Fragment key={r.id}>
-                      <tr onClick={() => setOpenRow(openRow === r.id ? null : r.id)} className="cursor-pointer hover:bg-page" title="Show what changed">
-                        <td className="py-2 pr-4 whitespace-nowrap [border-bottom:1px_solid_var(--color-line-soft)]" title={dateTime(r.created_at)}>
-                          <span className="inline-flex items-center gap-1.5"><Icon name={openRow === r.id ? 'ChevronDown' : 'ChevronRight'} size="sm" color="var(--color-muted-ink)" />{relative(r.created_at)}</span>
-                        </td>
-                        <td className="py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{r.actor_label}</td>
-                        <td className="py-2 pr-4 [border-bottom:1px_solid_var(--color-line-soft)]">{words(r.action)}</td>
-                        <td className="py-2 text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]">{words(r.entity_type)}</td>
-                      </tr>
-                      {openRow === r.id && (
-                        <tr><td colSpan={4} className="px-5 py-2 bg-page [border-bottom:1px_solid_var(--color-line-soft)]">
-                          <div className="text-meta text-muted-ink">{dateTime(r.created_at)} · record {String(r.entity_id).length > 12 ? String(r.entity_id).slice(0, 6).toUpperCase() : r.entity_id}</div>
-                          <AuditDiff before={r.before} after={r.after} />
-                        </td></tr>
-                      )}
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-meta text-muted-ink">
-              <span>Showing {count(rows.length)} of {count(feed.data?.total ?? rows.length)} in the last {range}. Click a row to see what changed.</span>
-              {rows.length < (feed.data?.total ?? 0) && limit < 1000 && <Button size="sm" variant="secondary" loading={feed.loading} onClick={() => setLimit(l => Math.min(1000, l + 200))}>Show more</Button>}
-            </div>
-            </>
-          )}
-      </div>
+        footer={rows.length > 0 && (
+          <div className="py-3 px-[22px] max-md:px-4 flex flex-wrap items-center justify-between gap-3 text-meta text-muted-ink [border-top:1px_solid_var(--color-line-soft)]">
+            <span>{count(rows.length)} of {count(feed.data?.total ?? rows.length)} in the last {range} loaded. Click a row to see what changed.</span>
+            {rows.length < (feed.data?.total ?? 0) && limit < 1000 && <Button size="sm" variant="secondary" loading={feed.loading} onClick={() => setLimit(l => Math.min(1000, l + 200))}>Show more</Button>}
+          </div>
+        )} />
     </>
   );
 }
+
+type Problem = LivePayload['problems'][number];
+const PROBLEM_COLUMNS: Column<Problem>[] = [
+  { key: 'at', label: 'When', type: 'datetime', value: p => p.at, width: 150 },
+  { key: 'what', label: 'What happened', value: p => p.what, hideable: false, width: 220 },
+  { key: 'where', label: 'Unit', value: p => p.where, width: 140 },
+  { key: 'error', label: 'Reason given', value: p => p.error, width: 260,
+    render: p => <span className="block text-muted-ink whitespace-normal [overflow-wrap:anywhere]">{p.error ?? '—'}</span> },
+];
+
+const AUDIT_COLUMNS: Column<AuditRow>[] = [
+  { key: 'when', label: 'When', type: 'datetime', value: r => r.created_at, width: 150,
+    render: r => <span className="whitespace-nowrap" title={dateTime(r.created_at)}>{relative(r.created_at)}</span> },
+  { key: 'who', label: 'Who', type: 'person', value: r => r.actor_label, width: 170 },
+  { key: 'action', label: 'Action', value: r => words(r.action), width: 200 },
+  { key: 'resource', label: 'Resource', value: r => words(r.entity_type), width: 150,
+    render: r => <span className="text-muted-ink">{words(r.entity_type)}</span> },
+  { key: 'record', label: 'Record', type: 'ref', value: r => String(r.entity_id), hidden: true, width: 150 },
+];

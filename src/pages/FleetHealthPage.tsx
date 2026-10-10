@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
@@ -53,6 +52,19 @@ export default function FleetHealthPage() {
   const rows = all.filter(r => (vehFilter === 'all' || r.vehicleId === vehFilter) && (!q || `${r.vehicleCode} ${r.vehiclePlate} ${r.vendor}`.toLowerCase().includes(q)));
   const overdue = all.filter(r => r.nextDueDate && r.nextDueDate < today()).length;
 
+  const columns = useMemo<Column<Rec>[]>(() => [
+    { key: 'date', label: 'Date', type: 'date', value: r => r.serviceDate },
+    { key: 'vehicle', label: 'Vehicle', value: r => r.vehicleCode, text: r => `${r.vehicleCode} ${r.vehiclePlate}`, hideable: false, render: r => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{r.vehicleCode}</span>, sub: r => r.vehiclePlate || null },
+    { key: 'type', label: 'Type', value: r => TYPE_LABEL[r.recordType], filter: { kind: 'select' } },
+    { key: 'cost', label: 'Cost', type: 'money', value: r => r.costSen, render: r => r.costSen ? <span className="tabular-nums whitespace-nowrap">{rm(r.costSen)}</span> : <span className="text-muted-ink">—</span> },
+    { key: 'due', label: 'Next due', type: 'date', value: r => r.nextDueDate, render: r => {
+      if (!r.nextDueDate) return <span className="text-muted-ink">—</span>;
+      const isOverdue = r.nextDueDate < today();
+      return <span className={cx('whitespace-nowrap tabular-nums', isOverdue ? cx(TONE.critical.text, 'font-semibold') : 'text-muted-ink')}>{date(r.nextDueDate)}{isOverdue ? ' · overdue' : ''}</span>;
+    } },
+    { key: 'status', label: 'Status', type: 'status', value: r => r.status, status: r => (r.status === 'DONE' ? { label: 'Done', tone: 'success' } : { label: 'Scheduled', tone: 'info' }) },
+  ], []);
+
   function save(draft: Rec, isNew: boolean) {
     const v = vehicles.find(x => x.id === draft.vehicleId);
     const withV = { ...draft, vehicleCode: v?.code ?? draft.vehicleCode, vehiclePlate: v?.plate ?? draft.vehiclePlate };
@@ -69,44 +81,24 @@ export default function FleetHealthPage() {
     <>
       <PageHeader title="Fleet health" sub={`${all.length} records${overdue ? ` · ${overdue} overdue` : ''}`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyRec(), isNew: true })}>Log maintenance</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last fleet records we have. ${error}`} onRetry={reload} />}
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex items-center gap-2.5">
-          <label className="text-[12px] font-medium text-muted-ink">Vehicle</label>
-          <select value={vehFilter} onChange={e => setVehFilter(e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
-            <option value="all">All vehicles</option>
-            {vehicles.map(v => <option key={v.id} value={v.id}>{v.code}{v.plate ? ` · ${v.plate}` : ''}</option>)}
-          </select>
-        </div>
-        <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search vehicle / vendor..." aria-label="Search fleet health"
-          className="h-9 box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[220px] max-w-full" />
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[820px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-              {['Date', 'Vehicle', 'Type', 'Cost', 'Next due', 'Status'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 3 ? 'text-right' : 'text-left')}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={6}><TableSkeleton rows={6} cols={6} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={6}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || vehFilter !== 'all' ? 'No records match.' : 'No fleet records yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Log services, repairs, road tax and inspections per vehicle, with the next-due reminder.</span></div></td></tr>
-              : rows.map(r => {
-                const isOverdue = r.nextDueDate && r.nextDueDate < today();
-                return (
-                  <tr key={r.id} onClick={() => { if (canWrite) setDrawer({ draft: r, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
-                    <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)] tabular-nums">{r.serviceDate ? date(r.serviceDate) : '—'}</td>
-                    <td className="py-[13px] px-4"><div className="flex flex-col"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{r.vehicleCode}</span>{r.vehiclePlate && <span className="text-[11.5px] text-muted-ink">{r.vehiclePlate}</span>}</div></td>
-                    <td className="py-[13px] px-4 text-[13px]">{TYPE_LABEL[r.recordType]}</td>
-                    <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{r.costSen ? rm(r.costSen) : '—'}</td>
-                    <td className="py-[13px] px-4 text-[12.5px] tabular-nums">{r.nextDueDate ? <span className={cx(isOverdue ? cx(TONE.critical.text, 'font-semibold') : 'text-muted-ink')}>{date(r.nextDueDate)}{isOverdue ? ' · overdue' : ''}</span> : <span className="text-muted-ink">—</span>}</td>
-                    <td className="py-[13px] px-4"><span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', r.status === 'DONE' ? cx(TONE.success.bg, TONE.success.text) : cx(TONE.info.bg, TONE.info.text))}>{r.status === 'DONE' ? 'Done' : 'Scheduled'}</span></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Rec>
+        id="scm.fleet-health" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={canWrite ? r => setDrawer({ draft: r, isNew: false }) : undefined}
+        noun={['record', 'records']} exportName="fleet-health"
+        toolbar={<>
+          <div className="flex items-center gap-2.5">
+            <label className="text-[12px] font-medium text-muted-ink">Vehicle</label>
+            <select value={vehFilter} onChange={e => setVehFilter(e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
+              <option value="all">All vehicles</option>
+              {vehicles.map(v => <option key={v.id} value={v.id}>{v.code}{v.plate ? ` · ${v.plate}` : ''}</option>)}
+            </select>
+          </div>
+          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search vehicle / vendor..." aria-label="Search fleet health"
+            className="h-9 box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[220px] max-w-full" />
+        </>}
+        filtered={!!q || vehFilter !== 'all'} onClearFilters={() => { setSearch(''); setVehFilter('all'); }}
+        empty={{ title: 'No fleet records yet.', body: 'Log services, repairs, road tax and inspections per vehicle, with the next-due reminder.', action: canWrite ? { label: 'Log maintenance', onClick: () => setDrawer({ draft: emptyRec(), isNew: true }) } : undefined }} />
       {drawer && <RecDrawer draft={drawer.draft} isNew={drawer.isNew} vehicles={vehicles} onClose={() => setDrawer(null)} onSave={save} onDelete={drawer.isNew ? undefined : () => remove(drawer.draft)} />}
     </>
   );

@@ -1,6 +1,7 @@
+import { useMemo } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
@@ -37,14 +38,21 @@ const FALLBACK: Payload = {
 export default function CoverageFleetPage() {
   const { data, loading, error, reload } = useApi<Payload>('/coverage-fleet', FALLBACK);
   const s = data?.summary;
-  const vehicles = data?.vehicles ?? [];
-  const drivers = data?.drivers ?? [];
+
+  const vehicleColumns = useMemo<Column<Veh>[]>(() => [
+    { key: 'vehicle', label: 'Vehicle', value: v => v.code, text: v => `${v.code} ${v.plate}`, hideable: false, render: v => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{v.code}</span>, sub: v => v.plate || null },
+    { key: 'type', label: 'Type', value: v => v.vehicleType },
+    { key: 'status', label: 'Status', type: 'status', value: v => v.state, status: v => ({ label: V_LABEL[v.state], tone: V_TONE[v.state] }), render: v => <Pill tone={V_TONE[v.state]} label={V_LABEL[v.state]} extra={v.overdue > 0 ? `${v.overdue} overdue` : ''} /> },
+  ], []);
+  const driverColumns = useMemo<Column<Drv>[]>(() => [
+    { key: 'driver', label: 'Driver', value: d => d.name, text: d => `${d.name} ${d.driverCode}`, hideable: false, sub: d => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px]">{d.driverCode}</span> },
+    { key: 'phone', label: 'Phone', value: d => d.phone },
+    { key: 'status', label: 'Status', type: 'status', value: d => d.state, status: d => ({ label: D_LABEL[d.state], tone: D_TONE[d.state] }) },
+  ], []);
 
   return (
     <>
       <PageHeader title="Coverage & fleet" sub="Who and what is available for delivery today" />
-      {error && <StaleBanner message={`Showing the last coverage we have. ${error}`} onRetry={reload} />}
-
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
         <Tile label="Vehicles available" value={s ? `${s.vehiclesAvailable}/${s.vehiclesTotal}` : '—'} tone="success" />
         <Tile label="In maintenance" value={s ? String(s.vehiclesMaintenance) : '—'} tone="warning" />
@@ -52,45 +60,23 @@ export default function CoverageFleetPage() {
         <Tile label="On leave today" value={s ? String(s.driversOnLeave) : '—'} tone="warning" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <Card>
-          <div className="px-5 pt-4 pb-2 text-[13px] font-semibold uppercase tracking-[0.1em] text-muted-ink">Vehicles</div>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse min-w-[360px]">
-              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">{['Vehicle', 'Type', 'Status'].map(h => <th key={h} className="py-2.5 px-4 text-left text-[11.5px] font-semibold uppercase tracking-[0.1em] text-muted-ink">{h}</th>)}</tr></thead>
-              <tbody>
-                {loading && vehicles.length === 0 ? <tr><td colSpan={3}><TableSkeleton rows={4} cols={3} /></td></tr>
-                : vehicles.length === 0 ? <tr><td colSpan={3}><div className="py-8 text-center text-[12.5px] text-muted-ink">No vehicles.</div></td></tr>
-                : vehicles.map(v => (
-                  <tr key={v.id} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
-                    <td className="py-[11px] px-4"><div className="flex flex-col"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{v.code}</span>{v.plate && <span className="text-[11.5px] text-muted-ink">{v.plate}</span>}</div></td>
-                    <td className="py-[11px] px-4 text-[12.5px] text-muted-ink">{v.vehicleType || '—'}</td>
-                    <td className="py-[11px] px-4"><Pill tone={V_TONE[v.state]} label={V_LABEL[v.state]} extra={v.overdue > 0 ? `${v.overdue} overdue` : ''} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-        <Card>
-          <div className="px-5 pt-4 pb-2 text-[13px] font-semibold uppercase tracking-[0.1em] text-muted-ink">Drivers</div>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse min-w-[360px]">
-              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">{['Driver', 'Phone', 'Status'].map(h => <th key={h} className="py-2.5 px-4 text-left text-[11.5px] font-semibold uppercase tracking-[0.1em] text-muted-ink">{h}</th>)}</tr></thead>
-              <tbody>
-                {loading && drivers.length === 0 ? <tr><td colSpan={3}><TableSkeleton rows={4} cols={3} /></td></tr>
-                : drivers.length === 0 ? <tr><td colSpan={3}><div className="py-8 text-center text-[12.5px] text-muted-ink">No drivers.</div></td></tr>
-                : drivers.map(d => (
-                  <tr key={d.id} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
-                    <td className="py-[11px] px-4"><div className="flex flex-col"><span className="text-[13px]">{d.name}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{d.driverCode}</span></div></td>
-                    <td className="py-[11px] px-4 text-[12.5px] text-muted-ink tabular-nums">{d.phone || '—'}</td>
-                    <td className="py-[11px] px-4"><Pill tone={D_TONE[d.state]} label={D_LABEL[d.state]} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 min-w-0">
+        <div className="min-w-0">
+          <DataTable<Veh>
+            id="scm.coverage-fleet.vehicles" urlPrefix="v." columns={vehicleColumns} rows={data ? data.vehicles : null} rowKey={v => v.id}
+            loading={loading} error={error} onRetry={reload} pageSize={0}
+            noun={['vehicle', 'vehicles']} exportName="coverage-vehicles"
+            header={<div className="px-5 pt-4 pb-2 text-[13px] font-semibold uppercase tracking-[0.1em] text-muted-ink">Vehicles</div>}
+            empty={{ title: 'No vehicles.' }} />
+        </div>
+        <div className="min-w-0">
+          <DataTable<Drv>
+            id="scm.coverage-fleet.drivers" urlPrefix="d." columns={driverColumns} rows={data ? data.drivers : null} rowKey={d => d.id}
+            loading={loading} error={error} onRetry={reload} pageSize={0}
+            noun={['driver', 'drivers']} exportName="coverage-drivers"
+            header={<div className="px-5 pt-4 pb-2 text-[13px] font-semibold uppercase tracking-[0.1em] text-muted-ink">Drivers</div>}
+            empty={{ title: 'No drivers.' }} />
+        </div>
       </div>
     </>
   );

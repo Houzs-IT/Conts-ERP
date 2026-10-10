@@ -7,18 +7,21 @@ import Icon from '../components/Icon';
 import { Dialog, type DialogSpec } from '../components/Dialog';
 import { HistoryDrawer } from '../components/RecordHistory';
 import { useToast } from '../components/Toast';
-import { EmptyState } from '../components/States';
 import { Select } from '../components/Select';
 import { MoneyText, moneyString } from '../components/MoneyText';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
+import { useSession } from '../lib/session';
 import { api } from '../lib/api';
+import { fetchAllPages } from '../lib/export';
+import { runEach, skippedNote } from '../lib/bulk';
 import { refreshNavCounts } from '../lib/navBadges';
 import { masked, date as fmtDate, monthLabel, plural, titleCase } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { PAYOUT, bankName } from '../lib/vocabulary';
 import type { PayoutState } from '../lib/types';
-import { useUrlState, usePhone, ListCard, Pager, SearchBox, FilterSelect, STICKY_HEAD } from './finance/listKit';
+import { useUrlState, SearchBox, FilterSelect } from './finance/listKit';
 import ApprovalBanner from '../components/ApprovalBanner';
 import { stagedToast, type Approval, type Staged } from '../lib/approvals';
 
@@ -31,6 +34,7 @@ interface Payload {
   total?: number; page?: number; pageSize?: number; counts?: Record<PayoutState, number>; outstanding?: number; periods?: string[];
 }
 const PAGE_SIZE = 100;
+const SIZES = [50, 100, 200, 500];
 
 const FALLBACK: Payload = {
   generatedAt: '2026-09-20T02:00:00Z',
@@ -47,8 +51,6 @@ const GROUP_ORDER: PayoutState[] = ['failed', 'pending', 'processing', 'paid'];
 const RANK: Record<PayoutState, number> = { failed: 0, pending: 1, processing: 2, paid: 3 };
 type Filter = 'all' | PayoutState;
 
-const gridCols = 'grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(92px,0.8fr)_minmax(118px,1fr)]';
-
 /** Bank never shows more than the tail; the raw number needs an audited reveal on the owner profile. */
 const destination = (p: Payout) => p.bankLast4 ? `${bankName(p.bankName) ?? 'Bank'} ${masked(p.bankLast4)}` : (bankName(p.bankName) ?? 'No bank account');
 const valueDate = (p: Payout) =>
@@ -59,17 +61,20 @@ const valueDate = (p: Payout) =>
 
 export default function PayoutsPage() {
   const url = useUrlState();
-  const phone = usePhone();
+  const { user } = useSession();
+  const canAct = !!user && user.role !== 'owner';
   const filter: Filter = (GROUP_ORDER as string[]).includes(url.get('state')) ? url.get('state') as PayoutState : 'all';
   const setFilter = (f: Filter) => url.set({ state: f === 'all' ? null : f, page: null });
   const period = url.get('period'), q = url.get('q');
   const page = Math.max(1, Number(url.get('page')) || 1);
-  const query = new URLSearchParams({ pageSize: String(PAGE_SIZE), ...(filter !== 'all' ? { state: filter } : {}), ...(period ? { period } : {}), ...(q ? { q } : {}), ...(page > 1 ? { page: String(page) } : {}) });
+  const size = SIZES.includes(Number(url.get('size'))) ? Number(url.get('size')) : PAGE_SIZE;
+  const query = new URLSearchParams({ pageSize: String(size), ...(filter !== 'all' ? { state: filter } : {}), ...(period ? { period } : {}), ...(q ? { q } : {}), ...(page > 1 ? { page: String(page) } : {}) });
   const { data, loading, error, reload } = useApi<Payload>(`/payouts?${query}`, FALLBACK);
   const runs = useApi<{ data: Approval[] }>('/approvals?entity=payouts');
   const toast = useToast();
 
   const [confirm, setConfirm] = useState<{ payout: Payout; kind: 'retry' | 'paid' } | null>(null);
+  const [bulkPaid, setBulkPaid] = useState<{ rows: Payout[]; clear: () => void } | null>(null);
   const [historyOf, setHistoryOf] = useState<Payout | null>(null);
   const historyButton = (r: Payout) => (
     <button type="button" onClick={() => setHistoryOf(r)} aria-label={`History of the payout to ${titleCase(r.ownerName)}`} title="History"
@@ -94,14 +99,13 @@ export default function PayoutsPage() {
   const failed = allRows.filter(r => r.state === 'failed');
   const due = data?.outstanding ?? allRows.filter(r => r.state !== 'paid').reduce((s, r) => s + r.amount, 0);
 
+  // The server already answers in attention order (failed, pending, processing, paid); the sample data does not.
   const visible = useMemo(() => {
     const rows = filter === 'all' ? allRows : allRows.filter(r => r.state === filter);
-    return [...rows].sort((a, b) => RANK[a.state] - RANK[b.state] || b.amount - a.amount);
+    return [...rows].sort((a, b) => RANK[a.state] - RANK[b.state]);
   }, [allRows, filter]);
-
-  const groups = GROUP_ORDER
-    .map(state => ({ state, items: visible.filter(r => r.state === state) }))
-    .filter(g => g.items.length > 0);
+  const total = data?.total ?? visible.length;
+  const filtered = filter !== 'all' || !!period || !!q;
 
   // The row changes only after the server has accepted the change.
   async function transition(p: Payout, kind: 'retry' | 'paid') {
@@ -119,7 +123,68 @@ export default function PayoutsPage() {
     } finally { setBusy(false); }
   }
 
-  const spec: DialogSpec | null = !confirm ? null
+  // One PATCH per payout, so each keeps its own role check, audit line and owner email.
+  async function markAllPaid() {
+    if (!bulkPaid) return;
+    const rows = bulkPaid.rows;
+    setBusy(true);
+    const { ok, failed: left } = await runEach(rows, p => api.patch('/payouts', { id: p.id, state: 'paid' }), p => titleCase(p.ownerName));
+    setBusy(false);
+    bulkPaid.clear();
+    setBulkPaid(null);
+    reload(); void refreshNavCounts();
+    toast({
+      tone: left.length ? 'warning' : 'success',
+      title: ok ? `${plural(ok, 'payout')} recorded as paid.` : 'No payout was updated.',
+      body: left.length ? skippedNote(left) : 'The owners were told by email and their statements moved to Paid.',
+    });
+  }
+
+  /** Every payout under the status, month and search, for the table's Export. The endpoint pages at up to 500. */
+  async function fetchAll(onProgress: (got: number, of: number) => void) {
+    const r = await fetchAllPages<Payout>(async (pg, sz) => {
+      const p = await api.get<Payload>(`/payouts?${new URLSearchParams({ pageSize: String(sz), page: String(pg), ...(filter !== 'all' ? { state: filter } : {}), ...(period ? { period } : {}), ...(q ? { q } : {}) })}`);
+      return { rows: p.data, total: p.total ?? p.data.length };
+    }, { size: 500, onProgress });
+    return r.rows;
+  }
+
+  const columns = useMemo<Column<Payout>[]>(() => [
+    { key: 'owner', label: 'Owner', value: r => titleCase(r.ownerName), hideable: false, width: 220,
+      render: r => <span className="font-medium block truncate" title={r.ownerName}>{titleCase(r.ownerName)}</span>,
+      sub: r => <span className="font-mono text-caption">{r.ref ?? r.id}{r.period ? ` · ${monthLabel(r.period)}` : ''}</span> },
+    { key: 'ref', label: 'Reference', type: 'ref', value: r => r.ref ?? r.id, hidden: true, width: 140 },
+    { key: 'period', label: 'Statement month', value: r => r.period ?? null, text: r => (r.period ? monthLabel(r.period) : ''), hidden: true, width: 130 },
+    { key: 'method', label: 'Method', value: r => r.method, width: 110 },
+    { key: 'destination', label: 'Destination', value: r => destination(r), width: 170 },
+    { key: 'paidOn', label: 'Paid on', type: 'date', value: r => (r.state === 'paid' ? r.paidAt : null), width: 150,
+      render: r => <span className="text-muted-ink whitespace-nowrap">{valueDate(r)}</span> },
+    { key: 'amount', label: 'Amount', type: 'money', value: r => r.amount, width: 130,
+      render: r => <MoneyText sen={r.amount} mode="exact" strong className="text-copy" /> },
+    { key: 'status', label: 'Status', type: 'status', value: r => r.state, width: 120,
+      status: r => ({ label: PAYOUT[r.state].label, tone: PAYOUT[r.state].tone }) },
+    { key: 'failure', label: 'Failure reason', value: r => r.failureReason, hidden: true, width: 220 },
+    { key: 'action', label: 'Action', width: 170, align: 'right', noExport: true, sortable: false, filter: false,
+      render: r => (
+        <span className="flex justify-end items-center gap-2" onClick={e => e.stopPropagation()}>
+          {r.state === 'failed' && <Button size="sm" variant="primary" onClick={() => setConfirm({ payout: r, kind: 'retry' })}>Try again</Button>}
+          {r.state === 'processing' && <Button size="sm" variant="secondary" onClick={() => setConfirm({ payout: r, kind: 'paid' })}>Mark paid</Button>}
+          {r.state === 'pending' && <span className="text-caption text-muted-ink">In the next run</span>}
+          {r.state === 'paid' && <span className="text-caption text-faint">Settled</span>}
+          {historyButton(r)}
+        </span>
+      ) },
+  ], []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const spec: DialogSpec | null = bulkPaid
+    ? {
+        title: `Mark ${plural(bulkPaid.rows.length, 'payout')} as paid?`,
+        body: 'Only once the bank confirms each transfer left the account. Each owner statement moves to Paid and each owner is told by email.',
+        meta: `${moneyString(bulkPaid.rows.reduce((n, r) => n + r.amount, 0), 'exact')} in all · processing payouts only`,
+        confirmLabel: 'Mark paid', busyLabel: 'Saving...',
+        onConfirm: markAllPaid,
+      }
+    : !confirm ? null
     : confirm.kind === 'retry'
       ? {
           title: `Try ${moneyString(confirm.payout.amount, 'exact')} to ${titleCase(confirm.payout.ownerName)} again?`,
@@ -145,16 +210,7 @@ export default function PayoutsPage() {
           disabled={counts.pending === 0} disabledReason="No payouts are waiting. Payouts appear here when statements are sent.">Start payout run</Button>}
       />
 
-      {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
       <ApprovalBanner items={runs.data?.data ?? []} onChanged={() => { runs.reload(); reload(); void refreshNavCounts(); }} />
-
-      <div className="flex flex-wrap gap-2">
-        <SearchBox className="flex-[2_1_240px]" label="Search payouts" placeholder="Search owner" value={q} onChange={v => url.set({ q: v || null, page: null })} />
-        <FilterSelect className="flex-[1_1_180px]" label="Statement month" all="All statement months" value={period} onChange={v => url.set({ period: v || null, page: null })}
-          options={(data?.periods ?? []).map(p => ({ value: p, label: monthLabel(p) }))} />
-        <Select label="Filter by status" value={filter} onChange={v => setFilter(v as Filter)} className="flex-[1_1_180px]"
-          options={[{ value: 'all', label: `All statuses · ${allCount}` }, ...GROUP_ORDER.map(s => ({ value: s, label: `${PAYOUT[s].label} · ${counts[s]}` }))]} />
-      </div>
 
       {/* Failed payouts are surfaced first, with the reason and the fix. */}
       {(filter === 'all' || filter === 'failed') && failed.map(p => (
@@ -174,82 +230,48 @@ export default function PayoutsPage() {
         </Card>
       ))}
 
-      {!loading && visible.length === 0 ? (
-        allCount === 0 && !q && !period
-          ? <EmptyState icon="Banknote" title="No payouts yet" body="A payout is created for each owner statement when it is sent. Send statements from Owner statements, then start a payout run here." />
-          : <EmptyState kind="filtered" title="No payouts match these filters." action={{ label: 'Clear filters', onClick: () => url.set({ state: null, period: null, q: null, page: null }) }} />
-      ) : (
-        <ListCard busy={loading && !!data}>
-          {phone ? (
-            <div>
-              {visible.map(r => (
-                <div key={r.id} className="flex items-start gap-3 py-[11px] px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
-                  <div className="flex flex-col gap-[3px] min-w-0 flex-1">
-                    <span className="text-copy font-medium truncate">{titleCase(r.ownerName)}</span>
-                    <span className="text-meta text-muted-ink truncate">{destination(r)} · {r.method}</span>
-                    <span className="text-meta text-muted-ink">{r.period ? `${monthLabel(r.period)} statement · ` : ''}{valueDate(r)}</span>
-                    {r.state === 'processing' && <Button size="sm" variant="secondary" style={{ alignSelf: 'flex-start', marginTop: 4 }} onClick={() => setConfirm({ payout: r, kind: 'paid' })}>Mark paid</Button>}
-                  </div>
-                  <div className="flex flex-col items-end gap-[5px] shrink-0">
-                    <MoneyText sen={r.amount} mode="exact" strong className="text-copy" />
-                    <Badge tone={PAYOUT[r.state].tone} label={PAYOUT[r.state].label} size="sm" />
-                    {historyButton(r)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div role="table" aria-label="Payouts">
-              <div role="row" className={`grid ${gridCols} gap-[14px] px-[22px] py-[9px] ${STICKY_HEAD}`}>
-                <div>Owner</div>
-                <div>Method</div>
-                <div>Destination</div>
-                <div>Paid on</div>
-                <div className="text-right">Amount</div>
-                <div>Status</div>
-                <div className="text-right">Action</div>
-              </div>
-
-              {loading && allRows.length === 0 ? <TableSkeleton rows={6} cols={7} /> : groups.map(g => (
-                <div key={g.state}>
-                  <div className="flex items-center gap-2 px-[22px] py-[7px] bg-page [border-bottom:1px_solid_var(--color-line-soft)]">
-                    <span className="text-caption font-semibold tracking-[0.04em] uppercase text-muted-ink">{PAYOUT[g.state].label}</span>
-                    <span className="text-caption text-faint">{g.items.length}</span>
-                  </div>
-                  {g.items.map(r => (
-                    <div role="row" key={r.id} className={`grid ${gridCols} gap-[14px] items-center min-h-[50px] px-[22px] py-[7px] [border-bottom:1px_solid_var(--color-line-soft)]`}>
-                      <div className="flex flex-col gap-px min-w-0">
-                        <span className="text-copy font-medium truncate" title={r.ownerName}>{titleCase(r.ownerName)}</span>
-                        <span className="font-mono text-caption text-muted-ink truncate">{r.ref ?? r.id}{r.period ? ` · ${monthLabel(r.period)}` : ''}</span>
-                      </div>
-                      <div className="text-copy">{r.method}</div>
-                      <div className="text-copy truncate" title={destination(r)}>{destination(r)}</div>
-                      <div className="text-copy text-muted-ink">{valueDate(r)}</div>
-                      <div className="text-right"><MoneyText sen={r.amount} mode="exact" strong className="text-copy" /></div>
-                      <div><Badge tone={PAYOUT[r.state].tone} label={PAYOUT[r.state].label} /></div>
-                      <div className="flex justify-end items-center gap-2">
-                        {r.state === 'failed' && <Button size="sm" variant="primary" onClick={() => setConfirm({ payout: r, kind: 'retry' })}>Try again</Button>}
-                        {r.state === 'processing' && <Button size="sm" variant="secondary" onClick={() => setConfirm({ payout: r, kind: 'paid' })}>Mark paid</Button>}
-                        {r.state === 'pending' && <span className="text-caption text-muted-ink">In the next run</span>}
-                        {r.state === 'paid' && <span className="text-caption text-faint">Settled</span>}
-                        {historyButton(r)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
-
-          <Pager page={page} pageSize={PAGE_SIZE} total={data?.total ?? visible.length} unit="payouts" onPage={p => url.set({ page: p > 1 ? p : null })} />
-          <div className="flex items-center justify-between gap-3 flex-wrap px-[22px] py-[11px] [border-top:1px_solid_var(--color-line)] bg-page text-meta text-muted-ink">
-            <span>{(data?.total ?? visible.length).toLocaleString('en-MY')} of {allCount.toLocaleString('en-MY')} payouts</span>
+      <DataTable<Payout>
+        id="payouts" columns={columns} rows={data ? visible : null} rowKey={r => r.id}
+        loading={loading} error={error} onRetry={reload}
+        server={{ total, page: data?.page ?? page, pageSize: data?.pageSize ?? size, sizes: SIZES, defaultPageSize: PAGE_SIZE, fetchAll }}
+        viewParams={['state', 'period', 'q']} filtered={filtered} onClearFilters={() => url.set({ state: null, period: null, q: null, page: null })}
+        noun={['payout', 'payouts']} exportName="payouts"
+        empty={{ icon: 'Banknote', title: 'No payouts yet', body: 'A payout is created for each owner statement when it is sent. Send statements from Owner statements, then start a payout run here.' }}
+        selectable={canAct ? (r => r.state === 'processing') : false}
+        bulkActions={canAct ? ((picked, clear) => (
+          <Button size="sm" variant="primary" icon={<Icon name="CheckCircle2" size="sm" />} onClick={() => setBulkPaid({ rows: picked, clear })}>Mark paid</Button>
+        )) : undefined}
+        toolbar={<>
+          <SearchBox className="flex-[2_1_240px]" label="Search payouts" placeholder="Search owner" value={q} onChange={v => url.set({ q: v || null, page: null })} />
+          <FilterSelect className="flex-[1_1_180px]" label="Statement month" all="All statement months" value={period} onChange={v => url.set({ period: v || null, page: null })}
+            options={(data?.periods ?? []).map(p => ({ value: p, label: monthLabel(p) }))} />
+          <Select label="Filter by status" value={filter} onChange={v => setFilter(v as Filter)} className="flex-[1_1_180px]"
+            options={[{ value: 'all', label: `All statuses · ${allCount}` }, ...GROUP_ORDER.map(s => ({ value: s, label: `${PAYOUT[s].label} · ${counts[s]}` }))]} />
+        </>}
+        renderCard={r => (
+          <span className="flex items-start gap-3 text-ink">
+            <span className="flex flex-col gap-[3px] min-w-0 flex-1">
+              <span className="text-copy font-medium truncate">{titleCase(r.ownerName)}</span>
+              <span className="text-meta text-muted-ink truncate">{destination(r)} · {r.method}</span>
+              <span className="text-meta text-muted-ink">{r.period ? `${monthLabel(r.period)} statement · ` : ''}{valueDate(r)}</span>
+              {r.state === 'processing' && <Button size="sm" variant="secondary" style={{ alignSelf: 'flex-start', marginTop: 4 }} onClick={e => { e.stopPropagation(); setConfirm({ payout: r, kind: 'paid' }); }}>Mark paid</Button>}
+            </span>
+            <span className="flex flex-col items-end gap-[5px] shrink-0">
+              <MoneyText sen={r.amount} mode="exact" strong className="text-copy" />
+              <Badge tone={PAYOUT[r.state].tone} label={PAYOUT[r.state].label} size="sm" />
+              <span onClick={e => e.stopPropagation()}>{historyButton(r)}</span>
+            </span>
+          </span>
+        )}
+        footer={
+          <div className="flex items-center justify-between gap-3 flex-wrap px-[22px] max-md:px-4 py-[11px] [border-top:1px_solid_var(--color-line)] bg-page text-meta text-muted-ink">
+            <span>{total.toLocaleString('en-MY')} of {allCount.toLocaleString('en-MY')} payouts</span>
             <span>Only the last four digits of any account are shown. Nothing here sends money: transfers are made at the bank.</span>
           </div>
-        </ListCard>
-      )}
+        }
+      />
 
-      <Dialog spec={spec} busy={busy} onClose={() => { if (!busy) setConfirm(null); }} />
+      <Dialog spec={spec} busy={busy} onClose={() => { if (!busy) { setConfirm(null); setBulkPaid(null); } }} />
       <HistoryDrawer onClose={() => setHistoryOf(null)}
         target={historyOf && { entity: 'payouts', id: historyOf.id, title: `Payout to ${titleCase(historyOf.ownerName)}`, sub: `${moneyString(historyOf.amount, 'exact')}${historyOf.period ? ` · ${monthLabel(historyOf.period)} statement` : ''}` }} />
       {runOpen && <RunDialog onClose={() => setRunOpen(false)} onDone={() => { setRunOpen(false); reload(); runs.reload(); void refreshNavCounts(); }} />}

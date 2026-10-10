@@ -1,17 +1,18 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
-import { EmptyState } from '../components/States';
 import { MoneyText, moneyString } from '../components/MoneyText';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
+import { api } from '../lib/api';
+import { fetchAllPages } from '../lib/export';
 import { DecisionDialog } from '../components/ApprovalBanner';
 import { useApi } from '../lib/useApi';
 import { refreshNavCounts } from '../lib/navBadges';
 import { STATUS_LABEL, type Approval, type ApprovalStatus, type Decision } from '../lib/approvals';
 import { date, dateTime, plural } from '../lib/format';
-import { useUrlState, usePhone, ListCard, Pager, SearchBox, FilterSelect, Chip, STICKY_HEAD } from './finance/listKit';
+import { useUrlState, SearchBox, FilterSelect, Chip } from './finance/listKit';
 
 interface Payload {
   view: 'pending' | 'decided'; total: number; page: number; pageSize: number;
@@ -22,17 +23,16 @@ interface Payload {
   data: Approval[];
 }
 const PAGE_SIZE = 50;
-const cols = 'grid-cols-[minmax(0,0.8fr)_minmax(0,2.8fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,0.7fr)_minmax(200px,1.1fr)]';
 
 /** Approvals: money leaving the company waits here for a second person (functions/_lib/approvals.ts). */
 export default function ApprovalsPage() {
   const url = useUrlState();
-  const phone = usePhone();
   const navigate = useNavigate();
   const view = url.get('view') === 'decided' ? 'decided' : 'pending';
   const kind = url.get('kind'), q = url.get('q'), status = url.get('status'), mine = url.get('mine') === '1';
   const page = Math.max(1, Number(url.get('page')) || 1);
-  const query = new URLSearchParams({ view, pageSize: String(PAGE_SIZE), ...(kind ? { kind } : {}), ...(q ? { q } : {}), ...(status && view === 'decided' ? { status } : {}), ...(mine ? { mine: '1' } : {}), ...(page > 1 ? { page: String(page) } : {}) });
+  const size = [25, 50, 100, 200].includes(Number(url.get('size'))) ? Number(url.get('size')) : PAGE_SIZE;
+  const query = new URLSearchParams({ view, pageSize: String(size), ...(kind ? { kind } : {}), ...(q ? { q } : {}), ...(status && view === 'decided' ? { status } : {}), ...(mine ? { mine: '1' } : {}), ...(page > 1 ? { page: String(page) } : {}) });
   const { data, loading, error, reload } = useApi<Payload>(`/approvals?${query}`);
   const [open, setOpen] = useState<{ a: Approval; decision: Decision } | null>(null);
   const rows = data?.data ?? [];
@@ -51,13 +51,41 @@ export default function ApprovalsPage() {
       {a.status !== 'pending' && a.link && <Button size="sm" variant="tertiary" onClick={() => navigate(a.link!)}>Open record</Button>}
     </div>
   );
+  const filtered = !!(q || kind || mine || status) || view === 'decided';
+  async function fetchAll(onProgress: (got: number, of: number) => void) {
+    const base = Object.fromEntries([...query.entries()].filter(([k]) => k !== 'page' && k !== 'pageSize'));
+    return (await fetchAllPages<Approval>(async (p, n) => {
+      const r = await api.get<Payload>('/approvals', { ...base, page: p, pageSize: n });
+      return { rows: r.data, total: r.total };
+    }, { size: 200, onProgress })).rows;
+  }
   const decidedLine = (a: Approval) => a.status === 'pending' ? null
     : `${STATUS_LABEL[a.status].label} by ${a.decidedBy?.name ?? 'someone'}${a.decidedAt ? `, ${dateTime(a.decidedAt)}` : ''}${a.selfApproved ? ' (self-approved, only management user)' : ''}${a.decisionNote ? ` · ${a.decisionNote}` : ''}`;
+
+  const columns = useMemo<Column<Approval>[]>(() => [
+    { key: 'type', label: 'Type', value: a => a.kindLabel, width: 140, hideable: false,
+      render: a => <span className="font-medium">{a.kindLabel}</span> },
+    { key: 'request', label: 'Request', value: a => a.summary, text: a => `${a.summary} ${a.reason}`, exportValue: a => a.summary, width: 320,
+      render: a => (
+        <span className="flex flex-col gap-[2px] min-w-0">
+          <span className="text-copy text-pretty whitespace-normal">{a.summary}</span>
+          <span className="text-caption text-muted-ink text-pretty whitespace-normal">Reason: {a.reason}</span>
+          {decidedLine(a) && <span className="text-caption text-muted-ink text-pretty whitespace-normal">{decidedLine(a)}</span>}
+        </span>
+      ) },
+    { key: 'reason', label: 'Reason', value: a => a.reason, hidden: true, width: 220 },
+    { key: 'amount', label: 'Amount', type: 'money', value: a => a.amount, width: 130,
+      render: a => <MoneyText sen={a.amount} mode="exact" strong className="text-copy" /> },
+    { key: 'asked', label: 'Asked by', value: a => a.requestedBy.name, width: 150, sub: a => date(a.requestedAt) },
+    { key: 'askedOn', label: 'Asked on', type: 'datetime', value: a => a.requestedAt, hidden: true },
+    { key: 'status', label: 'Status', type: 'status', value: a => STATUS_LABEL[a.status].label, status: a => STATUS_LABEL[a.status], width: 120 },
+    { key: 'decided', label: 'Decision', value: a => decidedLine(a), hidden: true, width: 240 },
+    { key: 'action', label: 'Action', align: 'right', noExport: true, sortable: false, filter: false, width: 220, render: a => actions(a) },
+  ], [view]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
       <PageHeader title="Approvals" sub={sub} />
-      {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <div className="flex gap-2 overflow-x-auto pb-[2px] shrink-0 [scrollbar-width:none]">
         <Chip on={view === 'pending'} onClick={() => url.set({ view: null, status: null, page: null })} count={data?.counts.pending}>Waiting</Chip>
@@ -80,57 +108,26 @@ export default function ApprovalsPage() {
         </p>
       )}
 
-      {!loading && rows.length === 0 ? (
-        view === 'pending' && !q && !kind && !mine
-          ? <EmptyState icon="ShieldCheck" title="Nothing waiting for approval" body="When someone asks for a refund, a payout run, an owner credit or charge, a large expense or a write-off, it waits here." />
-          : <EmptyState kind="filtered" title="No requests match these filters." action={{ label: 'Clear filters', onClick: () => url.set({ kind: null, q: null, status: null, mine: null, page: null }) }} />
-      ) : (
-        <ListCard busy={loading && !!data}>
-          {phone ? (
-            <div>
-              {loading && !data ? <TableSkeleton rows={5} cols={2} /> : rows.map(a => (
-                <div key={a.id} className="flex flex-col gap-[6px] py-3 px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-copy font-semibold">{a.kindLabel}</span>
-                    <MoneyText sen={a.amount} mode="exact" strong className="text-copy" />
-                  </div>
-                  <span className="text-meta text-ink text-pretty">{a.summary}</span>
-                  <span className="text-caption text-muted-ink text-pretty">{a.requestedBy.name}, {date(a.requestedAt)} · {a.reason}</span>
-                  {decidedLine(a) && <span className="text-caption text-muted-ink text-pretty">{decidedLine(a)}</span>}
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <Badge tone={STATUS_LABEL[a.status].tone} label={STATUS_LABEL[a.status].label} size="sm" />
-                    {actions(a)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div role="table" aria-label="Approval requests">
-              <div role="row" className={`grid ${cols} gap-[14px] px-[22px] py-[9px] ${STICKY_HEAD}`}>
-                <div>Type</div><div>Request</div><div className="text-right">Amount</div><div>Asked by</div><div>Status</div><div className="text-right">Action</div>
-              </div>
-              {loading && !data ? <TableSkeleton rows={6} cols={6} /> : rows.map(a => (
-                <div role="row" key={a.id} className={`grid ${cols} gap-[14px] items-center min-h-[56px] px-[22px] py-[9px] [border-bottom:1px_solid_var(--color-line-soft)]`}>
-                  <div className="text-copy font-medium">{a.kindLabel}</div>
-                  <div className="flex flex-col gap-[2px] min-w-0">
-                    <span className="text-copy text-pretty">{a.summary}</span>
-                    <span className="text-caption text-muted-ink text-pretty">Reason: {a.reason}</span>
-                    {decidedLine(a) && <span className="text-caption text-muted-ink text-pretty">{decidedLine(a)}</span>}
-                  </div>
-                  <div className="text-right"><MoneyText sen={a.amount} mode="exact" strong className="text-copy" /></div>
-                  <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-copy truncate">{a.requestedBy.name}</span>
-                    <span className="text-caption text-muted-ink">{date(a.requestedAt)}</span>
-                  </div>
-                  <div><Badge tone={STATUS_LABEL[a.status].tone} label={STATUS_LABEL[a.status].label} /></div>
-                  {actions(a)}
-                </div>
-              ))}
-            </div>
-          )}
-          <Pager page={page} pageSize={PAGE_SIZE} total={data?.total ?? rows.length} unit="requests" onPage={p => url.set({ page: p > 1 ? p : null })} />
-        </ListCard>
-      )}
+      <DataTable<Approval> id="approvals" columns={columns} rows={data ? rows : null} rowKey={a => a.id}
+        loading={loading} error={error} onRetry={reload} noun={['request', 'requests']} exportName="approvals"
+        server={{ total: data?.total ?? rows.length, page: data?.page ?? page, pageSize: data?.pageSize ?? size, sizes: [25, 50, 100, 200], defaultPageSize: PAGE_SIZE, fetchAll }}
+        viewParams={['view', 'kind', 'q', 'status', 'mine']} filtered={filtered} onClearFilters={() => url.set({ view: null, kind: null, q: null, status: null, mine: null, page: null })}
+        empty={{ title: 'Nothing waiting for approval', body: 'When someone asks for a refund, a payout run, an owner credit or charge, a large expense or a write-off, it waits here.', icon: 'ShieldCheck' }}
+        renderCard={a => (
+          <span className="flex flex-col gap-[6px]">
+            <span className="flex items-start justify-between gap-3">
+              <span className="text-copy font-semibold">{a.kindLabel}</span>
+              <MoneyText sen={a.amount} mode="exact" strong className="text-copy" />
+            </span>
+            <span className="text-meta text-ink text-pretty">{a.summary}</span>
+            <span className="text-caption text-muted-ink text-pretty">{a.requestedBy.name}, {date(a.requestedAt)} · {a.reason}</span>
+            {decidedLine(a) && <span className="text-caption text-muted-ink text-pretty">{decidedLine(a)}</span>}
+            <span className="flex items-center justify-between gap-2 flex-wrap">
+              <Badge tone={STATUS_LABEL[a.status].tone} label={STATUS_LABEL[a.status].label} size="sm" />
+              {actions(a)}
+            </span>
+          </span>
+        )} />
       {open && <DecisionDialog a={open.a} decision={open.decision} onClose={() => setOpen(null)} onDone={() => { setOpen(null); reload(); void refreshNavCounts(); }} />}
     </>
   );

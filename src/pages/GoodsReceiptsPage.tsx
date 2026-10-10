@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Search, Plus, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
@@ -73,6 +72,15 @@ export default function GoodsReceiptsPage() {
   const q = search.trim().toLowerCase();
   const rows = all.filter(g => (statusFilter === 'all' || g.status === statusFilter) && (!q || `${g.grnNumber} ${g.poNumber} ${g.supplierName}`.toLowerCase().includes(q)));
 
+  const columns = useMemo<Column<Grn>[]>(() => [
+    { key: 'grnNumber', label: 'GRN number', type: 'ref', value: g => g.grnNumber, hideable: false },
+    { key: 'poNumber', label: 'PO', type: 'ref', value: g => g.poNumber },
+    { key: 'supplier', label: 'Supplier', value: g => g.supplierName, sub: g => g.supplierCode, text: g => `${g.supplierName} ${g.supplierCode}` },
+    { key: 'receivedAt', label: 'Received', type: 'date', value: g => g.receivedAt || null },
+    { key: 'status', label: 'Status', type: 'status', value: g => g.status, status: g => ({ label: STATUS_LABEL[g.status], tone: STATUS_TONE[g.status] }) },
+    { key: 'total', label: 'Total', type: 'money', value: g => g.totalSen },
+  ], []);
+
   function created(grn: Grn) {
     setAdded(a => [grn, ...a]);
     toast({ tone: 'success', title: 'Goods received.', body: `${grn.grnNumber} · ${grn.supplierName}` });
@@ -93,53 +101,23 @@ export default function GoodsReceiptsPage() {
       <PageHeader title="Goods received" sub={`${all.length} receipts · against purchase orders`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>Receive goods</Button> : undefined} />
 
-      {error && <StaleBanner message={`Showing the last receipt list we have. ${error}`} onRetry={reload} />}
-
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">
-          {FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}
-        </div>
-        <div className="relative">
-          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search GRN, PO or supplier..." aria-label="Search goods receipts"
-            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
-        </div>
-      </div>
-
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[820px]">
-            <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-                {['GRN number', 'PO', 'Supplier', 'Received', 'Status', 'Total'].map((h, i) => (
-                  <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 5 ? 'text-right' : 'text-left')}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading && all.length === 0 ? (
-                <tr><td colSpan={6}><TableSkeleton rows={6} cols={6} /></td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={6}>
-                  <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
-                    <span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No goods receipts match.' : 'No goods received yet.'}</span>
-                    <span className="text-[12.5px] text-muted-ink max-w-[380px]">Receive goods against a purchase order to record a GRN.</span>
-                  </div>
-                </td></tr>
-              ) : rows.map(g => (
-                <tr key={g.id} onClick={() => setDrawer({ mode: 'view', grn: g })} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
-                  <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{g.grnNumber}</span></td>
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[12.5px] text-[var(--color-ink-2)]">{g.poNumber}</td>
-                  <td className="py-[13px] px-4"><div className="flex flex-col"><span className="text-[13.5px]">{g.supplierName}</span><span className="text-[11.5px] text-muted-ink">{g.supplierCode}</span></div></td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{g.receivedAt ? date(g.receivedAt) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={g.status} /></td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{rm(g.totalSen)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Grn>
+        id="scm.goods-receipts" columns={columns} rows={data ? rows : null} rowKey={g => g.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={g => setDrawer({ mode: 'view', grn: g })}
+        noun={['goods receipt', 'goods receipts']} exportName="goods-receipts"
+        toolbar={<>
+          <div className="flex gap-2 flex-wrap">
+            {FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}
+          </div>
+          <div className="relative">
+            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search GRN, PO or supplier..." aria-label="Search goods receipts"
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
+          </div>
+        </>}
+        filtered={!!q || statusFilter !== 'all'} onClearFilters={() => { setSearch(''); setStatusFilter('all'); }}
+        empty={{ title: 'No goods received yet.', body: 'Receive goods against a purchase order to record a GRN.', action: canWrite ? { label: 'Receive goods', onClick: () => setDrawer({ mode: 'new' }) } : undefined }} />
 
       {drawer?.mode === 'new' && <ReceiveDrawer openPos={openPos} canWrite={canWrite} onClose={() => setDrawer(null)} onCreated={created} />}
       {drawer?.mode === 'view' && <ViewDrawer grn={drawer.grn} canWrite={canWrite} onClose={() => setDrawer(null)} onCancel={cancel} />}
@@ -271,6 +249,14 @@ function NumCell({ value, onChange }: { value: string; onChange: (v: string) => 
 
 /* ---------- view drawer ---------- */
 
+const LINE_COLUMNS: Column<GrnLine & { i: number }>[] = [
+  { key: 'item', label: 'Item', value: l => l.description, sub: l => <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{l.itemCode}</span>, text: l => `${l.description} ${l.itemCode}`, hideable: false },
+  { key: 'received', label: 'Received', type: 'number', value: l => l.qtyReceived },
+  { key: 'accepted', label: 'Accepted', type: 'number', value: l => l.qtyAccepted },
+  { key: 'rejected', label: 'Rejected', type: 'number', value: l => l.qtyRejected, render: l => l.qtyRejected ? <span className="tabular-nums">{l.qtyRejected}</span> : <span className="text-muted-ink">—</span> },
+  { key: 'lineTotal', label: 'Line total', type: 'money', value: l => l.lineTotalSen },
+];
+
 function ViewDrawer({ grn, canWrite, onClose, onCancel }: { grn: Grn; canWrite: boolean; onClose: () => void; onCancel: (g: Grn) => void }) {
   return (
     <Drawer open onClose={onClose} width={760}>
@@ -285,25 +271,11 @@ function ViewDrawer({ grn, canWrite, onClose, onCancel }: { grn: Grn; canWrite: 
           <Meta label="Received" value={grn.receivedAt ? date(grn.receivedAt) : '—'} />
           <Meta label="Delivery note" value={grn.deliveryNoteRef || '—'} />
         </div>
-        <div className="overflow-x-auto border border-solid border-line rounded-card">
-          <table className="w-full border-collapse min-w-[560px]">
-            <thead><tr className="bg-muted">
-              {['Item', 'Received', 'Accepted', 'Rejected', 'Line total'].map((th, i) => (
-                <th key={th} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i === 0 ? 'text-left' : 'text-right')}>{th}</th>
-              ))}
-            </tr></thead>
-            <tbody>
-              {(grn.lines ?? []).map((l, i) => (
-                <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
-                  <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.qtyReceived}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.qtyAccepted}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.qtyRejected || '—'}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.lineTotalSen)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="border border-solid border-line rounded-card overflow-hidden">
+          <DataTable<GrnLine & { i: number }>
+            id="scm.goods-receipt.lines" urlPrefix="lines." columns={LINE_COLUMNS} rows={(grn.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)}
+            bare noViews noToolbar pageSize={0} noun={['line', 'lines']} exportName={`${grn.grnNumber}-lines`}
+            empty={{ title: 'No lines on this receipt.' }} />
         </div>
         {grn.notes && <div className="text-[13px]"><span className="text-muted-ink">Notes: </span>{grn.notes}</div>}
       </div>

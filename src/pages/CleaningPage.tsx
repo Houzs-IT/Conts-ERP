@@ -6,16 +6,21 @@ import Icon from '../components/Icon';
 import { Select, SearchSelect, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { EmptyState, Skeleton } from '../components/States';
-import { ListPager } from '../components/ListPager';
+import { DataTable, type Column } from '../components/DataTable';
+import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, ApiFailure } from '../lib/api';
 import { useCleaners } from '../lib/useCleaners';
 import { useUnitRoster } from '../lib/useUnitRoster';
-import { useMedia, useNow } from '../lib/useMedia';
+import { useNow } from '../lib/useMedia';
+import { useSession } from '../lib/session';
+import { runEach, skippedNote } from '../lib/bulk';
+import { fetchAllPages } from '../lib/export';
 import { cx } from '../lib/design-tokens';
-import { rm } from '../lib/format';
+import { rm, plural } from '../lib/format';
+import type { Tone } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
 import {
   Chip, CLEAN_STATUS, KIND_LABEL, TimeLeft, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton,
@@ -64,7 +69,11 @@ const COST_SOURCE: Record<string, string> = { unit: 'unit rate', history: 'last 
 export default function CleaningPage() {
   const [params, setParams] = useSearchParams();
   const tab: Tab = params.get('tab') === 'history' ? 'history' : 'board';
-  const setTab = (t: Tab) => setParams(p => { const n = new URLSearchParams(p); if (t === 'history') n.set('tab', 'history'); else n.delete('tab'); return n; }, { replace: true });
+  const setTab = (t: Tab) => setParams(p => {
+    const n = new URLSearchParams(p);
+    if (t === 'history') n.set('tab', 'history'); else { n.delete('tab'); HISTORY_PARAMS.forEach(k => n.delete(k)); }
+    return n;
+  }, { replace: true });
 
   return tab === 'history' ? <HistoryView onTab={setTab} /> : <BoardView onTab={setTab} />;
 }
@@ -540,57 +549,145 @@ function AssignBuildingModal({ building, date, onClose, onDone }: { building: { 
 /* ============================== history ============================== */
 
 interface HistoryRow {
-  id: string; unitNumber: string; propertyName: string; propertyId: string; kind: string; date: string; assigneeName: string | null; sheetCleaner: string | null;
-  completedAt: string | null; photoCount: number;
+  id: string; unitNumber: string; propertyName: string; propertyId: string; kind: string; state: string; date: string;
+  assigneeName: string | null; sheetCleaner: string | null; completedAt: string | null; photoCount: number;
 }
 interface HistoryPayload { total: number; page: number; pageSize: number; data: HistoryRow[] }
 
+/** URL parameters the History list owns; dropped when going back to the board. */
+const HISTORY_PARAMS = ['q', 'cleaner', 'from', 'to', 'state', 'sort', 'page', 'size'];
+const SHOW: { value: string; label: string }[] = [
+  { value: '', label: 'Finished' }, { value: 'active', label: 'Not finished' }, { value: 'all', label: 'All cleans' },
+];
+const TASK_STATE: Record<string, { label: string; tone: Tone }> = {
+  open: { label: 'Open', tone: 'neutral' }, assigned: { label: 'Assigned', tone: 'info' }, in_progress: { label: 'Cleaning', tone: 'info' },
+  waiting: { label: 'Waiting', tone: 'warning' }, overdue: { label: 'Overdue', tone: 'critical' }, reopened: { label: 'Reopened', tone: 'warning' },
+  resolved: { label: 'Done', tone: 'success' },
+};
+const FIELD_ROLES = ['housekeeper', 'technician'];
+const historyLabel = (r: HistoryRow) => `${r.propertyName} ${r.unitNumber}`;
+
 function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
-  const phone = !useMedia('(min-width: 768px)');
-  const [page, setPage] = useState(1);
-  const [q, setQ] = useState('');
-  const [query, setQuery] = useState('');
-  const [cleaner, setCleaner] = useState('');
-  const [from, setFrom] = useState(mytDay(-30));
-  const [to, setTo] = useState(mytDay(0));
+  const toast = useToast();
+  const { user } = useSession();
+  const canBulk = !!user && !FIELD_ROLES.includes(user.role);
+  const [params, setParams] = useSearchParams();
+  const update = (mut: (p: URLSearchParams) => void) => setParams(prev => { const n = new URLSearchParams(prev); mut(n); n.delete('page'); return n; }, { replace: true });
+  const setParam = (k: string, v: string) => update(p => { if (v) p.set(k, v); else p.delete(k); });
+
+  const cleaner = params.get('cleaner') ?? '';
+  const from = params.get('from') || mytDay(-30);
+  const to = params.get('to') || mytDay(0);
+  const show = SHOW.some(o => o.value === params.get('state')) ? params.get('state')! : '';
+  const urlQ = params.get('q') ?? '';
+  const [draft, setDraft] = useState(urlQ);
+  useEffect(() => {
+    const t = setTimeout(() => { if (draft.trim() !== urlQ) setParam('q', draft.trim()); }, 300);
+    return () => clearTimeout(t);
+  }, [draft]); // eslint-disable-line react-hooks/exhaustive-deps
   const { cleaners } = useCleaners(false);
-  useEffect(() => { const t = setTimeout(() => { setQuery(q.trim()); setPage(1); }, 300); return () => clearTimeout(t); }, [q]);
-  const qs = new URLSearchParams({ state: 'resolved', kind: 'cleaning', page: String(page), pageSize: '50', from, to, ...(query ? { q: query } : {}), ...(cleaner ? { assignee: `c:${cleaner}` } : {}) });
+
+  const sort = params.get('sort') ?? '';
+  const query = useMemo(() => {
+    const q: Record<string, string> = { state: show || 'resolved', kind: 'cleaning', from, to };
+    if (urlQ) q.q = urlQ;
+    if (cleaner) q.assignee = `c:${cleaner}`;
+    if (sort) q.sort = sort;
+    return q;
+  }, [show, from, to, cleaner, urlQ, sort]);
+  const qs = new URLSearchParams({ ...query, page: params.get('page') ?? '1', size: params.get('size') ?? '50' });
   const { data, loading, error, reload } = useApi<HistoryPayload>(`/tasks?${qs}`);
-  const rows = data?.data ?? [];
+
+  const [bulkAssign, setBulkAssign] = useState<{ ids: string[]; clear: () => void } | null>(null);
+  const [confirmDone, setConfirmDone] = useState<{ rows: HistoryRow[]; clear: () => void } | null>(null);
+  const [bulkBusy, setBulkBusy] = useState<string | null>(null);
+
+  async function fetchAll(onProgress: (got: number, of: number) => void) {
+    const r = await fetchAllPages<HistoryRow>(async (page, size) => {
+      const p = await api.get<HistoryPayload>('/tasks', { ...query, export: '1', page, size });
+      return { rows: p.data, total: p.total };
+    }, { onProgress });
+    return r.rows;
+  }
+
+  /** Starts or finishes the ticked cleans one by one; finished (or already started) ones are left alone and named. */
+  async function bulkMove(rows: HistoryRow[], move: 'start' | 'done', clear: () => void) {
+    const skip = (r: HistoryRow) => (r.state === 'resolved' ? 'Already finished' : move === 'start' && r.state === 'in_progress' ? 'Already started' : null);
+    const todo = rows.filter(r => !skip(r));
+    const left = rows.filter(r => skip(r)).map(r => ({ label: historyLabel(r), reason: skip(r)! }));
+    setBulkBusy(move);
+    const res = await runEach(todo, r => (move === 'start'
+      ? api.post(`/housekeeping/tasks/${r.id}/start`, {})
+      : api.post(`/tasks/${r.id}/complete`, { photoIds: [] })), historyLabel);
+    setBulkBusy(null);
+    const failed = [...res.failed, ...left];
+    toast({
+      tone: res.ok === 0 ? 'critical' : failed.length ? 'warning' : 'success',
+      title: res.ok ? `${plural(res.ok, 'clean')} ${move === 'start' ? 'started' : 'marked done'}.` : move === 'start' ? 'No cleans started.' : 'No cleans marked done.',
+      body: skippedNote(failed) || undefined,
+    });
+    clear(); setConfirmDone(null); reload();
+  }
+
+  const columns = useMemo<Column<HistoryRow>[]>(() => [
+    { key: 'day', label: 'Day', type: 'date', value: r => r.date, sortKey: 'day', width: 120, render: r => <span className="tabular-nums whitespace-nowrap">{dayLabel(r.date)}</span> },
+    { key: 'building', label: 'Building', value: r => r.propertyName, sortKey: 'building', width: 170 },
+    { key: 'unit', label: 'Unit', value: r => r.unitNumber, sortKey: 'unit', width: 100, hideable: false, render: r => <span className="font-medium">{r.unitNumber}</span> },
+    { key: 'kind', label: 'Type', value: r => r.kind, text: r => KIND_LABEL[r.kind] ?? r.kind, sortKey: 'kind', width: 100 },
+    { key: 'cleaner', label: 'Cleaner', type: 'person', value: r => r.assigneeName ?? r.sheetCleaner, sortKey: 'cleaner', width: 160 },
+    { key: 'state', label: 'Status', type: 'status', value: r => r.state, status: r => TASK_STATE[r.state] ?? { label: r.state, tone: 'neutral' }, sortKey: 'state', width: 120, hidden: !show },
+    { key: 'finished', label: 'Finished', type: 'datetime', value: r => r.completedAt, sortKey: 'finished', width: 150,
+      render: r => (r.completedAt ? <span className="text-muted-ink whitespace-nowrap">{stamp(r.completedAt)}</span> : <span className="text-muted-ink">—</span>) },
+    { key: 'proof', label: 'Proof', type: 'number', value: r => r.photoCount, width: 80, title: 'Photos and videos on the clean.' },
+  ], [show]);
+
+  const filtered = !!(urlQ || cleaner || params.get('from') || params.get('to'));
+  const clearAll = () => { setDraft(''); update(p => ['q', 'cleaner', 'from', 'to'].forEach(k => p.delete(k))); };
+  const showLabel = show === 'active' ? 'unfinished cleans' : show === 'all' ? 'cleans' : 'finished cleans';
+
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Cleaning" sub={data ? `${data.total.toLocaleString('en-MY')} finished cleans from ${dayLabel(from)} to ${dayLabel(to)}` : 'Finished cleans'}
+      <PageHeader title="Cleaning" sub={data ? `${data.total.toLocaleString('en-MY')} ${showLabel} from ${dayLabel(from)} to ${dayLabel(to)}` : 'Finished cleans'}
         actions={<TabSwitch tab="history" onTab={onTab} />} />
-      <div className="flex items-end gap-2 flex-wrap">
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit or building" aria-label="Search" className={cx(INPUT, 'h-9 w-[220px]')} />
-        <Select label="Cleaner" value={cleaner} onChange={v => { setCleaner(v); setPage(1); }} options={cleaners.map(c => ({ value: c.id, label: c.name }))} placeholder="All cleaners" className="flex-1 min-w-[140px] md:flex-none md:w-[160px]" />
-        <label className="flex items-center gap-1.5 text-meta text-muted-ink">From <input type="date" value={from} onChange={e => { if (e.target.value) { setFrom(e.target.value); setPage(1); } }} className={cx(INPUT, 'h-9 w-auto')} /></label>
-        <label className="flex items-center gap-1.5 text-meta text-muted-ink">To <input type="date" value={to} onChange={e => { if (e.target.value) { setTo(e.target.value); setPage(1); } }} className={cx(INPUT, 'h-9 w-auto')} /></label>
-      </div>
-      {error && <StaleBanner message={error} onRetry={reload} />}
-      <div className="bg-card rounded-card border border-solid border-line overflow-hidden">
-        {!phone && (
-          <div className="grid grid-cols-[0.9fr_1.3fr_0.9fr_0.7fr_1fr_0.9fr_0.6fr] gap-3 px-[18px] py-2.5 text-meta text-muted-ink bg-[#F4F1EB] sticky top-0">
-            <div>Day</div><div>Building</div><div>Unit</div><div>Type</div><div>Cleaner</div><div>Finished</div><div className="text-right">Proof</div>
-          </div>
+      <DataTable<HistoryRow>
+        id="cleaning.history" columns={columns} rows={data ? data.data : null} rowKey={r => r.id}
+        loading={loading} error={error} onRetry={reload}
+        server={{ total: data?.total ?? 0, page: data?.page ?? 1, pageSize: data?.pageSize ?? 50, sizes: [25, 50, 100], defaultPageSize: 50, fetchAll }}
+        viewParams={['state', 'cleaner', 'q']} filtered={filtered} onClearFilters={clearAll}
+        noun={['clean', 'cleans']} exportName="cleaning-history" selectionKey={`${show}|${from}|${to}`}
+        empty={{ title: show === 'active' ? 'No unfinished cleans in these dates.' : 'No cleans in these dates.', icon: 'Sparkles' }}
+        selectable={canBulk}
+        bulkActions={(picked, clear) => <>
+          <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setBulkAssign({ ids: picked.map(r => r.id), clear })}>Assign cleaner</Button>
+          <Button size="sm" variant="secondary" icon={<Icon name="Play" size="sm" />} loading={bulkBusy === 'start'} onClick={() => void bulkMove(picked, 'start', clear)}>Start</Button>
+          <Button size="sm" variant="primary" icon={<Icon name="CheckCircle2" size="sm" />} onClick={() => setConfirmDone({ rows: picked, clear })}>Mark done</Button>
+        </>}
+        toolbar={<>
+          <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="Search unit or building" aria-label="Search" className={cx(INPUT, 'h-9 w-[220px] max-md:w-full')} />
+          <Select label="Show" value={show} onChange={v => setParam('state', v)} options={SHOW} className="w-[150px] max-md:flex-1" />
+          <Select label="Cleaner" value={cleaner} onChange={v => setParam('cleaner', v)} options={cleaners.map(c => ({ value: c.id, label: c.name }))} placeholder="All cleaners" className="w-[160px] max-md:flex-1" />
+          <label className="flex items-center gap-1.5 text-meta text-muted-ink">From <input type="date" value={from} onChange={e => e.target.value && setParam('from', e.target.value)} className={cx(INPUT, 'h-9 w-auto')} /></label>
+          <label className="flex items-center gap-1.5 text-meta text-muted-ink">To <input type="date" value={to} onChange={e => e.target.value && setParam('to', e.target.value)} className={cx(INPUT, 'h-9 w-auto')} /></label>
+        </>}
+        renderCard={r => (
+          <span className="flex flex-col gap-0.5 text-copy min-w-0">
+            <span className="flex justify-between gap-2"><b>{r.propertyName} {r.unitNumber}</b><span className="text-muted-ink whitespace-nowrap">{dayLabel(r.date)}</span></span>
+            <span className="text-muted-ink">{KIND_LABEL[r.kind] ?? r.kind} · {r.assigneeName ?? r.sheetCleaner ?? 'No cleaner recorded'} · {r.photoCount} proof{show ? ` · ${TASK_STATE[r.state]?.label ?? r.state}` : ''}</span>
+          </span>
         )}
-        {loading && !data ? <div className="p-4 flex flex-col gap-2">{[0, 1, 2, 3].map(i => <Skeleton key={i} height={32} />)}</div>
-          : rows.length === 0 ? <EmptyState bare kind="filtered" title="No finished cleans match." action={{ label: 'Clear search', onClick: () => { setQ(''); setCleaner(''); } }} />
-          : rows.map(r => phone ? (
-            <div key={r.id} className="px-4 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy flex flex-col gap-0.5">
-              <div className="flex justify-between gap-2"><b>{r.propertyName} {r.unitNumber}</b><span className="text-muted-ink">{dayLabel(r.date)}</span></div>
-              <div className="text-muted-ink">{KIND_LABEL[r.kind] ?? r.kind} · {r.assigneeName ?? r.sheetCleaner ?? 'No cleaner recorded'} · {r.photoCount} proof</div>
-            </div>
-          ) : (
-            <div key={r.id} className="grid grid-cols-[0.9fr_1.3fr_0.9fr_0.7fr_1fr_0.9fr_0.6fr] gap-3 px-[18px] py-2.5 [border-top:1px_solid_var(--color-line-soft)] text-copy items-center">
-              <div className="[font-variant-numeric:tabular-nums]">{dayLabel(r.date)}</div><div className="truncate">{r.propertyName}</div><div className="font-medium">{r.unitNumber}</div>
-              <div>{KIND_LABEL[r.kind] ?? r.kind}</div><div className="truncate">{r.assigneeName ?? r.sheetCleaner ?? <span className="text-faint">Not recorded</span>}</div>
-              <div className="text-muted-ink">{r.completedAt ? stamp(r.completedAt) : '—'}</div><div className="text-right">{r.photoCount}</div>
-            </div>
-          ))}
-        {data && <ListPager page={page} pageSize={data.pageSize} total={data.total} onPage={setPage} busy={loading} noun="cleans" />}
-      </div>
+      />
+      {bulkAssign && <BulkAssignCleaner taskIds={bulkAssign.ids} onClose={() => setBulkAssign(null)}
+        onDone={() => { bulkAssign.clear(); setBulkAssign(null); reload(); }} />}
+      {confirmDone && (
+        <OpsModal title={`Mark ${plural(confirmDone.rows.length, 'clean')} done?`} onClose={() => setConfirmDone(null)} busy={bulkBusy === 'done'}
+          sub="Each unit turns Ready and its clean is charged to the unit. A clean with no photo or video is refused and named afterwards."
+          footer={<>
+            <Button size="sm" variant="secondary" onClick={() => setConfirmDone(null)} disabled={bulkBusy === 'done'}>Cancel</Button>
+            <Button size="sm" variant="primary" loading={bulkBusy === 'done'} onClick={() => void bulkMove(confirmDone.rows, 'done', confirmDone.clear)}>Mark done</Button>
+          </>}>
+          <p className="m-0 text-copy text-muted-ink">{confirmDone.rows.slice(0, 6).map(historyLabel).join(', ')}{confirmDone.rows.length > 6 ? ' …' : ''}</p>
+        </OpsModal>
+      )}
     </div>
   );
 }

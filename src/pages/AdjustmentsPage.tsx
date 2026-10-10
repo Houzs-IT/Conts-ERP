@@ -1,16 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Plus, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { date } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 
 /** Stock Adjustments — ported from 2990's SCM inventory adjustments, drawn in Conts. A manual
@@ -46,6 +44,14 @@ export default function AdjustmentsPage() {
   const q = search.trim().toLowerCase();
   const rows = all.filter(m => (whFilter === 'all' || m.warehouseId === whFilter) && (!q || `${m.itemCode} ${m.note}`.toLowerCase().includes(q)));
 
+  const columns = useMemo<Column<Mv>[]>(() => [
+    { key: 'date', label: 'Date', type: 'date', value: m => m.movedAt || null },
+    { key: 'item', label: 'Item', type: 'ref', value: m => m.itemCode, hideable: false },
+    { key: 'warehouse', label: 'Warehouse', value: m => m.warehouseName || m.warehouseCode || null },
+    { key: 'change', label: 'Change', type: 'number', value: m => m.qtyDelta, render: m => <span className={cx('tabular-nums text-[13px] font-semibold', m.qtyDelta > 0 ? TONE.success.text : TONE.critical.text)}>{m.qtyDelta > 0 ? '+' : ''}{m.qtyDelta}</span> },
+    { key: 'reason', label: 'Reason', value: m => m.note || null, render: m => <span className="text-[12.5px] text-muted-ink">{m.note || '—'}</span> },
+  ], []);
+
   // Waits for the server: a refused adjustment (e.g. more out than is on hand) must not show as posted.
   async function create(m: Mv) {
     try {
@@ -60,40 +66,23 @@ export default function AdjustmentsPage() {
     <>
       <PageHeader title="Adjustments" sub={`${all.length} stock adjustments`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(true)}>New adjustment</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last adjustments we have. ${error}`} onRetry={reload} />}
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex items-center gap-2.5">
-          <label className="text-[12px] font-medium text-muted-ink">Warehouse</label>
-          <select value={whFilter} onChange={e => setWhFilter(e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
-            <option value="all">All warehouses</option>
-            {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}
-          </select>
-        </div>
-        <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item / reason..." aria-label="Search adjustments"
-          className="h-9 box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[220px] max-w-full" />
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[640px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-              {['Date', 'Item', 'Warehouse', 'Change', 'Reason'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 3 ? 'text-right' : 'text-left')}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={5}><TableSkeleton rows={6} cols={5} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={5}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || whFilter !== 'all' ? 'No adjustments match.' : 'No adjustments yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Post a manual correction to on-hand stock — it lands in the movement ledger.</span></div></td></tr>
-              : rows.map(m => (
-                <tr key={m.id} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)] tabular-nums">{m.movedAt ? date(m.movedAt) : '—'}</td>
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px]">{m.itemCode}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{m.warehouseName || m.warehouseCode || '—'}</td>
-                  <td className="py-[13px] px-4 text-right"><span className={cx('tabular-nums text-[13px] font-semibold', m.qtyDelta > 0 ? TONE.success.text : TONE.critical.text)}>{m.qtyDelta > 0 ? '+' : ''}{m.qtyDelta}</span></td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink max-w-[240px] truncate">{m.note || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Mv>
+        id="scm.adjustments" columns={columns} rows={data ? rows : null} rowKey={m => m.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        noun={['adjustment', 'adjustments']} exportName="stock-adjustments"
+        toolbar={<>
+          <div className="flex items-center gap-2.5">
+            <label className="text-[12px] font-medium text-muted-ink">Warehouse</label>
+            <select value={whFilter} onChange={e => setWhFilter(e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
+              <option value="all">All warehouses</option>
+              {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}
+            </select>
+          </div>
+          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item / reason..." aria-label="Search adjustments"
+            className="h-9 box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[220px] max-w-full" />
+        </>}
+        filtered={!!q || whFilter !== 'all'} onClearFilters={() => { setSearch(''); setWhFilter('all'); }}
+        empty={{ title: 'No adjustments yet.', body: 'Post a manual correction to on-hand stock — it lands in the movement ledger.', action: canWrite ? { label: 'New adjustment', onClick: () => setDrawer(true) } : undefined }} />
       {drawer && <AdjustDrawer warehouses={warehouses} canWrite={canWrite} onClose={() => setDrawer(false)} onCreate={create} />}
     </>
   );

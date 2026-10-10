@@ -1,17 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
-import { Card } from '../components/Card';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { StaleBanner } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useCleaners, type Cleaner, type Employment } from '../lib/useCleaners';
 import { api, notifyFailure } from '../lib/api';
 import { plural } from '../lib/format';
 import { Select } from '../components/Select';
-import { EmptyState } from '../components/States';
 import type { Tone } from '../lib/types';
 
 /* ------------------------------------------------------------------ *
@@ -25,7 +24,6 @@ import type { Tone } from '../lib/types';
  * ------------------------------------------------------------------ */
 
 const EMPLOYMENT_LABEL: Record<Employment, string> = { internal: 'Internal staff', outsourced: 'Outsourced' };
-const EMPLOYMENT_TONE: Record<Employment, Tone> = { internal: 'info', outsourced: 'warning' };
 
 const inputCls = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy';
 const labelCls = 'text-meta font-medium text-muted-ink';
@@ -115,14 +113,10 @@ export default function CleanersPage() {
 
       {error && <StaleBanner message={`Showing the last roster we have. ${error}`} onRetry={reload} />}
 
-      {loading && roster.length === 0 ? (
-        <Card><TableSkeleton rows={4} cols={4} /></Card>
-      ) : (
-        <div className="flex flex-col gap-5">
-          <RosterSection title="Internal staff" hint="Your own housekeepers. They log in and get push jobs." tone="info" emptyTitle="No internal cleaners yet." addLabel="Add internal cleaner" onAdd={() => setModal({ mode: 'create', draft: emptyDraft('internal') })} cleaners={internal} onEdit={openEdit} onToggle={toggleActive} />
-          <RosterSection title="Outsourced / third-party" hint="Vendor crews you assign by hand or by rule. No login." tone="warning" emptyTitle="No outsourced cleaners yet." addLabel="Add outsourced" onAdd={() => setModal({ mode: 'create', draft: emptyDraft('outsourced') })} cleaners={outsourced} onEdit={openEdit} onToggle={toggleActive} />
-        </div>
-      )}
+      <div className="flex flex-col gap-5">
+        <RosterSection kind="internal" title="Internal staff" hint="Your own housekeepers. They log in and get push jobs." tone="info" emptyTitle="No internal cleaners yet." addLabel="Add internal cleaner" onAdd={() => setModal({ mode: 'create', draft: emptyDraft('internal') })} cleaners={loading && roster.length === 0 ? null : internal} onEdit={openEdit} onToggle={toggleActive} />
+        <RosterSection kind="outsourced" title="Outsourced / third-party" hint="Vendor crews you assign by hand or by rule. No login." tone="warning" emptyTitle="No outsourced cleaners yet." addLabel="Add outsourced" onAdd={() => setModal({ mode: 'create', draft: emptyDraft('outsourced') })} cleaners={loading && roster.length === 0 ? null : outsourced} onEdit={openEdit} onToggle={toggleActive} />
+      </div>
 
       {modal && (
         <FormModal
@@ -141,43 +135,59 @@ export default function CleanersPage() {
   );
 }
 
-function RosterSection({ title, hint, tone, emptyTitle, addLabel, onAdd, cleaners, onEdit, onToggle }: {
-  title: string; hint: string; tone: Tone; emptyTitle: string; addLabel: string; onAdd: () => void; cleaners: Cleaner[]; onEdit: (c: Cleaner) => void; onToggle: (c: Cleaner) => void;
+function RosterSection({ kind, title, hint, tone, emptyTitle, addLabel, onAdd, cleaners, onEdit, onToggle }: {
+  kind: Employment; title: string; hint: string; tone: Tone; emptyTitle: string; addLabel: string; onAdd: () => void; cleaners: Cleaner[] | null;
+  onEdit: (c: Cleaner) => void; onToggle: (c: Cleaner) => void;
 }) {
+  const columns = useMemo<Column<Cleaner>[]>(() => [
+    { key: 'name', label: 'Name', value: c => c.name, hideable: false, width: 200, render: c => <span className="font-semibold">{c.name}</span> },
+    ...(kind === 'outsourced' ? [{ key: 'vendor', label: 'Vendor', value: (c: Cleaner) => c.vendorName, width: 180 }] : []),
+    { key: 'phone', label: 'Phone', value: c => c.phone, width: 150 },
+    ...(kind === 'internal' ? [{ key: 'login', label: 'Login', type: 'status' as const, value: (c: Cleaner) => (c.userId ? 'linked' : 'none'),
+      status: (c: Cleaner) => ({ label: c.userId ? 'Linked login' : 'No login link', tone: c.userId ? 'success' as const : 'neutral' as const }), width: 140 }] : []),
+    { key: 'busy', label: 'Open jobs today', type: 'number', value: c => c.busy, width: 120 },
+    { key: 'active', label: 'Status', type: 'status', value: c => (c.isActive ? 'active' : 'inactive'),
+      status: c => ({ label: c.isActive ? 'Active' : 'Inactive', tone: c.isActive ? 'success' : 'neutral' }), width: 110 },
+    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 220, align: 'right', render: c => actions(c) },
+  ], [kind, onEdit, onToggle]); // eslint-disable-line react-hooks/exhaustive-deps
+  function actions(c: Cleaner) {
+    return (
+      <span className="flex gap-[7px] items-center justify-end">
+        <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => onEdit(c)}>Edit</Button>
+        <Button size="sm" variant="tertiary" icon={<Icon name={c.isActive ? 'UserMinus' : 'UserCheck'} size="sm" />} onClick={() => onToggle(c)}>
+          {c.isActive ? 'Deactivate' : 'Reactivate'}
+        </Button>
+      </span>
+    );
+  }
   return (
-    <Card>
-      <div className="py-[18px] px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line)]">
-        <span className="text-heading font-semibold flex items-center gap-2"><Badge tone={tone} label={String(cleaners.length)} size="sm" />{title}</span>
-        <span className="text-meta text-muted-ink">{hint}</span>
-      </div>
-      {cleaners.length === 0 ? (
-        <EmptyState bare title={emptyTitle} body={hint} action={{ label: addLabel, onClick: onAdd }} />
-      ) : (
-        cleaners.map(c => (
-          <div key={c.id} className={`flex gap-4 py-3 px-5 flex-wrap items-center [border-bottom:1px_solid_var(--color-line-soft)] ${c.isActive ? '' : 'opacity-[0.6]'}`}>
-            <div className="flex-1 min-w-[220px] flex flex-col gap-[3px]">
-              <div className="flex items-center gap-[9px] flex-wrap">
-                <span className="text-copy font-semibold">{c.name}</span>
-                <Badge tone={EMPLOYMENT_TONE[c.employmentType]} label={EMPLOYMENT_LABEL[c.employmentType]} size="sm" />
-                {!c.isActive && <Badge tone="neutral" label="Inactive" size="sm" />}
-              </div>
-              <div className="text-meta text-muted-ink flex gap-4 flex-wrap">
-                {c.vendorName && <span>Vendor: {c.vendorName}</span>}
-                {c.phone && <span>{c.phone}</span>}
-                <span>{c.employmentType === 'internal' ? (c.userId ? 'Linked login' : 'No login link') : 'No login'}</span>
-                <span>{plural(c.busy, 'open job')} today</span>
-              </div>
-            </div>
-            <div className="flex gap-[7px] items-center">
-              <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => onEdit(c)}>Edit</Button>
-              <Button size="sm" variant="tertiary" icon={<Icon name={c.isActive ? 'UserMinus' : 'UserCheck'} size="sm" />} onClick={() => onToggle(c)}>
-                {c.isActive ? 'Deactivate' : 'Reactivate'}
-              </Button>
-            </div>
-          </div>
-        ))
+    <DataTable<Cleaner>
+      id={`cleaners.${kind}`} urlPrefix={kind === 'internal' ? 'in.' : 'out.'} columns={columns} rows={cleaners} rowKey={c => c.id}
+      pageSize={0} noun={['cleaner', 'cleaners']} exportName={kind === 'internal' ? 'cleaners-internal' : 'cleaners-outsourced'}
+      rowTone={c => (c.isActive ? null : 'muted')}
+      header={
+        <div className="py-[18px] px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line)]">
+          <span className="text-heading font-semibold flex items-center gap-2"><Badge tone={tone} label={String(cleaners?.length ?? 0)} size="sm" />{title}</span>
+          <span className="text-meta text-muted-ink">{hint}</span>
+        </div>
+      }
+      empty={{ title: emptyTitle, body: hint, action: { label: addLabel, onClick: onAdd } }}
+      renderCard={c => (
+        <span className="flex flex-col gap-[3px] min-w-0">
+          <span className="flex items-center gap-[9px] flex-wrap">
+            <span className="text-copy font-semibold">{c.name}</span>
+            {!c.isActive && <Badge tone="neutral" label="Inactive" size="sm" />}
+          </span>
+          <span className="text-meta text-muted-ink flex gap-x-3 flex-wrap">
+            {c.vendorName && <span>Vendor: {c.vendorName}</span>}
+            {c.phone && <span>{c.phone}</span>}
+            <span>{c.employmentType === 'internal' ? (c.userId ? 'Linked login' : 'No login link') : 'No login'}</span>
+            <span>{plural(c.busy, 'open job')} today</span>
+          </span>
+          <span className="flex justify-start pt-1">{actions(c)}</span>
+        </span>
       )}
-    </Card>
+    />
   );
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
@@ -6,15 +6,17 @@ import Icon from '../components/Icon';
 import { Dialog } from '../components/Dialog';
 import { Field } from '../components/Field';
 import { EmptyState } from '../components/States';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { StaleBanner } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api, ApiFailure } from '../lib/api';
-import { rm, date as fmtDate, time as fmtTime, todayMyt, monthLabel } from '../lib/format';
+import { fetchAllPages } from '../lib/export';
+import { rm, todayMyt, monthLabel, plural } from '../lib/format';
 import { STATEMENT } from '../lib/vocabulary';
 import { TONE, cx } from '../lib/design-tokens';
 import type { StatementState } from '../lib/types';
-import { useUrlState, usePhone, ListCard, Pager, SearchBox, Chip, STICKY_HEAD, shiftMonth } from './finance/listKit';
+import { useUrlState, usePhone, SearchBox, Chip, shiftMonth } from './finance/listKit';
 
 interface Statement {
   id: string; period?: string; ownerName: string; unitsLabel: string; state: StatementState;
@@ -42,17 +44,8 @@ const FALLBACK: Payload = {
 
 const periodLabel = (p: string) => monthLabel(p);
 const PAGE_SIZE = 200;
-
-const SELECT_REASON: Record<StatementState, string> = {
-  provisional: 'Cannot send. This statement is still provisional.',
-  finalised: '',
-  sent: 'Already sent to the owner.',
-  paid: 'Paid — nothing left to send.',
-};
+const SIZES = [50, 100, 200, 500];
 const STATE_ORDER: StatementState[] = ['provisional', 'finalised', 'sent', 'paid'];
-
-// Every column can shrink so the table fits without a sideways scrollbar (which would stop the header sticking).
-const gridCols = 'grid-cols-[28px_minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(92px,0.85fr)_70px]';
 
 export default function StatementsPage() {
   const url = useUrlState();
@@ -62,13 +55,13 @@ export default function StatementsPage() {
   const stateFilter = (STATE_ORDER as string[]).includes(url.get('state')) ? url.get('state') as StatementState : '';
   const q = url.get('q');
   const page = Math.max(1, Number(url.get('page')) || 1);
-  const query = new URLSearchParams({ pageSize: String(PAGE_SIZE), ...(pickedPeriod ? { period: pickedPeriod } : {}), ...(stateFilter ? { state: stateFilter } : {}), ...(q ? { q } : {}), ...(page > 1 ? { page: String(page) } : {}) });
+  const size = SIZES.includes(Number(url.get('size'))) ? Number(url.get('size')) : PAGE_SIZE;
+  const query = new URLSearchParams({ pageSize: String(size), ...(pickedPeriod ? { period: pickedPeriod } : {}), ...(stateFilter ? { state: stateFilter } : {}), ...(q ? { q } : {}), ...(page > 1 ? { page: String(page) } : {}) });
   const { data, loading, error, reload } = useApi<Payload>(`/statements?${query}`, FALLBACK);
   const toast = useToast();
 
   const [edits, setEdits] = useState<Record<string, Partial<Statement>>>({});
-  const [sel, setSel] = useState<Record<string, boolean>>({});
-  const [sendConfirm, setSendConfirm] = useState(false);
+  const [sendTargets, setSendTargets] = useState<{ rows: Statement[]; clear: () => void } | null>(null);
   const [genOpen, setGenOpen] = useState(false);
   const [genInitial, setGenInitial] = useState(shiftMonth(thisMonth, -1));
   const [adjustTarget, setAdjustTarget] = useState<Statement | null>(null);
@@ -76,7 +69,7 @@ export default function StatementsPage() {
 
   // The server opens on the latest period that has statements; the URL holds a period only once one is picked.
   const viewPeriod = pickedPeriod || data?.period || shiftMonth(thisMonth, -1);
-  const setViewPeriod = (p: string) => { url.set({ period: p, page: null }); setSel({}); };
+  const setViewPeriod = (p: string) => url.set({ period: p, page: null });
   const periodRows = data?.periods ?? [];
   const current = periodRows.find(p => p.period === viewPeriod);
 
@@ -93,8 +86,6 @@ export default function StatementsPage() {
   }, [periodRows, thisMonth, viewPeriod]);
   const lockedPeriods = useMemo(() => new Set(periodRows.filter(p => p.sent + p.paid > 0).map(p => p.period)), [periodRows]);
 
-  const selected = rows.filter(r => sel[r.id] && r.state === 'finalised');
-  const selectedProvisional = rows.filter(r => sel[r.id] && r.state === 'provisional');
   const notSent = current?.finalised ?? rows.filter(r => r.state === 'finalised').length;
   const totals = data?.totals ?? {
     gross: rows.reduce((n, r) => n + r.grossBookingValue, 0), fee: rows.reduce((n, r) => n + r.managementFee, 0),
@@ -114,7 +105,6 @@ export default function StatementsPage() {
       const res = await api.post<{ count: number; skipped: number }>('/statements/generate', { period, ownerIds: [] });
       setEdits({});
       url.set({ period, page: null, state: null });
-      setSel({});
       setGenOpen(false);
       reload();
       toast({
@@ -128,13 +118,13 @@ export default function StatementsPage() {
     } finally { setBusy(false); }
   }
 
-  async function runFinalise() {
-    const ids = selectedProvisional.map(t => t.id);
+  async function runFinalise(picked: Statement[], clear: () => void) {
+    const ids = picked.filter(r => r.state === 'provisional').map(t => t.id);
     if (!ids.length) return;
     setBusy(true);
     try {
       const res = await api.post<{ finalised: number; failed: { id: string; reason: string }[] }>('/statements/finalise', { statementIds: ids });
-      setEdits({}); setSel({}); reload();
+      setEdits({}); clear(); reload();
       toast(res.failed.length
         ? { tone: 'warning', title: `${res.finalised} finalised, ${res.failed.length} not.`, body: res.failed[0].reason }
         : { tone: 'success', title: `${res.finalised} ${res.finalised === 1 ? 'statement' : 'statements'} finalised.`, body: 'The figures are now frozen and ready to send.' });
@@ -144,9 +134,9 @@ export default function StatementsPage() {
   }
 
   async function runSend() {
-    const targets = selected;
+    const targets = sendTargets?.rows ?? [];
     const ids = targets.map(t => t.id);
-    if (!ids.length) { setSendConfirm(false); return; }
+    if (!ids.length) { setSendTargets(null); return; }
     setBusy(true);
     try {
       const res = await api.post<{ sent: number; failed: { id: string; reason: string }[] }>('/statements/send', { statementIds: ids });
@@ -163,8 +153,8 @@ export default function StatementsPage() {
       toast({ tone: 'critical', title: 'Statements were not sent.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
     } finally {
       setBusy(false);
-      setSel({});
-      setSendConfirm(false);
+      sendTargets?.clear();
+      setSendTargets(null);
     }
   }
 
@@ -184,30 +174,49 @@ export default function StatementsPage() {
     } finally { setBusy(false); }
   }
 
-  function exportCsv() {
-    const genAt = data?.generatedAt || new Date().toISOString();
-    const extra = [stateFilter && `status ${STATEMENT[stateFilter].label}`, q && `search "${q}"`].filter(Boolean).join(', ');
-    const filtersLine = `Filters applied: period ${periodLabel(viewPeriod)}${extra ? `, ${extra}` : ''} · generated ${fmtDate(genAt)} ${fmtTime(genAt)}`;
-    const scopeLine = `Scope: ${rows.length} owners · ${periodLabel(viewPeriod)} · management + finance view`;
-    const head = ['Owner', 'Units', 'Hospitality income', 'To operator', 'Deductions', 'Net payout', 'Status'];
-    const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
-    const body = rows.map(r => [r.ownerName, r.unitsLabel, rm(r.grossBookingValue), rm(r.managementFee), rm(r.expensesTotal), rm(r.netPayout), STATEMENT[r.state].label]);
-    const lines = [`# ${filtersLine}`, `# ${scopeLine}`, '', head.map(esc).join(','), ...body.map(r => r.map(esc).join(',')),
-      ['Total', '', rm(totals.gross), rm(totals.fee), rm(totals.expenses), rm(totals.net), ''].map(esc).join(',')];
-    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-    const href = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = href; a.download = `owner-statements-${viewPeriod}.csv`; a.click();
-    URL.revokeObjectURL(href);
-    toast({ tone: 'success', title: 'Export ready.', body: 'The CSV header prints the applied filters, generated time and scope.' });
+  /** Every statement under the period, status and search, for the table's Export. The endpoint pages at up to 500. */
+  async function fetchAll(onProgress: (got: number, of: number) => void) {
+    const r = await fetchAllPages<Statement>(async (pg, sz) => {
+      const p = await api.get<Payload>(`/statements?${new URLSearchParams({ period: viewPeriod, pageSize: String(sz), page: String(pg), ...(stateFilter ? { state: stateFilter } : {}), ...(q ? { q } : {}) })}`);
+      return { rows: p.data.map(x => ({ ...x, ...edits[x.id], period: x.period ?? viewPeriod })), total: p.total ?? p.data.length };
+    }, { size: 500, onProgress });
+    return r.rows;
   }
 
   function openRow(r: Statement) { window.location.hash = `#/finance/statements/${r.id}`; }
 
-  function downloadPdf(r: Statement, e: MouseEvent) {
-    e.stopPropagation();
-    window.location.hash = `#/finance/statements/${encodeURIComponent(r.id)}/report`;
-  }
+  const columns = useMemo<Column<Statement>[]>(() => [
+    { key: 'owner', label: 'Owner', value: r => r.ownerName, hideable: false, width: 240, sub: r => r.unitsLabel,
+      render: r => <span className="font-medium block truncate" title={r.ownerName}>{r.ownerName}</span> },
+    { key: 'units', label: 'Units', value: r => r.unitsLabel, hidden: true, width: 220 },
+    { key: 'period', label: 'Period', value: r => r.period ?? null, text: r => (r.period ? periodLabel(r.period) : ''), hidden: true, width: 110 },
+    { key: 'gross', label: 'Hospitality income', type: 'money', value: r => r.grossBookingValue, width: 140,
+      render: r => <span className="tabular-nums whitespace-nowrap">{rm(r.grossBookingValue, { cents: false })}</span> },
+    { key: 'fee', label: 'To operator', type: 'money', value: r => r.managementFee, width: 120,
+      render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">&minus; {rm(r.managementFee, { cents: false })}</span> },
+    { key: 'expenses', label: 'Deductions', type: 'money', value: r => r.expensesTotal, width: 120,
+      render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">&minus; {rm(r.expensesTotal, { cents: false })}</span> },
+    { key: 'net', label: 'Net payout', type: 'money', value: r => r.netPayout, width: 130,
+      render: r => <span className={cx('tabular-nums whitespace-nowrap font-semibold', r.netPayout < 0 ? TONE.critical.text : '')}>{rm(r.netPayout)}</span> },
+    { key: 'status', label: 'Status', type: 'status', value: r => r.state, width: 120,
+      status: r => ({ label: STATEMENT[r.state].label, tone: STATEMENT[r.state].tone }) },
+    { key: 'actions', label: '', width: 84, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
+      render: s => (
+        <span className="flex justify-end gap-[6px]" onClick={e => e.stopPropagation()}>
+          {(s.state === 'provisional' || s.state === 'finalised') && (
+            <button onClick={() => setAdjustTarget(s)} aria-label={`Adjust statement for ${s.ownerName}`} title="Add an adjustment"
+              className="grid place-items-center w-[30px] h-[30px] rounded-control bg-transparent border border-solid border-line text-muted-ink cursor-pointer">
+              <Icon name="Pencil" size="sm" />
+            </button>
+          )}
+          <button onClick={() => { window.location.hash = `#/finance/statements/${encodeURIComponent(s.id)}/report`; }}
+            aria-label={`Owner Income Report for ${s.ownerName}`} title="Owner Income Report (PDF)"
+            className="grid place-items-center w-[30px] h-[30px] rounded-control bg-transparent border border-solid border-line text-muted-ink cursor-pointer">
+            <Icon name="FileText" size="sm" />
+          </button>
+        </span>
+      ) },
+  ], []);
 
   const periodHasNone = !!data && !current && !filtered;
 
@@ -232,13 +241,12 @@ export default function StatementsPage() {
               </label>
               <button aria-label="Next period" onClick={() => setViewPeriod(shiftMonth(viewPeriod, 1))} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">›</button>
             </div>
-            <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportCsv} disabled={rows.length === 0} disabledReason="Nothing to export for this period yet.">Export</Button>
             <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => openGenerate(lockedPeriods.has(shiftMonth(thisMonth, -1)) ? thisMonth : shiftMonth(thisMonth, -1))}>Generate statements</Button>
           </div>
         }
       />
 
-      {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
+      {error && periodHasNone && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
 
       {periodHasNone ? (
         <EmptyState
@@ -246,154 +254,59 @@ export default function StatementsPage() {
           body="Generate the period to draw every settled booking, fee and documented expense into provisional statements."
           action={{ label: 'Generate statements', onClick: () => openGenerate(viewPeriod) }}
         />
-      ) : (<>
-        <div className="flex flex-col gap-2">
-          <div className={cx('flex gap-[7px] shrink-0', phone ? 'overflow-x-auto -mx-4 px-4 pb-1' : 'flex-wrap')}>
-            <Chip on={!stateFilter} onClick={() => url.set({ state: null, page: null })} count={current?.count}>All</Chip>
-            {STATE_ORDER.map(s => (
-              <Chip key={s} on={stateFilter === s} onClick={() => url.set({ state: stateFilter === s ? null : s, page: null })} count={current ? current[s] : undefined}>{STATEMENT[s].label}</Chip>
-            ))}
-          </div>
-          <SearchBox className="max-w-[420px]" label="Search statements" placeholder="Search owner or unit" value={q} onChange={v => url.set({ q: v || null, page: null })} />
-        </div>
-
-        <ListCard busy={loading && !!data}>
-          {(selected.length > 0 || selectedProvisional.length > 0) && (
-            <div className="sticky -top-6 z-[3] flex items-center justify-between gap-[14px] flex-wrap px-[22px] py-[11px] bg-black text-white">
-              <span className="text-[13px] font-medium">{selected.length + selectedProvisional.length} selected · {periodLabel(viewPeriod)}</span>
-              <div className="flex items-center gap-[10px]">
-                <button onClick={() => setSel({})} className="[font:inherit] text-[var(--color-text-on-dark)] bg-transparent border-none cursor-pointer">Clear</button>
-                {selectedProvisional.length > 0 && (
-                  <button onClick={runFinalise} disabled={busy} className="py-[7px] px-[13px] rounded-control bg-white text-black text-[12.5px] font-semibold border-none cursor-pointer">
-                    Finalise {selectedProvisional.length}
-                  </button>
-                )}
-                {selected.length > 0 && (
-                  <button onClick={() => setSendConfirm(true)} className="py-[7px] px-[13px] rounded-control bg-gold text-black text-[12.5px] font-semibold border-none cursor-pointer">
-                    Send {selected.length} {selected.length === 1 ? 'statement' : 'statements'}
-                  </button>
-                )}
-              </div>
+      ) : (
+        <DataTable<Statement>
+          id="statements" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
+          loading={loading} error={error} onRetry={reload} onRowClick={openRow}
+          server={{ total, page: data?.page ?? page, pageSize: data?.pageSize ?? size, sizes: SIZES, defaultPageSize: PAGE_SIZE, fetchAll }}
+          viewParams={['state', 'q']} filtered={filtered} onClearFilters={() => url.set({ state: null, q: null, page: null })}
+          noun={['statement', 'statements']} exportName={`owner-statements-${viewPeriod}`} selectionKey={viewPeriod}
+          empty={{ title: `No statements for ${periodLabel(viewPeriod)}.` }}
+          selectable={r => r.state === 'provisional' || r.state === 'finalised'}
+          bulkActions={(picked, clear) => {
+            const provisional = picked.filter(r => r.state === 'provisional').length;
+            const finalised = picked.filter(r => r.state === 'finalised');
+            return <>
+              {provisional > 0 && <Button size="sm" variant="secondary" loading={busy} onClick={() => runFinalise(picked, clear)}>Finalise {provisional}</Button>}
+              {finalised.length > 0 && <Button size="sm" variant="primary" onClick={() => setSendTargets({ rows: finalised, clear })}>Send {plural(finalised.length, 'statement')}</Button>}
+            </>;
+          }}
+          header={
+            <div className={cx('flex gap-[7px] py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]', phone ? 'overflow-x-auto' : 'flex-wrap')}>
+              <Chip on={!stateFilter} onClick={() => url.set({ state: null, page: null })} count={current?.count}>All</Chip>
+              {STATE_ORDER.map(st => (
+                <Chip key={st} on={stateFilter === st} onClick={() => url.set({ state: stateFilter === st ? null : st, page: null })} count={current ? current[st] : undefined}>{STATEMENT[st].label}</Chip>
+              ))}
             </div>
+          }
+          toolbar={<SearchBox className="flex-[1_1_260px] max-w-[420px]" label="Search statements" placeholder="Search owner or unit" value={q} onChange={v => url.set({ q: v || null, page: null })} />}
+          renderCard={s => (
+            <span className="flex items-start gap-3 text-ink">
+              <span className="flex flex-col gap-[3px] min-w-0 flex-1">
+                <span className="text-[13.5px] font-medium truncate">{s.ownerName}</span>
+                <span className="text-[12px] text-muted-ink truncate">{s.unitsLabel}</span>
+                <span className="text-[11.5px] text-muted-ink tabular-nums">Gross {rm(s.grossBookingValue, { cents: false })} · fees {rm(s.managementFee, { cents: false })} · costs {rm(s.expensesTotal, { cents: false })}</span>
+              </span>
+              <span className="flex flex-col items-end gap-[5px] shrink-0">
+                <span className="text-[13.5px] font-semibold tabular-nums">{rm(s.netPayout, { cents: false })}</span>
+                <Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} size="sm" />
+              </span>
+            </span>
           )}
-
-          {loading && !data ? <TableSkeleton rows={8} cols={phone ? 2 : 7} /> : rows.length === 0 ? (
-            <div className="py-[44px] px-[22px] text-center flex flex-col items-center gap-2">
-              <span className="text-[14px] font-medium">No statements match these filters.</span>
-              <button onClick={() => url.set({ state: null, q: null, page: null })} className="font-sans text-[14px] text-gold-ink bg-transparent border-none cursor-pointer">Clear filters</button>
+          footer={rows.length > 0 && <>
+            <div className="flex items-center justify-between gap-x-5 gap-y-1 flex-wrap px-[22px] max-md:px-4 py-[12px] [border-top:1px_solid_var(--color-line)] bg-page text-[13px] font-semibold">
+              <span>Total · {plural(total, 'owner')}{filtered ? ' · filtered' : ''}</span>
+              <span className="flex gap-x-5 gap-y-1 flex-wrap tabular-nums">
+                <span><span className="text-muted-ink font-normal">Income </span>{rm(totals.gross, { cents: false })}</span>
+                <span><span className="text-muted-ink font-normal">To operator </span>&minus; {rm(totals.fee, { cents: false })}</span>
+                <span><span className="text-muted-ink font-normal">Deductions </span>&minus; {rm(totals.expenses, { cents: false })}</span>
+                <span><span className="text-muted-ink font-normal">Net </span>{rm(totals.net)}</span>
+              </span>
             </div>
-          ) : phone ? (
-            <div>
-              {rows.map(s => {
-                const can = s.state === 'finalised' || s.state === 'provisional';
-                return (
-                  <div key={s.id} className={cx('flex items-start gap-3 py-[11px] px-4 [border-bottom:1px_solid_var(--color-line-soft)]', sel[s.id] ? 'bg-gold-tint' : 'bg-card')}>
-                    <input type="checkbox" disabled={!can} checked={!!sel[s.id]} aria-label={`Select ${s.ownerName}`}
-                      onChange={() => setSel(v => ({ ...v, [s.id]: !v[s.id] }))} className="mt-[3px] w-[17px] h-[17px] accent-[#11694A]" />
-                    <button onClick={() => openRow(s)} className="flex flex-col gap-[3px] min-w-0 flex-1 text-left bg-transparent border-none p-0 cursor-pointer font-sans text-ink">
-                      <span className="text-[13.5px] font-medium truncate">{s.ownerName}</span>
-                      <span className="text-[12px] text-muted-ink truncate">{s.unitsLabel}</span>
-                      <span className="text-[11.5px] text-muted-ink tabular-nums">Gross {rm(s.grossBookingValue, { cents: false })} · fees {rm(s.managementFee, { cents: false })} · costs {rm(s.expensesTotal, { cents: false })}</span>
-                    </button>
-                    <div className="flex flex-col items-end gap-[5px] shrink-0">
-                      <span className="text-[13.5px] font-semibold tabular-nums">{rm(s.netPayout, { cents: false })}</span>
-                      <Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} size="sm" />
-                    </div>
-                  </div>
-                );
-              })}
-              <div className="flex items-center justify-between py-3 px-4 bg-page text-[13px] font-semibold">
-                <span>{total} {total === 1 ? 'owner' : 'owners'}</span>
-                <span className="tabular-nums">{rm(totals.net)}</span>
-              </div>
-            </div>
-          ) : (
-            <div role="table" aria-label={`Owner statements, ${periodLabel(viewPeriod)}`}>
-              <div role="row" className={cx('grid', gridCols, 'gap-[14px] px-[22px] py-[9px]', STICKY_HEAD)}>
-                <div />
-                <div>Owner</div>
-                <div className="text-right">Hospitality income</div>
-                <div className="text-right">To operator</div>
-                <div className="text-right">Deductions</div>
-                <div className="text-right">Net payout</div>
-                <div>Status</div>
-                <div />
-              </div>
-
-              {rows.map(s => {
-                const can = s.state === 'finalised' || s.state === 'provisional';
-                const on = !!sel[s.id];
-                return (
-                  <div
-                    key={s.id}
-                    role="row"
-                    tabIndex={0}
-                    onClick={() => openRow(s)}
-                    onKeyDown={e => { if (e.key === 'Enter') openRow(s); }}
-                    className={cx('grid', gridCols, 'gap-[14px] items-center min-h-[50px] py-[7px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer', on ? 'bg-gold-tint' : 'bg-card hover:bg-page')}
-                  >
-                    <span onClick={e => e.stopPropagation()} className="flex">
-                      <input
-                        type="checkbox"
-                        disabled={!can}
-                        checked={on}
-                        title={can ? undefined : SELECT_REASON[s.state]}
-                        aria-label={can ? `Select ${s.ownerName}` : `${s.ownerName} cannot be selected — ${SELECT_REASON[s.state]}`}
-                        onChange={() => setSel(v => ({ ...v, [s.id]: !v[s.id] }))}
-                        className={`w-[17px] h-[17px] accent-[#11694A] ${can ? 'cursor-pointer' : 'cursor-not-allowed'}`}
-                      />
-                    </span>
-                    <div className="flex flex-col gap-px min-w-0">
-                      <span className="text-[13.5px] font-medium truncate" title={s.ownerName}>{s.ownerName}</span>
-                      <span className="text-[11.5px] text-muted-ink truncate" title={s.unitsLabel}>{s.unitsLabel}</span>
-                    </div>
-                    <div className="text-right text-[13px] tabular-nums whitespace-nowrap">{rm(s.grossBookingValue, { cents: false })}</div>
-                    <div className="text-right text-[13px] text-muted-ink tabular-nums whitespace-nowrap">&minus; {rm(s.managementFee, { cents: false })}</div>
-                    <div className="text-right text-[13px] text-muted-ink tabular-nums whitespace-nowrap">&minus; {rm(s.expensesTotal, { cents: false })}</div>
-                    <div className={cx('text-right text-[13px] font-semibold tabular-nums whitespace-nowrap', s.netPayout < 0 ? TONE.critical.text : '')}>{rm(s.netPayout)}</div>
-                    <div><Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} /></div>
-                    <div className="flex justify-end gap-[6px]" onClick={e => e.stopPropagation()}>
-                      {(s.state === 'provisional' || s.state === 'finalised') && (
-                        <button
-                          onClick={() => setAdjustTarget(s)}
-                          aria-label={`Adjust statement for ${s.ownerName}`}
-                          title="Add an adjustment"
-                          className="grid place-items-center w-[30px] h-[30px] rounded-control bg-transparent border border-solid border-line text-muted-ink cursor-pointer"
-                        >
-                          <Icon name="Pencil" size="sm" />
-                        </button>
-                      )}
-                      <button
-                        onClick={e => downloadPdf(s, e)}
-                        aria-label={`Owner Income Report for ${s.ownerName}`}
-                        title="Owner Income Report (PDF)"
-                        className="grid place-items-center w-[30px] h-[30px] rounded-control bg-transparent border border-solid border-line text-muted-ink cursor-pointer"
-                      >
-                        <Icon name="FileText" size="sm" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-
-              <div className={cx('grid', gridCols, 'gap-[14px] items-center px-[22px] py-[12px] bg-page text-[13px] font-semibold')}>
-                <div />
-                <div>Total · {total} {total === 1 ? 'owner' : 'owners'}</div>
-                <div className="text-right tabular-nums whitespace-nowrap">{rm(totals.gross, { cents: false })}</div>
-                <div className="text-right tabular-nums whitespace-nowrap">&minus; {rm(totals.fee, { cents: false })}</div>
-                <div className="text-right tabular-nums whitespace-nowrap">&minus; {rm(totals.expenses, { cents: false })}</div>
-                <div className="text-right tabular-nums whitespace-nowrap">{rm(totals.net)}</div>
-                <div /><div />
-              </div>
-            </div>
-          )}
-          <Pager page={page} pageSize={PAGE_SIZE} total={total} unit="statements" onPage={p => url.set({ page: p > 1 ? p : null })} />
-          <div className="flex items-center justify-between gap-3 flex-wrap px-[22px] py-[11px] [border-top:1px_solid_var(--color-line)] bg-page text-[12px] text-muted-ink">
-            <span>{periodLabel(viewPeriod)}{filtered ? ' · filtered' : ''}</span>
-            <span>Every deduction carries a category, date and amount</span>
-          </div>
-        </ListCard>
-      </>)}
+            <div className="px-[22px] max-md:px-4 pb-[11px] bg-page text-[12px] text-muted-ink">Every deduction carries a category, date and amount.</div>
+          </>}
+        />
+      )}
 
       {genOpen && (
         <GenerateDialog
@@ -416,11 +329,11 @@ export default function StatementsPage() {
 
       <Dialog
         busy={busy}
-        onClose={() => { if (!busy) setSendConfirm(false); }}
-        spec={!sendConfirm ? null : {
-          title: `Send ${selected.length} ${selected.length === 1 ? 'statement' : 'statements'} to owners?`,
+        onClose={() => { if (!busy) setSendTargets(null); }}
+        spec={!sendTargets ? null : {
+          title: `Send ${plural(sendTargets.rows.length, 'statement')} to owners?`,
           body: 'Owners receive an email and portal notification with the PDF. Sent statements cannot be edited, only superseded by an adjustment.',
-          meta: `${rm(selected.reduce((sum, r) => sum + r.netPayout, 0))} total · finalised statements only`,
+          meta: `${rm(sendTargets.rows.reduce((sum, r) => sum + r.netPayout, 0))} total · finalised statements only`,
           confirmLabel: 'Send', busyLabel: 'Sending…', onConfirm: runSend,
         }}
       />

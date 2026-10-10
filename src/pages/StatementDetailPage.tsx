@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -8,6 +8,7 @@ import Icon from '../components/Icon';
 import { Dialog } from '../components/Dialog';
 import { EmptyState } from '../components/States';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
@@ -133,7 +134,7 @@ export default function StatementDetailPage() {
       {s.units.length === 0 && (
         <div className="mt-4"><Card><div className="px-[22px] py-[18px] text-[13px] text-muted-ink">
           {s.source === 'owner_workbook' ? 'This month was paid from the owner workbook before Property OS. The workbook gives the payout, not every line behind it.' : 'No unit figures on this statement.'}
-        </div><LineList lines={s.lines} /></Card></div>
+        </div><LineList id="all" lines={s.lines} /></Card></div>
       )}
 
       {s.units.map(u => (
@@ -164,7 +165,7 @@ export default function StatementDetailPage() {
                 <Row key={l.id} label={l.description} value={signed(l.amount)} muted />)}
               <Row label="Net payout to owner" value={rm(u.netPayout)} line strong />
             </div>
-            <LineList lines={s.lines.filter(l => l.unitId === u.unitId)} />
+            <LineList id={u.unitId} lines={s.lines.filter(l => l.unitId === u.unitId)} />
           </Card>
         </div>
       ))}
@@ -223,9 +224,29 @@ function Row({ label, value, muted, strong, line }: { label: string; value: stri
   );
 }
 
-/** Every line behind the figures, folded away until asked for. A booking line links to the booking; an expense to Expenses. */
-function LineList({ lines }: { lines: Line[] }) {
+const qtyText = (l: Line) => (l.quantity === null ? '' : l.type === 'gross' ? `${l.quantity} n` : l.category === 'misc' ? `${(l.quantity * 100).toFixed(2)}%` : String(l.quantity));
+
+/** Every line behind the figures, folded away until asked for. A booking line links to the booking; an expense to Expenses.
+ *  `id` keeps each unit's table apart in the URL (sort and filters), since a statement shows one per unit. */
+function LineList({ id, lines }: { id: string; lines: Line[] }) {
   const [open, setOpen] = useState(false);
+  const columns = useMemo<Column<Line>[]>(() => [
+    { key: 'date', label: 'Date', type: 'date', value: l => l.occurredOn, width: 120 },
+    { key: 'line', label: 'Line', value: l => l.description, text: l => (l.reference && !l.booking ? `${l.description} · ${l.reference}` : l.description), hideable: false, width: 300,
+      render: l => (
+        <span className="block truncate" title={l.description}>
+          {l.booking?.ref ? <a href={`#/reservations/bookings?q=${encodeURIComponent(l.booking.ref)}`} className="text-ink underline underline-offset-2">{l.description}</a>
+            : l.expenseId ? <a href="#/finance/expenses" className="text-ink underline underline-offset-2">{l.description}</a>
+            : l.description}
+          {l.reference && !l.booking && <span className="text-muted-ink"> · {l.reference}</span>}
+        </span>
+      ) },
+    { key: 'unit', label: 'Unit', value: l => l.unitLabel, hidden: true, width: 160 },
+    { key: 'qty', label: 'Qty', value: l => qtyText(l), align: 'right', width: 80, filter: false,
+      render: l => <span className="tabular-nums text-muted-ink">{qtyText(l)}</span> },
+    { key: 'amount', label: 'Amount', type: 'money', value: l => l.amount, width: 130,
+      render: l => <span className="tabular-nums whitespace-nowrap">{signed(l.amount)}</span> },
+  ], []);
   if (!lines.length) return null;
   return (
     <div className="[border-top:1px_solid_var(--color-line)]">
@@ -235,28 +256,10 @@ function LineList({ lines }: { lines: Line[] }) {
         <Icon name={open ? 'ChevronUp' : 'ChevronDown'} size="sm" />
       </button>
       {open && (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] border-collapse text-[12.5px]">
-            <thead><tr className="text-left text-muted-ink">
-              <th className="font-medium px-[22px] py-[7px]">Date</th><th className="font-medium py-[7px]">Line</th><th className="font-medium py-[7px] text-right">Qty</th><th className="font-medium px-[22px] py-[7px] text-right">Amount</th>
-            </tr></thead>
-            <tbody>
-              {lines.map(l => (
-                <tr key={l.id} className="[border-top:1px_solid_var(--color-line-soft)] align-top">
-                  <td className="px-[22px] py-[6px] whitespace-nowrap text-muted-ink">{l.occurredOn}</td>
-                  <td className="py-[6px] pr-3">
-                    {l.booking?.ref ? <a href={`#/reservations/bookings?q=${encodeURIComponent(l.booking.ref)}`} className="text-ink underline underline-offset-2">{l.description}</a>
-                      : l.expenseId ? <a href="#/finance/expenses" className="text-ink underline underline-offset-2">{l.description}</a>
-                      : l.description}
-                    {l.reference && !l.booking && <span className="text-muted-ink"> · {l.reference}</span>}
-                  </td>
-                  <td className="py-[6px] text-right tabular-nums text-muted-ink">{l.quantity === null ? '' : l.type === 'gross' ? `${l.quantity} n` : l.category === 'misc' ? `${(l.quantity * 100).toFixed(2)}%` : l.quantity}</td>
-                  <td className="px-[22px] py-[6px] text-right tabular-nums whitespace-nowrap">{signed(l.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable<Line>
+          id="statement.lines" urlPrefix={`l${id.replace(/[^a-z0-9]/gi, '').slice(0, 8)}.`} columns={columns} rows={lines} rowKey={l => l.id}
+          pageSize={0} bare noViews noun={['line', 'lines']} exportName="statement-lines" maxHeight="480px"
+        />
       )}
     </div>
   );

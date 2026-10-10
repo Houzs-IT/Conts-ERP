@@ -9,7 +9,8 @@ import { Dialog, type DialogSpec } from '../components/Dialog';
 import Icon from '../components/Icon';
 import { Field } from '../components/Field';
 import { Select } from '../components/Select';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { StaleBanner } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
@@ -77,7 +78,6 @@ function status(u: Row): { label: string; tone: Tone } {
 const initials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('');
 
 /* ------------------------------- styles ------------------------------- */
-const LIST_COLS_CLASS = 'grid-cols-[minmax(150px,1.5fr)_minmax(160px,1.4fr)_130px_120px_100px_90px_32px]';
 // Left accent on org cards — the -line tone shade, as a box-shadow inset (kept off
 // the border so it does not change the card geometry). Static per-tone literals so
 // the JIT scanner sees each class.
@@ -131,7 +131,33 @@ export default function UsersPage() {
   const nameById = useMemo(() => Object.fromEntries(rows.map(r => [r.id, r.fullName])), [rows]);
 
   const staff = rows.filter(r => r.role !== 'owner');
+
+  const columns = useMemo<Column<Row>[]>(() => [
+    { key: 'name', label: 'Name', value: u => u.fullName, hideable: false, width: 220,
+      render: u => (
+        <span className="flex items-center gap-2.5 min-w-0">
+          <span className={cx('w-[30px] h-[30px] flex-none rounded-full grid place-items-center text-caption font-semibold', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>
+            {initials(u.fullName)}
+          </span>
+          <span className="flex flex-col gap-px min-w-0">
+            <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={u.fullName}>{u.fullName}</span>
+            <span className="text-caption text-muted-ink whitespace-nowrap">{u.phone}</span>
+          </span>
+        </span>
+      ) },
+    { key: 'email', label: 'Email', value: u => u.email, width: 210 },
+    { key: 'phone', label: 'Phone', value: u => u.phone || null, hidden: true, width: 140 },
+    { key: 'role', label: 'Role', type: 'status', value: u => u.role, status: u => ({ label: roleLabel(u.role), tone: roleTone[u.role] }), width: 150 },
+    { key: 'manager', label: 'Reports to', type: 'person', value: u => (u.managerId ? nameById[u.managerId] ?? null : null), width: 150 },
+    { key: 'lastLogin', label: 'Last sign-in', type: 'date', value: u => u.lastLoginAt, width: 120,
+      render: u => <span className="text-copy text-muted-ink whitespace-nowrap">{u.lastLoginAt ? date(u.lastLoginAt) : 'Never'}</span> },
+    { key: 'status', label: 'Status', type: 'status', value: u => status(u).label, status: u => status(u), width: 110 },
+    // The menu is read through a ref: its actions depend on state the memoised columns would otherwise hold stale.
+    { key: 'actions', label: '', width: 52, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
+      render: u => <RowActions name={u.fullName} items={actionsRef.current(u)} /> },
+  ], [nameById]);
   const invitedCount = rows.filter(r => status(r).label === 'Invited').length;
+  const actionsRef = useRef<(u: Row) => RowAction[]>(() => []);
 
   /* ------------------------------ invite ------------------------------ */
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -255,6 +281,7 @@ export default function UsersPage() {
     setEdits(m => ({ ...m, [u.id]: { ...m[u.id], isActive } }));
   };
 
+  actionsRef.current = u => actionsFor(u);
   function actionsFor(u: Row): RowAction[] {
     const self = u.id === me?.id;
     const invited = status(u).label === 'Invited';
@@ -423,69 +450,37 @@ export default function UsersPage() {
         })}
       </div>
 
-      {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
+      {error && tab !== 'users' && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       {/* ------------------------------ Users tab ------------------------------ */}
       {tab === 'users' && (
-        <Card>
-          <div className="py-3 px-5 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] flex items-center justify-between gap-3 flex-wrap">
-            <span className="text-meta text-muted-ink">Role sets what a person can do. The reporting line is separate — see the organisation chart.</span>
-          </div>
-          {/* Phones: one stacked row per person instead of a 910px table that hides role and status off-screen. */}
-          <div className="sm:hidden">
-            {loading && rows.length === 0 ? <TableSkeleton rows={5} cols={2} /> : rows.map(u => {
-              const s = status(u);
-              return (
-                <div key={u.id} onClick={() => openEdit(u)}
-                  className="flex items-center gap-3 w-full box-border text-left py-3 px-4 cursor-pointer [border-bottom:1px_solid_var(--color-line-soft)]">
-                  <span className={cx('w-[32px] h-[32px] flex-none rounded-full grid place-items-center text-caption font-semibold', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>
-                    {initials(u.fullName)}
-                  </span>
-                  <span className="flex flex-col gap-1 min-w-0 flex-1">
-                    <span className="text-copy font-medium truncate" title={u.fullName}>{u.fullName}</span>
-                    <span className="text-meta text-muted-ink truncate" title={u.email}>{u.email}</span>
-                    <span className="flex items-center gap-1.5 flex-wrap"><Badge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /><Badge tone={s.tone} label={s.label} size="sm" /></span>
-                  </span>
-                  <RowActions name={u.fullName} items={actionsFor(u)} />
-                </div>
-              );
-            })}
-          </div>
-          <div className="overflow-x-auto max-sm:hidden">
-            <div className="min-w-[910px]">
-              <div className={cx('grid', LIST_COLS_CLASS, 'gap-3.5 py-2.5 px-5 bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-meta font-semibold text-muted-ink')}>
-                <div>Name</div><div>Email</div><div>Role</div><div>Reports to</div><div>Last sign-in</div><div>Status</div><div><span className="sr-only">Actions</span></div>
-              </div>
-              {loading && rows.length === 0 ? <TableSkeleton rows={7} cols={6} /> : rows.map(u => {
-                const s = status(u);
-                const manager = u.managerId ? nameById[u.managerId] : null;
-                return (
-                  <div
-                    key={u.id}
-                    onClick={() => openEdit(u)}
-                    className={cx('grid', LIST_COLS_CLASS, 'gap-3.5 items-center w-full box-border text-left min-h-[50px] py-2 px-5 cursor-pointer hover:bg-muted [border-bottom:1px_solid_var(--color-line-soft)]')}
-                  >
-                    <span className="flex items-center gap-2.5 min-w-0">
-                      <span className={cx('w-[30px] h-[30px] flex-none rounded-full grid place-items-center text-caption font-semibold', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>
-                        {initials(u.fullName)}
-                      </span>
-                      <span className="flex flex-col gap-px min-w-0">
-                        <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={u.fullName}>{u.fullName}</span>
-                        <span className="text-caption text-muted-ink whitespace-nowrap">{u.phone}</span>
-                      </span>
-                    </span>
-                    <span className="text-copy text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={u.email}>{u.email}</span>
-                    <span><Badge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /></span>
-                    <span className={cx('text-copy whitespace-nowrap overflow-hidden text-ellipsis', manager ? 'text-ink' : 'text-faint')}>{manager ?? '—'}</span>
-                    <span className="text-copy text-muted-ink">{u.lastLoginAt ? date(u.lastLoginAt) : 'Never'}</span>
-                    <span><Badge tone={s.tone} label={s.label} /></span>
-                    <span className="flex justify-end"><RowActions name={u.fullName} items={actionsFor(u)} /></span>
-                  </div>
-                );
-              })}
+        <DataTable<Row>
+          id="users" columns={columns} rows={data ? rows : null} rowKey={u => u.id}
+          loading={loading} error={error} onRetry={reload} onRowClick={openEdit}
+          pageSize={0} noun={['account', 'accounts']} exportName="users"
+          header={
+            <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)] text-meta text-muted-ink">
+              Role sets what a person can do. The reporting line is separate — see the organisation chart.
             </div>
-          </div>
-        </Card>
+          }
+          empty={{ title: 'No accounts yet.', icon: 'Users' }}
+          renderCard={u => {
+            const s = status(u);
+            return (
+              <span className="flex items-center gap-3 min-w-0">
+                <span className={cx('w-[32px] h-[32px] flex-none rounded-full grid place-items-center text-caption font-semibold', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>
+                  {initials(u.fullName)}
+                </span>
+                <span className="flex flex-col gap-1 min-w-0 flex-1">
+                  <span className="text-copy font-medium truncate" title={u.fullName}>{u.fullName}</span>
+                  <span className="text-meta text-muted-ink truncate" title={u.email}>{u.email}</span>
+                  <span className="flex items-center gap-1.5 flex-wrap"><Badge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /><Badge tone={s.tone} label={s.label} size="sm" /></span>
+                </span>
+                <RowActions name={u.fullName} items={actionsFor(u)} />
+              </span>
+            );
+          }}
+        />
       )}
 
       {/* ----------------------------- Sign-ins tab ----------------------------- */}

@@ -9,6 +9,7 @@ import { api, ApiFailure } from '../../lib/api';
 import { date, monthLabel, rm } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { MODELS, MODEL, MODEL_CHIP, type RevenueModel } from '../../lib/revenueModel';
+import { DataTable, type Column } from '../../components/DataTable';
 
 /** The Contract tab: pick ONE revenue model, then fill only that model's fields. Below, last month's statement for
  *  this unit worked out on the terms as they stand in the form (the statement engine, on the server), and the
@@ -73,6 +74,13 @@ function problems(d: Draft): Record<string, string> {
   if (m === 'long_term' && !d.tenantName.trim()) f.tenantName = 'Enter the tenant.';
   return f;
 }
+
+const HISTORY_COLUMNS: Column<ContractView>[] = [
+  { key: 'model', label: 'Revenue model', value: h => MODEL[h.revenueModel].label, width: 170, render: h => <span><ModelChip model={h.revenueModel} /></span> },
+  { key: 'terms', label: 'Terms', value: h => h.termsLabel, width: 200 },
+  { key: 'starts', label: 'From', type: 'date', value: h => h.startsOn, width: 116, render: h => <span className="whitespace-nowrap">{h.startsOn ? date(h.startsOn) : 'No start'}</span> },
+  { key: 'ends', label: 'To', type: 'date', value: h => h.endsOn, width: 116, render: h => <span className="whitespace-nowrap">{h.endsOn ? date(h.endsOn) : 'Open'}</span> },
+];
 
 export function ModelChip({ model, label }: { model: RevenueModel; label?: string }) {
   return <span className={cx('inline-flex items-center rounded-pill px-[10px] py-[3px] text-meta font-medium whitespace-nowrap', MODEL_CHIP[model])}>{label ?? MODEL[model].label}</span>;
@@ -226,13 +234,8 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
             <span className="text-heading font-semibold">Contract history</span>
             <span className="text-meta text-muted-ink">Earlier contracts of this unit. A month before the current contract started is worked out on the one in force then.</span>
           </div>
-          {data!.history.map(h => (
-            <div key={h.id} className="flex flex-wrap items-center gap-3 py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
-              <ModelChip model={h.revenueModel} />
-              <span className="text-copy flex-1 min-w-[160px]">{h.termsLabel}</span>
-              <span className="text-meta text-muted-ink">{h.startsOn ? date(h.startsOn) : 'No start'} to {h.endsOn ? date(h.endsOn) : 'open'}</span>
-            </div>
-          ))}
+          <DataTable<ContractView> id="unit.contracts" urlPrefix="ct." bare noViews noToolbar pageSize={0} maxHeight="none"
+            columns={HISTORY_COLUMNS} rows={data!.history} rowKey={h => h.id ?? `${h.startsOn}|${h.revenueModel}`} noun={['contract', 'contracts']} />
         </Card>
       )}
       {footer}
