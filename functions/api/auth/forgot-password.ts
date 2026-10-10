@@ -1,12 +1,21 @@
-import { type Env, one, run, json } from '../../_lib/db';
+import { type Env, one, run, json, fail } from '../../_lib/db';
 import { notify } from '../../_lib/notify';
 
-/** Always 200, always the same body. Never discloses whether an account exists. */
+/** Tells the person what happened: no account, account switched off, too many requests, the email could not be
+ *  sent, or sent. The owner chose this over a silent "always sent" reply (10 Oct 2026): an internal staff tool
+ *  where a reset that silently did nothing cost more than revealing which emails have accounts. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { email } = await request.json<{ email: string }>();
-  const user = await one<{ id: string }>(env, 'SELECT id FROM users WHERE email = ?', (email ?? '').toLowerCase().trim());
+  const address = (email ?? '').toLowerCase().trim();
+  if (!address) return fail('VALIDATION', 'Enter the email you sign in with.', 422);
+  const user = await one<{ id: string; is_active: number }>(env, 'SELECT id, is_active FROM users WHERE lower(email) = ?', address);
+  if (!user) return fail('NO_ACCOUNT', 'No account uses this email. Check the spelling, or ask a manager to add you in Users and roles.', 404);
+  if (!user.is_active) return fail('INACTIVE', 'This account is switched off. Ask a manager to turn it back on in Users and roles.', 403);
+  const recent = await one<{ n: number }>(env,
+    'SELECT COUNT(*) AS n FROM password_reset_tokens WHERE user_id = ? AND created_at > ?', user.id, new Date(Date.now() - 15 * 60000).toISOString());
+  if (Number(recent?.n ?? 0) >= 3) return fail('TOO_MANY', 'Three reset links were sent in the last 15 minutes. Use the newest one, or try again later.', 429);
 
-  if (user) {
+  {
     const token = crypto.randomUUID();
     const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)))]
       .map(b => b.toString(16).padStart(2, '0')).join('');
@@ -16,7 +25,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     // The token leaves the server only inside the email body. It is never logged,
     // never returned, and only its hash is stored.
     const origin = new URL(request.url).origin;
-    await notify(env, {
+    const sent = await notify(env, {
       template: 'account.password_reset',
       recipient: email.toLowerCase().trim(),
       channel: 'email',
@@ -29,7 +38,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       entityTable: 'password_reset_tokens', entityId: hash,
       urgent: true,
     });
+    if (sent.state === 'failed') {
+      return fail('EMAIL_NOT_SENT', `The account exists, but the reset email could not be sent (${sent.reason ?? 'unknown error'}). Ask a manager to reset your password in Users and roles.`, 502);
+    }
   }
 
-  return json({ ok: true });
+  return json({ ok: true, sent: true });
 };
