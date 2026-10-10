@@ -1,6 +1,7 @@
 import { type Env, one, all, run, json, fail, audit, nowIso } from './db';
 import type { Session } from './auth';
 import { notify } from './notify';
+import { cleaningNotice } from './notices';
 
 export const MYT_DATE = (col: string) => `to_char((${col})::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')`;
 
@@ -77,6 +78,7 @@ export async function assignTask(env: Env, session: Session, taskId: string, ass
     body: `New job: ${unit?.property_name} ${unit?.unit_number}${task.due_at ? `, due ${hhmm(task.due_at)}` : ''}.`,
     entityTable: 'tasks', entityId: taskId, urgent: true,
   });
+  await cleaningNotice(env, taskId, 'assigned', session.userId);
   return json({ ok: true, assigneeName: assignee.full_name, notified: delivery.state });
 }
 
@@ -99,7 +101,8 @@ export async function activeCleaners(env: Env, prefer: 'internal' | 'outsourced'
 /** Assign one clean to a roster cleaner. Sets cleaner_id always, and assignee_id to
  *  the cleaner's login when it is internal staff (outsourced crews have no login, so
  *  assignee_id is cleared). Overlapping work is a 409 ASSIGNEE_BUSY unless force. */
-export async function assignCleaner(env: Env, session: Session, taskId: string, cleaner: RosterCleaner, force: boolean): Promise<Response> {
+/** `quiet`: a bulk assignment sends one notice per cleaner afterwards instead of one per clean. */
+export async function assignCleaner(env: Env, session: Session, taskId: string, cleaner: RosterCleaner, force: boolean, quiet = false): Promise<Response> {
   const task = await one<any>(env, 'SELECT id, state, cleaner_id, assignee_id, due_at, unit_id FROM tasks WHERE id = ?', taskId);
   if (!task) return fail('NOT_FOUND', 'That task no longer exists. Refresh the list.', 404);
   if (task.state === 'resolved') return fail('CONFLICT', 'That task is already finished.', 409);
@@ -108,7 +111,7 @@ export async function assignCleaner(env: Env, session: Session, taskId: string, 
     const clash = await all<{ id: string }>(env, `
       SELECT t.id FROM tasks t
       WHERE t.id != ? AND t.state NOT IN ('resolved') AND t.due_at IS NOT NULL
-        AND (t.cleaner_id = ? OR (? IS NOT NULL AND t.assignee_id = ?))
+        AND (t.cleaner_id = ? OR (?::text IS NOT NULL AND t.assignee_id = ?))
         AND abs(extract(epoch from (t.due_at::timestamptz - ?::timestamptz))) < 5400`,
       taskId, cleaner.id, cleaner.user_id, cleaner.user_id, task.due_at);
     if (clash.length) {
@@ -135,6 +138,7 @@ export async function assignCleaner(env: Env, session: Session, taskId: string, 
       entityTable: 'tasks', entityId: taskId, urgent: true,
     });
   }
+  if (!quiet) await cleaningNotice(env, taskId, 'assigned', session.userId);
   return json({ ok: true, assigneeName: cleaner.full_name });
 }
 

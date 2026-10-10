@@ -1,12 +1,9 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { cx } from '../lib/design-tokens';
-import { Card } from '../components/Card';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
-import { TableSkeleton } from '../components/DataState';
-import { EmptyState } from '../components/States';
+import { DataTable, type Column } from '../components/DataTable';
 import { Select } from '../components/Select';
-import { rm } from '../lib/format';
 
 // ---- Maintenance SKU catalog: the master list of repair items with a preset selling price.
 // Shared by the catalog tab and the "pick a SKU" field in the create-job modal.
@@ -85,59 +82,38 @@ export function CatalogPanel({
     [skus, showInactive],
   );
 
+  const columns = useMemo<Column<Sku>[]>(() => [
+    { key: 'code', label: 'Code', type: 'ref', value: s => s.code, width: 120 },
+    { key: 'name', label: 'Item', value: s => s.name, hideable: false, width: 240, sub: s => s.notes || null, render: s => <span className="font-semibold">{s.name}</span> },
+    { key: 'category', label: 'Category', type: 'status', value: s => s.category, status: s => ({ label: CATEGORY_LABEL[s.category], tone: 'neutral' }), width: 120 },
+    { key: 'price', label: 'Preset price', type: 'money', value: s => s.defaultPrice, sub: s => PER[s.unitLabel], width: 130 },
+    { key: 'stock', label: 'In stock', type: 'number', value: s => (s.trackStock ? s.stockOnHand : null), width: 120,
+      render: s => (s.trackStock ? <StatusBadge tone={stockTone(s.stockOnHand)} label={s.stockOnHand > 0 ? `${s.stockOnHand} in stock` : 'Out of stock'} size="sm" /> : <span className="text-muted-ink">Not stocked</span>) },
+    { key: 'active', label: 'Status', type: 'status', value: s => (s.active ? 'active' : 'retired'), status: s => ({ label: s.active ? 'Active' : 'Retired', tone: s.active ? 'success' : 'warning' }), width: 110 },
+    ...(canWrite ? [{ key: 'edit', label: '', noExport: true, sortable: false, filter: false as const, width: 80, align: 'right' as const,
+      render: (s: Sku) => <Button size="sm" variant="secondary" onClick={() => setEditing(s)}>Edit</Button> }] : []),
+  ], [canWrite]);
+  const activeN = skus.filter(s => s.active).length;
+
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span className="text-copy text-muted-ink">
-          {skus.filter(s => s.active).length} active item{skus.filter(s => s.active).length === 1 ? '' : 's'} · a preset price seeds the quote when you raise a job.
-        </span>
-        <div className="flex items-center gap-2 flex-wrap">
+      <DataTable<Sku>
+        id="maintenance.catalog" urlPrefix="cat." columns={columns} rows={loading && skus.length === 0 ? null : rows} rowKey={s => s.id}
+        pageSize={0} noun={['item', 'items']} exportName="maintenance-catalog"
+        rowTone={s => (s.active ? null : 'muted')} onRowClick={canWrite ? s => setEditing(s) : undefined}
+        filtered={!showInactive && skus.length > 0} onClearFilters={() => setShowInactive(true)}
+        toolbar={<span className="text-copy text-muted-ink">{activeN} active item{activeN === 1 ? '' : 's'} · a preset price seeds the quote when you raise a job.</span>}
+        actions={<>
           <label className="flex items-center gap-1.5 text-meta text-muted-ink cursor-pointer">
             <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
             Show retired
           </label>
           {canWrite && <Button size="sm" variant="primary" onClick={() => setCreating(true)}>New item</Button>}
-        </div>
-      </div>
-
-      {loading && skus.length === 0 ? (
-        <Card><TableSkeleton rows={4} cols={3} /></Card>
-      ) : rows.length === 0 ? (
-        skus.length === 0 ? (
-          <EmptyState icon="Package" title="No catalog items yet"
-            body={canWrite ? 'Add a repair item with a preset price, so picking it on a job fills the quote.' : 'Items appear here once someone in operations adds them.'}
-            action={canWrite ? { label: 'New item', onClick: () => setCreating(true) } : undefined} />
-        ) : (
-          <EmptyState kind="filtered" title="Every item is retired." action={{ label: 'Show retired', onClick: () => setShowInactive(true) }} />
-        )
-      ) : (
-        <Card>
-          {rows.map((s, idx) => (
-            <div key={s.id} className={cx('px-5 py-[13px] flex items-center justify-between gap-4 flex-wrap',
-              idx !== rows.length - 1 && '[border-bottom:1px_solid_var(--color-line-soft)]', !s.active && 'opacity-60')}>
-              <div className="flex flex-col gap-[3px] min-w-[220px] flex-1">
-                <div className="flex items-center gap-[9px] flex-wrap">
-                  <span className="font-mono text-caption text-muted-ink">{s.code}</span>
-                  <span className="text-copy font-semibold">{s.name}</span>
-                  <StatusBadge tone="neutral" label={CATEGORY_LABEL[s.category]} size="sm" />
-                  {s.trackStock && <StatusBadge tone={stockTone(s.stockOnHand)} label={s.stockOnHand > 0 ? `${s.stockOnHand} in stock` : 'Out of stock'} size="sm" />}
-                  {!s.active && <StatusBadge tone="warning" label="Retired" size="sm" />}
-                </div>
-                {s.notes && <span className="text-meta text-muted-ink text-pretty">{s.notes}</span>}
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="flex flex-col items-end">
-                  <span className="text-heading font-semibold tabular-nums">{s.defaultPrice != null ? rm(s.defaultPrice) : '—'}</span>
-                  <span className="text-caption text-muted-ink">{PER[s.unitLabel]}</span>
-                </div>
-                {canWrite && (
-                  <Button size="sm" variant="secondary" onClick={() => setEditing(s)}>Edit</Button>
-                )}
-              </div>
-            </div>
-          ))}
-        </Card>
-      )}
+        </>}
+        empty={{ title: 'No catalog items yet', icon: 'Package',
+          body: canWrite ? 'Add a repair item with a preset price, so picking it on a job fills the quote.' : 'Items appear here once someone in operations adds them.',
+          action: canWrite ? { label: 'New item', onClick: () => setCreating(true) } : undefined }}
+      />
 
       {creating && <SkuModal onClose={() => setCreating(false)} onSave={input => { onCreate(input); setCreating(false); }} />}
       {editing && (

@@ -1,17 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { TONE, cx } from '../lib/design-tokens';
 
 /** Warehouses — warehouse master, ported from 2990's SCM and drawn in Conts. Racks
  *  (bin management) are a later Warehouse-ops slice. */
@@ -48,6 +46,17 @@ export default function WarehousesPage() {
     [added, data, edits, removed],
   );
 
+  const columns = useMemo<Column<Warehouse>[]>(() => [
+    { key: 'code', label: 'Code', type: 'ref', value: w => w.code, hideable: false },
+    { key: 'name', label: 'Name', value: w => w.name },
+    { key: 'location', label: 'Location', value: w => w.location },
+    { key: 'default', label: 'Default', value: w => (w.isDefault ? 'Default' : ''), filter: { kind: 'select' }, width: 110,
+      render: w => w.isDefault
+        ? <span className="inline-flex items-center text-[12px] font-semibold px-2.5 py-0.5 rounded-full bg-[var(--color-gold-50)] text-gold-ink">Default</span>
+        : <span className="text-muted-ink">—</span> },
+    { key: 'status', label: 'Status', type: 'status', value: w => (w.isActive ? 'ACTIVE' : 'INACTIVE'), entity: 'active_flag' },
+  ], []);
+
   function save(d: Draft) {
     const body = { code: d.code.trim(), name: d.name.trim(), location: d.location.trim(), isActive: d.isActive, isDefault: d.isDefault };
     // Reflect the single-default rule locally too.
@@ -76,43 +85,12 @@ export default function WarehousesPage() {
       <PageHeader title="Warehouses" sub={`${rows.length} warehouses`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(emptyDraft())}>New warehouse</Button> : undefined} />
 
-      {error && <StaleBanner message={`Showing the last warehouse list we have. ${error}`} onRetry={reload} />}
-
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[620px]">
-            <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
-                {['Code', 'Name', 'Location', 'Default', 'Status'].map(h => (
-                  <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading && rows.length === 0 ? (
-                <tr><td colSpan={5}><TableSkeleton rows={4} cols={5} /></td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={5}><div className="py-[38px] px-[22px] text-center text-[14px] font-semibold">No warehouses yet.</div></td></tr>
-              ) : rows.map(w => (
-                <tr key={w.id} onClick={() => { if (canWrite) setDrawer({ ...w, isNew: false }); }}
-                  className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
-                  <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{w.code}</span></td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{w.name}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{w.location || '—'}</td>
-                  <td className="py-[13px] px-4">{w.isDefault
-                    ? <span className="inline-flex items-center text-[12px] font-semibold px-2.5 py-0.5 rounded-full bg-[var(--color-gold-50)] text-gold-ink">Default</span>
-                    : <span className="text-[12.5px] text-muted-ink">—</span>}</td>
-                  <td className="py-[13px] px-4">
-                    <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', w.isActive ? cx(TONE.success.bg, TONE.success.text) : cx(TONE.neutral.bg, TONE.neutral.text))}>
-                      <span className="w-1.5 h-1.5 rounded-full bg-current" />{w.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Warehouse>
+        id="scm.warehouses" columns={columns} rows={data ? rows : null} rowKey={w => w.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={canWrite ? w => setDrawer({ ...w, isNew: false }) : undefined}
+        noun={['warehouse', 'warehouses']} exportName="warehouses"
+        empty={{ title: 'No warehouses yet.', action: canWrite ? { label: 'New warehouse', onClick: () => setDrawer(emptyDraft()) } : undefined }} />
 
       {drawer && <WarehouseDrawer draft={drawer} onClose={() => setDrawer(null)} onSave={save}
         onDelete={drawer.isNew ? undefined : () => { const w = rows.find(x => x.id === drawer.id); if (w) remove(w); }} />}

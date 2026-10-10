@@ -6,7 +6,7 @@ import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { ConfirmDialog, type ConfirmSpec } from '../../components/ConfirmDialog';
 import Icon from '../../components/Icon';
-import { StaleBanner, TableSkeleton } from '../../components/DataState';
+import { DataTable, type Column } from '../../components/DataTable';
 import { useApi } from '../../lib/useApi';
 import { api, notifyFailure, errorMessage } from '../../lib/api';
 import { useToast } from '../../components/Toast';
@@ -127,9 +127,61 @@ export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitL
     });
   }
 
+  const lastShown = (r: Credential) => localReveal[r.id] ?? (r.lastRevealedBy ? { by: r.lastRevealedBy, at: r.lastRevealedAt ?? '' } : null);
+  // The code itself is never exported: only its type, name, instruction and history.
+  const columns: Column<Credential>[] = [
+    { key: 'kind', label: 'Type', value: r => KIND_LABEL[r.kind] ?? r.kind, hideable: false, width: 170,
+      render: r => (
+        <span className="flex flex-col gap-[3px] min-w-0">
+          <span className="font-medium">{KIND_LABEL[r.kind] ?? r.kind}</span>
+          <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={r.label}>{r.label}</span>
+          {r.rotatesAfterStay && <span><StatusBadge tone="info" label="Rotates after each stay" size="sm" /></span>}
+        </span>
+      ) },
+    { key: 'label', label: 'Name', value: r => r.label, hidden: true, width: 160 },
+    { key: 'code', label: 'Code', noExport: true, sortable: false, filter: false, width: 240,
+      render: r => {
+        const last = lastShown(r);
+        return (
+          <span className="flex flex-col gap-1 min-w-0">
+            {!r.secret ? (
+              <span className="text-copy text-muted-ink">No code</span>
+            ) : revealed[r.id] != null ? (
+              <span className="flex items-center gap-2 flex-wrap">
+                <span className="font-mono text-copy font-medium [overflow-wrap:anywhere]">{revealed[r.id]}</span>
+                <IconAction name="EyeOff" label={`Mask the code for ${r.label}`} onClick={() => remask(r)} />
+                <IconAction name="Copy" label={`Copy the code for ${r.label}`} onClick={() => copy(r)} />
+              </span>
+            ) : (
+              <button type="button" onClick={() => reveal(r)} aria-label={`Reveal the code for ${r.label}`}
+                className="inline-flex items-center gap-[7px] h-[32px] px-[11px] py-0 rounded-control border border-solid border-line bg-card cursor-pointer [font:inherit] max-w-full self-start">
+                <Icon name="Eye" size="sm" color={color.textMuted} />
+                <span className="font-mono">{r.secret}</span>
+                <span className="text-muted-ink font-medium">Reveal</span>
+              </button>
+            )}
+            <span className="text-caption text-muted-ink whitespace-normal">
+              Changed {safeDate(r.updatedAt)} · {last ? `last shown to ${last.by}${last.at ? ` ${safeDate(last.at)}` : ''}` : 'never revealed'}
+            </span>
+          </span>
+        );
+      } },
+    { key: 'instruction', label: 'Instruction', value: r => r.instruction, width: 260,
+      render: r => <span className="block text-meta text-muted-ink whitespace-normal text-pretty">{r.instruction}</span> },
+    { key: 'rotates', label: 'Rotates after each stay', value: r => (r.rotatesAfterStay ? 'Yes' : 'No'), hidden: true, width: 120 },
+    { key: 'updated', label: 'Changed', type: 'date', value: r => r.updatedAt || null, hidden: true, width: 116 },
+    { key: 'lastShown', label: 'Last shown to', value: r => lastShown(r)?.by ?? null, hidden: true, width: 150 },
+    ...(canEdit ? [{ key: 'actions', label: '', noExport: true, sortable: false, filter: false, width: 90, align: 'right',
+      render: r => (
+        <span className="flex gap-1.5 justify-end">
+          <IconAction name="Pencil" label={`Edit ${r.label}`} onClick={() => setEditing(r)} />
+          <IconAction name="Trash2" label={`Remove ${r.label}`} onClick={() => askDelete(r)} />
+        </span>
+      ) }] as Column<Credential>[] : []),
+  ];
+
   return (
     <>
-      {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
           <div className="flex flex-col gap-1 min-w-0">
@@ -139,49 +191,11 @@ export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitL
           {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setEditing('new')}>Add access</Button>}
         </div>
 
-        {loading && rows.length === 0 ? <TableSkeleton rows={3} cols={3} /> : rows.length === 0 ? (
-          <div className="py-6 px-5 text-copy text-muted-ink">No access recorded for this unit yet.{canEdit ? ' Add the door code, key box or Wi-Fi so cleaners and guests get the right instruction.' : ''}</div>
-        ) : rows.map(r => {
-          const isRevealed = revealed[r.id] != null;
-          const last = localReveal[r.id] ?? (r.lastRevealedBy ? { by: r.lastRevealedBy, at: r.lastRevealedAt ?? '' } : null);
-          return (
-            <div key={r.id} className="grid grid-cols-1 md:grid-cols-[minmax(140px,1fr)_minmax(200px,1.2fr)_minmax(180px,1.5fr)_auto] gap-x-[14px] gap-y-2 items-start md:items-center py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
-              <div className="flex flex-col gap-[3px] min-w-0">
-                <span className="text-copy font-medium">{KIND_LABEL[r.kind] ?? r.kind}</span>
-                <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">{r.label}</span>
-                {r.rotatesAfterStay && <span><StatusBadge tone="info" label="Rotates after each stay" size="sm" /></span>}
-              </div>
-              <div className="min-w-0">
-                {!r.secret ? (
-                  <span className="text-copy text-muted-ink">No code</span>
-                ) : isRevealed ? (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-copy font-medium [overflow-wrap:anywhere]">{revealed[r.id]}</span>
-                    <IconAction name="EyeOff" label={`Mask the code for ${r.label}`} onClick={() => remask(r)} />
-                    <IconAction name="Copy" label={`Copy the code for ${r.label}`} onClick={() => copy(r)} />
-                  </div>
-                ) : (
-                  <button type="button" onClick={() => reveal(r)} aria-label={`Reveal the code for ${r.label}`}
-                    className="inline-flex items-center gap-[7px] h-[32px] px-[11px] py-0 rounded-control border border-solid border-line bg-card cursor-pointer [font:inherit] max-w-full">
-                    <Icon name="Eye" size="sm" color={color.textMuted} />
-                    <span className="font-mono">{r.secret}</span>
-                    <span className="text-muted-ink font-medium">Reveal</span>
-                  </button>
-                )}
-                <div className="text-caption text-muted-ink mt-1">
-                  Changed {safeDate(r.updatedAt)} · {last ? `last shown to ${last.by}${last.at ? ` ${safeDate(last.at)}` : ''}` : 'never revealed'}
-                </div>
-              </div>
-              <span className="text-meta text-muted-ink text-pretty">{r.instruction}</span>
-              {canEdit ? (
-                <div className="flex gap-1.5">
-                  <IconAction name="Pencil" label={`Edit ${r.label}`} onClick={() => setEditing(r)} />
-                  <IconAction name="Trash2" label={`Remove ${r.label}`} onClick={() => askDelete(r)} />
-                </div>
-              ) : <span />}
-            </div>
-          );
-        })}
+        <DataTable<Credential> id="unit.access" urlPrefix="acc." bare noViews pageSize={0} maxHeight="none"
+          columns={columns} rows={data ? rows : null} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
+          noun={['access item', 'access items']} exportName="unit-access"
+          empty={{ title: 'No access recorded for this unit yet.', icon: 'KeyRound',
+            body: canEdit ? 'Add the door code, key box or Wi-Fi so cleaners and guests get the right instruction.' : undefined }} />
       </Card>
 
       {editing && <CredentialModal initial={editing === 'new' ? null : editing} unitLabel={unitLabel} onClose={() => setEditing(null)} onSubmit={save} />}

@@ -1,17 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { TONE, cx } from '../lib/design-tokens';
 
 /** Categories — the product-category display master (label, icon, sort), ported from
  *  2990's SCM and drawn in Conts. */
@@ -49,6 +47,14 @@ export default function CategoriesPage() {
     [added, data, edits, removed],
   );
 
+  const columns = useMemo<Column<Category>[]>(() => [
+    { key: 'sort', label: 'Sort', type: 'number', value: c => c.sortOrder, width: 80 },
+    { key: 'id', label: 'Id', type: 'ref', value: c => c.id, hideable: false },
+    { key: 'label', label: 'Label', value: c => c.label },
+    { key: 'icon', label: 'Icon', value: c => c.icon },
+    { key: 'status', label: 'Status', type: 'status', value: c => (c.tbc ? 'To confirm' : 'Confirmed'), status: c => (c.tbc ? { label: 'To confirm', tone: 'warning' } : null) },
+  ], []);
+
   function save(d: Draft) {
     const body = { id: d.id.trim(), label: d.label.trim(), icon: d.icon.trim(), tbc: d.tbc, heroImageKey: d.heroImageKey.trim(), sortOrder: d.sortOrder };
     if (d.isNew) {
@@ -75,39 +81,12 @@ export default function CategoriesPage() {
       <PageHeader title="Categories" sub={`${rows.length} product categories`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(emptyDraft())}>New category</Button> : undefined} />
 
-      {error && <StaleBanner message={`Showing the last category list we have. ${error}`} onRetry={reload} />}
-
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[560px]">
-            <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
-                {['Sort', 'Id', 'Label', 'Icon', 'Status'].map(h => (
-                  <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading && rows.length === 0 ? (
-                <tr><td colSpan={5}><TableSkeleton rows={5} cols={5} /></td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={5}><div className="py-[38px] px-[22px] text-center text-[14px] font-semibold">No categories yet.</div></td></tr>
-              ) : rows.map(c => (
-                <tr key={c.id} onClick={() => { if (canWrite) setDrawer({ ...c, isNew: false }); }}
-                  className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
-                  <td className="py-[13px] px-4 text-[13px] tabular-nums text-muted-ink">{c.sortOrder}</td>
-                  <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{c.id}</span></td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{c.label}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{c.icon}</td>
-                  <td className="py-[13px] px-4">{c.tbc
-                    ? <span className={cx('inline-flex items-center text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE.warning.bg, TONE.warning.text)}>To confirm</span>
-                    : <span className="text-[12.5px] text-muted-ink">—</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Category>
+        id="scm.categories" columns={columns} rows={data ? rows : null} rowKey={c => c.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={canWrite ? c => setDrawer({ ...c, isNew: false }) : undefined}
+        noun={['category', 'categories']} exportName="categories"
+        empty={{ title: 'No categories yet.', action: canWrite ? { label: 'New category', onClick: () => setDrawer(emptyDraft()) } : undefined }} />
 
       {drawer && <CategoryDrawer draft={drawer} onClose={() => setDrawer(null)} onSave={save}
         onDelete={drawer.isNew ? undefined : () => { const c = rows.find(x => x.id === drawer.id); if (c) remove(c); }} />}

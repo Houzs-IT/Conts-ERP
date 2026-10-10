@@ -47,7 +47,7 @@ export interface UnitDetail {
     sizeSqft: number | null; isListed: boolean; fittedOutAt: string | null;
     channels: BookingChannel[];
     owner: { id: string; name: string; email: string | null };
-    contract: { managementFeePct: number; startsOn: string; renewsOn: string | null } | null;
+    contract: { id?: string | null; managementFeePct: number; startsOn: string; renewsOn: string | null } | null;
     revenueModel?: RevenueModel; revenueModelLabel?: string; termsLabel?: string;
     baseRate?: number;
   };

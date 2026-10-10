@@ -1,18 +1,16 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, Search } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
-import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 
 /** Fabric library — ported from 2990's SCM, drawn in Conts. Upholstery fabric catalogue
@@ -48,6 +46,17 @@ export default function FabricsPage() {
   const rows = useMemo(() => [...added, ...(data?.data ?? [])].filter(f => !removed.has(f.id)).map(f => ({ ...f, ...edits[f.id] }))
     .filter(f => !q || `${f.id} ${f.fabricCode} ${f.label} ${f.tier}`.toLowerCase().includes(q)).sort((a, b) => a.sortOrder - b.sortOrder), [added, data, edits, removed, q]);
 
+  const columns = useMemo<Column<Fabric>[]>(() => [
+    { key: 'code', label: 'Code', type: 'ref', value: f => f.fabricCode || f.id, hideable: false },
+    { key: 'label', label: 'Label', value: f => f.label, width: 200 },
+    { key: 'tier', label: 'Tier', value: f => f.tier, filter: { kind: 'select' },
+      render: f => <StatusBadge entity="fabric_tier" value={f.tier} size="sm" /> },
+    { key: 'surcharge', label: 'Surcharge', type: 'money', value: f => f.defaultSurchargeSen,
+      render: f => f.defaultSurchargeSen ? <span className="tabular-nums whitespace-nowrap">+ {rm(f.defaultSurchargeSen)}</span> : <span className="text-muted-ink">—</span> },
+    { key: 'tiers', label: 'Sofa / Bed tier', value: f => [f.sofaTier, f.bedframeTier].filter(Boolean).join(' / ') },
+    { key: 'status', label: 'Status', type: 'status', value: f => (f.active ? 'ACTIVE' : 'INACTIVE'), entity: 'active_flag' },
+  ], []);
+
   function save(d: Draft) {
     const body = { id: d.id.trim(), fabricCode: d.fabricCode.trim(), label: d.label.trim(), tier: d.tier.trim() || 'standard', defaultSurchargeSen: d.defaultSurchargeSen, sofaTier: d.sofaTier.trim(), bedframeTier: d.bedframeTier.trim(), active: d.active, sortOrder: d.sortOrder };
     if (d.isNew) { setAdded(a => [{ ...body }, ...a]); api.post('/fabrics', body).catch(notifyFailure); toast({ tone: 'success', title: 'Fabric added.', body: body.label }); }
@@ -60,42 +69,22 @@ export default function FabricsPage() {
     <>
       <PageHeader title="Fabric library" sub={`${rows.length} fabrics · upholstery catalogue`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(emptyDraft())}>New fabric</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last fabric list we have. ${error}`} onRetry={reload} />}
-      <div className="flex justify-end">
-        <div className="relative">
+      <DataTable<Fabric>
+        id="scm.fabrics" columns={columns} rows={data ? rows : null} rowKey={f => f.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={canWrite ? f => setDrawer({ ...f, isNew: false }) : undefined}
+        noun={['fabric', 'fabrics']} exportName="fabrics"
+        toolbar={<div className="relative">
           <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
           <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search fabrics..." aria-label="Search fabrics"
             className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
-        </div>
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[680px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
-              {['Code', 'Label', 'Tier', 'Surcharge', 'Sofa / Bed tier', 'Status'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 3 ? 'text-right' : 'text-left')}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && rows.length === 0 ? <tr><td colSpan={6}><TableSkeleton rows={5} cols={6} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={6}><div className="py-[38px] px-[22px] text-center text-[14px] font-semibold">No fabrics yet.</div></td></tr>
-              : rows.map(f => (
-                <tr key={f.id} onClick={() => { if (canWrite) setDrawer({ ...f, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[12.5px] text-muted-ink">{f.fabricCode || f.id}</td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{f.label}</td>
-                  <td className="py-[13px] px-4"><StatusBadge entity="fabric_tier" value={f.tier} /></td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{f.defaultSurchargeSen ? `+ ${rm(f.defaultSurchargeSen)}` : '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{[f.sofaTier, f.bedframeTier].filter(Boolean).join(' / ') || '—'}</td>
-                  <td className="py-[13px] px-4"><StatusBadge entity="active_flag" value={f.active ? 'active' : 'inactive'} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+        </div>}
+        filtered={!!q} onClearFilters={() => setSearch('')}
+        empty={{ title: 'No fabrics yet.', action: canWrite ? { label: 'New fabric', onClick: () => setDrawer(emptyDraft()) } : undefined }} />
       {drawer && <FabricDrawer draft={drawer} onClose={() => setDrawer(null)} onSave={save} onDelete={drawer.isNew ? undefined : () => { const f = rows.find(x => x.id === drawer.id); if (f) remove(f); }} />}
     </>
   );
 }
-
 
 function FabricDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onClose: () => void; onSave: (d: Draft) => void; onDelete?: () => void }) {
   const [f, setF] = useState<Draft>(draft);

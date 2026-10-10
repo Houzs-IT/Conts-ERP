@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
-import { date } from '../lib/format';
-import { cx } from '../lib/design-tokens';
 
 /** Loading List — the warehouse loading manifest: delivery orders that are LOADED (packed,
  *  ready to dispatch), with what and how much to load. Read-only view over delivery orders,
@@ -26,6 +23,8 @@ const FALLBACK: Payload = { generatedAt: '', totalQty: 5, data: [
   { id: 'do2', doNumber: 'DO-2026-0006', customerName: 'Arcoris Owner', doDate: '2026-09-24', warehouseId: 'wh1', warehouseCode: 'WH-MAIN', warehouseName: 'Main Warehouse', driverName: '', vehicle: '', lineCount: 1, totalQty: 2 },
 ] };
 
+const driverText = (r: Row) => r.driverName || r.vehicle ? `${r.driverName || '—'}${r.vehicle ? ` · ${r.vehicle}` : ''}` : 'Unassigned';
+
 export default function LoadingListPage() {
   const { data, loading, error, reload } = useApi<Payload>('/loading-list', FALLBACK);
   const warehouses = useApi<{ data: Wh[] }>('/warehouses', WH_FALLBACK).data?.data ?? [];
@@ -37,12 +36,25 @@ export default function LoadingListPage() {
   const rows = useMemo(() => all.filter(r => (whFilter === 'all' || r.warehouseId === whFilter) && (!dateFilter || r.doDate === dateFilter)), [all, whFilter, dateFilter]);
   const shownUnits = rows.reduce((s, r) => s + r.totalQty, 0);
 
+  const columns = useMemo<Column<Row>[]>(() => [
+    { key: 'do', label: 'Delivery order', type: 'ref', value: r => r.doNumber, hideable: false },
+    { key: 'customer', label: 'Customer', value: r => r.customerName },
+    { key: 'warehouse', label: 'Warehouse', value: r => r.warehouseName || r.warehouseCode || null },
+    { key: 'date', label: 'Date', type: 'date', value: r => r.doDate || null },
+    { key: 'driver', label: 'Driver / vehicle', value: driverText, render: r => <span className="text-[12.5px] text-muted-ink">{driverText(r)}</span> },
+    { key: 'lines', label: 'Lines', type: 'number', value: r => r.lineCount },
+    { key: 'units', label: 'Units', type: 'number', value: r => r.totalQty, render: r => <span className="tabular-nums font-semibold">{r.totalQty}</span> },
+  ], []);
+
   return (
     <>
       <PageHeader title="Loading list" sub={`${all.length} delivery orders ready to load`} />
-      {error && <StaleBanner message={`Showing the last loading list we have. ${error}`} onRetry={reload} />}
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex items-center gap-2.5 flex-wrap">
+      <DataTable<Row>
+        id="scm.loading-list" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={r => setDrawer(r)}
+        noun={['delivery order', 'delivery orders']} exportName="loading-list"
+        toolbar={<div className="flex items-center gap-2.5 flex-wrap">
           <label className="text-[12px] font-medium text-muted-ink">Warehouse</label>
           <select value={whFilter} onChange={e => setWhFilter(e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
             <option value="all">All warehouses</option>
@@ -50,40 +62,22 @@ export default function LoadingListPage() {
           </select>
           <label className="text-[12px] font-medium text-muted-ink ml-2">Date</label>
           <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" />
-        </div>
-        <div className="flex items-baseline gap-2.5">
+        </div>}
+        above={<div className="flex items-baseline justify-end gap-2.5 px-4 py-2">
           <span className="text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink">Units to load</span>
           <span className="text-[22px] font-semibold tabular-nums">{shownUnits}</span>
-        </div>
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[820px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
-              {['Delivery order', 'Customer', 'Warehouse', 'Date', 'Driver / vehicle', 'Lines', 'Units'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i >= 5 ? 'text-right' : 'text-left')}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={7}><TableSkeleton rows={5} cols={7} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={7}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">Nothing to load.</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Delivery orders show here once they are packed (status Loaded) and waiting to dispatch.</span></div></td></tr>
-              : rows.map(r => (
-                <tr key={r.id} onClick={() => setDrawer(r)} className="[border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-muted">
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{r.doNumber}</td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{r.customerName}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{r.warehouseName || r.warehouseCode || '—'}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)] tabular-nums">{r.doDate ? date(r.doDate) : '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink">{r.driverName || r.vehicle ? `${r.driverName || '—'}${r.vehicle ? ` · ${r.vehicle}` : ''}` : 'Unassigned'}</td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px] text-muted-ink">{r.lineCount}</td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{r.totalQty}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+        </div>}
+        filtered={whFilter !== 'all' || !!dateFilter} onClearFilters={() => { setWhFilter('all'); setDateFilter(''); }}
+        empty={{ title: 'Nothing to load.', body: 'Delivery orders show here once they are packed (status Loaded) and waiting to dispatch.' }} />
       {drawer && <ItemsDrawer row={drawer} onClose={() => setDrawer(null)} />}
     </>
   );
 }
+
+const lineColumns: Column<DoLine & { i: number }>[] = [
+  { key: 'item', label: 'Item', value: l => l.description, sub: l => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px]">{l.itemCode}</span>, hideable: false },
+  { key: 'qty', label: 'Qty', type: 'number', value: l => l.qty, render: l => <span className="tabular-nums font-semibold">{l.qty} {l.uom}</span> },
+];
 
 function ItemsDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
   const [lines, setLines] = useState<DoLine[] | null>(null);
@@ -96,20 +90,10 @@ function ItemsDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">Items to load</div>
-        <div className="overflow-x-auto border border-solid border-line rounded-card">
-          <table className="w-full border-collapse min-w-[380px]">
-            <thead><tr className="bg-muted">{['Item', 'Qty'].map((th, i) => <th key={th} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i === 0 ? 'text-left' : 'text-right')}>{th}</th>)}</tr></thead>
-            <tbody>
-              {lines === null ? <tr><td colSpan={2} className="py-6 text-center text-[12.5px] text-muted-ink">Loading…</td></tr>
-              : lines.length === 0 ? <tr><td colSpan={2} className="py-6 text-center text-[12.5px] text-muted-ink">No line items.</td></tr>
-              : lines.map((l, i) => (
-                <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
-                  <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px] font-semibold">{l.qty} {l.uom}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="border border-solid border-line rounded-card overflow-hidden">
+          <DataTable<DoLine & { i: number }> id="scm.loading-list.items" urlPrefix="items." bare noViews noToolbar pageSize={0}
+            columns={lineColumns} rows={lines ? lines.map((l, i) => ({ ...l, i })) : null} rowKey={l => String(l.i)} loading={lines === null}
+            noun={['item', 'items']} exportName={`${row.doNumber}-items`} empty={{ title: 'No line items.' }} />
         </div>
       </div>
     </Drawer>

@@ -3,18 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import { color } from '../theme';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
+import { HistoryDisclosure } from '../components/RecordHistory';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { Field } from '../components/Field';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api, errorMessage } from '../lib/api';
 import { rm, date, todayMyt, titleCase, plural } from '../lib/format';
 import { Select } from '../components/Select';
-import { EmptyState } from '../components/States';
 import { TONE, cx } from '../lib/design-tokens';
-import { useUrlState, usePhone, ListCard, SearchBox, Chip, STICKY_HEAD } from './finance/listKit';
+import { useUrlState, usePhone, SearchBox, Chip } from './finance/listKit';
+import { statusOf } from '../lib/status';
 
 type FeeModel = 'management' | 'grr';
 type ContractState = 'Active' | 'Ending soon' | 'Ended';
@@ -49,7 +50,6 @@ const FALLBACK: Payload = {
 const ENDING_WINDOW_DAYS = 60;
 /** The stored-status key for each contract state (lib/status.ts, entity contract). */
 const STATE_KEY: Record<ContractState, string> = { Active: 'active', 'Ending soon': 'ending_soon', Ended: 'ended' };
-const COLS_CLASS = 'grid-cols-[minmax(0,1.5fr)_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,1.05fr)_minmax(96px,0.8fr)_40px]';
 
 const DAY = 86_400_000;
 /** The date the agreement stops: its end date, else its renewal date. */
@@ -77,7 +77,6 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'active', label: 'Active' },
   { key: 'ended', label: 'Ended' },
 ];
-type SortKey = 'expiry' | 'owner' | 'start';
 
 export default function ContractsPage() {
   const { data, loading, error, reload } = useApi<Payload>('/contracts', FALLBACK);
@@ -89,7 +88,6 @@ export default function ContractsPage() {
   const [modal, setModal] = useState<null | { mode: 'add' } | { mode: 'edit'; id: string }>(null);
 
   const filter: FilterKey = (['soon', 'active', 'ended'].includes(url.get('state')) ? url.get('state') : 'all') as FilterKey;
-  const sort: SortKey = (['owner', 'start'].includes(url.get('sort')) ? url.get('sort') : 'expiry') as SortKey;
   const model = url.get('model');
   const q = url.get('q').toLowerCase();
 
@@ -118,19 +116,17 @@ export default function ContractsPage() {
       if (model && r.model !== model) return false;
       return !q || r.ownerName.toLowerCase().includes(q) || r.unitsLabel.toLowerCase().includes(q);
     });
-    // Expiry order: the next to end first, open-ended after, the ones already ended last (latest first).
+    // Until someone sorts by a column: the next to end first, open-ended after, the ones already ended last (latest first).
     const rank = (r: Contract) => {
       const d = daysUntil(expiryOf(r));
       return d === null ? [1, 0] : d < 0 ? [2, -d] : [0, d];
     };
     list.sort((a, b) => {
-      if (sort === 'owner') return a.ownerName.localeCompare(b.ownerName);
-      if (sort === 'start') return b.startsOn.localeCompare(a.startsOn);
       const [ga, va] = rank(a), [gb, vb] = rank(b);
       return ga - gb || va - vb || a.ownerName.localeCompare(b.ownerName);
     });
     return list;
-  }, [rows, filter, model, q, sort]);
+  }, [rows, filter, model, q]);
 
   const soonList = useMemo(() => rows.filter(r => stateOf(r) === 'Ending soon')
     .sort((a, b) => (daysUntil(expiryOf(a)) ?? 0) - (daysUntil(expiryOf(b)) ?? 0)), [rows]);
@@ -158,6 +154,7 @@ export default function ContractsPage() {
   }
 
   const openOwner = (r: Contract) => { if (r.ownerId) navigate(`/owners/${encodeURIComponent(r.ownerId)}`); };
+  const clearFilters = () => url.set({ state: null, model: null, q: null, page: null });
 
   const EndsCell = ({ r }: { r: Contract }) => {
     const exp = expiryOf(r), d = daysUntil(exp), s = stateOf(r);
@@ -171,6 +168,45 @@ export default function ContractsPage() {
     );
   };
 
+  const columns: Column<Contract>[] = [
+    { key: 'owner', label: 'Owner', value: r => r.ownerName, hideable: false, width: 210,
+      render: r => (
+        <span className="flex items-center gap-[10px] min-w-0">
+          <Icon name="FileSignature" size="sm" color={color.textMuted} />
+          <span className="flex flex-col gap-px min-w-0">
+            <span className="text-copy font-medium truncate" title={r.ownerName}>{titleCase(r.ownerName)}</span>
+            {r.offerLetter && (
+              <span className="inline-flex items-center gap-1 text-caption text-muted-ink truncate">
+                <Icon name="Paperclip" size="sm" color={color.faint} style={{ width: 12, height: 12 }} />{r.offerLetter}
+              </span>
+            )}
+          </span>
+        </span>
+      ) },
+    { key: 'units', label: 'Units', value: r => r.unitsLabel, width: 200 },
+    { key: 'fee', label: 'Fee model', value: r => feeLabel(r), width: 140, render: r => <span className="text-copy font-medium truncate block" title={feeLabel(r)}>{feeLabel(r)}</span> },
+    { key: 'model', label: 'Model', value: r => (r.model === 'grr' ? 'Guaranteed rent' : 'Management fee'), hidden: true, width: 140, filter: { kind: 'select' } },
+    { key: 'feePct', label: 'Management fee %', type: 'number', value: r => (r.model === 'management' ? r.managementFeePct : null), hidden: true, width: 120 },
+    { key: 'grr', label: 'Guaranteed rent / month', type: 'money', value: r => (r.model === 'grr' ? r.grrAmount : null), hidden: true, width: 150 },
+    { key: 'started', label: 'Started', type: 'date', value: r => r.startsOn, width: 110 },
+    { key: 'ends', label: 'Ends', type: 'date', value: r => expiryOf(r), width: 140, title: 'The end date, or the renewal date when no end date is recorded.',
+      render: r => <EndsCell r={r} /> },
+    { key: 'endsOn', label: 'End date', type: 'date', value: r => r.endsOn ?? null, hidden: true },
+    { key: 'renewsOn', label: 'Renews on', type: 'date', value: r => r.renewsOn, hidden: true },
+    { key: 'offer', label: 'Offer letter', value: r => r.offerLetter, hidden: true, width: 180 },
+    { key: 'status', label: 'Status', type: 'status', value: r => stateOf(r), status: r => statusOf('contract', STATE_KEY[stateOf(r)]), width: 120 },
+    { key: 'edit', label: '', width: 56, noExport: true, sortable: false, filter: false, align: 'right',
+      render: r => (
+        <button
+          onClick={e => { e.stopPropagation(); setModal({ mode: 'edit', id: r.id }); }}
+          aria-label={`Edit contract for ${titleCase(r.ownerName)}`}
+          className="grid place-items-center w-9 h-9 rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink"
+        >
+          <Icon name="Pencil" size="sm" />
+        </button>
+      ) },
+  ];
+
   return (
     <>
       <PageHeader
@@ -178,8 +214,6 @@ export default function ContractsPage() {
         sub={`${plural(counts.all, 'management agreement')} · ${counts.soon} ending within ${ENDING_WINDOW_DAYS} days · ${counts.ended} ended`}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ mode: 'add' })}>Add contract</Button>}
       />
-
-      {error && <StaleBanner message={`Showing the last agreements we have. ${error}`} onRetry={reload} />}
 
       {soonList.length > 0 && filter !== 'soon' && (
         <div role="status" className={cx('flex items-start gap-3 flex-wrap py-[12px] px-[16px] rounded-control [border-left:3px_solid_var(--color-warning-line)]', TONE.warning.bg)}>
@@ -195,95 +229,48 @@ export default function ContractsPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <SearchBox className="flex-1 min-w-[200px]" label="Search contracts" placeholder="Search owner or unit" value={url.get('q')} onChange={v => url.set({ q: v || null })} />
-        <Select className="flex-[1_1_160px] sm:flex-[0_1_180px]" label="Fee model" value={model} onChange={v => url.set({ model: v || null })}
-          options={[{ value: '', label: 'All fee models' }, { value: 'management', label: 'Management fee' }, { value: 'grr', label: 'Guaranteed rent' }]} />
-        <Select className="flex-[1_1_160px] sm:flex-[0_1_180px]" label="Sort by" value={sort === 'expiry' ? '' : sort} onChange={v => url.set({ sort: v || null })}
-          options={[{ value: '', label: 'Sort: ending soonest' }, { value: 'owner', label: 'Sort: owner A-Z' }, { value: 'start', label: 'Sort: newest first' }]} />
-        <div className={cx('flex gap-2', phone ? 'w-full overflow-x-auto pb-1' : 'flex-wrap')}>
-          {FILTERS.map(f => (
-            <Chip key={f.key} on={filter === f.key} onClick={() => url.set({ state: f.key === 'all' ? null : f.key })} count={counts[f.key]}>{f.label}</Chip>
-          ))}
-        </div>
-        {filtered && <Button size="sm" variant="tertiary" onClick={() => url.set({ state: null, model: null, q: null })}>Clear filters</Button>}
-      </div>
-
-      <ListCard busy={loading && !!data}>
-        {loading && !data ? (
-          <TableSkeleton rows={8} cols={phone ? 2 : 7} />
-        ) : visible.length === 0 ? (
-          rows.length === 0
-            ? <EmptyState bare icon="FileSignature" title="No contracts yet." body="Add the first management agreement: owner, unit and how the owner is paid." />
-            : <EmptyState bare kind="filtered" title="No contracts match these filters." action={{ label: 'Clear filters', onClick: () => url.set({ state: null, model: null, q: null }) }} />
-        ) : phone ? (
-          <div>
-            {visible.map(r => {
-              const state = stateOf(r);
-              return (
-                <div key={r.id} role="button" tabIndex={0} onClick={() => openOwner(r)} onKeyDown={e => { if (e.key === 'Enter') openOwner(r); }}
-                  className={cx('min-h-[64px] flex flex-col gap-1 py-3 pr-4 pl-[13px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer',
-                    state === 'Ending soon' ? '[border-left:3px_solid_var(--color-warning-line)]' : '[border-left:3px_solid_transparent]')}>
-                  <span className="flex items-start justify-between gap-2 w-full">
-                    <span className="text-copy font-medium min-w-0 [overflow-wrap:anywhere]">{titleCase(r.ownerName)}</span>
-                    <span className="shrink-0"><StatusBadge entity="contract" value={STATE_KEY[state]} size="sm" /></span>
-                  </span>
-                  <span className="text-meta text-muted-ink truncate w-full" title={r.unitsLabel}>{r.unitsLabel}</span>
-                  <span className="flex items-center justify-between gap-2 w-full flex-wrap">
-                    <span className="text-meta font-medium">{feeLabel(r)}</span>
-                    <EndsCell r={r} />
-                  </span>
-                </div>
-              );
-            })}
+      <DataTable<Contract>
+        id="contracts" phoneSort={false} columns={columns} rows={data ? visible : null} rowKey={r => r.id}
+        loading={loading} error={error} onRetry={reload} onRowClick={openOwner}
+        rowTone={r => { const st = stateOf(r); return st === 'Ending soon' ? 'warning' : st === 'Ended' ? 'muted' : null; }}
+        viewParams={['state', 'model', 'q']} filtered={filtered} onClearFilters={clearFilters}
+        noun={['contract', 'contracts']} exportName="contracts"
+        empty={{ title: 'No contracts yet.', body: 'Add the first management agreement: owner, unit and how the owner is paid.', icon: 'FileSignature', action: { label: 'Add contract', onClick: () => setModal({ mode: 'add' }) } }}
+        header={
+          <div className={cx('flex gap-2 py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]', phone ? 'overflow-x-auto' : 'flex-wrap')}>
+            {FILTERS.map(f => (
+              <Chip key={f.key} on={filter === f.key} onClick={() => url.set({ state: f.key === 'all' ? null : f.key, page: null })} count={counts[f.key]}>{f.label}</Chip>
+            ))}
           </div>
-        ) : (
-          <div role="table" aria-label="Contracts">
-            <div role="row" className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] pr-[22px] pl-[19px] [border-left:3px_solid_transparent]', STICKY_HEAD)}>
-              <div>Owner</div><div>Units</div><div>Fee model</div><div>Started</div><div>Ends</div><div>Status</div><div />
-            </div>
-            {visible.map(r => {
-              const state = stateOf(r);
-              const soon = state === 'Ending soon';
-              return (
-                <div role="row" key={r.id} onClick={() => openOwner(r)}
-                  className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[52px] py-[7px] pr-[22px] pl-[19px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-page',
-                    soon ? '[border-left:3px_solid_var(--color-warning-line)] bg-warning-bg' : '[border-left:3px_solid_transparent]',
-                    state === 'Ended' ? 'text-muted-ink' : '')}>
-                  <div className="flex items-center gap-[10px] min-w-0">
-                    <Icon name="FileSignature" size="sm" color={color.textMuted} />
-                    <div className="flex flex-col gap-px min-w-0">
-                      <span className="text-copy font-medium truncate" title={r.ownerName}>{titleCase(r.ownerName)}</span>
-                      {r.offerLetter && (
-                        <span className="inline-flex items-center gap-1 text-caption text-muted-ink truncate">
-                          <Icon name="Paperclip" size="sm" color={color.faint} style={{ width: 12, height: 12 }} />{r.offerLetter}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <span className="text-copy text-muted-ink truncate" title={r.unitsLabel}>{r.unitsLabel}</span>
-                  <span className="text-copy font-medium truncate" title={feeLabel(r)}>{feeLabel(r)}</span>
-                  <span className="text-copy tabular-nums whitespace-nowrap">{date(r.startsOn)}</span>
-                  <EndsCell r={r} />
-                  <div><StatusBadge entity="contract" value={STATE_KEY[state]} /></div>
-                  <div className="flex justify-end">
-                    <button
-                      onClick={e => { e.stopPropagation(); setModal({ mode: 'edit', id: r.id }); }}
-                      aria-label={`Edit contract for ${titleCase(r.ownerName)}`}
-                      className="grid place-items-center w-9 h-9 rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink"
-                    >
-                      <Icon name="Pencil" size="sm" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-            <div className="py-[11px] px-[22px] bg-page text-meta text-muted-ink">
-              {visible.length === rows.length ? plural(rows.length, 'contract') : `${visible.length} of ${plural(rows.length, 'contract')}`} · Ends shows the end date, or the renewal date when no end date is recorded
-            </div>
-          </div>
-        )}
-      </ListCard>
+        }
+        toolbar={<>
+          <SearchBox className="flex-1 min-w-[200px]" label="Search contracts" placeholder="Search owner or unit" value={url.get('q')} onChange={v => url.set({ q: v || null, page: null })} />
+          <Select className="flex-[1_1_160px] sm:flex-[0_1_180px]" label="Fee model" value={model} onChange={v => url.set({ model: v || null, page: null })}
+            options={[{ value: '', label: 'All fee models' }, { value: 'management', label: 'Management fee' }, { value: 'grr', label: 'Guaranteed rent' }]} />
+          {phone && (
+            <Select className="flex-[1_1_160px]" label="Sort by" value={url.get('sort')} onChange={v => url.set({ sort: v || null, page: null })}
+              options={[{ value: '', label: 'Sort: ending soonest' }, { value: 'owner:asc', label: 'Sort: owner A-Z' }, { value: 'started:desc', label: 'Sort: newest first' }]} />
+          )}
+          {filtered && <Button size="sm" variant="tertiary" onClick={clearFilters}>Clear filters</Button>}
+        </>}
+        footer={<div className="py-[11px] px-[22px] max-md:px-4 bg-page [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink">Ends shows the end date, or the renewal date when no end date is recorded.</div>}
+        renderCard={r => {
+          const state = stateOf(r);
+          return (
+            <span className="flex flex-col gap-1 min-w-0">
+              <span className="flex items-start justify-between gap-2 w-full">
+                <span className="text-copy font-medium min-w-0 [overflow-wrap:anywhere]">{titleCase(r.ownerName)}</span>
+                <span className="shrink-0"><StatusBadge entity="contract" value={STATE_KEY[state]} size="sm" /></span>
+              </span>
+              <span className="text-meta text-muted-ink truncate w-full" title={r.unitsLabel}>{r.unitsLabel}</span>
+              <span className="flex items-center justify-between gap-2 w-full flex-wrap">
+                <span className="text-meta font-medium">{feeLabel(r)}</span>
+                <EndsCell r={r} />
+              </span>
+            </span>
+          );
+        }}
+      />
 
       {modal?.mode === 'add' && <ContractModal onClose={() => setModal(null)} onSubmit={addContract} />}
       {modal?.mode === 'edit' && editing && <ContractModal existing={editing} onClose={() => setModal(null)} onSubmit={input => saveEdit(editing.id, input)} />}
@@ -402,6 +389,7 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
       </div>
       <Field label="Renews on" type="date" value={renewsOn} onChange={e => setRenewsOn(e.target.value)} help="Optional. Used as the end date when no end date is recorded." />
       <OfferLetterField value={offerLetter} onChange={setOfferLetter} />
+      {existing && <HistoryDisclosure entity="owner_contracts" id={existing.id} />}
     </Modal>
   );
 }

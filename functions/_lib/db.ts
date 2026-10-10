@@ -23,6 +23,9 @@ export interface Env {
   /** "staging" on the preview environment only: lets management view the system as another account
    *  (functions/api/auth/view-as.ts). Never set on production. */
   VIEW_AS?: string;
+  /** Encrypts each person's two-step sign-in secret at rest (functions/_lib/twoFactor.ts). Without it, setting up
+   *  two-step sign-in is refused with a plain message; signing in with a password still works. */
+  TOTP_ENC_KEY?: string;
   /** Set only on the copy of env that transaction() hands its callback: every query through that copy runs on the
    *  transaction's one connection. Never set in wrangler. */
   TX?: postgres.TransactionSql;

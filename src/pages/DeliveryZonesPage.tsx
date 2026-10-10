@@ -1,18 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { cx } from '../lib/design-tokens';
-import { StatusBadge } from '../components/StatusBadge';
 
 /** Delivery Zones — ported from 2990's SCM zone-classify, drawn in Conts. The postcode-prefix
  *  -> area-zone map. Prefixes are the FIRST TWO digits of a Malaysian postcode (00–99). */
@@ -49,6 +46,13 @@ export default function DeliveryZonesPage() {
   const rows = useMemo(() => [...added, ...(data?.data ?? [])].filter(z => !removed.has(z.id)).map(z => ({ ...z, ...edits[z.id] })), [added, data, edits, removed]);
   const usingDefault = (data?.usingDefault ?? true) && added.length === 0 && !seeded;
 
+  const columns = useMemo<Column<Zone>[]>(() => [
+    { key: 'zone', label: 'Zone', value: z => z.zone, hideable: false, render: z => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{z.zone}</span> },
+    { key: 'prefixes', label: 'Postcode prefixes', value: z => `${pad(z.prefixStart)}xxx – ${pad(z.prefixEnd)}xxx`, render: z => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] tabular-nums">{pad(z.prefixStart)}xxx – {pad(z.prefixEnd)}xxx</span> },
+    { key: 'label', label: 'Label', value: z => z.label },
+    { key: 'status', label: 'Status', type: 'status', value: z => (z.isActive ? 'active' : 'inactive'), entity: 'active_flag' },
+  ], []);
+
   function save(draft: Zone, isNew: boolean) {
     if (isNew) { setAdded(a => [{ ...draft, id: `dz-new-${crypto.randomUUID().slice(0, 8)}` }, ...a]); api.post('/delivery-zones', draft).catch(notifyFailure); toast({ tone: 'success', title: 'Zone rule added.', body: `${draft.zone} ${pad(draft.prefixStart)}–${pad(draft.prefixEnd)}` }); }
     else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...draft } })); api.patch(`/delivery-zones/${draft.id}`, draft).catch(notifyFailure); toast({ tone: 'success', title: 'Zone rule updated.', body: draft.zone }); }
@@ -66,34 +70,18 @@ export default function DeliveryZonesPage() {
     <>
       <PageHeader title="Delivery zones" sub={`${rows.length} postcode-prefix rules`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyZone(), isNew: true })}>New rule</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last zone map we have. ${error}`} onRetry={reload} />}
       {usingDefault && (
         <div className="flex items-center justify-between gap-4 flex-wrap p-4 rounded-card bg-[var(--color-gold-50)] [border:1px_solid_var(--color-line)]">
           <div className="text-[13px] text-gold-ink">No custom map yet — postcodes classify by the built-in default. Load it to customise.</div>
           {canWrite && <Button size="sm" variant="secondary" onClick={loadDefault}>Load default map</Button>}
         </div>
       )}
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[560px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
-              {['Zone', 'Postcode prefixes', 'Label', 'Status'].map((h) => <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && rows.length === 0 ? <tr><td colSpan={4}><TableSkeleton rows={6} cols={4} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={4}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">No custom rules.</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Add postcode-prefix rules, or load the default map to start from.</span></div></td></tr>
-              : rows.map(z => (
-                <tr key={z.id} onClick={() => { if (canWrite) setDrawer({ draft: z, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
-                  <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{z.zone}</span></td>
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] tabular-nums">{pad(z.prefixStart)}xxx – {pad(z.prefixEnd)}xxx</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink">{z.label || '—'}</td>
-                  <td className="py-[13px] px-4"><StatusBadge entity="active_flag" value={z.isActive ? 'active' : 'inactive'} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Zone>
+        id="scm.delivery-zones" columns={columns} rows={data ? rows : null} rowKey={z => z.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={canWrite ? z => setDrawer({ draft: z, isNew: false }) : undefined}
+        noun={['rule', 'rules']} exportName="delivery-zones"
+        empty={{ title: 'No custom rules.', body: 'Add postcode-prefix rules, or load the default map to start from.', action: canWrite ? { label: 'New rule', onClick: () => setDrawer({ draft: emptyZone(), isNew: true }) } : undefined }} />
       {drawer && <ZoneDrawer draft={drawer.draft} isNew={drawer.isNew} knownZones={knownZones} onClose={() => setDrawer(null)} onSave={save} onDelete={drawer.isNew ? undefined : () => remove(drawer.draft)} />}
     </>
   );

@@ -1,20 +1,19 @@
 import { useMemo, useState } from 'react';
 import { Search, Plus, Trash2, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm } from '../lib/format';
 import { cx } from '../lib/design-tokens';
-import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
+import { StatusBadge } from '../components/StatusBadge';
 
 /** Sales Orders — ported from 2990's SCM (core sell-side doc), drawn in Conts. Header +
  *  lines + 9-state status flow + deposit/payment. Customer inline; DO/SI are next modules. */
@@ -60,6 +59,16 @@ export default function SalesOrdersPage() {
   const rows = all.filter(p => (statusFilter === 'all' || p.status === statusFilter) && (!q || `${p.docNo} ${p.customerName} ${p.customerPo}`.toLowerCase().includes(q)));
   const outstanding = all.filter(p => p.status !== 'CANCELLED').reduce((s, p) => s + p.outstandingSen, 0);
 
+  const columns = useMemo<Column<So>[]>(() => [
+    { key: 'docNo', label: 'SO number', type: 'ref', value: p => p.docNo, hideable: false },
+    { key: 'customer', label: 'Customer', value: p => p.customerName, sub: p => p.customerPo ? `PO ${p.customerPo}` : null, text: p => `${p.customerName} ${p.customerPo}`.trim() },
+    { key: 'soDate', label: 'SO date', type: 'date', value: p => p.soDate || null },
+    { key: 'target', label: 'Target', type: 'date', value: p => p.targetDate || null },
+    { key: 'status', label: 'Status', type: 'status', value: p => p.status, entity: 'sales_order' },
+    { key: 'total', label: 'Total', type: 'money', value: p => p.totalSen },
+    { key: 'outstanding', label: 'Outstanding', type: 'money', value: p => p.status === 'CANCELLED' ? null : p.outstandingSen, render: p => p.status === 'CANCELLED' ? <span className="text-muted-ink">—</span> : <span className="tabular-nums font-semibold">{rm(p.outstandingSen)}</span> },
+  ], []);
+
   function totalsOf(lines: Line[], taxSen: number) { const subtotalSen = lines.reduce((s, l) => s + l.lineTotalSen, 0); return { subtotalSen, taxSen: Math.max(0, taxSen), totalSen: subtotalSen + Math.max(0, taxSen) }; }
   function body(so: So, lines: Line[]) { return { customerName: so.customerName, customerPhone: so.customerPhone, customerPo: so.customerPo, soDate: so.soDate, targetDate: so.targetDate || null, notes: so.notes, taxSen: so.taxSen, depositSen: so.depositSen, lines: lines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qty: l.qty, unitPriceSen: l.unitPriceSen, discountSen: l.discountSen })) }; }
 
@@ -88,41 +97,21 @@ export default function SalesOrdersPage() {
     <>
       <PageHeader title="Sales orders" sub={`${all.length} orders · ${rm(outstanding, { cents: false })} outstanding`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={openNew}>New sales order</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last order list we have. ${error}`} onRetry={reload} />}
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('sales_order', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
-        <div className="relative">
-          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search SO or customer..." aria-label="Search sales orders"
-            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[260px] max-w-full" />
-        </div>
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[880px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
-              {['SO number', 'Customer', 'SO date', 'Target', 'Status', 'Total', 'Outstanding'].map((h, i) => (
-                <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i >= 5 ? 'text-right' : 'text-left')}>{h}</th>
-              ))}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={7}><TableSkeleton rows={6} cols={7} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={7}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No sales orders match.' : 'No sales orders yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Raise a sales order for a customer.</span></div></td></tr>
-              : rows.map(p => (
-                <tr key={p.id} onClick={() => { setIsNew(false); setDrawer({ ...p, lines: p.lines ?? [] }); }} className="[border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-muted">
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{p.docNo}</td>
-                  <td className="py-[13px] px-4"><div className="flex flex-col"><span className="text-[13.5px]">{p.customerName}</span>{p.customerPo && <span className="text-[11.5px] text-muted-ink">PO {p.customerPo}</span>}</div></td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.soDate ? date(p.soDate) : '—'}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.targetDate ? date(p.targetDate) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusBadge entity="sales_order" value={p.status} /></td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{rm(p.totalSen)}</td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{p.status === 'CANCELLED' ? '—' : rm(p.outstandingSen)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<So>
+        id="scm.sales-orders" columns={columns} rows={data ? rows : null} rowKey={p => p.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={p => { setIsNew(false); setDrawer({ ...p, lines: p.lines ?? [] }); }}
+        noun={['sales order', 'sales orders']} exportName="sales-orders"
+        toolbar={<>
+          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('sales_order', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+          <div className="relative">
+            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search SO or customer..." aria-label="Search sales orders"
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[260px] max-w-full" />
+          </div>
+        </>}
+        filtered={!!q || statusFilter !== 'all'} onClearFilters={() => { setSearch(''); setStatusFilter('all'); }}
+        empty={{ title: 'No sales orders yet.', body: 'Raise a sales order for a customer.', action: canWrite ? { label: 'New sales order', onClick: openNew } : undefined }} />
       {drawer && <SoDrawer so={drawer} isNew={isNew} canWrite={canWrite} onClose={() => setDrawer(null)} onSave={save} onAct={act} totalsOf={totalsOf} />}
     </>
   );

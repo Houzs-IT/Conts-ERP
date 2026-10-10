@@ -1,22 +1,24 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useSession } from '../lib/session';
+import { useSession, type TwoStep } from '../lib/session';
+import { ApiFailure } from '../lib/api';
 import Icon from '../components/Icon';
 import { Logo } from '../components/Logo';
 import { Button } from '../components/Button';
 import { Field, PasswordField } from '../components/Field';
 
-type Screen = 'signin' | 'forgot' | 'change' | 'reset';
+type Screen = 'signin' | 'forgot' | 'change' | 'reset' | 'code';
 
 const COPY: Record<Screen, { eyebrow: string; heading: string; sub: string; submit: string }> = {
   signin: { eyebrow: 'CONTS ERP', heading: 'Sign in', sub: 'Use the work email your administrator invited.', submit: 'Sign in' },
   forgot: { eyebrow: 'ACCOUNT RECOVERY', heading: 'Reset password', sub: 'We will email you a reset link.', submit: 'Send reset link' },
   change: { eyebrow: 'FIRST SIGN-IN', heading: 'Set a new password', sub: 'Your invitation used a temporary password.', submit: 'Save and continue' },
   reset: { eyebrow: 'ACCOUNT RECOVERY', heading: 'Set a new password', sub: 'Choose a new password for your account.', submit: 'Save and sign in' },
+  code: { eyebrow: 'TWO-STEP SIGN-IN', heading: 'Enter your code', sub: 'Open your authenticator app and enter the 6-digit code for Conts ERP.', submit: 'Verify and sign in' },
 };
 
 
 export default function LoginPage({ forceChangePassword = false, resetToken = null }: { forceChangePassword?: boolean; resetToken?: string | null }) {
-  const { login, requestReset, changePassword, resetPassword, checkResetToken } = useSession();
+  const { login, verifyCode, requestReset, changePassword, resetPassword, checkResetToken } = useSession();
   const [screen, setScreen] = useState<Screen>(forceChangePassword ? 'change' : resetToken ? 'reset' : 'signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -24,6 +26,10 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
+  // Set once the password is right on an account with two-step sign-in; the code is asked for next.
+  const [twoStep, setTwoStep] = useState<TwoStep | null>(null);
+  const [code, setCode] = useState('');
+  const [useBackup, setUseBackup] = useState(false);
   // Checked the moment the link opens, before anyone types a password — an
   // already-used or expired link otherwise renders an identical form and only
   // reveals the problem after a submit.
@@ -52,7 +58,9 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
   const ownerDoor = window.location.hostname.split('.')[0] === 'owner';
   const c = ownerDoor && screen === 'signin'
     ? { ...COPY.signin, eyebrow: 'OWNER PORTAL', sub: 'Use the email The Conts registered for your property.' }
-    : COPY[screen];
+    : screen === 'code' && useBackup
+      ? { ...COPY.code, heading: 'Enter a backup code', sub: 'Use one of the ten backup codes you saved when you set up two-step sign-in. Each works once.' }
+      : COPY[screen];
 
   const policy = [
     { label: 'At least 8 characters', ok: password.length >= 8 },
@@ -67,9 +75,16 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
     try {
       if (screen === 'forgot') { await requestReset(email); setSent(true); }
       else if (screen === 'change') { await changePassword(password); }
-      else if (screen === 'reset') { await resetPassword(resetToken!, password); }
-      else { await login(email, password, remember); }
+      else if (screen === 'code') { await verifyCode(twoStep!.challenge, code); }
+      else {
+        const res = screen === 'reset' ? await resetPassword(resetToken!, password) : await login(email, password, remember);
+        if (res.twoStep) {
+          setTwoStep(res.twoStep); setUseBackup(res.twoStep.backupOnly); setCode(''); setScreen('code');
+        }
+      }
     } catch (err: any) {
+      // The five minutes between password and code ran out: start again from the password.
+      if (err instanceof ApiFailure && err.code === 'CHALLENGE_EXPIRED') { setTwoStep(null); setScreen('signin'); setPassword(''); }
       setError(err?.message ?? 'Could not reach the server. Check your connection and try again.');
     } finally { setBusy(false); }
   }
@@ -131,7 +146,23 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
           {sent && <div className="[border-left:2px_solid_var(--color-success-line)] bg-success-bg py-3 px-3.5 text-meta text-success">Reset link sent. It expires in 60 minutes.</div>}
 
           <div className="flex flex-col gap-5">
-            {screen !== 'change' && screen !== 'reset' && (
+            {screen === 'code' && (
+              <>
+                <Field label={useBackup ? 'Backup code' : '6-digit code'} required autoFocus value={code}
+                  autoComplete="one-time-code" inputMode={useBackup ? 'text' : 'numeric'} maxLength={useBackup ? 11 : 6}
+                  onChange={e => setCode(useBackup ? e.target.value : e.target.value.replace(/\D/g, ''))}
+                  placeholder={useBackup ? 'xxxxx-xxxxx' : '123456'}
+                  style={{ letterSpacing: '0.2em', fontVariantNumeric: 'tabular-nums' }} />
+                {!twoStep?.backupOnly && (
+                  <Button type="button" variant="tertiary" size="md" className="self-start" style={{ paddingInline: 0 }}
+                    onClick={() => { setUseBackup(b => !b); setCode(''); setError(''); }}>
+                    {useBackup ? 'Use the code from my app' : 'I do not have my phone: use a backup code'}
+                  </Button>
+                )}
+              </>
+            )}
+
+            {screen !== 'change' && screen !== 'reset' && screen !== 'code' && (
               <Field label="Email" type="email" required autoComplete="email" value={email}
                 onChange={e => setEmail(e.target.value)} placeholder="you@theconts.com" />
             )}
@@ -140,7 +171,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
               <div className="text-meta text-muted-ink">Checking your link…</div>
             )}
 
-            {screen !== 'forgot' && (screen !== 'reset' || tokenState === 'valid') && (
+            {screen !== 'forgot' && screen !== 'code' && (screen !== 'reset' || tokenState === 'valid') && (
               <PasswordField label={newPassword ? 'New password' : 'Password'} required
                 autoComplete={newPassword ? 'new-password' : 'current-password'}
                 value={password} onChange={e => setPassword(e.target.value)}
@@ -185,7 +216,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
 
           {screen !== 'signin' && !forceChangePassword && (
             <Button type="button" variant="tertiary" size="md" className="self-center"
-              onClick={() => { if (resetToken) window.location.hash = '/'; setScreen('signin'); setError(''); setSent(false); }}>
+              onClick={() => { if (resetToken) window.location.hash = '/'; setScreen('signin'); setError(''); setSent(false); setTwoStep(null); setPassword(''); }}>
               Back to sign in
             </Button>
           )}

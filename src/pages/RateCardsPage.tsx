@@ -1,19 +1,16 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm } from '../lib/format';
 import { cx } from '../lib/design-tokens';
-import { StatusBadge } from '../components/StatusBadge';
 
 /** Carriers & Rates (Delivery Rate Cards) — ported from 2990's SCM, drawn in Conts. A card is
  *  one carrier's freight tariff; its rules feed the pure pricing engine. Money integer sen. */
@@ -65,6 +62,16 @@ export default function RateCardsPage() {
   const q = search.trim().toLowerCase();
   const rows = all.filter(c => !q || `${c.name} ${c.carrierLabel} ${c.carrierName}`.toLowerCase().includes(q));
 
+  const columns = useMemo<Column<RateCard>[]>(() => [
+    { key: 'name', label: 'Card', value: c => c.name, hideable: false, render: c => <span className="font-medium">{c.name}</span> },
+    { key: 'carrier', label: 'Carrier', value: c => c.carrierName || c.carrierLabel },
+    { key: 'charged', label: 'Charged', value: c => `${AGG_LABEL[c.aggregation]}${c.aggregation === 'UNIT' ? ` · ${c.basis === 'ITEM' ? 'item' : 'set'}` : ''}` },
+    { key: 'rules', label: 'Rules', type: 'number', value: c => c.ruleCount, width: 80 },
+    { key: 'min', label: 'Min', type: 'money', value: c => c.minChargeSen },
+    { key: 'cap', label: 'Cap', type: 'money', value: c => c.capSen },
+    { key: 'status', label: 'Status', type: 'status', value: c => (c.isActive ? 'active' : 'inactive'), entity: 'active_flag' },
+  ], []);
+
   async function openNew() { setDrawer({ card: { id: '', name: '', carrierCompanyId: '', carrierLabel: '', carrierName: '', basis: 'SET', aggregation: 'UNIT', minChargeSen: null, capSen: null, rounding: 'NONE', isActive: true, notes: '', ruleCount: 0, rules: [] }, isNew: true }); }
   async function openEdit(c: RateCard) {
     let rules = c.rules;
@@ -85,35 +92,15 @@ export default function RateCardsPage() {
     <>
       <PageHeader title="Carriers & rates" sub={`${all.length} rate cards`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={openNew}>New rate card</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last rate cards we have. ${error}`} onRetry={reload} />}
-      <div className="flex items-center justify-end">
-        <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search rate cards..." aria-label="Search rate cards"
-          className="h-9 box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[260px] max-w-full" />
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[820px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
-              {['Card', 'Carrier', 'Charged', 'Rules', 'Min', 'Cap', 'Status'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i >= 3 && i <= 5 ? 'text-right' : 'text-left')}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={7}><TableSkeleton rows={5} cols={7} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={7}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q ? 'No rate cards match.' : 'No rate cards yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[400px]">Set up a freight tariff per carrier — tiers, sofa brackets, outstation surcharges and the min/cap/rounding envelope.</span></div></td></tr>
-              : rows.map(c => (
-                <tr key={c.id} onClick={() => { if (canWrite) void openEdit(c); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
-                  <td className="py-[13px] px-4 text-[13.5px] font-medium">{c.name}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{c.carrierName || c.carrierLabel || '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink">{AGG_LABEL[c.aggregation]}{c.aggregation === 'UNIT' ? ` · ${c.basis === 'ITEM' ? 'item' : 'set'}` : ''}</td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{c.ruleCount}</td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{c.minChargeSen != null ? rm(c.minChargeSen) : '—'}</td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{c.capSen != null ? rm(c.capSen) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusBadge entity="active_flag" value={c.isActive ? 'active' : 'inactive'} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<RateCard>
+        id="scm.rate-cards" columns={columns} rows={data ? rows : null} rowKey={c => c.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={canWrite ? c => { void openEdit(c); } : undefined}
+        noun={['rate card', 'rate cards']} exportName="rate-cards"
+        toolbar={<input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search rate cards..." aria-label="Search rate cards"
+          className="h-9 box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[260px] max-w-full" />}
+        filtered={!!q} onClearFilters={() => setSearch('')}
+        empty={{ title: 'No rate cards yet.', body: 'Set up a freight tariff per carrier — tiers, sofa brackets, outstation surcharges and the min/cap/rounding envelope.', action: canWrite ? { label: 'New rate card', onClick: () => { void openNew(); } } : undefined }} />
       {drawer && <CardDrawer card={drawer.card} isNew={drawer.isNew} carriers={carriers} onClose={() => setDrawer(null)} onSave={save} onDelete={drawer.isNew ? undefined : () => remove(drawer.card)} />}
     </>
   );

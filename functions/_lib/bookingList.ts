@@ -24,6 +24,7 @@ export const CHANNEL_FILTERS = ['airbnb', 'booking_com', 'agoda', 'direct'] as c
 const SORTS: Record<string, string> = {
   reference: 'r.external_ref', guest: 'lower(COALESCE(g.full_name, \'\'))', unit: 'lower(u.unit_number)',
   channel: 'r.channel', stay: 'r.check_in', gross: 'r.gross_booking_value', status: 'r.state',
+  nights: '(r.check_out::date - r.check_in::date)', guests: 'r.guests_count', fee: 'r.channel_fee', created: 'r.created_at',
 };
 
 export const BLOCK = `r.channel IN ('maintenance_block','owner_stay')`;
@@ -98,7 +99,7 @@ export interface ListQuery {
   orderBy: string;
   page: number; pageSize: number;
   searches: Partial<Record<SearchKey, string>>;
-  filters: { channel: string | null; property: string | null; from: string | null; to: string | null };
+  filters: { channel: string | null; property: string | null; from: string | null; to: string | null; grossMin: number | null; grossMax: number | null };
   sortLabel: string | null;
 }
 
@@ -151,6 +152,11 @@ export function parseListQuery(url: URL): ListQuery {
   const to = ISO_DAY.test(sp.get('to') ?? '') ? sp.get('to')! : null;
   if (from) { conds.push('r.check_out > ?'); args.push(from); }
   if (to) { conds.push('r.check_in <= ?'); args.push(to); }
+  // Guest total between two amounts in ringgit (the table's number filter).
+  const rmArg = (k: string) => { const v = sp.get(k); const n = v === null || v === '' ? NaN : Number(v); return Number.isFinite(n) ? Math.round(n * 100) : null; };
+  const grossMin = rmArg('grossMin'), grossMax = rmArg('grossMax');
+  if (grossMin !== null) { conds.push('r.gross_booking_value >= ?'); args.push(grossMin); }
+  if (grossMax !== null) { conds.push('r.gross_booking_value <= ?'); args.push(grossMax); }
 
   const [sortKey, sortDir] = (sp.get('sort') ?? '').split(':');
   const sortExpr = SORTS[sortKey];
@@ -158,12 +164,13 @@ export function parseListQuery(url: URL): ListQuery {
   const orderBy = `${sortExpr ?? 'r.check_in'} ${asc ? 'ASC' : 'DESC'}, r.check_in ${asc ? 'ASC' : 'DESC'}, r.id`;
 
   const size = Number(sp.get('size'));
-  const pageSize = [25, 50, 100, 200].includes(size) ? size : 50;
+  // export=1: the table's Export asks for every matching row in pages of up to 1,000 (src/lib/export.ts).
+  const pageSize = sp.get('export') === '1' && Number.isInteger(size) && size >= 1 && size <= 1000 ? size : [25, 50, 100, 200].includes(size) ? size : 50;
   const page = Math.max(1, Math.min(10000, Math.floor(Number(sp.get('page')) || 1)));
 
   return {
     view: viewFinal, todo, today, where: conds.length ? conds.join(' AND ') : 'TRUE', args, orderBy, page, pageSize, searches,
-    filters: { channel, property, from, to },
+    filters: { channel, property, from, to, grossMin, grossMax },
     sortLabel: sortExpr ? `${sortKey} ${asc ? 'ascending' : 'descending'}` : null,
   };
 }

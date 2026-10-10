@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
@@ -50,6 +49,15 @@ export default function DriverLeavePage() {
   const all = useMemo(() => [...added, ...(data?.data ?? [])].filter(l => !removed.has(l.id)), [added, data, removed]);
   const rows = all.filter(l => driverFilter === 'all' || l.driverId === driverFilter);
 
+  const columns = useMemo<Column<Leave>[]>(() => [
+    { key: 'driver', label: 'Driver', value: l => l.driverName, text: l => `${l.driverName} ${l.driverCode}`, hideable: false, sub: l => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px]">{l.driverCode}</span> },
+    { key: 'from', label: 'From', type: 'date', value: l => l.startDate },
+    { key: 'to', label: 'To', type: 'date', value: l => l.endDate },
+    { key: 'days', label: 'Days', type: 'number', value: l => spanDays(l.startDate, l.endDate), width: 80, render: l => <span className={cx('inline-flex items-center text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE.info.bg, TONE.info.text)}>{spanDays(l.startDate, l.endDate)}d</span> },
+    { key: 'reason', label: 'Reason', value: l => l.reason },
+    { key: 'remove', label: '', noExport: true, sortable: false, filter: false, width: 56, align: 'right', phone: 'hide', render: l => canWrite ? <button onClick={e => { e.stopPropagation(); remove(l); }} aria-label="Remove leave" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><Trash2 size={15} strokeWidth={1.75} /></button> : null },
+  ], [canWrite]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function create(l: Leave) { setAdded(a => [l, ...a]); api.post('/driver-leave', { driverId: l.driverId, startDate: l.startDate, endDate: l.endDate, reason: l.reason }).catch(notifyFailure); toast({ tone: 'success', title: 'Leave recorded.', body: `${l.driverName} · ${date(l.startDate)}` }); setDrawer(false); }
   function remove(l: Leave) { setRemoved(r => new Set(r).add(l.id)); api.del(`/driver-leave/${l.id}`).catch(notifyFailure); toast({ tone: 'success', title: 'Leave removed.', body: l.driverName }); }
 
@@ -57,37 +65,19 @@ export default function DriverLeavePage() {
     <>
       <PageHeader title="Driver leave" sub={`${all.length} leave periods on record`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(true)}>New leave</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last leave list we have. ${error}`} onRetry={reload} />}
-      <div className="flex items-center gap-2.5 flex-wrap">
-        <label className="text-[12px] font-medium text-muted-ink">Driver</label>
-        <select value={driverFilter} onChange={e => setDriverFilter(e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
-          <option value="all">All drivers</option>
-          {drivers.map(d => <option key={d.id} value={d.id}>{d.driverCode} · {d.name}</option>)}
-        </select>
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[640px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
-              {['Driver', 'From', 'To', 'Days', 'Reason', ''].map((h, i) => <th key={i} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 3 ? 'text-right' : 'text-left')}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={6}><TableSkeleton rows={5} cols={6} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={6}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">No leave recorded.</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Record when a driver is away so the delivery planner can route around it.</span></div></td></tr>
-              : rows.map(l => (
-                <tr key={l.id} className="[border-bottom:1px_solid_var(--color-line-soft)]">
-                  <td className="py-[13px] px-4"><div className="flex flex-col"><span className="text-[13.5px]">{l.driverName}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.driverCode}</span></div></td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)] tabular-nums">{date(l.startDate)}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)] tabular-nums">{date(l.endDate)}</td>
-                  <td className="py-[13px] px-4 text-right"><span className={cx('inline-flex items-center text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE.info.bg, TONE.info.text)}>{spanDays(l.startDate, l.endDate)}d</span></td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink max-w-[220px] truncate">{l.reason || '—'}</td>
-                  <td className="py-[13px] px-4 text-right">{canWrite && <button onClick={() => remove(l)} aria-label="Remove leave" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><Trash2 size={15} strokeWidth={1.75} /></button>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Leave>
+        id="scm.driver-leave" columns={columns} rows={data ? rows : null} rowKey={l => l.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        noun={['leave period', 'leave periods']} exportName="driver-leave"
+        toolbar={<div className="flex items-center gap-2.5 flex-wrap">
+          <label className="text-[12px] font-medium text-muted-ink">Driver</label>
+          <select value={driverFilter} onChange={e => setDriverFilter(e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
+            <option value="all">All drivers</option>
+            {drivers.map(d => <option key={d.id} value={d.id}>{d.driverCode} · {d.name}</option>)}
+          </select>
+        </div>}
+        filtered={driverFilter !== 'all'} onClearFilters={() => setDriverFilter('all')}
+        empty={{ title: 'No leave recorded.', body: 'Record when a driver is away so the delivery planner can route around it.', action: canWrite ? { label: 'New leave', onClick: () => setDrawer(true) } : undefined }} />
       {drawer && <LeaveDrawer drivers={drivers} canWrite={canWrite} onClose={() => setDrawer(false)} onCreate={create} />}
     </>
   );

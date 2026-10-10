@@ -2,6 +2,7 @@ import { mayWork } from '../../_lib/access';
 import { type Env, all, one, json, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { assignCleaner, activeCleaners, MYT_DATE } from '../../_lib/ops';
+import { notifyUsers } from '../../_lib/notify';
 
 const ORDER: Record<string, string> = {
   earliest_checkin: 'COALESCE(t.next_guest_at, t.due_at, t.created_at)',
@@ -39,13 +40,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     ORDER BY ${orderBy}`, today);
 
   let assigned = 0, rr = 0;
+  const given = new Map<string, string[]>();
   for (const t of tasks) {
     // least_loaded picks the cleaner with the fewest open jobs; round_robin cycles.
     const cleaner = strategy === 'round_robin'
       ? people[rr++ % people.length]
       : people.reduce((a, c) => (load.get(c.id)! <= load.get(a.id)! ? c : a));
-    const res = await assignCleaner(env, session, t.id, { ...cleaner, busy: 0 }, true);
-    if (res.ok) { assigned++; load.set(cleaner.id, (load.get(cleaner.id) ?? 0) + 1); }
+    const res = await assignCleaner(env, session, t.id, { ...cleaner, busy: 0 }, true, true);
+    if (res.ok) { assigned++; load.set(cleaner.id, (load.get(cleaner.id) ?? 0) + 1); given.set(cleaner.id, [...(given.get(cleaner.id) ?? []), t.id]); }
+  }
+  for (const [cid, ids] of given) {
+    const c = people.find(p => p.id === cid);
+    if (c?.user_id) await notifyUsers(env, [c.user_id], { kind: 'cleaning.assigned', title: `${ids.length} ${ids.length === 1 ? 'clean' : 'cleans'} assigned to you`, body: 'Open Cleaning to see the units and times.', link: '/operations/cleaning', entityTable: 'tasks', entityId: ids[0], except: session.userId });
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.auto_assign', entityTable: 'tasks', entityId: 'auto', after: { rule, prefer, strategy, assigned } });
   return json({ ok: true, assigned });

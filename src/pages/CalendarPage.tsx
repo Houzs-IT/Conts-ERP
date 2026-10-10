@@ -186,6 +186,10 @@ export default function CalendarPage() {
   const dragRef = useRef<{ id: string; grabOffset: number } | null>(null);
 
   const allUnits = useMemo(() => data?.units ?? [], [data]);
+  // With a building picked the board loads only that building, but Rate update offers every unit: it reads the
+  // whole list (one night, no building) when it opens.
+  const everyUnit = useApi<Payload>(rateUpdate && property !== 'all' ? `/reservations/calendar?from=${from}&to=${from}` : null);
+  const rateSource = property === 'all' ? data : everyUnit.data ?? data;
   const properties = useMemo<BuildingRow[]>(() => data?.buildings ?? Array.from(
     allUnits.reduce((m, u) => m.set(buildingOf(u), { id: buildingOf(u), name: u.propertyName, units: (m.get(buildingOf(u))?.units ?? 0) + 1 }), new Map<string, BuildingRow>()).values(),
   ), [data, allUnits]);
@@ -800,8 +804,10 @@ export default function CalendarPage() {
             .then(res => { setBlockWizard(false); toast({ tone: 'success', title: v.kind === 'owner_stay' ? 'Owner stay added.' : 'Dates blocked.', body: `${dateRange(v.from, v.to)}. ${channelNote(res?.effects?.channel, 'held')}`.trim() }); reload(); })
             .catch(e => toast({ tone: 'critical', title: 'Dates not blocked.', body: errorMessage(e, 'Try again in a moment.') }));
         }} />}
-      {rateUpdate && <RateUpdate units={allUnits} initial={rateUpdate} busy={rateBusy} onClose={() => { if (!rateBusy) setRateUpdate(false); }}
-        pricing={{ baseRate: data?.baseRate ?? {}, weekendRate: data?.weekendRate, savedUplifts: data?.savedUplifts, upliftShares: data?.upliftShares }}
+      {rateUpdate && <RateUpdate units={rateSource?.units ?? allUnits} initial={rateUpdate} busy={rateBusy} onClose={() => { if (!rateBusy) setRateUpdate(false); }}
+        loadingAll={property !== 'all' && !everyUnit.data} building={property !== 'all' ? property : undefined}
+        preselect={!rateUpdate.unitIds && property !== 'all' && units.length <= 12 ? units.map(u => u.id) : undefined}
+        pricing={{ baseRate: { ...(rateSource?.baseRate ?? {}), ...(data?.baseRate ?? {}) }, weekendRate: { ...(rateSource?.weekendRate ?? {}), ...(data?.weekendRate ?? {}) }, savedUplifts: { ...(rateSource?.savedUplifts ?? {}), ...(data?.savedUplifts ?? {}) }, upliftShares: data?.upliftShares ?? rateSource?.upliftShares }}
         onSave={v => {
           setRateBusy(true);
           api.post<{ nights?: number; skipped?: Record<string, number>; syncFailed?: number }>('/rates/bulk', v)

@@ -222,9 +222,9 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
               <span style={{ fontSize: text.small, color: color.textMuted }}>{user!.email}</span>
             </div>
             {[
-              // BUTTONS §2: Personal profile and Notification settings have no screen yet, so they are not offered;
-              // Security and sessions is the Settings > Security section.
-              { label: 'Security and sessions', icon: 'ShieldCheck', go: () => { setProfileOpen(false); navigate('/system/settings'); } },
+              // BUTTONS §2: Notification settings have no screen yet, so they are not offered. My account holds the
+              // person's own password, two-step sign-in, recent sign-ins and other devices.
+              { label: 'My account', icon: 'ShieldCheck', go: () => { setProfileOpen(false); navigate('/account'); } },
               { label: 'Log out', icon: 'LogOut', danger: true, go: logout },
             ].map(m => (
               <button key={m.label} onClick={m.go}

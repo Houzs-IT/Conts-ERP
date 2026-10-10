@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Search, Plus, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
@@ -58,6 +57,17 @@ export default function SalesInvoicesPage() {
   const rows = all.filter(p => (statusFilter === 'all' || p.status === statusFilter) && (!q || `${p.invoiceNumber} ${p.customerName}`.toLowerCase().includes(q)));
   const outstanding = all.filter(p => p.status !== 'CANCELLED').reduce((s, p) => s + p.outstandingSen, 0);
 
+  const columns = useMemo<Column<Si>[]>(() => [
+    { key: 'invoiceNumber', label: 'Invoice', type: 'ref', value: p => p.invoiceNumber, hideable: false },
+    { key: 'customer', label: 'Customer', value: p => p.customerName },
+    { key: 'do', label: 'DO', type: 'ref', value: p => p.doNumber || null },
+    { key: 'invoiceDate', label: 'Invoice date', type: 'date', value: p => p.invoiceDate || null },
+    { key: 'due', label: 'Due', type: 'date', value: p => p.dueDate || null },
+    { key: 'status', label: 'Status', type: 'status', value: p => p.status, entity: 'sales_invoice' },
+    { key: 'total', label: 'Total', type: 'money', value: p => p.totalSen },
+    { key: 'outstanding', label: 'Outstanding', type: 'money', value: p => p.status === 'CANCELLED' ? null : p.outstandingSen, render: p => p.status === 'CANCELLED' ? <span className="text-muted-ink">—</span> : <span className="tabular-nums font-semibold">{rm(p.outstandingSen)}</span> },
+  ], []);
+
   function created(si: Si) { setAdded(a => [si, ...a]); toast({ tone: 'success', title: 'Invoice raised.', body: `${si.invoiceNumber} · ${si.customerName}` }); setDrawer(null); }
   function act(si: Si, patch: Record<string, unknown>, optimistic: Partial<Si>, title: string) {
     setEdits(e => ({ ...e, [si.id]: { ...e[si.id], ...optimistic } }));
@@ -70,42 +80,21 @@ export default function SalesInvoicesPage() {
     <>
       <PageHeader title="Sales invoices" sub={`${all.length} invoices · ${rm(outstanding, { cents: false })} outstanding`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New invoice</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last invoice list we have. ${error}`} onRetry={reload} />}
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('sales_invoice', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
-        <div className="relative">
-          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search invoice or customer..." aria-label="Search sales invoices"
-            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
-        </div>
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[880px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
-              {['Invoice', 'Customer', 'DO', 'Invoice date', 'Due', 'Status', 'Total', 'Outstanding'].map((h, i) => (
-                <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i >= 6 ? 'text-right' : 'text-left')}>{h}</th>
-              ))}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={8}><TableSkeleton rows={6} cols={8} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={8}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No invoices match.' : 'No sales invoices yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Invoice a delivery order to bill the customer.</span></div></td></tr>
-              : rows.map(p => (
-                <tr key={p.id} onClick={() => setDrawer({ mode: 'view', si: p })} className="[border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-muted">
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{p.invoiceNumber}</td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{p.customerName}</td>
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[12px] text-muted-ink">{p.doNumber || '—'}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.invoiceDate ? date(p.invoiceDate) : '—'}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.dueDate ? date(p.dueDate) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusBadge entity="sales_invoice" value={p.status} /></td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{rm(p.totalSen)}</td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{p.status === 'CANCELLED' ? '—' : rm(p.outstandingSen)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Si>
+        id="scm.sales-invoices" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={p => setDrawer({ mode: 'view', si: p })}
+        noun={['sales invoice', 'sales invoices']} exportName="sales-invoices"
+        toolbar={<>
+          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('sales_invoice', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+          <div className="relative">
+            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search invoice or customer..." aria-label="Search sales invoices"
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
+          </div>
+        </>}
+        filtered={!!q || statusFilter !== 'all'} onClearFilters={() => { setSearch(''); setStatusFilter('all'); }}
+        empty={{ title: 'No sales invoices yet.', body: 'Invoice a delivery order to bill the customer.', action: canWrite ? { label: 'New invoice', onClick: () => setDrawer({ mode: 'new' }) } : undefined }} />
       {drawer?.mode === 'new' && <BillDrawer openDos={openDos} canWrite={canWrite} onClose={() => setDrawer(null)} onCreated={created} />}
       {drawer?.mode === 'view' && <ViewDrawer si={drawer.si} canWrite={canWrite} onClose={() => setDrawer(null)} onAct={act} />}
     </>
@@ -115,6 +104,13 @@ export default function SalesInvoicesPage() {
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
 }
+
+const lineColumns: Column<SiLine>[] = [
+  { key: 'item', label: 'Item', value: l => l.description, sub: l => <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{l.itemCode}</span>, text: l => `${l.description} ${l.itemCode}` },
+  { key: 'qty', label: 'Qty', type: 'number', value: l => l.qty },
+  { key: 'price', label: 'Unit price', type: 'money', value: l => l.unitPriceSen },
+  { key: 'total', label: 'Line total', type: 'money', value: l => l.lineTotalSen },
+];
 
 function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo[]; canWrite: boolean; onClose: () => void; onCreated: (s: Si) => void }) {
   const [doId, setDoId] = useState('');
@@ -132,6 +128,7 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
     if (!dl) { try { const r = await api.get<{ data: { lines: DoLine[] } }>(`/delivery-orders/${id}`); dl = r.data.lines; } catch { dl = []; } }
     setLines(dl ?? []);
   }
+  const lineRows = useMemo(() => lines.map((l, i) => ({ ...l, key: String(i) })), [lines]);
   const subtotal = lines.reduce((s, l) => s + l.lineTotalSen, 0);
   const taxSen = Math.max(0, Math.round((Number(tax) || 0) * 100));
   const total = subtotal + taxSen;
@@ -161,21 +158,12 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
           <Field label="Due date" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
         </div>
         {doId && (
-          <div className="overflow-x-auto border border-solid border-line rounded-card">
-            <table className="w-full border-collapse min-w-[480px]">
-              <thead><tr className="bg-muted">{['Item', 'Qty', 'Unit price', 'Line total'].map((th, i) => <th key={th} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i === 0 ? 'text-left' : 'text-right')}>{th}</th>)}</tr></thead>
-              <tbody>
-                {lines.length === 0 ? <tr><td colSpan={4} className="py-6 text-center text-[12.5px] text-muted-ink">This delivery order has no lines.</td></tr>
-                : lines.map((l, i) => (
-                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
-                    <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
-                    <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.qty}</td>
-                    <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.unitPriceSen)}</td>
-                    <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.lineTotalSen)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="border border-solid border-line rounded-card overflow-hidden">
+            <DataTable<DoLine & { key: string }>
+              id="scm.sales-invoice.new-lines" urlPrefix="newlines." bare noViews noToolbar pageSize={0}
+              columns={lineColumns} rows={lineRows} rowKey={l => l.key}
+              noun={['line', 'lines']} exportName="invoice-lines"
+              empty={{ title: 'This delivery order has no lines.' }} />
           </div>
         )}
         <div className="grid grid-cols-2 gap-5">
@@ -198,6 +186,7 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
 function ViewDrawer({ si, canWrite, onClose, onAct }: { si: Si; canWrite: boolean; onClose: () => void; onAct: (s: Si, patch: Record<string, unknown>, optimistic: Partial<Si>, title: string) => void }) {
   const [recv, setRecv] = useState('');
   const recvSen = Math.max(0, Math.round((Number(recv) || 0) * 100));
+  const lineRows = useMemo(() => (si.lines ?? []).map((l, i) => ({ ...l, key: String(i) })), [si.lines]);
   return (
     <Drawer open onClose={onClose} width={720}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
@@ -211,20 +200,12 @@ function ViewDrawer({ si, canWrite, onClose, onAct }: { si: Si; canWrite: boolea
           <Meta label="Invoice date" value={si.invoiceDate ? date(si.invoiceDate) : '—'} />
           <Meta label="Due" value={si.dueDate ? date(si.dueDate) : '—'} />
         </div>
-        <div className="overflow-x-auto border border-solid border-line rounded-card">
-          <table className="w-full border-collapse min-w-[460px]">
-            <thead><tr className="bg-muted">{['Item', 'Qty', 'Unit price', 'Line total'].map((th, i) => <th key={th} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i === 0 ? 'text-left' : 'text-right')}>{th}</th>)}</tr></thead>
-            <tbody>
-              {(si.lines ?? []).map((l, i) => (
-                <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
-                  <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.qty}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.unitPriceSen)}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.lineTotalSen)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="border border-solid border-line rounded-card overflow-hidden">
+          <DataTable<SiLine & { key: string }>
+            id="scm.sales-invoice.lines" urlPrefix="lines." bare noViews noToolbar pageSize={0}
+            columns={lineColumns} rows={lineRows} rowKey={l => l.key}
+            noun={['line', 'lines']} exportName={`${si.invoiceNumber}-lines`}
+            empty={{ title: 'No lines on this invoice.' }} />
         </div>
         <div className="flex flex-col gap-1.5 items-end">
           <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Total</span><span className="tabular-nums w-[120px] text-right">{rm(si.totalSen)}</span></div>

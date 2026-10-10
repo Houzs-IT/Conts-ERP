@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
@@ -10,7 +9,6 @@ import { useSession } from '../lib/session';
 import { date } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { SLOT_LABEL, schedFallback, type Sched, type SchedPayload, type SchedStatus } from '../lib/schedule';
-import { StatusBadge } from '../components/StatusBadge';
 
 /** Last Mile Delivery — dispatch scheduled deliveries and mark them delivered. A focused view
  *  over delivery_schedule; ported from 2990's SCM (manual). */
@@ -39,37 +37,27 @@ export default function LastMileDeliveryPage() {
     toast({ tone: 'success', title: label, body: `${r.soDocNo} · ${r.customerName}` });
   }
 
+  const columns = useMemo<Column<Sched>[]>(() => [
+    { key: 'so', label: 'Sales order', type: 'ref', value: r => r.soDocNo, hideable: false, render: r => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold whitespace-nowrap">{r.soDocNo}</span> },
+    { key: 'customer', label: 'Customer', value: r => r.customerName },
+    { key: 'date', label: 'Date / slot', type: 'date', value: r => r.plannedDate, render: r => <span className="text-[12.5px] text-muted-ink tabular-nums whitespace-nowrap">{r.plannedDate ? date(r.plannedDate) : '—'}{r.timeSlot ? ` · ${SLOT_LABEL[r.timeSlot]}` : ''}</span> },
+    { key: 'crew', label: 'Driver / vehicle', value: r => (r.driverName || r.vehicleCode ? `${r.driverName || '—'}${r.vehicleCode ? ` · ${r.vehicleCode}` : ''}` : 'Unassigned') },
+    { key: 'status', label: 'Status', type: 'status', value: r => r.status, entity: 'delivery_schedule' },
+    { key: 'act', label: '', noExport: true, sortable: false, filter: false, width: 150, align: 'right', render: r => <>
+      {canWrite && r.status === 'SCHEDULED' && <Button size="sm" variant="secondary" onClick={e => { e.stopPropagation(); act(r, 'dispatch', 'DISPATCHED', 'Dispatched.'); }}>Dispatch</Button>}
+      {canWrite && r.status === 'DISPATCHED' && <Button size="sm" variant="primary" onClick={e => { e.stopPropagation(); act(r, 'deliver', 'DELIVERED', 'Marked delivered.'); }}>Mark delivered</Button>}
+    </> },
+  ], [canWrite]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <>
       <PageHeader title="Last mile delivery" sub="Dispatch scheduled deliveries and confirm they arrived" />
-      {error && <StaleBanner message={`Showing the last schedule we have. ${error}`} onRetry={reload} />}
-      <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <button key={f} onClick={() => setFilter(f)} aria-pressed={filter === f} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', filter === f ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{FILTER_LABEL[f]}</button>)}</div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[820px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
-              {['Sales order', 'Customer', 'Date / slot', 'Driver / vehicle', 'Status', ''].map((h, i) => <th key={i} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 5 ? 'text-right' : 'text-left')}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={6}><TableSkeleton rows={5} cols={6} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={6}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">Nothing here.</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Scheduled deliveries appear here to dispatch and confirm.</span></div></td></tr>
-              : rows.map(r => (
-                <tr key={r.id} className="[border-bottom:1px_solid_var(--color-line-soft)]">
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{r.soDocNo}</td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{r.customerName}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums">{r.plannedDate ? date(r.plannedDate) : '—'}{r.timeSlot ? ` · ${SLOT_LABEL[r.timeSlot]}` : ''}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink">{r.driverName || r.vehicleCode ? `${r.driverName || '—'}${r.vehicleCode ? ` · ${r.vehicleCode}` : ''}` : 'Unassigned'}</td>
-                  <td className="py-[13px] px-4"><StatusBadge entity="delivery_schedule" value={r.status} /></td>
-                  <td className="py-[13px] px-4 text-right">
-                    {canWrite && r.status === 'SCHEDULED' && <Button size="sm" variant="secondary" onClick={() => act(r, 'dispatch', 'DISPATCHED', 'Dispatched.')}>Dispatch</Button>}
-                    {canWrite && r.status === 'DISPATCHED' && <Button size="sm" variant="primary" onClick={() => act(r, 'deliver', 'DELIVERED', 'Marked delivered.')}>Mark delivered</Button>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Sched>
+        id="scm.last-mile-delivery" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        noun={['delivery', 'deliveries']} exportName="last-mile-delivery"
+        toolbar={<div className="flex gap-2 flex-wrap">{FILTERS.map(f => <button key={f} onClick={() => setFilter(f)} aria-pressed={filter === f} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', filter === f ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{FILTER_LABEL[f]}</button>)}</div>}
+        empty={{ title: 'Nothing here.', body: 'Scheduled deliveries appear here to dispatch and confirm.' }} />
     </>
   );
 }

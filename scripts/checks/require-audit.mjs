@@ -9,6 +9,7 @@ export const allow = {
   'functions/api/[[path]].ts': 'Catch-all 404; changes nothing.',
   'functions/api/auth/logout.ts': 'Only clears the browser cookie; no stored record changes.',
   'functions/api/auth/login.ts': 'Sign-in attempts are counted on the user row for lock-out, not business changes.',
+  'functions/api/auth/login-2fa.ts': 'Sign-in attempts are written to the login log (logLogin), not business records.',
   'functions/api/auth/forgot-password.ts': 'Sends a reset email; no record the business reads changes.',
   'functions/api/messages/threads/[id].ts': 'Only flips a conversation\'s read / unread flag for the inbox view.',
   'functions/api/notifications/index.ts': 'Only marks bell notifications as seen.',

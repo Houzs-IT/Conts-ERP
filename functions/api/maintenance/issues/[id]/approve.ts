@@ -1,5 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
 import { requireSession } from '../../../../_lib/auth';
+import { repairNotice } from '../../../../_lib/notices';
 
 /** POST /api/maintenance/issues/:id/approve { approved, quotedAmount }
  *  The owner's decision. The quote is echoed back so nobody approves a figure that changed after they saw it. */
@@ -25,5 +26,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const next = b.approved ? 'assigned' : 'waiting';
   await run(env, 'UPDATE maintenance_issues SET state = ?, owner_approved_at = ?, updated_at = ? WHERE id = ?', next, b.approved ? nowIso() : null, nowIso(), id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: b.approved ? 'maintenance.approve' : 'maintenance.decline', entityTable: 'maintenance_issues', entityId: id, before: { state: issue.state }, after: { state: next }, source: session.role === 'owner' ? 'owner_portal' : 'web' });
+  await repairNotice(env, id, 'approval_decided', session.userId, b.approved ? 'approved' : 'declined');
   return json({ ok: true, state: next });
 };

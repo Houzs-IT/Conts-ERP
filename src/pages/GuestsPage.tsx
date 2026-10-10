@@ -7,8 +7,9 @@ import { Button } from '../components/Button';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { useToast } from '../components/Toast';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
-import { PageControls } from '../components/PageControls';
+import { DataTable, type Column } from '../components/DataTable';
+import { fetchAllPages } from '../lib/export';
+import { runEach, skippedNote } from '../lib/bulk';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
 import { CentreModal } from '../components/booking/BookingDrawer';
@@ -19,9 +20,9 @@ import { useSession } from '../lib/session';
 import { deliveryToast } from '../lib/bookingStatus';
 import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, phone } from '../lib/format';
 import { Select, Menu } from '../components/Select';
-import { EmptyState } from '../components/States';
 import { Chip as FilterChip } from './finance/listKit';
 import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } from '../lib/types';
+import { RecordHistory } from '../components/RecordHistory';
 
 /* ------------------------------------------------------------------ */
 /* Model                                                               */
@@ -92,10 +93,10 @@ const LIST_FALLBACK: ListPayload = {
 
 // Latest stay first: the guest an operator is looking for is usually the one who just booked or stayed.
 const SORTS = [
-  { key: 'recent', label: 'Latest stay' },
-  { key: 'name', label: 'Name A to Z' },
-  { key: 'value', label: 'Booking value' },
-  { key: 'stays', label: 'Most stays' },
+  { key: 'recent', label: 'Latest stay', dir: 'desc' },
+  { key: 'name', label: 'Name A to Z', dir: 'asc' },
+  { key: 'value', label: 'Booking value', dir: 'desc' },
+  { key: 'stays', label: 'Most stays', dir: 'desc' },
 ] as const;
 
 const OPS_ROLES: UserRole[] = ['management', 'operations_manager', 'operations_staff'];
@@ -140,14 +141,15 @@ export default function GuestsPage() {
   }
   const rawFilter = params.get('filter');
   const filter: Filter = FILTERS.some(f => f.key === rawFilter) ? rawFilter as Filter : 'all';
-  const sort = SORTS.some(s => s.key === params.get('sort')) ? params.get('sort')! : 'recent';
+  // The table writes `sort` as "<key>:asc|desc"; the Sort menu writes each key with its natural direction.
+  const sortKey = (params.get('sort') ?? 'recent').split(':')[0];
 
   const listQuery = useMemo(() => {
     const p = new URLSearchParams();
-    for (const k of ['q', 'filter', 'page']) { const v = params.get(k); if (v) p.set(k, v); }
-    p.set('sort', sort);
+    for (const k of ['q', 'filter', 'page', 'size']) { const v = params.get(k); if (v) p.set(k, v); }
+    p.set('sort', params.get('sort') ?? 'recent');
     return p.toString();
-  }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [params]);
   const list = useApi<ListPayload>(`/guests${listQuery ? `?${listQuery}` : ''}`, LIST_FALLBACK);
   const rows = list.data?.data ?? [];
   const counts = list.data?.counts;
@@ -188,8 +190,68 @@ export default function GuestsPage() {
     if (window.matchMedia('(max-width: 767.98px)').matches) document.querySelector('main')?.scrollTo({ top: 0 });
   }
   function setFilter(key: Filter) { updateParams(p => { if (key === 'all') p.delete('filter'); else p.set('filter', key); p.delete('page'); p.delete('g'); }); }
-  function setSort(key: string) { updateParams(p => { if (key === 'recent') p.delete('sort'); else p.set('sort', key); p.delete('page'); p.delete('g'); }); }
-  function goPage(n: number) { updateParams(p => { if (n <= 1) p.delete('page'); else p.set('page', String(n)); p.delete('g'); }); }
+  function setSort(key: string) {
+    const s = SORTS.find(x => x.key === key);
+    updateParams(p => { if (!s || key === 'recent') p.delete('sort'); else p.set('sort', `${key}:${s.dir}`); p.delete('page'); p.delete('g'); });
+  }
+  const sortOptions = SORTS.some(s => s.key === sortKey) ? SORTS.map(s => ({ value: s.key, label: s.label }))
+    : [{ value: sortKey, label: 'By column' }, ...SORTS.map(s => ({ value: s.key, label: s.label }))];
+
+  /** Every guest under the current search, chip and sort, for the table's Export. */
+  async function fetchAll(onProgress: (got: number, of: number) => void) {
+    const q: Record<string, string> = { export: '1', sort: params.get('sort') ?? 'recent' };
+    for (const k of ['q', 'filter']) { const v = params.get(k); if (v) q[k] = v; }
+    const r = await fetchAllPages<GuestSummary>(async (page, size) => {
+      const p = await api.get<ListPayload>('/guests', { ...q, page, size });
+      return { rows: p.data, total: p.total };
+    }, { onProgress });
+    return r.rows;
+  }
+
+  // Sets or clears one manual tag on each ticked guest through the guest's own PATCH (role check and audit there).
+  async function bulkTag(picked: GuestSummary[], tag: 'vip' | 'blacklist', on: boolean, clear: () => void) {
+    const name = tag === 'vip' ? 'VIP' : 'Blacklist';
+    const todo = picked.filter(g => g.tags.some(t => t.key === tag) !== on);
+    const { ok, failed } = await runEach(todo, g => {
+      const manual = g.tags.map(t => t.key).filter(k => k === 'vip' || k === 'blacklist');
+      return api.patch(`/guests/${g.id}`, { tags: on ? [...manual, tag] : manual.filter(k => k !== tag) });
+    }, g => g.fullName);
+    const already = picked.length - todo.length;
+    toast({
+      tone: failed.length ? 'warning' : 'success',
+      title: ok ? `${on ? `Tagged ${name}` : `${name} tag removed`}: ${plural(ok, 'guest')}.` : `No guest ${on ? 'tagged' : 'changed'}.`,
+      body: [already ? `${plural(already, 'guest')} ${on ? 'already had' : 'did not have'} the tag.` : '', skippedNote(failed)].filter(Boolean).join(' ') || undefined,
+    });
+    if (ok) { clear(); reloadAll(); }
+  }
+
+  const columns = useMemo<Column<GuestSummary>[]>(() => [
+    { key: 'name', label: 'Guest', value: g => g.fullName, sortKey: 'name', hideable: false, width: 210,
+      render: g => (
+        <span className="flex items-center gap-[10px] min-w-0">
+          <span className="w-[30px] h-[30px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-caption font-semibold">{initials(g.fullName)}</span>
+          <span className="flex flex-col gap-px min-w-0">
+            <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={g.fullName}>{g.fullName}</span>
+            <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{guestMeta(g, canSeeContact)}</span>
+          </span>
+        </span>
+      ) },
+    { key: 'tag', label: 'Tag', type: 'status', width: 110, phone: 'badge',
+      status: g => (g.missingId ? { label: 'Missing ID', tone: 'critical' } : g.tags[0] ? { label: g.tags[0].label, tone: g.tags[0].tone } : null) },
+    { key: 'stays', label: 'Stays', type: 'number', value: g => g.stays, sortKey: 'stays', width: 80,
+      sub: g => (g.upcoming ? `${fmtCount(g.upcoming)} upcoming` : null) },
+    ...(canSeeContact ? [
+      { key: 'email', label: 'Email', value: (g: GuestSummary) => g.email, hidden: true, width: 190 },
+      { key: 'phone', label: 'Phone', type: 'phone' as const, value: (g: GuestSummary) => g.phone, hidden: true, width: 140 },
+    ] : []),
+    { key: 'country', label: 'Nationality', value: g => countryName(g.countryCode), hidden: true, width: 130 },
+    { key: 'channel', label: 'Latest channel', type: 'channel', value: g => g.channel, hidden: true },
+    { key: 'nights', label: 'Nights', type: 'number', value: g => g.nights, sortKey: 'nights', hidden: true, width: 80 },
+    { key: 'upcoming', label: 'Upcoming', type: 'number', value: g => g.upcoming, sortKey: 'upcoming', hidden: true, width: 90 },
+    { key: 'lastCheckIn', label: 'Last check-in', type: 'date', value: g => g.lastCheckIn ?? null, sortKey: 'recent', hidden: true },
+    { key: 'value', label: 'Booking value', type: 'money', value: g => g.lifetimeValue, sortKey: 'value', hidden: true,
+      title: 'Guest totals of every stay, upcoming included.' },
+  ], [canSeeContact]);
 
   // ---- actions: each toast says what the server did, never what was hoped for ----
   async function prepareEarly(g: Guest) {
@@ -271,46 +333,48 @@ export default function GuestsPage() {
         primary={canSeeContact ? <Button variant="primary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Add guest</Button> : undefined}
       />
 
-      {list.error && <StaleBanner message={`Showing the last guest list we have. ${list.error}`} onRetry={list.reload} />}
-
       <div className="flex gap-5 items-start max-w-[1600px] max-md:flex-col max-md:items-stretch">
         {/* -------- left: directory list -------- */}
-        <div className={cx('md:flex-[0_1_420px] md:min-w-[320px] md:max-w-[440px] w-full bg-card border border-solid border-line rounded-card overflow-hidden', pickedId && 'max-md:hidden')}>
-          <div className="py-4 px-4 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-3">
-            <div className="flex gap-2 flex-wrap">
+        <div className={cx('md:flex-[0_1_520px] md:min-w-[340px] md:max-w-[560px] w-full min-w-0', pickedId && 'max-md:hidden')}>
+          <DataTable<GuestSummary>
+            id="guests" phoneSort={false} columns={columns} rows={list.data ? rows : null} rowKey={g => g.id}
+            loading={list.loading} error={list.error} onRetry={list.reload} onRowClick={g => select(g.id)}
+            rowTone={g => (g.id === selectedId ? 'gold' : null)}
+            server={{ total, page: list.data?.page ?? 1, pageSize: list.data?.pageSize ?? 50, sizes: [25, 50, 100], defaultPageSize: 50, fetchAll }}
+            viewParams={['filter', 'q']} filtered={searching} onClearFilters={() => setSearch('')}
+            noun={['guest', 'guests']} exportName="guests" maxHeight="calc(100dvh - 420px)"
+            empty={{ title: emptyText, icon: 'Users' }}
+            selectable
+            bulkActions={canSeeContact ? (picked, clear) => (
+              <Menu label="Tag ticked guests" align="right"
+                trigger={<span className="h-8 inline-flex items-center gap-1 px-3 rounded-control border border-solid border-line bg-card text-copy text-ink"><Icon name="Tag" size="sm" />Tag<Icon name="ChevronDown" size="sm" /></span>}
+                items={[
+                  { key: 'vip-on', label: 'Tag VIP', icon: 'Star', onSelect: () => void bulkTag(picked, 'vip', true, clear) },
+                  { key: 'vip-off', label: 'Remove VIP', icon: 'X', onSelect: () => void bulkTag(picked, 'vip', false, clear) },
+                  { key: 'bl-on', label: 'Tag Blacklist', icon: 'Ban', danger: true, onSelect: () => void bulkTag(picked, 'blacklist', true, clear) },
+                  { key: 'bl-off', label: 'Remove Blacklist', icon: 'X', onSelect: () => void bulkTag(picked, 'blacklist', false, clear) },
+                ]} />
+            ) : undefined}
+            header={
+              <div role="group" aria-label="Filter guests" className="flex gap-2 flex-wrap py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
+                {FILTERS.map(f => (
+                  <FilterChip key={f.key} on={f.key === filter} onClick={() => setFilter(f.key)} count={counts?.[f.key]}>
+                    {f.key === 'missing_id' && !!counts?.missing_id && f.key !== filter ? <span className="text-danger">{f.label}</span> : f.label}
+                  </FilterChip>
+                ))}
+              </div>
+            }
+            toolbar={<>
               <label className="relative flex-[1_1_180px] min-w-0">
-                <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid"><Icon name="Search" size="sm" /></span>
+                <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid pointer-events-none"><Icon name="Search" size="sm" /></span>
                 <input value={draft} onChange={e => setSearch(e.target.value)} aria-label="Search guests"
                   placeholder={canSeeContact ? 'Name, phone, email or booking reference' : 'Guest name'}
                   className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-copy pl-[32px] pr-3 py-0 outline-none" />
               </label>
-              <Select label="Sort guests" value={sort} onChange={setSort} className="flex-[1_1_150px] sm:flex-none sm:w-[150px]"
-                options={SORTS.map(s => ({ value: s.key, label: s.label }))} />
-            </div>
-            <div role="group" aria-label="Filter guests" className="flex gap-2 flex-wrap">
-              {FILTERS.map(f => (
-                <FilterChip key={f.key} on={f.key === filter} onClick={() => setFilter(f.key)} count={counts?.[f.key]}>
-                  {f.key === 'missing_id' && !!counts?.missing_id && f.key !== filter ? <span className="text-danger">{f.label}</span> : f.label}
-                </FilterChip>
-              ))}
-            </div>
-          </div>
-
-          <div className="md:max-h-[calc(100dvh-400px)] md:min-h-[320px] overflow-y-auto" aria-busy={list.loading}>
-            {!list.data ? <TableSkeleton rows={8} cols={2} /> : rows.length === 0 ? (
-              searching
-                ? <EmptyState bare kind="filtered" title={emptyText} action={{ label: 'Clear search', onClick: () => setSearch('') }} />
-                : <EmptyState bare title={emptyText} />
-            ) : (
-              <div className={cx('transition-opacity duration-150', list.loading && 'opacity-55')}>
-                {rows.map(g => <GuestRow key={g.id} g={g} selected={selectedId === g.id} canSeeContact={canSeeContact} onSelect={() => select(g.id)} />)}
-              </div>
-            )}
-          </div>
-          {list.data && total > 0 && (
-            <PageControls page={list.data.page} pageSize={list.data.pageSize} total={total} onPage={goPage}
-              noun={total === 1 ? 'guest' : 'guests'} className="[border-top:1px_solid_var(--color-line-soft)] px-4!" />
-          )}
+              <Select label="Sort guests" value={sortKey} onChange={setSort} className="flex-[1_1_150px] sm:flex-none sm:w-[150px]" options={sortOptions} />
+            </>}
+            renderCard={g => <GuestCard g={g} canSeeContact={canSeeContact} />}
+          />
         </div>
 
         {/* -------- right: guest profile -------- */}
@@ -369,16 +433,17 @@ export default function GuestsPage() {
 /* Directory row                                                       */
 /* ------------------------------------------------------------------ */
 
-function GuestRow({ g, selected, canSeeContact, onSelect }: { g: GuestSummary; selected: boolean; canSeeContact: boolean; onSelect: () => void }) {
+const guestMeta = (g: GuestSummary, canSeeContact: boolean) => {
   const lastStay = g.upcoming ? 'Stay coming up' : g.lastCheckIn ? `Last stay ${fmtDate(g.lastCheckIn)}` : 'No stays yet';
-  const meta = canSeeContact ? [phone(g.phone), g.email].filter(Boolean).join(' · ') || lastStay : lastStay;
+  return canSeeContact ? [phone(g.phone), g.email].filter(Boolean).join(' · ') || lastStay : lastStay;
+};
+
+/** The phone card: the face the directory rows had before the list became a table. */
+function GuestCard({ g, canSeeContact }: { g: GuestSummary; canSeeContact: boolean }) {
+  const meta = guestMeta(g, canSeeContact);
   const tag = g.tags[0];
   return (
-    <button onClick={onSelect} aria-current={selected}
-      className={cx(
-        'flex items-center gap-3 w-full text-left [font:inherit] min-h-[62px] py-[11px] px-4 cursor-pointer [border-top:0] [border-right:0] [border-left:0] [border-bottom:1px_solid_var(--color-line-soft)]',
-        selected ? 'bg-gold-tint shadow-[inset_3px_0_0_var(--color-gold)]' : 'bg-card shadow-none',
-      )}>
+    <span className="flex items-center gap-3 min-w-0">
       <span className="w-[34px] h-[34px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-meta font-semibold">{initials(g.fullName)}</span>
       <span className="flex flex-col gap-[2px] min-w-0 flex-1">
         <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={g.fullName}>{g.fullName}</span>
@@ -388,7 +453,7 @@ function GuestRow({ g, selected, canSeeContact, onSelect }: { g: GuestSummary; s
         {g.missingId ? <StatusBadge tone="critical" label="Missing ID" size="sm" /> : tag && <StatusBadge tone={tag.tone} label={tag.label} size="sm" />}
         <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{plural(g.stays, 'stay')}{g.upcoming ? ` (${g.upcoming} upcoming)` : ''}</span>
       </span>
-    </button>
+    </span>
   );
 }
 
@@ -471,6 +536,8 @@ function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, o
           ))
         )}
       </div>
+
+      <RecordHistory entity="guests" id={g.id} refreshKey={g} />
     </>
   );
 }

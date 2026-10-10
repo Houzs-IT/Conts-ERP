@@ -1,18 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, X, Check } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { cx } from '../lib/design-tokens';
-import { StatusBadge } from '../components/StatusBadge';
 
 /** Delivery Residence Rules — ported from 2990's SCM, drawn in Conts. Per-building-type
  *  delivery config the TMS scheduler reads (service duration, time window, lift/registration). */
@@ -48,6 +45,15 @@ export default function DeliveryResidenceRulesPage() {
   const q = search.trim().toLowerCase();
   const rows = all.filter(r => !q || r.buildingType.toLowerCase().includes(q));
 
+  const columns = useMemo<Column<Rule>[]>(() => [
+    { key: 'building', label: 'Building type', value: r => r.buildingType, hideable: false },
+    { key: 'service', label: 'Service time', type: 'number', align: 'left', value: r => r.serviceDurationMinutes, render: r => <span className="tabular-nums">{dur(r.serviceDurationMinutes)}</span> },
+    { key: 'window', label: 'Delivery window', value: r => (r.earliestDeliveryTime || r.latestDeliveryTime ? `${r.earliestDeliveryTime || '—'} – ${r.latestDeliveryTime || '—'}` : 'Any time') },
+    { key: 'lift', label: 'Lift booking', value: r => (r.requiresLiftBooking ? 'Yes' : 'No'), filter: { kind: 'select' }, align: 'center', width: 110, render: r => r.requiresLiftBooking ? <Check size={16} strokeWidth={2} className="inline text-gold-ink" /> : <span className="text-muted-ink">—</span> },
+    { key: 'registration', label: 'Registration', value: r => (r.requiresRegistration ? 'Yes' : 'No'), filter: { kind: 'select' }, align: 'center', width: 110, render: r => r.requiresRegistration ? <Check size={16} strokeWidth={2} className="inline text-gold-ink" /> : <span className="text-muted-ink">—</span> },
+    { key: 'status', label: 'Status', type: 'status', value: r => (r.isActive ? 'active' : 'inactive'), entity: 'active_flag' },
+  ], []);
+
   function save(draft: Rule, isNew: boolean) {
     if (isNew) { setAdded(a => [R({ ...draft, id: `rr-new-${crypto.randomUUID().slice(0, 8)}` }), ...a]); api.post('/residence-rules', draft).catch(notifyFailure); toast({ tone: 'success', title: 'Rule added.', body: draft.buildingType }); }
     else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...draft } })); api.patch(`/residence-rules/${draft.id}`, draft).catch(notifyFailure); toast({ tone: 'success', title: 'Rule updated.', body: draft.buildingType }); }
@@ -59,34 +65,15 @@ export default function DeliveryResidenceRulesPage() {
     <>
       <PageHeader title="Residence rules" sub={`${all.length} building-type rules`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: R({ id: '', buildingType: '' }), isNew: true })}>New rule</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last rules we have. ${error}`} onRetry={reload} />}
-      <div className="flex items-center justify-end gap-5 flex-wrap">
-        <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search building type..." aria-label="Search residence rules"
-          className="h-9 box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[760px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
-              {['Building type', 'Service time', 'Delivery window', 'Lift booking', 'Registration', 'Status'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 3 || i === 4 ? 'text-center' : 'text-left')}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={6}><TableSkeleton rows={5} cols={6} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={6}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q ? 'No rules match.' : 'No residence rules yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Set per-building delivery windows and access requirements for the planner.</span></div></td></tr>
-              : rows.map(r => (
-                <tr key={r.id} onClick={() => { if (canWrite) setDrawer({ draft: r, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
-                  <td className="py-[13px] px-4 text-[13.5px]">{r.buildingType}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)] tabular-nums">{dur(r.serviceDurationMinutes)}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums">{r.earliestDeliveryTime || r.latestDeliveryTime ? `${r.earliestDeliveryTime || '—'} – ${r.latestDeliveryTime || '—'}` : 'Any time'}</td>
-                  <td className="py-[13px] px-4 text-center">{r.requiresLiftBooking ? <Check size={16} strokeWidth={2} className="inline text-gold-ink" /> : <span className="text-muted-ink">—</span>}</td>
-                  <td className="py-[13px] px-4 text-center">{r.requiresRegistration ? <Check size={16} strokeWidth={2} className="inline text-gold-ink" /> : <span className="text-muted-ink">—</span>}</td>
-                  <td className="py-[13px] px-4"><StatusBadge entity="active_flag" value={r.isActive ? 'active' : 'inactive'} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Rule>
+        id="scm.residence-rules" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={canWrite ? r => setDrawer({ draft: r, isNew: false }) : undefined}
+        noun={['rule', 'rules']} exportName="residence-rules"
+        toolbar={<input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search building type..." aria-label="Search residence rules"
+          className="h-9 box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />}
+        filtered={!!q} onClearFilters={() => setSearch('')}
+        empty={{ title: 'No residence rules yet.', body: 'Set per-building delivery windows and access requirements for the planner.', action: canWrite ? { label: 'New rule', onClick: () => setDrawer({ draft: R({ id: '', buildingType: '' }), isNew: true }) } : undefined }} />
       {drawer && <RuleDrawer draft={drawer.draft} isNew={drawer.isNew} onClose={() => setDrawer(null)} onSave={save} onDelete={drawer.isNew ? undefined : () => remove(drawer.draft)} />}
     </>
   );

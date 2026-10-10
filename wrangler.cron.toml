@@ -1,13 +1,20 @@
-# Scheduled worker, deployed separately from Pages.
-#   npx wrangler deploy --config wrangler.cron.toml
+# Scheduled worker (theconts-cron), deployed separately from Pages:
+#   node scripts/cron-deploy.mjs          checks the Cloudflare account and this file, then deploys
 #
 # Pages Functions route by file path; a cron handler cannot live in functions/.
-# This Worker shares the same Supabase database (via Hyperdrive) as the Pages app.
+# This Worker uses the same production database (Hyperdrive, same id as wrangler.toml) and the same job code
+# (functions/_lib/cronJobs.ts) as the local dry run: node scripts/cron-dry-run.mjs
+#
+# Secrets (set once with `npx wrangler secret put <NAME> --config wrangler.cron.toml`, typed at the prompt):
+#   CHANNEX_API_KEY      needed for the Channex outbox; without it that job reports "not configured"
+#   MAIL_API_KEY         optional: email copies and owner emails
+#   WHATSAPP_TOKEN, WHATSAPP_PHONE_ID   optional: WhatsApp copies
 
 name = "theconts-cron"
 main = "worker/scheduled.ts"
 compatibility_date = "2026-09-17"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = false
 
 [[hyperdrive]]
 binding = "HYPERDRIVE"
@@ -15,9 +22,10 @@ id = "e0781ccdee9046919161c28cb95694c0"
 
 [triggers]
 crons = [
-  "* * * * *",      # send the Channex outbox: retries and anything the request-time flush missed
-  "*/15 * * * *",   # drain the quiet-hours notification queue
-  "0 * * * *",      # SLA sweep: move overdue tasks, flag unsent statements
+  "* * * * *",      # Channex outbox: retries and anything the request-time flush missed
+  "*/15 * * * *",   # email / WhatsApp outbox (quiet hours, retries); release calendar blocks of finished repair jobs
+  "0 * * * *",      # overdue cleans and repairs; statements finalised but unsent
+  "0 0 * * *",      # 08:00 Malaysia: the "today" digest for operations
 ]
 
 [vars]

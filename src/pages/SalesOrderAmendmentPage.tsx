@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Search, Plus, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
@@ -56,6 +55,14 @@ export default function SalesOrderAmendmentPage() {
   const q = search.trim().toLowerCase();
   const rows = all.filter(a => (statusFilter === 'all' || a.status === statusFilter) && (!q || `${a.amendmentNo} ${a.soDocNo} ${a.customerName}`.toLowerCase().includes(q)));
 
+  const columns = useMemo<Column<Amd>[]>(() => [
+    { key: 'amendmentNo', label: 'Amendment', type: 'ref', value: a => a.amendmentNo, hideable: false },
+    { key: 'so', label: 'Sales order', type: 'ref', value: a => a.soDocNo },
+    { key: 'customer', label: 'Customer', value: a => a.customerName },
+    { key: 'reason', label: 'Reason', value: a => a.reason, render: a => a.reason ? <span className="text-[12.5px] text-muted-ink">{a.reason}</span> : <span className="text-muted-ink">—</span> },
+    { key: 'status', label: 'Status', type: 'status', value: a => a.status, entity: 'so_amendment' },
+  ], []);
+
   function created(a: Amd) { setAdded(x => [a, ...x]); toast({ tone: 'success', title: 'Amendment raised.', body: `${a.amendmentNo} · ${a.soDocNo}` }); setDrawer(null); }
   function act(a: Amd, action: 'approve' | 'reject' | 'cancel' | 'apply', next: Status, label: string) {
     setEdits(e => ({ ...e, [a.id]: { ...e[a.id], status: next } }));
@@ -68,37 +75,21 @@ export default function SalesOrderAmendmentPage() {
     <>
       <PageHeader title="Sales order amendment" sub={`${all.length} amendments`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New amendment</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last amendments we have. ${error}`} onRetry={reload} />}
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('so_amendment', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
-        <div className="relative">
-          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search amendment, SO or customer..." aria-label="Search amendments"
-            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
-        </div>
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[760px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
-              {['Amendment', 'Sales order', 'Customer', 'Reason', 'Status'].map(h => <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={5}><TableSkeleton rows={5} cols={5} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={5}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No amendments match.' : 'No amendments yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Raise an amendment to change a confirmed sales order through a controlled approval.</span></div></td></tr>
-              : rows.map(a => (
-                <tr key={a.id} onClick={() => setDrawer({ mode: 'view', amd: a })} className="[border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-muted">
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{a.amendmentNo}</td>
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[12.5px] text-muted-ink">{a.soDocNo}</td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{a.customerName}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink max-w-[240px] truncate">{a.reason || '—'}</td>
-                  <td className="py-[13px] px-4"><StatusBadge entity="so_amendment" value={a.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Amd>
+        id="scm.so-amendments" columns={columns} rows={data ? rows : null} rowKey={a => a.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={a => setDrawer({ mode: 'view', amd: a })}
+        noun={['amendment', 'amendments']} exportName="so-amendments"
+        toolbar={<>
+          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('so_amendment', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+          <div className="relative">
+            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search amendment, SO or customer..." aria-label="Search amendments"
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
+          </div>
+        </>}
+        filtered={!!q || statusFilter !== 'all'} onClearFilters={() => { setSearch(''); setStatusFilter('all'); }}
+        empty={{ title: 'No amendments yet.', body: 'Raise an amendment to change a confirmed sales order through a controlled approval.', action: canWrite ? { label: 'New amendment', onClick: () => setDrawer({ mode: 'new' }) } : undefined }} />
       {drawer?.mode === 'new' && <NewDrawer openSos={openSos} canWrite={canWrite} onClose={() => setDrawer(null)} onCreated={created} />}
       {drawer?.mode === 'view' && <ViewDrawer amd={drawer.amd} canWrite={canWrite} onClose={() => setDrawer(null)} onAct={act} />}
     </>
@@ -184,10 +175,17 @@ function NewDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[
 }
 
 /* ---------- view ---------- */
+const lineColumns: Column<AmdLine>[] = [
+  { key: 'item', label: 'Item', value: l => l.description, sub: l => <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{l.itemCode}</span>, text: l => `${l.description} ${l.itemCode}` },
+  { key: 'action', label: 'Change', value: l => l.action, filter: false, render: l => <span className={cx('text-[12px] font-semibold', l.action === 'REMOVE' ? TONE.critical.text : l.action === 'ADD' ? TONE.success.text : TONE.info.text)}>{l.action}</span> },
+  { key: 'from', label: 'From', align: 'right', sortable: false, filter: false, value: l => l.oldQty != null ? `${l.oldQty} × ${rm(l.oldUnitPriceSen ?? 0)}` : null, render: l => <span className="tabular-nums text-[12.5px] text-muted-ink">{l.oldQty != null ? `${l.oldQty} × ${rm(l.oldUnitPriceSen ?? 0)}` : '—'}</span> },
+  { key: 'to', label: 'To', align: 'right', sortable: false, filter: false, value: l => l.action === 'REMOVE' ? null : `${l.newQty} × ${rm(l.newUnitPriceSen)}`, render: l => <span className="tabular-nums text-[12.5px]">{l.action === 'REMOVE' ? '—' : `${l.newQty} × ${rm(l.newUnitPriceSen)}`}</span> },
+];
+
 function ViewDrawer({ amd, canWrite, onClose, onAct }: { amd: Amd; canWrite: boolean; onClose: () => void; onAct: (a: Amd, action: 'approve' | 'reject' | 'cancel' | 'apply', next: Status, label: string) => void }) {
   const { data } = useApi<{ data: Amd }>(`/so-amendments/${amd.id}`, { data: { ...amd, lines: amd.lines ?? [] } });
   const full = data?.data ?? amd;
-  const lines = full.lines ?? [];
+  const lineRows = useMemo(() => (full.lines ?? []).map((l, i) => ({ ...l, key: l.id ?? String(i) })), [full.lines]);
   return (
     <Drawer open onClose={onClose} width={760}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
@@ -201,21 +199,12 @@ function ViewDrawer({ amd, canWrite, onClose, onAct }: { amd: Amd; canWrite: boo
           <Meta label="Applied" value={full.appliedAt ? date(full.appliedAt) : '—'} />
           <Meta label="Reason" value={full.reason || '—'} />
         </div>
-        <div className="overflow-x-auto border border-solid border-line rounded-card">
-          <table className="w-full border-collapse min-w-[520px]">
-            <thead><tr className="bg-muted">{['Item', 'Change', 'From', 'To'].map((th, i) => <th key={th} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i <= 1 ? 'text-left' : 'text-right')}>{th}</th>)}</tr></thead>
-            <tbody>
-              {lines.length === 0 ? <tr><td colSpan={4} className="py-6 text-center text-[12.5px] text-muted-ink">No line changes recorded.</td></tr>
-              : lines.map((l, i) => (
-                <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
-                  <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
-                  <td className="py-2 px-3 text-[12px]"><span className={cx('font-semibold', l.action === 'REMOVE' ? TONE.critical.text : l.action === 'ADD' ? TONE.success.text : TONE.info.text)}>{l.action}</span></td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[12.5px] text-muted-ink">{l.oldQty != null ? `${l.oldQty} × ${rm(l.oldUnitPriceSen ?? 0)}` : '—'}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[12.5px]">{l.action === 'REMOVE' ? '—' : `${l.newQty} × ${rm(l.newUnitPriceSen)}`}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="border border-solid border-line rounded-card overflow-hidden">
+          <DataTable<AmdLine & { key: string }>
+            id="scm.so-amendment.lines" urlPrefix="lines." bare noViews noToolbar pageSize={0}
+            columns={lineColumns} rows={lineRows} rowKey={l => l.key}
+            noun={['line change', 'line changes']} exportName={`${full.amendmentNo}-lines`}
+            empty={{ title: 'No line changes recorded.' }} />
         </div>
       </div>
       <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">

@@ -40,6 +40,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       INSERT INTO reservations (id, unit_id, channel, state, check_in, check_out, guests_count, gross_booking_value, currency, notes, block_reason, created_at, updated_at)
       VALUES (?, ?, ?, 'confirmed', ?, ?, 0, 0, 'MYR', ?, ?, ?, ?)`,
       id, unit.id, kind === 'owner_stay' ? 'owner_stay' : 'maintenance_block', b.from, b.to, note || KIND_LABEL[kind], kind, now, now);
+    // The repair job this block is for, so closing the job gives the nights back (migration 0095; skipped without it).
+    if (b.issueId) await run(env, 'UPDATE reservations SET maintenance_issue_id = ? WHERE id = ? AND EXISTS (SELECT 1 FROM maintenance_issues WHERE id = ? AND unit_id = ?)', String(b.issueId), id, String(b.issueId), unit.id).catch(() => {});
   } else if (!b.issueId) {
     return fail('VALIDATION', 'Give the dates to block.', 422);
   }

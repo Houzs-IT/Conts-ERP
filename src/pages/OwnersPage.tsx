@@ -1,25 +1,23 @@
-import { Fragment, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api, errorMessage } from '../lib/api';
 import { rmShort, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
 import { MoneyText } from '../components/MoneyText';
 import { Select } from '../components/Select';
-import { EmptyState } from '../components/States';
 import { cx } from '../lib/design-tokens';
 import {
   type Owner, type Payload,
   FALLBACK, netOf, grossOf, guaranteedOf, managedNetOf, managedGrossOf, terms,
   Roll, AddOwnerModal,
 } from './owners/shared';
-import { useUrlState, usePhone, ListCard, SearchBox, Chip, MonthStepper, STICKY_HEAD, shiftMonth, useFinanceFilters } from './finance/listKit';
+import { useUrlState, usePhone, SearchBox, Chip, MonthStepper, shiftMonth, useFinanceFilters } from './finance/listKit';
 import { MODELS, type RevenueModel } from '../lib/revenueModel';
 import { ModelChip } from './units/ContractTab';
 
@@ -35,10 +33,6 @@ import { ModelChip } from './units/ContractTab';
  * searched and sorted here, which keeps sorting by net instant.
  */
 
-const COLS = 'grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)_minmax(0,1.6fr)_minmax(96px,0.85fr)_minmax(104px,0.9fr)_minmax(96px,0.75fr)]';
-
-type SortKey = 'name' | 'units' | 'gross' | 'net';
-const SORT_KEYS: SortKey[] = ['name', 'units', 'gross', 'net'];
 type ModelFilter = '' | RevenueModel | 'none';
 const modelOf = (u: Owner['units'][number]): RevenueModel => u.revenueModel ?? (u.model === 'grr' ? 'grr' : 'management');
 
@@ -64,9 +58,6 @@ export default function OwnersPage() {
   const model = ([...MODELS.map(m => m.key as string), 'none'].includes(url.get('model')) ? url.get('model') : '') as ModelFilter;
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const toggle = (id: string) => setOpen(m => ({ ...m, [id]: !m[id] }));
-  const sortRaw = url.get('sort', 'name');
-  const desc = sortRaw.startsWith('-');
-  const sortKey: SortKey = SORT_KEYS.includes(sortRaw.replace(/^-/, '') as SortKey) ? sortRaw.replace(/^-/, '') as SortKey : 'name';
 
   const { data, loading, error, reload } = useApi<Payload>(`/owners${month === thisMonth ? '' : `?month=${month}`}`, FALLBACK);
   const filters = useFinanceFilters();
@@ -81,17 +72,12 @@ export default function OwnersPage() {
     none: all.filter(o => o.units.length === 0).length,
   }), [all]);
 
-  const rows = useMemo(() => {
-    const list = all.filter(o =>
-      (!q || o.displayName.toLowerCase().includes(q) || (o.email ?? '').toLowerCase().includes(q) || o.units.some(u => u.unitLabel.toLowerCase().includes(q))) &&
-      (!building || o.units.some(u => u.buildingId === building)) &&
-      (!model || (model === 'none' ? o.units.length === 0 : o.units.some(u => modelOf(u) === model))));
-    const val = (o: Owner) => sortKey === 'units' ? o.units.length : sortKey === 'gross' ? grossOf(o) : sortKey === 'net' ? netOf(o) : 0;
-    list.sort((a, b) => sortKey === 'name'
-      ? a.displayName.localeCompare(b.displayName) * (desc ? -1 : 1)
-      : (val(a) - val(b)) * (desc ? -1 : 1) || a.displayName.localeCompare(b.displayName));
-    return list;
-  }, [all, q, building, model, sortKey, desc]);
+  // Name order until someone sorts by a column.
+  const rows = useMemo(() => all.filter(o =>
+    (!q || o.displayName.toLowerCase().includes(q) || (o.email ?? '').toLowerCase().includes(q) || o.units.some(u => u.unitLabel.toLowerCase().includes(q))) &&
+    (!building || o.units.some(u => u.buildingId === building)) &&
+    (!model || (model === 'none' ? o.units.length === 0 : o.units.some(u => modelOf(u) === model))))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName)), [all, q, building, model]);
 
   const unitCount = all.reduce((s, o) => s + o.units.length, 0);
   // Portfolio rollup — pure client compute over loaded owners, reusing the same per-owner net the profile shows.
@@ -105,8 +91,8 @@ export default function OwnersPage() {
   const monthText = month === thisMonth ? 'this month' : monthLabel(month);
 
   const openProfile = (id: string) => navigate(`/owners/${encodeURIComponent(id)}`);
-  // Numbers sort biggest first on the first click; names A to Z.
-  const sortBy = (k: SortKey) => url.set({ sort: sortKey === k ? (desc ? k : `-${k}`) : (k === 'name' ? null : `-${k}`) });
+  const clearFilters = () => url.set({ q: null, building: null, model: null, page: null });
+  const monthCol = month === thisMonth ? 'month' : monthLabel(month);
 
   async function addOwner(o: Omit<Owner, 'id' | 'units' | 'portalInvited' | 'contract' | 'defaultManagementFeePct'>) {
     try {
@@ -119,19 +105,55 @@ export default function OwnersPage() {
     }
   }
 
-  const Head = ({ k, label, right }: { k: SortKey; label: string; right?: boolean }) => (
-    <button onClick={() => sortBy(k)} aria-sort={sortKey === k ? (desc ? 'descending' : 'ascending') : undefined}
-      className={cx('p-0 bg-transparent border-none cursor-pointer font-sans text-meta font-semibold inline-flex items-center gap-1', right ? 'justify-end' : '', sortKey === k ? 'text-ink' : 'text-muted-ink')}>
-      {label}{sortKey === k && <span aria-hidden className="text-caption">{desc ? '▼' : '▲'}</span>}
-    </button>
-  );
+  // Column filters are off: the totals under the table add up the owners the page's own search and chips leave.
+  const columns = useMemo<Column<Owner>[]>(() => [
+    { key: 'owner', label: 'Owner', value: o => o.displayName, hideable: false, width: 220, filter: false,
+      render: o => (
+        <span className="flex items-center gap-2.5 min-w-0">
+          <span className="w-[30px] h-[30px] flex-none rounded-full bg-black text-gold grid place-items-center text-caption font-semibold">{initials(o.displayName)}</span>
+          <span className="flex flex-col gap-px min-w-0">
+            <span className="text-copy font-medium truncate" title={o.displayName}>{titleCase(o.displayName)}</span>
+            {o.email && <span className="text-meta text-muted-ink truncate" title={o.email}>{o.email}</span>}
+          </span>
+        </span>
+      ) },
+    { key: 'email', label: 'Email', value: o => o.email || null, hidden: true, filter: false, width: 200 },
+    { key: 'phone', label: 'Phone', type: 'phone', value: o => o.phone, hidden: true, filter: false, width: 140 },
+    { key: 'units', label: 'Units', type: 'number', align: 'left', value: o => o.units.length, width: 140, filter: false,
+      render: o => <span className="text-copy text-muted-ink truncate block" title={o.units.map(u => u.unitLabel).join(', ')}>{unitsText(o)}</span> },
+    { key: 'unitList', label: 'Unit list', value: o => o.units.map(u => u.unitLabel).join(', ') || null, hidden: true, filter: false, width: 220 },
+    { key: 'terms', label: 'Terms', value: o => ownerTerms(o), width: 220, filter: false,
+      text: o => o.units.length > 1 ? o.units.map(u => `${u.unitLabel}: ${terms(u)}`).join('; ') : ownerTerms(o),
+      render: o => o.units.length > 1 ? (
+        <span className="flex flex-col gap-1 min-w-0 py-0.5">
+          <button type="button" aria-expanded={!!open[o.id]} onClick={e => { e.stopPropagation(); toggle(o.id); }} onKeyDown={e => e.stopPropagation()}
+            className="flex items-center gap-1.5 min-w-0 p-0 bg-transparent border-none cursor-pointer [font:inherit] text-copy! text-gold-ink text-left">
+            <Icon name={open[o.id] ? 'ChevronDown' : 'ChevronRight'} size="sm" />
+            <span className="truncate">{ownerTerms(o)}</span>
+          </button>
+          {open[o.id] && o.units.map(u => (
+            <a key={u.unitId} href={`#/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} onClick={e => e.stopPropagation()}
+              className="flex items-center justify-between gap-2 min-w-0 pl-5 no-underline text-inherit! hover:underline" title={`${u.unitLabel} · ${terms(u)}`}>
+              <span className="text-meta text-ink truncate">{titleCase(u.unitLabel)}</span>
+              <span className="shrink-0"><ModelChip model={modelOf(u)} label={terms(u)} /></span>
+            </a>
+          ))}
+        </span>
+      ) : <span className="text-copy text-muted-ink truncate block" title={ownerTerms(o)}>{ownerTerms(o)}</span> },
+    { key: 'gross', label: `Booking revenue, ${monthCol}`, type: 'money', value: o => grossOf(o), width: 150, filter: false,
+      render: o => <MoneyText sen={grossOf(o)} mode="exact" tone="muted" className="text-copy" /> },
+    { key: 'net', label: `Owner payout, ${monthCol}`, type: 'money', value: o => netOf(o), width: 150, filter: false,
+      render: o => <MoneyText sen={netOf(o)} mode="exact" tone="auto" className="text-copy font-medium" /> },
+    { key: 'guaranteed', label: `Guaranteed rent, ${monthCol}`, type: 'money', value: o => guaranteedOf(o), hidden: true, filter: false, width: 150 },
+    { key: 'defaultFee', label: 'Default fee %', type: 'number', value: o => o.defaultManagementFeePct, hidden: true, filter: false, width: 110 },
+    { key: 'portal', label: 'Portal', type: 'status', width: 120, filter: false,
+      status: o => (o.portalInvited ? { label: 'Active', tone: 'success' } : { label: 'Not invited', tone: 'neutral' }) },
+  ], [open, monthCol]);
 
   return (
     <>
       <PageHeader title="Owners" sub={`${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')} under management`}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal(true)}>Add owner</Button>} />
-
-      {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <Card>
         <div className="flex gap-[30px] gap-y-3 flex-wrap items-center py-4 px-[22px]">
@@ -146,113 +168,57 @@ export default function OwnersPage() {
         </div>
       </Card>
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <SearchBox className="flex-1 min-w-[200px]" label="Search owners" placeholder="Search owner, email or unit" value={url.get('q')} onChange={v => url.set({ q: v || null })} />
-        {filters && (
-          <Select className="flex-[0_1_200px]" label="Building" value={building} onChange={v => url.set({ building: v || null })}
-            options={[{ value: '', label: 'All buildings' }, ...[...filters.buildings].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: b.name }))]} />
-        )}
-        {phone && (
-          <Select className="flex-[1_1_180px]" label="Sort by" value={sortRaw === 'name' ? '' : sortRaw}
-            onChange={v => url.set({ sort: v || null })}
-            options={[{ value: '', label: 'Sort: name A-Z' }, { value: '-net', label: 'Sort: net, highest first' }, { value: 'net', label: 'Sort: net, lowest first' }, { value: '-gross', label: 'Sort: gross, highest first' }, { value: '-units', label: 'Sort: most units' }]} />
-        )}
-        <div className={cx('flex gap-2', phone ? 'w-full overflow-x-auto pb-1' : 'flex-wrap')}>
-          <Chip on={!model} onClick={() => url.set({ model: null })} count={counts.all}>All owners</Chip>
-          {MODELS.filter(m => counts[m.key] > 0 || model === m.key).map(m => (
-            <Chip key={m.key} on={model === m.key} onClick={() => url.set({ model: m.key })} count={counts[m.key]}>{m.label}</Chip>
-          ))}
-          <Chip on={model === 'none'} onClick={() => url.set({ model: 'none' })} count={counts.none}>No units</Chip>
-        </div>
-        {filtered && <Button size="sm" variant="tertiary" onClick={() => url.set({ q: null, building: null, model: null })}>Clear filters</Button>}
-      </div>
-
-      <ListCard busy={loading && !!data}>
-        {loading && !data ? <TableSkeleton rows={8} cols={phone ? 2 : 6} /> : rows.length === 0 ? (
-          all.length === 0
-            ? <EmptyState bare title="No owners yet." body="Add an owner, then link their units and set the fee or guaranteed rent." />
-            : <EmptyState bare kind="filtered" title="No owners match these filters." action={{ label: 'Clear filters', onClick: () => url.set({ q: null, building: null, model: null }) }} />
-        ) : phone ? (
-          <div>
-            {rows.map(o => (
-              <button key={o.id} onClick={() => openProfile(o.id)}
-                className="w-full text-left flex items-center gap-3 py-[11px] px-4 bg-card border-none [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer font-sans text-ink">
-                <span className="w-[32px] h-[32px] flex-none rounded-full bg-black text-gold grid place-items-center text-caption font-semibold">{initials(o.displayName)}</span>
-                <div className="flex flex-col gap-[2px] min-w-0 flex-1">
-                  <span className="text-copy font-medium truncate" title={o.displayName}>{titleCase(o.displayName)}</span>
-                  {o.units.length <= 1
-                    ? <span className="text-meta text-muted-ink truncate" title={`${o.units.map(u => u.unitLabel).join(', ') || unitsText(o)} · ${ownerTerms(o)}`}>{unitsText(o)} · {ownerTerms(o)}</span>
-                    : o.units.map(u => <span key={u.unitId} className="text-meta text-muted-ink truncate" title={`${u.unitLabel} · ${terms(u)}`}>{u.unitLabel.split(' ').pop()} · {terms(u)}</span>)}
-                </div>
-                <div className="flex flex-col items-end gap-[2px] shrink-0">
-                  <MoneyText sen={netOf(o)} mode="exact" tone="auto" strong className="text-copy" />
-                  <span className="text-caption text-muted-ink">net</span>
-                </div>
-              </button>
+      <DataTable<Owner>
+        id="owners" phoneSort={false} columns={columns} rows={data ? rows : null} rowKey={o => o.id}
+        loading={loading} error={error} onRetry={reload} onRowClick={o => openProfile(o.id)}
+        pageSize={0} viewParams={['q', 'building', 'model', 'month']} filtered={filtered} onClearFilters={clearFilters}
+        noun={['owner', 'owners']} exportName="owners"
+        empty={{ title: 'No owners yet.', body: 'Add an owner, then link their units and set the fee or guaranteed rent.', action: { label: 'Add owner', onClick: () => setModal(true) } }}
+        header={
+          <div className={cx('flex gap-2 py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]', phone ? 'overflow-x-auto' : 'flex-wrap')}>
+            <Chip on={!model} onClick={() => url.set({ model: null, page: null })} count={counts.all}>All owners</Chip>
+            {MODELS.filter(m => counts[m.key] > 0 || model === m.key).map(m => (
+              <Chip key={m.key} on={model === m.key} onClick={() => url.set({ model: m.key, page: null })} count={counts[m.key]}>{m.label}</Chip>
             ))}
-            <div className="flex items-center justify-between py-3 px-4 bg-page text-copy font-semibold">
-              <span>{plural(rows.length, 'owner')}</span>
-              <MoneyText sen={shownNet} mode="exact" />
-            </div>
+            <Chip on={model === 'none'} onClick={() => url.set({ model: 'none', page: null })} count={counts.none}>No units</Chip>
           </div>
-        ) : (
-          <div role="table" aria-label="Owners">
-            <div role="row" className={cx(COLS, 'grid gap-[14px] py-[9px] px-[22px]', STICKY_HEAD)}>
-              <Head k="name" label="Owner" /><Head k="units" label="Units" /><div>Terms</div>
-              <Head k="gross" label={`Booking revenue, ${month === thisMonth ? 'month' : monthLabel(month)}`} right />
-              <Head k="net" label={`Owner payout, ${month === thisMonth ? 'month' : monthLabel(month)}`} right />
-              <div>Portal</div>
-            </div>
-            {rows.map(o => (
-              <Fragment key={o.id}>
-              <div role="row" tabIndex={0} onClick={() => openProfile(o.id)} onKeyDown={e => { if (e.key === 'Enter') openProfile(o.id); }}
-                className={cx(COLS, 'grid gap-[14px] items-center min-h-[52px] py-[7px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-page')}>
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-[30px] h-[30px] flex-none rounded-full bg-black text-gold grid place-items-center text-caption font-semibold">{initials(o.displayName)}</span>
-                  <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-copy font-medium truncate" title={o.displayName}>{titleCase(o.displayName)}</span>
-                    {o.email && <span className="text-meta text-muted-ink truncate" title={o.email}>{o.email}</span>}
-                  </div>
-                </div>
-                <span className="text-copy text-muted-ink truncate" title={o.units.map(u => u.unitLabel).join(', ')}>{unitsText(o)}</span>
-                {o.units.length > 1 ? (
-                  <button type="button" aria-expanded={!!open[o.id]} onClick={e => { e.stopPropagation(); toggle(o.id); }} onKeyDown={e => e.stopPropagation()}
-                    className="flex items-center gap-1.5 min-w-0 p-0 bg-transparent border-none cursor-pointer [font:inherit] text-copy! text-gold-ink text-left">
-                    <Icon name={open[o.id] ? 'ChevronDown' : 'ChevronRight'} size="sm" />
-                    <span className="truncate">{ownerTerms(o)}</span>
-                  </button>
-                ) : (
-                  <span className="text-copy text-muted-ink truncate" title={ownerTerms(o)}>{ownerTerms(o)}</span>
-                )}
-                <MoneyText sen={grossOf(o)} mode="exact" tone="muted" className="text-copy text-right" />
-                <MoneyText sen={netOf(o)} mode="exact" tone="auto" className="text-copy text-right font-medium" />
-                <div className="flex items-center justify-between gap-2 min-w-0">
-                  {o.portalInvited ? <StatusBadge tone="success" label="Active" /> : <StatusBadge tone="neutral" label="Not invited" />}
-                  <Icon name="ChevronRight" size="sm" color="var(--color-muted-ink)" />
-                </div>
-              </div>
-              {open[o.id] && o.units.map(u => (
-                <a key={u.unitId} role="row" href={`#/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`}
-                  className={cx(COLS, 'grid gap-[14px] items-center min-h-[40px] py-[5px] px-[22px] bg-page [border-bottom:1px_solid_var(--color-line-soft)] no-underline text-inherit! hover:bg-muted')}>
-                  <span />
-                  <span className="text-meta text-ink truncate pl-2" title={u.unitLabel}>{titleCase(u.unitLabel)}</span>
-                  <span className="min-w-0 truncate"><ModelChip model={modelOf(u)} label={terms(u)} /></span>
-                  <MoneyText sen={u.gross} mode="exact" tone="muted" className="text-meta text-right" />
-                  <MoneyText sen={u.net} mode="exact" tone="auto" className="text-meta text-right" />
-                  <span />
-                </a>
-              ))}
-              </Fragment>
-            ))}
-            <div className={cx(COLS, 'grid gap-[14px] items-center py-[12px] px-[22px] bg-page text-copy font-semibold')}>
-              <span>{filtered ? `${rows.length} of ${plural(all.length, 'owner')}` : plural(rows.length, 'owner')}</span><span /><span />
-              <MoneyText sen={shownGross} mode="exact" className="text-right" />
-              <MoneyText sen={shownNet} mode="exact" className="text-right" />
-              <span />
-            </div>
+        }
+        toolbar={<>
+          <SearchBox className="flex-1 min-w-[200px]" label="Search owners" placeholder="Search owner, email or unit" value={url.get('q')} onChange={v => url.set({ q: v || null, page: null })} />
+          {filters && (
+            <Select className="flex-[0_1_200px] max-md:flex-[1_1_160px]" label="Building" value={building} onChange={v => url.set({ building: v || null, page: null })}
+              options={[{ value: '', label: 'All buildings' }, ...[...filters.buildings].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: b.name }))]} />
+          )}
+          {phone && (
+            <Select className="flex-[1_1_180px]" label="Sort by" value={url.get('sort')}
+              onChange={v => url.set({ sort: v || null })}
+              options={[{ value: '', label: 'Sort: name A-Z' }, { value: 'net:desc', label: 'Sort: net, highest first' }, { value: 'net:asc', label: 'Sort: net, lowest first' }, { value: 'gross:desc', label: 'Sort: gross, highest first' }, { value: 'units:desc', label: 'Sort: most units' }]} />
+          )}
+          {filtered && <Button size="sm" variant="tertiary" onClick={clearFilters}>Clear filters</Button>}
+        </>}
+        footer={rows.length > 0 && (
+          <div className="flex items-center gap-x-5 gap-y-1 flex-wrap py-3 px-[22px] max-md:px-4 bg-page [border-top:1px_solid_var(--color-line)] text-copy font-semibold">
+            <span>{filtered ? `${rows.length} of ${plural(all.length, 'owner')}` : plural(rows.length, 'owner')}</span>
+            <span className="ml-auto max-md:ml-0 inline-flex items-baseline gap-1.5"><span className="text-meta text-muted-ink font-normal">Booking revenue</span><MoneyText sen={shownGross} mode="exact" /></span>
+            <span className="inline-flex items-baseline gap-1.5"><span className="text-meta text-muted-ink font-normal">Owner payout</span><MoneyText sen={shownNet} mode="exact" /></span>
           </div>
         )}
-      </ListCard>
+        renderCard={o => (
+          <span className="flex items-center gap-3 min-w-0">
+            <span className="w-[32px] h-[32px] flex-none rounded-full bg-black text-gold grid place-items-center text-caption font-semibold">{initials(o.displayName)}</span>
+            <span className="flex flex-col gap-[2px] min-w-0 flex-1">
+              <span className="text-copy font-medium truncate" title={o.displayName}>{titleCase(o.displayName)}</span>
+              {o.units.length <= 1
+                ? <span className="text-meta text-muted-ink truncate" title={`${o.units.map(u => u.unitLabel).join(', ') || unitsText(o)} · ${ownerTerms(o)}`}>{unitsText(o)} · {ownerTerms(o)}</span>
+                : o.units.map(u => <span key={u.unitId} className="text-meta text-muted-ink truncate" title={`${u.unitLabel} · ${terms(u)}`}>{u.unitLabel.split(' ').pop()} · {terms(u)}</span>)}
+            </span>
+            <span className="flex flex-col items-end gap-[2px] shrink-0">
+              <MoneyText sen={netOf(o)} mode="exact" tone="auto" strong className="text-copy" />
+              <span className="text-caption text-muted-ink">net</span>
+            </span>
+          </span>
+        )}
+      />
 
       {modal && <AddOwnerModal onClose={() => setModal(false)} onSubmit={addOwner} />}
     </>

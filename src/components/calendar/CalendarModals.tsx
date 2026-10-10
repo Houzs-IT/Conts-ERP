@@ -121,13 +121,16 @@ const span = (xs: number[], f: (n: number) => string) => {
 /** Up to this many units on the board, Rate update starts with all of them ticked. */
 const PRESELECT_MAX = 12;
 
-export function RateUpdate({ units, pricing, initial, busy, onClose, onSave }: {
+export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, building, preselect, loadingAll }: {
   units: CalendarUnit[]; pricing: RatePricing; initial: { unitIds?: string[]; from?: string; to?: string }; busy?: boolean;
   onClose: () => void; onSave: (v: RateUpdateValue) => void;
+  /** The building the board is showing: the picker starts on it, but every unit can be picked. */
+  building?: string; preselect?: string[]; loadingAll?: boolean;
 }) {
   const [step, setStep] = useState<1 | 2 | 3>(initial.unitIds?.length && initial.from ? 3 : initial.unitIds?.length ? 2 : 1);
-  const [sel, setSel] = useState<Set<string>>(() => new Set(initial.unitIds ?? (units.length <= PRESELECT_MAX ? units.map(u => u.id) : [])));
+  const [sel, setSel] = useState<Set<string>>(() => new Set(initial.unitIds ?? preselect ?? (units.length <= PRESELECT_MAX ? units.map(u => u.id) : [])));
   const [q, setQ] = useState('');
+  const [onlyBuilding, setOnlyBuilding] = useState(building ?? '');
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [ranges, setRanges] = useState<Range[]>([{ from: initial.from ?? '', to: initial.to ?? initial.from ?? '' }]);
   const [days, setDays] = useState<Set<number>>(new Set(ALL_DAYS));
@@ -149,7 +152,8 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave }: {
     return [...m.entries()].map(([id, g]) => ({ id, ...g }));
   }, [units]);
   const needle = q.trim().toLowerCase();
-  const shown = needle ? groups.map(g => ({ ...g, units: g.units.filter(u => `${g.name} ${u.unitNumber}`.toLowerCase().includes(needle)) })).filter(g => g.units.length) : groups;
+  const inBuilding = onlyBuilding ? groups.filter(g => g.id === onlyBuilding) : groups;
+  const shown = needle ? inBuilding.map(g => ({ ...g, units: g.units.filter(u => `${g.name} ${u.unitNumber}`.toLowerCase().includes(needle)) })).filter(g => g.units.length) : inBuilding;
   const chosen = units.filter(u => sel.has(u.id));
   const toggle = (ids: string[], on: boolean) => setSel(s => { const n = new Set(s); for (const id of ids) { if (on) n.add(id); else n.delete(id); } return n; });
 
@@ -261,14 +265,17 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave }: {
           <div className="min-h-0 overflow-y-auto p-4 sm:p-6 flex flex-col gap-4">
             {step === 1 && (
               <>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit or building" aria-label="Search unit or building"
-                    className="field-input flex-1 min-w-0" />
+                    className="field-input flex-1 min-w-[180px]" />
+                  <Select label="Building" value={onlyBuilding} onChange={setOnlyBuilding} className="w-[200px] max-sm:w-full"
+                    options={[{ value: '', label: `All buildings (${count(units.length)} units)` }, ...groups.map(g => ({ value: g.id, label: `${g.name} (${g.units.length})` }))]} />
                   <span className="flex-none text-meta text-muted-ink whitespace-nowrap">Selected {count(chosen.length)}</span>
                   {chosen.length > 0 && <Button size="sm" variant="tertiary" type="button" onClick={() => setSel(new Set())}>Clear</Button>}
                 </div>
                 <div className="flex flex-col border border-solid border-line rounded-card overflow-hidden">
-                  {shown.length === 0 && <div className="p-4 text-copy text-muted-ink">No unit matches “{q}”.</div>}
+                  {loadingAll && <div className="px-3 py-2 text-meta text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]">Loading the other buildings' units…</div>}
+                  {shown.length === 0 && <div className="p-4 text-copy text-muted-ink">{needle ? `No unit matches “${q}”.` : 'No units in this building.'}</div>}
                   {shown.map(g => {
                     const ids = g.units.map(u => u.id);
                     const on = ids.filter(id => sel.has(id)).length;

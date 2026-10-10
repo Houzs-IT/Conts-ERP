@@ -68,28 +68,6 @@ export function BusyBar({ on }: { on: boolean }) {
 // items-center: a header that wraps to two lines ("Booking revenue, month") stays level with its one-line neighbours.
 export const STICKY_HEAD = 'items-center sticky -top-6 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink';
 
-/** "51-100 of 977" with previous / next. Hidden when everything fits on one page. */
-export function Pager({ page, pageSize, total, onPage, unit = 'rows' }: {
-  page: number; pageSize: number; total: number; onPage: (p: number) => void; unit?: string;
-}) {
-  const pages = Math.max(1, Math.ceil(total / pageSize));
-  if (total <= pageSize) return null;
-  const from = (page - 1) * pageSize + 1, to = Math.min(total, page * pageSize);
-  // The pager sits under the last row; bring the new page's first rows into view.
-  const go = (p: number) => { onPage(p); document.querySelector('main')?.scrollTo({ top: 0 }); };
-  const btn = 'h-8 px-3 rounded-control border border-solid border-line bg-card font-sans text-copy text-ink cursor-pointer disabled:cursor-default disabled:text-faint';
-  return (
-    <div className="flex items-center justify-between gap-3 flex-wrap px-[22px] py-[11px] [border-top:1px_solid_var(--color-line)] bg-page">
-      <span className="text-copy text-muted-ink tabular-nums">{countLabel(from)}–{countLabel(to)} of {countLabel(total)} {unit}</span>
-      <div className="flex items-center gap-2">
-        <button className={btn} disabled={page <= 1} onClick={() => go(page - 1)} aria-label="Previous page">Previous</button>
-        <span className="text-copy text-muted-ink tabular-nums whitespace-nowrap">Page {page} of {pages}</span>
-        <button className={btn} disabled={page >= pages} onClick={() => go(page + 1)} aria-label="Next page">Next</button>
-      </div>
-    </div>
-  );
-}
-
 /** Search box that commits after a short pause, so each keystroke is not a request. */
 export function SearchBox({ value, onChange, placeholder, label, className }: {
   value: string; onChange: (v: string) => void; placeholder: string; label: string; className?: string;

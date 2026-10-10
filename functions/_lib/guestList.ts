@@ -81,12 +81,26 @@ export function filterWhere(f: GuestFilter, cols: boolean): string {
   }
 }
 
-export const SORTS: Record<string, string> = {
-  name: 'lower(g.full_name) ASC, g.id',
-  recent: 's.last_check_in DESC NULLS LAST, lower(g.full_name), g.id',
-  value: 'COALESCE(s.value, 0) DESC, lower(g.full_name), g.id',
-  stays: 'COALESCE(s.stays, 0) DESC, lower(g.full_name), g.id',
+/** Sort keys: the expression and the direction a bare key (old links, `?sort=value`) has always meant. */
+const SORT_KEYS: Record<string, { expr: string; dir: 'asc' | 'desc' }> = {
+  name: { expr: 'lower(g.full_name)', dir: 'asc' },
+  recent: { expr: 's.last_check_in', dir: 'desc' },
+  value: { expr: 'COALESCE(s.value, 0)', dir: 'desc' },
+  stays: { expr: 'COALESCE(s.stays, 0)', dir: 'desc' },
+  nights: { expr: 'COALESCE(s.nights, 0)', dir: 'desc' },
+  upcoming: { expr: 'COALESCE(s.upcoming, 0)', dir: 'desc' },
 };
+
+/** `name`, `recent:asc`, `value:desc` ... into ORDER BY. Unknown keys fall back to `fallback`. Guests without a stay
+ *  sort last either way. */
+export function guestSort(raw: string | null, fallback = 'name'): { key: string; dir: 'asc' | 'desc'; sql: string } {
+  const [k, d] = (raw ?? '').split(':');
+  const key = SORT_KEYS[k] ? k : fallback;
+  const dir = SORT_KEYS[k] && (d === 'asc' || d === 'desc') ? d : SORT_KEYS[key].dir;
+  const { expr } = SORT_KEYS[key];
+  const tie = key === 'name' ? 'g.id' : 'lower(g.full_name), g.id';
+  return { key, dir, sql: `${expr} ${dir.toUpperCase()}${key === 'recent' ? ' NULLS LAST' : ''}, ${tie}` };
+}
 
 /** The last four characters of an ID number, the rest hidden. */
 export const maskId = (v: string | null | undefined) => (v ? `•••• ${v.replace(/\s+/g, '').slice(-4)}` : null);

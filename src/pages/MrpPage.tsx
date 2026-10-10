@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { cx } from '../lib/design-tokens';
 
@@ -33,42 +32,33 @@ export default function MrpPage() {
   const totalNet = (data?.data ?? []).reduce((s, r) => s + r.net, 0);
   const shortItems = (data?.data ?? []).filter(r => r.net > 0).length;
 
+  const columns = useMemo<Column<Row>[]>(() => [
+    { key: 'code', label: 'Item code', type: 'ref', value: r => r.itemCode, hideable: false },
+    { key: 'name', label: 'Description', value: r => r.itemName || null },
+    { key: 'demand', label: 'Demand', type: 'number', value: r => r.demand },
+    { key: 'onHand', label: 'On hand', type: 'number', value: r => r.onHand, render: r => <span className="tabular-nums text-muted-ink">{r.onHand}</span> },
+    { key: 'onOrder', label: 'On order', type: 'number', value: r => r.onOrder, render: r => <span className="tabular-nums text-muted-ink">{r.onOrder}</span> },
+    { key: 'net', label: 'Net to buy', type: 'number', value: r => r.net, render: r => <span className={cx('tabular-nums text-[14px] font-semibold', r.net > 0 ? 'text-danger' : 'text-muted-ink')}>{r.net > 0 ? r.net : '—'}</span> },
+  ], []);
+
   return (
     <>
       <PageHeader title="MRP" sub={`${shortItems} items short · ${totalNet} units to buy`} />
-      {error && <StaleBanner message={`Showing the last requirements we have. ${error}`} onRetry={reload} />}
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <button onClick={() => setShortfallOnly(v => !v)} aria-pressed={shortfallOnly}
-          className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', shortfallOnly ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>Shortfall only</button>
-        <div className="relative">
-          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item..." aria-label="Search requirements"
-            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[220px] max-w-full" />
-        </div>
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[680px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
-              {['Item code', 'Description', 'Demand', 'On hand', 'On order', 'Net to buy'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i >= 2 ? 'text-right' : 'text-left')}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && rows.length === 0 ? <tr><td colSpan={6}><TableSkeleton rows={6} cols={6} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={6}><div className="py-[38px] px-[22px] text-center text-[14px] font-semibold">{shortfallOnly ? 'Nothing short — stock and orders cover demand.' : 'No open demand.'}</div></td></tr>
-              : rows.map(r => (
-                <tr key={r.itemCode} className="[border-bottom:1px_solid_var(--color-line-soft)]">
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{r.itemCode}</td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{r.itemName || '—'}</td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{r.demand}</td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px] text-muted-ink">{r.onHand}</td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px] text-muted-ink">{r.onOrder}</td>
-                  <td className={cx('py-[13px] px-4 text-right tabular-nums text-[14px] font-semibold', r.net > 0 ? 'text-danger' : 'text-muted-ink')}>{r.net > 0 ? r.net : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Row>
+        id="scm.mrp" columns={columns} rows={data ? rows : null} rowKey={r => r.itemCode}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        noun={['item', 'items']} exportName="mrp"
+        toolbar={<>
+          <button onClick={() => setShortfallOnly(v => !v)} aria-pressed={shortfallOnly}
+            className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', shortfallOnly ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>Shortfall only</button>
+          <div className="relative">
+            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item..." aria-label="Search requirements"
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[220px] max-w-full" />
+          </div>
+        </>}
+        filtered={!!q} onClearFilters={() => { setSearch(''); setShortfallOnly(false); }}
+        empty={{ title: shortfallOnly ? 'Nothing short — stock and orders cover demand.' : 'No open demand.' }} />
     </>
   );
 }
