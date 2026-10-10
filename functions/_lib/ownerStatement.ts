@@ -2,7 +2,9 @@
  *  Owner ruling, Oct 2026: statements follow the workbook exactly. For one unit and one month:
  *
  *    Hospitality income   every stay split by night into the month (revenue.ts), on what the booking site paid out
- *                         (collected revenue, the workbook's 金额 Amount). Occupancy = booked nights / days in month.
+ *                         (collected revenue, the workbook's 金额 Amount), or, where payments are recorded against the booking
+ *                         (booking_payments), by each payment: a monthly instalment over the nights it covers (stayParts).
+ *                         Occupancy = booked nights / days in month.
  *  - Expense deduction    cleaning (basic and deep, per session), electricity, water, Wi-Fi, Indah Water, additional
  *                         deductions (repairs and other owner-charged costs), and, when the unit's contract says so,
  *                         miscellaneous charges of RM 100 a month scaled by occupancy (RM 96.67 at 96.67%).
@@ -62,7 +64,13 @@ export interface ContractRow {
   starts_on: string | null; ends_on: string | null; minimum_guarantee: number | null; guarantee_starts_on: string | null; guarantee_ends_on: string | null;
   misc_charges: number | null; tenant_name: string | null; agent_fee_pct: number | null;
 }
-export interface StayRow { id: string; unit_id: string; check_in: string; check_out: string; collected_revenue: number; channel: string; external_ref: string | null; guest_name: string | null }
+export interface StayRow {
+  id: string; unit_id: string; check_in: string; check_out: string; collected_revenue: number; channel: string; external_ref: string | null; guest_name: string | null;
+  /** The money the stay brought in, in pieces that each cover their own nights (stayParts). Absent: the whole stay
+   *  at collected_revenue, as before booking_payments existed. */
+  parts?: StayPart[];
+}
+export interface StayPart { check_in: string; check_out: string; amount: number }
 export interface CostRow { id: string; unit_id: string; category: string; description: string; amount: number; incurred_on: string; reference: string | null; task_kind: string | null }
 export interface AdjustmentRow { id: string; owner_id: string; unit_id: string | null; kind: string; amount: number; description: string; occurred_on: string; reference: string | null; state: string; statement_id: string | null }
 
@@ -147,6 +155,33 @@ export interface UnitMonth {
 
 const ymd = (d: string) => d.slice(0, 10);
 
+const partsOf = (s: StayRow): StayPart[] => s.parts ?? [{ check_in: s.check_in, check_out: s.check_out, amount: Number(s.collected_revenue) }];
+
+export interface PaymentPiece { reservation_id: string; amount: number; status: string; kind: string; source: string; note: string | null }
+
+/** What a stay brought in, as pieces each covering its own nights (owner, 10 Oct 2026: statements use the payments
+ *  recorded against a booking, booking_payments, where there are any):
+ *   - the owner workbook's payout lines (one per Airbnb monthly instalment), each over the dates the line covers
+ *     ("Payout line for 2026-09-03 to 2026-10-03", written by the import), received or still expected, as the
+ *     workbook counts them. They replace collected_revenue, which the import fills with the same money.
+ *   - otherwise collected_revenue (HostPlatform's figure) over the whole stay.
+ *   - plus money typed in here (a guest's payment, a site payout recorded by hand, less refunds), over the whole stay.
+ *     A direct or Channex booking has no collected_revenue: before this its statement line was RM 0. */
+export function stayParts(s: StayRow, pieces: PaymentPiece[]): StayPart[] | undefined {
+  if (!pieces.length) return undefined;
+  const whole = (amount: number): StayPart => ({ check_in: s.check_in, check_out: s.check_out, amount });
+  const lines = pieces.filter(p => p.source === 'owner_workbook' && p.kind === 'ota_payout').map(p => {
+    const m = /(\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})/.exec(p.note ?? '');
+    const inside = m && m[1] < m[2] && m[1] >= s.check_in && m[2] <= s.check_out;
+    return inside ? { check_in: m![1], check_out: m![2], amount: Number(p.amount) } : whole(Number(p.amount));
+  });
+  const typed = pieces.filter(p => p.source === 'manual' && p.status === 'received')
+    .reduce((n, p) => n + (p.kind === 'refund' ? -Number(p.amount) : Number(p.amount)), 0);
+  const parts = lines.length ? lines : [whole(Number(s.collected_revenue))];
+  if (typed) parts.push(whole(typed));
+  return parts;
+}
+
 /** One unit, one month. `stays`, `costs` and `adjustments` may hold other months and units: only what belongs here is used.
  *  adjustments: pass the ones to put on this statement (the caller decides: open ones for a new statement, dated ones for history). */
 export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, stays: StayRow[], costs: CostRow[], adjustments: AdjustmentRow[], miscMonthly: number): UnitMonth {
@@ -157,9 +192,12 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   // stays that belong to the owner (the tenant's rent is the income; under a master lease all trading is the company's).
   const ownTrading = terms.model !== 'long_term' && terms.model !== 'master_lease';
   const mine = stays.filter(s => s.unit_id === unit.id && ownTrading).map(s => {
-    const total = nightsInWindow(s.check_in, s.check_out, ymd(s.check_in), ymd(s.check_out));
     const n = nightsInWindow(ymd(s.check_in), ymd(s.check_out), start, endEx);
-    return { s, n, exact: prorate(Number(s.collected_revenue), n, total) };
+    // Each payment piece is split by night over the nights it covers, so a long stay paid in monthly instalments is
+    // credited to each month by its own instalment rather than by the stay's average night.
+    const parts = partsOf(s);
+    const exact = parts.reduce((sum, p) => sum + prorate(p.amount, nightsInWindow(p.check_in, p.check_out, start, endEx), nightsInWindow(p.check_in, p.check_out, p.check_in, p.check_out)), 0);
+    return { s, n, exact, paid: parts.reduce((sum, p) => sum + p.amount, 0) };
   }).filter(x => x.n > 0).sort((a, b) => a.s.check_in.localeCompare(b.s.check_in));
   const nights = mine.reduce((n, x) => n + x.n, 0);
   // Long-term let: the month's rent, for the days of the month the tenancy covers.
@@ -270,7 +308,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   });
   const adjustmentsTotal = mineAdj.reduce((n, a) => n + Number(a.amount), 0);
   const warnings: string[] = [];
-  const unpaid = mine.filter(x => !(Number(x.s.collected_revenue) > 0));
+  const unpaid = mine.filter(x => !(x.paid > 0));
   if (unpaid.length) warnings.push(`${unpaid.length} ${unpaid.length === 1 ? 'stay has' : 'stays have'} no payout recorded (${unpaid.reduce((n, x) => n + x.n, 0)} nights counted at RM 0): ${unpaid.map(x => `${x.s.check_in} to ${x.s.check_out}`).join(', ')}.`);
   if (terms.model === 'long_term' && !gross) warnings.push('Long-term let with no rent this month: check the tenancy dates on the contract.');
   if (terms.source === 'default') warnings.push(`No contract or split on this unit: the default ${fmtPct(100 - (terms.ownerPct ?? 0))} operator share was used.`);
@@ -306,7 +344,7 @@ export const UNIT_SQL = `
   FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
   LEFT JOIN owner_contracts c ON c.id = u.contract_id`;
 
-/** Everything needed for [from, toExclusive), for every unit, some owners' units, or one unit. Five queries. */
+/** Everything needed for [from, toExclusive), for every unit, some owners' units, or one unit. Six queries. */
 export async function loadInputs(q: Query, from: string, toExclusive: string, scope: { ownerIds?: string[]; unitId?: string } = {}): Promise<Inputs> {
   const unitWhere = scope.unitId ? 'WHERE u.id = ?' : scope.ownerIds ? 'WHERE u.owner_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : '';
   const unitArg = scope.unitId ? [scope.unitId] : scope.ownerIds ? [JSON.stringify(scope.ownerIds)] : [];
@@ -335,9 +373,19 @@ export async function loadInputs(q: Query, from: string, toExclusive: string, sc
   ]);
   const historyOf = new Map<string, ContractRow[]>();
   for (const h of history) { const l = historyOf.get(h.unit_id); if (l) l.push(h); else historyOf.set(h.unit_id, [h]); }
+  // The payments recorded against these stays (migration 0091); a database without the table reads as none.
+  const pieces = stays.length ? await q<PaymentPiece>(`
+    SELECT reservation_id, amount, status, kind, source, note FROM booking_payments
+    WHERE reservation_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(stays.map(s => s.id))).catch(() => [] as PaymentPiece[]) : [];
+  const piecesOf = new Map<string, PaymentPiece[]>();
+  for (const p of pieces) { const l = piecesOf.get(p.reservation_id); if (l) l.push(p); else piecesOf.set(p.reservation_id, [p]); }
   return {
     units: units.map(u => (historyOf.get(u.id)?.length ? { ...u, history: historyOf.get(u.id) } : u)),
-    stays: stays.map(s => ({ ...s, check_in: ymd(s.check_in), check_out: ymd(s.check_out), collected_revenue: Number(s.collected_revenue) })),
+    stays: stays.map(s => {
+      const row = { ...s, check_in: ymd(s.check_in), check_out: ymd(s.check_out), collected_revenue: Number(s.collected_revenue) };
+      const parts = stayParts(row, piecesOf.get(s.id) ?? []);
+      return parts ? { ...row, parts } : row;
+    }),
     costs: costs.map(c => ({ ...c, incurred_on: ymd(c.incurred_on), amount: Number(c.amount) })),
     adjustments: adjustments.map(a => ({ ...a, amount: Number(a.amount) })),
   };

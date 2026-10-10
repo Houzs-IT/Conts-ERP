@@ -178,3 +178,11 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Channex full sync (functions/_lib/channexQueue.ts) still counts inquiries as taken nights; the board and the clash check do not. Decide whether an inquiry should close the nights on the booking sites.
 - The booking drawer (src/components/booking) still offers Change dates on Airbnb / Booking.com / Agoda bookings; the board now refuses dragging them.
 - Rate update lists the units on the board, so with one building filtered it offers only that building; open it with All buildings to price across buildings.
+
+## Money approvals and guest documents (feat/s4-money-docs, migrations 0096-0097)
+- Migrations 0096 (approval_requests) and 0097 (document_counters, issued_documents) must be applied on production before this ships; until then refunds, payout runs, owner credits and charges, large expenses and write-offs answer with a database error.
+- Owner to set the approval limits in Settings > Approvals (defaults RM 500 for expenses, RM 2,000 for finance admins); they were chosen as placeholders, not by the owner.
+- OPEN: approvers are told only by the Approvals count in the menu and the bell. Wire notifyUsers (Stream 3, functions/_lib/notify.ts) at the two call sites notifyApprovers / notifyRequester in functions/_lib/approvals.ts once it is on main.
+- Expenses written by the system (finished cleans, utility bills from Record utilities, the workbook import) are not staged for approval; only expenses typed in on Expenses or an owner's page are.
+- Guest documents are print-ready pages (Save as PDF from the browser), not PDF files; same as owner statements.
+- Numbering under real concurrency is enforced by the database (counter row lock and one-live-document indexes); the local PGlite copy serves one connection at a time, so the parallel test there proves distinct consecutive numbers but not the index race. Re-run approvals-documents.mjs against staging Postgres before relying on it.
