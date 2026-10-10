@@ -5,7 +5,7 @@ import { d1Compat } from "../src/db/d1-compat";
 import renovation from "../src/routes/renovation";
 import projects from "../src/routes/projects";
 import { assertDisposableTestDatabase } from "./lib/doc-no-fixture";
-import { loadOpenLines, lineGroupOf } from "../src/scm/routes/site-receipts";
+import { loadOpenLines, lineGroupOf, stampSiteReceipt } from "../src/scm/routes/site-receipts";
 import { postGrnAndRollup } from "../src/scm/routes/grns";
 import { pgTransactionSupabase } from "../src/scm/lib/pg-supabase-transaction";
 import { onRenovationSoLinesChanged, projectHandoverState } from "../src/scm/lib/renovation-hooks";
@@ -212,11 +212,22 @@ describePg("renovation project routes on the real schema", () => {
     expect(elec).toMatchObject({ remaining: 1, category_group: "WORKS", room: null });
     expect(lineGroupOf(elec!)).toBe("WORKS");
 
-    const grnId = String((await sql`insert into scm.grns (grn_number, purchase_order_id, supplier_id, status, created_by, company_id)
-      values (${"GRN-" + run}, (select purchase_order_id from scm.purchase_order_items where id = ${poItems.elec!}), ${supplierId}, 'DRAFT', ${staffId}, ${CO}) returning id`)[0]!.id);
+    // Inserted the way the shared PO->GRN core inserts it: no status, so the column default applies.
+    const grnId = String((await sql`insert into scm.grns (grn_number, purchase_order_id, supplier_id, created_by, company_id)
+      values (${"GRN-" + run}, (select purchase_order_id from scm.purchase_order_items where id = ${poItems.elec!}), ${supplierId}, ${staffId}, ${CO}) returning id`)[0]!.id);
     await sql`insert into scm.grn_items (grn_id, purchase_order_item_id, material_kind, item_code, material_name, qty_received, qty_accepted, unit_price_sen, line_total_sen, company_id)
       values (${grnId}, ${poItems.elec!}, 'mfg_product', ${`RN-ELECTRICAL-${run}`}, 'Wiring', 1, 1, 100000, 100000, ${CO})`;
-    await sql`update scm.grns set received_at_site = true, project_id = ${projectId}, site_received_at = now(), supervisor_signature_r2_key = ${`renovation/${projectId}/sig.png`} where id = ${grnId}`;
+    await stampSiteReceipt(d1Compat(() => sql) as never, {
+      grnId, companyId: CO, projectId, supervisorStaffId: staffId, lat: null, lng: null, accuracyM: null,
+      photos: [{ grn_item_id: null, location: "Living", kind: "after", r2_key: `renovation/${projectId}/after.png`, caption: null, taken_at: null }],
+      supervisorSignatureR2Key: `renovation/${projectId}/sig.png`, customerSignerName: null, customerSignatureR2Key: null, notes: null,
+    });
+    const stamped = await sql`select received_at_site, project_id::int as project_id from scm.grns where id = ${grnId}`;
+    expect(stamped[0]).toMatchObject({ received_at_site: true, project_id: projectId });
+    await expect(stampSiteReceipt(d1Compat(() => sql) as never, {
+      grnId: "00000000-0000-4000-8000-00000000dead", companyId: CO, projectId, supervisorStaffId: staffId, lat: null, lng: null, accuracyM: null,
+      photos: [], supervisorSignatureR2Key: `renovation/${projectId}/sig.png`, customerSignerName: null, customerSignatureR2Key: null, notes: null,
+    })).rejects.toThrow(/matched 0/);
     await sql`insert into scm.warehouses (code, name, type, company_id, is_default) values (${"WH" + run}, 'Main', 'warehouse', ${CO}, true)`;
 
     const res = await sql.begin((tx) => postGrnAndRollup(pgTransactionSupabase(tx as never) as never, grnId, staffId, CO));
