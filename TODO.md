@@ -164,3 +164,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - The sidebar still says "Adjustments" where it means owner credits and charges, if anywhere: navigation belongs to batch 1.
 - Expense receipt upload checked through the API only (document kind 'receipt', expenses.receipt_document_id); the file picker in the Record expense form was not clicked through in a browser.
 - 26 units with no contract record still run on their own split (units.split_kind); saving their Contract tab creates the contract.
+## Calendar and rates (b3, 10 Oct)
+- Migration 0092 (units.weekend_rate, reservations.block_reason) is not yet applied to staging or production. It backfills weekend_rate = round(base_rate x 1.22) for every priced unit so live Fri/Sat prices do not move; units created later sell the weekend at the base rate until a weekend rate is set (Pricing page).
+- Channex full sync (functions/_lib/channexQueue.ts) still counts inquiries as taken nights; the board and the clash check do not. Decide whether an inquiry should close the nights on the booking sites.
+- The booking drawer (src/components/booking) still offers Change dates on Airbnb / Booking.com / Agoda bookings; the board now refuses dragging them.
+- Rate update lists the units on the board, so with one building filtered it offers only that building; open it with All buildings to price across buildings.

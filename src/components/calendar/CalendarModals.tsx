@@ -1,19 +1,17 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '../Button';
 import { Field } from '../Field';
 import ChannelMark from '../ChannelMark';
-import { date, count } from '../../lib/format';
+import { date, dateShort, count, plural } from '../../lib/format';
 import { Select } from '../Select';
 import Icon from '../Icon';
 import { UnitPicker } from '../booking/UnitPicker';
 import { CHANNEL } from '../../lib/vocabulary';
+import { COMMISSION, upliftOver } from '../../lib/pricing';
 import type { BookingChannel } from '../../lib/types';
 import { type CalendarUnit } from './types';
 
-// Channels a bulk rate push can target. Direct is the web rate itself.
-const PUSH: BookingChannel[] = ['direct', 'airbnb', 'booking_com', 'agoda'];
-
-function CentreModal({ title, sub, onClose, onSave, saveLabel, canSave, children }: { title: string; sub?: string; onClose: () => void; onSave: () => void; saveLabel: string; canSave: boolean; children: ReactNode }) {
+function CentreModal({ title, sub, onClose, onSave, saveLabel, canSave, disabledReason = 'Fill the fields first', children }: { title: string; sub?: string; onClose: () => void; onSave: () => void; saveLabel: string; canSave: boolean; disabledReason?: string; children: ReactNode }) {
   return (
     <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)]">
       <div onClick={onClose} className="absolute inset-0" />
@@ -23,7 +21,7 @@ function CentreModal({ title, sub, onClose, onSave, saveLabel, canSave, children
           <div className="px-[22px] py-4 flex flex-col gap-[14px]">{children}</div>
           <div className="px-[22px] py-[14px] [border-top:1px_solid_var(--color-line)] bg-page rounded-b-card flex justify-end gap-[9px]">
             <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button size="sm" variant="primary" type="submit" disabled={!canSave} disabledReason="Fill the fields first">{saveLabel}</Button>
+            <Button size="sm" variant="primary" type="submit" disabled={!canSave} disabledReason={disabledReason}>{saveLabel}</Button>
           </div>
         </form>
       </div>
@@ -41,143 +39,376 @@ export function SetPriceModal({ m, onClose, onSave }: { m: { unit: CalendarUnit;
   );
 }
 
+export type BlockKind = 'maintenance' | 'owner_stay' | 'other';
+const BLOCK_KINDS: { key: BlockKind; label: string; help: string }[] = [
+  { key: 'maintenance', label: 'Maintenance', help: 'Repairs or works. Shown as a block.' },
+  { key: 'owner_stay', label: 'Owner stay', help: 'The owner is staying. Shown as an owner stay.' },
+  { key: 'other', label: 'Other', help: 'Any other reason. Add a note.' },
+];
+
 export function BlockWizard({ units, initial, onClose, onSave }: {
-  units: CalendarUnit[]; initial: { unitId?: string; from?: string; to?: string };
-  onClose: () => void; onSave: (v: { unitId: string; from: string; to: string; reason: string }) => void;
+  units: CalendarUnit[]; initial: { unitId?: string; from?: string; to?: string; kind?: BlockKind };
+  onClose: () => void; onSave: (v: { unitId: string; from: string; to: string; kind: BlockKind; reason: string }) => void;
 }) {
   const [unit, setUnit] = useState(initial.unitId ?? '');
-  const [fromD, setFromD] = useState(initial.from ?? ''); const [toD, setToD] = useState(initial.to ?? ''); const [reason, setReason] = useState('');
-  const valid = !!unit && fromD !== '' && toD !== '' && toD > fromD && reason.trim() !== '';
+  const [fromD, setFromD] = useState(initial.from ?? ''); const [toD, setToD] = useState(initial.to ?? '');
+  const [kind, setKind] = useState<BlockKind>(initial.kind ?? 'maintenance');
+  const [reason, setReason] = useState('');
+  const valid = !!unit && fromD !== '' && toD !== '' && toD > fromD && (kind !== 'other' || reason.trim() !== '');
   return (
-    <CentreModal title="Block wizard" sub="Hold nights so no channel can sell them." onClose={onClose} saveLabel="Block dates" canSave={valid} onSave={() => onSave({ unitId: unit, from: fromD, to: toD, reason: reason.trim() })}>
+    <CentreModal title="Block dates" sub="Hold nights so no channel can sell them." onClose={onClose} saveLabel="Block dates" canSave={valid}
+      disabledReason={kind === 'other' && !reason.trim() ? 'Add a note saying why' : 'Pick the unit and dates first'}
+      onSave={() => onSave({ unitId: unit, from: fromD, to: toD, kind, reason: reason.trim() })}>
       <UnitPicker units={units} value={unit} onChange={setUnit} />
       <div className="grid grid-cols-2 gap-3">
         <Field label="From" type="date" value={fromD} onChange={e => setFromD(e.target.value)} />
-        <Field label="To" type="date" value={toD} min={fromD || undefined} onChange={e => setToD(e.target.value)} />
+        <Field label="To (check-out day)" type="date" value={toD} min={fromD || undefined} onChange={e => setToD(e.target.value)} />
       </div>
-      <Field label="Reason" placeholder="e.g. Plumbing works" value={reason} onChange={e => setReason(e.target.value)} help="Required. Shown on the block. A unit linked to Channex has the nights closed on the booking sites." />
+      <fieldset className="m-0 p-0 border-none flex flex-col gap-[7px]">
+        <legend className="p-0 mb-[7px] text-meta font-medium text-muted-ink">Reason</legend>
+        <div role="radiogroup" aria-label="Reason" className="grid grid-cols-3 gap-2">
+          {BLOCK_KINDS.map(k => (
+            <button key={k.key} type="button" role="radio" aria-checked={kind === k.key} onClick={() => setKind(k.key)}
+              className={`h-10 px-2 rounded-control cursor-pointer font-sans text-copy border border-solid ${kind === k.key ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink'}`}>
+              {k.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-meta text-muted-ink">{BLOCK_KINDS.find(k => k.key === kind)!.help}</span>
+      </fieldset>
+      <Field label={kind === 'other' ? 'Note' : 'Note (optional)'} placeholder={kind === 'owner_stay' ? 'e.g. Owner and family' : 'e.g. Plumbing works'} value={reason} onChange={e => setReason(e.target.value)}
+        help="Shown on the hold. A unit linked to Channex has the nights closed on the booking sites." />
     </CentreModal>
   );
 }
 
-/** Up to this many units on the board, Rate update starts with all of them ticked. */
-const PRESELECT_MAX = 12;
-const groupByBuilding = (units: CalendarUnit[]) => {
-  const m = new Map<string, CalendarUnit[]>();
-  for (const u of units) { const l = m.get(u.propertyName) ?? []; l.push(u); m.set(u.propertyName, l); }
-  return [...m.entries()];
+/* ------------------------------------------------------------------ */
+/* Rate update: three steps in one dialog                              */
+/* ------------------------------------------------------------------ */
+
+const PRICE_CHANNELS: ('web' | 'airbnb' | 'booking_com' | 'agoda')[] = ['web', 'airbnb', 'booking_com', 'agoda'];
+const CH_LABEL: Record<string, string> = { web: 'Web / Direct', airbnb: 'Airbnb', booking_com: 'Booking.com', agoda: 'Agoda' };
+/** Monday first, as the operators read a week. Values are JavaScript weekdays (0 = Sunday). */
+const WEEK: { d: number; label: string }[] = [
+  { d: 1, label: 'Mon' }, { d: 2, label: 'Tue' }, { d: 3, label: 'Wed' }, { d: 4, label: 'Thu' },
+  { d: 5, label: 'Fri' }, { d: 6, label: 'Sat' }, { d: 0, label: 'Sun' },
+];
+const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
+const MIN_STAY_OPTIONS = [{ value: '', label: 'Keep as is' }, { value: '1', label: '1 night (no minimum)' },
+  ...[2, 3, 4, 5, 6, 7, 10, 14, 21, 30].map(n => ({ value: String(n), label: `${n} nights` }))];
+
+export interface RatePricing {
+  baseRate: Record<string, number>;
+  weekendRate?: Record<string, number | null>;
+  savedUplifts?: Record<string, number>;
+  upliftShares?: Record<string, number>;
+}
+export interface RateUpdateValue {
+  unitIds: string[]; channels: string[]; weekdays: number[] | null;
+  lines: { from: string; to: string; baseRate?: number; adjustPct?: number; minStay?: number | null; stopSell?: boolean }[];
+}
+interface Range { from: string; to: string }
+type PriceMode = 'keep' | 'set' | 'up' | 'down';
+
+const addDayIso = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) + 864e5).toISOString().slice(0, 10);
+const weekdayIso = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay();
+const ringgit = (sen: number) => `RM ${Math.round(sen / 100).toLocaleString('en-MY')}`;
+const span = (xs: number[], f: (n: number) => string) => {
+  if (!xs.length) return '—';
+  const lo = Math.min(...xs), hi = Math.max(...xs);
+  return lo === hi ? f(lo) : `${f(lo)}–${Math.round(hi / 100).toLocaleString('en-MY')}`;
 };
 
-interface RateLine { from: string; to: string; price: string; minStay: string; stop: 'same' | 'close' | 'open' }
-export interface RateUpdateValue { unitIds: string[]; channels: BookingChannel[]; lines: { from: string; to: string; priceSen?: number; minStay?: number; stopSell?: boolean }[] }
+/** Up to this many units on the board, Rate update starts with all of them ticked. */
+const PRESELECT_MAX = 12;
 
-/** Several date ranges, each with its own price / minimum stay / stop sell, saved together: one save is one
- *  batch for Channex, however many ranges it holds. */
-export function RateUpdate({ units, initial, onClose, onSave }: {
-  units: CalendarUnit[]; initial: { unitIds?: string[]; from?: string; to?: string }; onClose: () => void;
-  onSave: (v: RateUpdateValue) => void;
+export function RateUpdate({ units, pricing, initial, busy, onClose, onSave }: {
+  units: CalendarUnit[]; pricing: RatePricing; initial: { unitIds?: string[]; from?: string; to?: string }; busy?: boolean;
+  onClose: () => void; onSave: (v: RateUpdateValue) => void;
 }) {
-  // Opened from the toolbar with a long board, nothing starts ticked: a price meant for one building must not
-  // reach all 139 units because the operator did not untick the rest.
-  const startAll = units.length <= PRESELECT_MAX;
-  const [unitSel, setUnitSel] = useState<Record<string, boolean>>(Object.fromEntries(units.map(u => [u.id, initial.unitIds ? initial.unitIds.includes(u.id) : startAll])));
-  const groups = groupByBuilding(units);
-  const [chanSel, setChanSel] = useState<Record<string, boolean>>({ direct: true, airbnb: true, booking_com: true, agoda: true });
-  const blank = (from = '', to = ''): RateLine => ({ from, to, price: '', minStay: '', stop: 'same' });
-  const [lines, setLines] = useState<RateLine[]>([blank(initial.from ?? '', initial.to ?? '')]);
-  const setLine = (i: number, p: Partial<RateLine>) => setLines(ls => ls.map((l, j) => (j === i ? { ...l, ...p } : l)));
+  const [step, setStep] = useState<1 | 2 | 3>(initial.unitIds?.length && initial.from ? 3 : initial.unitIds?.length ? 2 : 1);
+  const [sel, setSel] = useState<Set<string>>(() => new Set(initial.unitIds ?? (units.length <= PRESELECT_MAX ? units.map(u => u.id) : [])));
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [ranges, setRanges] = useState<Range[]>([{ from: initial.from ?? '', to: initial.to ?? initial.from ?? '' }]);
+  const [days, setDays] = useState<Set<number>>(new Set(ALL_DAYS));
+  const [mode, setMode] = useState<PriceMode>('set');
+  const [value, setValue] = useState('');
+  const [chanOff, setChanOff] = useState<Record<string, boolean>>({});
+  const [minStay, setMinStay] = useState('');
+  const [stop, setStop] = useState<'same' | 'close' | 'open'>('same');
 
-  const unitIds = units.filter(u => unitSel[u.id]).map(u => u.id);
-  const channels = PUSH.filter(c => chanSel[c]);
-  const hasPrice = (l: RateLine) => l.price !== '' && Number(l.price) >= 0;
-  const minStayOk = (l: RateLine) => l.minStay === '' || (Number.isInteger(Number(l.minStay)) && Number(l.minStay) >= 1 && Number(l.minStay) <= 60);
-  const lineOk = (l: RateLine) => l.from !== '' && l.to !== '' && l.to >= l.from && minStayOk(l) && (hasPrice(l) || l.minStay !== '' || l.stop !== 'same');
-  const anyPrice = lines.some(hasPrice);
-  const valid = unitIds.length > 0 && lines.every(lineOk) && (!anyPrice || channels.length > 0);
-  const pill = (on: boolean) => `inline-flex items-center gap-[6px] h-8 px-3 rounded-pill cursor-pointer [font-family:inherit] text-copy border border-solid ${on ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink'}`;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [busy, onClose]);
+
+  const groups = useMemo(() => {
+    const m = new Map<string, { name: string; units: CalendarUnit[] }>();
+    for (const u of units) { const k = u.propertyId ?? u.propertyName; const g = m.get(k) ?? { name: u.propertyName, units: [] }; g.units.push(u); m.set(k, g); }
+    return [...m.entries()].map(([id, g]) => ({ id, ...g }));
+  }, [units]);
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? groups.map(g => ({ ...g, units: g.units.filter(u => `${g.name} ${u.unitNumber}`.toLowerCase().includes(needle)) })).filter(g => g.units.length) : groups;
+  const chosen = units.filter(u => sel.has(u.id));
+  const toggle = (ids: string[], on: boolean) => setSel(s => { const n = new Set(s); for (const id of ids) { if (on) n.add(id); else n.delete(id); } return n; });
+
+  // Nights: every chosen weekday of every range, counted once even where ranges overlap.
+  const rangeOk = (r: Range) => r.from !== '' && r.to !== '' && r.to >= r.from;
+  const nightSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of ranges) if (rangeOk(r)) for (let d = r.from, k = 0; d <= r.to && k < 500; d = addDayIso(d), k++) if (days.has(weekdayIso(d))) s.add(d);
+    return s;
+  }, [ranges, days]);
+  const nights = nightSet.size;
+  const allWeek = days.size === 7;
+
+  // Channel rows: the web rate always; a booking site only for units connected to it.
+  const linkedCount = (ch: string) => (ch === 'web' ? chosen.length : chosen.filter(u => u.linked?.includes(ch as BookingChannel)).length);
+  const pricing_ = mode !== 'keep';
+  const channels = PRICE_CHANNELS.filter(ch => linkedCount(ch) > 0 && !chanOff[ch]);
+  const num = Number(value);
+  const valueOk = !pricing_ || (value.trim() !== '' && Number.isFinite(num) && (mode === 'set' ? num > 0 : num > 0 && num <= (mode === 'down' ? 90 : 300)));
+  const changesSomething = pricing_ || minStay !== '' || stop !== 'same';
+
+  // The example the table prices: a weekday night of each chosen unit at its standard web rate, moved as asked.
+  const exampleWeb = (u: CalendarUnit) => {
+    const base = pricing.baseRate[u.id] ?? 0;
+    if (mode === 'set') return Math.round(num * 100) || 0;
+    if (mode === 'up' || mode === 'down') return Math.max(100, Math.round(base * (1 + (mode === 'up' ? num : -num) / 100) / 100) * 100);
+    return base;
+  };
+  const rowFor = (ch: typeof PRICE_CHANNELS[number]) => {
+    const us = ch === 'web' ? chosen : chosen.filter(u => u.linked?.includes(ch as BookingChannel));
+    const ups = us.map(u => upliftOver(ch, exampleWeb(u), pricing.savedUplifts?.[`${u.id}:${ch}`], pricing.upliftShares?.[ch]));
+    const guest = us.map((u, i) => exampleWeb(u) + ups[i]);
+    const keep = ch === 'web' ? guest : guest.map(g => Math.round(g * (1 - COMMISSION[ch as 'airbnb'] / 100)));
+    return { n: us.length, ups, guest, keep };
+  };
+
+  const step1Ok = chosen.length > 0;
+  const step2Ok = ranges.every(rangeOk) && nights > 0;
+  const step3Ok = changesSomething && valueOk && (!pricing_ || channels.length > 0);
+  const total = chosen.length * nights;
+  const saveLabel = pricing_ ? `Save and push ${count(total)} ${total === 1 ? 'price' : 'prices'}` : 'Save';
+
+  function save() {
+    const lines = ranges.map(r => ({
+      from: r.from, to: r.to,
+      ...(mode === 'set' ? { baseRate: Math.round(num * 100) } : mode === 'up' ? { adjustPct: num } : mode === 'down' ? { adjustPct: -num } : {}),
+      ...(minStay !== '' ? { minStay: Number(minStay) } : {}),
+      ...(stop !== 'same' ? { stopSell: stop === 'close' } : {}),
+    }));
+    onSave({ unitIds: chosen.map(u => u.id), channels: pricing_ ? channels : [], weekdays: allWeek ? null : [...days], lines });
+  }
+
+  const unitsSummary = chosen.length === 0 ? 'None yet'
+    : (() => {
+      const bs = [...new Set(chosen.map(u => u.propertyName))];
+      const names = chosen.slice(0, 3).map(u => u.unitNumber).join(', ');
+      return `${bs.length === 1 ? bs[0] : plural(bs.length, 'building')}: ${names}${chosen.length > 3 ? ` and ${chosen.length - 3} more` : ''}`;
+    })();
+  const daysLabel = allWeek ? 'Every night' : `Only ${WEEK.filter(w => days.has(w.d)).map(w => w.label).join(', ')}`;
+  const rangesLabel = ranges.filter(rangeOk).map(r => (r.from === r.to ? dateShort(r.from) : `${dateShort(r.from)} – ${date(r.to)}`)).join('; ') || 'None yet';
+  const siteSummary = (['airbnb', 'booking_com', 'agoda'] as const).map(ch => {
+    const n = linkedCount(ch);
+    return `${CH_LABEL[ch]} ${n === 0 ? '0 (not connected, not changed)' : plural(n, 'unit')}`;
+  }).join(' · ');
+
+  const stepChip = (n: 1 | 2 | 3, label: string, ok: boolean) => (
+    <li key={n}>
+      <button type="button" onClick={() => setStep(n)} aria-current={step === n ? 'step' : undefined}
+        className={`h-8 px-3 rounded-full border-none cursor-pointer font-sans text-meta font-medium whitespace-nowrap ${step === n ? 'bg-black text-white' : ok ? 'bg-[var(--color-success)] text-[var(--color-success-fg)]' : 'bg-muted text-muted-ink'}`}>
+        {n} {label}
+      </button>
+    </li>
+  );
+  const summaryBlock = (n: 1 | 2 | 3, title: string, body: ReactNode) => (
+    <div className="flex flex-col gap-1">
+      <span className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">{n} · {title}</span>
+      <div className="text-copy text-ink">{body}</div>
+      {step !== n && <button type="button" onClick={() => setStep(n)} className="self-start p-0 bg-transparent border-none cursor-pointer font-sans text-meta font-medium text-[var(--color-text-accent)]">Change</button>}
+    </div>
+  );
 
   return (
-    <CentreModal title="Rate update" sub="Set prices, minimum stay or stop sell for one or more date ranges, saved together." onClose={onClose} saveLabel="Save" canSave={valid}
-      onSave={() => onSave({
-        unitIds, channels,
-        lines: lines.map(l => ({
-          from: l.from, to: l.to,
-          ...(hasPrice(l) ? { priceSen: Math.round(Number(l.price) * 100) } : {}),
-          ...(l.minStay !== '' ? { minStay: Number(l.minStay) } : {}),
-          ...(l.stop !== 'same' ? { stopSell: l.stop === 'close' } : {}),
-        })),
-      })}>
-      <div className="flex flex-col gap-[7px]">
-        <div className="flex items-baseline justify-between gap-3">
-          <label className="text-meta font-medium text-muted-ink">Units · {count(unitIds.length)} of {count(units.length)}</label>
-          {units.length > 1 && (
-            <button type="button" onClick={() => setUnitSel(Object.fromEntries(units.map(u => [u.id, unitIds.length !== units.length])))}
-              className="bg-transparent border-none p-0 cursor-pointer font-sans text-meta font-medium text-[var(--color-text-accent)]">
-              {unitIds.length === units.length ? 'Clear all' : 'Select all'}
-            </button>
-          )}
+    <div role="dialog" aria-modal="true" aria-label="Rate update" className="fixed inset-0 z-[60] grid place-items-center p-0 sm:p-6 bg-[var(--color-surface-scrim)]">
+      <div onClick={() => { if (!busy) onClose(); }} className="absolute inset-0" />
+      <div className="relative w-full h-full sm:h-auto sm:max-h-[min(860px,92vh)] max-w-[980px] flex flex-col bg-card sm:rounded-card shadow-[var(--shadow-overlay)] overflow-hidden">
+        <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 flex flex-wrap items-start justify-between gap-3 [border-bottom:1px_solid_var(--color-line)]">
+          <div className="min-w-0">
+            <h2 className="m-0 text-title font-semibold">Rate update</h2>
+            <p className="m-0 mt-1 text-meta text-muted-ink">Only the booking sites each unit is connected to are changed.</p>
+          </div>
+          <ol className="m-0 p-0 list-none flex gap-1.5 flex-wrap">
+            {stepChip(1, `Units${chosen.length ? ` · ${count(chosen.length)}` : ''}`, step1Ok)}
+            {stepChip(2, `Dates${nights ? ` · ${plural(nights, 'night')}` : ''}`, step2Ok)}
+            {stepChip(3, 'Prices', step3Ok)}
+          </ol>
         </div>
-        <div className={`flex flex-col gap-2.5 ${units.length > 12 ? 'max-h-[30vh] overflow-y-auto pr-1 [scrollbar-width:thin]' : ''}`}>
-          {groups.map(([name, us]) => {
-            const allOn = us.every(u => unitSel[u.id]);
-            return (
-              <div key={name} className="flex flex-col gap-1.5">
-                {groups.length > 1 && (
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-meta font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">{name}</span>
-                    <button type="button" onClick={() => setUnitSel(s => ({ ...s, ...Object.fromEntries(us.map(u => [u.id, !allOn])) }))}
-                      className="flex-none bg-transparent border-none p-0 cursor-pointer font-sans text-meta font-medium text-muted-ink hover:text-ink">
-                      {allOn ? 'None' : `All ${us.length}`}
-                    </button>
-                  </div>
-                )}
-                <div className="flex gap-2 flex-wrap">
-                  {us.map(u => { const on = !!unitSel[u.id]; return (
-                    <button key={u.id} type="button" aria-pressed={on} onClick={() => setUnitSel(s => ({ ...s, [u.id]: !on }))} className={pill(on)}>{u.unitNumber}</button>
-                  ); })}
+
+        <div className="flex-1 min-h-0 grid md:grid-cols-[280px_minmax(0,1fr)]">
+          <aside className="hidden md:flex flex-col gap-4 p-5 bg-page [border-right:1px_solid_var(--color-line)] overflow-y-auto">
+            {summaryBlock(1, 'Units', unitsSummary)}
+            {summaryBlock(2, 'Dates', <>{rangesLabel}<div className="text-meta text-muted-ink">{daysLabel}</div></>)}
+            <div className="mt-auto p-3 rounded-card bg-card border border-solid border-line flex flex-col gap-1">
+              <span className="text-caption text-muted-ink">Preview before saving</span>
+              <span className="text-heading font-semibold [font-variant-numeric:tabular-nums]">{plural(chosen.length, 'unit')} × {plural(nights, 'night')} = {plural(total, 'price')}</span>
+              {chosen.length > 0 && <span className="text-meta text-muted-ink">{siteSummary}</span>}
+            </div>
+          </aside>
+
+          <div className="min-h-0 overflow-y-auto p-4 sm:p-6 flex flex-col gap-4">
+            {step === 1 && (
+              <>
+                <div className="flex items-center gap-3">
+                  <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit or building" aria-label="Search unit or building"
+                    className="field-input flex-1 min-w-0" />
+                  <span className="flex-none text-meta text-muted-ink whitespace-nowrap">Selected {count(chosen.length)}</span>
+                  {chosen.length > 0 && <Button size="sm" variant="tertiary" type="button" onClick={() => setSel(new Set())}>Clear</Button>}
                 </div>
-              </div>
-            );
-          })}
+                <div className="flex flex-col border border-solid border-line rounded-card overflow-hidden">
+                  {shown.length === 0 && <div className="p-4 text-copy text-muted-ink">No unit matches “{q}”.</div>}
+                  {shown.map(g => {
+                    const ids = g.units.map(u => u.id);
+                    const on = ids.filter(id => sel.has(id)).length;
+                    const expanded = !!needle || open[g.id] || false;
+                    return (
+                      <div key={g.id} className="[border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
+                        <div className="flex items-center gap-2 px-3 min-h-11 bg-muted/50">
+                          <input type="checkbox" aria-label={`All of ${g.name}`} checked={on === ids.length} ref={el => { if (el) el.indeterminate = on > 0 && on < ids.length; }}
+                            onChange={() => toggle(ids, on !== ids.length)} className="w-4 h-4 accent-[var(--color-brand-black)] cursor-pointer" />
+                          <button type="button" onClick={() => setOpen(o => ({ ...o, [g.id]: !expanded }))} aria-expanded={expanded}
+                            className="flex-1 min-w-0 flex items-center gap-2 h-11 p-0 bg-transparent border-none cursor-pointer font-sans text-left text-ink">
+                            <span className="flex-1 min-w-0 text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{g.name}</span>
+                            <span className="flex-none text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{on ? `${on} of ${g.units.length}` : g.units.length}</span>
+                            <Icon name={expanded ? 'ChevronDown' : 'ChevronRight'} size="sm" />
+                          </button>
+                        </div>
+                        {expanded && g.units.map(u => (
+                          <label key={u.id} className="flex items-center gap-2.5 pl-9 pr-3 min-h-10 cursor-pointer hover:bg-muted/40 [border-top:1px_solid_var(--color-line-soft)]">
+                            <input type="checkbox" checked={sel.has(u.id)} onChange={e => toggle([u.id], e.target.checked)} className="w-4 h-4 accent-[var(--color-brand-black)] cursor-pointer" />
+                            <span className="flex-1 min-w-0 text-copy text-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
+                            <span className="flex-none flex items-center gap-1">{(u.linked ?? []).map(c => <ChannelMark key={c} ch={c} size={14} />)}</span>
+                            <span className="flex-none w-[72px] text-right text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{pricing.baseRate[u.id] ? ringgit(pricing.baseRate[u.id]) : 'No rate'}</span>
+                          </label>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {step === 2 && (
+              <>
+                <div className="flex flex-col gap-3">
+                  {ranges.map((r, i) => (
+                    <div key={i} className="grid grid-cols-[1fr_1fr_auto] items-end gap-3">
+                      <Field label={i === 0 ? 'First night' : `First night (range ${i + 1})`} type="date" value={r.from} onChange={e => setRanges(rs => rs.map((x, j) => (j === i ? { ...x, from: e.target.value, to: x.to && x.to >= e.target.value ? x.to : e.target.value } : x)))} />
+                      <Field label="Last night" type="date" value={r.to} min={r.from || undefined} onChange={e => setRanges(rs => rs.map((x, j) => (j === i ? { ...x, to: e.target.value } : x)))} />
+                      {ranges.length > 1
+                        ? <Button size="md" variant="tertiary" type="button" aria-label={`Remove range ${i + 1}`} onClick={() => setRanges(rs => rs.filter((_, j) => j !== i))}><Icon name="X" size="sm" /></Button>
+                        : <span className="w-10" />}
+                    </div>
+                  ))}
+                  {ranges.length < 20 && <div className="self-start"><Button size="sm" variant="secondary" type="button" icon={<Icon name="Plus" size="sm" />} onClick={() => setRanges(rs => [...rs, { from: '', to: '' }])}>Add another range</Button></div>}
+                </div>
+                <fieldset className="m-0 p-0 border-none flex flex-col gap-2">
+                  <legend className="p-0 mb-2 text-meta font-medium text-muted-ink">Days of the week</legend>
+                  <div className="flex flex-wrap gap-2">
+                    {WEEK.map(w => {
+                      const on = days.has(w.d);
+                      return (
+                        <button key={w.d} type="button" aria-pressed={on} onClick={() => setDays(s => { const n = new Set(s); if (on) n.delete(w.d); else n.add(w.d); return n; })}
+                          className={`h-10 min-w-[52px] px-3 rounded-control cursor-pointer font-sans text-copy border border-solid ${on ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink'}`}>{w.label}</button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    {[{ l: 'Every night', d: ALL_DAYS }, { l: 'Fri and Sat only', d: [5, 6] }, { l: 'Sun to Thu', d: [0, 1, 2, 3, 4] }].map(p => (
+                      <button key={p.l} type="button" onClick={() => setDays(new Set(p.d))} className="p-0 bg-transparent border-none cursor-pointer font-sans text-meta font-medium text-[var(--color-text-accent)]">{p.l}</button>
+                    ))}
+                  </div>
+                </fieldset>
+                <p className="m-0 text-copy text-ink">{nights ? `${plural(nights, 'night')} will change${allWeek ? '' : ` (${daysLabel.toLowerCase()})`}.` : 'Pick the dates and at least one day of the week.'}</p>
+              </>
+            )}
+
+            {step === 3 && (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Select label="Base price (Web / Direct)" showLabel size="md" value={mode} onChange={v => setMode(v as PriceMode)}
+                    options={[{ value: 'set', label: 'Set to this price' }, { value: 'up', label: 'Raise the current price by %' }, { value: 'down', label: 'Lower the current price by %' }, { value: 'keep', label: 'Keep the prices' }]} />
+                  {pricing_ && (
+                    <Field label={mode === 'set' ? 'Price (RM / night)' : 'Percentage'} type="number" min={1} max={mode === 'set' ? undefined : mode === 'down' ? 90 : 300} step="1"
+                      numeric value={value} onChange={e => setValue(e.target.value)} placeholder={mode === 'set' ? 'e.g. 420' : 'e.g. 10'}
+                      error={value !== '' && !valueOk ? (mode === 'set' ? 'Enter a price above RM 0.' : `Enter 1 to ${mode === 'down' ? 90 : 300}.`) : undefined} />
+                  )}
+                </div>
+
+                <div className="flex-none border border-solid border-line rounded-card overflow-x-auto">
+                  <div className="min-w-[520px]">
+                    <div className="grid grid-cols-[minmax(150px,1.3fr)_1fr_1fr_1.2fr] gap-3 px-3.5 py-2.5 bg-muted text-meta font-semibold text-muted-ink">
+                      <span>Channel</span><span>Markup</span><span>Guest sees</span><span>We receive</span>
+                    </div>
+                    {PRICE_CHANNELS.map(ch => {
+                      const n = linkedCount(ch);
+                      const disabled = n === 0;
+                      const on = !disabled && !chanOff[ch];
+                      const r = rowFor(ch);
+                      const markup = ch === 'web' ? 'None' : (() => {
+                        const shares = r.ups.map((u, i) => (r.guest[i] - u > 0 ? Math.round((u / (r.guest[i] - u)) * 100) : 0));
+                        return new Set(r.ups).size === 1 ? `+ ${ringgit(r.ups[0])}` : new Set(shares).size === 1 ? `+ ${shares[0]}%` : `+ ${span(r.ups, ringgit)}`;
+                      })();
+                      return (
+                        <div key={ch} className={`grid grid-cols-[minmax(150px,1.3fr)_1fr_1fr_1.2fr] gap-3 items-center px-3.5 min-h-12 [border-top:1px_solid_var(--color-line-soft)] ${on || (!pricing_ && !disabled) ? 'text-ink' : 'text-faint'}`}>
+                          <label className={`flex items-center gap-2 min-w-0 ${disabled || !pricing_ ? '' : 'cursor-pointer'}`}>
+                            {pricing_ && <input type="checkbox" checked={on} disabled={disabled} onChange={e => setChanOff(o => ({ ...o, [ch]: !e.target.checked }))} className="w-4 h-4 accent-[var(--color-brand-black)]" aria-label={`Change ${CH_LABEL[ch]}`} />}
+                            <ChannelMark ch={ch === 'web' ? 'direct' : ch} size={18} muted={disabled} />
+                            <span className="min-w-0 flex flex-col">
+                              <span className="text-copy whitespace-nowrap">{CH_LABEL[ch]}</span>
+                              {ch !== 'web' && <span className="text-caption text-muted-ink">{disabled ? 'Not connected' : n < chosen.length ? `${n} of ${chosen.length} units connected` : `${COMMISSION[ch]}% commission`}</span>}
+                            </span>
+                          </label>
+                          {disabled ? <><span className="text-copy">Not connected</span><span className="text-copy">—</span><span className="text-copy">—</span></> : <>
+                            <span className="text-copy [font-variant-numeric:tabular-nums]">{markup}</span>
+                            <span className="text-copy font-semibold [font-variant-numeric:tabular-nums]">{span(r.guest, ringgit)}</span>
+                            <span className="text-copy [font-variant-numeric:tabular-nums]">{span(r.keep, ringgit)}{ch !== 'web' && <span className="text-caption text-muted-ink"> after {COMMISSION[ch]}%</span>}</span>
+                          </>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <p className="m-0 -mt-2 text-meta text-muted-ink">
+                  {pricing_ ? 'Shown for a weekday night. Each booking site keeps its own markup on top of the base price; sites a unit is not connected to are never written.' : 'Current weekday prices. Nothing is priced; only the minimum stay or stop sell below changes.'}
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Select label="Minimum stay" showLabel size="md" value={minStay} onChange={setMinStay} options={MIN_STAY_OPTIONS} />
+                  <Select label="Stop sell" showLabel size="md" value={stop} onChange={v => setStop(v as typeof stop)}
+                    options={[{ value: 'same', label: 'Keep as is' }, { value: 'close', label: 'Stop sell (cannot be booked)' }, { value: 'open', label: 'Open for sale' }]} />
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="px-4 sm:px-6 py-3 [border-top:1px_solid_var(--color-line)] bg-page flex flex-wrap items-center justify-between gap-3">
+          <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{plural(chosen.length, 'unit')} × {plural(nights, 'night')} = {plural(total, 'price')}</span>
+          <div className="flex gap-2 ml-auto">
+            {step > 1 && <Button size="md" variant="secondary" type="button" icon={<Icon name="ChevronLeft" size="sm" />} onClick={() => setStep(s => (s - 1) as 1 | 2)}>Back</Button>}
+            <Button size="md" variant="secondary" type="button" onClick={onClose} disabled={busy} disabledReason="Saving">Cancel</Button>
+            {step < 3
+              ? <Button size="md" variant="primary" type="button" disabled={step === 1 ? !step1Ok : !step2Ok} disabledReason={step === 1 ? 'Pick at least one unit' : 'Pick the dates and days'} onClick={() => setStep(s => (s + 1) as 2 | 3)}>Next</Button>
+              : <Button size="md" variant="primary" type="button" loading={busy} disabled={!step1Ok || !step2Ok || !step3Ok}
+                  disabledReason={!step1Ok ? 'Pick at least one unit' : !step2Ok ? 'Pick the dates and days' : !changesSomething ? 'Set a price, minimum stay or stop sell' : !valueOk ? 'Enter a valid price' : 'Pick at least one channel'}
+                  onClick={save}>{saveLabel}</Button>}
+          </div>
         </div>
       </div>
-
-      <div className="flex flex-col gap-3 max-h-[46vh] overflow-y-auto">
-        {lines.map((l, i) => (
-          <div key={i} className="flex flex-col gap-2.5 p-3 border border-solid border-line rounded-card">
-            <div className="flex items-center justify-between">
-              <span className="text-meta font-semibold text-muted-ink">Range {i + 1}</span>
-              {lines.length > 1 && <Button variant="tertiary" size="sm" type="button" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}>Remove</Button>}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="From" type="date" value={l.from} onChange={e => setLine(i, { from: e.target.value })} />
-              <Field label="To" type="date" value={l.to} min={l.from || undefined} onChange={e => setLine(i, { to: e.target.value })} />
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <Field label="Price (RM)" type="number" min={0} step="0.01" numeric value={l.price} onChange={e => setLine(i, { price: e.target.value })} help="Empty keeps it." />
-              <Field label="Min stay" type="number" min={1} max={60} numeric value={l.minStay} onChange={e => setLine(i, { minStay: e.target.value })} help={minStayOk(l) ? '1 removes it.' : '1 to 60 nights.'} />
-              <Select label="Stop sell" showLabel size="md" value={l.stop} onChange={v => setLine(i, { stop: v as RateLine['stop'] })}
-                options={[{ value: 'same', label: 'Keep' }, { value: 'close', label: 'Close' }, { value: 'open', label: 'Open' }]} />
-            </div>
-          </div>
-        ))}
-        {lines.length < 20 && (
-          <div className="self-start"><Button variant="secondary" size="sm" type="button" icon={<Icon name="Plus" size="sm" />} onClick={() => setLines(ls => [...ls, blank()])}>Add another range</Button></div>
-        )}
-      </div>
-
-      {anyPrice && (
-        <div className="flex flex-col gap-[7px]">
-          <label className="text-meta font-medium text-muted-ink">Prices apply to</label>
-          <div className="flex gap-2 flex-wrap">
-            {PUSH.map(c => { const on = !!chanSel[c]; return (
-              <button key={c} type="button" aria-pressed={on} onClick={() => setChanSel(s => ({ ...s, [c]: !on }))} className={pill(on)}>
-                <ChannelMark ch={c} size={16} muted={!on} />{c === 'direct' ? 'Web / Direct' : CHANNEL[c].label}
-              </button>
-            ); })}
-          </div>
-        </div>
-      )}
-    </CentreModal>
+    </div>
   );
 }
