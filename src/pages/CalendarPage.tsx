@@ -18,7 +18,8 @@ import { todayMyt, rm, date, dateRange, dateShort, dateTime, time, timeWithZone,
 import { CHANNEL, TONE } from '../lib/vocabulary';
 import type { BookingChannel, Tone } from '../lib/types';
 import { CalendarFilters } from '../components/calendar/CalendarFilters';
-import { BlockWizard, RateUpdate, SetPriceModal } from '../components/calendar/CalendarModals';
+import { BlockWizard, RateUpdate, SetPriceModal, type BlockKind } from '../components/calendar/CalendarModals';
+import { SelectionPopover, type NightSelection } from '../components/calendar/SelectionPopover';
 import { type CalendarBlock as Block, type CalendarUnit as Unit } from '../components/calendar/types';
 
 /** Width of one night column, px. The unit column width is the CSS variable --unit-col (narrower on phones). */
@@ -46,7 +47,20 @@ const otaChannelsOf = (u: Unit) => u.channels ?? OTA_CHANNELS;
 const rateRowsFor = (u: Unit) => ['web', ...otaChannelsOf(u)].map(k => RATE_ROW_BY_KEY[k]).filter(Boolean);
 
 interface BuildingRow { id: string; name: string; units: number }
-interface Payload { from: string; to: string; buildings?: BuildingRow[]; units: Unit[]; blocks: Block[]; baseRate: Record<string, number>; rates?: Record<string, number>; uplifts?: Record<string, number>; weekendMultiplier?: number; restrictions?: Record<string, { minStay: number; stopSell: boolean }>; generatedAt: string }
+interface Payload {
+  from: string; to: string; buildings?: BuildingRow[]; units: Unit[]; blocks: Block[];
+  baseRate: Record<string, number>;
+  /** The web price of a Friday or Saturday night; null or missing: the base rate. */
+  weekendRate?: Record<string, number | null>;
+  rates?: Record<string, number>;
+  /** Each booking site's uplift on a weekday night, and on a weekend night (a default uplift is a share of the night's web price). */
+  uplifts?: Record<string, number>; weekendUplifts?: Record<string, number>;
+  savedUplifts?: Record<string, number>; upliftShares?: Record<string, number>;
+  restrictions?: Record<string, { minStay: number; stopSell: boolean }>;
+  /** Whether this person may change prices. Missing (an older backend): assume yes and let the server refuse. */
+  canSetRates?: boolean;
+  generatedAt: string;
+}
 
 /** GET /api/integrations — the OTA rows are worked out from the real Channex connections. */
 interface IntegrationRow { provider: string; state: string; lastSyncedAt: string | null; unitsLinked: number }
@@ -61,7 +75,7 @@ const SYNC_CHIP: Record<string, { label: string; tone: Tone }> = {
 const today = new Date(todayMyt());
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const addDays = (d: Date, n: number) => new Date(d.getTime() + n * 864e5);
-/** Fri and Sat nights: the nights the weekend multiplier prices up. */
+/** Fri and Sat nights: the nights a unit's weekend rate applies to. */
 const isWeekendNight = (d: Date) => d.getUTCDay() === 5 || d.getUTCDay() === 6;
 const ringgit = (sen: number) => Math.round(sen / 100).toLocaleString('en-MY');
 
@@ -70,6 +84,7 @@ const T = (n: number) => todayMyt(n);
 const FALLBACK: Payload = {
   from: T(0), to: T(SPAN - 1), generatedAt: '',
   baseRate: { u1: 28800, u2: 23100, u3: 31800, u4: 26500, u5: 24200, u6: 22800 },
+  weekendRate: { u1: 35100, u2: 28200, u3: null, u4: 32300, u5: null, u6: 27800 },
   units: [
     { id: 'u1', unitNumber: '#C-13-13A', propertyId: 'p1', propertyName: 'Agile Bukit Bintang, Imbi', channels: ['airbnb', 'booking_com', 'agoda'] },
     { id: 'u2', unitNumber: '#B-08-11', propertyId: 'p2', propertyName: 'Arcoris Mont Kiara', channels: ['airbnb', 'booking_com'] },
@@ -87,6 +102,7 @@ const FALLBACK: Payload = {
     { id: 'b6', unitId: 'u2', channel: 'booking_com', state: 'confirmed', guestName: 'Chen Yu', checkIn: T(2), checkOut: T(7), grossBookingValue: 161700, ref: 'BDC-5512087', reason: null },
     { id: 'b7', unitId: 'u4', channel: 'owner_stay', state: 'confirmed', guestName: 'Chong Wei Han', checkIn: T(7), checkOut: T(9), grossBookingValue: 0, ref: 'OWN-0032', reason: 'Owner staying, agreed 12 Sep' },
     { id: 'b8', unitId: 'u6', channel: 'maintenance_block', state: 'confirmed', guestName: 'AquaFix Sdn Bhd', checkIn: T(0), checkOut: T(6), grossBookingValue: 0, ref: 'MNT-0914', reason: 'Plumbing works' },
+    { id: 'b9', unitId: 'u5', channel: 'airbnb', state: 'inquiry', guestName: 'Tan Wei', checkIn: T(3), checkOut: T(5), grossBookingValue: 0, ref: null, reason: null },
   ],
   restrictions: { [`u1:${T(5)}`]: { minStay: 2, stopSell: false }, [`u1:${T(6)}`]: { minStay: 2, stopSell: false }, [`u2:${T(10)}`]: { minStay: 1, stopSell: true } },
 };
@@ -143,11 +159,24 @@ export default function CalendarPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [ratesPref, setRatesPref] = useState<boolean | null>(null);
   const [unitOpen, setUnitOpen] = useState<Record<string, boolean>>({});
+  // Prices set on the board before the reload brings them back, keyed `${unitId}:${channel}:${date}`: by date, not
+  // by column, so they stay on their night when the board pages to another 30 days.
   const [rateEdits, setRateEdits] = useState<Record<string, number>>({});
   const [dialog, setDialog] = useState<DialogSpec | null>(null);
   const [priceModal, setPriceModal] = useState<null | { unit: Unit; channel: string; dayIso: string; current: number }>(null);
   const [blockWizard, setBlockWizard] = useState(false);
-  const [blockPrefill, setBlockPrefill] = useState<{ unitId?: string; from?: string; to?: string }>({});
+  const [blockPrefill, setBlockPrefill] = useState<{ unitId?: string; from?: string; to?: string; kind?: BlockKind }>({});
+  const [rateBusy, setRateBusy] = useState(false);
+  // Nights being picked on one unit (a to b, column indexes, either order), the popover for a finished pick, and on
+  // phones the first tapped night while waiting for the last.
+  const [picked, setPicked] = useState<{ unitId: string; a: number; b: number } | null>(null);
+  const [popover, setPopover] = useState<NightSelection | null>(null);
+  const [tapStart, setTapStart] = useState<{ unitId: string; i: number } | null>(null);
+  const dragSel = useRef(false);
+  const suppressClick = useRef(false);
+  const lastPointer = useRef<string>('mouse');
+  // A booking-site bar that was refused a drag: the click that follows the attempt must not open its drawer.
+  const refusedDrag = useRef(false);
   const [rateUpdate, setRateUpdate] = useState<false | { unitIds?: string[]; from?: string; to?: string }>(false);
   const [openBlock, setOpenBlock] = useState<Block | null>(null);
   const [busy, setBusy] = useState(false);
@@ -178,6 +207,9 @@ export default function CalendarPage() {
     })),
     [data, dateEdits],
   );
+  // Who holds each night, from every booking whatever the filters show: filters only hide bars, so a night taken
+  // by a hidden booking still reads as taken. Inquiries hold nothing.
+  const holding = useMemo(() => liveBlocks.filter(b => !['cancelled', 'no_show', 'inquiry'].includes(b.state)), [liveBlocks]);
   const blocks = useMemo(() => liveBlocks.filter(b => {
     if (b.state === 'cancelled' || b.state === 'no_show') return false; // a cancelled or no-show stay releases its dates on the board
     if (off[b.channel]) return false;
@@ -199,19 +231,20 @@ export default function CalendarPage() {
   const todayEdge = (i: number) => (i === todayIdx ? TODAY_EDGES : '');
 
   const buildingCount = properties.length;
-  // Per unit: its bars, and which booking holds each night of the window. Worked out once per change,
-  // not once per row per render.
+  // Per unit: the bars the filters show, and which booking holds each night of the window (from every booking,
+  // not just the shown ones). Worked out once per change, not once per row per render.
   const byUnit = useMemo(() => {
     const m = new Map<string, { bars: Block[]; cells: (Block | null)[] }>();
     for (const u of units) m.set(u.id, { bars: [], cells: Array(span).fill(null) });
-    for (const b of blocks) {
+    for (const b of blocks) m.get(b.unitId)?.bars.push(b);
+    for (const b of holding) {
       const row = m.get(b.unitId);
       if (!row) continue;
-      row.bars.push(b);
       for (let i = Math.max(0, dayIndex(b.checkIn)); i < Math.min(span, dayIndex(b.checkOut)); i++) row.cells[i] = b;
     }
     return m;
-  }, [units, blocks, data?.from]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [units, blocks, holding, data?.from]); // eslint-disable-line react-hooks/exhaustive-deps
+  const canSetRates = data?.canSetRates !== false;
   const allFolded = groups.length > 1 && groups.every(g => folded[g.id]);
   // Booking-site toggles only for sites at least one shown unit is on; direct, block and owner stay always.
   const filterChannels = useMemo(() => {
@@ -228,17 +261,25 @@ export default function CalendarPage() {
   const lastSync = otaRows.map(r => r.lastSyncedAt).filter((x): x is string => !!x).sort().pop() ?? null;
   const syncTrouble = otaRows.some(r => r.state === 'degraded' || r.state === 'failed' || r.state === 'expired');
 
+  /** A unit's web price on a weekday and on a Friday or Saturday night. */
+  const webRates = (unitId: string) => {
+    const base = data?.baseRate[unitId] ?? 0;
+    return { base, weekend: data?.weekendRate?.[unitId] ?? base };
+  };
   function rateFor(unitId: string, channel: string, i: number) {
-    const key = `${unitId}:${channel}:${i}`;
+    const key = `${unitId}:${channel}:${dayIso(i)}`;
     if (rateEdits[key] != null) return rateEdits[key];
-    const saved = data?.rates?.[`${unitId}:${channel}:${dayIso(i)}`];
+    const saved = data?.rates?.[key];
     if (saved != null) return saved;
-    // Same rule as the Pricing page and Channex: (base + the channel's uplift), weekend multiplier on Fri/Sat.
-    const standard = (data?.baseRate[unitId] ?? 0) + (data?.uplifts?.[`${unitId}:${channel}`] ?? 0);
-    return isWeekendNight(addDays(gridStart, i)) ? Math.round(standard * (data?.weekendMultiplier ?? 1.22)) : standard;
+    // Same rule as the Pricing page and Channex (functions/_lib/channelPrice.ts): the night's web price (the
+    // weekend rate on Fri/Sat) plus the channel's uplift on that night.
+    const weekend = isWeekendNight(addDays(gridStart, i));
+    const web = weekend ? webRates(unitId).weekend : webRates(unitId).base;
+    if (channel === 'web') return web;
+    return web + ((weekend ? data?.weekendUplifts : data?.uplifts)?.[`${unitId}:${channel}`] ?? data?.uplifts?.[`${unitId}:${channel}`] ?? 0);
   }
   function setPrice(unitId: string, channel: string, i: number, rmValue: number) {
-    const key = `${unitId}:${channel}:${i}`;
+    const key = `${unitId}:${channel}:${dayIso(i)}`;
     const prev = rateEdits[key];
     setRateEdits(e => ({ ...e, [key]: Math.round(rmValue * 100) }));
     api.put('/rates', { unitId, channel, date: dayIso(i), rate: Math.round(rmValue * 100) })
@@ -246,22 +287,26 @@ export default function CalendarPage() {
       .catch(err => { setRateEdits(e => { const n = { ...e }; if (prev == null) delete n[key]; else n[key] = prev; return n; }); notifyFailure(err); });
   }
 
-  function emptyNight(unit: Unit, i: number) {
-    setDialog({
-      title: `${unit.unitNumber} · ${date(dayIso(i))}`,
-      body: 'This night is open. Block it, create a reservation, or set a price.',
-      confirmLabel: 'Set price',
-      extraActions: [
-        { label: 'Block dates', onClick: () => { setDialog(null); setBlockPrefill({ unitId: unit.id, from: dayIso(i), to: dayIso(i + 1) }); setBlockWizard(true); } },
-        { label: 'Create reservation', onClick: () => { setDialog(null); window.location.hash = `#/reservations/bookings?create=1&forUnit=${encodeURIComponent(unit.id)}&checkIn=${dayIso(i)}&checkOut=${dayIso(i + 1)}`; } },
-      ],
-      onConfirm: () => { setDialog(null); setPriceModal({ unit, channel: 'web', dayIso: dayIso(i), current: rateFor(unit.id, 'web', i) }); },
+  /** Nights a..b (either order) of a unit were picked: open the Book / Block / Change price card at (x, y). */
+  function openPick(unit: Unit, a: number, b: number, x: number, y: number) {
+    const lo = Math.max(0, Math.min(a, b)), hi = Math.min(span - 1, Math.max(a, b));
+    const cells = byUnit.get(unit.id)?.cells ?? [];
+    const taken = cells.slice(lo, hi + 1).filter(Boolean) as Block[];
+    setPicked({ unitId: unit.id, a: lo, b: hi });
+    setTapStart(null);
+    setPopover({
+      unitId: unit.id, unitNumber: unit.unitNumber, first: dayIso(lo), last: dayIso(hi), nights: hi - lo + 1,
+      taken: taken.length, takenBy: taken[0] ? (taken[0].guestName || CHANNEL[taken[0].channel].label) : null,
+      priceNow: rateFor(unit.id, 'web', lo), x, y,
     });
   }
+  function closePick() { setPopover(null); setPicked(null); setTapStart(null); }
+  /** The night column under the pointer on a unit's track. */
+  const nightAt = (e: { clientX: number; currentTarget: Element }) => Math.floor((e.clientX - e.currentTarget.getBoundingClientRect().left) / COL);
 
-  /** An existing booking/block on the same unit that overlaps [ci, co). */
+  /** An existing booking/block on the same unit that overlaps [ci, co). Inquiries hold nothing. */
   function conflictFor(unitId: string, ci: string, co: string, excludeId?: string) {
-    return liveBlocks.find(o =>
+    return holding.find(o =>
       o.unitId === unitId && o.id !== excludeId
       && dayIndex(o.checkIn) < dayIndex(co) && dayIndex(ci) < dayIndex(o.checkOut),
     ) ?? null;
@@ -344,14 +389,14 @@ export default function CalendarPage() {
         actions={phone ? (
           // Phones: icon-only 42px squares, each with its own label for screen readers.
           <div className="flex items-center gap-2">
-            <button type="button" className={toolBtn} onClick={() => setRateUpdate({})} aria-label="Rate update" title="Rate update"><Icon name="Tag" size="sm" /></button>
-            <button type="button" className={toolBtn} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }} aria-label="Block wizard" title="Block dates"><Icon name="Ban" size="sm" /></button>
+            {canSetRates && <button type="button" className={toolBtn} onClick={() => setRateUpdate({})} aria-label="Rate update" title="Rate update"><Icon name="Tag" size="sm" /></button>}
+            <button type="button" className={toolBtn} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }} aria-label="Block dates" title="Block dates"><Icon name="Ban" size="sm" /></button>
             <button type="button" className={toolBtn} onClick={refresh} disabled={syncing} aria-label="Refresh" title="Pull new bookings from the channels">{refreshIcon}</button>
           </div>
         ) : (
           <>
-            <Button size="sm" variant="secondary" icon={<Icon name="Tag" size="sm" />} onClick={() => setRateUpdate({})}>Rate update</Button>
-            <Button size="sm" variant="secondary" icon={<Icon name="Ban" size="sm" />} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }} title="Block dates">Block wizard</Button>
+            {canSetRates && <Button size="sm" variant="secondary" icon={<Icon name="Tag" size="sm" />} onClick={() => setRateUpdate({})}>Rate update</Button>}
+            <Button size="sm" variant="secondary" icon={<Icon name="Ban" size="sm" />} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }} title="Block dates">Block dates</Button>
             <Button size="sm" variant="secondary" icon={refreshIcon} onClick={refresh} disabled={syncing} disabledReason="Pulling new bookings from the channels" title="Pull new bookings from the channels">Refresh</Button>
           </>
         )}
@@ -407,6 +452,9 @@ export default function CalendarPage() {
             <CalendarFilters channels={filterChannels} properties={properties} property={property} setProperty={setProperty}
               off={off} setOff={setOff} statusOff={statusOff} setStatusOff={setStatusOff} dirty={filtersDirty}
               onReset={() => { setOff({}); setStatusOff({}); setProperty('all'); }} />
+            {(offCount > 0 || Object.values(statusOff).some(Boolean)) && (
+              <p className="m-0 mt-2 text-meta text-muted-ink">Filters only hide booking bars. Free and Full always count every booking.</p>
+            )}
           </div>
         </div>
 
@@ -492,14 +540,24 @@ export default function CalendarPage() {
                               <Icon name={rowOpen ? 'ChevronDown' : 'ChevronRight'} size="sm" />
                             </span>
                             <span className="min-w-0 flex flex-col gap-px">
-                              <span className="text-copy font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
-                              {/* The building is the group header above, so the second line is just today's state. */}
-                              {readiness && (
-                                <span className="flex items-center gap-[5px] min-w-0 text-caption text-muted-ink whitespace-nowrap">
-                                  <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: readiness.dot }} />
-                                  <span className="overflow-hidden text-ellipsis">{readiness.label}</span>
-                                </span>
-                              )}
+                              <span className="flex items-center gap-[5px] min-w-0">
+                                {readiness && <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: readiness.dot }} title={readiness.label} aria-label={readiness.label} />}
+                                <span className="text-copy font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
+                              </span>
+                              {/* The building is the group header above, so the lines under the number are its prices. */}
+                              {(() => {
+                                const w = webRates(u.id);
+                                if (w.base <= 0) return <span className="text-caption text-faint whitespace-nowrap">No rate set</span>;
+                                return (
+                                  <>
+                                    <span className="hidden md:block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis [font-variant-numeric:tabular-nums]">
+                                      Web RM {ringgit(w.base)}{w.weekend !== w.base ? ` · Weekend RM ${ringgit(w.weekend)}` : ''}
+                                    </span>
+                                    <span className="md:hidden text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]">Web RM {ringgit(w.base)}</span>
+                                    {w.weekend !== w.base && <span className="md:hidden text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]">Wknd RM {ringgit(w.weekend)}</span>}
+                                  </>
+                                );
+                              })()}
                             </span>
                           </button>
                         </div>
@@ -508,40 +566,99 @@ export default function CalendarPage() {
                             it is. The column shading comes from the layer behind the rows. */}
                         <div className="group relative flex-none h-16 cursor-pointer" style={{ width: span * COL }}
                           aria-label={`${u.unitNumber} nights`}
-                          onMouseMove={e => { const r = e.currentTarget.getBoundingClientRect(); e.currentTarget.style.setProperty('--hx', `${Math.floor((e.clientX - r.left) / COL) * COL}px`); }}
+                          onPointerDown={e => {
+                            lastPointer.current = e.pointerType;
+                            if (e.button !== 0 || phone || e.pointerType === 'touch') return;
+                            const i = nightAt(e);
+                            if (i < 0 || cells[i]) return;
+                            e.preventDefault();
+                            setPopover(null); setTapStart(null);
+                            setPicked({ unitId: u.id, a: i, b: i });
+                            dragSel.current = true;
+                            e.currentTarget.setPointerCapture(e.pointerId);
+                          }}
+                          onPointerMove={e => {
+                            const r = e.currentTarget.getBoundingClientRect();
+                            e.currentTarget.style.setProperty('--hx', `${Math.floor((e.clientX - r.left) / COL) * COL}px`);
+                            if (!dragSel.current) return;
+                            const i = Math.max(0, Math.min(span - 1, nightAt(e)));
+                            setPicked(p => (p && p.unitId === u.id && p.b !== i ? { ...p, b: i } : p));
+                          }}
+                          onPointerUp={e => {
+                            if (!dragSel.current) return;
+                            dragSel.current = false; suppressClick.current = true;
+                            const i = Math.max(0, Math.min(span - 1, nightAt(e)));
+                            const a = picked?.unitId === u.id ? picked.a : i;
+                            openPick(u, a, i, e.clientX, e.clientY);
+                          }}
+                          onPointerCancel={() => { dragSel.current = false; setPicked(null); }}
                           onClick={e => {
-                            const r = e.currentTarget.getBoundingClientRect(), i = Math.floor((e.clientX - r.left) / COL);
+                            if (suppressClick.current) { suppressClick.current = false; return; }
+                            const i = nightAt(e);
                             if (i < 0 || i >= span) return;
-                            const booked = cells[i];
-                            if (booked) setOpenBlock(booked); else emptyNight(u, i);
+                            const tapMode = phone || lastPointer.current === 'touch';
+                            if (!tapMode) { if (cells[i]) setOpenBlock(cells[i]); return; }
+                            // Phones: the first tap marks the first night, the second the last.
+                            if (tapStart && tapStart.unitId === u.id) { openPick(u, tapStart.i, i, e.clientX, e.clientY); return; }
+                            if (cells[i]) { setOpenBlock(cells[i]); return; }
+                            setPopover(null);
+                            setTapStart({ unitId: u.id, i });
+                            setPicked({ unitId: u.id, a: i, b: i });
                           }}
                           onDragOver={e => { if (dragRef.current) e.preventDefault(); }}
                           onDrop={e => { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); dropOnDay(u.id, Math.floor((e.clientX - r.left) / COL)); }}>
                           <div aria-hidden className="absolute top-0 bottom-0 hidden group-hover:block bg-sunken/80 pointer-events-none" style={{ left: 'var(--hx, -100px)', width: COL }} />
+                          {picked?.unitId === u.id && (() => {
+                            const lo = Math.min(picked.a, picked.b), hi = Math.max(picked.a, picked.b), n = hi - lo + 1;
+                            return (
+                              <div aria-hidden className="absolute top-2.5 bottom-2.5 z-[3] box-border rounded-[8px] border-2 border-solid border-gold bg-gold-tint/80 grid place-items-center pointer-events-none text-meta font-semibold text-[var(--color-text-accent)] whitespace-nowrap overflow-hidden"
+                                style={{ left: lo * COL + 2, width: n * COL - 4 }}>
+                                {n * COL > 90 ? `${n === 1 ? dateShort(dayIso(lo)) : `${dateShort(dayIso(lo))} – ${dateShort(dayIso(hi))}`} · ${plural(n, 'night')}` : n}
+                              </div>
+                            );
+                          })()}
                           {unitBlocks.map(b => {
                             const ci = dayIndex(b.checkIn), co = dayIndex(b.checkOut);
                             const s = Math.max(0, ci), e = Math.min(span, co);
                             if (e <= s) return null;
                             const ch = CHANNEL[b.channel]; const hold = ch.border !== 'solid';
+                            const inquiry = b.state === 'inquiry';
+                            const ota = OTA_CHANNELS.includes(b.channel);
+                            const movable = !inquiry && !ota;
                             const clipL = ci < 0, clipR = co > span;
                             const inset = 3;
                             const left = s * COL + (clipL ? 0 : inset), width = (e - s) * COL - (clipL ? 0 : inset) - (clipR ? 0 : inset);
                             const r = (on: boolean) => (on ? 0 : 8);
-                            const fullName = b.guestName || (b.channel === 'owner_stay' ? 'Owner stay' : b.channel === 'maintenance_block' ? 'Blocked' : ch.label);
+                            const fullName = inquiry ? `Inquiry · not holding${b.guestName ? ` · ${b.guestName}` : ''}`
+                              : b.guestName || (b.channel === 'owner_stay' ? 'Owner stay' : b.channel === 'maintenance_block' ? (b.blockReason === 'other' ? 'Blocked' : 'Maintenance') : ch.label);
                             const firstName = fullName.split(' ')[0];
                             // A one-night bar is too narrow for logo and name side by side, so they stack.
                             const narrow = width < 100;
                             return (
-                              <div key={b.id} draggable onClick={e => { e.stopPropagation(); setOpenBlock(b); }}
-                                title={`${fullName} · ${ch.label}${b.ref ? ' · ' + b.ref : ''} · ${dateRange(b.checkIn, b.checkOut)}${b.reason ? ' · ' + b.reason : ''} · drag to move`}
+                              <div key={b.id} draggable={!inquiry} onClick={e => { e.stopPropagation(); if (refusedDrag.current) { refusedDrag.current = false; return; } setOpenBlock(b); }}
+                                onPointerDown={e => e.stopPropagation()}
+                                title={`${fullName} · ${ch.label}${b.ref ? ' · ' + b.ref : ''} · ${dateRange(b.checkIn, b.checkOut)}${b.reason ? ' · ' + b.reason : ''}${movable ? ' · drag to move' : ota ? ` · dates change on ${ch.label}` : ''}`}
                                 onDragStart={ev => {
+                                  if (!movable) {
+                                    // A booking site owns its booking's dates: moving it here would leave the site on the old ones.
+                                    ev.preventDefault();
+                                    refusedDrag.current = true;
+                                    window.setTimeout(() => { refusedDrag.current = false; }, 400);
+                                    if (ota) toast({ tone: 'info', title: `Change dates on ${ch.label}.`, body: `This booking came from ${ch.label}. Change its dates there; the new dates come back here on the next sync.` });
+                                    return;
+                                  }
                                   ev.dataTransfer.effectAllowed = 'move';
                                   const rect = ev.currentTarget.getBoundingClientRect();
                                   dragRef.current = { id: b.id, grabOffset: (s - ci) + Math.max(0, Math.floor((ev.clientX - rect.left) / COL)) };
                                 }}
                                 onDragEnd={() => { dragRef.current = null; }}
-                                className={`absolute top-2.5 bottom-2.5 z-[2] box-border flex overflow-hidden cursor-grab active:cursor-grabbing select-none hover:brightness-[0.98] ${narrow ? 'flex-col justify-center items-start gap-0.5 px-1.5' : 'items-center gap-1.5 px-2'}`}
-                                style={{
+                                className={`absolute top-2.5 bottom-2.5 z-[2] box-border flex overflow-hidden ${movable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} select-none hover:brightness-[0.98] ${narrow ? 'flex-col justify-center items-start gap-0.5 px-1.5' : 'items-center gap-1.5 px-2'}`}
+                                style={inquiry ? {
+                                  // An inquiry holds nothing: an outline only, so the night still reads as open.
+                                  left, width, color: 'var(--color-text-muted)', background: 'transparent',
+                                  border: '1px dashed var(--color-line-strong)',
+                                  borderRadius: `${r(clipL)}px ${r(clipR)}px ${r(clipR)}px ${r(clipL)}px`,
+                                } : {
                                   left, width, color: ch.ink,
                                   // Holds read as a pale, finely hatched band so a long block does not shout over the bookings around it.
                                   background: hold ? `repeating-linear-gradient(135deg, color-mix(in srgb, ${ch.tint} 70%, var(--color-surface-card)) 0 2px, var(--color-surface-card) 2px 9px)` : ch.tint,
@@ -578,10 +695,10 @@ export default function CalendarPage() {
                               const minStay = rs && rs.minStay > 1 ? rs.minStay : 0;
                               const restriction = rs?.stopSell ? 'Closed for sale' : minStay ? `Minimum ${minStay} nights` : 'No minimum stay, open for sale';
                               return (
-                                <button key={i} type="button" onClick={() => setRateUpdate({ unitIds: [u.id], from: dayIso(i), to: dayIso(i) })}
-                                  title={`${left ? '1 of 1 unit available' : 'Sold'} · ${restriction} · click to change`}
+                                <button key={i} type="button" disabled={!canSetRates} onClick={() => setRateUpdate({ unitIds: [u.id], from: dayIso(i), to: dayIso(i) })}
+                                  title={`${left ? '1 of 1 unit available' : 'Sold'} · ${restriction}${canSetRates ? ' · click to change' : ''}`}
                                   style={{ width: COL }}
-                                  className={`flex-none box-border h-10 md:h-8 p-0 pl-1 border-none bg-transparent hover:bg-sunken/80 cursor-pointer font-sans text-meta whitespace-nowrap flex items-center justify-end gap-0.5 [font-variant-numeric:tabular-nums] ${minStay && !rs?.stopSell ? 'pr-1.5' : 'pr-2'} ${left ? 'text-ink-2' : 'text-faint'}`}>
+                                  className={`flex-none box-border h-10 md:h-8 p-0 pl-1 border-none bg-transparent enabled:hover:bg-sunken/80 enabled:cursor-pointer disabled:cursor-default font-sans text-meta whitespace-nowrap flex items-center justify-end gap-0.5 [font-variant-numeric:tabular-nums] ${minStay && !rs?.stopSell ? 'pr-1.5' : 'pr-2'} ${left ? 'text-ink-2' : 'text-faint'}`}>
                                   {rs?.stopSell
                                     ? <span className="px-1 rounded-[4px] text-caption font-semibold leading-[16px]" style={{ background: TONE.critical.bg, color: TONE.critical.fg }}>Closed</span>
                                     : <>
@@ -613,14 +730,14 @@ export default function CalendarPage() {
                               }>
                                 {days.map((_, i) => {
                                   const price = rateFor(u.id, r.key, i);
-                                  const custom = rateEdits[`${u.id}:${r.key}:${i}`] != null || data?.rates?.[`${u.id}:${r.key}:${dayIso(i)}`] != null;
+                                  const custom = rateEdits[`${u.id}:${r.key}:${dayIso(i)}`] != null || data?.rates?.[`${u.id}:${r.key}:${dayIso(i)}`] != null;
                                   // No price to show: the unit has no base rate yet, or the site is not linked and nothing was set by hand.
                                   const none = !custom && (price <= 0 || unlinked);
                                   return (
-                                    <button key={i} type="button" onClick={() => setPriceModal({ unit: u, channel: r.key, dayIso: dayIso(i), current: price })}
-                                      title={`${r.label} · ${date(dayIso(i))} · ${none ? (unlinked ? `not linked to ${r.label}, so no price is sent` : 'no rate set') : `RM ${ringgit(price)}`}${custom ? ' · set by hand' : ''} · click to set`}
+                                    <button key={i} type="button" disabled={!canSetRates} onClick={() => setPriceModal({ unit: u, channel: r.key, dayIso: dayIso(i), current: price })}
+                                      title={`${r.label} · ${date(dayIso(i))} · ${none ? (unlinked ? `not linked to ${r.label}, so no price is sent` : 'no rate set') : `RM ${ringgit(price)}`}${custom ? ' · set by hand' : ''}${canSetRates ? ' · click to set' : ''}`}
                                       style={{ width: COL }}
-                                      className={`flex-none box-border h-10 md:h-8 p-0 pr-2 border-none bg-transparent hover:bg-sunken/80 cursor-pointer font-sans text-meta text-right [font-variant-numeric:tabular-nums] ${none ? 'text-faint' : custom ? 'font-semibold text-ink' : 'text-ink-2'}`}>
+                                      className={`flex-none box-border h-10 md:h-8 p-0 pr-2 border-none bg-transparent enabled:hover:bg-sunken/80 enabled:cursor-pointer disabled:cursor-default font-sans text-meta text-right [font-variant-numeric:tabular-nums] ${none ? 'text-faint' : custom ? 'font-semibold text-ink' : 'text-ink-2'}`}>
                                       {none ? '—' : ringgit(price)}
                                     </button>
                                   );
@@ -654,32 +771,56 @@ export default function CalendarPage() {
       <Dialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
       {priceModal && <SetPriceModal m={priceModal} onClose={() => setPriceModal(null)}
         onSave={rmValue => { const i = dayIndex(priceModal.dayIso); setPrice(priceModal.unit.id, priceModal.channel, i, rmValue); setPriceModal(null); }} />}
-      {blockWizard && <BlockWizard units={units} initial={blockPrefill} onClose={() => setBlockWizard(false)}
+      {popover && (() => {
+        const u = allUnits.find(x => x.id === popover.unitId);
+        if (!u) return null;
+        const checkOut = iso(addDays(new Date(popover.last), 1));
+        return (
+          <SelectionPopover sel={popover} phone={phone} canSetRates={canSetRates} onClose={closePick}
+            onBook={() => { closePick(); window.location.hash = `#/reservations/bookings?create=1&forUnit=${encodeURIComponent(u.id)}&checkIn=${popover.first}&checkOut=${checkOut}`; }}
+            onBlock={() => { closePick(); setBlockPrefill({ unitId: u.id, from: popover.first, to: checkOut }); setBlockWizard(true); }}
+            onPrice={() => { closePick(); setRateUpdate({ unitIds: [u.id], from: popover.first, to: popover.last }); }} />
+        );
+      })()}
+      {tapStart && !popover && (() => {
+        const u = allUnits.find(x => x.id === tapStart.unitId);
+        return (
+          <div role="status" className="fixed left-3 right-3 bottom-3 z-[55] bg-black text-white rounded-card shadow-[var(--shadow-overlay)] px-4 py-3 flex items-center gap-3">
+            <span className="flex-1 min-w-0 text-copy">{u?.unitNumber} · from {dateShort(dayIso(tapStart.i))}. Tap the last night.</span>
+            <button type="button" onClick={() => u && openPick(u, tapStart.i, tapStart.i, window.innerWidth / 2, window.innerHeight - 80)}
+              className="flex-none h-9 px-3 rounded-control border border-solid border-white/40 bg-transparent text-white font-sans text-meta font-semibold cursor-pointer">Just this night</button>
+            <button type="button" onClick={closePick} aria-label="Cancel picking" className="flex-none w-9 h-9 grid place-items-center rounded-control border-none bg-transparent text-white cursor-pointer"><Icon name="X" size="sm" /></button>
+          </div>
+        );
+      })()}
+      {blockWizard && <BlockWizard units={allUnits} initial={blockPrefill} onClose={() => setBlockWizard(false)}
         onSave={v => {
           const clash = conflictFor(v.unitId, v.from, v.to);
-          if (clash) { toast({ tone: 'critical', title: 'Dates unavailable.', body: `${clash.guestName} already holds ${dateRange(clash.checkIn, clash.checkOut)} on this unit.` }); return; }
-          api.post<{ effects?: { channel: ChannelSync } }>('/blocks', { unitId: v.unitId, from: v.from, to: v.to, reason: v.reason })
-            .then(res => { setBlockWizard(false); toast({ tone: 'success', title: 'Dates blocked.', body: `${dateRange(v.from, v.to)}. ${channelNote(res?.effects?.channel, 'held')}`.trim() }); reload(); })
+          if (clash) { toast({ tone: 'critical', title: 'Dates unavailable.', body: `${clash.guestName || CHANNEL[clash.channel].label} already holds ${dateRange(clash.checkIn, clash.checkOut)} on this unit.` }); return; }
+          api.post<{ effects?: { channel: ChannelSync } }>('/blocks', { unitId: v.unitId, from: v.from, to: v.to, kind: v.kind, reason: v.reason })
+            .then(res => { setBlockWizard(false); toast({ tone: 'success', title: v.kind === 'owner_stay' ? 'Owner stay added.' : 'Dates blocked.', body: `${dateRange(v.from, v.to)}. ${channelNote(res?.effects?.channel, 'held')}`.trim() }); reload(); })
             .catch(e => toast({ tone: 'critical', title: 'Dates not blocked.', body: e instanceof Error ? e.message : 'Try again in a moment.' }));
         }} />}
-      {rateUpdate && <RateUpdate units={units} initial={rateUpdate} onClose={() => setRateUpdate(false)}
+      {rateUpdate && <RateUpdate units={allUnits} initial={rateUpdate} busy={rateBusy} onClose={() => { if (!rateBusy) setRateUpdate(false); }}
+        pricing={{ baseRate: data?.baseRate ?? {}, weekendRate: data?.weekendRate, savedUplifts: data?.savedUplifts, upliftShares: data?.upliftShares }}
         onSave={v => {
-          api.post('/rates/bulk', {
-            unitIds: v.unitIds, channels: v.channels,
-            lines: v.lines.map(l => ({
-              from: l.from, to: l.to,
-              ...(l.priceSen !== undefined ? { baseRate: l.priceSen } : {}),
-              ...(l.minStay !== undefined ? { minStay: l.minStay } : {}),
-              ...(l.stopSell !== undefined ? { stopSell: l.stopSell } : {}),
-            })),
-          })
-            .then(() => {
+          setRateBusy(true);
+          api.post<{ nights?: number; skipped?: Record<string, number>; syncFailed?: number }>('/rates/bulk', v)
+            .then(res => {
               setRateUpdate(false);
               const ranges = v.lines.length === 1 ? dateRange(v.lines[0].from, v.lines[0].to) : plural(v.lines.length, 'date range');
-              toast({ tone: 'success', title: 'Saved.', body: `${plural(v.unitIds.length, 'unit')} · ${ranges}.` });
+              const skipped = Object.entries(res?.skipped ?? {}).map(([c, n]) => `${CHANNEL[c as BookingChannel]?.label ?? c} on ${plural(n, 'unit')}`);
+              toast({
+                tone: res?.syncFailed ? 'warning' : 'success', title: 'Saved.',
+                body: [`${plural(v.unitIds.length, 'unit')} · ${ranges}.`,
+                  skipped.length ? `Not connected, left alone: ${skipped.join(', ')}.` : '',
+                  res?.syncFailed ? `${plural(res.syncFailed, 'unit')} could not be queued for the booking sites; see System health.` : ''].filter(Boolean).join(' '),
+              });
+              setRateEdits({});
               reload();
             })
-            .catch(notifyFailure);
+            .catch(notifyFailure)
+            .finally(() => setRateBusy(false));
         }} />}
     </>
   );

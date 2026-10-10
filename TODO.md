@@ -165,3 +165,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner questions, contract defaults in use: typed amount allowed when it differs from measure x rate (flagged *); rounding per line to the sen; QT-YYMM-NNN; PO split 30/65/5; credit note to the sales-return account; supply-by-owner goods get no PO; promotion column = unit price.
 - Not yet observed on a running engine: SKU photo upload through R2, phone site receipt submit, revenue and credit-note journals, the PO payment-schedule card; scripts/api-checks/renovation-project.mjs is written but not yet run.
 - Site receipt POST goes through the REST goods-receipt core and counts toward the free plan's 50 outside calls per request. Engine ESLint cannot run in Conts (engine/scripts/eslint and lint-ratchet.mjs were not copied).
+
+## Calendar and rates (b3, 10 Oct)
+- Migration 0092 (units.weekend_rate, reservations.block_reason) is not yet applied to staging or production. It backfills weekend_rate = round(base_rate x 1.22) for every priced unit so live Fri/Sat prices do not move; units created later sell the weekend at the base rate until a weekend rate is set (Pricing page).
+- Channex full sync (functions/_lib/channexQueue.ts) still counts inquiries as taken nights; the board and the clash check do not. Decide whether an inquiry should close the nights on the booking sites.
+- The booking drawer (src/components/booking) still offers Change dates on Airbnb / Booking.com / Agoda bookings; the board now refuses dragging them.
+- Rate update lists the units on the board, so with one building filtered it offers only that building; open it with All buildings to price across buildings.
