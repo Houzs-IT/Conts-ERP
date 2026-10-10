@@ -39,6 +39,12 @@ import { PRODUCT_CODE_CASCADE } from '../lib/product-code-rename';
 import { moveModelCategory, planModelCategoryMoves, type ImportModelMove } from '../lib/model-category-move';
 import { ensureModelForSku, modelCodeForSku } from '../lib/ensure-model-for-sku';
 import { MFG_PRODUCT_CATEGORIES, MFG_CATEGORY_LABELS, mfgCategoryLabel, parseMfgCategory } from '../shared/product-categories';
+import { isPhotoRequiredCategory, isUom, parseSubCategory, parseUom, validateCategoryPair } from '../shared/renovation-catalog';
+import {
+  deleteMfgProductPhotoHandler, listMfgProductPhotosHandler, patchMfgProductPhotoHandler,
+  photoCountFor, photoKeysFor, primaryPhotosFor, uploadMfgProductPhotoHandler,
+} from './mfg-product-photos';
+import { resolveDefaultParty, type BindingForParty } from '../lib/default-supply-party';
 
 export const mfgProducts = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -150,6 +156,16 @@ export const listMfgProductsHandler = async (c: AppContext) => {
   // column marker). OPT-IN via ?anchorState=1 so the SO / PO / GRN catalog pickers
   // that load this SAME list stay a plain column read with no extra binding query.
   const wantAnchorState = c.req.query('anchorState') === '1';
+  /* Renovation SKU Master (Conts): ?group= / ?sub= filter on the derived
+     category_group / sub_category; ?status=all includes INACTIVE (a photo-group
+     SKU waits there for its photo); ?withPhotos=1 and ?withMain=1 add the
+     primary photo and the default PO party. All opt-in, so the pickers that load
+     this same list are unchanged. */
+  const group = c.req.query('group')?.trim().toUpperCase() || null;
+  const sub = c.req.query('sub')?.trim().toUpperCase() || null;
+  const allStatuses = c.req.query('status') === 'all';
+  const wantPhotos = c.req.query('withPhotos') === '1';
+  const wantMain = c.req.query('withMain') === '1';
   const supabase = c.get('supabase');
 
   // PR #104 — Commander 2026-05-26: dropped fabric_usage_sen /
@@ -185,6 +201,7 @@ export const listMfgProductsHandler = async (c: AppContext) => {
         'id, code, name, category, description, base_model, size_code, size_label, base_price_sen, price1_sen, sell_price_sen, pwp_price_sen, ' +
           'unit_m3_milli, status, pos_active, one_shot, source_doc_no, included_addons, sku_code, model_id, ' +
           'branding, barcode, sub_assemblies, pieces, seat_height_prices, default_variants, updated_at, ' +
+          'category_group, sub_category, uom, ' +
           // Commander 2026-05-29 — surface the Model's allowed_options so the SO
           // line editor can hide variant choices the SKU doesn't allow, which
           // heads off SOME variant_not_allowed refusals on save. NOT all of
@@ -196,9 +213,11 @@ export const listMfgProductsHandler = async (c: AppContext) => {
           // no matter what this select returns (2026-08-18).
           'model:product_models(allowed_options)',
       )
-      .eq('status', 'ACTIVE')
       .order('code', { ascending: true });
+    if (!allStatuses) q = q.eq('status', 'ACTIVE');
     if (category) q = q.eq('category', category);
+    if (group) q = q.eq('category_group', group);
+    if (sub) q = q.eq('sub_category', sub);
     // 0166 — barcode rides the same OR-chain so a scanner blast into the SKU
     // Master search box finds the row (escapeForOr keeps the grammar safe).
     if (s) q = q.or(`code.ilike.%${s}%,name.ilike.%${s}%,description.ilike.%${s}%,barcode.ilike.%${s}%`);
@@ -246,6 +265,45 @@ export const listMfgProductsHandler = async (c: AppContext) => {
       }
     }
   }
+  if (wantPhotos && products.length > 0) {
+    const photos = await primaryPhotosFor(supabase, products.map((p) => String(p.id)), Number(activeCompanyId(c)));
+    // A failed photo read leaves the fields off (the screen shows no thumbnail),
+    // it never claims "0 photos".
+    if (photos.ok) {
+      for (const p of products) {
+        const ph = photos.byProduct.get(String(p.id));
+        p.primaryPhotoUrl = ph?.url ?? null;
+        p.primaryThumbUrl = ph?.thumbUrl ?? null;
+        p.photoCount = ph?.count ?? 0;
+      }
+    }
+  }
+  if (wantMain && products.length > 0) {
+    const { data: bindings, error: bErr } = await readMfgProductBindings<BindingForParty & { item_code: string }>(supabase, {
+      codes: products.map((p) => String(p.code)),
+      companyId: activeCompanyId(c),
+      select: 'id, item_code, supplier_id, is_main_supplier, unit_price_sen',
+    });
+    if (!bErr) {
+      const byCode = new Map<string, BindingForParty[]>();
+      for (const b of bindings) byCode.set(b.item_code, [...(byCode.get(b.item_code) ?? []), b]);
+      const supplierIds = [...new Set(bindings.map((b) => b.supplier_id))];
+      const names = new Map<string, string>();
+      if (supplierIds.length > 0) {
+        const { data: sups } = await scopeToCompany(supabase.from('suppliers').select('id, name').in('id', supplierIds), c);
+        for (const s2 of (sups ?? []) as Array<{ id: string; name: string }>) names.set(s2.id, s2.name);
+      }
+      const seeCost = canViewScmProductCost(c);
+      for (const p of products) {
+        const list = byCode.get(String(p.code)) ?? [];
+        const party = resolveDefaultParty(list);
+        p.supplierCount = list.length;
+        p.mainSupplierId = party?.supplierId ?? null;
+        p.mainSupplierName = party ? (names.get(party.supplierId) ?? null) : null;
+        if (seeCost) p.mainCostSen = party?.unitPriceSen ?? null;
+      }
+    }
+  }
   /* Perf (go-live) — the 1141-row SKU master is the catalog picker every SO /
      PO / GRN / DO "new" page loads, and it changes rarely (price/config edits,
      not per-order). A short PRIVATE max-age lets the browser reuse the payload
@@ -253,7 +311,8 @@ export const listMfgProductsHandler = async (c: AppContext) => {
      while staying per-user (never shared/CDN) and short enough that a
      commander price edit shows within a minute. Follows the existing
      `private, max-age` header convention used elsewhere in this router. */
-  c.header('cache-control', 'private, max-age=60');
+  // The SKU Master's all-status view changes as people edit it: never cached.
+  c.header('cache-control', allStatuses ? 'no-store' : 'private, max-age=60');
   /* Multi-company (fix/so-product-company-scope): the 60s PRIVATE cache is keyed
      by URL only, but the ACTIVE company travels in the X-Company-Id REQUEST header
      (authed-fetch.ts stamps it from the top-bar switcher). WITHOUT Vary, the
@@ -306,7 +365,9 @@ mfgProducts.get('/bound-codes', async (c) => {
    have always imported it from this file. */
 export { MFG_PRODUCT_CATEGORIES };
 const VALID_CATEGORIES = new Set<string>(MFG_PRODUCT_CATEGORIES);
-mfgProducts.post('/', async (c) => {
+/* Exported so the renovation create rules (sub-category, unit, photo-gated
+   status) can be driven by a test. */
+export const createMfgProductHandler = async (c: AppContext) => {
   const gate = await requireRole(c);
   if (!gate.ok) return gate.res;
   let body: Record<string, unknown>;
@@ -320,6 +381,16 @@ mfgProducts.post('/', async (c) => {
   if (!code)  return c.json({ error: 'code_required' }, 400);
   if (!name)  return c.json({ error: 'name_required' }, 400);
   if (!VALID_CATEGORIES.has(category)) return c.json({ error: 'invalid_category', allowed: [...VALID_CATEGORIES] }, 400);
+  /* Renovation catalog: a new group (WORKS, BUILTIN, ...) needs a sub-category of
+     that group; a legacy Houzs category may carry one but does not need it. */
+  const subCategory = typeof body.subCategory === 'string' && body.subCategory.trim() ? body.subCategory.trim().toUpperCase() : null;
+  const pair = validateCategoryPair(category, subCategory);
+  if (!pair.ok) return c.json({ error: pair.error }, 400);
+  const uom = typeof body.uom === 'string' && body.uom.trim() ? body.uom.trim().toUpperCase() : null;
+  if (uom && !isUom(uom)) return c.json({ error: 'invalid_uom' }, 400);
+  // A SKU in a photo group cannot be ACTIVE before its first photo (the database
+  // trigger from migration 0062 enforces the same on every other path).
+  const needsPhoto = isPhotoRequiredCategory(category);
 
   // Company is the only scope boundary (service role bypasses RLS), and
   // ensureModelForSku needs it — require it up front.
@@ -339,7 +410,7 @@ mfgProducts.post('/', async (c) => {
     code,
     name,
     category,
-    status: 'ACTIVE',
+    status: needsPhoto ? 'INACTIVE' : 'ACTIVE',
     description: (body.description as string) ?? null,
     base_model: (body.baseModel as string) ?? null,
     size_code: (body.sizeCode as string) ?? null,
@@ -354,6 +425,8 @@ mfgProducts.post('/', async (c) => {
     /* PR #104 — fabric_usage_sen / production_time_minutes /
        fabric_color removed (not used by 2990's retail catalogue). */
   };
+  if (subCategory) row.sub_category = subCategory;
+  if (uom) row.uom = uom;
 
   // Every SKU belongs to a Model (owner 2026-09-18) — find-or-create it and
   // stamp model_id so this bare create is uniform with the New-SKU/Model dialog
@@ -383,8 +456,9 @@ mfgProducts.post('/', async (c) => {
     if (error.code === '42501') return c.json({ error: 'forbidden', reason: error.message }, 403);
     return c.json({ error: 'insert_failed', reason: error.message }, 500);
   }
-  return c.json(data, 201);
-});
+  return c.json({ ...(data as Record<string, unknown>), status: row.status, needsPhoto }, 201);
+};
+mfgProducts.post('/', createMfgProductHandler);
 
 // ── POST /batch-import ─────────────────────────────────────────────────
 // Bulk upsert from a CSV import. Body: { rows: [{ code, name, category, ... }] }.
@@ -451,7 +525,7 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
      *
      * The existence read moved UP for this; the write branch below reuses it. */
     const { data: existing } = await supabase.from('mfg_products')
-      .select('id, seat_height_prices').eq('code', code).eq('company_id', activeCompanyId(c)).maybeSingle();
+      .select('id, seat_height_prices, category, sub_category, status').eq('code', code).eq('company_id', activeCompanyId(c)).maybeSingle();
 
     if (categoryCell && !category) {
       failures.push({
@@ -473,14 +547,62 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
       continue;
     }
 
+    /* Renovation columns (Conts): sub category and uom, read as typed (code or
+       label). Filled-cell-only like the rest; an unreadable cell is reported. */
+    const subCell = String(r.sub_category ?? r.subCategory ?? '').trim();
+    const uomCell = String(r.uom ?? '').trim();
+    const sub = parseSubCategory(subCell);
+    if (subCell && !sub) {
+      failures.push({ code, reason: `"${subCell}" is not a sub-category.` });
+      continue;
+    }
+    const uom = parseUom(uomCell);
+    if (uomCell && !uom) {
+      failures.push({ code, reason: `"${uomCell}" is not a unit — use PCS, UNIT, SET, LOT (LS), FT, SQFT, POINT or FULL.` });
+      continue;
+    }
+    const prev = existing as { category?: string; sub_category?: string | null; status?: string } | null;
+    const finalCategory = String(category ?? prev?.category ?? '');
+    const categoryChanged = !!category && category !== prev?.category;
+    const finalSub = sub ?? (categoryChanged ? null : (prev?.sub_category ?? null));
+    if (sub || category) {
+      const pair = validateCategoryPair(finalCategory, finalSub);
+      if (!pair.ok) {
+        failures.push({
+          code,
+          reason: pair.error === 'sub_category_required'
+            ? `${mfgCategoryLabel(finalCategory)} SKUs need a sub-category (the "sub category" column).`
+            : pair.error === 'sub_category_mismatch'
+              ? `sub-category "${subCell || finalSub}" does not belong to ${mfgCategoryLabel(finalCategory)}.`
+              : `category "${finalCategory}" is not a category.`,
+        });
+        continue;
+      }
+    }
+    /* Photo rule: a new SKU in a photo group starts INACTIVE; an existing one is
+       activated only when it already has a photo (a read error refuses). */
+    const needsPhoto = isPhotoRequiredCategory(finalCategory);
+    const wantsActive = String(r.status ?? '').trim().toUpperCase() === 'ACTIVE';
+    if (needsPhoto && existing && wantsActive && prev?.status !== 'ACTIVE') {
+      const photos = await photoCountFor(supabase, String((existing as { id: string }).id), co.companyId);
+      if (!photos.ok || photos.count === 0) {
+        failures.push({ code, reason: photos.ok ? 'add a photo before making this SKU active.' : `could not check its photos, so it was not activated (${photos.reason}).` });
+        continue;
+      }
+    }
+
     const row: Record<string, unknown> = { code };
     /* Present-and-non-empty only, exactly like every other column. On a create
        the guard above has already proved both are there. */
     if (name) row.name = name;
     if (category) row.category = category;
+    if (sub) row.sub_category = sub;
+    else if (categoryChanged) row.sub_category = null;
+    if (uom) row.uom = uom;
 
     // String fields — include only when the cell actually has a value.
     if (hasVal(r.status))      row.status = String(r.status);
+    if (needsPhoto && !existing) row.status = 'INACTIVE';
     if (hasVal(r.description)) row.description = String(r.description);
     if (hasVal(r.base_model))  row.base_model = String(r.base_model);
     if (hasVal(r.size_label))  row.size_label = String(r.size_label);
@@ -523,7 +645,7 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
     if (move) {
       let moveError = moveFailed.get(move.modelId);
       if (moveError === undefined && !modelsMoved.some((m) => m.modelId === move.modelId)) {
-        const moved = await moveModelCategory(supabase, co.companyId, move.modelId, move.to);
+        const moved = await moveModelCategory(supabase, co.companyId, move.modelId, move.to, sub);
         if (moved.ok) {
           modelsMoved.push({ ...move, skuCount: moved.skuCodes.length });
         } else {
@@ -683,7 +805,13 @@ export const deleteMfgProductHandler = async (c: any) => {
     }
   }
 
+  // SKU photos (migration 0062): the rows cascade with the SKU, so read the R2
+  // keys first and remove the objects once the delete has succeeded.
+  const photoKeys = await photoKeysFor(supabase, id, co.companyId);
   const { error } = await scopeToCompanyId(supabase.from('mfg_products').delete().eq('id', id), co.companyId);
+  if (!error && photoKeys.length > 0 && c.env?.SO_ITEM_PHOTOS) {
+    for (const k of photoKeys) await c.env.SO_ITEM_PHOTOS.delete(k).catch(() => {});
+  }
   if (error) {
     if (error.code === '42501') return c.json({ error: 'forbidden', reason: error.message }, 403);
     if (error.code === '23503') {
@@ -701,6 +829,14 @@ export const deleteMfgProductHandler = async (c: any) => {
   return c.body(null, 204);
 };
 mfgProducts.delete('/:id', deleteMfgProductHandler);
+
+// ── SKU photos (renovation catalog, migration 0062) ─────────────────────
+// The public GET that streams a photo is mounted outside the auth gate in
+// public-images.ts; these are the authed list / upload / edit routes.
+mfgProducts.get('/:id/photos', listMfgProductPhotosHandler);
+mfgProducts.post('/:id/photos', uploadMfgProductPhotoHandler);
+mfgProducts.patch('/:id/photos/:photoId', patchMfgProductPhotoHandler);
+mfgProducts.delete('/:id/photos/:photoId', deleteMfgProductPhotoHandler);
 
 // ── GET /:id ───────────────────────────────────────────────────────────
 mfgProducts.get('/:id', async (c) => {
@@ -795,6 +931,10 @@ export const patchMfgProductHandler = async (c: AppContext) => {
     /** Any other valid category (shared/category-swap.ts), and only on a SKU
         with no model — a modelled SKU moves with its model. */
     category?: string;
+    /** Renovation catalog (migration 0061): sub-category of the SKU's group, and
+        its unit. A new group needs a sub-category; null clears it on a legacy SKU. */
+    subCategory?: string | null;
+    uom?: string;
   };
   try {
     body = (await c.req.json()) as typeof body;
@@ -813,7 +953,7 @@ export const patchMfgProductHandler = async (c: AppContext) => {
 
   const { data: current, error: loadErr } = await scopeToCompanyId(supabase
     .from('mfg_products')
-    .select('code, category, model_id, base_price_sen, price1_sen, cost_price_sen, sell_price_sen, pwp_price_sen, default_variants, seat_height_prices')
+    .select('code, category, sub_category, uom, status, model_id, base_price_sen, price1_sen, cost_price_sen, sell_price_sen, pwp_price_sen, default_variants, seat_height_prices')
     .eq('id', id), co.companyId)
     .maybeSingle();
   if (loadErr) return c.json({ error: 'load_failed', reason: loadErr.message }, 500);
@@ -874,6 +1014,45 @@ export const patchMfgProductHandler = async (c: AppContext) => {
   // the rest of the schema (matches mfg_products.status default in inserts).
   if (body.status === 'ACTIVE' || body.status === 'INACTIVE') {
     updates.status = body.status;
+  }
+  /* Renovation catalog. The pair (category, sub-category) is checked as it will
+     be stored: a category change without a sub-category clears the old one (the
+     database re-derives a legacy category's implied sub), so a stale sub can
+     never sit under another group. */
+  {
+    const categoryChanged = typeof updates.category === 'string';
+    const finalCategory = String(updates.category ?? current.category ?? '');
+    if (body.subCategory !== undefined) {
+      const sub = typeof body.subCategory === 'string' && body.subCategory.trim() ? body.subCategory.trim().toUpperCase() : null;
+      updates.sub_category = sub;
+    } else if (categoryChanged) {
+      updates.sub_category = null;
+    }
+    if (body.subCategory !== undefined || categoryChanged) {
+      const finalSub = (updates.sub_category as string | null | undefined) ?? null;
+      const pair = validateCategoryPair(finalCategory, finalSub);
+      if (!pair.ok) return c.json({ error: pair.error }, 400);
+    }
+    if (body.uom !== undefined) {
+      const uom = typeof body.uom === 'string' ? body.uom.trim().toUpperCase() : '';
+      if (!isUom(uom)) return c.json({ error: 'invalid_uom' }, 400);
+      updates.uom = uom;
+    }
+    /* Photo rule: a SKU in a photo group is ACTIVE only with a photo. Checked
+       whenever the write would leave it ACTIVE in such a group and either the
+       status or the category is changing. A read that fails refuses (503): it
+       must never read as "has a photo". */
+    const finalStatus = String(updates.status ?? current.status ?? '');
+    const statusChanged = updates.status !== undefined && updates.status !== current.status;
+    if (finalStatus === 'ACTIVE' && isPhotoRequiredCategory(finalCategory) && (statusChanged || categoryChanged)) {
+      const photos = await photoCountFor(supabase, String(id), co.companyId);
+      if (!photos.ok) {
+        return c.json({ error: 'photo_check_failed', reason: `Could not check this SKU's photos, so it stays as it is — try again (${photos.reason}).` }, 503);
+      }
+      if (photos.count === 0) {
+        return c.json({ error: 'photo_required', reason: 'Add a photo first: SKUs in this group need one before they can be active.' }, 409);
+      }
+    }
   }
   // D5 — selling-only POS catalog visibility. Independent of status (cost/PO).
   if (typeof body.posActive === 'boolean') {
@@ -1058,6 +1237,10 @@ export const patchMfgProductHandler = async (c: AppContext) => {
   if (updErr) {
     if (updErr.code === '42501' || /permission denied/i.test(updErr.message)) {
       return c.json({ error: 'forbidden', reason: updErr.message }, 403);
+    }
+    // Migration 0062 backstop: the database refused an ACTIVE photo-group SKU with no photo.
+    if (/photo_required/.test(updErr.message)) {
+      return c.json({ error: 'photo_required', reason: 'Add a photo first: SKUs in this group need one before they can be active.' }, 409);
     }
     if (updErr.code === '23505') {
       // PR #89 — only the `code` column has a UNIQUE constraint that the
