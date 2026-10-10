@@ -3,15 +3,16 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 
-/** `#/finance/statements/:id/report[?unit=]` — the Owner Income Report, laid out as the owner's own report:
- *  page 1 the unit's month (OWNER INCOME REPORT), page 2 its year to date. A4, printed by the browser:
+/** `#/finance/statements/:id/report[?unit=|?view=owner]` — the Owner Income Report, laid out as the owner's own report:
+ *  page 1 the unit's month (OWNER INCOME REPORT), page 2 its year to date. `view=owner` puts the owner's whole
+ *  account first: every unit of the statement on one month page and one year-to-date page, then each unit. A4, printed by the browser:
  *  "Download PDF" opens the print dialog with Save as PDF. Rendered outside the app shell so nothing else prints.
  *  Letterhead and terms come from Settings (company.*, report.*). */
 
 interface Row { key: string; label: string; quantity: number | null; uom: string | null; price: number | null; amount: number }
 interface YearRow { month: string; label: string; gross: number | null; deductions: number | null; operator: number | null; net: number | null; source: string }
 interface Unit {
-  unitId: string; code: string; refNo: string; address: string | null; propertyName: string; unitNumber: string; basis: 'share' | 'fixed_rent';
+  unitId: string; code: string; refNo: string; address: string | null; propertyName: string; unitNumber: string; basis: 'share' | 'fixed_rent'; model: string | null;
   nights: number; days: number; occupancy: number; gross: number; deductions: Row[]; deductionsTotal: number; net: number; operatorPct: number | null;
   operatorShare: number; guarantee: number; topUp: number; fixedRent: number; payoutBeforeAdjustments: number;
   adjustments: { id: string; description: string; amount: number }[]; netPayout: number;
@@ -41,6 +42,7 @@ export default function OwnerIncomeReportPage() {
   const navigate = useNavigate();
   const owner = useSession().user?.role === 'owner';
   const unit = params.get('unit');
+  const combined = !unit && params.get('view') === 'owner';
   const { data, loading, error } = useApi<{ data: Report }>(`/statements/${encodeURIComponent(id)}/report${unit ? `?unit=${encodeURIComponent(unit)}` : ''}`);
   const all = useApi<{ data: Report }>(unit ? `/statements/${encodeURIComponent(id)}/report` : null);
   const r = data?.data;
@@ -56,7 +58,7 @@ export default function OwnerIncomeReportPage() {
 
   function download() {
     const before = document.title;
-    if (r) document.title = `Owner Income Report ${r.units.length === 1 ? r.units[0].refNo : r.period}`;
+    if (r) document.title = `Owner Income Report ${r.units.length === 1 ? r.units[0].refNo : `${r.owner.name} ${r.period}`}`;
     window.print();
     document.title = before;
   }
@@ -69,8 +71,9 @@ export default function OwnerIncomeReportPage() {
         {choices.length > 1 && (
           <label>
             <span className="oir-sr">Unit</span>
-            <select value={unit ?? ''} onChange={e => { const v = e.target.value; setParams(v ? { unit: v } : {}); }}>
-              <option value="">All {choices.length} units</option>
+            <select value={unit ?? (combined ? '__owner' : '')} onChange={e => { const v = e.target.value; setParams(v === '__owner' ? { view: 'owner' } : v ? { unit: v } : {}); }}>
+              <option value="__owner">By owner: all {choices.length} units combined</option>
+              <option value="">By unit: each of the {choices.length} units</option>
               {choices.map(u => <option key={u.unitId} value={u.unitId}>{u.code}</option>)}
             </select>
           </label>
@@ -84,6 +87,7 @@ export default function OwnerIncomeReportPage() {
         : !r.units.length ? <div className="oir-note">This statement has no unit figures to report. Months paid from the owner workbook before Property OS only carry the payout.</div>
         : (
           <div className="oir-sheets" style={{ zoom: scale } as CSSProperties}>
+            {combined && r.units.length > 1 && <div><OwnerMonthPage r={r} /><OwnerYearPage r={r} /></div>}
             {r.units.map(u => (
               <div key={u.unitId}>
                 <MonthPage r={r} u={u} />
@@ -143,7 +147,9 @@ function MonthPage({ r, u }: { r: Report; u: Unit }) {
         <thead><tr><th>DESCRIPTION</th><th>QTY</th><th>UOM</th><th>PRICE (RM)</th><th>AMOUNT (RM)</th></tr></thead>
         <tbody>
           <tr><td><u><b>Gross Income</b></u></td><td /><td /><td /><td /></tr>
-          {share ? (
+          {share && u.model === 'long_term' ? (
+            <tr><td className="oir-in">Monthly Rent (long-term tenant)</td><td className="c">1</td><td className="c">months</td><td className="r">{money(u.gross)}</td><td className="r">{money(u.gross, { dash: false })}</td></tr>
+          ) : share ? (
             <tr><td className="oir-in">Hospitality Income</td><td className="c">{u.nights}</td><td className="c">%</td><td className="r">{pct(u.occupancy * 100)}</td><td className="r">{money(u.gross, { dash: false })}</td></tr>
           ) : (
             <tr><td className="oir-in">Fixed Monthly Rent</td><td className="c">1</td><td className="c">months</td><td className="r">{money(u.fixedRent)}</td><td className="r">{money(u.fixedRent)}</td></tr>
@@ -198,7 +204,97 @@ function YearPage({ r, u }: { r: Report; u: Unit }) {
   );
 }
 
+const MODEL_NAME: Record<string, string> = {
+  management: 'Profit share', management_guarantee: 'Profit share, minimum guarantee', grr: 'Guaranteed rent', master_lease: 'Master lease', long_term: 'Long-term let',
+};
+
+/** By owner, page 1: every unit of the statement on one page, with the owner's total. */
+function OwnerMonthPage({ r }: { r: Report }) {
+  const mon = MON[Number(r.period.slice(5, 7)) - 1];
+  const sum = (f: (u: Unit) => number) => r.units.reduce((n, u) => n + f(u), 0);
+  const income = (u: Unit) => (u.basis === 'share' ? u.gross : u.fixedRent);
+  const adj = (u: Unit) => u.adjustments.reduce((n, a) => n + a.amount, 0);
+  const ref = `${r.period.slice(2, 4)}${r.period.slice(5, 7)}-OWNER`;
+  const left: [string, string][] = [['OWNER', r.owner.name.toUpperCase()], ['UNITS', String(r.units.length)], ['TEL', r.owner.phone ?? ''], ['EMAIL', r.owner.email ?? '']];
+  const right: [string, string][] = [['REF. NO.', ref], ['DATE', dayMonYear(r.periodEnd)], ['MONTHS', mon], ['TERMS', r.settings.paymentTerms]];
+  return (
+    <article className="oir-sheet">
+      <Letterhead r={r} />
+      <h1>OWNER INCOME REPORT (ALL UNITS)</h1>
+      <div className="oir-parties">
+        <dl>{left.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>: {v}</dd></div>)}</dl>
+        <dl>{right.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>: {v}</dd></div>)}</dl>
+      </div>
+      <table className="oir-table oir-ytd oir-owner">
+        <colgroup><col style={{ width: '25%' }} /><col style={{ width: '13%' }} /><col style={{ width: '13%' }} /><col style={{ width: '12%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11%' }} /><col style={{ width: '13%' }} /></colgroup>
+        <thead><tr><th>UNIT</th><th>GROSS INCOME (RM)</th><th>EXPENSE DEDUCTION (RM)</th><th>TO OPERATOR (RM)</th><th>PAYOUT BEFORE O2 (RM)</th><th>O2 (RM)</th><th>NET PAYOUT (RM)</th></tr></thead>
+        <tbody>
+          {r.units.map(u => (
+            <tr key={u.unitId}>
+              <td><b>{u.code}</b><div className="oir-model">{MODEL_NAME[u.model ?? (u.basis === 'share' ? 'management' : 'grr')]}{u.basis === 'share' && u.operatorPct != null ? `, ${pct(u.operatorPct)} to operator` : ''}</div></td>
+              <td className="r">{money(income(u))}</td>
+              <td className="r">{money(u.basis === 'share' ? u.deductionsTotal : 0)}</td>
+              <td className="r">{money(u.basis === 'share' ? u.operatorShare - u.topUp : 0)}</td>
+              <td className="r">{money(u.payoutBeforeAdjustments)}</td>
+              <td className="r">{money(adj(u))}</td>
+              <td className="r"><b>{money(u.netPayout, { dash: false })}</b></td>
+            </tr>
+          ))}
+          <tr className="oir-total">
+            <td><b>TOTAL</b></td>
+            <td className="r"><b>{money(sum(income))}</b></td>
+            <td className="r"><b>{money(sum(u => (u.basis === 'share' ? u.deductionsTotal : 0)))}</b></td>
+            <td className="r"><b>{money(sum(u => (u.basis === 'share' ? u.operatorShare - u.topUp : 0)))}</b></td>
+            <td className="r"><b>{money(sum(u => u.payoutBeforeAdjustments))}</b></td>
+            <td className="r"><b>{money(sum(adj))}</b></td>
+            <td className="r oir-box"><b>{money(sum(u => u.netPayout), { dash: false })}</b></td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="oir-foot">Each unit's own report follows, with every income line, deduction and owner credit or charge. To operator is after any minimum guarantee top-up.</p>
+      <Terms items={r.settings.monthlyTerms} />
+      <Signatures />
+    </article>
+  );
+}
+
+/** By owner, page 2: the year to date of all the units, month by month. */
+function OwnerYearPage({ r }: { r: Report }) {
+  const year = r.period.slice(0, 4);
+  const months = MON.map((label, i) => {
+    const rows = r.units.map(u => u.year[i]).filter(Boolean);
+    const add = (k: 'gross' | 'deductions' | 'operator' | 'net') => rows.some(y => y[k] != null) ? rows.reduce((n, y) => n + (y[k] ?? 0), 0) : null;
+    return { label, gross: add('gross'), deductions: add('deductions'), operator: add('operator'), net: add('net'), workbook: rows.some(y => y.source === 'workbook') };
+  });
+  const total = (k: 'gross' | 'deductions' | 'operator' | 'net') => months.reduce((n, m) => n + (m[k] ?? 0), 0);
+  return (
+    <article className="oir-sheet">
+      <Letterhead r={r} />
+      <h1>YEAR-TO-DATE OWNER INCOME REPORT, ALL UNITS (JAN - DEC {year})</h1>
+      <div className="oir-parties">
+        <dl>{([['OWNER', r.owner.name.toUpperCase()], ['UNITS', r.units.map(u => u.code).join(', ')]] as [string, string][]).map(([k, v]) => <div key={k}><dt>{k}</dt><dd>: {v}</dd></div>)}</dl>
+        <dl><div><dt>MONTH</dt><dd>: {MON[Number(r.period.slice(5, 7)) - 1]} {year}</dd></div></dl>
+      </div>
+      <table className="oir-table oir-ytd">
+        <colgroup><col style={{ width: '12%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /></colgroup>
+        <thead><tr><th>MONTH</th><th>GROSS INCOME (RM)</th><th>EXPENSE DEDUCTION (RM)</th><th>GROSS DEDUCTION (RM)</th><th>NET INCOME (RM)</th></tr></thead>
+        <tbody>
+          {months.map(m => (
+            <tr key={m.label}><td><b>{m.label}</b>{m.workbook ? ' *' : ''}</td><td className="r">{money(m.gross)}</td><td className="r">{money(m.deductions)}</td><td className="r">{money(m.operator)}</td><td className="r">{money(m.net)}</td></tr>
+          ))}
+          <tr className="oir-total"><td><b>TOTAL</b></td><td className="r"><b>{money(total('gross'))}</b></td><td className="r"><b>{money(total('deductions'))}</b></td><td className="r"><b>{money(total('operator'))}</b></td><td className="r"><b>{money(total('net'))}</b></td></tr>
+        </tbody>
+      </table>
+      {months.some(m => m.workbook) && <p className="oir-foot">* Paid before Property OS for at least one unit: the owner workbook records the payout for that month, not its breakdown.</p>}
+      <Terms items={r.settings.yearTerms} />
+      <Signatures />
+    </article>
+  );
+}
+
 const CSS = `
+.oir-owner td { font-size: 9.5pt; }
+.oir-model { font-size: 8.5pt; color: #333; }
 .oir-root { min-height: 100vh; background: #e9e7e3; color: #000; padding-bottom: 32px; }
 .oir-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 16px; background: #fff; border-bottom: 1px solid #d6d3cd; font: 13px/1.4 "IBM Plex Sans", system-ui, sans-serif; }
 .oir-bar button, .oir-bar select { height: 34px; padding: 0 12px; border: 1px solid #c9c5be; border-radius: 6px; background: #fff; color: #151515; font: inherit; cursor: pointer; }

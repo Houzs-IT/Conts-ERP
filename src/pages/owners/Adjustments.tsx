@@ -34,7 +34,7 @@ const STATE: Record<State, { label: string; tone: Tone }> = {
 };
 const FINAL = ['finalised', 'sent', 'paid'];
 const FILTERS = [
-  { value: 'all', label: 'All adjustments' }, { value: 'held', label: 'Held' }, { value: 'open', label: 'Open' }, { value: 'settled', label: 'Settled' },
+  { value: 'all', label: 'All credits and charges' }, { value: 'held', label: 'Held' }, { value: 'open', label: 'Open' }, { value: 'settled', label: 'Settled' },
 ];
 const PAGE = 8;
 
@@ -77,9 +77,9 @@ export function OwnerAdjustments({ owner }: { owner: Owner }) {
     if (a.state === 'open') items.push({
       key: 'hold', label: 'Hold', icon: 'Pause', hint: 'Keep it off statements until released.', disabledReason: onFinal,
       onSelect: () => setDialog({
-        title: 'Hold this adjustment?', body: 'It stays off every statement generated from now on, until someone releases it.',
+        title: 'Hold this credit or charge?', body: 'It stays off every statement generated from now on, until someone releases it.',
         meta: `${KIND[a.kind]} · ${moneyString(a.amount, 'exact')} · ${a.description}`, confirmLabel: 'Hold', busyLabel: 'Holding...',
-        onConfirm: () => change(a, { action: 'hold' }, 'Adjustment held.'),
+        onConfirm: () => change(a, { action: 'hold' }, 'Held.'),
       }),
     });
     if (a.state !== 'settled') items.push({ key: 'settle', label: 'Mark settled outside', icon: 'CheckCircle2', hint: 'Paid outside Property OS; it never reaches a statement.', disabledReason: onFinal, onSelect: () => setModal({ kind: 'settle', a }) });
@@ -88,19 +88,19 @@ export function OwnerAdjustments({ owner }: { owner: Owner }) {
 
   return (
     <Card>
-      <CardHeader title="Adjustments" right={canChange ? <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'add' })}>Add credit or charge</Button> : undefined} />
+      <CardHeader title="Owner credits & charges" right={canChange ? <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'add' })}>Add credit or charge</Button> : undefined} />
       <div className="px-5 pb-3 flex flex-wrap items-center justify-between gap-3">
         <span className="text-meta text-muted-ink text-pretty max-w-[640px]">
           {held.length
-            ? <>{plural(held.length, 'held adjustment')} worth <MoneyText sen={data!.totals.held} mode="exact" strong className="text-ink" /> {held.length === 1 ? 'is' : 'are'} waiting to be released. Held amounts never reach a statement by themselves.</>
-            : 'Credits and charges outside bookings and expenses. Open ones go on the next statement generated.'}
+            ? <>{plural(held.length, 'held credit or charge', 'held credits and charges')} worth <MoneyText sen={data!.totals.held} mode="exact" strong className="text-ink" /> {held.length === 1 ? 'is' : 'are'} waiting to be released. Held amounts never reach a statement by themselves.</>
+            : 'Money for or against the owner that is not a booking or a unit expense (a refund of overpaid water, an old debt, a maintenance fee charged to the owner). Each one sits on a unit; open ones go on the next statement generated.'}
         </span>
         {rows.length > 0 && <div className="w-[180px] max-w-full"><Select label="Show" value={filter} onChange={v => { setFilter(v); setShown(PAGE); }} options={FILTERS} /></div>}
       </div>
 
-      {loading && !data ? <div className="py-6 px-5 text-copy text-muted-ink">Loading adjustments...</div>
+      {loading && !data ? <div className="py-6 px-5 text-copy text-muted-ink">Loading credits and charges...</div>
         : error && !data ? <div className="py-6 px-5 text-copy text-muted-ink">{error}</div>
-        : list.length === 0 ? <div className="py-6 px-5 text-copy text-muted-ink [border-top:1px_solid_var(--color-line-soft)]">{rows.length ? 'None in this view.' : 'No adjustments for this owner.'}</div>
+        : list.length === 0 ? <div className="py-6 px-5 text-copy text-muted-ink [border-top:1px_solid_var(--color-line-soft)]">{rows.length ? 'None in this view.' : 'No credits or charges for this owner.'}</div>
         : (
           <div className="[border-top:1px_solid_var(--color-line-soft)]">
             {list.slice(0, shown).map(a => {
@@ -135,7 +135,7 @@ export function OwnerAdjustments({ owner }: { owner: Owner }) {
           </div>
         )}
 
-      {modal?.kind === 'release' && <ReleaseModal a={modal.a} busy={busy} onClose={() => setModal(null)} onSubmit={month => change(modal.a, { action: 'release', month }, 'Adjustment released.', `Generate or regenerate the ${monthLabel(month)} statements to deduct it.`)} />}
+      {modal?.kind === 'release' && <ReleaseModal a={modal.a} busy={busy} onClose={() => setModal(null)} onSubmit={month => change(modal.a, { action: 'release', month }, 'Released.', `Generate or regenerate the ${monthLabel(month)} statements to deduct it.`)} />}
       {modal?.kind === 'settle' && <SettleModal a={modal.a} busy={busy} onClose={() => setModal(null)} onSubmit={note => change(modal.a, { action: 'settle', note }, 'Marked settled outside.')} />}
       {modal?.kind === 'add' && <AddModal owner={owner} busy={busy} onClose={() => setModal(null)} onSubmit={async body => {
         setBusy(true);
@@ -157,7 +157,7 @@ function ReleaseModal({ a, busy, onClose, onSubmit }: { a: Adjustment; busy: boo
   const options = [-3, -2, -1, 0, 1, 2].map(n => addMonths(thisMonth, n)).map(m => ({ value: m, label: `${monthLabel(m, { long: true })} statement` }));
   const [month, setMonth] = useState(addMonths(thisMonth, -1));
   return (
-    <Modal title="Release this adjustment?" sub={`${moneyString(a.amount, 'exact')} · ${a.description}`} onClose={onClose}
+    <Modal title="Release this credit or charge?" sub={`${moneyString(a.amount, 'exact')} · ${a.description}`} onClose={onClose}
       submitLabel={busy ? 'Releasing...' : 'Release'} canSubmit={!busy} onSubmit={() => onSubmit(month)}>
       <Select label="Deduct on" showLabel size="md" value={month} onChange={setMonth} options={options} />
       <p className="m-0 text-meta text-muted-ink text-pretty">

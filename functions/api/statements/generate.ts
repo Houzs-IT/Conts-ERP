@@ -60,7 +60,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       }
       for (const a of m.adjustmentIds) attach.push({ id: a, statement_id: id });
       unitRows.push({
-        id: crypto.randomUUID(), statement_id: id, unit_id: m.unitId, basis: m.terms.basis, terms_source: m.terms.source, nights: m.nights, days: m.days,
+        // A master lease has nothing to split (basis 'none'); it reaches a statement only through owner credits or charges.
+        id: crypto.randomUUID(), statement_id: id, unit_id: m.unitId, basis: m.terms.basis === 'none' ? 'fixed_rent' : m.terms.basis, revenue_model: m.terms.model,
+        terms_source: m.terms.source, nights: m.nights, days: m.days,
         gross_income: m.gross, deductions: m.deductions, net_income: m.net, owner_pct: m.ownerPct, operator_share: m.operatorShare, guarantee: m.guarantee,
         top_up: m.topUp, fixed_rent: m.fixedRent, payout_before_adjustments: m.payoutBeforeAdjustments, adjustments_total: m.adjustmentsTotal, net_payout: m.netPayout, notes: m.warnings.length ? JSON.stringify(m.warnings) : null, created_at: now,
       });
@@ -94,11 +96,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           description text, occurred_on text, amount int, reference text, sort_order int, quantity float8, adjustment_id text)`, JSON.stringify(lines.slice(i, i + 2000)));
     }
     await run(env, `
-      INSERT INTO statement_units (id, statement_id, unit_id, basis, terms_source, nights, days, gross_income, deductions, net_income, owner_pct, operator_share, guarantee,
+      INSERT INTO statement_units (id, statement_id, unit_id, basis, revenue_model, terms_source, nights, days, gross_income, deductions, net_income, owner_pct, operator_share, guarantee,
         top_up, fixed_rent, payout_before_adjustments, adjustments_total, net_payout, notes, created_at)
-      SELECT x.id, x.statement_id, x.unit_id, x.basis, x.terms_source, x.nights, x.days, x.gross_income, x.deductions, x.net_income, x.owner_pct, x.operator_share, x.guarantee,
+      SELECT x.id, x.statement_id, x.unit_id, x.basis, x.revenue_model, x.terms_source, x.nights, x.days, x.gross_income, x.deductions, x.net_income, x.owner_pct, x.operator_share, x.guarantee,
         x.top_up, x.fixed_rent, x.payout_before_adjustments, x.adjustments_total, x.net_payout, x.notes, x.created_at
-      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, statement_id text, unit_id text, basis text, terms_source text, nights int, days int, gross_income int, deductions int,
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, statement_id text, unit_id text, basis text, revenue_model text, terms_source text, nights int, days int, gross_income int, deductions int,
         net_income int, owner_pct float8, operator_share int, guarantee int, top_up int, fixed_rent int, payout_before_adjustments int, adjustments_total int, net_payout int, notes text, created_at text)`,
       JSON.stringify(unitRows));
     await recordPool(env, period, months.filter(m => m.guarantee > 0 && statements.some(s => s.owner_id === m.ownerId)), now);

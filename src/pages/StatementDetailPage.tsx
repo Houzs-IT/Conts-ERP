@@ -110,7 +110,7 @@ export default function StatementDetailPage() {
           <Figure label="Hospitality income" value={rm(s.totals.grossIncome)} />
           <Figure label="Expense deduction" value={signed(-s.totals.deductions)} />
           <Figure label="To operator" value={signed(-s.totals.operatorShare)} />
-          <Figure label="Adjustments" value={signed(s.totals.adjustments)} />
+          <Figure label="Owner credits &amp; charges" value={signed(s.totals.adjustments)} />
           <Figure label="Net payout to owner" value={rm(s.totals.netPayout)} strong />
         </div>
         <div className="flex flex-wrap gap-x-[18px] gap-y-1 px-[22px] py-[10px] [border-top:1px_solid_var(--color-line)] bg-page text-[12px] text-muted-ink">
@@ -158,7 +158,7 @@ export default function StatementDetailPage() {
                   {u.topUp > 0 && <Row label={`Minimum guarantee top-up (guaranteed ${rm(u.guarantee)})`} value={rm(u.topUp)} muted />}
                 </>
               ) : <Row label="Fixed monthly rent" value={rm(u.fixedRent)} />}
-              <Row label="Payout before owner adjustments" value={rm(u.payoutBeforeAdjustments)} line strong />
+              <Row label="Payout before owner credits &amp; charges" value={rm(u.payoutBeforeAdjustments)} line strong />
               {s.lines.filter(l => l.unitId === u.unitId && l.type === 'adjustment' && !['guarantee_top_up', 'fixed_rent'].includes(l.category ?? '')).map(l =>
                 <Row key={l.id} label={l.description} value={signed(l.amount)} muted />)}
               <Row label="Net payout to owner" value={rm(u.netPayout)} line strong />

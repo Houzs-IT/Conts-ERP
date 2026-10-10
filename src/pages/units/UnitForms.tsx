@@ -6,12 +6,13 @@ import { Card } from '../../components/Card';
 import { useToast } from '../../components/Toast';
 import { color } from '../../theme';
 import { api, notifyFailure, downloadFile } from '../../lib/api';
-import { rm, monthLabel, year, todayMyt, date } from '../../lib/format';
+import { rm, date } from '../../lib/format';
 import { bankName } from '../../lib/vocabulary';
+import { MODEL } from '../../lib/revenueModel';
 import {
-  BANKS, STATES, PACKAGES, TERMS, SPLITS, cap,
+  BANKS, STATES, cap,
   SectionHead, Grid3, Labeled, Select, ReadOnly, CentreModal,
-  type Unit, type Building, type GuaranteePeriod, type UnitDetail,
+  type Unit, type Building, type UnitDetail,
 } from './shared';
 
 type Change = (p: Partial<Unit>) => void;
@@ -35,7 +36,7 @@ export function SaveBar({ title, sub, dirty, saving, canEdit, onSave, extra }: {
   );
 }
 
-export function DetailsForm({ u, buildings, money, canEdit, onChange }: { u: Unit; buildings: Building[]; money: boolean; canEdit: boolean; onChange: Change }) {
+export function DetailsForm({ u, buildings, money, canEdit, onChange, onOpenContract }: { u: Unit; buildings: Building[]; money: boolean; canEdit: boolean; onChange: Change; onOpenContract?: () => void }) {
   const building = buildings.find(b => b.id === u.buildingId);
   return (
     <fieldset disabled={!canEdit} className="p-5 m-0 border-0 min-w-0">
@@ -80,74 +81,11 @@ export function DetailsForm({ u, buildings, money, canEdit, onChange }: { u: Uni
       <p className="-mt-3 mb-[22px] text-meta text-muted-ink">Owner and bank details belong to the owner, so a change here applies to every unit they own.</p>
 
       <SectionHead>Revenue model</SectionHead>
-      <Grid3>
-        <Labeled label="Package" hint="DROPDOWN"><Select label="Package" value={u.pkg} onChange={v => onChange({ pkg: v })} options={PACKAGES.map(p => ({ value: p, label: p }))} /></Labeled>
-        <Labeled label="Rental term" hint="DROPDOWN"><Select label="Rental term" value={u.term} onChange={v => onChange({ term: v })} options={TERMS.map(t => ({ value: t, label: t }))} /></Labeled>
-        <Labeled label="Split / GRR" hint="DROPDOWN"><Select label="Split or GRR" value={u.split} onChange={v => onChange({ split: v })} options={SPLITS.map(s => ({ value: s, label: s }))} /></Labeled>
-      </Grid3>
-      {u.split.startsWith('GRR') && <GuaranteedRent u={u} onChange={onChange} />}
-    </fieldset>
-  );
-}
-
-/** Guaranteed rent shown per month AND per year — the two always reconcile (annual = monthly × 12).
- *  split_value is stored canonically as sen-per-month; guaranteePeriod only records which figure the operator typed,
- *  so an annual contract re-opens in annual and its statement still folds back to a monthly deduction. */
-function GuaranteedRent({ u, onChange }: { u: Unit; onChange: Change }) {
-  const monthlySen = u.splitValue;
-  const period = u.guaranteePeriod;
-  const today = todayMyt();
-  const shown = monthlySen == null ? '' : String(Math.round((period === 'year' ? monthlySen * 12 : monthlySen) / 100));
-  const setAmount = (v: string) => {
-    if (!v) return onChange({ splitValue: null });
-    const rmv = Number(v);
-    if (!Number.isFinite(rmv)) return onChange({ splitValue: null });
-    onChange({ splitValue: period === 'year' ? Math.round((rmv * 100) / 12) : Math.round(rmv * 100) });
-  };
-  const annualSen = monthlySen == null ? null : monthlySen * 12;
-  return (
-    <div className="max-w-[440px] mt-1 mb-[6px]">
-      <div className="flex items-baseline justify-between gap-2 mb-1.5">
-        <span className="text-meta font-medium text-muted-ink">Guaranteed rent</span>
-        <span className="text-caption font-bold tracking-[0.08em] text-faint">AMOUNT + PERIOD</span>
+      <div className="flex flex-wrap items-center gap-3 mb-[6px]">
+        <span className="text-copy">{u.revenueModel ? (u.termsLabel ?? MODEL[u.revenueModel].label) : u.pkg}</span>
+        {onOpenContract && <button type="button" onClick={onOpenContract} className="p-0 bg-transparent border-none cursor-pointer [font:inherit] text-meta! font-semibold text-gold-ink">Change on the Contract tab</button>}
       </div>
-      <div className="flex gap-2">
-        <div className="flex-1 min-w-0"><Field label="" aria-label="Guaranteed rent" type="number" numeric value={shown} onChange={e => setAmount(e.target.value)} /></div>
-        <div className="w-[132px] flex-none"><Select label="Guarantee period" value={period} onChange={v => onChange({ guaranteePeriod: v as GuaranteePeriod })} options={[{ value: 'month', label: 'per month' }, { value: 'year', label: 'per year' }]} /></div>
-      </div>
-      {monthlySen != null ? (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2 text-meta">
-          <span className="tabular-nums font-semibold text-ink">{rm(monthlySen, { cents: false })}</span>
-          <span className="text-muted-ink">· {monthLabel(today)} per month</span>
-          <span className="text-faint">—</span>
-          <span className="tabular-nums font-semibold text-gold-ink">{rm(annualSen!, { cents: false })}</span>
-          <span className="text-muted-ink">· {year(today)} per year</span>
-        </div>
-      ) : (
-        <p className="text-meta text-muted-ink mt-2">Enter the guarantee; the statement folds an annual figure back to a monthly deduction.</p>
-      )}
-    </div>
-  );
-}
-
-export function ContractFields({ u, canEdit, onChange }: { u: Unit; canEdit: boolean; onChange: Change }) {
-  const c = u.contract;
-  return (
-    <fieldset disabled={!canEdit} className="p-5 pb-0 m-0 border-0 min-w-0">
-      <Grid3>
-        <Labeled label="Management fee %" hint="AMOUNT"><Field label="" aria-label="Management fee percent" type="number" numeric value={String(c.feePct)} onChange={e => onChange({ contract: { ...c, feePct: Number(e.target.value) || 0 } })} /></Labeled>
-        <Labeled label="Start date" hint="DATE"><Field label="" aria-label="Contract start date" type="date" value={c.startedOn} onChange={e => onChange({ contract: { ...c, startedOn: e.target.value } })} /></Labeled>
-        <Labeled label="Renews on" hint="DATE"><Field label="" aria-label="Contract renewal date" type="date" value={c.renewsOn} onChange={e => onChange({ contract: { ...c, renewsOn: e.target.value } })} /></Labeled>
-      </Grid3>
-      {c.minimumGuarantee !== undefined && (u.pkg === 'Package D' || c.minimumGuarantee > 0) && (
-        <Grid3>
-          <Labeled label="Package D monthly minimum" hint="AMOUNT" help="The owner is paid at least this a month. From the owner workbook; read-only here.">
-            <ReadOnly>{c.minimumGuarantee > 0 ? rm(c.minimumGuarantee) : 'Not set'}{c.minimumGuaranteeAnnual ? ` (${rm(c.minimumGuaranteeAnnual)} a year)` : ''}</ReadOnly>
-          </Labeled>
-          <Labeled label="Minimum applies from" hint="DATE"><ReadOnly>{c.guaranteeStartsOn ? date(c.guaranteeStartsOn) : 'Not set'}</ReadOnly></Labeled>
-          <Labeled label="Minimum applies until" hint="DATE"><ReadOnly>{c.guaranteeEndsOn ? date(c.guaranteeEndsOn) : 'No end date'}</ReadOnly></Labeled>
-        </Grid3>
-      )}
+      <p className="m-0 text-meta text-muted-ink">One revenue model per contract decides how the owner statement is worked out. Package {u.pkg.replace('Package ', '')} is kept from the owner workbook for reference.</p>
     </fieldset>
   );
 }

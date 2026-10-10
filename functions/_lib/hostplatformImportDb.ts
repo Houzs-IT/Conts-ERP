@@ -398,8 +398,14 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
       grr_amount = EXCLUDED.grr_amount, starts_on = EXCLUDED.starts_on, ends_on = EXCLUDED.ends_on,
       agent_fee_pct = EXCLUDED.agent_fee_pct, minimum_guarantee = EXCLUDED.minimum_guarantee, minimum_guarantee_annual = EXCLUDED.minimum_guarantee_annual,
       guarantee_starts_on = EXCLUDED.guarantee_starts_on, guarantee_ends_on = EXCLUDED.guarantee_ends_on,
-      agreement_file = EXCLUDED.agreement_file, misc_charges = EXCLUDED.misc_charges`));
-  if (links.length) await db.run(`UPDATE units u SET contract_id = x.contract_id FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, contract_id text) WHERE u.id = x.id AND u.contract_id IS NULL`, JSON.stringify(links));
+      agreement_file = EXCLUDED.agreement_file, misc_charges = EXCLUDED.misc_charges,
+      revenue_model = CASE WHEN owner_contracts.revenue_model IN ('master_lease','long_term') THEN owner_contracts.revenue_model ELSE NULL END`));
+  // revenue_model NULL reads from model / minimum guarantee / package (revenueModel.ts), so a re-import that changes those
+  // is never contradicted by an older choice; the two models the workbook cannot express are kept.
+  if (links.length) {
+    await db.run(`UPDATE units u SET contract_id = x.contract_id FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, contract_id text) WHERE u.id = x.id AND u.contract_id IS NULL`, JSON.stringify(links));
+    await db.run(`UPDATE owner_contracts c SET unit_id = x.id FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, contract_id text) WHERE c.id = x.contract_id AND c.unit_id IS NULL`, JSON.stringify(links));
+  }
 
   add(res, 'unit_utility_accounts', await upsert(db, 'unit_utility_accounts',
     [['id', 'text'], ['unit_id', 'text'], ['kind', 'text'], ['account_no', 'text'], ['provider', 'text'], ['note', 'text'], ['created_at', 'text'], ['updated_at', 'text']],

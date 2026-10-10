@@ -2,14 +2,19 @@ import { maySee } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { MASTER_ROLES } from '../../_lib/properties';
-import { daysIn, todayMyt } from '../../_lib/ops';
+import { todayMyt } from '../../_lib/ops';
+import { loadInputs, computeMonth, statementSettings, type Query, type UnitRow } from '../../_lib/ownerStatement';
+import { contractView } from '../../_lib/unitContract';
+import { monthEndExclusive } from '../../_lib/revenue';
 
 const READ_ROLES = [...MASTER_ROLES, 'operations_staff'];
 /** Last four characters, ignoring spaces and dashes ("680606-08-5101" -> "5101"). */
 const tail = (v: unknown) => String(v).replace(/[\s-]/g, '').slice(-4);
 
-/** GET /api/owners?month=YYYY-MM&id= — every owner (or one, with `id`) with their units, contract and that
- *  month's figures (default: this month). Identity and bank numbers are shown only to roles that manage them. */
+/** GET /api/owners?month=YYYY-MM&id= — every owner (or one, with `id`) with their units, each unit's revenue model and
+ *  terms, and that month's figures (default: this month) worked out by the statement engine (ownerStatement.ts), so
+ *  the list, the profile cards and the statement never disagree. Identity and bank numbers are shown only to roles
+ *  that manage them; money only to roles that see it. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -19,24 +24,22 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const url = new URL(request.url);
   const month = url.searchParams.get('month') || todayMyt().slice(0, 7);
   if (!/^\d{4}-\d{2}$/.test(month)) return fail('VALIDATION', 'Month must look like 2026-08.', 422);
-  const days = daysIn(month);
   const id = url.searchParams.get('id');
   const owners = id
     ? await all<any>(env, 'SELECT * FROM owners WHERE id = ?', id)
     : await all<any>(env, 'SELECT * FROM owners ORDER BY display_name');
-  const units = await all<any>(env, `
-    SELECT u.id, u.owner_id, u.unit_number, u.split_kind, u.split_value, u.property_id, p.name AS property_name,
-           c.model, c.management_fee_pct, c.grr_amount,
-           COALESCE(SUM(r.collected_revenue), 0) AS revenue, COALESCE(SUM(r.check_out::date - r.check_in::date), 0) AS nights,
-           (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.unit_id = u.id AND e.charge_to = 'owner' AND substr(e.incurred_on, 1, 7) = ?) AS costs
-    FROM units u JOIN properties p ON p.id = u.property_id
-    LEFT JOIN owner_contracts c ON c.id = u.contract_id
-    LEFT JOIN reservations r ON r.unit_id = u.id AND r.state IN ('confirmed','checked_in','checked_out')
-      AND r.channel NOT IN ('maintenance_block','owner_stay') AND substr(r.check_in, 1, 7) = ?
-    ${id ? 'WHERE u.owner_id = ?' : ''}
-    GROUP BY u.id, p.id, p.name, c.model, c.management_fee_pct, c.grr_amount
-    ORDER BY p.name, u.unit_number`, month, month, ...(id ? [id] : []));
-  const contracts = await all<any>(env, `SELECT * FROM owner_contracts ${id ? 'WHERE owner_id = ?' : ''} ORDER BY starts_on DESC`, ...(id ? [id] : []));
+  const q: Query = (sql, ...args) => all(env, sql, ...args);
+  const [settings, inputs, contracts, statements] = await Promise.all([
+    statementSettings(q),
+    loadInputs(q, `${month}-01`, monthEndExclusive(month), id ? { ownerIds: [id] } : {}),
+    all<any>(env, `SELECT * FROM owner_contracts ${id ? 'WHERE owner_id = ?' : ''} ORDER BY starts_on DESC`, ...(id ? [id] : [])),
+    all<any>(env, `SELECT id, owner_id, state FROM owner_statements WHERE period_start = ? ${id ? 'AND owner_id = ?' : ''}`, `${month}-01`, ...(id ? [id] : [])),
+  ]);
+  const months = new Map(computeMonth(month, inputs, settings, 'dated').map(m => [m.unitId, m]));
+  const statementOf = new Map(statements.map(s => [s.owner_id, s]));
+  const unitsOf = new Map<string, UnitRow[]>();
+  for (const u of inputs.units) { const l = unitsOf.get(u.owner_id); if (l) l.push(u); else unitsOf.set(u.owner_id, [u]); }
+  const propertyOf = new Map((await all<any>(env, `SELECT id, property_id FROM units ${id ? 'WHERE owner_id = ?' : ''}`, ...(id ? [id] : []))).map(r => [r.id, r.property_id]));
 
   return json({
     generatedAt: nowIso(), month,
@@ -44,6 +47,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       const mine = contracts.find(c => c.owner_id === o.id) ?? null;
       // Owner-level default management fee (migration 0009). Absent until applied → null.
       const ownerDefault = o.default_management_fee_pct != null ? Number(o.default_management_fee_pct) : null;
+      const st = statementOf.get(o.id);
       return {
         id: o.id, displayName: o.display_name, email: o.email, phone: o.phone,
         // Identity and bank numbers leave the server only as their last four characters; the full value needs an
@@ -55,19 +59,27 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         portalInvited: !!o.user_id,
         defaultManagementFeePct: ownerDefault,
         contract: mine ? { feePct: Number(mine.management_fee_pct), startedOn: mine.starts_on, renewsOn: mine.renews_on, endsOn: mine.ends_on ?? null } : null,
-        units: units.filter(u => u.owner_id === o.id).map(u => {
-          const grr = (u.model ?? (mine?.model ?? 'management')) === 'grr';
-          // Fee resolution: the unit's own contract fee wins, then the owner default, then 25%.
+        statement: st ? { id: st.id, state: st.state } : null,
+        units: (unitsOf.get(o.id) ?? []).map(u => {
+          const m = months.get(u.id)!;
+          const view = contractView(u.contract_id ? { ...u, id: u.contract_id, misc_charges: u.contract_misc } : null, { ...u, misc_charges: u.unit_misc }, settings.defaultFeePct);
+          const fixed = m.terms.basis !== 'share';
           const unitPct = u.management_fee_pct != null ? Number(u.management_fee_pct) : null;
-          const feePct = unitPct ?? ownerDefault ?? 25;
-          const feeSource: 'unit' | 'owner-default' | 'fallback' = unitPct != null ? 'unit' : ownerDefault != null ? 'owner-default' : 'fallback';
-          const revenue = Number(u.revenue), nights = Number(u.nights);
-          const grrAmount = Number(u.grr_amount ?? mine?.grr_amount ?? 0);
           return {
-            unitId: u.id, unitLabel: `${u.property_name} ${u.unit_number}`, buildingId: u.property_id, model: grr ? 'grr' : 'management',
-            ...(grr ? { grrAmount } : { feePct }), feeSource,
-            occupancy: Math.min(100, Math.round((nights / days) * 100)), adr: nights ? Math.round(revenue / nights) : 0,
-            gross: revenue, net: grr ? grrAmount : revenue - Math.round(revenue * (feePct / 100)) - Number(u.costs),
+            unitId: u.id, unitLabel: `${u.property_name} ${u.unit_number}`, buildingId: propertyOf.get(u.id),
+            // model: the two-way split older screens filter on; revenueModel: the five models.
+            model: m.terms.model === 'grr' ? 'grr' : 'management', revenueModel: m.terms.model, termsLabel: view.termsLabel,
+            ...(fixed ? { grrAmount: m.terms.fixedRent } : { feePct: 100 - (m.ownerPct ?? 0) }),
+            feeSource: unitPct != null ? 'unit' : ownerDefault != null ? 'owner-default' : 'fallback',
+            occupancy: Math.min(100, Math.round(m.occupancy * 100)), adr: m.nights ? Math.round(m.gross / m.nights) : 0,
+            gross: m.gross, net: m.netPayout,
+            ...(banking ? {
+              figures: {
+                income: m.gross, costs: m.deductions, operatorShare: m.operatorShare, guarantee: m.guarantee, topUp: m.topUp, fixedRent: m.terms.model === 'master_lease' ? 0 : m.fixedRent,
+                payoutBeforeAdjustments: m.payoutBeforeAdjustments, adjustments: m.adjustmentsTotal, netPayout: m.netPayout, nights: m.nights,
+                costLines: m.deductionGroups.filter(g => g.amount).map(g => ({ label: g.label, amount: g.amount })),
+              },
+            } : {}),
           };
         }),
       };

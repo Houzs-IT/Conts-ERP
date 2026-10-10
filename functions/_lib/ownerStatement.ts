@@ -11,8 +11,13 @@
  *    - share (profit share 75/20/5, or a management fee "15% To Operator"): the owner gets OWNER% of the net
  *      income; the rest is the operator's (management and agent). Package D: the owner gets at least the monthly
  *      minimum guarantee (prorated by the days it applies); what the company adds to reach it is a top-up.
- *    - fixed rent (long term / GRR): the owner gets the rent, prorated by the contract days in the month; the
- *      income and costs are the company's.
+ *    - fixed rent (GRR): the owner gets the monthly rent; the income and costs are the company's.
+ *    - long-term let (revenue model long_term, no bookings): the income is the tenant's monthly rent, prorated by the
+ *      tenancy days in the month; owner-paid costs come off it, and the management fee is a percentage of the rent.
+ *    - master lease: the company rents the unit from the owner. There is no owner statement; the rent is a company
+ *      cost (units/detail.ts shows it). Owner credits and charges on such a unit still reach the owner.
+ *  Only expenses paid by the owner (expenses.charge_to = 'owner', "Paid by: Owner" on screen) are deducted; the
+ *  company's, a tenant's or a guest's never reach the statement.
  *  = Payout before O2 adjustment
  *  + Owner adjustments (O2): credits and charges after the split, e.g. "MAINTENANCE FEE SEPT 26".
  *  = Net payout to owner
@@ -22,6 +27,7 @@
  *  share = net x OWNER%, rounded; the operator's share is the rest. Every line on the page can be checked by hand
  *  and the statement adds up to the sen. */
 import { prorate, nightsInWindow, daysInMonth, monthEndExclusive } from './revenue';
+import { modelOf, type RevenueModel } from './revenueModel';
 
 export type Query = <T = any>(sql: string, ...args: unknown[]) => Promise<T[]>;
 
@@ -46,13 +52,24 @@ export interface UnitRow {
   contract_id: string | null; model: string | null; management_fee_pct: number | null; grr_amount: number | null;
   starts_on: string | null; ends_on: string | null; minimum_guarantee: number | null; guarantee_starts_on: string | null; guarantee_ends_on: string | null;
   contract_misc: number | null;
+  /** 0093: the contract's revenue model (null = read from model / minimum guarantee / package), tenant, agent. */
+  revenue_model?: string | null; tenant_name?: string | null; agent_fee_pct?: number | null;
+  /** The unit's other contracts (history), newest start first: used for a month before the current contract began. */
+  history?: ContractRow[];
+}
+export interface ContractRow {
+  id: string; unit_id: string; revenue_model: string | null; model: string | null; management_fee_pct: number | null; grr_amount: number | null;
+  starts_on: string | null; ends_on: string | null; minimum_guarantee: number | null; guarantee_starts_on: string | null; guarantee_ends_on: string | null;
+  misc_charges: number | null; tenant_name: string | null; agent_fee_pct: number | null;
 }
 export interface StayRow { id: string; unit_id: string; check_in: string; check_out: string; collected_revenue: number; channel: string; external_ref: string | null; guest_name: string | null }
 export interface CostRow { id: string; unit_id: string; category: string; description: string; amount: number; incurred_on: string; reference: string | null; task_kind: string | null }
 export interface AdjustmentRow { id: string; owner_id: string; unit_id: string | null; kind: string; amount: number; description: string; occurred_on: string; reference: string | null; state: string; statement_id: string | null }
 
 export interface Terms {
-  basis: 'share' | 'fixed_rent'; source: 'contract' | 'unit' | 'default';
+  /** 'none': master lease, nothing to split (no statement unless there are owner credits or charges). */
+  basis: 'share' | 'fixed_rent' | 'none'; source: 'contract' | 'unit' | 'default';
+  model: RevenueModel; tenantName?: string | null; agentPct?: number | null;
   ownerPct: number | null; fixedRent: number; guarantee: number;
   activeFrom: string | null; activeTo: string | null; guaranteeFrom: string | null; guaranteeTo: string | null;
   miscCharges: boolean;
@@ -64,15 +81,36 @@ export function termsFor(u: UnitRow, defaultFeePct: number): Terms {
   const miscCharges = Number(u.contract_misc ?? 0) === 1 || Number(u.unit_misc ?? 0) === 1;
   const base = { activeFrom: u.starts_on, activeTo: u.ends_on, guaranteeFrom: u.guarantee_starts_on, guaranteeTo: u.guarantee_ends_on, miscCharges };
   if (u.contract_id) {
-    if (u.model === 'grr') return { ...base, basis: 'fixed_rent', source: 'contract', ownerPct: null, fixedRent: Number(u.grr_amount ?? 0), guarantee: 0 };
-    return { ...base, basis: 'share', source: 'contract', ownerPct: 100 - Number(u.management_fee_pct ?? defaultFeePct), fixedRent: 0, guarantee: Number(u.minimum_guarantee ?? 0) };
+    const model = modelOf(u);
+    const agentPct = u.agent_fee_pct == null ? null : Number(u.agent_fee_pct);
+    if (model === 'grr') return { ...base, model, basis: 'fixed_rent', source: 'contract', ownerPct: null, fixedRent: Number(u.grr_amount ?? 0), guarantee: 0 };
+    if (model === 'master_lease') return { ...base, model, basis: 'none', source: 'contract', ownerPct: null, fixedRent: Number(u.grr_amount ?? 0), guarantee: 0, miscCharges: false };
+    if (model === 'long_term') return { ...base, model, basis: 'share', source: 'contract', ownerPct: 100 - Number(u.management_fee_pct ?? 0), fixedRent: Number(u.grr_amount ?? 0), guarantee: 0, miscCharges: false, tenantName: u.tenant_name ?? null };
+    // A management share never carries a guarantee; one with a guarantee is management_guarantee (modelOf reads a
+    // contract with a minimum as that, so the figures are the ones the statement always gave).
+    return { ...base, model, agentPct, basis: 'share', source: 'contract', ownerPct: 100 - Number(u.management_fee_pct ?? defaultFeePct), fixedRent: 0,
+      guarantee: model === 'management_guarantee' ? Number(u.minimum_guarantee ?? 0) : 0 };
   }
   const none = { activeFrom: null, activeTo: null, guaranteeFrom: null, guaranteeTo: null, miscCharges };
-  if (/grr|guaranteed rent/i.test(u.split_kind ?? '') && Number(u.split_value) > 0) return { ...none, basis: 'fixed_rent', source: 'unit', ownerPct: null, fixedRent: Number(u.split_value), guarantee: 0 };
+  if (/grr|guaranteed rent/i.test(u.split_kind ?? '') && Number(u.split_value) > 0) return { ...none, model: 'grr', basis: 'fixed_rent', source: 'unit', ownerPct: null, fixedRent: Number(u.split_value), guarantee: 0 };
   if (/profit share/i.test(u.split_kind ?? '') && u.split_value !== null && Number(u.split_value) >= 0 && Number(u.split_value) <= 100) {
-    return { ...none, basis: 'share', source: 'unit', ownerPct: Number(u.split_value), fixedRent: 0, guarantee: 0 };
+    return { ...none, model: 'management', basis: 'share', source: 'unit', ownerPct: Number(u.split_value), fixedRent: 0, guarantee: 0 };
   }
-  return { ...none, basis: 'share', source: 'default', ownerPct: 100 - defaultFeePct, fixedRent: 0, guarantee: 0 };
+  return { ...none, model: 'management', basis: 'share', source: 'default', ownerPct: 100 - defaultFeePct, fixedRent: 0, guarantee: 0 };
+}
+
+/** The unit as it stood under the contract in force in `month`. The current contract applies unless it starts after
+ *  the month and an earlier contract of the unit covers it (a unit's history, kept since 0093). */
+export function unitForMonth(u: UnitRow, month: string): UnitRow {
+  const start = `${month}-01`, endEx = monthEndExclusive(month);
+  if (!u.history?.length || !u.starts_on || u.starts_on.slice(0, 10) < endEx) return u;
+  const c = u.history.find(h => h.id !== u.contract_id && h.starts_on && h.starts_on.slice(0, 10) < endEx && (!h.ends_on || h.ends_on.slice(0, 10) >= start));
+  if (!c) return u;
+  return {
+    ...u, contract_id: c.id, revenue_model: c.revenue_model, model: c.model, management_fee_pct: c.management_fee_pct, grr_amount: c.grr_amount,
+    starts_on: c.starts_on, ends_on: c.ends_on, minimum_guarantee: c.minimum_guarantee, guarantee_starts_on: c.guarantee_starts_on,
+    guarantee_ends_on: c.guarantee_ends_on, contract_misc: c.misc_charges, tenant_name: c.tenant_name, agent_fee_pct: c.agent_fee_pct,
+  };
 }
 
 /** Days of the month inside [from, to] (inclusive dates; null = open). */
@@ -87,7 +125,7 @@ export function classifyCost(c: Pick<CostRow, 'category' | 'description' | 'task
   const cat = c.category, d = c.description ?? '';
   if (cat === 'cleaning' || cat === 'housekeeping') return c.task_kind === 'deep_clean' || /deep|move-out/i.test(d) ? 'cleaning_deep' : 'cleaning_basic';
   if (cat === 'electricity' || cat === 'water' || cat === 'internet') return cat;
-  if (cat === 'utilities' && /indah|sewer|iwk/i.test(d)) return 'sewerage';
+  if (cat === 'sewerage' || (cat === 'utilities' && /indah|sewer|iwk/i.test(d))) return 'sewerage';
   return 'additional';
 }
 
@@ -115,14 +153,19 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   const start = `${month}-01`, endEx = monthEndExclusive(month), days = daysInMonth(month), end = new Date(Date.parse(`${endEx}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
   const lines: Line[] = [];
 
-  // Income: each stay's nights in the month and that share of its payout.
-  const mine = stays.filter(s => s.unit_id === unit.id).map(s => {
+  // Income: each stay's nights in the month and that share of its payout. A long-term let or a master lease has no
+  // stays that belong to the owner (the tenant's rent is the income; under a master lease all trading is the company's).
+  const ownTrading = terms.model !== 'long_term' && terms.model !== 'master_lease';
+  const mine = stays.filter(s => s.unit_id === unit.id && ownTrading).map(s => {
     const total = nightsInWindow(s.check_in, s.check_out, ymd(s.check_in), ymd(s.check_out));
     const n = nightsInWindow(ymd(s.check_in), ymd(s.check_out), start, endEx);
     return { s, n, exact: prorate(Number(s.collected_revenue), n, total) };
   }).filter(x => x.n > 0).sort((a, b) => a.s.check_in.localeCompare(b.s.check_in));
   const nights = mine.reduce((n, x) => n + x.n, 0);
-  const grossExact = mine.reduce((n, x) => n + x.exact, 0);
+  // Long-term let: the month's rent, for the days of the month the tenancy covers.
+  const tenancyDays = terms.model === 'long_term' ? daysCovered(month, terms.activeFrom, terms.activeTo) : 0;
+  const rentExact = terms.model === 'long_term' ? (terms.fixedRent * tenancyDays) / days : 0;
+  const grossExact = mine.reduce((n, x) => n + x.exact, 0) + rentExact;
   const gross = roundSen(grossExact);
   // Each stay's line is rounded so that the lines add up to the rounded total (largest remainder).
   const floors = mine.map(x => Math.floor(x.exact));
@@ -132,7 +175,8 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   if (left < 0) floors[floors.length - 1] += left;
 
   // Deductions, by the workbook's rows.
-  const myCosts = costs.filter(c => c.unit_id === unit.id && c.incurred_on >= start && c.incurred_on < endEx).sort((a, b) => a.incurred_on.localeCompare(b.incurred_on));
+  // A master lease deducts nothing from the owner: every cost of the unit is the company's.
+  const myCosts = terms.basis === 'none' ? [] : costs.filter(c => c.unit_id === unit.id && c.incurred_on >= start && c.incurred_on < endEx).sort((a, b) => a.incurred_on.localeCompare(b.incurred_on));
   const occupancy = nights / days;
   const miscExact = terms.miscCharges && terms.basis === 'share' ? miscMonthly * occupancy : 0;
   const misc = roundSen(miscExact);
@@ -161,7 +205,13 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
 
   // The split.
   let ownerShare = 0, operatorShare = 0, topUp = 0, guarantee = 0, fixedRent = 0, payoutBeforeAdjustments = 0;
-  if (terms.basis === 'fixed_rent') {
+  if (terms.basis === 'none') {
+    // Master lease: nothing earned or owed by the owner through a statement.
+  } else if (terms.model === 'long_term') {
+    // The management fee is the operator's percentage of the rent; the owner gets the rest of the net.
+    operatorShare = roundSen((gross * (100 - (terms.ownerPct ?? 100))) / 100);
+    ownerShare = payoutBeforeAdjustments = net - operatorShare;
+  } else if (terms.basis === 'fixed_rent') {
     // The workbook pays the whole month's rent whatever the contract dates say (rents run on past their end date
     // and a new one is paid in full from its first month), so the rent is not prorated.
     fixedRent = payoutBeforeAdjustments = roundSen(terms.fixedRent);
@@ -185,7 +235,16 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
 
   // Lines, in the order the report shows them. A fixed-rent owner's statement carries the rent, not the unit's trading.
   const label = `${unit.property_name} ${unit.unit_number}`;
-  if (terms.basis === 'share') {
+  if (terms.model === 'long_term') {
+    if (gross) lines.push({ type: 'gross', category: 'long_term_rent', unitId: unit.id, quantity: tenancyDays, amount: gross, occurredOn: start,
+      description: `${label} · monthly rent${terms.tenantName ? ` from ${terms.tenantName}` : ''}${tenancyDays !== days ? ` (${tenancyDays} of ${days} days)` : ''}` });
+    for (const c of myCosts) lines.push({
+      type: 'expense', category: classifyCost(c), unitId: unit.id, expenseId: c.id, quantity: 1, amount: -Number(c.amount), occurredOn: c.incurred_on,
+      description: c.description || c.category, reference: c.reference,
+    });
+    if (operatorShare) lines.push({ type: 'management_fee', category: 'operator_share', unitId: unit.id, quantity: null, amount: -operatorShare, occurredOn: end,
+      description: `Management fee ${fmtPct(100 - (terms.ownerPct ?? 100))} of the rent` });
+  } else if (terms.basis === 'share') {
     mine.forEach((x, i) => lines.push({
       type: 'gross', category: 'hospitality', unitId: unit.id, reservationId: x.s.id, quantity: x.n, amount: floors[i], occurredOn: x.s.check_in > start ? ymd(x.s.check_in) : start,
       description: `${label} · ${x.s.guest_name || 'Guest'} · ${ymd(x.s.check_in)} to ${ymd(x.s.check_out)}${x.n !== nightsInWindow(ymd(x.s.check_in), ymd(x.s.check_out), ymd(x.s.check_in), ymd(x.s.check_out)) ? ` (${x.n} ${x.n === 1 ? 'night' : 'nights'} in ${month})` : ''}`,
@@ -213,6 +272,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   const warnings: string[] = [];
   const unpaid = mine.filter(x => !(Number(x.s.collected_revenue) > 0));
   if (unpaid.length) warnings.push(`${unpaid.length} ${unpaid.length === 1 ? 'stay has' : 'stays have'} no payout recorded (${unpaid.reduce((n, x) => n + x.n, 0)} nights counted at RM 0): ${unpaid.map(x => `${x.s.check_in} to ${x.s.check_out}`).join(', ')}.`);
+  if (terms.model === 'long_term' && !gross) warnings.push('Long-term let with no rent this month: check the tenancy dates on the contract.');
   if (terms.source === 'default') warnings.push(`No contract or split on this unit: the default ${fmtPct(100 - (terms.ownerPct ?? 0))} operator share was used.`);
 
   return {
@@ -227,7 +287,9 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
 export const fmtPct = (p: number) => `${Number(p.toFixed(2))}%`;
 
 /** Does this unit belong on a statement this month: anything earned, charged, owed or guaranteed. */
-export const hasActivity = (m: UnitMonth) => m.nights > 0 || m.deductions !== 0 || m.adjustmentIds.length > 0 || m.fixedRent !== 0 || m.guarantee !== 0;
+export const hasActivity = (m: UnitMonth) => m.terms.basis === 'none'
+  ? m.adjustmentIds.length > 0
+  : m.nights > 0 || m.gross !== 0 || m.deductions !== 0 || m.adjustmentIds.length > 0 || m.fixedRent !== 0 || m.guarantee !== 0;
 
 /* ------------------------------------------------------------------ */
 /* Loading                                                             */
@@ -239,7 +301,8 @@ export const UNIT_SQL = `
   SELECT u.id, u.owner_id, o.display_name AS owner_name, u.unit_number, u.unit_code, p.name AS property_name, u.address,
          u.package, u.term, u.split_kind, u.split_value, u.misc_charges AS unit_misc,
          c.id AS contract_id, c.model, c.management_fee_pct, c.grr_amount, c.starts_on, c.ends_on,
-         c.minimum_guarantee, c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges AS contract_misc
+         c.minimum_guarantee, c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges AS contract_misc,
+         c.revenue_model, c.tenant_name, c.agent_fee_pct
   FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
   LEFT JOIN owner_contracts c ON c.id = u.contract_id`;
 
@@ -249,7 +312,7 @@ export async function loadInputs(q: Query, from: string, toExclusive: string, sc
   const unitArg = scope.unitId ? [scope.unitId] : scope.ownerIds ? [JSON.stringify(scope.ownerIds)] : [];
   const units = await q<UnitRow>(`${UNIT_SQL} ${unitWhere} ORDER BY p.name, u.unit_number`, ...unitArg);
   const ids = JSON.stringify(units.map(u => u.id));
-  const [stays, costs, adjustments] = await Promise.all([
+  const [stays, costs, adjustments, history] = await Promise.all([
     q<StayRow>(`
       SELECT r.id, r.unit_id, r.check_in, r.check_out, r.collected_revenue, r.channel, r.external_ref, g.full_name AS guest_name
       FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id
@@ -264,9 +327,16 @@ export async function loadInputs(q: Query, from: string, toExclusive: string, sc
       FROM owner_adjustments a
       WHERE a.state <> 'held' AND a.occurred_on < ? AND a.owner_id IN (SELECT DISTINCT owner_id FROM units WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)))
       ORDER BY a.occurred_on, a.id`, toExclusive, ids),
+    q<ContractRow>(`
+      SELECT c.id, c.unit_id, c.revenue_model, c.model, c.management_fee_pct, c.grr_amount, c.starts_on, c.ends_on, c.minimum_guarantee,
+             c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges, c.tenant_name, c.agent_fee_pct
+      FROM owner_contracts c WHERE c.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+      ORDER BY c.starts_on DESC, c.created_at DESC`, ids),
   ]);
+  const historyOf = new Map<string, ContractRow[]>();
+  for (const h of history) { const l = historyOf.get(h.unit_id); if (l) l.push(h); else historyOf.set(h.unit_id, [h]); }
   return {
-    units,
+    units: units.map(u => (historyOf.get(u.id)?.length ? { ...u, history: historyOf.get(u.id) } : u)),
     stays: stays.map(s => ({ ...s, check_in: ymd(s.check_in), check_out: ymd(s.check_out), collected_revenue: Number(s.collected_revenue) })),
     costs: costs.map(c => ({ ...c, incurred_on: ymd(c.incurred_on), amount: Number(c.amount) })),
     adjustments: adjustments.map(a => ({ ...a, amount: Number(a.amount) })),
@@ -303,8 +373,11 @@ export function computeMonth(month: string, inputs: Inputs, settings: { defaultF
   const costs = inputs.costs.filter(c => c.incurred_on >= start && c.incurred_on < endEx);
   const out: UnitMonth[] = [];
   for (const [ownerId, units] of byOwner) {
-    const adj = adjustmentsFor(inputs.adjustments, ownerId, month, mode, statementIdOf(ownerId), units[0]?.id ?? null);
-    for (const u of units) out.push(computeUnitMonth(month, u, termsFor(u, settings.defaultFeePct), stays, costs, adj, settings.miscMonthly));
+    const asOf = units.map(u => unitForMonth(u, month));
+    // An owner credit or charge with no unit goes on the owner's first unit that has a statement (not a master lease).
+    const first = asOf.find(u => modelOf(u) !== 'master_lease') ?? asOf[0];
+    const adj = adjustmentsFor(inputs.adjustments, ownerId, month, mode, statementIdOf(ownerId), first?.id ?? null);
+    for (const u of asOf) out.push(computeUnitMonth(month, u, termsFor(u, settings.defaultFeePct), stays, costs, adj, settings.miscMonthly));
   }
   return out;
 }
