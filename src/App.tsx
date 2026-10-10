@@ -20,11 +20,9 @@ const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 const BookingsPage = lazy(() => import('./pages/BookingsPage'));
 const GuestsPage = lazy(() => import('./pages/GuestsPage'));
 const OperationsTodayPage = lazy(() => import('./pages/OperationsTodayPage'));
-const HousekeepingPage = lazy(() => import('./pages/HousekeepingPage'));
+const CleaningPage = lazy(() => import('./pages/CleaningPage'));
 const CleanersPage = lazy(() => import('./pages/CleanersPage')); // added: housekeeping cleaner roster
 const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
-const TasksPage = lazy(() => import('./pages/TasksPage'));
-const InspectionsPage = lazy(() => import('./pages/InspectionsPage'));
 import SupplyChainEngine from './components/SupplyChainEngine';
 import { ENGINE_PATH } from './lib/scmEngine';
 import { useApi } from './lib/useApi';
@@ -143,6 +141,12 @@ function ToUnits({ tab }: { tab?: string }) {
   return <Navigate replace to={`/properties/units${unit ? `/${encodeURIComponent(unit)}` : ''}${t ? `?tab=${encodeURIComponent(t)}` : ''}`} />;
 }
 
+/** The old All tasks list: maintenance work opens Maintenance's History, everything else Cleaning's History. */
+function ToTaskHistory() {
+  const kind = new URLSearchParams(useLocation().search).get('kind');
+  return <Navigate replace to={kind === 'maintenance' ? '/operations/maintenance' : '/operations/cleaning?tab=history'} />;
+}
+
 function OwnerProfileRoute() {
   const { id = '' } = useParams();
   return <OwnerProfilePage ownerId={decodeURIComponent(id)} />;
@@ -189,11 +193,14 @@ function Routed() {
         <Route path="/reservations/bookings" element={<BookingsPage />} />
         <Route path="/reservations/guests" element={<GuestsPage />} />
         <Route path="/operations/today" element={<OperationsTodayPage />} />
-        <Route path="/operations/housekeeping" element={<HousekeepingPage />} />
-        <Route path="/operations/cleaners" element={<CleanersPage />} /> {/* added: cleaner roster */}
+        <Route path="/operations/cleaning" element={<CleaningPage />} />
+        <Route path="/operations/cleaners" element={<CleanersPage />} />
         <Route path="/operations/maintenance" element={<MaintenancePage />} />
-        <Route path="/operations/tasks" element={<TasksPage />} />
-        <Route path="/operations/inspections" element={<InspectionsPage />} />
+        {/* Housekeeping is Cleaning; Inspections is gone; All tasks is the History tab (owner, 10 Oct). */}
+        <Route path="/operations/housekeeping" element={<Navigate to="/operations/cleaning" replace />} />
+        <Route path="/operations/inspections" element={<Navigate to="/operations/cleaning" replace />} />
+        <Route path="/operations/inspections/*" element={<Navigate to="/operations/cleaning" replace />} />
+        <Route path="/operations/tasks" element={<ToTaskHistory />} />
         <Route path="/properties" element={<ToUnits />} />
         <Route path="/properties/units" element={<UnitsPage unitId="" />} />
         <Route path="/properties/units/:id" element={<UnitsRoute />} />

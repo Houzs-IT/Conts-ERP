@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { color, shell, radius, motion, text } from '../theme';
 import { navFor, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type NavGroup, type Workspace } from '../lib/navigation';
 import { useApi } from '../lib/useApi';
@@ -7,6 +7,7 @@ import { useNavCounts } from '../lib/navBadges';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import Icon, { toPascal } from './Icon';
 import { Logo } from './Logo';
+import { cx } from '../lib/design-tokens';
 
 interface Props { path: string; navigate: (p: string) => void; open: boolean; onToggle: () => void }
 
@@ -54,6 +55,16 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   const activeParent = parentOf(groups, path);
   const selected = activeKey(groups, path);
 
+  // The scrollbar shows while the menu moves and fades a second after it stops.
+  const [scrolling, setScrolling] = useState(false);
+  const scrollTimer = useRef<number | undefined>(undefined);
+  const onNavScroll = () => {
+    setScrolling(true);
+    window.clearTimeout(scrollTimer.current);
+    scrollTimer.current = window.setTimeout(() => setScrolling(false), 900);
+  };
+  useEffect(() => () => window.clearTimeout(scrollTimer.current), []);
+
   const counts = useNavCounts(path);
   const countOf = (k?: BadgeKey) => (k && counts?.[k]) || 0;
 
@@ -65,7 +76,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
 
   return (
     <div data-print-hide style={{
-      width: open ? shell.sidebar : shell.sidebarCollapsed, flex: 'none', height: '100vh',
+      width: open ? shell.sidebar : shell.sidebarCollapsed, flex: 'none', height: '100dvh',
       display: 'flex', flexDirection: 'column', background: color.black, color: '#FFFFFF',
       transition: `width ${motion.standard} ${motion.ease}`,
     }}>
@@ -105,8 +116,10 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
         )
       )}
 
-      {/* Own scroller: the sidebar never rides the page scroll. */}
-      <nav aria-label={hasSupply ? WORKSPACE_LABEL[ws] : 'Main'} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin', padding: open ? '12px 10px 20px' : '10px 10px 20px', display: 'flex', flexDirection: 'column', gap: open ? 14 : 6 }}>
+      {/* Own scroller: the sidebar never rides the page scroll. Its bar is thin and dark and shows only while the
+          menu is scrolling (.nav-scroll in tokens.css), never the grey browser bar with arrows. */}
+      <nav aria-label={hasSupply ? WORKSPACE_LABEL[ws] : 'Main'} className={cx('nav-scroll', scrolling && 'is-scrolling')} onScroll={onNavScroll}
+        style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', padding: open ? '12px 10px 20px' : '10px 10px 20px', display: 'flex', flexDirection: 'column', gap: open ? 14 : 6 }}>
         {groups.map((g, gi) => {
           const sectionCollapsed = open && !!collapsedSections[g.label];
           return (
@@ -200,7 +213,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
         })}
       </nav>
 
-      <div style={{ padding: 10, borderTop: `1px solid ${color.charcoal}`, position: 'relative' }}>
+      <div style={{ flex: 'none', padding: 10, borderTop: `1px solid ${color.charcoal}`, position: 'relative' }}>
         {profileOpen && (
           <div style={{ position: 'absolute', left: 10, bottom: 62, width: Math.max(224, open ? shell.sidebar - 20 : 224), zIndex: 30, background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: '0 12px 32px rgba(21,21,21,0.24)', overflow: 'hidden' }}>
             <div style={{ padding: '14px 16px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', flexDirection: 'column', gap: 3 }}>
