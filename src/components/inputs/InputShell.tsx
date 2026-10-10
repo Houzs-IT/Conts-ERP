@@ -43,5 +43,13 @@ export function InputShell({ id, label, help, error, trailing, leading, children
   );
 }
 
-/** Phone-sized tap target and 16px text (no iOS zoom-on-focus) below the sm breakpoint. */
-export const PHONE_SIZING = 'max-sm:min-h-10 max-sm:text-base';
+/** Phone-sized tap target and 16px text (iOS zooms the page into any field under 16px) below the sm breakpoint.
+ *  A plain rule rather than Tailwind's max-sm: utilities: .field-input sits outside the cascade layers, so it
+ *  would beat any utility; this rule comes later and is more specific. */
+export const PHONE_SIZING = 'ci-input';
+if (typeof document !== 'undefined' && !document.getElementById('ci-input-css')) {
+  const s = document.createElement('style');
+  s.id = 'ci-input-css';
+  s.textContent = '@media (max-width: 639.98px) { input.ci-input { font-size: 16px; min-height: 40px; } }';
+  document.head.appendChild(s);
+}

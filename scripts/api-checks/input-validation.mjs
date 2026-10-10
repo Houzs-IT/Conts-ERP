@@ -45,5 +45,19 @@ await refuses('settings check-in 25:00', 'PUT', '/api/settings', { operations: {
   await call('PUT', '/api/settings', { report: { miscChargeMonthly: before.report.miscChargeMonthly }, company: { supportPhone: before.company.supportPhone } });
 }
 
+// Forms behind the converted fields. Every body below is refused before anything is written.
+const unitId = (await call('GET', '/api/units?limit=1')).json?.data?.[0]?.id;
+check('a unit to test against', !!unitId);
+const stay = { unitId, checkIn: '2027-01-10', checkOut: '2027-01-12', guestsCount: 2, guest: { fullName: 'Input Check' } };
+await refuses('booking with 31 February', 'POST', '/api/reservations', { ...stay, checkIn: '2027-02-31' }, 'checkIn');
+await refuses('booking total in ringgit (450.5)', 'POST', '/api/reservations', { ...stay, grossBookingValue: 450.5 }, 'grossBookingValue');
+await refuses('booking with 0 guests', 'POST', '/api/reservations', { ...stay, guestsCount: 0 }, 'guestsCount');
+await refuses('booking phone with letters', 'POST', '/api/reservations', { ...stay, guest: { fullName: 'Input Check', phone: 'abc' } }, 'guest.phone');
+await refuses('expense negative amount', 'POST', '/api/expenses', { unitId, category: 'repair', amount: -500, incurredOn: '2026-10-01' }, 'amount');
+await refuses('expense float amount', 'POST', '/api/expenses', { unitId, category: 'repair', amount: 12.3, incurredOn: '2026-10-01' }, 'amount');
+await refuses('expense date not a date', 'POST', '/api/expenses', { unitId, category: 'repair', amount: 1230, incurredOn: '10/01/2026' }, 'incurredOn');
+await refuses('product price in ringgit', 'POST', '/api/products', { code: 'INPUT-CHECK', name: 'Input check', category: 'SOFA', basePriceSen: 99.9 }, 'basePriceSen');
+await refuses('night rate on a bad date', 'PUT', '/api/rates', { unitId, channel: 'web', date: '2026-13-01', rate: 25000 }, 'date');
+
 console.log(`\ninput-validation: ${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

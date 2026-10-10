@@ -203,3 +203,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Done: the 32 one-click Delete / Cancel buttons on the built-in supply chain screens now ask first (ConfirmButton).
 - Open: rejecting a sales order amendment asks no reason; the amendments API has no field to store one.
 - Open: make the CI workflow (.github/workflows/ci.yml) a required check on main (GitHub > Settings > Branches; owner, needs admin).
+
+## Form inputs (feat/s6-inputs)
+- Done: every money, number, percent, phone, date and time field uses src/components/inputs (no raw type="number"/date/time left; `npm run check` enforces it). Endpoints behind them refuse bad values with a field-level 422 (functions/_lib/validate.ts; scripts/api-checks/input-validation.mjs).
+- Open: native date/time pickers are kept on purpose (phone calendars work well); a typed-text date field is not built.
+- Open: lockout attempts accepts 3-20 on the server but the Settings screen offers 3-10; left to the security stream to align.
