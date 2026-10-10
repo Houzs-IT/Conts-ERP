@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Search, Plus, Trash2, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
@@ -53,6 +52,14 @@ export default function ConsignmentNotesPage() {
   const q = search.trim().toLowerCase();
   const rows = all.filter(c => (statusFilter === 'all' || c.status === statusFilter) && (!q || `${c.cnNumber} ${c.consigneeName}`.toLowerCase().includes(q)));
 
+  const columns = useMemo<Column<Cn>[]>(() => [
+    { key: 'cnNumber', label: 'CN number', type: 'ref', value: c => c.cnNumber, hideable: false },
+    { key: 'consignee', label: 'Consignee', value: c => c.consigneeName },
+    { key: 'cnDate', label: 'Date', type: 'date', value: c => c.cnDate || null },
+    { key: 'status', label: 'Status', type: 'status', value: c => c.status, status: c => ({ label: STATUS_LABEL[c.status], tone: STATUS_TONE[c.status] }) },
+    { key: 'value', label: 'Value', type: 'money', value: c => c.totalSen, render: c => <span className="tabular-nums font-semibold">{rm(c.totalSen)}</span> },
+  ], []);
+
   function created(cn: Cn) { setAdded(a => [cn, ...a]); toast({ tone: 'success', title: 'Consignment note raised.', body: `${cn.cnNumber} · ${cn.consigneeName}` }); setDrawer(null); }
   function act(cn: Cn, patch: Record<string, unknown>, optimistic: Partial<Cn>, title: string) {
     setEdits(e => ({ ...e, [cn.id]: { ...e[cn.id], ...optimistic } }));
@@ -65,37 +72,21 @@ export default function ConsignmentNotesPage() {
     <>
       <PageHeader title="Consignment notes" sub={`${all.length} notes · stock consigned out`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New consignment note</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last note list we have. ${error}`} onRetry={reload} />}
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
-        <div className="relative">
-          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search note or consignee..." aria-label="Search consignment notes"
-            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
-        </div>
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[700px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-              {['CN number', 'Consignee', 'Date', 'Status', 'Value'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 4 ? 'text-right' : 'text-left')}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={5}><TableSkeleton rows={5} cols={5} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={5}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No consignment notes match.' : 'No consignment notes yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Consign stock out to a showroom or retailer.</span></div></td></tr>
-              : rows.map(c => (
-                <tr key={c.id} onClick={() => setDrawer({ mode: 'view', cn: c })} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{c.cnNumber}</td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{c.consigneeName}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{c.cnDate ? date(c.cnDate) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={c.status} /></td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{rm(c.totalSen)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Cn>
+        id="scm.consignment-notes" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={c => setDrawer({ mode: 'view', cn: c })}
+        noun={['consignment note', 'consignment notes']} exportName="consignment-notes"
+        toolbar={<>
+          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+          <div className="relative">
+            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search note or consignee..." aria-label="Search consignment notes"
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
+          </div>
+        </>}
+        filtered={!!q || statusFilter !== 'all'} onClearFilters={() => { setSearch(''); setStatusFilter('all'); }}
+        empty={{ title: 'No consignment notes yet.', body: 'Consign stock out to a showroom or retailer.', action: canWrite ? { label: 'New consignment note', onClick: () => setDrawer({ mode: 'new' }) } : undefined }} />
       {drawer?.mode === 'new' && <CreateDrawer canWrite={canWrite} onClose={() => setDrawer(null)} onCreated={created} />}
       {drawer?.mode === 'view' && <SettleDrawer cn={drawer.cn} canWrite={canWrite} onClose={() => setDrawer(null)} onAct={act} />}
     </>

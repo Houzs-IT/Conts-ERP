@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Badge } from '../../components/Badge';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { useApi } from '../../lib/useApi';
 import type { RosterUnit } from '../../lib/useUnitRoster';
 import { rm, monthLabel, titleCase } from '../../lib/format';
 import { MoneyText } from '../../components/MoneyText';
+import { DataTable, type Column } from '../../components/DataTable';
 import { Select, SearchSelect } from '../../components/Select';
 import { cx } from '../../lib/design-tokens';
 import { STATEMENT } from '../../lib/vocabulary';
@@ -124,25 +125,26 @@ export function Section({ title, action, children }: { title: string; action?: R
 export function StatementHistory({ o }: { o: Owner }) {
   // Combined statement history across the owner's units. Hydrates from the live
   // endpoint when present; the computed fallback keeps the section rendering in dev.
-  const { data } = useApi<StatementsPayload>(`/owners/${o.id}/statements`, statementsFallback(o));
-  const history = data?.data ?? [];
+  const { data, loading, error, reload } = useApi<StatementsPayload>(`/owners/${o.id}/statements`, statementsFallback(o));
+  const navigate = useNavigate();
+  const columns = useMemo<Column<OwnerStatement>[]>(() => [
+    { key: 'period', label: 'Month', value: s => s.period, render: s => <span className="text-copy font-medium whitespace-nowrap">{periodLabel(s.period)}</span>,
+      exportValue: s => periodLabel(s.period), hideable: false, width: 110, filter: false },
+    { key: 'gross', label: 'Booking revenue', type: 'money', value: s => s.grossBookingValue, width: 120,
+      render: s => <MoneyText sen={s.grossBookingValue} mode="exact" tone="muted" className="text-meta" /> },
+    { key: 'net', label: 'Owner payout', type: 'money', value: s => s.netPayout, width: 120,
+      render: s => <MoneyText sen={s.netPayout} mode="exact" strong className="text-copy" /> },
+    { key: 'state', label: 'Status', type: 'status', value: s => s.state, width: 110, status: s => STATEMENT[s.state] },
+  ], []);
   return (
     <Section title="Statement history">
-      {history.length === 0 ? (
-        <div className="text-copy text-muted-ink">No statements yet. History appears here once a period is generated for this owner.</div>
-      ) : (
-        <div className="border border-solid border-line rounded-card overflow-hidden">
-          {history.map(s => (
-            <a key={s.id} href={`#/finance/statements/${encodeURIComponent(s.id)}`}
-              className="grid grid-cols-[1fr_0.9fr_0.9fr_auto] gap-2.5 items-center py-[11px] px-[13px] [border-bottom:1px_solid_var(--color-line-soft)] no-underline text-inherit!">
-              <div className="text-copy font-medium">{periodLabel(s.period)}</div>
-              <MoneyText sen={s.grossBookingValue} mode="exact" tone="muted" className="text-meta text-right" />
-              <MoneyText sen={s.netPayout} mode="exact" strong className="text-copy text-right" />
-              <span className="flex justify-end"><Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} size="sm" /></span>
-            </a>
-          ))}
-        </div>
-      )}
+      <div className="border border-solid border-line rounded-card overflow-hidden">
+        <DataTable<OwnerStatement> id="owner.statements" urlPrefix="stmt." bare noViews pageSize={0} maxHeight="420px"
+          columns={columns} rows={data ? data.data : null} rowKey={s => s.id} loading={loading} error={error} onRetry={reload}
+          onRowClick={s => navigate(`/finance/statements/${encodeURIComponent(s.id)}`)}
+          noun={['statement', 'statements']} exportName={`${o.displayName} statements`}
+          empty={{ title: 'No statements yet.', body: 'History appears here once a period is generated for this owner.', icon: 'FileText' }} />
+      </div>
     </Section>
   );
 }

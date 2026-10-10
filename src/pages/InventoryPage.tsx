@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { SearchSelect, Select } from '../components/Select';
 import { Dot } from '../components/Badge';
-import { EmptyState } from '../components/States';
+import { DataTable, type Column } from '../components/DataTable';
 import { Chip } from './finance/listKit';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { Field } from '../components/Field';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { api, notifyFailure } from '../lib/api';
@@ -49,9 +48,6 @@ const FALLBACK: Payload = {
   ],
 };
 
-// Shared grid-template-columns for the table header and each row. Mirrors the
-// former COLS inline value as a Tailwind arbitrary grid-cols.
-const COLS_CLASS = 'grid-cols-[minmax(190px,1.9fr)_minmax(140px,1.2fr)_minmax(96px,0.8fr)_minmax(138px,1fr)_minmax(96px,0.8fr)_minmax(120px,0.95fr)_minmax(150px,1.3fr)]';
 const DUE_WINDOW_DAYS = 90;
 
 const isAttention = (i: Item) => i.condition === 'replace_soon' || i.condition === 'damaged';
@@ -127,6 +123,31 @@ export default function InventoryPage() {
   }
   function clearFilters() { setUnitFilter('all'); setCondFilter('all'); setDueOnly(false); }
 
+  const conditionPicker = (i: Item) => (
+    <div className="flex items-center gap-2 min-w-0">
+      <Dot tone={COND_TONE[i.condition]} />
+      <Select label={`Condition of ${i.name}`} className="flex-1" value={i.condition} onChange={v => setCondition(i, v as Condition)}
+        options={CONDITIONS.map(c => ({ value: c, label: COND_LABEL[c] }))} />
+    </div>
+  );
+  const replaceFace = (i: Item) => {
+    const sTone = scheduleTone(i.replaceBy);
+    return <span className={cx('text-copy whitespace-nowrap', sTone ? cx(TONE[sTone].text, 'font-semibold') : 'text-muted-ink font-normal')}>{i.replaceBy ? date(i.replaceBy) : '—'}</span>;
+  };
+  const columns: Column<Item>[] = [
+    { key: 'name', label: 'Item', value: i => i.name, hideable: false, width: 230,
+      sub: i => <>{i.quantity}{i.suppliedInHouse ? ' · Supplied by The Conts' : ''}{i.installedOn ? ` · installed ${date(i.installedOn)}` : ''}</> },
+    { key: 'unit', label: 'Unit', value: i => i.unitNumber, text: i => `${i.unitNumber} ${i.propertyName}`, sub: i => i.propertyName, width: 150,
+      render: i => <span className="text-copy">{i.unitNumber}</span> },
+    { key: 'category', label: 'Category', value: i => i.category, text: i => CAT_LABEL[i.category], width: 120, filter: { kind: 'select', options: CATEGORIES.map(c => ({ value: c, label: CAT_LABEL[c] })) } },
+    { key: 'condition', label: 'Condition', type: 'status', value: i => i.condition, status: i => ({ label: COND_LABEL[i.condition], tone: COND_TONE[i.condition] }),
+      filter: false, width: 170, render: conditionPicker },
+    { key: 'value', label: 'Value', type: 'money', value: i => i.purchaseCost, width: 110, render: i => <span className="tabular-nums">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span> },
+    { key: 'replaceBy', label: 'Replace by', type: 'date', value: i => i.replaceBy, width: 130, render: replaceFace },
+    { key: 'lastChecked', label: 'Last checked', type: 'date', value: i => i.lastChecked, width: 130, hidden: true },
+    { key: 'notes', label: 'Notes', value: i => i.notes, width: 180, sortable: false, render: i => <NoteCell value={i.notes} onSave={v => saveNote(i, v)} label={i.name} /> },
+  ];
+
   return (
     <>
       <PageHeader
@@ -156,54 +177,30 @@ export default function InventoryPage() {
         {filtersOn && <Button size="sm" variant="tertiary" onClick={clearFilters}>Clear filters</Button>}
       </div>
 
-      <Card>
-        {!loading && rows.length === 0 ? (
-          filtersOn
-            ? <EmptyState bare kind="filtered" title="No items match these filters." action={{ label: 'Clear filters', onClick: clearFilters }} />
-            : <EmptyState bare icon="Sofa" title="No fit-out items recorded yet"
-                body="Add the furniture, appliances, linen and electronics supplied for each unit to track their condition and replacement."
-                action={{ label: 'Add item', onClick: () => setAdding(true) }} />
-        ) : (
-        <div className="overflow-x-auto">
-          <div className="min-w-[1060px]">
-            <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-meta font-semibold text-muted-ink')}>
-              <div>Item</div><div>Unit</div><div>Category</div><div>Condition</div><div className="text-right">Value</div><div>Replace by</div><div>Notes</div>
-            </div>
-
-            {loading && all.length === 0 ? (
-              <TableSkeleton rows={6} cols={7} />
-            ) : rows.map(i => {
-              const sTone = scheduleTone(i.replaceBy);
-              return (
-                <div key={i.id} className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[54px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]')}>
-                  <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-copy">{i.name}</span>
-                    <span className="text-meta text-muted-ink">
-                      {i.quantity}{i.suppliedInHouse ? ' · Supplied by The Conts' : ''}{i.installedOn ? ` · installed ${date(i.installedOn)}` : ''}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-copy">{i.unitNumber}</span>
-                    <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{i.propertyName}</span>
-                  </div>
-                  <span className="text-copy text-[var(--color-ink-2)]">{CAT_LABEL[i.category]}</span>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Dot tone={COND_TONE[i.condition]} />
-                    <Select label={`Condition of ${i.name}`} className="flex-1" value={i.condition} onChange={v => setCondition(i, v as Condition)}
-                      options={CONDITIONS.map(c => ({ value: c, label: COND_LABEL[c] }))} />
-                  </div>
-                  <span className="text-copy text-right tabular-nums">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span>
-                  <span className={cx('text-copy', sTone ? cx(TONE[sTone].text, 'font-semibold') : 'text-muted-ink font-normal')}>
-                    {i.replaceBy ? date(i.replaceBy) : '—'}
-                  </span>
-                  <NoteCell value={i.notes} onSave={v => saveNote(i, v)} label={i.name} />
-                </div>
-              );
-            })}
-          </div>
-        </div>
+      <DataTable<Item>
+        id="inventory" columns={columns} rows={loading && all.length === 0 ? null : rows} rowKey={i => i.id} loading={loading}
+        noun={['item', 'items']} exportName="fit-out-register"
+        filtered={filtersOn} onClearFilters={clearFilters}
+        empty={{ title: 'No fit-out items recorded yet', icon: 'Sofa',
+          body: 'Add the furniture, appliances, linen and electronics supplied for each unit to track their condition and replacement.',
+          action: { label: 'Add item', onClick: () => setAdding(true) } }}
+        renderCard={i => (
+          <span className="flex flex-col gap-1.5 min-w-0">
+            <span className="flex items-start justify-between gap-2">
+              <span className="flex flex-col gap-px min-w-0">
+                <span className="text-copy font-semibold">{i.name}</span>
+                <span className="text-meta text-muted-ink">{i.unitNumber} · {i.propertyName} · {CAT_LABEL[i.category]} · {i.quantity}</span>
+              </span>
+              <span className="text-copy font-medium tabular-nums whitespace-nowrap">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span>
+            </span>
+            <span className="flex items-center gap-3">
+              <span className="flex-1 min-w-0">{conditionPicker(i)}</span>
+              <span className="text-meta text-muted-ink">Replace by</span>{replaceFace(i)}
+            </span>
+            <NoteCell value={i.notes} onSave={v => saveNote(i, v)} label={i.name} />
+          </span>
         )}
-      </Card>
+      />
 
       {adding && <AddItemModal units={units} onClose={() => setAdding(false)} onSubmit={addItem} />}
     </>

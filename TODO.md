@@ -178,4 +178,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Migration 0092 (units.weekend_rate, reservations.block_reason) is not yet applied to staging or production. It backfills weekend_rate = round(base_rate x 1.22) for every priced unit so live Fri/Sat prices do not move; units created later sell the weekend at the base rate until a weekend rate is set (Pricing page).
 - Channex full sync (functions/_lib/channexQueue.ts) still counts inquiries as taken nights; the board and the clash check do not. Decide whether an inquiry should close the nights on the booking sites.
 - The booking drawer (src/components/booking) still offers Change dates on Airbnb / Booking.com / Agoda bookings; the board now refuses dragging them.
-- Rate update lists the units on the board, so with one building filtered it offers only that building; open it with All buildings to price across buildings.
+
+## Tables (stream 2, 10 Oct)
+- Migration 0094 (pos.table_layouts, saved table views) is not applied to staging or production yet; apply after the PR merges, dry-run first.
+- Lists that stay outside the shared DataTable on purpose: Expenses Grouped view (category tree loaded on demand), Payouts' grouped section headers (now one list ordered by attention), Reviews (reply cards), Automations, Integrations, Settings, Operations today, unit tree.
+- DataTable has no expandable or grouped rows and no export header note; a page-computed total does not follow the table's own column filters (Owners turns column filters off for that reason).
+- Cleaning bulk Start makes the person pressing it the assignee of an unassigned clean (existing start endpoint behaviour).

@@ -52,6 +52,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const filters = [VIEW_LABEL[q.view] ?? q.view, ...(q.todo ? [TODO_LABEL[q.todo]] : []),
     ...(q.filters.channel ? [`channel ${CHANNEL[q.filters.channel]}`] : []), ...(q.filters.property ? ['one building'] : []),
     ...(q.filters.from || q.filters.to ? [`stays touching ${q.filters.from ?? 'any date'} to ${q.filters.to ?? 'any date'}`] : []),
+    ...(q.filters.grossMin !== null || q.filters.grossMax !== null ? [`guest total ${q.filters.grossMin !== null ? `from RM ${money(q.filters.grossMin)}` : ''}${q.filters.grossMax !== null ? ` up to RM ${money(q.filters.grossMax)}` : ''}`.trim()] : []),
     ...Object.entries(q.searches).map(([k, v]) => `${k === 'q' ? 'search' : k} contains "${v}"`)];
   if (q.sortLabel) filters.push(`sorted by ${q.sortLabel}`);
   const sum = (f: (x: ReturnType<typeof toRow>) => number) => rows.reduce((n, { x }) => n + f(x), 0);

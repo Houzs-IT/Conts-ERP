@@ -9,6 +9,7 @@ const SORTS: Record<string, string> = {
   amount: 'e.amount DESC, e.incurred_on DESC, e.id',
   amount_asc: 'e.amount ASC, e.incurred_on DESC, e.id',
   unit: 'p.name, u.unit_number, e.incurred_on DESC, e.id',
+  unit_desc: 'p.name DESC, u.unit_number DESC, e.incurred_on DESC, e.id',
 };
 
 const FROM = 'FROM expenses e JOIN units u ON u.id = e.unit_id JOIN properties p ON p.id = u.property_id';
@@ -20,7 +21,7 @@ const shape = (r: any) => ({
   parentExpenseId: r.parent_expense_id ?? null, locked: !!r.locked, receiptDocumentId: r.receipt_document_id ?? null,
 });
 
-/** GET /api/finance/expenses?month=YYYY-MM|all&category=&building=&unit=&owner=&q=&sort=&page=&pageSize=&view=list|tree
+/** GET /api/finance/expenses?month=YYYY-MM|all&category=&building=&unit=&owner=&q=&sort=&page=&pageSize=&view=list|tree&export=1
  *  One page of expenses plus the totals for everything the filters match, so the screen never has to hold
  *  all of them. `list` returns the money-carrying lines; `tree` (with a category) returns that category's
  *  top-level expenses with their line items, for the grouped view. A rollup header carries no money of its
@@ -44,8 +45,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sort = SORTS[url.searchParams.get('sort') ?? ''] ? url.searchParams.get('sort')! : 'date';
   const page = Math.max(1, Math.floor(Number(url.searchParams.get('page')) || 1));
   const rawSize = url.searchParams.get('pageSize');
-  // pageSize=0 returns the totals only (the grouped view's first paint).
-  const pageSize = rawSize === '0' ? 0 : Math.min(200, Math.max(1, Math.floor(Number(rawSize)) || 50));
+  // pageSize=0 returns the totals only (the grouped view's first paint). export=1: the table's Export reads
+  // every matching expense in pages of up to 1,000 (src/lib/export.ts).
+  const maxSize = url.searchParams.get('export') === '1' ? 1000 : 200;
+  const pageSize = rawSize === '0' ? 0 : Math.min(maxSize, Math.max(1, Math.floor(Number(rawSize)) || 50));
 
   const where = expenseWhere(f);
   const noCategory = expenseWhere(f, 'category');

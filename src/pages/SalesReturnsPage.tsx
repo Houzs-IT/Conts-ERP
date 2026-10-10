@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Search, Plus, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
@@ -60,6 +59,16 @@ export default function SalesReturnsPage() {
   const q = search.trim().toLowerCase();
   const rows = all.filter(p => (statusFilter === 'all' || p.status === statusFilter) && (!q || `${p.returnNumber} ${p.doNumber} ${p.customerName}`.toLowerCase().includes(q)));
 
+  const columns = useMemo<Column<Sret>[]>(() => [
+    { key: 'returnNumber', label: 'Return', type: 'ref', value: p => p.returnNumber, hideable: false },
+    { key: 'customer', label: 'Customer', value: p => p.customerName },
+    { key: 'do', label: 'DO', type: 'ref', value: p => p.doNumber || null },
+    { key: 'returnDate', label: 'Return date', type: 'date', value: p => p.returnDate || null },
+    { key: 'reason', label: 'Reason', value: p => p.reason, render: p => p.reason ? <span className="text-[12.5px] text-muted-ink">{p.reason}</span> : <span className="text-muted-ink">—</span> },
+    { key: 'status', label: 'Status', type: 'status', value: p => p.status, status: p => ({ label: STATUS_LABEL[p.status], tone: STATUS_TONE[p.status] }) },
+    { key: 'refund', label: 'Refund', type: 'money', value: p => p.status === 'CANCELLED' ? null : p.refundSen, render: p => p.status === 'CANCELLED' ? <span className="text-muted-ink">—</span> : <span className="tabular-nums font-semibold">{rm(p.refundSen)}</span> },
+  ], []);
+
   function created(sret: Sret) { setAdded(a => [sret, ...a]); toast({ tone: 'success', title: 'Return raised.', body: `${sret.returnNumber} · ${sret.customerName}` }); setDrawer(null); }
   function patch(p: Sret, status: Status, label: string) {
     setEdits(e => ({ ...e, [p.id]: { ...e[p.id], status } }));
@@ -73,53 +82,21 @@ export default function SalesReturnsPage() {
       <PageHeader title="Sales returns" sub={`${all.length} returns · from customers`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New return</Button> : undefined} />
 
-      {error && <StaleBanner message={`Showing the last return list we have. ${error}`} onRetry={reload} />}
-
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
-        <div className="relative">
-          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search return, DO or customer..." aria-label="Search sales returns"
-            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
-        </div>
-      </div>
-
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[780px]">
-            <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-                {['Return', 'Customer', 'DO', 'Return date', 'Reason', 'Status', 'Refund'].map((h, i) => (
-                  <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 6 ? 'text-right' : 'text-left')}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading && all.length === 0 ? (
-                <tr><td colSpan={7}><TableSkeleton rows={5} cols={7} /></td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={7}>
-                  <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
-                    <span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No returns match.' : 'No sales returns yet.'}</span>
-                    <span className="text-[12.5px] text-muted-ink max-w-[380px]">Take back goods a customer returned, against a delivery order.</span>
-                  </div>
-                </td></tr>
-              ) : rows.map(p => (
-                <tr key={p.id} onClick={() => setDrawer({ mode: 'view', sret: p })} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{p.returnNumber}</td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{p.customerName}</td>
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[12px] text-muted-ink">{p.doNumber || '—'}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.returnDate ? date(p.returnDate) : '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink max-w-[200px] truncate">{p.reason || '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={p.status} /></td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{p.status === 'CANCELLED' ? '—' : rm(p.refundSen)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
+      <DataTable<Sret>
+        id="scm.sales-returns" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={p => setDrawer({ mode: 'view', sret: p })}
+        noun={['sales return', 'sales returns']} exportName="sales-returns"
+        toolbar={<>
+          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+          <div className="relative">
+            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search return, DO or customer..." aria-label="Search sales returns"
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
+          </div>
+        </>}
+        filtered={!!q || statusFilter !== 'all'} onClearFilters={() => { setSearch(''); setStatusFilter('all'); }}
+        empty={{ title: 'No sales returns yet.', body: 'Take back goods a customer returned, against a delivery order.', action: canWrite ? { label: 'New return', onClick: () => setDrawer({ mode: 'new' }) } : undefined }} />
       {drawer?.mode === 'new' && <ReturnDrawer openDos={openDos} canWrite={canWrite} onClose={() => setDrawer(null)} onCreated={created} />}
       {drawer?.mode === 'view' && <ViewDrawer sret={drawer.sret} canWrite={canWrite} onClose={() => setDrawer(null)}
         onComplete={p => patch(p, 'COMPLETED', 'Return completed.')} onCancel={p => patch(p, 'CANCELLED', 'Return cancelled.')} />}
@@ -235,7 +212,15 @@ function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: Open
 
 /* ---------- view drawer ---------- */
 
+const lineColumns: Column<SretLine>[] = [
+  { key: 'item', label: 'Item', value: l => l.description, sub: l => <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{l.itemCode}</span>, text: l => `${l.description} ${l.itemCode}` },
+  { key: 'qty', label: 'Qty', type: 'number', value: l => l.qtyReturned },
+  { key: 'price', label: 'Unit price', type: 'money', value: l => l.unitPriceSen },
+  { key: 'total', label: 'Line total', type: 'money', value: l => l.lineTotalSen },
+];
+
 function ViewDrawer({ sret, canWrite, onClose, onComplete, onCancel }: { sret: Sret; canWrite: boolean; onClose: () => void; onComplete: (p: Sret) => void; onCancel: (p: Sret) => void }) {
+  const lineRows = useMemo(() => (sret.lines ?? []).map((l, i) => ({ ...l, key: String(i) })), [sret.lines]);
   return (
     <Drawer open onClose={onClose} width={720}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
@@ -250,20 +235,12 @@ function ViewDrawer({ sret, canWrite, onClose, onComplete, onCancel }: { sret: S
           <Meta label="Credit note" value={sret.creditNoteRef || '—'} />
         </div>
         {sret.reason && <div className="text-[13px]"><span className="text-muted-ink">Reason: </span>{sret.reason}</div>}
-        <div className="overflow-x-auto border border-solid border-line rounded-card">
-          <table className="w-full border-collapse min-w-[480px]">
-            <thead><tr className="bg-muted">{['Item', 'Qty', 'Unit price', 'Line total'].map((th, i) => <th key={th} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i === 0 ? 'text-left' : 'text-right')}>{th}</th>)}</tr></thead>
-            <tbody>
-              {(sret.lines ?? []).map((l, i) => (
-                <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
-                  <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.qtyReturned}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.unitPriceSen)}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.lineTotalSen)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="border border-solid border-line rounded-card overflow-hidden">
+          <DataTable<SretLine & { key: string }>
+            id="scm.sales-return.lines" urlPrefix="lines." bare noViews noToolbar pageSize={0}
+            columns={lineColumns} rows={lineRows} rowKey={l => l.key}
+            noun={['line', 'lines']} exportName={`${sret.returnNumber}-lines`}
+            empty={{ title: 'No lines on this return.' }} />
         </div>
         <div className="flex justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Refund value</span><span className="tabular-nums w-[120px] text-right">{rm(sret.refundSen)}</span></div></div>
       </div>

@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Search, Plus, X, Trash2 } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
@@ -62,6 +62,16 @@ export default function CreditNotesPage() {
   const rows = all.filter(n => (kindFilter === 'all' || n.kind === kindFilter) && (statusFilter === 'all' || n.status === statusFilter)
     && (!q || `${n.noteNumber} ${n.partyName} ${n.sourceDocNo} ${n.salesInvoiceNumber} ${n.purchaseInvoiceNumber}`.toLowerCase().includes(q)));
 
+  const columns = useMemo<Column<Note>[]>(() => [
+    { key: 'noteNumber', label: 'Note', type: 'ref', value: n => n.noteNumber, hideable: false },
+    { key: 'kind', label: 'Type', value: n => n.kind, text: n => KIND_LABEL[n.kind], filter: { kind: 'select' } },
+    { key: 'party', label: 'Customer / supplier', value: n => n.partyName },
+    { key: 'against', label: 'Against', value: n => against(n) || null },
+    { key: 'noteDate', label: 'Date', type: 'date', value: n => n.noteDate || null },
+    { key: 'status', label: 'Status', type: 'status', value: n => n.status, status: n => ({ label: STATUS_LABEL[n.status], tone: STATUS_TONE[n.status] }) },
+    { key: 'amount', label: 'Amount', type: 'money', value: n => n.totalSen, render: n => n.status === 'CANCELLED' ? <span className="tabular-nums text-muted-ink line-through">{rm(n.totalSen)}</span> : <span className="tabular-nums">{rm(n.totalSen)}</span> },
+  ], []);
+
   function done(title: string, body: string) { toast({ tone: 'success', title, body }); reload(); }
 
   return (
@@ -69,13 +79,15 @@ export default function CreditNotesPage() {
       <PageHeader title="Credit / debit notes" sub={`${all.length} notes · only posted notes change what is owed`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New note</Button> : undefined} />
 
-      {error && <StaleBanner message={`Showing the last notes we have. ${error}`} onRetry={reload} />}
-
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">
-          {(['all', 'CN', 'DN', 'SCN'] as const).map(k => <Chip key={k} label={k === 'all' ? 'All' : KIND_LABEL[k] + 's'} active={kindFilter === k} onClick={() => setKindFilter(k)} />)}
-        </div>
-        <div className="flex gap-2.5 items-center flex-wrap">
+      <DataTable<Note>
+        id="scm.credit-notes" columns={columns} rows={data ? rows : null} rowKey={n => n.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={n => setDrawer({ mode: 'view', id: n.id })}
+        noun={['note', 'notes']} exportName="credit-debit-notes"
+        toolbar={<>
+          <div className="flex gap-2 flex-wrap">
+            {(['all', 'CN', 'DN', 'SCN'] as const).map(k => <Chip key={k} label={k === 'all' ? 'All' : KIND_LABEL[k] + 's'} active={kindFilter === k} onClick={() => setKindFilter(k)} />)}
+          </div>
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as Status | 'all')} aria-label="Status"
             className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
             <option value="all">All statuses</option>
@@ -86,44 +98,9 @@ export default function CreditNotesPage() {
             <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search note, customer or supplier..." aria-label="Search notes"
               className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
           </div>
-        </div>
-      </div>
-
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[820px]">
-            <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-                {['Note', 'Type', 'Customer / supplier', 'Against', 'Date', 'Status', 'Amount'].map((h, i) => (
-                  <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 6 ? 'text-right' : 'text-left')}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading && all.length === 0 ? (
-                <tr><td colSpan={7}><TableSkeleton rows={5} cols={7} /></td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={7}>
-                  <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
-                    <span className="text-[14px] font-semibold">{q || kindFilter !== 'all' || statusFilter !== 'all' ? 'No notes match.' : 'No credit or debit notes yet.'}</span>
-                    <span className="text-[12.5px] text-muted-ink max-w-[420px]">Raise a note to correct what a customer or supplier owes, e.g. after goods are returned.</span>
-                  </div>
-                </td></tr>
-              ) : rows.map(n => (
-                <tr key={n.id} onClick={() => setDrawer({ mode: 'view', id: n.id })} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{n.noteNumber}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{KIND_LABEL[n.kind]}</td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{n.partyName}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink">{against(n) || '—'}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{n.noteDate ? date(n.noteDate) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={n.status} /></td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{n.status === 'CANCELLED' ? <span className="text-muted-ink line-through">{rm(n.totalSen)}</span> : rm(n.totalSen)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+        </>}
+        filtered={!!q || kindFilter !== 'all' || statusFilter !== 'all'} onClearFilters={() => { setSearch(''); setKindFilter('all'); setStatusFilter('all'); }}
+        empty={{ title: 'No credit or debit notes yet.', body: 'Raise a note to correct what a customer or supplier owes, e.g. after goods are returned.', action: canWrite ? { label: 'New note', onClick: () => setDrawer({ mode: 'new' }) } : undefined }} />
 
       {drawer?.mode === 'new' && <NewNoteDrawer suppliers={suppliers} salesInvoices={salesInvoices} purchaseInvoices={purchaseInvoices} canWrite={canWrite}
         onClose={() => setDrawer(null)} onDone={(title, body) => { setDrawer(null); done(title, body); }} />}
@@ -258,6 +235,11 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
 
 /* ---------- view / post / cancel ---------- */
 
+const LINE_COLUMNS: Column<NoteLine & { i: number }>[] = [
+  { key: 'description', label: 'Description', value: l => l.description || null, render: l => l.description || <span className="text-muted-ink">—</span>, hideable: false },
+  { key: 'amount', label: 'Amount', type: 'money', value: l => l.amountSen },
+];
+
 function ViewNoteDrawer({ id, canWrite, onClose, onDone }: { id: string; canWrite: boolean; onClose: () => void; onDone: (title: string, body: string) => void }) {
   const { data, loading } = useApi<{ data: Note }>(`/credit-notes/${id}`);
   const n = data?.data;
@@ -288,18 +270,11 @@ function ViewNoteDrawer({ id, canWrite, onClose, onDone }: { id: string; canWrit
               <Meta label="Against" value={against(n) || '—'} />
               <Meta label="Reason" value={n.reason || '—'} />
             </div>
-            <div className="overflow-x-auto border border-solid border-line rounded-card">
-              <table className="w-full border-collapse min-w-[360px]">
-                <thead><tr className="bg-muted">{['Description', 'Amount'].map((th, i) => <th key={th} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i === 0 ? 'text-left' : 'text-right')}>{th}</th>)}</tr></thead>
-                <tbody>
-                  {(n.lines ?? []).map((l, i) => (
-                    <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
-                      <td className="py-2 px-3 text-[13px]">{l.description || '—'}</td>
-                      <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.amountSen)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="border border-solid border-line rounded-card overflow-hidden">
+              <DataTable<NoteLine & { i: number }>
+                id="scm.credit-note.lines" urlPrefix="lines." columns={LINE_COLUMNS} rows={(n.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)}
+                bare noViews noToolbar pageSize={0} noun={['line', 'lines']} exportName={`${n.noteNumber}-lines`}
+                empty={{ title: 'No lines on this note.' }} />
             </div>
             <div className="flex justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Total</span><span className="tabular-nums w-[120px] text-right">{rm(n.totalSen)}</span></div></div>
             {n.status === 'DRAFT' && <div className="text-[12.5px] text-muted-ink">This is a draft. It changes nothing until it is posted.</div>}

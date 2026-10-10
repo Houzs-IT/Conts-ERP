@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { color, tone as T, channel as CH } from '../theme';
+import { color, channel as CH } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -13,11 +13,13 @@ import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
 import ChannexChannelsCard from '../components/ChannexChannelsCard';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
+import { UnitList } from './units/UnitList';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, downloadFile } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, dateRange, date, dateShort, dateTime, monthLabel, plural, humanize, titleCase } from '../lib/format';
+import { rm, dateRange, date, monthLabel, plural, humanize, titleCase } from '../lib/format';
 import { READINESS, TASK } from '../lib/vocabulary';
 import { STATUS } from '../lib/bookingStatus';
 import type { UnitReadiness } from '../lib/types';
@@ -86,7 +88,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     const n = new URLSearchParams(p);
     if (t === 'overview') n.delete('tab'); else n.set('tab', t);
     // The Bookings tab's own filter and page do not carry over to another tab.
-    n.delete('when'); n.delete('page');
+    n.delete('when'); n.delete('page'); n.delete('size');
     return n;
   }, { replace: true });
 
@@ -183,8 +185,12 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     void createUnit(nu, 'Sub-unit added.', 'A room or floor under the unit — fill in its details below.');
   }
 
+  // ?view=list shows every unit as one table instead of the tree and one record.
+  const listMode = params.get('view') === 'list';
+  const setListMode = (on: boolean) => setParams(p => { const n = new URLSearchParams(on ? '' : p); if (on) n.set('view', 'list'); else n.delete('view'); return n; }, { replace: true });
   const header = (
     <PageHeader title="Units" sub={`${plural(units.length, 'unit')} · ${plural(buildings.length, 'building')}`}
+      actions={<Button size="sm" variant="secondary" icon={<Icon name={listMode ? 'FolderTree' : 'Table2'} size="sm" />} onClick={() => setListMode(!listMode)}>{listMode ? 'Tree and record' : 'List of all units'}</Button>}
       primary={canEdit ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button> : undefined} />
   );
 
@@ -201,6 +207,15 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       onClose={() => setModal(null)} onConfirm={() => addSubUnit(modal.buildingId, modal.parent)} />}
   </>;
 
+  if (listMode) {
+    return (
+      <div className="flex flex-col gap-5 min-w-0">
+        {header}
+        <UnitList units={units} buildings={buildings} readiness={readiness} loading={props.loading} error={props.error} onRetry={reloadAll} onOpen={select} />
+        {modals}
+      </div>
+    );
+  }
   if (props.loading && units.length === 0) {
     return <div className="flex flex-col gap-5">{header}<Card><TableSkeleton rows={6} cols={3} /></Card></div>;
   }
@@ -323,6 +338,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   }
   const needsForm = <Card><div className="p-8 text-center text-copy text-muted-ink">This unit's master data is not available to your role.</div></Card>;
   const title = form?.listingName || `${u.propertyName} ${u.unitNumber}`;
+  const stem = unitLabel.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'unit';
   const subtitle = [form?.unitCode || u.unitNumber, building?.name ?? u.propertyName].filter(Boolean).join(' · ');
 
   return (
@@ -464,71 +480,30 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               {/* units/detail.ts sends the latest 12; the full list is on the Housekeeping board. */}
               {d.tasks.length >= 12 && <span className="text-meta text-muted-ink">Latest 12</span>}
             </div>
-            {d.tasks.length === 0 && <div className="py-4 px-5 text-copy text-muted-ink">No tasks for this unit.</div>}
-            {d.tasks.map(t => (
-              <div key={t.id} className="flex items-center gap-[14px] py-[14px] px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex-wrap" style={{ borderLeft: `3px solid ${T[TASK_TONE[t.state]].line}` }}>
-                <div className="flex flex-col gap-0.5 flex-1 min-w-[180px]">
-                  <span className="text-copy font-medium">{t.title}</span>
-                  <span className="text-meta text-muted-ink">
-                    {humanize(t.kind)} · {t.assigneeName ?? 'Unassigned'}{t.completedAt ? ` · done ${dateTime(t.completedAt)}` : t.dueAt ? ` · due ${dateTime(t.dueAt)}` : ''}
-                  </span>
-                </div>
-                <Badge tone={TASK_TONE[t.state]} label={TASK[t.state].label} />
-              </div>
-            ))}
+            <DataTable<TaskRow> id="unit.tasks" urlPrefix="tasks." bare noViews pageSize={0} maxHeight="none"
+              columns={TASK_COLUMNS} rows={d.tasks} rowKey={t => t.id} noun={['task', 'tasks']} exportName={`${stem}-tasks`}
+              empty={{ title: 'No tasks for this unit.', icon: 'Sparkles' }} />
           </Card>
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
               <span className="text-heading font-semibold">Maintenance</span>
               {d.maintenance.length >= 12 && <span className="text-meta text-muted-ink">Latest 12</span>}
             </div>
-            {d.maintenance.length === 0 && <div className="py-4 px-5 text-copy text-muted-ink">No maintenance jobs reported.</div>}
-            {d.maintenance.map(m => (
-              <div key={m.id} className="py-[14px] px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-start gap-4 flex-wrap">
-                <div className="flex flex-col gap-[3px] flex-1 min-w-[200px]">
-                  <div className="flex items-center gap-[9px] flex-wrap">
-                    <span className="text-copy font-semibold">{m.title}</span>
-                    <Badge tone={TASK_TONE[m.state]} label={TASK[m.state].label} />
-                    {m.blocksUnit && <Badge tone="critical" label="Blocks the unit" />}
-                  </div>
-                  <span className="text-meta text-muted-ink">{dateShort(m.reportedAt)}{m.vendorName ? ` · ${m.vendorName}` : ''} · charged to {CHARGE_LABEL[m.chargeTo] ?? humanize(m.chargeTo)}</span>
-                  {m.detail && <span className="text-copy [text-wrap:pretty]">{m.detail}</span>}
-                </div>
-                {(m.finalAmount != null || m.quotedAmount != null) && (
-                  <div className="flex flex-col items-end gap-0.5 flex-none">
-                    <MoneyText sen={m.finalAmount ?? m.quotedAmount!} mode="exact" className="text-copy font-semibold" />
-                    <span className="text-caption text-muted-ink">{m.finalAmount != null ? 'Final' : 'Quoted'}</span>
-                  </div>
-                )}
-              </div>
-            ))}
+            <DataTable<JobRow> id="unit.maintenance" urlPrefix="jobs." bare noViews pageSize={0} maxHeight="none"
+              columns={JOB_COLUMNS} rows={d.maintenance} rowKey={m => m.id} noun={['job', 'jobs']} exportName={`${stem}-maintenance`}
+              empty={{ title: 'No maintenance jobs reported.', icon: 'Wrench' }} />
           </Card>
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center justify-between gap-3 flex-wrap">
               <span className="text-heading font-semibold">Fit-out register</span>
               <a href="#/properties/inventory" className="text-meta font-semibold text-gold-ink no-underline">Open inventory</a>
             </div>
-            {d.inventory.length === 0 ? <div className="py-4 px-5 text-copy text-muted-ink">Nothing recorded in this unit.</div> : (
-              <div className="overflow-x-auto">
-                <div className="min-w-[600px]">
-                  {d.inventory.map(i => (
-                    <div key={i.id} className="grid grid-cols-[minmax(200px,2fr)_minmax(90px,0.8fr)_minmax(130px,1fr)_minmax(100px,0.9fr)] gap-[14px] items-center min-h-[50px] py-[9px] px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
-                      <div className="flex flex-col gap-px min-w-0">
-                        <span className="text-copy">{i.name}</span>
-                        {i.suppliedInHouse && <span className="text-caption text-muted-ink">Supplied by The Conts</span>}
-                      </div>
-                      <span className="text-copy">{i.quantity}</span>
-                      <div><Badge tone={COND_TONE[i.condition] ?? 'neutral'} label={cap(i.condition)} /></div>
-                      <span className="text-copy text-right tabular-nums">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <DataTable<ItemRow> id="unit.fitout" urlPrefix="fit." bare noViews pageSize={0} maxHeight="none"
+              columns={ITEM_COLUMNS} rows={d.inventory} rowKey={i => i.id} noun={['item', 'items']} exportName={`${stem}-fit-out`}
+              empty={{ title: 'Nothing recorded in this unit.', icon: 'Package' }} />
           </Card>
         </>
       )}
-
       {shown === 'financials' && d.pnl && (
         <>
           <ExpensesCard title="Expenses this month" unitId={u.id} month={todayMyt().slice(0, 7)} units={[{ id: u.id, label: unitLabel }]} canEdit={canEdit} onChanged={reloadDetail} />
@@ -583,21 +558,58 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
             <span className="text-heading font-semibold">Activity</span>
             <span className="text-meta text-muted-ink">Who did what, when, and from where. Read straight from the audit trail.</span>
           </div>
-          {d.activity.length === 0 && <div className="py-4 px-5 text-copy text-muted-ink">Nothing recorded yet.</div>}
-          {d.activity.map((a, i) => (
-            <div key={i} className="flex items-center gap-[14px] py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex-wrap">
-              <span className="w-[30px] h-[30px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-caption font-semibold">
-                {a.actorLabel.split(' ').map(n => n[0]).slice(0, 2).join('')}
-              </span>
-              <div className="flex flex-col gap-px flex-1 min-w-[160px]">
-                <span className="text-copy"><strong className="font-semibold">{a.actorLabel}</strong> · {a.action.replace(/[._]/g, ' ')}</span>
-                <span className="text-meta text-muted-ink">{a.source.replace(/_/g, ' ')}</span>
-              </div>
-              <span className="text-meta text-muted-ink">{dateTime(a.occurredAt)}</span>
-            </div>
-          ))}
+          <DataTable<ActivityRow> id="unit.activity" urlPrefix="act." bare noViews pageSize={0} maxHeight="none"
+            columns={ACTIVITY_COLUMNS} rows={d.activity} rowKey={a => `${a.occurredAt}|${a.actorLabel}|${a.action}`}
+            noun={['event', 'events']} exportName={`${stem}-activity`} empty={{ title: 'Nothing recorded yet.', icon: 'History' }} />
         </Card>
       )}
     </>
   );
 }
+
+type TaskRow = UnitDetail['tasks'][number];
+type JobRow = UnitDetail['maintenance'][number];
+type ItemRow = UnitDetail['inventory'][number];
+type ActivityRow = UnitDetail['activity'][number];
+
+const TASK_COLUMNS: Column<TaskRow>[] = [
+  { key: 'title', label: 'Task', value: t => t.title, hideable: false, width: 220 },
+  { key: 'kind', label: 'Type', value: t => humanize(t.kind), width: 120 },
+  { key: 'assignee', label: 'Assigned to', type: 'person', value: t => t.assigneeName ?? 'Unassigned', width: 160 },
+  { key: 'when', label: 'Due or done', type: 'datetime', value: t => t.completedAt ?? t.dueAt, width: 160,
+    sub: t => (t.completedAt ? 'Done' : t.dueAt ? 'Due' : null) },
+  { key: 'state', label: 'Status', type: 'status', value: t => t.state, status: t => ({ label: TASK[t.state].label, tone: TASK_TONE[t.state] }), width: 130 },
+];
+
+const JOB_COLUMNS: Column<JobRow>[] = [
+  { key: 'title', label: 'Job', value: m => m.title, hideable: false, width: 240,
+    render: m => (
+      <span className="flex items-center gap-2 min-w-0">
+        <span className="font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={m.title}>{m.title}</span>
+        {m.blocksUnit && <Badge tone="critical" label="Blocks the unit" size="sm" />}
+      </span>
+    ),
+    sub: m => (m.detail ? <span title={m.detail}>{m.detail}</span> : null) },
+  { key: 'detail', label: 'Detail', value: m => m.detail, hidden: true, width: 240 },
+  { key: 'reported', label: 'Reported', type: 'date', value: m => m.reportedAt, width: 116 },
+  { key: 'vendor', label: 'Vendor', value: m => m.vendorName, width: 140 },
+  { key: 'charge', label: 'Charged to', value: m => CHARGE_LABEL[m.chargeTo] ?? humanize(m.chargeTo), width: 130 },
+  { key: 'state', label: 'Status', type: 'status', value: m => m.state, status: m => ({ label: TASK[m.state].label, tone: TASK_TONE[m.state] }), width: 130 },
+  { key: 'amount', label: 'Amount', type: 'money', value: m => m.finalAmount ?? m.quotedAmount ?? null, width: 120,
+    sub: m => (m.finalAmount != null ? 'Final' : m.quotedAmount != null ? 'Quoted' : null) },
+];
+
+const ITEM_COLUMNS: Column<ItemRow>[] = [
+  { key: 'name', label: 'Item', value: i => i.name, hideable: false, width: 220, sub: i => (i.suppliedInHouse ? 'Supplied by The Conts' : null) },
+  { key: 'quantity', label: 'Quantity', value: i => i.quantity, width: 90 },
+  { key: 'condition', label: 'Condition', type: 'status', value: i => i.condition, status: i => ({ label: cap(i.condition), tone: COND_TONE[i.condition] ?? 'neutral' }), width: 130 },
+  { key: 'cost', label: 'Cost', type: 'money', value: i => i.purchaseCost ?? null, width: 110,
+    render: i => <span className="tabular-nums whitespace-nowrap">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span> },
+];
+
+const ACTIVITY_COLUMNS: Column<ActivityRow>[] = [
+  { key: 'who', label: 'Who', type: 'person', value: a => a.actorLabel, hideable: false, width: 180 },
+  { key: 'action', label: 'Action', value: a => a.action.replace(/[._]/g, ' '), width: 200 },
+  { key: 'source', label: 'From', value: a => a.source.replace(/_/g, ' '), width: 130 },
+  { key: 'when', label: 'When', type: 'datetime', value: a => a.occurredAt, width: 160 },
+];

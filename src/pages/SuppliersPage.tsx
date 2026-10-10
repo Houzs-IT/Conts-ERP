@@ -1,17 +1,16 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
+import { cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
 /** Suppliers — supplier master, ported from 2990's SCM (logic) and drawn in Conts.
@@ -81,6 +80,17 @@ export default function SuppliersPage() {
     (!q || `${s.code} ${s.name} ${s.contactPerson} ${s.category}`.toLowerCase().includes(q)),
   );
 
+  const columns = useMemo<Column<Supplier>[]>(() => [
+    { key: 'code', label: 'Code', type: 'ref', value: s => s.code, hideable: false },
+    { key: 'name', label: 'Name', value: s => s.name, width: 200 },
+    { key: 'contact', label: 'Contact', value: s => s.contactPerson },
+    { key: 'phone', label: 'Phone', value: s => s.phone, width: 140 },
+    { key: 'category', label: 'Category', value: s => s.category },
+    { key: 'terms', label: 'Terms', value: s => s.paymentTerms, width: 110 },
+    { key: 'credit', label: 'Credit limit', type: 'money', value: s => s.creditLimitSen, render: s => s.creditLimitSen ? <span className="tabular-nums whitespace-nowrap">{rm(s.creditLimitSen, { cents: false })}</span> : <span className="text-muted-ink">—</span> },
+    { key: 'status', label: 'Status', type: 'status', value: s => s.status, status: s => ({ label: STATUS_LABEL[s.status], tone: STATUS_TONE[s.status] }) },
+  ], []);
+
   function save(draft: Draft, isNew: boolean) {
     const { creditLimit, ...rest } = draft;
     const body = { ...rest, creditLimitSen: rmToSen(creditLimit) };
@@ -114,57 +124,24 @@ export default function SuppliersPage() {
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyDraft(), isNew: true })}>New supplier</Button> : undefined}
       />
 
-      {error && <StaleBanner message={`Showing the last supplier list we have. ${error}`} onRetry={reload} />}
-
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">
-          <Chip label="All" active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />
-          {STATUSES.map(s => <Chip key={s} label={STATUS_LABEL[s]} active={statusFilter === s} onClick={() => setStatusFilter(s)} />)}
-        </div>
-        <div className="relative">
-          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search suppliers..." aria-label="Search suppliers"
-            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
-        </div>
-      </div>
-
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[840px]">
-            <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-                {['Code', 'Name', 'Contact', 'Phone', 'Category', 'Terms', 'Credit limit', 'Status'].map((h, i) => (
-                  <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 6 ? 'text-right' : 'text-left')}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading && all.length === 0 ? (
-                <tr><td colSpan={8}><TableSkeleton rows={6} cols={8} /></td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={8}>
-                  <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
-                    <span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No suppliers match.' : 'No suppliers yet.'}</span>
-                    <span className="text-[12.5px] text-muted-ink max-w-[380px]">{q || statusFilter !== 'all' ? 'Clear the search or status filter to see the full list.' : 'Add the suppliers you buy furniture, fittings and services from.'}</span>
-                  </div>
-                </td></tr>
-              ) : rows.map(s => (
-                <tr key={s.id} onClick={() => { if (canWrite) setDrawer({ draft: toDraft(s), isNew: false }); }}
-                  className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
-                  <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{s.code}</span></td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{s.name}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{s.contactPerson || '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums">{s.phone || '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{s.category || '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{s.paymentTerms || '—'}</td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{s.creditLimitSen ? rm(s.creditLimitSen, { cents: false }) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={s.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Supplier>
+        id="scm.suppliers" columns={columns} rows={data ? rows : null} rowKey={s => s.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={canWrite ? s => setDrawer({ draft: toDraft(s), isNew: false }) : undefined}
+        noun={['supplier', 'suppliers']} exportName="suppliers"
+        toolbar={<>
+          <div className="flex gap-2 flex-wrap">
+            <Chip label="All" active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />
+            {STATUSES.map(s => <Chip key={s} label={STATUS_LABEL[s]} active={statusFilter === s} onClick={() => setStatusFilter(s)} />)}
+          </div>
+          <div className="relative">
+            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search suppliers..." aria-label="Search suppliers"
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
+          </div>
+        </>}
+        filtered={!!q || statusFilter !== 'all'} onClearFilters={() => { setSearch(''); setStatusFilter('all'); }}
+        empty={{ title: 'No suppliers yet.', body: 'Add the suppliers you buy furniture, fittings and services from.', action: canWrite ? { label: 'New supplier', onClick: () => setDrawer({ draft: emptyDraft(), isNew: true }) } : undefined }} />
 
       {drawer && <SupplierDrawer draft={drawer.draft} isNew={drawer.isNew} onClose={() => setDrawer(null)} onSave={save}
         onDelete={drawer.isNew ? undefined : () => { const s = all.find(x => x.id === drawer.draft.id); if (s) remove(s); }} />}
@@ -181,15 +158,6 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
         active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>
       {label}
     </button>
-  );
-}
-
-function StatusPill({ status }: { status: Status }) {
-  const t = STATUS_TONE[status];
-  return (
-    <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}>
-      <span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}
-    </span>
   );
 }
 

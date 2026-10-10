@@ -5,7 +5,7 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
@@ -62,6 +62,7 @@ const FALLBACK: Payload = {
 
 const senToRm = (sen: number | null | undefined) => (sen == null ? '' : String(sen / 100));
 const rmToSen = (v: string): number | null => { const n = Number(v); return v.trim() && Number.isFinite(n) ? Math.round(n * 100) : null; };
+const noPrice1 = (p: Product) => p.category === 'MATTRESS' || p.category === 'SERVICE';
 const priceLabel = (sen: number | null | undefined) => (sen == null ? '—' : rm(sen));
 
 /** Split one CSV line into cells, honouring double-quoted fields. */
@@ -125,6 +126,28 @@ export default function ProductsPage() {
     (cat === 'all' || p.category === cat) &&
     (!q || `${p.code} ${p.name} ${p.barcode}`.toLowerCase().includes(q)),
   );
+
+  const columns = useMemo<Column<Product>[]>(() => [
+    { key: 'code', label: 'Product Code', type: 'ref', value: p => p.code, hideable: false },
+    { key: 'name', label: 'Description', value: p => p.name, text: p => (p.branding ? `${p.name} · ${p.branding}` : p.name), width: 240,
+      render: p => <span className="block whitespace-nowrap overflow-hidden text-ellipsis">{p.name}{p.branding ? <span className="text-muted-ink"> · {p.branding}</span> : ''}</span> },
+    { key: 'category', label: 'Category', value: p => p.category, text: p => CAT_LABEL[p.category], filter: { kind: 'select' },
+      render: p => <span className="inline-block text-[11px] font-semibold uppercase tracking-[0.06em] bg-[var(--color-gold-50)] text-gold-ink px-2.5 py-0.5 rounded-full">{CAT_LABEL[p.category]}</span> },
+    { key: 'size', label: 'Size', value: p => p.sizeLabel, width: 110 },
+    { key: 'price2', label: 'Price 2', type: 'money', value: p => p.basePriceSen,
+      render: p => editPrices
+        ? <span onClick={e => e.stopPropagation()}><PriceInput value={priceEdits[p.id]?.basePrice ?? senToRm(p.basePriceSen)} onChange={v => setPriceEdits(s => ({ ...s, [p.id]: { ...s[p.id], basePrice: v } }))} /></span>
+        : <span className="tabular-nums whitespace-nowrap">{priceLabel(p.basePriceSen)}</span> },
+    { key: 'price1', label: 'Price 1', type: 'money', value: p => (noPrice1(p) ? null : p.price1Sen),
+      render: p => noPrice1(p) ? <span className="text-faint">—</span>
+        : editPrices
+          ? <span onClick={e => e.stopPropagation()}><PriceInput value={priceEdits[p.id]?.price1 ?? senToRm(p.price1Sen)} onChange={v => setPriceEdits(s => ({ ...s, [p.id]: { ...s[p.id], price1: v } }))} /></span>
+          : <span className="tabular-nums whitespace-nowrap">{priceLabel(p.price1Sen)}</span> },
+    { key: 'barcode', label: 'Barcode', value: p => p.barcode, width: 140 },
+    { key: 'm3', label: 'Unit (m³)', type: 'number', value: p => (p.unitM3Milli ? p.unitM3Milli / 1000 : null), width: 100,
+      render: p => p.unitM3Milli ? <span className="tabular-nums">{(p.unitM3Milli / 1000).toFixed(3)}</span> : <span className="text-muted-ink">—</span> },
+    { key: 'status', label: 'Status', type: 'status', value: p => p.status, status: p => (p.status === 'ACTIVE' ? { label: 'Active', tone: 'success' } : { label: 'Inactive', tone: 'neutral' }) },
+  ], [editPrices, priceEdits]);
 
   function patch(id: string, optimistic: Partial<Product>, apiBody?: Record<string, unknown>) {
     setEdits(e => ({ ...e, [id]: { ...e[id], ...optimistic } }));
@@ -227,8 +250,6 @@ export default function ProductsPage() {
         ))}
       </div>
 
-      {error && <StaleBanner message={`Showing the last catalogue we have. ${error}`} onRetry={reload} />}
-
       {tab !== 'sku' ? (
         <Card>
           <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
@@ -238,19 +259,26 @@ export default function ProductsPage() {
         </Card>
       ) : (
         <>
-          {/* Toolbar: category chips + actions */}
-          <div className="flex items-center justify-between gap-5 flex-wrap">
-            <div className="flex gap-2 flex-wrap">
-              <Chip label="All" active={cat === 'all'} onClick={() => setCat('all')} />
-              {CATEGORIES.map(c => <Chip key={c} label={CAT_LABEL[c]} active={cat === c} onClick={() => setCat(c)} />)}
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
+          <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">{countLabel}</div>
+
+          <DataTable<Product>
+            id="scm.products" columns={columns} rows={data ? rows : null} rowKey={p => p.id}
+            loading={loading} error={error} onRetry={reload} pageSize={0}
+            onRowClick={!editPrices && canWrite ? p => setDrawer(draftFrom(p)) : undefined}
+            noun={['product', 'products']} exportName="products"
+            toolbar={<>
+              <div className="flex gap-2 flex-wrap">
+                <Chip label="All" active={cat === 'all'} onClick={() => setCat('all')} />
+                {CATEGORIES.map(c => <Chip key={c} label={CAT_LABEL[c]} active={cat === c} onClick={() => setCat(c)} />)}
+              </div>
               <div className="relative">
                 <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
                 <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search all products..." aria-label="Search all products"
                   className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
               </div>
-              <Button variant="secondary" size="sm" icon={<Download size={16} strokeWidth={1.75} />} onClick={exportCsv}>Export</Button>
+            </>}
+            actions={<>
+              <Button variant="secondary" size="sm" icon={<Download size={16} strokeWidth={1.75} />} onClick={exportCsv} title="CSV in the column layout Import reads back">CSV for import</Button>
               {canWrite && <>
                 <input ref={fileRef} type="file" accept=".csv" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void importCsv(f); e.target.value = ''; }} />
                 <Button variant="secondary" size="sm" icon={<Upload size={16} strokeWidth={1.75} />} onClick={() => fileRef.current?.click()}>Import</Button>
@@ -262,57 +290,9 @@ export default function ProductsPage() {
                     </>
                   : <Button variant="primary" size="sm" icon={<Pencil size={16} strokeWidth={1.75} />} onClick={() => setEditPrices(true)}>Edit Prices</Button>}
               </>}
-            </div>
-          </div>
-
-          <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">{countLabel}</div>
-
-          <Card>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse min-w-[920px]">
-                <thead>
-                  <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-                    {['Product Code', 'Description', 'Category', 'Size', 'Price 2', 'Price 1', 'Barcode', 'Unit (m³)', 'Status'].map((h, i) => (
-                      <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 4 || i === 5 || i === 7 ? 'text-right' : 'text-left')}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading && all.length === 0 ? (
-                    <tr><td colSpan={9}><TableSkeleton rows={6} cols={9} /></td></tr>
-                  ) : rows.length === 0 ? (
-                    <tr><td colSpan={9}>
-                      <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
-                        <span className="text-[14px] font-semibold">{q || cat !== 'all' ? 'No products match.' : 'No products yet.'}</span>
-                        <span className="text-[12.5px] text-muted-ink max-w-[380px]">{q || cat !== 'all' ? 'Clear the search or category to see the full catalogue.' : 'Add a product, or import your SKU sheet as a CSV.'}</span>
-                      </div>
-                    </td></tr>
-                  ) : rows.map(p => {
-                    const pe = priceEdits[p.id] ?? {};
-                    return (
-                      <tr key={p.id} onClick={() => { if (!editPrices && canWrite) setDrawer(draftFrom(p)); }}
-                        className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', !editPrices && canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
-                        <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{p.code}</span></td>
-                        <td className="py-[13px] px-4 text-[13.5px]">{p.name}{p.branding ? <span className="text-muted-ink"> · {p.branding}</span> : ''}</td>
-                        <td className="py-[13px] px-4"><span className="inline-block text-[11px] font-semibold uppercase tracking-[0.06em] bg-[var(--color-gold-50)] text-gold-ink px-2.5 py-0.5 rounded-full">{CAT_LABEL[p.category]}</span></td>
-                        <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.sizeLabel || '—'}</td>
-                        <td className="py-[13px] px-4 text-right tabular-nums text-[13px]" onClick={e => editPrices && e.stopPropagation()}>
-                          {editPrices ? <PriceInput value={pe.basePrice ?? senToRm(p.basePriceSen)} onChange={v => setPriceEdits(s => ({ ...s, [p.id]: { ...s[p.id], basePrice: v } }))} /> : priceLabel(p.basePriceSen)}
-                        </td>
-                        <td className="py-[13px] px-4 text-right tabular-nums text-[13px]" onClick={e => editPrices && e.stopPropagation()}>
-                          {p.category === 'MATTRESS' || p.category === 'SERVICE' ? <span className="text-faint">—</span>
-                            : editPrices ? <PriceInput value={pe.price1 ?? senToRm(p.price1Sen)} onChange={v => setPriceEdits(s => ({ ...s, [p.id]: { ...s[p.id], price1: v } }))} /> : priceLabel(p.price1Sen)}
-                        </td>
-                        <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums">{p.barcode || '—'}</td>
-                        <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{p.unitM3Milli ? (p.unitM3Milli / 1000).toFixed(3) : '—'}</td>
-                        <td className="py-[13px] px-4"><StatusPill status={p.status} /></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+            </>}
+            filtered={!!q || cat !== 'all'} onClearFilters={() => { setSearch(''); setCat('all'); }}
+            empty={{ title: 'No products yet.', body: 'Add a product, or import your SKU sheet as a CSV.', action: canWrite ? { label: 'New SKU', onClick: () => setDrawer(emptyDraft()) } : undefined }} />
         </>
       )}
 
@@ -330,16 +310,6 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
         active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>
       {label}
     </button>
-  );
-}
-
-function StatusPill({ status }: { status: 'ACTIVE' | 'INACTIVE' }) {
-  const on = status === 'ACTIVE';
-  return (
-    <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full',
-      on ? 'bg-[var(--color-success)] text-[var(--color-success-fg)]' : 'bg-muted text-muted-ink')}>
-      <span className="w-1.5 h-1.5 rounded-full bg-current" />{on ? 'Active' : 'Inactive'}
-    </span>
   );
 }
 

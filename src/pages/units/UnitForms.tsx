@@ -1,4 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react';
+import { DataTable, type Column } from '../../components/DataTable';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import Icon from '../../components/Icon';
@@ -6,7 +7,7 @@ import { Card } from '../../components/Card';
 import { useToast } from '../../components/Toast';
 import { color } from '../../theme';
 import { api, notifyFailure, downloadFile } from '../../lib/api';
-import { rm, date } from '../../lib/format';
+import { rm } from '../../lib/format';
 import { bankName } from '../../lib/vocabulary';
 import { MODEL } from '../../lib/revenueModel';
 import {
@@ -16,6 +17,7 @@ import {
 } from './shared';
 
 type Change = (p: Partial<Unit>) => void;
+type Doc = UnitDetail['documents'][number];
 
 /** The bar above an editable tab: what is pending, and the one Save for the whole unit. */
 export function SaveBar({ title, sub, dirty, saving, canEdit, onSave, extra }: { title: string; sub?: string; dirty: boolean; saving: boolean; canEdit: boolean; onSave: () => void; extra?: ReactNode }) {
@@ -102,6 +104,20 @@ export function DocumentsCard({ unitId, unitLabel, documents, onUploaded }: { un
     toast({ tone: 'info', title: 'Preparing download', body: `${d.name} — served as a signed link.` });
     downloadFile(`/documents/${d.id}/download`).catch(notifyFailure);
   }
+  const docColumns: Column<Doc>[] = [
+    { key: 'name', label: 'Document', value: doc => doc.name, hideable: false, width: 240,
+      render: doc => (
+        <span className="flex items-center gap-[10px] min-w-0">
+          <Icon name="FileText" size="sm" color={color.textMuted} />
+          <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={doc.name}>{doc.name}</span>
+        </span>
+      ) },
+    { key: 'kind', label: 'Kind', value: doc => cap(doc.kind), width: 120 },
+    { key: 'size', label: 'Size', value: doc => doc.sizeLabel, width: 90 },
+    { key: 'added', label: 'Added', type: 'date', value: doc => doc.updatedAt, width: 116 },
+    { key: 'download', label: '', noExport: true, sortable: false, filter: false, width: 130, align: 'right',
+      render: doc => <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => download(doc)}>Download</Button> },
+  ];
   async function upload(file: File) {
     const fd = new FormData();
     fd.append('file', file); fd.append('unitId', unitId); fd.append('kind', kind);
@@ -119,17 +135,9 @@ export function DocumentsCard({ unitId, unitLabel, documents, onUploaded }: { un
         <span className="text-heading font-semibold">Documents</span>
         <span className="text-meta text-muted-ink">Agreements, statements, inspection reports and photos for this unit.</span>
       </div>
-      {documents.length === 0 && <div className="py-6 px-5 text-copy text-muted-ink">No documents on this unit yet.</div>}
-      {documents.map(doc => (
-        <div key={doc.id} className="flex items-center gap-[14px] py-[13px] px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
-          <Icon name="FileText" size="nav" color={color.textMuted} />
-          <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-            <span className="text-copy font-medium [overflow-wrap:anywhere]">{doc.name}</span>
-            <span className="text-meta text-muted-ink">{cap(doc.kind)} · {doc.sizeLabel} · added {date(doc.updatedAt)}</span>
-          </div>
-          <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => download(doc)}>Download</Button>
-        </div>
-      ))}
+      <DataTable<Doc> id="unit.documents" urlPrefix="doc." bare noViews noToolbar pageSize={0} maxHeight="none"
+        columns={docColumns} rows={documents} rowKey={doc => doc.id} noun={['document', 'documents']}
+        empty={{ title: 'No documents on this unit yet.', icon: 'FileText' }} />
       <div className="flex flex-wrap items-center gap-2 py-3 px-5 bg-page">
         <div className="w-[180px] max-w-full"><Select label="Kind of document" value={kind} onChange={setKind} options={UPLOAD_KINDS} /></div>
         <Button size="sm" variant="secondary" loading={busy} icon={<Icon name="Upload" size="sm" />} onClick={() => fileRef.current?.click()}>Upload a document</Button>
