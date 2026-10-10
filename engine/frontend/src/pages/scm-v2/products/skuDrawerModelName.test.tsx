@@ -15,6 +15,16 @@ const CROWN: MfgProductRow = {
 };
 
 const idle = { mutate: () => {}, mutateAsync: async () => ({}), isPending: false };
+/* These pin the Houzs SKU Master grid, which the Conts renovation switch replaces
+   (conts/catalog.ts). Run them with the switch off: the grid is kept, not deleted. */
+vi.mock('../../../conts/catalog', () => ({
+  CONTS_RENOVATION_CATALOG: false,
+  CONTS_HIDDEN_PRODUCT_TABS: new Set<string>(),
+  CONTS_HIDDEN_MAINTENANCE_KEYS: new Set<string>(),
+  visibleProductTabs: <T,>(tabs: readonly T[]) => [...tabs],
+  resolveProductTab: (t: string | null, all: readonly string[]) => (t && all.includes(t) ? t : 'sku'),
+}));
+
 vi.mock('../../../vendor/scm/lib/mfg-products-queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../vendor/scm/lib/mfg-products-queries')>()),
   useMfgProducts: () => ({ data: [CROWN], isLoading: false, isFetching: false, error: null }),

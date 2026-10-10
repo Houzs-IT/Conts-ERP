@@ -29,9 +29,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       return {
         id: r.id, unitId: r.unit_id,
         unit: { unitNumber: r.unit_number, propertyName: r.property_name },
-        addressLine: r.address_line, accessInstruction: r.access_instruction ?? null,
+        addressLine: String(r.address_line ?? '').replace(/[\s,]+$/, ''), accessInstruction: r.access_instruction ?? null,
         work: r.title, dueAt: r.due_at, nextGuestAt: r.next_guest_at,
-        readiness: r.readiness, flag: sameDay ? 'Same-day turnaround' : null,
+        readiness: r.readiness, done: r.state === 'resolved', flag: sameDay ? 'Same-day turnaround' : null,
         requiresPhoto: !!r.requires_photo, photoCount: Number(r.photo_count),
         sync: r.state === 'resolved' ? 'synced' : r.sync === 'synced' ? null : r.sync,
         syncedAt: r.state === 'resolved' ? r.updated_at : null,

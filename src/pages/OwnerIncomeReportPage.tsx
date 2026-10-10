@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApi } from '../lib/useApi';
+import { useSession } from '../lib/session';
 
 /** `#/finance/statements/:id/report[?unit=]` — the Owner Income Report, laid out as the owner's own report:
  *  page 1 the unit's month (OWNER INCOME REPORT), page 2 its year to date. A4, printed by the browser:
@@ -38,6 +39,7 @@ export default function OwnerIncomeReportPage() {
   const { id = '' } = useParams();
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
+  const owner = useSession().user?.role === 'owner';
   const unit = params.get('unit');
   const { data, loading, error } = useApi<{ data: Report }>(`/statements/${encodeURIComponent(id)}/report${unit ? `?unit=${encodeURIComponent(unit)}` : ''}`);
   const all = useApi<{ data: Report }>(unit ? `/statements/${encodeURIComponent(id)}/report` : null);
@@ -63,7 +65,7 @@ export default function OwnerIncomeReportPage() {
     <div className="oir-root">
       <style>{CSS}</style>
       <div className="oir-bar">
-        <button onClick={() => navigate(`/finance/statements/${encodeURIComponent(id)}`)}>Back to statement</button>
+        <button onClick={() => navigate(owner ? '/' : `/finance/statements/${encodeURIComponent(id)}`)}>{owner ? 'Back to your account' : 'Back to statement'}</button>
         {choices.length > 1 && (
           <label>
             <span className="oir-sr">Unit</span>

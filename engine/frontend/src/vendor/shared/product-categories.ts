@@ -11,7 +11,11 @@
    purpose, because readers test a line group with includes('sofa').
 
    Mirrored byte-for-byte at frontend/src/vendor/shared/product-categories.ts. */
-export const MFG_PRODUCT_CATEGORIES = ['SOFA', 'BEDFRAME', 'ACCESSORY', 'FABRIC_ACCESSORY', 'MATTRESS', 'BEDLINES', 'DINING', 'DIFFUSER', 'CARPET', 'SERVICE'] as const;
+export const MFG_PRODUCT_CATEGORIES = [
+  'SOFA', 'BEDFRAME', 'ACCESSORY', 'FABRIC_ACCESSORY', 'MATTRESS', 'BEDLINES', 'DINING', 'DIFFUSER', 'CARPET', 'SERVICE',
+  // Renovation groups (Conts, migration 0060; renovation-catalog.ts holds the tree).
+  'WORKS', 'BUILTIN', 'FURNITURE', 'LIGHTING', 'APPLIANCE', 'SOFT',
+] as const;
 
 export type MfgProductCategory = (typeof MFG_PRODUCT_CATEGORIES)[number];
 
@@ -26,6 +30,12 @@ export const MFG_CATEGORY_LABELS: Readonly<Record<MfgProductCategory, string>> =
   DIFFUSER: 'Diffuser',
   CARPET: 'Carpet',
   SERVICE: 'Service',
+  WORKS: 'Works',
+  BUILTIN: 'Built-in',
+  FURNITURE: 'Furniture',
+  LIGHTING: 'Lighting',
+  APPLIANCE: 'Appliances',
+  SOFT: 'Soft furnishing',
 };
 
 export function isMfgProductCategory(c: string | null | undefined): c is MfgProductCategory {

@@ -34,6 +34,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     WHERE l.statement_id = ? ORDER BY l.sort_order, l.occurred_on`, st.id);
 
   const unitLabel = (l: any) => l.property_name ? `${l.property_name} ${l.unit_number}` : 'Unassigned';
+  // A stay line reads "<unit> · <guest> · 2026-08-31 to 2026-09-03 (2 nights in 2026-09)". Inside its unit's
+  // section the unit name is noise and ISO dates are hard to read on a phone: "<guest> · 31 Aug - 3 Sep (2 nights in Sep)".
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const stayLabel = (l: any) => {
+    const unit = unitLabel(l);
+    const text = String(l.description ?? '').startsWith(`${unit} · `) ? String(l.description).slice(unit.length + 3) : String(l.description ?? '');
+    return text
+      .replace(/(\d{4})-(\d{2})-(\d{2}) to (\d{4})-(\d{2})-(\d{2})/, (_m, _y1, m1, d1, _y2, m2, d2) => `${Number(d1)} ${MON[Number(m1) - 1]} - ${Number(d2)} ${MON[Number(m2) - 1]}`)
+      .replace(/ in (\d{4})-(\d{2})\)/, (_m, _y, mo) => ` in ${MON[Number(mo) - 1]})`);
+  };
 
   // Bucket every line that carries a unit; the fee and owner-level adjustments are allocated after.
   const buckets = new Map<string, UnitBreak>();
@@ -50,7 +60,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     if (l.line_type === 'gross') {
       const u = bucket(l.unit_id, unitLabel(l));
       u.gross += amt;
-      u.lines.push({ label: l.description, amount: amt, type: 'gross', occurredOn: l.occurred_on });
+      u.lines.push({ label: stayLabel(l), amount: amt, type: 'gross', occurredOn: l.occurred_on });
     } else if (l.line_type === 'expense') {
       const u = bucket(l.unit_id, unitLabel(l));
       u.expenses += Math.abs(amt);

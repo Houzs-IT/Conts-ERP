@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { color } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
@@ -314,7 +314,7 @@ export default function OwnerPortalPage() {
               <Icon name={DOC_ICON[d.type]} size="sm" />
             </span>
             <div className="flex flex-col gap-px min-w-0 flex-1">
-              <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{d.title}</span>
+              <span className="text-copy font-medium [overflow-wrap:anywhere] text-pretty">{d.title}</span>
               <span className="text-meta text-muted-ink">{d.meta}</span>
             </div>
             <Button size="md" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => downloadDoc(d)}>Download</Button>
@@ -420,7 +420,21 @@ function issueLine(i: HealthIssue, showUnit: boolean): string {
 
 /** Net-payout trend. Uniform-scaled SVG so the gold stroke never distorts. */
 function TrendChart({ points }: { points: TrendPoint[] }) {
-  const W = 640, H = 172, padX = 12, padTop = 20, padBottom = 34;
+  // Drawn at the box's real width, so 11px text stays 11px on a phone instead of shrinking with the drawing.
+  const box = useRef<HTMLDivElement>(null);
+  const [W, setW] = useState(640);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const fit = () => setW(Math.max(240, Math.round(el.clientWidth)));
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const H = 172, padX = 12, padTop = 20, padBottom = 34;
+  // A month label needs about 56px; on a narrow screen every other one is shown, always keeping the latest.
+  const every = W / Math.max(1, points.length) < 56 ? 2 : 1;
   const vals = points.map(p => p.netPayout);
   const max = Math.max(...vals), min = Math.min(...vals);
   const span = Math.max(1, max - min);
@@ -436,7 +450,8 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
   const desc = points.map(p => `${monthLabel(p.period)} ${moneyString(p.netPayout, 'whole')}`).join(', ');
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" className="block mt-1.5 h-auto" role="img" aria-label={`Net payout by month: ${desc}`}>
+    <div ref={box} className="mt-1.5 min-w-0">
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="block max-w-full" role="img" aria-label={`Net payout by month: ${desc}`}>
       <defs>
         <linearGradient id="owner-trend-fill" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color.gold} stopOpacity="0.24" />
@@ -448,9 +463,10 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
       <path d={line} fill="none" stroke={color.gold} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
       <circle cx={lastX} cy={lastY} r="4.5" fill={color.gold} stroke="#FFFFFF" strokeWidth="2" />
       <text x={lastX} y={Math.max(14, lastY - 12)} textAnchor="end" fontSize="12" fontWeight="600" fill={color.goldInk}>{moneyString(last.netPayout, 'whole')}</text>
-      {points.map((p, i) => (
-        <text key={p.period} x={x(i)} y={H - 12} textAnchor="middle" fontSize="11" fill={color.textMuted}>{monthLabel(p.period)}</text>
+      {points.map((p, i) => (points.length - 1 - i) % every === 0 && (
+        <text key={p.period} x={x(i)} y={H - 12} textAnchor={i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'} fontSize="11" fill={color.textMuted}>{monthLabel(p.period)}</text>
       ))}
     </svg>
+    </div>
   );
 }

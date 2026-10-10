@@ -20,8 +20,18 @@
    headers are already lower snake_case, so this is IDENTITY on an exported file
    and only ever LOOSENS matching. */
 export function normalizeImportHeader(h: string): string {
-  return h.trim().toLowerCase().replace(/[\s_]+/g, '_');
+  const n = h.trim().toLowerCase().replace(/[\s_]+/g, '_');
+  return IMPORT_HEADER_ALIASES[n] ?? n;
 }
+
+/* Conts renovation catalog columns as people type them ("Sub-category",
+   "Subcategory", "Trade"). None of these is a header the round-trip export
+   writes, so on an exported file this is still identity. */
+const IMPORT_HEADER_ALIASES: Record<string, string | undefined> = {
+  'sub-category': 'sub_category',
+  subcategory: 'sub_category',
+  trade: 'sub_category',
+};
 
 /* THE OTHER FILE ON THIS PAGE, and why it can never be imported.
  *
@@ -82,6 +92,13 @@ const GRID_LABEL_TO_KEY: Record<string, string | undefined> = {
   branding: 'branding',
   size: 'size_label',
   category: 'category',
+  // Conts renovation SKU Master columns (Sub-category, Unit) and hand-typed variants.
+  'sub category': 'sub_category',
+  'sub-category': 'sub_category',
+  subcategory: 'sub_category',
+  trade: 'sub_category',
+  unit: 'uom',
+  uom: 'uom',
 };
 
 /** A heading as a person reads it: lower-cased, runs of space collapsed, and
