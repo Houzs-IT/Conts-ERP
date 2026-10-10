@@ -19,6 +19,8 @@ import { cx } from '../lib/design-tokens';
 import { PAYOUT, bankName } from '../lib/vocabulary';
 import type { PayoutState } from '../lib/types';
 import { useUrlState, usePhone, ListCard, Pager, SearchBox, FilterSelect, STICKY_HEAD } from './finance/listKit';
+import ApprovalBanner from '../components/ApprovalBanner';
+import { stagedToast, type Approval, type Staged } from '../lib/approvals';
 
 interface Payout {
   id: string; ref?: string; period?: string | null; ownerName: string; amount: number; state: PayoutState; method: string;
@@ -64,6 +66,7 @@ export default function PayoutsPage() {
   const page = Math.max(1, Number(url.get('page')) || 1);
   const query = new URLSearchParams({ pageSize: String(PAGE_SIZE), ...(filter !== 'all' ? { state: filter } : {}), ...(period ? { period } : {}), ...(q ? { q } : {}), ...(page > 1 ? { page: String(page) } : {}) });
   const { data, loading, error, reload } = useApi<Payload>(`/payouts?${query}`, FALLBACK);
+  const runs = useApi<{ data: Approval[] }>('/approvals?entity=payouts');
   const toast = useToast();
 
   const [confirm, setConfirm] = useState<{ payout: Payout; kind: 'retry' | 'paid' } | null>(null);
@@ -143,6 +146,7 @@ export default function PayoutsPage() {
       />
 
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
+      <ApprovalBanner items={runs.data?.data ?? []} onChanged={() => { runs.reload(); reload(); void refreshNavCounts(); }} />
 
       <div className="flex flex-wrap gap-2">
         <SearchBox className="flex-[2_1_240px]" label="Search payouts" placeholder="Search owner" value={q} onChange={v => url.set({ q: v || null, page: null })} />
@@ -248,7 +252,7 @@ export default function PayoutsPage() {
       <Dialog spec={spec} busy={busy} onClose={() => { if (!busy) setConfirm(null); }} />
       <HistoryDrawer onClose={() => setHistoryOf(null)}
         target={historyOf && { entity: 'payouts', id: historyOf.id, title: `Payout to ${titleCase(historyOf.ownerName)}`, sub: `${moneyString(historyOf.amount, 'exact')}${historyOf.period ? ` · ${monthLabel(historyOf.period)} statement` : ''}` }} />
-      {runOpen && <RunDialog onClose={() => setRunOpen(false)} onDone={() => { setRunOpen(false); reload(); void refreshNavCounts(); }} />}
+      {runOpen && <RunDialog onClose={() => setRunOpen(false)} onDone={() => { setRunOpen(false); reload(); runs.reload(); void refreshNavCounts(); }} />}
     </>
   );
 }
@@ -264,6 +268,7 @@ function RunDialog({ onClose, onDone }: { onClose: () => void; onDone: () => voi
   const rows = useMemo(() => data?.data ?? [], [data]);
   const [off, setOff] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
+  const [reason, setReason] = useState('');
   const can = (p: Payout) => !!p.bankLast4;
   const chosen = rows.filter(p => can(p) && !off[p.id]);
   const total = chosen.reduce((n, p) => n + p.amount, 0);
@@ -271,10 +276,11 @@ function RunDialog({ onClose, onDone }: { onClose: () => void; onDone: () => voi
   async function start() {
     setBusy(true);
     try {
-      const res = await api.post<{ run: string; started: number; total: number; skipped: { id: string; reason: string }[] }>('/payouts/run', { payoutIds: chosen.map(p => p.id) });
+      // Money leaving: the run waits for a second person, and the payouts move only when it is approved.
+      const res = await api.post<Staged & { run: string; queued: number; total: number; skipped: { id: string; reason: string }[] }>('/payouts/run', { payoutIds: chosen.map(p => p.id), reason: reason.trim() || undefined });
       toast(res.skipped.length
-        ? { tone: 'warning', title: `${plural(res.started, 'payout')} in run ${res.run}, ${res.skipped.length} not.`, body: res.skipped[0].reason }
-        : { tone: 'success', title: `Payout run ${res.run} started.`, body: `${plural(res.started, 'payout')}, ${moneyString(res.total, 'exact')}. Make the transfers at the bank, then mark each one paid.` });
+        ? { tone: 'warning', title: `Run ${res.run} sent for approval with ${plural(res.queued, 'payout')}; ${res.skipped.length} left out.`, body: res.skipped[0].reason }
+        : { ...stagedToast(res), title: `Run ${res.run} sent for approval: ${plural(res.queued, 'payout')}, ${moneyString(res.total, 'exact')}.` });
       onDone();
     } catch (e) {
       toast({ tone: 'critical', title: 'The run was not started.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
@@ -289,7 +295,7 @@ function RunDialog({ onClose, onDone }: { onClose: () => void; onDone: () => voi
         <div className="px-[22px] pt-[22px] pb-3 flex flex-col gap-2">
           <h2 className="m-0 text-title font-semibold">Start payout run</h2>
           <p className="m-0 text-copy text-muted-ink text-pretty">
-            The ticked payouts move to <strong className="text-ink font-semibold">Processing</strong>. This records that you are making these transfers; it does not send money. Make each transfer in the bank's own system, then mark it paid here.
+            The run is sent for approval first: once someone else approves it, the ticked payouts move to <strong className="text-ink font-semibold">Processing</strong>. That records that you are making these transfers; it does not send money. Make each transfer in the bank's own system, then mark it paid here.
           </p>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto [border-top:1px_solid_var(--color-line-soft)]">
@@ -307,11 +313,16 @@ function RunDialog({ onClose, onDone }: { onClose: () => void; onDone: () => voi
               </label>
             ))}
         </div>
-        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-between gap-3 flex-wrap">
+        <div className="px-[22px] pt-3 pb-1 [border-top:1px_solid_var(--color-line)] flex flex-col gap-[6px]">
+          <label htmlFor="run-reason" className="text-meta font-medium text-muted-ink">Note for the approver (optional)</label>
+          <input id="run-reason" value={reason} onChange={e => setReason(e.target.value)} maxLength={500} placeholder="e.g. September 2026 owner payouts"
+            className="block w-full box-border h-9 px-3 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy" />
+        </div>
+        <div className="py-[14px] px-[22px] bg-page flex items-center justify-between gap-3 flex-wrap">
           <span className="text-meta text-muted-ink">{plural(chosen.length, 'payout')} · <MoneyText sen={total} mode="exact" strong className="text-ink" /></span>
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-            <Button size="sm" variant="primary" loading={busy} onClick={start} disabled={chosen.length === 0} disabledReason="Tick at least one payout with a bank account.">Start run</Button>
+            <Button size="sm" variant="primary" loading={busy} onClick={start} disabled={chosen.length === 0} disabledReason="Tick at least one payout with a bank account.">Send run for approval</Button>
           </div>
         </div>
       </div>

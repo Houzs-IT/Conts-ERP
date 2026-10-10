@@ -164,7 +164,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner: link item groups WORKS, BUILTIN, FURNITURE, LIGHTING, APPLIANCE, SOFT, SERVICE and RENOVATION to sales and sales-return accounts (Accounting > Item Groups), or invoices for those lines post nothing and negative instalments refuse their credit note; upload the Dream Crafter and The Conts logos (Project Maintenance > Brands).
 - Owner questions, contract defaults in use: typed amount allowed when it differs from measure x rate (flagged *); rounding per line to the sen; QT-YYMM-NNN; PO split 30/65/5; credit note to the sales-return account; supply-by-owner goods get no PO; promotion column = unit price.
 - Observed on a local engine (10 Oct, scratch Postgres + PostgREST): SKU photo upload, site receipts, the whole project flow (scripts/api-checks/renovation-project.mjs all passed, scripts/demo seed + cleanup). Not observed: revenue and credit-note journals (the local database has no chart of accounts), the PO payment-schedule card.
-- Owner decision: a line with no PO (FOC, waived, supply-by-owner goods, in-house) can never get a proof of delivery, so the stage that owns it can never be completed. Exempt such lines from the POD rule, or give them a "delivered" tick.
 - Demo data for the live site: scripts/demo (seed + cleanup, browser snippet or terminal). Cleanup archives and cancels; billed contracts, cancelled documents and inactive DEMO SKUs/suppliers stay.
 - Site receipt POST goes through the REST goods-receipt core and counts toward the free plan's 50 outside calls per request. Engine ESLint cannot run in Conts (engine/scripts/eslint and lint-ratchet.mjs were not copied).
 
@@ -179,3 +178,11 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Channex full sync (functions/_lib/channexQueue.ts) still counts inquiries as taken nights; the board and the clash check do not. Decide whether an inquiry should close the nights on the booking sites.
 - The booking drawer (src/components/booking) still offers Change dates on Airbnb / Booking.com / Agoda bookings; the board now refuses dragging them.
 - Rate update lists the units on the board, so with one building filtered it offers only that building; open it with All buildings to price across buildings.
+
+## Money approvals and guest documents (feat/s4-money-docs, migrations 0096-0097)
+- Migrations 0096 (approval_requests) and 0097 (document_counters, issued_documents) must be applied on production before this ships; until then refunds, payout runs, owner credits and charges, large expenses and write-offs answer with a database error.
+- Owner to set the approval limits in Settings > Approvals (defaults RM 500 for expenses, RM 2,000 for finance admins); they were chosen as placeholders, not by the owner.
+- Done (feat/s3-history-notify): approvers get a bell notice when a request is waiting, the requester when it is decided, and finance when a payout run is approved.
+- Expenses written by the system (finished cleans, utility bills from Record utilities, the workbook import) are not staged for approval; only expenses typed in on Expenses or an owner's page are.
+- Guest documents are print-ready pages (Save as PDF from the browser), not PDF files; same as owner statements.
+- Numbering under real concurrency is enforced by the database (counter row lock and one-live-document indexes); the local PGlite copy serves one connection at a time, so the parallel test there proves distinct consecutive numbers but not the index race. Re-run approvals-documents.mjs against staging Postgres before relying on it.

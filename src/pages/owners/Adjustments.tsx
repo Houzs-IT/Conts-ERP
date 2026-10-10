@@ -14,6 +14,9 @@ import { date, monthLabel, todayMyt, plural } from '../../lib/format';
 import type { Tone } from '../../lib/types';
 import type { Owner } from './shared';
 import { Modal } from './shared';
+import ApprovalBanner from '../../components/ApprovalBanner';
+import { isStaged, stagedToast, type Approval, type Staged } from '../../lib/approvals';
+import { refreshNavCounts } from '../../lib/navBadges';
 
 /** Money for or against the owner outside bookings and expenses (GET /api/owners/:id/adjustments): workbook
  *  credits, debts carried over, manual credits and charges. A held one waits until someone releases it;
@@ -47,6 +50,7 @@ const addMonths = (ym: string, by: number) => {
 export function OwnerAdjustments({ owner }: { owner: Owner }) {
   const toast = useToast();
   const { data, loading, error, reload } = useApi<Payload>(`/owners/${encodeURIComponent(owner.id)}/adjustments`);
+  const pending = useApi<{ data: Approval[] }>(`/approvals?entity=owners&entityId=${encodeURIComponent(owner.id)}`);
   const [filter, setFilter] = useState('all');
   const [shown, setShown] = useState(PAGE);
   const [modal, setModal] = useState<null | { kind: 'release' | 'settle'; a: Adjustment } | { kind: 'add' }>(null);
@@ -61,7 +65,8 @@ export function OwnerAdjustments({ owner }: { owner: Owner }) {
   async function change(a: Adjustment, body: Record<string, unknown>, done: string, after?: string) {
     setBusy(true);
     try {
-      const r = await api.patch<{ regenerate?: string | null }>(`/owners/${encodeURIComponent(owner.id)}/adjustments/${encodeURIComponent(a.id)}`, body);
+      const r = await api.patch<{ regenerate?: string | null } | Staged>(`/owners/${encodeURIComponent(owner.id)}/adjustments/${encodeURIComponent(a.id)}`, body);
+      if (isStaged(r)) { toast(stagedToast(r)); setModal(null); setDialog(null); pending.reload(); void refreshNavCounts(); return; }
       toast({ tone: 'success', title: done, body: r?.regenerate ? `Regenerate the ${monthLabel(r.regenerate)} statements to take it off that statement.` : after });
       setModal(null); setDialog(null); reload();
     } catch (e) {
@@ -82,13 +87,15 @@ export function OwnerAdjustments({ owner }: { owner: Owner }) {
         onConfirm: () => change(a, { action: 'hold' }, 'Held.'),
       }),
     });
-    if (a.state !== 'settled') items.push({ key: 'settle', label: 'Mark settled outside', icon: 'CheckCircle2', hint: 'Paid outside Property OS; it never reaches a statement.', disabledReason: onFinal, onSelect: () => setModal({ kind: 'settle', a }) });
+    if (a.state !== 'settled') items.push({ key: 'settle', label: a.state === 'held' ? 'Write off or settle outside' : 'Mark settled outside', icon: 'CheckCircle2',
+      hint: a.state === 'held' ? 'Never deducted from a statement. Needs a second person to approve.' : 'Paid outside Property OS; it never reaches a statement.', disabledReason: onFinal, onSelect: () => setModal({ kind: 'settle', a }) });
     return items;
   }
 
   return (
     <Card>
       <CardHeader title="Owner credits & charges" right={canChange ? <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'add' })}>Add credit or charge</Button> : undefined} />
+      {(pending.data?.data.length ?? 0) > 0 && <div className="px-5 pb-3"><ApprovalBanner items={pending.data!.data} onChanged={() => { pending.reload(); reload(); void refreshNavCounts(); }} /></div>}
       <div className="px-5 pb-3 flex flex-wrap items-center justify-between gap-3">
         <span className="text-meta text-muted-ink text-pretty max-w-[640px]">
           {held.length
@@ -140,9 +147,11 @@ export function OwnerAdjustments({ owner }: { owner: Owner }) {
       {modal?.kind === 'add' && <AddModal owner={owner} busy={busy} onClose={() => setModal(null)} onSubmit={async body => {
         setBusy(true);
         try {
-          await api.post(`/owners/${encodeURIComponent(owner.id)}/adjustments`, body);
-          toast({ tone: 'success', title: body.kind === 'credit' ? 'Credit added.' : 'Charge added.', body: 'The next statement generated for that month carries it.' });
-          setModal(null); reload();
+          // Credits and charges change what the owner is paid: they wait for a second person's approval.
+          const r = await api.post<unknown>(`/owners/${encodeURIComponent(owner.id)}/adjustments`, body);
+          if (isStaged(r)) toast(stagedToast(r));
+          else toast({ tone: 'success', title: body.kind === 'credit' ? 'Credit added.' : 'Charge added.', body: 'The next statement generated for that month carries it.' });
+          setModal(null); reload(); pending.reload(); void refreshNavCounts();
         } catch (e) {
           toast({ tone: 'critical', title: 'Nothing was added.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
         } finally { setBusy(false); }

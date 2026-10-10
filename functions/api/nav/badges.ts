@@ -1,6 +1,7 @@
 import { type Env, one, json, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
+import { waitingCount } from '../../_lib/approvals';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-MY')} ${n === 1 ? one : many}`;
 
@@ -31,11 +32,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            (SELECT count(*)::int FROM channex_outbox o WHERE o.status = 'failed' AND o.unit_id IN (SELECT unit_id FROM channex_channels)) AS failed`);
   const channels = { units: ch?.units ?? 0, lastSentAt: ch?.last_sent ?? null, failed: ch?.failed ?? 0 };
   const n = c!;
+  const approvals = await waitingCount(env, session);
   const money = session.manage;
 
   type Alert = { key: string; title: string; body: string; target: string; tone: 'critical' | 'warning' | 'info'; count: number };
   const alerts: Alert[] = [];
   const add = (cond: boolean, a: Alert) => { if (cond) alerts.push(a); };
+  add(approvals > 0, { key: 'approvals', tone: 'warning', count: approvals, title: `${plural(approvals, 'money request')} waiting for your approval`, body: 'Refunds, payout runs, owner credits and charges, large expenses and write-offs.', target: '/finance/approvals' });
   add(n.overdue > 0, { key: 'overdue', tone: 'critical', count: n.overdue, title: `${plural(n.overdue, 'task')} overdue`, body: 'Past the time they were due and not finished.', target: '/operations/today' });
   add(money && n.payouts_failed > 0, { key: 'payouts_failed', tone: 'critical', count: n.payouts_failed, title: `${plural(n.payouts_failed, 'payout')} failed`, body: 'Check the bank details, then retry.', target: '/finance/payouts?state=failed' });
   add(channels.failed > 0, { key: 'channels', tone: 'critical', count: channels.failed, title: 'Channel sync needs attention', body: `${plural(channels.failed, 'update')} refused by Channex.`, target: '/system/integrations' });
@@ -47,6 +50,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Today lists open maintenance alongside the day's tasks (operations/today.ts), so its count does too.
   return json({
     channels, today: n.today + n.maintenance, maintenance: n.maintenance, inbox: n.inbox,
-    statements: money ? n.statements : 0, alerts,
+    statements: money ? n.statements : 0, approvals, alerts,
   });
 };

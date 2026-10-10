@@ -79,6 +79,8 @@ const StatementsPage = lazy(() => import('./pages/StatementsPage'));
 const StatementDetailPage = lazy(() => import('./pages/StatementDetailPage'));
 const OwnerIncomeReportPage = lazy(() => import('./pages/OwnerIncomeReportPage'));
 const PayoutsPage = lazy(() => import('./pages/PayoutsPage'));
+const ApprovalsPage = lazy(() => import('./pages/ApprovalsPage'));
+const GuestDocumentsPage = lazy(() => import('./pages/GuestDocumentsPage'));
 const OwnersPage = lazy(() => import('./pages/OwnersPage'));
 const OwnerProfilePage = lazy(() => import('./pages/OwnerProfilePage'));
 const ContractsPage = lazy(() => import('./pages/ContractsPage'));
@@ -266,6 +268,8 @@ function Routed() {
         <Route path="/finance/statements" element={<StatementsPage />} />
         <Route path="/finance/statements/:id" element={<StatementDetailPage />} />
         <Route path="/finance/payouts" element={<PayoutsPage />} />
+        <Route path="/finance/approvals" element={<ApprovalsPage />} />
+        <Route path="/finance/documents" element={<GuestDocumentsPage />} />
         <Route path="/owners" element={<OwnersPage />} />
         <Route path="/owners/:id" element={<OwnerProfileRoute />} />
         <Route path="/owners/contracts" element={<ContractsPage />} />
