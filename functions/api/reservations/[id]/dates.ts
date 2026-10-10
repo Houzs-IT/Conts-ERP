@@ -27,6 +27,12 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id WHERE r.id = ?`, id);
   if (!cur) return fail('NOT_FOUND', 'That reservation does not exist.', 404);
   if (!MOVABLE.includes(cur.state)) return fail('CONFLICT', 'The dates of a finished, cancelled or no-show booking cannot change.', 409);
+  // A booking site owns its bookings' dates (drag on the calendar included): changed here, the site would still
+  // hold the old nights and sell the new ones to someone else.
+  if (['airbnb', 'booking_com', 'agoda'].includes(cur.channel)) {
+    const site = cur.channel === 'airbnb' ? 'Airbnb' : cur.channel === 'booking_com' ? 'Booking.com' : 'Agoda';
+    return fail('OTA_LOCKED', `This is a ${site} booking: its dates are set on ${site}. Change them there; the change comes back here through Channex.`, 409);
+  }
   if (cur.state === 'checked_in' && b.checkIn !== cur.check_in) return fail('CONFLICT', 'The guest is already in. Only the check-out date can change.', 409);
 
   let gross: number | null = null;

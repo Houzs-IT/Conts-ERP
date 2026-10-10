@@ -1,4 +1,6 @@
-import { type Env, one, run } from './db';
+import { type Env, one, run, audit } from './db';
+import { syncAvailabilityIfLinked, channexMappingFor } from './channexSync';
+import { channexConfigured } from './channex';
 
 /** The reservation that already holds any of these nights on the unit, or null.
  *  Check-out day is free. Cancelled, no-show and inquiry rows do not hold dates. */
@@ -28,4 +30,35 @@ export async function upsertGuest(env: Env, g: { fullName: string; email?: strin
   const id = crypto.randomUUID();
   await run(env, 'INSERT INTO guests (id, full_name, email, phone, created_at) VALUES (?, ?, ?, ?, ?)', id, g.fullName.trim(), email, phone, new Date().toISOString());
   return id;
+}
+
+/** Our own reference for a booking made here: TC-YYMM-####, numbered per month (Kuala Lumpur time) from a
+ *  counter row, so two bookings made at the same moment never share a number. Bookings from a booking site
+ *  keep the site's reference. Before migration 0091 the counter does not exist and the old MAN- form is used. */
+export async function nextBookingRef(env: Env, fallbackId: string): Promise<string> {
+  const yymm = new Date(Date.now() + 8 * 3600e3).toISOString().slice(2, 7).replace('-', '');
+  try {
+    const r = await one<{ last: number }>(env, `
+      INSERT INTO booking_ref_counters (month, last)
+      VALUES (?, COALESCE((SELECT MAX(substring(external_ref from 9)::int) FROM reservations WHERE external_ref ~ ('^TC-' || ? || '-[0-9]{4,}$')), 0) + 1)
+      ON CONFLICT (month) DO UPDATE SET last = booking_ref_counters.last + 1
+      RETURNING last`, yymm, yymm);
+    return `TC-${yymm}-${String(r!.last).padStart(4, '0')}`;
+  } catch {
+    return `MAN-${fallbackId.slice(0, 6).toUpperCase()}`;
+  }
+}
+
+/** Closes (or reopens) the nights on every booking site the unit is sold on. A Channex failure never fails the
+ *  booking that was already saved here: it is reported back as 'failed' and written to the audit log. */
+export async function holdOnChannels(env: Env, unitId: string, checkIn: string, checkOut: string, release: boolean, reservationId: string): Promise<'queued' | 'not_linked' | 'failed'> {
+  try {
+    if (!channexConfigured(env) || !(await channexMappingFor(env, unitId))) return 'not_linked';
+    await syncAvailabilityIfLinked(env, unitId, checkIn, checkOut, release);
+    return 'queued';
+  } catch (e) {
+    await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.availability_failed', entityTable: 'reservations', entityId: reservationId,
+      after: { unitId, checkIn, checkOut, release, error: e instanceof Error ? e.message.slice(0, 300) : String(e) } }).catch(() => {});
+    return 'failed';
+  }
 }

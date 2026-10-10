@@ -1,33 +1,41 @@
 import { mayWork } from '../../_lib/access';
-import { type Env, all, one, json, fail } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, audit } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { CONTACT_ROLES, guestTag, monthYear, todayAndTomorrow } from '../../_lib/guestList';
+import { CONTACT_ROLES, guestTags, monthYear, todayAndTomorrow, hasGuestColumns, maskId, MANUAL_TAGS } from '../../_lib/guestList';
+import { countryCode } from '../../_lib/hostplatformImport';
 
 const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 864e5));
 const at = (date: string, time: string) => `${date}T${time}:00+08:00`;
+const ID_TYPES = ['mykad', 'passport', 'other'];
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
-/** GET /api/guests/:id — one guest's profile: lifetime figures, stay history and today/tomorrow movement. */
+/** GET /api/guests/:id — one guest's profile: lifetime figures (upcoming stays included), tags, registration details
+ *  (the ID number masked to its last four), internal notes, stay history and today/tomorrow movement. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Guest contact details are not available to field roles.', 403);
   const contact = mayWork(session, CONTACT_ROLES);
+  const cols = await hasGuestColumns(env);
 
-  const g = await one<any>(env, 'SELECT id, full_name, email, phone, created_at FROM guests WHERE id = ?', String(params.id));
+  const g = await one<any>(env, `SELECT id, full_name, email, phone, country_code, created_at${cols ? ', tags, language, id_type, id_number, date_of_birth, notes, merged_into' : ''} FROM guests WHERE id = ?`, String(params.id));
   if (!g) return fail('NOT_FOUND', 'That guest does not exist.', 404);
+  // A merged duplicate opens as the guest it was merged into.
+  if (g.merged_into) return json({ redirectTo: g.merged_into }, 200);
 
   const { today, tomorrow } = todayAndTomorrow();
   const mine = await all<any>(env, `
-    SELECT r.id, r.channel, r.state, r.check_in, r.check_out, r.check_in_time, r.check_out_time, r.guests_count,
+    SELECT r.id, r.channel, r.state, r.check_in, r.check_out, r.check_in_time, r.check_out_time, r.guests_count, r.external_ref,
            r.gross_booking_value, u.unit_number, u.readiness, p.name AS property_name,
            (SELECT MIN(t.created_at) FROM tasks t WHERE t.reservation_id = r.id) AS prepared_at,
            (SELECT MAX(n.sent_at) FROM notification_log n WHERE n.template = 'access_details' AND n.entity_id = r.id) AS access_sent_at,
            (SELECT AVG(v.rating) FROM reviews v WHERE v.reservation_id = r.id) AS rating
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id
-    WHERE r.guest_id = ? AND r.channel NOT IN ('maintenance_block','owner_stay') AND r.state != 'cancelled'
+    WHERE r.guest_id = ? AND r.channel NOT IN ('maintenance_block','owner_stay') AND r.state NOT IN ('cancelled','no_show','inquiry')
     ORDER BY r.check_in DESC`, g.id);
 
-  const done = mine.filter(s => s.state === 'checked_out' || s.state === 'checked_in');
+  const upcoming = mine.filter(s => (s.state === 'confirmed' || s.state === 'pending') && s.check_in >= today);
+  const live = mine.some(s => ['confirmed', 'pending', 'checked_in'].includes(s.state) && s.check_out >= today);
   const ratings = mine.map(s => s.rating).filter(x => x !== null).map(Number);
 
   let movement: Record<string, unknown> | undefined;
@@ -49,18 +57,78 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   }
 
   const latest = mine[0]?.channel ?? null;
-  const channel = latest ?? 'direct';
+  const reg = cols ? {
+    idType: g.id_type ?? null, idNumberMasked: contact ? maskId(g.id_number) : null, hasIdNumber: !!g.id_number,
+    dateOfBirth: contact ? g.date_of_birth ?? null : null, countryCode: g.country_code ?? null,
+  } : { idType: null, idNumberMasked: null, hasIdNumber: false, dateOfBirth: null, countryCode: g.country_code ?? null };
+  const missing = [!reg.idType && 'ID type', !reg.hasIdNumber && 'ID number', !g.date_of_birth && 'date of birth', !g.country_code && 'nationality'].filter(Boolean) as string[];
   return json({
     id: g.id, fullName: g.full_name,
-    email: contact ? g.email : null, phone: contact ? g.phone : null,
-    channel, tag: guestTag(done.length, mine.length, latest), since: `Guest since ${monthYear(g.created_at)}`,
-    stays: done.length, nights: done.reduce((n, s) => n + nightsBetween(s.check_in, s.check_out), 0),
-    lifetimeValue: done.reduce((n, s) => n + Number(s.gross_booking_value), 0),
+    email: contact ? g.email : null, phone: contact ? g.phone : null, language: cols ? g.language ?? null : null,
+    channel: latest ?? 'direct', tags: guestTags(mine.length, latest, cols ? g.tags : ''), manualTags: cols ? String(g.tags ?? '').split(',').filter(Boolean) : [],
+    since: `Guest since ${monthYear(g.created_at)}`,
+    stays: mine.length, upcoming: upcoming.length,
+    nights: mine.reduce((n, s) => n + nightsBetween(s.check_in, s.check_out), 0),
+    lifetimeValue: mine.reduce((n, s) => n + Number(s.gross_booking_value), 0),
     ratingScore: ratings.length ? Number((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1)) : null,
+    registration: { ...reg, missing, required: live },
+    notes: contact && cols ? g.notes ?? null : null,
+    can: { edit: contact && cols, reveal: !!session.manage && cols, merge: contact && cols },
     history: mine.map(s => ({
-      reservationId: s.id, checkIn: s.check_in, checkOut: s.check_out, unitNumber: s.unit_number, propertyName: s.property_name,
+      reservationId: s.id, externalRef: s.external_ref, checkIn: s.check_in, checkOut: s.check_out, unitNumber: s.unit_number, propertyName: s.property_name,
       nights: nightsBetween(s.check_in, s.check_out), channel: s.channel, value: Number(s.gross_booking_value), state: s.state,
+      rating: s.rating == null ? null : Number(Number(s.rating).toFixed(1)),
     })),
     ...(movement ? { movement } : {}),
   });
 };
+
+/** PATCH /api/guests/:id { fullName?, email?, phone?, language?, countryCode?, idType?, idNumber?, dateOfBirth?, notes?, tags? }
+ *  Contact, registration details, internal notes and the manual tags (vip, blacklist). Audited; the ID number itself
+ *  never goes into the audit log, only that it changed. */
+export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return response!;
+  if (!mayWork(session, CONTACT_ROLES)) return fail('FORBIDDEN', 'Only operations and management can change guest details.', 403);
+  if (!(await hasGuestColumns(env))) return fail('NOT_READY', 'Guest details are not set up on this database yet (migration 0091).', 503);
+
+  const id = String(params.id);
+  const g = await one<any>(env, 'SELECT * FROM guests WHERE id = ?', id);
+  if (!g) return fail('NOT_FOUND', 'That guest does not exist.', 404);
+  const b = await request.json<any>().catch(() => null);
+  if (!b || typeof b !== 'object') return fail('VALIDATION', 'Nothing to change.', 422);
+
+  const text = (v: unknown, max: number) => (v === null ? null : String(v).trim().slice(0, max) || null);
+  const next: Record<string, string | null> = {};
+  const errs: Record<string, string> = {};
+  if (b.fullName !== undefined) { const v = text(b.fullName, 200); if (!v) errs.fullName = 'Enter the guest name.'; else next.full_name = v; }
+  if (b.email !== undefined) { const v = text(b.email, 200); if (v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) errs.email = 'Check the email.'; else next.email = v; }
+  if (b.phone !== undefined) next.phone = text(b.phone, 40);
+  if (b.language !== undefined) next.language = text(b.language, 40);
+  if (b.countryCode !== undefined) { const v = b.countryCode ? countryCode(String(b.countryCode)) : null; if (b.countryCode && !v) errs.countryCode = 'Pick a country.'; else next.country_code = v; }
+  if (b.idType !== undefined) { const v = b.idType || null; if (v && !ID_TYPES.includes(v)) errs.idType = 'Pick MyKad, passport or other.'; else next.id_type = v; }
+  if (b.idNumber !== undefined) next.id_number = text(b.idNumber, 40);
+  if (b.dateOfBirth !== undefined) {
+    const v = b.dateOfBirth || null;
+    if (v && (!ISO_DAY.test(v) || v > todayAndTomorrow().today || v < '1900-01-01')) errs.dateOfBirth = 'Pick a real date of birth.'; else next.date_of_birth = v;
+  }
+  if (b.notes !== undefined) next.notes = text(b.notes, 4000);
+  if (b.tags !== undefined) {
+    const list = Array.isArray(b.tags) ? [...new Set(b.tags.map(String))] : null;
+    if (!list || list.some(t => !(MANUAL_TAGS as readonly string[]).includes(t as string))) errs.tags = 'Tags can be VIP and Blacklist.';
+    else next.tags = MANUAL_TAGS.filter(t => list.includes(t)).join(',');
+  }
+  if (Object.keys(errs).length) return fail('VALIDATION', Object.values(errs)[0], 422, errs);
+
+  const changed = Object.entries(next).filter(([k, v]) => (g[k] ?? null) !== (k === 'tags' ? v ?? '' : v));
+  if (!changed.length) return json({ id, changed: false });
+  await run(env, `UPDATE guests SET ${changed.map(([k]) => `${k} = ?`).join(', ')} WHERE id = ?`, ...changed.map(([k, v]) => (k === 'tags' ? v ?? '' : v)), id);
+  const SECRET = new Set(['id_number', 'date_of_birth', 'notes', 'email', 'phone']);
+  await audit(env, {
+    actorId: session.userId, actorLabel: session.fullName, action: 'guest.update', entityTable: 'guests', entityId: id,
+    before: Object.fromEntries(changed.map(([k]) => [k, SECRET.has(k) ? (g[k] ? 'set' : 'empty') : g[k] ?? null])),
+    after: Object.fromEntries(changed.map(([k, v]) => [k, SECRET.has(k) ? (v ? 'set' : 'empty') : v])),
+  });
+  return json({ id, changed: true, fields: changed.map(([k]) => k) });
+};
+

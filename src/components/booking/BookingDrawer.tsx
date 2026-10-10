@@ -8,7 +8,7 @@ import ChannelMark from '../ChannelMark';
 import { useApi } from '../../lib/useApi';
 import { useToast } from '../Toast';
 import { api, ApiFailure } from '../../lib/api';
-import { rm, date, dateRange, dateTime, time, nights as fmtNights, guests as fmtGuests, percent } from '../../lib/format';
+import { rm, date, dateRange, dateTime, time, nights as fmtNights, guests as fmtGuests } from '../../lib/format';
 import { CHANNEL_META, cx } from '../../lib/design-tokens';
 import { TONE } from '../../lib/vocabulary';
 import { STATUS, channelNote, deliveryToast, type ChannelSync } from '../../lib/bookingStatus';
@@ -33,9 +33,24 @@ interface Money {
   depositCollected: number | null; depositRefunded: number | null; payoutAmount: number | null;
   payoutDate: string | null; paymentMethod: string | null; ratePlan: string | null; guestNationality: string | null;
 }
+interface Payment {
+  id: string; amount: number; receivedOn: string | null; status: 'received' | 'expected'; method: string | null;
+  reference: string | null; kind: 'guest_payment' | 'ota_payout' | 'refund'; note: string | null; source: 'manual' | 'owner_workbook';
+  createdBy: string | null; createdAt: string;
+}
+interface LedgerLine { key: string; label: string; sub?: string; amount: number }
+interface Ledger {
+  guestLines: LedgerLine[]; guestTotal: number; otaTax: number | null;
+  platformLines: LedgerLine[]; platformTotal: number;
+  expected: number; received: number; outstanding: number; receivedBefore: number;
+  payments: Payment[]; paymentMethod: string | null;
+  disagree: string | null; sources: { label: string; amount: number | null; from: string }[];
+}
 interface Detail extends Required<Omit<BookingSummary, 'guestPhone'>> {
-  guestPhone: string | null; unitId: string; notes: string | null; createdAt: string;
-  money: Money; timeline: TimelineEvent[]; moves: Move[];
+  guestPhone: string | null; guestEmail: string | null; guestId: string | null; nationality: string | null;
+  unitId: string; notes: string | null; staffNotes: string | null; createdAt: string;
+  money: Money; ledger: Ledger; timeline: TimelineEvent[]; moves: Move[];
+  can: { changeDates: boolean; changeDatesReason: string | null; recordPayment: boolean; editDetails: boolean; paymentsReady: boolean };
 }
 
 const isBlock = (c: BookingChannel) => c === 'maintenance_block' || c === 'owner_stay';
@@ -129,55 +144,95 @@ const Group = ({ title, children }: { title: string; children: ReactNode }) => (
   </div>
 );
 
-/** Only figures that are stored on the booking. Lines the data does not have are left out, never estimated. */
-function MoneyPanel({ d }: { d: Detail }) {
-  const m = d.money;
+const KIND_LABEL: Record<Payment['kind'], string> = { guest_payment: 'Guest payment', ota_payout: 'Payout', refund: 'Refund' };
+
+/** The money in three parts that add up: what the guest paid, what the platform took, what we receive. The server
+ *  works the figures out (functions/_lib/bookingMoney.ts); where its sources disagree it says so, and the figures
+ *  behind it are one click away instead of being shown side by side as if they agreed. */
+function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void; onRemove: (p: Payment) => void }) {
+  const L = d.ledger;
+  const [sources, setSources] = useState(false);
   const dead = d.state === 'cancelled' || d.state === 'no_show';
-  const ota = d.channel === 'airbnb' || d.channel === 'booking_com' || d.channel === 'agoda';
   const site = CHANNEL_META[d.channel].label;
-  const has = (v: number | null): v is number => v != null && v !== 0;
-  const received = m.payoutAmount ?? (m.collected > 0 ? m.collected : null);
+  const ota = d.channel === 'airbnb' || d.channel === 'booking_com' || d.channel === 'agoda';
 
-  if (dead) {
-    return (
-      <div className="border border-solid border-line rounded-card overflow-hidden">
-        <Line label={`Booking value before it was ${d.state === 'cancelled' ? 'cancelled' : 'marked no-show'}`} value={m.gross > 0 ? rm(m.gross) : '—'} muted />
-        <Line strong label={d.state === 'cancelled' ? 'Kept after cancellation' : 'Kept after no-show'}
-          sub={received ? 'The payout recorded on this booking.' : 'No cancellation payout is recorded.'}
-          value={rm(received ?? 0)} />
-      </div>
-    );
-  }
-
-  const roomOrCleaning = has(m.roomRevenue) || has(m.guestCleaningFee) || has(m.extraFees);
   return (
-    <div className="border border-solid border-line rounded-card overflow-hidden">
-      <Group title="What the guest paid">
-        {has(m.roomRevenue) && <Line label="Room charges" sub={m.ratePlan ? `Rate plan: ${m.ratePlan}` : fmtNights(d.nights)} value={rm(m.roomRevenue)} />}
-        {has(m.guestCleaningFee) && <Line label="Cleaning fee (paid by guest)" value={rm(m.guestCleaningFee)} />}
-        {has(m.extraFees) && <Line label="Extra charges" sub="Extra guest, early or late, add-ons" value={rm(m.extraFees)} />}
-        <Line strong={!roomOrCleaning} label={roomOrCleaning ? 'Total booking value' : 'Booking value'} value={m.gross > 0 ? rm(m.gross) : 'Not recorded'} muted={m.gross <= 0} />
-        {has(m.sstAmount) && <Line label="SST" value={rm(m.sstAmount)} />}
-        {has(m.tourismTax) && <Line label="Tourism tax" sub={ota ? `Collected by ${site}, not ours` : undefined} value={rm(m.tourismTax)} />}
-        {has(m.otaTax) && <Line label={`Tax collected by ${site}`} sub="Paid by the guest to the site, not ours" value={rm(m.otaTax)} />}
-      </Group>
-      {(m.channelFee > 0 || has(m.paymentProcessingFee)) && (
-        <Group title="Taken off before it reaches us">
-          {m.channelFee > 0 && <Line label="Booking site commission" sub={m.gross > 0 ? `${percent(m.channelFee / m.gross * 100)} of the booking value` : undefined} value={rm(m.channelFee)} minus />}
-          {has(m.paymentProcessingFee) && <Line label="Payment processing" value={rm(m.paymentProcessingFee)} minus />}
+    <div className="flex flex-col gap-2">
+      <div className="border border-solid border-line rounded-card overflow-hidden">
+        <Group title="1 · What the guest paid">
+          {L.guestLines.map(l => <Line key={l.key} label={l.label} sub={l.sub} value={rm(l.amount)} />)}
+          <Line strong label={dead ? `Guest total before it was ${d.state === 'cancelled' ? 'cancelled' : 'marked no-show'}` : 'Guest total'}
+            value={L.guestTotal > 0 ? rm(L.guestTotal) : 'Not recorded'} muted={L.guestTotal <= 0}
+            sub={!L.guestLines.length && L.guestTotal > 0 ? 'No breakdown recorded for this booking.' : undefined} />
+          {L.otaTax ? <Line label={`Tax collected by ${site}`} sub="Paid by the guest to the site and kept by it. Not ours." value={rm(L.otaTax)} muted /> : null}
         </Group>
+        {L.platformLines.length > 0 && (
+          <Group title="2 · Taken by the platform">
+            {L.platformLines.map(l => <Line key={l.key} label={l.label} sub={l.sub} value={rm(l.amount)} minus />)}
+          </Group>
+        )}
+        <Group title={`${L.platformLines.length ? 3 : 2} · What we receive`}>
+          {dead ? (
+            <Line strong label={d.state === 'cancelled' ? 'Kept after cancellation' : 'Kept after no-show'} value={rm(L.received)}
+              sub={L.received ? undefined : 'No money is recorded on this booking.'} />
+          ) : <>
+            <Line strong label="Expected" value={rm(L.expected)} sub={L.platformTotal ? `Guest total less ${ota ? site : 'the platform'}'s share` : undefined} />
+            {L.receivedBefore > 0 && <Line label="Received before payments were recorded here" sub="From the HostPlatform or workbook import" value={rm(L.receivedBefore)} />}
+            {L.payments.map(p => (
+              <div key={p.id} className="flex justify-between items-baseline gap-3 py-[7px] px-[14px]">
+                <span className="flex flex-col min-w-0">
+                  <span className="text-copy text-muted-ink">
+                    {p.status === 'expected' ? `${KIND_LABEL[p.kind]} expected` : `${KIND_LABEL[p.kind]}${p.receivedOn ? ` · ${date(p.receivedOn)}` : ''}`}
+                  </span>
+                  <span className="text-caption text-muted-ink">
+                    {[p.note, p.method, p.reference ? `Ref ${p.reference}` : null,
+                      p.source === 'owner_workbook' ? (p.status === 'received' && !p.receivedOn ? 'Paid out (owner workbook; no date given)' : 'From the owner workbook') : p.createdBy ? `Recorded by ${p.createdBy}` : null,
+                    ].filter(Boolean).join(' · ')}
+                  </span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className={cx('text-copy [font-variant-numeric:tabular-nums] whitespace-nowrap', p.status === 'expected' && 'text-[var(--color-warning-fg)]')}>
+                    {p.kind === 'refund' ? `− ${rm(p.amount)}` : rm(p.amount)}{p.status === 'expected' ? ' not received' : ''}
+                  </span>
+                  {p.source === 'manual' && d.can.recordPayment && (
+                    <button type="button" onClick={() => onRemove(p)} aria-label="Remove this payment" title="Remove this payment"
+                      className="w-7 h-7 grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted"><Icon name="Trash2" size="sm" /></button>
+                  )}
+                </span>
+              </div>
+            ))}
+            <Line strong label="Received" value={rm(L.received)} />
+            <Line strong label="Outstanding" value={L.outstanding > 0 ? rm(L.outstanding) : 'Nothing'}
+              sub={L.outstanding > 0 ? (ota ? `${site} has not paid this out yet.` : 'Still owed by the guest.') : undefined} />
+            {L.paymentMethod && <Line label="Payment method" value={L.paymentMethod} />}
+          </>}
+        </Group>
+      </div>
+
+      {L.disagree && (
+        <div role="note" className="rounded-control border border-solid border-[var(--color-warning-line)] bg-[var(--color-warning-bg)] px-3 py-[10px] text-meta flex flex-col gap-1">
+          <span className="font-semibold text-[var(--color-warning-fg)] flex items-center gap-[6px]"><Icon name="AlertTriangle" size="sm" />Sources disagree</span>
+          <span className="text-ink leading-[1.45]">{L.disagree}</span>
+        </div>
       )}
-      <Group title="What we receive">
-        <Line strong label="Paid out to us" value={received != null ? rm(received) : 'Not recorded yet'} muted={received == null}
-          sub={received == null ? (ota ? `${site} has not reported a payout for this booking.` : 'No payment is recorded on this booking.') : undefined} />
-        {m.payoutDate && <Line label="Payout date" value={date(m.payoutDate)} />}
-        {m.paymentMethod && <Line label="Payment method" value={m.paymentMethod} />}
-      </Group>
-      {(has(m.depositCollected) || has(m.depositRefunded)) && (
-        <Group title="Security deposit">
-          {has(m.depositCollected) && <Line label="Deposit collected" value={rm(m.depositCollected)} />}
-          {has(m.depositRefunded) && <Line label="Deposit refunded" value={rm(m.depositRefunded)} minus />}
-        </Group>
+      {L.sources.length > 1 && (
+        <button type="button" onClick={() => setSources(v => !v)} aria-expanded={sources}
+          className={cx('self-start p-0 border-none bg-transparent [font:inherit] text-meta underline cursor-pointer', L.disagree ? 'font-semibold text-ink' : 'text-muted-ink')}>
+          {sources ? 'Hide sources' : 'View sources'}
+        </button>
+      )}
+      {sources && (
+        <div className="border border-solid border-line rounded-card overflow-hidden">
+          {L.sources.map((x, i) => (
+            <div key={i} className="flex justify-between gap-3 px-[14px] py-[7px] text-meta [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
+              <span className="flex flex-col min-w-0"><span className="text-ink">{x.label}</span><span className="text-caption text-muted-ink">{x.from}</span></span>
+              <span className="[font-variant-numeric:tabular-nums] whitespace-nowrap">{x.amount == null ? '—' : rm(x.amount)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {d.can.recordPayment && !dead && (
+        <Button size="sm" variant="secondary" icon={<Icon name="Banknote" size="sm" />} onClick={onRecord}>Record payment</Button>
       )}
     </div>
   );
@@ -370,6 +425,140 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
   );
 }
 
+const METHODS = ['Bank transfer', 'Cash', 'Card', 'DuitNow / QR', 'Booking site payout', 'Other'];
+const todayIso = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+
+/** Money received against the booking: a guest paying, a booking site's payout, or a refund going back. */
+function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () => void; onSaved: (msg: string) => void }) {
+  const toast = useToast();
+  const ota = d.channel === 'airbnb' || d.channel === 'booking_com' || d.channel === 'agoda';
+  const [kind, setKind] = useState<Payment['kind']>(ota ? 'ota_payout' : 'guest_payment');
+  const [amount, setAmount] = useState(d.ledger.outstanding > 0 ? (d.ledger.outstanding / 100).toFixed(2) : '');
+  const [receivedOn, setReceivedOn] = useState(todayIso());
+  const [method, setMethod] = useState(ota ? 'Booking site payout' : 'Bank transfer');
+  const [reference, setReference] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const sen = Math.round(Number(amount) * 100);
+  const valid = Number.isFinite(sen) && sen > 0 && !!receivedOn;
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!valid) return;
+    setBusy(true); setErrors({});
+    try {
+      await api.post(`/reservations/${d.id}/payments`, { amount: sen, receivedOn, kind, method, reference: reference || undefined, note: note || undefined });
+      const left = kind === 'refund' ? d.ledger.outstanding + sen : Math.max(d.ledger.outstanding - sen, 0);
+      onSaved(`${kind === 'refund' ? 'Refund' : 'Payment'} of ${rm(sen)} recorded. ${left > 0 ? `${rm(left)} still outstanding.` : 'Nothing is outstanding now.'}`);
+    } catch (err) {
+      if (err instanceof ApiFailure && err.fields) setErrors(err.fields);
+      toast({ tone: 'critical', title: 'Payment not recorded.', body: failMessage(err) });
+    }
+    setBusy(false);
+  }
+  return (
+    <CentreModal title="Record payment" sub={`Expected ${rm(d.ledger.expected)} · received ${rm(d.ledger.received)} · outstanding ${rm(d.ledger.outstanding)}`} onClose={() => { if (!busy) onClose(); }}>
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
+        <div role="radiogroup" aria-label="What is this" className="grid grid-cols-3 gap-1 p-1 rounded-control bg-muted">
+          {(['guest_payment', 'ota_payout', 'refund'] as const).map(k => (
+            <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
+              className={cx('h-9 rounded-[8px] border-none [font:inherit] text-meta cursor-pointer', kind === k ? 'bg-card font-semibold text-ink shadow-sm' : 'bg-transparent text-muted-ink')}>
+              {k === 'guest_payment' ? 'From the guest' : k === 'ota_payout' ? 'Site payout' : 'Refund'}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+          <Field label="Amount (RM)" type="number" min={0.01} step="0.01" numeric value={amount} onChange={e => setAmount(e.target.value)} required error={errors.amount} />
+          <Field label={kind === 'refund' ? 'Refunded on' : 'Received on'} type="date" value={receivedOn} max={todayIso()} onChange={e => setReceivedOn(e.target.value)} required error={errors.receivedOn} />
+        </div>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="pay-method" className="text-meta font-medium text-muted-ink">Method</label>
+            <select id="pay-method" value={method} onChange={e => setMethod(e.target.value)}
+              className="h-10 rounded-control border border-solid border-line bg-card text-ink [font:inherit] text-copy px-3">
+              {METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <Field label="Reference (optional)" value={reference} onChange={e => setReference(e.target.value)} placeholder="Bank or receipt reference" />
+        </div>
+        <Field label="Note (optional)" value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Deposit, balance on arrival" />
+        <div className="flex justify-end gap-[9px]">
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason="Enter an amount and a date.">{busy ? 'Saving…' : 'Record payment'}</Button>
+        </div>
+      </form>
+    </CentreModal>
+  );
+}
+
+/** Early check-in or late check-out. Cleaning plans the turnover from these times. */
+function TimesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => void; onSaved: (msg: string) => void }) {
+  const toast = useToast();
+  const [inTime, setInTime] = useState(d.checkInTime || '15:00');
+  const [outTime, setOutTime] = useState(d.checkOutTime || '11:00');
+  const [busy, setBusy] = useState(false);
+  const changed = inTime !== d.checkInTime || outTime !== d.checkOutTime;
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!changed) return;
+    setBusy(true);
+    try {
+      await api.patch(`/reservations/${d.id}/details`, { checkInTime: inTime, checkOutTime: outTime });
+      onSaved(`Check-in from ${inTime} on ${date(d.checkIn)}, check-out by ${outTime} on ${date(d.checkOut)}. Cleaning plans with the new times.`);
+    } catch (err) { toast({ tone: 'critical', title: 'Times not changed.', body: failMessage(err) }); }
+    setBusy(false);
+  }
+  return (
+    <CentreModal title="Check-in and check-out times" sub="For an early check-in or a late check-out. The dates do not change, and the guest is not messaged." onClose={() => { if (!busy) onClose(); }}>
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+          <Field label={`Check-in from (${date(d.checkIn)})`} type="time" value={inTime} onChange={e => setInTime(e.target.value)} required disabled={d.state === 'checked_in'}
+            help={d.state === 'checked_in' ? 'The guest is already in.' : 'Standard 15:00'} />
+          <Field label={`Check-out by (${date(d.checkOut)})`} type="time" value={outTime} onChange={e => setOutTime(e.target.value)} required help="Standard 11:00" />
+        </div>
+        <div className="flex justify-end gap-[9px]">
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!changed} disabledReason="Change a time first.">{busy ? 'Saving…' : 'Save times'}</Button>
+        </div>
+      </form>
+    </CentreModal>
+  );
+}
+
+/** Internal notes on the booking. What an import wrote stays separate and read-only, because a re-import rewrites it. */
+function NotesBox({ d, onSaved }: { d: Detail; onSaved: () => void }) {
+  const toast = useToast();
+  const [text, setText] = useState(d.staffNotes ?? '');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setText(d.staffNotes ?? ''); }, [d.staffNotes]);
+  const dirty = text.trim() !== (d.staffNotes ?? '').trim();
+  async function save() {
+    setBusy(true);
+    try {
+      await api.patch(`/reservations/${d.id}/details`, { staffNotes: text.trim() || null });
+      toast({ tone: 'success', title: 'Notes saved.' });
+      onSaved();
+    } catch (err) { toast({ tone: 'critical', title: 'Notes not saved.', body: failMessage(err) }); }
+    setBusy(false);
+  }
+  const imported = d.notes && !/^Imported from (HostPlatform|owner workbook) \([^)]*\)$/.test(d.notes.replace(/ · amounts from owner workbook$/, '')) ? d.notes : null;
+  return (
+    <div className="flex flex-col gap-2">
+      <label htmlFor="bk-notes" className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">Notes</label>
+      {imported && <div className="text-meta text-muted-ink py-2 px-3 rounded-control bg-page border border-solid border-line-soft break-words">{imported}</div>}
+      <textarea id="bk-notes" value={text} onChange={e => setText(e.target.value)} rows={3} maxLength={2000} placeholder="Internal notes for the team, e.g. Guest asked for a high floor"
+        className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
+      {dirty && (
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="tertiary" onClick={() => setText(d.staffNotes ?? '')} disabled={busy}>Discard</Button>
+          <Button size="sm" variant="primary" onClick={save} loading={busy}>Save notes</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* The drawer                                                          */
 /* ------------------------------------------------------------------ */
@@ -384,11 +573,17 @@ export function BookingDrawer({ id, summary, onClose, onChanged, onDuplicated }:
   onChanged?: (id: string) => void; onDuplicated?: (newId: string) => void;
 }) {
   return (
-    <Drawer open={!!id} onClose={onClose} width={440}>
+    <Drawer open={!!id} onClose={onClose} width={460}>
       {id && <Panel key={id} id={id} summary={summary ?? null} onClose={onClose} onChanged={onChanged} onDuplicated={onDuplicated} />}
     </Drawer>
   );
 }
+
+const countryName = (code: string | null) => {
+  if (!code) return null;
+  if (!/^[A-Z]{2}$/.test(code)) return code;
+  try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code; } catch { return code; }
+};
 
 function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
   id: string; summary: BookingSummary | null; onClose: () => void; onChanged?: (id: string) => void; onDuplicated?: (newId: string) => void;
@@ -399,6 +594,9 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState<Move | 'remove_block' | null>(null);
   const [datesOpen, setDatesOpen] = useState(false);
+  const [timesOpen, setTimesOpen] = useState(false);
+  const [payOpen, setPayOpen] = useState(false);
+  const [removing, setRemoving] = useState<Payment | null>(null);
   const [messageOpen, setMessageOpen] = useState(false);
 
   const s = d ?? summary;
@@ -450,10 +648,24 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
     setBusy(false);
   }
 
+  async function removePayment(p: Payment) {
+    setBusy(true);
+    try {
+      await api.del(`/reservations/${id}/payments/${p.id}`);
+      toast({ tone: 'neutral', title: `${KIND_LABEL[p.kind]} of ${rm(p.amount)} removed.` });
+      setRemoving(null); reload(); onChanged?.(id);
+    } catch (err) { toast({ tone: 'critical', title: 'Payment not removed.', body: failMessage(err) }); }
+    setBusy(false);
+  }
+
   function duplicate() {
-    api.post<{ id: string }>(`/reservations/${id}/duplicate`, {})
+    api.post<{ id: string; externalRef: string; checkIn: string; channel: BookingChannel; effects?: { channel: ChannelSync } }>(`/reservations/${id}/duplicate`, {})
       .then(res => {
-        toast({ tone: 'success', title: 'Booking duplicated as Pending.', body: `${s!.guestName || 'The copy'} starts on ${date(s!.checkOut)}. Change its dates if needed.` });
+        toast({
+          tone: res.effects?.channel === 'failed' ? 'warning' : 'success',
+          title: `Copy ${res.externalRef} created as Pending.`,
+          body: [`${s!.guestName || 'The copy'} starts on ${date(res.checkIn)}.`, res.channel !== s!.channel ? 'It is a direct booking: it is not on the original booking site.' : '', channelNote(res.effects?.channel, 'held')].filter(Boolean).join(' '),
+        });
         onChanged?.(id); onDuplicated?.(res.id);
       })
       .catch(err => toast({ tone: 'critical', title: 'Booking not duplicated.', body: failMessage(err) }));
@@ -462,6 +674,8 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
   const pick = (m: Move) => { if (m.needsReason) setAsking(m); else void move(m); };
   const cancelMove = d?.moves.find(m => m.to === 'cancelled' && m.allowed);
   const metaLine = `${s.guestName || ch.label} · ${s.propertyName} ${s.unitNumber} · ${dateRange(s.checkIn, s.checkOut)}`;
+  const saved = (msg: string) => { toast({ tone: 'success', title: msg }); reload(); onChanged?.(id); };
+  const nationality = d ? countryName(d.nationality) : null;
 
   return (
     <>
@@ -471,7 +685,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
             <ChannelMark ch={s.channel} size={24} />
             <div className="flex flex-col min-w-0">
               <span className="text-heading font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{s.channel === 'owner_stay' ? (s.guestName ? `Owner stay · ${s.guestName}` : 'Owner stay') : block ? 'Blocked dates' : (s.guestName || 'No guest name')}</span>
-              <span className="text-meta text-[rgba(255,255,255,0.72)] whitespace-nowrap overflow-hidden text-ellipsis">{s.propertyName} {s.unitNumber}</span>
+              <span className="text-meta text-[rgba(255,255,255,0.72)] whitespace-nowrap overflow-hidden text-ellipsis">{s.propertyName} {s.unitNumber} · {fmtNights(nights)}</span>
             </div>
           </div>
           <CloseButton onClose={onClose} dark />
@@ -503,13 +717,30 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
             </div>
           ))}
         </div>
+        {d && live && (
+          <button type="button" onClick={() => setTimesOpen(true)}
+            className="self-start -mt-3 p-0 border-none bg-transparent [font:inherit] text-meta text-ink underline cursor-pointer">Change check-in or check-out time</button>
+        )}
+
+        {!block && d && (
+          <div className="flex flex-col gap-1 text-copy">
+            <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink mb-1">Guest</div>
+            <div className="flex justify-between gap-3"><span className="text-muted-ink">Phone</span><span className="text-right break-all">{d.guestPhone ? <a href={`tel:${d.guestPhone.replace(/[^0-9+]/g, '')}`} className="text-ink">{d.guestPhone}</a> : '—'}</span></div>
+            {d.guestEmail && <div className="flex justify-between gap-3"><span className="text-muted-ink">Email</span><span className="text-right break-all">{d.guestEmail}</span></div>}
+            <div className="flex justify-between gap-3"><span className="text-muted-ink">Nationality</span>
+              <span className="text-right">{nationality ?? '—'}{nationality && !/malaysia/i.test(nationality) ? <span className="text-muted-ink"> · tourism tax applies</span> : null}</span></div>
+            {d.guestId && <a href={`#/reservations/guests?g=${encodeURIComponent(d.guestId)}`} className="self-start mt-1 text-meta text-ink underline">Open guest profile</a>}
+          </div>
+        )}
 
         {block ? (
           <div className="text-copy text-muted-ink">
             <div>{d?.notes ? <>Note: <span className="text-ink">{d.notes}</span></> : 'No note recorded.'}</div>
             {d && <div className="mt-1">{d.money.gross > 0 ? <>Recorded value: <span className="text-ink [font-variant-numeric:tabular-nums]">{rm(d.money.gross)}</span></> : 'No money is recorded on it.'}</div>}
           </div>
-        ) : d ? <MoneyPanel d={d} /> : <div className="h-[120px] rounded-card bg-muted animate-pulse" />}
+        ) : d ? <MoneyPanel d={d} onRecord={() => setPayOpen(true)} onRemove={setRemoving} /> : <div className="h-[120px] rounded-card bg-muted animate-pulse" />}
+
+        {!block && d && <NotesBox d={d} onSaved={reload} />}
 
         <div>
           <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink mb-3">Timeline</div>
@@ -530,10 +761,14 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
           </div>
           {live && (
             <div className="flex gap-[9px]">
-              <Button variant="secondary" style={{ flex: 1 }} onClick={() => setDatesOpen(true)} disabled={!d}>Change dates</Button>
+              <Button variant="secondary" style={{ flex: 1 }} onClick={() => setDatesOpen(true)} disabled={!d || !d.can.changeDates}
+                disabledReason={d?.can.changeDatesReason ?? 'Loading…'}>Change dates</Button>
               <Button variant="danger" style={{ flex: 1 }} onClick={() => cancelMove && setAsking(cancelMove)} disabled={!cancelMove}
                 disabledReason={d ? 'A guest who is already in cannot be cancelled. Check them out instead.' : 'Loading…'}>Cancel booking</Button>
             </div>
+          )}
+          {live && d && !d.can.changeDates && d.can.changeDatesReason && (
+            <p className="m-0 text-caption text-muted-ink leading-[1.4]">{d.can.changeDatesReason}</p>
           )}
         </>}
       </div>
@@ -560,6 +795,16 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
             toast({ tone: 'success', title: 'Dates changed.', body: [`Now ${dateRange(v.checkIn, v.checkOut)}.`, channelNote(v.channel, 'moved'), block ? '' : 'The guest was not messaged.'].filter(Boolean).join(' ') });
             reload(); onChanged?.(id);
           }} />
+      )}
+      {timesOpen && d && <TimesModal d={d} onClose={() => setTimesOpen(false)} onSaved={msg => { setTimesOpen(false); saved(msg); }} />}
+      {payOpen && d && <RecordPaymentModal d={d} onClose={() => setPayOpen(false)} onSaved={msg => { setPayOpen(false); saved(msg); }} />}
+      {removing && (
+        <CentreModal title="Remove this payment?" sub={`${KIND_LABEL[removing.kind]} of ${rm(removing.amount)}${removing.receivedOn ? ` on ${date(removing.receivedOn)}` : ''}. Use this only for one recorded by mistake; the removal is kept in the audit log.`} onClose={() => { if (!busy) setRemoving(null); }}>
+          <div className="px-[22px] py-4 flex justify-end gap-[9px]">
+            <Button size="sm" variant="secondary" onClick={() => setRemoving(null)} disabled={busy}>Keep it</Button>
+            <Button size="sm" variant="danger" loading={busy} onClick={() => removePayment(removing)}>Remove payment</Button>
+          </div>
+        </CentreModal>
       )}
       {messageOpen && <MessageGuestModal r={{ id, guestName: s.guestName, channel: s.channel }} onClose={() => setMessageOpen(false)} onSent={reload} />}
     </>

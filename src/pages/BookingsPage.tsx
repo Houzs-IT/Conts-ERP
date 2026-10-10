@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -15,6 +15,7 @@ import { EmptyState } from '../components/States';
 import { Select } from '../components/Select';
 import { PageControls } from '../components/PageControls';
 import { useApi } from '../lib/useApi';
+import { useSession } from '../lib/session';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
 import { api, notifyFailure, downloadFile } from '../lib/api';
@@ -24,70 +25,87 @@ import type { BookingChannel, ReservationState } from '../lib/types';
 
 interface Row {
   id: string; externalRef: string | null; guestName: string; guestsCount: number;
-  guestPhone: string | null; unitNumber: string; propertyName: string; channel: BookingChannel;
+  guestPhone: string | null; guestCountry: string | null; guestNationality: string | null;
+  unitNumber: string; propertyName: string; channel: BookingChannel;
   state: ReservationState; checkIn: string; checkOut: string; checkInTime: string; checkOutTime: string;
-  nights: number; grossBookingValue: number; channelFee: number; collectedRevenue: number; createdAt: string;
+  nights: number; grossBookingValue: number; channelFee: number; collectedRevenue: number;
+  expectedPayout: number; received: number; outstanding: number; createdAt: string;
 }
 
+/** Five tabs, no overlap: every booking is in exactly one of the first four, and All is their sum. */
 const VIEWS = [
-  { key: 'upcoming', label: 'Upcoming', empty: 'No upcoming or in-house bookings.' },
-  { key: 'arriving', label: 'Arriving today', empty: 'Nobody arrives today.' },
+  { key: 'upcoming', label: 'Upcoming', empty: 'No upcoming bookings.' },
   { key: 'inhouse', label: 'In house', empty: 'Nobody is in house right now.' },
-  { key: 'unpaid', label: 'Direct, not paid', empty: 'Every direct booking has a payment recorded.' },
-  { key: 'payout', label: 'Payout pending', empty: 'Every finished booking-site stay has a payout recorded.' },
-  { key: 'past', label: 'Past', empty: 'No past bookings yet.' },
+  { key: 'past', label: 'Checked out', empty: 'No finished stays yet.' },
   { key: 'cancelled', label: 'Cancelled', empty: 'No cancelled bookings.' },
-  { key: 'blocks', label: 'Blocks', empty: 'No maintenance blocks or owner stays.' },
   { key: 'all', label: 'All', empty: 'No bookings yet.' },
 ] as const;
 type ViewKey = typeof VIEWS[number]['key'];
 
+/** Things to do today. A card filters the list; it is not another tab. */
+const TODOS = [
+  { key: 'arriving', label: 'Arriving today', empty: 'Nobody arrives today.', money: false },
+  { key: 'departing', label: 'Departing today', empty: 'Nobody leaves today.', money: false },
+  { key: 'unpaid', label: 'Direct, not fully paid', empty: 'Every direct booking is paid.', money: true },
+  { key: 'payout', label: 'Booking-site payout pending', empty: 'Every finished booking-site stay is paid out.', money: true },
+] as const;
+type TodoKey = typeof TODOS[number]['key'];
+
 interface Payload {
-  data: Row[]; total: number; page: number; pageSize: number; generatedAt: string; today: string; view: ViewKey;
+  data: Row[]; total: number; page: number; pageSize: number; generatedAt: string; today: string; view: ViewKey; todo: TodoKey | null;
   counts: Record<ViewKey, number>;
-  totals: { bookings: number; nights: number; gross: number; fees: number; outstanding: number | null };
+  todos: Record<TodoKey, { count: number; outstanding: number }>;
+  totals: { bookings: number; nights: number; gross: number; fees: number; outstanding: number };
+  buildings: { id: string; name: string }[];
+  paymentsReady: boolean;
 }
 
 const SAMPLE: Row[] = [
-  { id: 'b1', externalRef: 'ABNB-7741QK', guestName: 'Nadia Abdullah', guestsCount: 2, guestPhone: '+60 12-111 0001', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', channel: 'airbnb', state: 'checked_in', checkIn: '2026-09-16', checkOut: '2026-09-19', checkInTime: '15:00', checkOutTime: '11:00', nights: 3, grossBookingValue: 85200, channelFee: 12780, collectedRevenue: 0, createdAt: '2026-09-12T02:02:00Z' },
-  { id: 'b2', externalRef: 'DIR-2026-0916', guestName: 'Aaron Lee', guestsCount: 2, guestPhone: '+60 12-111 0002', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', channel: 'direct', state: 'confirmed', checkIn: '2026-09-19', checkOut: '2026-09-23', checkInTime: '15:00', checkOutTime: '11:00', nights: 4, grossBookingValue: 113600, channelFee: 0, collectedRevenue: 0, createdAt: '2026-09-12T02:02:00Z' },
-  { id: 'b3', externalRef: 'BDC-5512088', guestName: 'Priya Sundaram', guestsCount: 2, guestPhone: '+60 12-111 0003', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', channel: 'booking_com', state: 'confirmed', checkIn: '2026-09-24', checkOut: '2026-09-27', checkInTime: '15:00', checkOutTime: '11:00', nights: 3, grossBookingValue: 198800, channelFee: 29820, collectedRevenue: 0, createdAt: '2026-09-15T14:41:00Z' },
+  { id: 'b1', externalRef: 'HMF4323EHS', guestName: 'Nadia Abdullah', guestsCount: 2, guestPhone: null, guestCountry: 'MY', guestNationality: null, unitNumber: 'A-12-03', propertyName: 'Vista Jaya One', channel: 'airbnb', state: 'checked_in', checkIn: '2026-09-16', checkOut: '2026-09-19', checkInTime: '15:00', checkOutTime: '11:00', nights: 3, grossBookingValue: 85200, channelFee: 12780, collectedRevenue: 0, expectedPayout: 72420, received: 0, outstanding: 72420, createdAt: '2026-09-12T02:02:00Z' },
 ];
 const FALLBACK: Payload = {
-  total: 3, page: 1, pageSize: 50, generatedAt: '', today: '2026-09-16', view: 'upcoming', data: SAMPLE,
-  counts: { upcoming: 3, arriving: 0, inhouse: 1, unpaid: 1, payout: 0, past: 0, cancelled: 0, blocks: 0, all: 3 },
-  totals: { bookings: 3, nights: 10, gross: 397600, fees: 42600, outstanding: null },
+  total: 1, page: 1, pageSize: 50, generatedAt: '', today: '2026-09-16', view: 'upcoming', todo: null, data: SAMPLE,
+  counts: { upcoming: 0, inhouse: 1, past: 0, cancelled: 0, all: 1 },
+  todos: { arriving: { count: 0, outstanding: 0 }, departing: { count: 0, outstanding: 0 }, unpaid: { count: 0, outstanding: 0 }, payout: { count: 0, outstanding: 0 } },
+  totals: { bookings: 1, nights: 3, gross: 85200, fees: 12780, outstanding: 72420 }, buildings: [], paymentsReady: true,
 };
 
-/** Channels a manual entry may use — revenue channels only; blocks/owner stays are set on the calendar. */
-const CREATE_CHANNELS: BookingChannel[] = ['direct', 'airbnb', 'booking_com', 'agoda'];
+const COLS = 'grid-cols-[minmax(140px,1.1fr)_minmax(160px,1.4fr)_minmax(130px,1.1fr)_minmax(150px,1.2fr)_minmax(110px,0.8fr)_minmax(110px,0.8fr)_44px]';
+const COLS_PICK = 'grid-cols-[28px_minmax(140px,1.1fr)_minmax(160px,1.4fr)_minmax(130px,1.1fr)_minmax(150px,1.2fr)_minmax(110px,0.8fr)_minmax(110px,0.8fr)_44px]';
 
-const COLS = 'grid-cols-[minmax(130px,1.1fr)_minmax(150px,1.4fr)_minmax(140px,1.2fr)_minmax(96px,0.7fr)_minmax(140px,1.1fr)_minmax(96px,0.8fr)_minmax(104px,0.8fr)_48px]';
-
-type ColKey = 'reference' | 'guest' | 'unit' | 'channel' | 'stay' | 'gross' | 'status';
-/** Each column's search box writes its own URL parameter; the server searches every booking, not just this page. */
-const COLUMNS: { key: ColKey; param: string; label: string; align?: 'right'; hint: string }[] = [
-  { key: 'reference', param: 'ref', label: 'Reference', hint: 'Search' },
-  { key: 'guest', param: 'guest', label: 'Guest', hint: 'Name or phone' },
-  { key: 'unit', param: 'unit', label: 'Unit', hint: 'Unit or building' },
-  { key: 'channel', param: 'channel', label: 'Channel', hint: 'Search' },
-  { key: 'stay', param: 'stay', label: 'Stay', hint: 'e.g. 12 Oct' },
-  { key: 'gross', param: 'gross', label: 'Gross', align: 'right', hint: 'Search' },
-  { key: 'status', param: 'status', label: 'Status', hint: 'Search' },
+type ColKey = 'reference' | 'guest' | 'unit' | 'stay' | 'gross' | 'status';
+const COLUMNS: { key: ColKey; label: string; align?: 'right'; title?: string }[] = [
+  { key: 'reference', label: 'Reference' },
+  { key: 'guest', label: 'Guest' },
+  { key: 'unit', label: 'Unit' },
+  { key: 'stay', label: 'Check-in to check-out' },
+  { key: 'gross', label: 'Guest total', align: 'right', title: 'What the guest paid for the stay: room, fees and the taxes we collect. Tax a booking site keeps is not included.' },
+  { key: 'status', label: 'Status' },
 ];
-const SEARCH_PARAMS = ['q', ...COLUMNS.map(c => c.param)];
+/** Searches the server reads. The column searches are kept for links from global search (?ref=, ?guest=). */
+const SEARCH_PARAMS = ['q', 'ref', 'guest', 'unit', 'channel', 'stay', 'gross', 'status'];
+const FILTER_PARAMS = ['ch', 'building', 'from', 'to'];
 /** URL parameters the server reads. The drawer's `open` stays out so opening a booking does not refetch the list. */
-const API_PARAMS = ['view', 'sort', 'page', 'size', ...SEARCH_PARAMS];
+const API_PARAMS = ['view', 'todo', 'sort', 'page', 'size', ...SEARCH_PARAMS, ...FILTER_PARAMS];
+const CHANNEL_CHOICES: BookingChannel[] = ['airbnb', 'booking_com', 'agoda', 'direct'];
+const MONEY_ROLES = ['management', 'finance_admin', 'operations_manager'];
 
 const nightsBetween = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 864e5);
 const num = (v: number) => v.toLocaleString('en-MY');
+const countryName = (code: string | null) => {
+  if (!code) return null;
+  try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code; } catch { return code; }
+};
+const nationalityOf = (r: { guestNationality?: string | null; guestCountry?: string | null }) => r.guestNationality || countryName(r.guestCountry ?? null);
 
 export default function BookingsPage() {
   const UNITS = useUnitRoster();
   const toast = useToast();
+  const { user } = useSession();
+  const canMoney = !!user && MONEY_ROLES.includes(user.role);
 
-  // URL-as-state (react-router, HashRouter): tab, sort, page, page size and every search live in the
-  // query string, so a link or a refresh shows the same list. The calendar deep-links with ?create=1.
+  // URL-as-state (react-router, HashRouter): tab, card, filters, sort, page and search live in the query
+  // string, so a link or a refresh shows the same list. The calendar deep-links with ?create=1.
   const [params, setParams] = useSearchParams();
   function updateParams(mut: (p: URLSearchParams) => void) {
     setParams(prev => { const next = new URLSearchParams(prev); mut(next); return next; }, { replace: true });
@@ -95,6 +113,8 @@ export default function BookingsPage() {
 
   const rawView = params.get('view');
   const view: ViewKey = VIEWS.some(v => v.key === rawView) ? (rawView as ViewKey) : 'upcoming';
+  const rawTodo = params.get('todo');
+  const todo: TodoKey | null = TODOS.some(t => t.key === rawTodo) ? (rawTodo as TodoKey) : null;
   const [sortKey, sortDir] = (params.get('sort') ?? '').split(':') as [ColKey | undefined, string | undefined];
 
   const apiQuery = useMemo(() => {
@@ -104,74 +124,80 @@ export default function BookingsPage() {
   }, [params]);
   const { data, loading, error, reload } = useApi<Payload>(`/reservations${apiQuery ? `?${apiQuery}` : ''}`, FALLBACK);
 
-  // Search boxes answer every keystroke locally; the URL (and so the server) follows once typing pauses.
-  const [drafts, setDrafts] = useState<Record<string, string>>(() => Object.fromEntries(SEARCH_PARAMS.map(k => [k, params.get(k) ?? ''])));
+  // The search box answers every keystroke locally; the URL (and so the server) follows once typing pauses.
+  const [draft, setDraft] = useState(params.get('q') ?? '');
   const timer = useRef<number | undefined>(undefined);
-  function setSearch(param: string, value: string) {
-    setDrafts(d => ({ ...d, [param]: value }));
+  function setSearch(value: string) {
+    setDraft(value);
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => updateParams(p => {
-      if (value.trim()) p.set(param, value); else p.delete(param);
+      if (value.trim()) p.set('q', value); else p.delete('q');
       p.delete('page');
     }), 300);
   }
-  function clearSearches() {
+  function clearAll() {
     window.clearTimeout(timer.current);
-    setDrafts(Object.fromEntries(SEARCH_PARAMS.map(k => [k, ''])));
-    updateParams(p => { SEARCH_PARAMS.forEach(k => p.delete(k)); p.delete('page'); });
+    setDraft('');
+    updateParams(p => { [...SEARCH_PARAMS, ...FILTER_PARAMS, 'todo'].forEach(k => p.delete(k)); p.delete('page'); });
   }
   useEffect(() => () => window.clearTimeout(timer.current), []);
-  const searching = SEARCH_PARAMS.some(k => params.get(k));
+  const searching = SEARCH_PARAMS.some(k => params.get(k)) || FILTER_PARAMS.some(k => params.get(k));
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-
   const [creating, setCreating] = useState(false);
-  // Guests' "Book again" passes the guest in router state (kept out of the URL); the Calendar passes the unit and
-  // nights it was opened from (?forUnit=&checkIn=&checkOut=; not ?unit=, which is the Unit column's search). Captured when the form opens, because stripping the flags
-  // below replaces the location and drops the state.
+  // Guests' "Book a stay" passes the guest in router state (kept out of the URL); the Calendar passes the unit and
+  // nights it was opened from (?forUnit=&checkIn=&checkOut=). Captured when the form opens, because stripping the
+  // flags below replaces the location and drops the state.
   const location = useLocation();
   const [prefill, setPrefill] = useState<CreatePrefill | null>(null);
   const [importRows, setImportRows] = useState<ParsedRow[] | null>(null);
-  // The message modal targets a specific reservation (a row's chat icon), so it is keyed by row.
   const [messageRow, setMessageRow] = useState<Row | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Deep link: open the create form once, then strip the flags so a refresh or a close does not reopen it.
   useEffect(() => {
     if (params.get('create') === '1') {
       setPrefill({
         ...((location.state ?? {}) as CreatePrefill),
         unitId: params.get('forUnit') ?? undefined, checkIn: params.get('checkIn') ?? undefined, checkOut: params.get('checkOut') ?? undefined,
+        kind: params.get('kind') === 'owner_stay' ? 'owner_stay' : undefined,
       });
       setCreating(true);
-      updateParams(p => { p.delete('create'); p.delete('forUnit'); p.delete('checkIn'); p.delete('checkOut'); });
+      updateParams(p => { p.delete('create'); p.delete('forUnit'); p.delete('checkIn'); p.delete('checkOut'); p.delete('kind'); });
     }
-    // ?open=<id> (from the Calendar or a shared link) opens that booking's drawer.
     const o = params.get('open');
     if (o) { setOpenId(o); updateParams(p => p.delete('open')); }
   }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rows = data?.data ?? [];
   const onPage = openId ? rows.find(r => r.id === openId) ?? null : null;
-
   const page = data?.page ?? 1;
-  // A new page or tab starts at its first row, not wherever the last one was scrolled to.
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 });
-    // Phones have no inner table scroll: the cards scroll with the page, so bring the page back up instead.
     if (window.matchMedia('(max-width: 767.98px)').matches) document.querySelector('main')?.scrollTo({ top: 0 });
-  }, [data?.page, data?.view]);
+  }, [data?.page, data?.view, data?.todo]);
+  // A selection belongs to the payout card it was made on.
+  useEffect(() => { setPicked(new Set()); }, [todo, apiQuery]);
   const pageSize = data?.pageSize ?? 50;
   const total = data?.total ?? 0;
   const counts = data?.counts;
   const totals = data?.totals;
   const refreshing = loading && !!data;
+  const pickMode = todo === 'payout' && canMoney && !!data?.paymentsReady;
 
   function setView(key: ViewKey) {
-    updateParams(p => { if (key === 'upcoming') p.delete('view'); else p.set('view', key); p.delete('page'); });
+    updateParams(p => { if (key === 'upcoming') p.delete('view'); else p.set('view', key); p.delete('todo'); p.delete('page'); });
   }
+  function setTodo(key: TodoKey) {
+    updateParams(p => {
+      if (p.get('todo') === key) { p.delete('todo'); p.delete('view'); } else { p.set('todo', key); p.set('view', 'all'); }
+      p.delete('page');
+    });
+  }
+  function setParam(k: string, v: string) { updateParams(p => { if (v) p.set(k, v); else p.delete(k); p.delete('page'); }); }
   function toggleSort(key: ColKey) {
     updateParams(p => {
       const [c, dir] = (p.get('sort') ?? '').split(':');
@@ -180,83 +206,89 @@ export default function BookingsPage() {
       p.delete('page');
     });
   }
-  function goPage(n: number) {
-    updateParams(p => { if (n <= 1) p.delete('page'); else p.set('page', String(n)); });
-  }
-  function setSize(n: number) {
-    updateParams(p => { if (n === 50) p.delete('size'); else p.set('size', String(n)); p.delete('page'); });
-  }
+  function goPage(n: number) { updateParams(p => { if (n <= 1) p.delete('page'); else p.set('page', String(n)); }); }
+  function setSize(n: number) { updateParams(p => { if (n === 50) p.delete('size'); else p.set('size', String(n)); p.delete('page'); }); }
 
-  // ---- Create reservation (POST /reservations); the row appears once the server has saved it ----
-  async function createReservation(input: {
-    unitId: string; channel: BookingChannel; guestName: string; phone: string; email: string;
-    checkIn: string; checkOut: string; guestsCount: number; grossSen: number;
-  }) {
+  async function createReservation(input: CreateInput) {
     const unit = UNITS.find(u => u.id === input.unitId);
     if (!unit) { toast({ tone: 'critical', title: 'Pick a unit first.' }); return; }
     try {
-      const res = await api.post<{ id: string; effects?: { channel: 'queued' | 'not_linked' | 'failed' } }>('/reservations', {
+      const res = await api.post<{ id: string; externalRef: string; effects?: { channel: 'queued' | 'not_linked' | 'failed' } }>('/reservations', {
         unitId: input.unitId, channel: input.channel,
-        guest: { fullName: input.guestName, email: input.email || null, phone: input.phone || null },
-        checkIn: input.checkIn, checkOut: input.checkOut, guestsCount: input.guestsCount, grossBookingValue: input.grossSen,
+        guest: input.guestName ? { fullName: input.guestName, email: input.email || null, phone: input.phone || null } : undefined,
+        checkIn: input.checkIn, checkOut: input.checkOut, checkInTime: input.checkInTime, checkOutTime: input.checkOutTime,
+        guestsCount: input.guestsCount, grossBookingValue: input.grossSen, externalRef: input.externalRef || undefined, notes: input.notes || undefined,
       });
       setCreating(false);
-      setOpenId(res.id);
-      toast({ tone: 'success', title: 'Reservation created.', body: `${input.guestName} · ${unit.propertyName} ${unit.unitNumber} · ${dateRange(input.checkIn, input.checkOut)}. ${channelNote(res.effects?.channel, 'held')}`.trim() });
+      const owner = input.channel === 'owner_stay';
+      toast({
+        tone: res.effects?.channel === 'failed' ? 'warning' : 'success',
+        title: owner ? `Owner stay ${res.externalRef} saved.` : `Reservation ${res.externalRef} created.`,
+        body: [`${owner ? '' : `${input.guestName} · `}${unit.propertyName} ${unit.unitNumber} · ${dateRange(input.checkIn, input.checkOut)}.`,
+          channelNote(res.effects?.channel, 'held'), owner ? 'Owner stays show on the calendar and the unit page, not in this list.' : ''].filter(Boolean).join(' '),
+      });
+      if (!owner) setOpenId(res.id);
       reload();
     } catch (e) { toast({ tone: 'critical', title: 'Reservation not created.', body: e instanceof Error ? e.message : 'Try again in a moment.' }); }
   }
 
-  // ---- Import reservations (CSV) ----
   function pickImportFile() { fileRef.current?.click(); }
   function onImportFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    e.target.value = ''; // allow re-selecting the same file
+    e.target.value = '';
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => setImportRows(buildImport(String(reader.result ?? ''), UNITS));
     reader.readAsText(file);
   }
-  // Reports the server's own count: rows it refused (e.g. clashing dates) are counted as rejected.
+  // Reports the server's own count: rows it refused (e.g. clashing dates) are counted as rejected, and how many
+  // bookings had their nights closed on the booking sites.
   async function commitImport() {
     if (!importRows) return;
     const valid = importRows.filter(p => p.row).map(p => p.row!);
-    let created = 0, refused = 0;
+    let created = 0, refused = 0, failedSync = 0, queued = 0;
     if (valid.length) {
       try {
-        const r = await api.post<{ created: number; failed: unknown[] }>('/reservations/import', {
+        const r = await api.post<{ created: number; failed: unknown[]; effects?: { channels: { queued: number; not_linked: number; failed: number } } }>('/reservations/import', {
           rows: valid.map(r => ({
             unitNumber: r.unitNumber, channel: r.channel, guest: { fullName: r.guestName, phone: r.guestPhone },
-            checkIn: r.checkIn, checkOut: r.checkOut, guestsCount: r.guestsCount, grossBookingValue: r.grossBookingValue,
+            checkIn: r.checkIn, checkOut: r.checkOut, guestsCount: r.guestsCount, grossBookingValue: r.grossBookingValue, externalRef: r.externalRef,
           })),
         });
         created = r.created; refused = r.failed?.length ?? 0;
+        failedSync = r.effects?.channels.failed ?? 0; queued = r.effects?.channels.queued ?? 0;
       } catch (e) { notifyFailure(e); return; }
     }
     const rejected = importRows.length - valid.length + refused;
     toast({
-      tone: created ? 'success' : 'warning',
+      tone: created && !failedSync ? 'success' : 'warning',
       title: created ? `Imported ${plural(created, 'reservation')}.` : 'Nothing imported.',
-      body: rejected ? `${plural(rejected, 'row')} ${rejected === 1 ? 'was' : 'were'} rejected and left out.` : 'Every row was accepted.',
+      body: [rejected ? `${plural(rejected, 'row')} ${rejected === 1 ? 'was' : 'were'} rejected and left out.` : 'Every row was accepted.',
+        queued ? `${plural(queued, 'stay')} closed on the booking sites.` : '',
+        failedSync ? `${plural(failedSync, 'stay')} could not be closed on the booking sites; check Integrations.` : ''].filter(Boolean).join(' '),
     });
     setImportRows(null);
     reload();
   }
 
-  // ---- Download CSV: the server writes every booking matching this tab and these searches, not just this page ----
   async function exportCsv() {
     setExporting(true);
     try {
       await downloadFile('/reservations/export', Object.fromEntries(API_PARAMS.filter(k => k !== 'page' && k !== 'size').map(k => [k, params.get(k)])));
-      toast({ tone: 'success', title: 'Export ready.', body: `${plural(total, 'booking')}. The first lines of the file name the filters and totals.` });
+      toast({ tone: 'success', title: 'Export ready.', body: `${plural(total, 'booking')} with the money breakdown and payments. The first lines name the filters and totals.` });
     } catch (e) { notifyFailure(e); }
     setExporting(false);
   }
 
   const viewMeta = VIEWS.find(v => v.key === view)!;
-  const sub = counts
-    ? `${num(counts.upcoming)} upcoming or in house · ${plural(counts.all, 'booking')} in total${searching ? ' matching your search' : ''}`
+  const todoMeta = todo ? TODOS.find(t => t.key === todo)! : null;
+  const sub = counts && todoMeta ? `${todoMeta.label}: ${plural(counts.all, 'booking')}${searching ? ' matching the filters' : ''}`
+  : counts
+    ? `${num(counts.upcoming)} upcoming · ${num(counts.inhouse)} in house · ${plural(counts.all, 'booking')} in total${searching ? ' matching the filters' : ''}`
     : 'Loading bookings';
+  const pickedRows = rows.filter(r => picked.has(r.id));
+  const pickedOwed = pickedRows.reduce((n, r) => n + r.outstanding, 0);
+  const cols = pickMode ? COLS_PICK : COLS;
 
   return (
     <>
@@ -264,116 +296,148 @@ export default function BookingsPage() {
         actions={<>
           <Button size="sm" variant="secondary" icon={<Icon name="Upload" size="sm" />} onClick={pickImportFile}>Import</Button>
           <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportCsv} loading={exporting}
-            disabled={!data || total === 0} disabledReason="Nothing to export for this tab and search.">Download CSV</Button>
+            disabled={!data || total === 0} disabledReason="Nothing to export for this tab and these filters.">Download CSV</Button>
         </>}
-        primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Create reservation</Button>} />
+        primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => { setPrefill(null); setCreating(true); }}>Create reservation</Button>} />
 
       <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onImportFile} className="hidden" aria-hidden />
-
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
+      {/* To do: four cards that filter the list */}
+      <div className="grid grid-cols-4 gap-3 mb-4 max-lg:grid-cols-2" role="group" aria-label="To do">
+        {TODOS.map(t => {
+          const c = data?.todos?.[t.key];
+          const on = todo === t.key;
+          const warn = t.money && (c?.count ?? 0) > 0;
+          return (
+            <button key={t.key} type="button" onClick={() => setTodo(t.key)} aria-pressed={on}
+              className={cx('text-left [font:inherit] rounded-card border border-solid px-4 py-3 cursor-pointer flex flex-col gap-1 min-w-0 transition-colors',
+                on ? 'bg-black text-white border-black' : warn ? 'bg-[var(--color-warning-bg)] border-[var(--color-warning-line)] text-ink hover:border-[var(--color-warning-fg)]' : 'bg-card border-line text-ink hover:border-muted-ink')}>
+              <span className={cx('text-meta', on ? 'text-[rgba(255,255,255,0.75)]' : warn ? 'text-[var(--color-warning-fg)]' : 'text-muted-ink')}>{t.label}</span>
+              <span className="text-heading font-semibold [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">
+                {c ? num(c.count) : '–'}{t.money && c && c.count > 0 ? <span className="font-medium"> · {rm(c.outstanding, { cents: false })}</span> : null}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       <Card>
-        {/* Tabs, each with its count under the current searches */}
-        <div role="tablist" aria-label="Booking views"
-          className="flex gap-2 py-3 px-[22px] [border-bottom:1px_solid_var(--color-line)] overflow-x-auto [scrollbar-width:none] md:flex-wrap max-md:px-4">
-          {VIEWS.map(v => {
-            const on = view === v.key;
-            const n = counts?.[v.key];
-            return (
-              <button key={v.key} role="tab" aria-selected={on} onClick={() => setView(v.key)}
-                className={cx(
-                  'flex-none h-8 inline-flex items-center gap-[6px] px-[13px] py-0 rounded-pill cursor-pointer [font-family:inherit] text-copy border border-solid whitespace-nowrap',
-                  on ? 'font-semibold border-transparent bg-black text-white' : 'font-medium border-line bg-page text-muted-ink',
-                )}>
-                {v.label}
-                <span className={cx('[font-variant-numeric:tabular-nums] min-w-[1ch]', on ? 'opacity-80' : 'opacity-70')}>{n === undefined ? '' : num(n)}</span>
-              </button>
-            );
-          })}
+        {/* Tabs and filters */}
+        <div className="flex items-center gap-2 flex-wrap py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
+          <div role="tablist" aria-label="Booking views" className="flex gap-2 overflow-x-auto [scrollbar-width:none] max-md:w-full">
+            {VIEWS.map(v => {
+              const on = !todo && view === v.key;
+              const n = counts?.[v.key];
+              return (
+                <button key={v.key} role="tab" aria-selected={on} onClick={() => setView(v.key)}
+                  className={cx('flex-none h-8 inline-flex items-center gap-[6px] px-[13px] py-0 rounded-pill cursor-pointer [font-family:inherit] text-copy border border-solid whitespace-nowrap',
+                    on ? 'font-semibold border-transparent bg-black text-white' : 'font-medium border-line bg-page text-muted-ink')}>
+                  {v.label}
+                  <span className={cx('[font-variant-numeric:tabular-nums] min-w-[1ch]', on ? 'opacity-80' : 'opacity-70')}>{n === undefined ? '' : num(n)}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap ml-auto max-md:ml-0 max-md:w-full">
+            <ChannelFilter value={params.get('ch') ?? ''} onChange={v => setParam('ch', v)} />
+            <Select label="Building" value={params.get('building') ?? ''} onChange={v => setParam('building', v)} className="w-[170px] max-md:w-full max-md:order-last"
+              options={[{ value: '', label: 'All buildings' }, ...(data?.buildings ?? []).map(b => ({ value: b.id, label: b.name }))]} />
+            <DateFilter from={params.get('from') ?? ''} to={params.get('to') ?? ''}
+              onChange={(f, t) => updateParams(p => { if (f) p.set('from', f); else p.delete('from'); if (t) p.set('to', t); else p.delete('to'); p.delete('page'); })} />
+          </div>
         </div>
 
-        {/* One search across reference, guest, phone, unit and building */}
+        {/* Search and the totals of the whole filtered set */}
         <div className="flex items-center gap-3 flex-wrap py-[10px] px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
           <label className="relative flex-[1_1_260px] min-w-[200px] max-w-[420px]">
             <span className="absolute left-[11px] top-1/2 -translate-y-1/2 text-muted-ink grid pointer-events-none"><Icon name="Search" size="sm" /></span>
-            <input value={drafts.q} onChange={e => setSearch('q', e.target.value)} placeholder="Guest, phone, reference or unit"
+            <input value={draft} onChange={e => setSearch(e.target.value)} placeholder="Guest, phone, reference, unit or building"
               aria-label="Search bookings"
               className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink font-sans text-copy pl-[33px] pr-3 py-0 outline-none" />
           </label>
-          {searching && (
-            <Button variant="tertiary" size="sm" icon={<Icon name="X" size="sm" />} onClick={clearSearches}>Clear search</Button>
-          )}
-          {/* Totals of the whole filtered set, so the owner reads the figure for the tab, not one page */}
+          {(searching || todo) && <Button variant="tertiary" size="sm" icon={<Icon name="X" size="sm" />} onClick={clearAll}>Clear filters</Button>}
           <dl className="m-0 ml-auto flex items-center gap-x-5 gap-y-1 flex-wrap text-meta min-h-[20px] max-md:ml-0 max-md:w-full">
             {totals && <>
+              {todoMeta && <span className="font-semibold text-ink">{todoMeta.label}</span>}
               <Total label="Bookings" value={num(totals.bookings)} />
               <Total label="Nights" value={num(totals.nights)} />
-              <Total label="Gross" value={rm(totals.gross, { cents: false })} />
-              <Total label="Channel fees" value={rm(totals.fees, { cents: false })} />
-              {totals.outstanding != null && <Total label={view === 'unpaid' ? 'Owed by guests' : 'Owed by booking sites'} value={rm(totals.outstanding, { cents: false })}
-                title={view === 'unpaid' ? 'Booking value of these direct bookings with no payment recorded.' : 'Booking value less the site commission, for these stays with no payout recorded.'} />}
+              <Total label="Guest total" value={rm(totals.gross, { cents: false })} />
+              <Total label="Commission" value={rm(totals.fees, { cents: false })} />
+              {todoMeta?.money && <Total label={todo === 'unpaid' ? 'Owed by guests' : 'Owed by booking sites'} value={rm(totals.outstanding, { cents: false })}
+                title={todo === 'unpaid' ? 'Guest total less what has been received, for these direct bookings.' : 'The payout expected less what has arrived, for these finished stays.'} />}
             </>}
           </dl>
         </div>
 
+        {pickMode && (
+          <div className="flex items-center gap-3 flex-wrap py-[10px] px-[22px] max-md:px-4 bg-page [border-bottom:1px_solid_var(--color-line-soft)] text-meta">
+            <span className="text-muted-ink">{picked.size ? `${plural(picked.size, 'booking')} picked · ${rm(pickedOwed)} outstanding` : 'Tick the stays the booking site has paid out, then mark them received.'}</span>
+            <div className="ml-auto flex gap-2 max-md:ml-0">
+              <Button size="sm" variant="secondary" onClick={() => setPicked(picked.size === rows.length ? new Set() : new Set(rows.map(r => r.id)))} disabled={!rows.length}>
+                {picked.size === rows.length && rows.length ? 'Clear selection' : 'Pick this page'}
+              </Button>
+              <Button size="sm" variant="primary" icon={<Icon name="CheckCircle2" size="sm" />} onClick={() => setBulkOpen(true)} disabled={!picked.size} disabledReason="Pick at least one booking.">
+                Mark payouts received
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Desktop and tablet: the sortable table. Its own scroll area keeps the header in view. */}
-        <div ref={scrollRef} className="max-md:hidden overflow-auto max-h-[calc(100dvh-330px)] min-h-[360px]" aria-busy={loading}>
-          <div className="min-w-[1010px]">
-            <div className="sticky top-0 z-[2]">
-              <div className={cx(COLS, 'grid gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink')}>
-                {COLUMNS.map(c => {
-                  const active = sortKey === c.key;
-                  return (
-                    <button key={c.key} type="button" onClick={() => toggleSort(c.key)} title={`Sort by ${c.label}`}
-                      className={cx('flex items-center gap-1 [font-family:inherit] text-meta font-semibold text-muted-ink bg-transparent border-none cursor-pointer p-0', c.align === 'right' && 'justify-end')}>
-                      <span>{c.label}</span>
-                      <Icon name={active ? (sortDir === 'desc' ? 'ChevronDown' : 'ChevronUp') : 'ChevronsUpDown'} size="sm"
-                        color={active ? 'var(--color-ink)' : 'var(--color-line)'} />
-                    </button>
-                  );
-                })}
-                <div className="flex items-center justify-center">Chat</div>
-              </div>
-              <div className={cx(COLS, 'grid gap-[14px] py-[7px] px-[22px] bg-page [border-bottom:1px_solid_var(--color-line-soft)]')}>
-                {COLUMNS.map(c => (
-                  <input key={c.key} value={drafts[c.param]} onChange={e => setSearch(c.param, e.target.value)}
-                    placeholder={c.hint} aria-label={`Search ${c.label}`}
-                    className={cx('h-7 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-meta px-2 py-0 outline-none', c.align === 'right' && 'text-right')} />
-                ))}
-                <div aria-hidden />
-              </div>
+        <div ref={scrollRef} className="max-md:hidden overflow-auto max-h-[calc(100dvh-400px)] min-h-[360px]" aria-busy={loading}>
+          <div className="min-w-[960px]">
+            <div className={cx(cols, 'sticky top-0 z-[2] grid gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink')}>
+              {pickMode && <span />}
+              {COLUMNS.map(c => {
+                const active = sortKey === c.key;
+                return (
+                  <button key={c.key} type="button" onClick={() => toggleSort(c.key)} title={c.title ?? `Sort by ${c.label}`}
+                    className={cx('flex items-center gap-1 [font-family:inherit] text-meta font-semibold text-muted-ink bg-transparent border-none cursor-pointer p-0 whitespace-nowrap', c.align === 'right' && 'justify-end')}>
+                    <span>{c.label}</span>
+                    <Icon name={active ? (sortDir === 'desc' ? 'ChevronDown' : 'ChevronUp') : 'ChevronsUpDown'} size="sm" color={active ? 'var(--color-ink)' : 'var(--color-line)'} />
+                  </button>
+                );
+              })}
+              <div className="flex items-center justify-center">Chat</div>
             </div>
 
-            {!data ? <TableSkeleton rows={8} cols={8} /> : rows.length === 0 ? (
-              <EmptyList searching={searching} message={viewMeta.empty} onClear={clearSearches} />
+            {!data ? <TableSkeleton rows={8} cols={7} /> : rows.length === 0 ? (
+              <EmptyList searching={searching} message={todoMeta?.empty ?? viewMeta.empty} onClear={clearAll} />
             ) : (
               <div className={cx('transition-opacity duration-150', refreshing && 'opacity-55')}>
                 {rows.map(b => {
-                  const ch = CHANNEL_META[b.channel];
+                  const nat = nationalityOf(b);
                   return (
                     <div key={b.id} role="button" tabIndex={0} onClick={() => setOpenId(b.id)}
                       onKeyDown={e => { if (e.key === 'Enter') setOpenId(b.id); }}
-                      className={cx(COLS, 'grid gap-[14px] items-center min-h-[54px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-page')}>
+                      className={cx(cols, 'grid gap-[14px] items-center min-h-[56px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-page', picked.has(b.id) && 'bg-gold-tint')}>
+                      {pickMode && (
+                        <span onClick={e => e.stopPropagation()} className="grid place-items-center">
+                          <input type="checkbox" aria-label={`Pick ${b.externalRef ?? b.guestName}`} checked={picked.has(b.id)} className="w-4 h-4 cursor-pointer"
+                            onChange={() => setPicked(s => { const n = new Set(s); if (n.has(b.id)) n.delete(b.id); else n.add(b.id); return n; })} />
+                        </span>
+                      )}
                       <div className="flex items-center gap-[9px] min-w-0">
                         <ChannelMark ch={b.channel} size={20} />
-                        <span className="font-mono text-meta whitespace-nowrap overflow-hidden text-ellipsis" title={b.externalRef ?? undefined}>{b.externalRef ?? '—'}</span>
+                        <span className="font-mono text-meta whitespace-nowrap overflow-hidden text-ellipsis" title={`${CHANNEL_META[b.channel].label} · ${b.externalRef ?? ''}`}>{b.externalRef ?? '—'}</span>
                       </div>
                       <div className="flex flex-col gap-px min-w-0">
                         <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={b.guestName}>{b.guestName || '—'}</span>
-                        <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.guestsCount > 0 ? fmtGuests(b.guestsCount) : 'No guest count'}</span>
+                        <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{[b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, nat].filter(Boolean).join(' · ') || '—'}</span>
                       </div>
                       <div className="flex flex-col gap-px min-w-0">
                         <span className="text-copy whitespace-nowrap overflow-hidden text-ellipsis" title={b.unitNumber}>{b.unitNumber}</span>
                         <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={b.propertyName}>{b.propertyName}</span>
                       </div>
-                      <div>
-                        <span className="inline-flex items-center h-[22px] px-[9px] rounded-pill text-caption font-semibold whitespace-nowrap" style={{ background: ch.tint, color: ch.ink }}>{ch.label}</span>
-                      </div>
                       <div className="flex flex-col gap-px min-w-0">
                         <span className="text-copy whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span>
                         <span className="text-meta text-muted-ink">{fmtNights(b.nights)}</span>
                       </div>
-                      <div className="text-right text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</div>
+                      <div className="flex flex-col gap-px items-end min-w-0">
+                        <span className="text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>
+                        {todoMeta?.money && b.outstanding > 0 && <span className="text-meta text-[var(--color-warning-fg)] [font-variant-numeric:tabular-nums] whitespace-nowrap">{rm(b.outstanding, { cents: false })} owed</span>}
+                      </div>
                       <div><StatusPill state={b.state} size="sm" /></div>
                       <div className="flex justify-center">
                         <button type="button" title="Message guest" aria-label={`Message ${b.guestName}`}
@@ -393,24 +457,31 @@ export default function BookingsPage() {
         {/* Phones: one condensed card per booking, no wide table */}
         <div className="md:hidden" aria-busy={loading}>
           {!data ? <TableSkeleton rows={6} cols={2} /> : rows.length === 0 ? (
-            <EmptyList searching={searching} message={viewMeta.empty} onClear={clearSearches} />
+            <EmptyList searching={searching} message={todoMeta?.empty ?? viewMeta.empty} onClear={clearAll} />
           ) : (
             <ul className={cx('list-none m-0 p-0 transition-opacity duration-150', refreshing && 'opacity-55')}>
               {rows.map(b => (
-                <li key={b.id} className="[border-bottom:1px_solid_var(--color-line-soft)]">
+                <li key={b.id} className={cx('[border-bottom:1px_solid_var(--color-line-soft)] flex items-start', picked.has(b.id) && 'bg-gold-tint')}>
+                  {pickMode && (
+                    <label className="pl-4 pt-[15px] flex-none">
+                      <input type="checkbox" aria-label={`Pick ${b.externalRef ?? b.guestName}`} checked={picked.has(b.id)} className="w-5 h-5"
+                        onChange={() => setPicked(s => { const n = new Set(s); if (n.has(b.id)) n.delete(b.id); else n.add(b.id); return n; })} />
+                    </label>
+                  )}
                   <button type="button" onClick={() => setOpenId(b.id)}
-                    className="w-full text-left [font:inherit] text-ink bg-transparent border-none cursor-pointer py-3 px-4 flex gap-3 items-start">
+                    className="flex-1 min-w-0 text-left [font:inherit] text-ink bg-transparent border-none cursor-pointer py-3 px-4 flex gap-3 items-start">
                     <ChannelMark ch={b.channel} size={22} />
                     <span className="flex flex-col gap-[3px] min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
                         <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{b.guestName || '—'}</span>
                         <span className="text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>
                       </span>
-                      <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.unitNumber} · {b.propertyName}</span>
+                      <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? '—'} · {b.unitNumber} · {b.propertyName}</span>
                       <span className="flex items-center justify-between gap-2 pt-[2px]">
-                        <span className="text-meta whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)} · {fmtNights(b.nights)}</span>
+                        <span className="text-meta whitespace-nowrap min-w-0 overflow-hidden text-ellipsis">{dateRange(b.checkIn, b.checkOut)} · {fmtNights(b.nights)}</span>
                         <StatusPill state={b.state} size="sm" />
                       </span>
+                      {todoMeta?.money && b.outstanding > 0 && <span className="text-meta text-[var(--color-warning-fg)]">{rm(b.outstanding)} owed</span>}
                     </span>
                   </button>
                 </li>
@@ -430,6 +501,8 @@ export default function BookingsPage() {
       {creating && <CreateReservationModal units={UNITS} prefill={prefill} onClose={() => setCreating(false)} onCreate={createReservation} />}
       {importRows && <ImportPreviewModal rows={importRows} onClose={() => setImportRows(null)} onConfirm={commitImport} />}
       {messageRow && <MessageGuestModal r={messageRow} onClose={() => setMessageRow(null)} />}
+      {bulkOpen && <BulkPayoutModal rows={pickedRows} owed={pickedOwed} onClose={() => setBulkOpen(false)}
+        onDone={() => { setBulkOpen(false); setPicked(new Set()); reload(); }} />}
     </>
   );
 }
@@ -445,16 +518,151 @@ function Total({ label, value, title }: { label: string; value: string; title?: 
 
 function EmptyList({ searching, message, onClear }: { searching: boolean; message: string; onClear: () => void }) {
   return searching
-    ? <EmptyState bare kind="filtered" title="No bookings match this search in this tab." action={{ label: 'Clear search', onClick: onClear }} />
+    ? <EmptyState bare kind="filtered" title="No bookings match these filters." action={{ label: 'Clear filters', onClick: onClear }} />
     : <EmptyState bare icon="CalendarDays" title={message} />;
 }
 
+/* ------------------------------------------------------------------ */
+/* Filters                                                             */
+/* ------------------------------------------------------------------ */
+
+function Popover({ label, active, children, width = 240 }: { label: ReactNode; active: boolean; children: (close: () => void) => ReactNode; width?: number }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDoc); document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  return (
+    <div ref={ref} className="relative max-md:flex-1">
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+        className={cx('h-9 w-full inline-flex items-center gap-2 pl-3 pr-2 rounded-control border border-solid bg-card [font:inherit] text-copy cursor-pointer whitespace-nowrap',
+          active ? 'border-ink text-ink font-medium' : 'border-line text-ink')}>
+        {label}<Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" style={{ marginLeft: 'auto' }} />
+      </button>
+      {open && (
+        <div style={{ width }} className="absolute z-[30] right-0 max-md:left-0 max-md:right-auto top-full mt-1 max-w-[calc(100vw-32px)] p-1 bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)]">
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChannelFilter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const cur = value ? CHANNEL_META[value as BookingChannel] : null;
+  return (
+    <Popover active={!!cur} width={210} label={cur ? <span className="inline-flex items-center gap-2"><ChannelMark ch={value as BookingChannel} size={16} />{cur.label}</span> : 'All channels'}>
+      {close => (
+        <div role="menu" aria-label="Channel">
+          {(['', ...CHANNEL_CHOICES] as const).map(c => (
+            <button key={c || 'all'} type="button" role="menuitemradio" aria-checked={value === c} onClick={() => { onChange(c); close(); }}
+              className={cx('w-full flex items-center gap-2 px-[10px] py-2 rounded-[8px] border-none [font:inherit] text-copy text-left cursor-pointer hover:bg-muted', value === c ? 'bg-muted font-semibold' : 'bg-transparent')}>
+              {c ? <ChannelMark ch={c} size={18} /> : <span className="w-[18px]" />}
+              {c ? CHANNEL_META[c].label : 'All channels'}
+            </button>
+          ))}
+        </div>
+      )}
+    </Popover>
+  );
+}
+
+const shift = (iso: string, days: number) => new Date(Date.parse(iso) + days * 864e5).toISOString().slice(0, 10);
+const monthStart = (iso: string, add = 0) => { const d = new Date(Date.parse(iso.slice(0, 7) + '-01T00:00:00Z')); d.setUTCMonth(d.getUTCMonth() + add); return d.toISOString().slice(0, 10); };
+
+function DateFilter({ from, to, onChange }: { from: string; to: string; onChange: (from: string, to: string) => void }) {
+  const today = todayMyt();
+  const presets: { label: string; from: string; to: string }[] = [
+    { label: 'Today', from: today, to: today },
+    { label: 'Next 7 days', from: today, to: shift(today, 6) },
+    { label: 'This month', from: monthStart(today), to: shift(monthStart(today, 1), -1) },
+    { label: 'Last month', from: monthStart(today, -1), to: shift(monthStart(today), -1) },
+  ];
+  const [f, setF] = useState(from), [t, setT] = useState(to);
+  useEffect(() => { setF(from); setT(to); }, [from, to]);
+  const label = from || to ? (from && to ? (from === to ? dateRange(from, shift(from, 1)).split(' –')[0] : dateRange(from, to)) : from ? `From ${from}` : `Until ${to}`) : 'Any dates';
+  return (
+    <Popover active={!!(from || to)} width={280} label={label}>
+      {close => (
+        <div className="p-2 flex flex-col gap-2">
+          <span className="text-caption text-muted-ink px-1">Stays that touch these dates</span>
+          <div className="grid grid-cols-2 gap-1">
+            {presets.map(p => (
+              <button key={p.label} type="button" onClick={() => { onChange(p.from, p.to); close(); }}
+                className={cx('h-8 rounded-control border border-solid [font:inherit] text-meta cursor-pointer', from === p.from && to === p.to ? 'bg-black text-white border-black' : 'bg-card border-line text-ink hover:bg-muted')}>{p.label}</button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="From" type="date" value={f} onChange={e => setF(e.target.value)} />
+            <Field label="To" type="date" value={t} min={f || undefined} onChange={e => setT(e.target.value)} />
+          </div>
+          <div className="flex justify-between gap-2">
+            <Button size="sm" variant="tertiary" onClick={() => { onChange('', ''); close(); }}>Any dates</Button>
+            <Button size="sm" variant="primary" onClick={() => { onChange(f, t); close(); }} disabled={!!(f && t && t < f)} disabledReason="The end is before the start.">Apply</Button>
+          </div>
+        </div>
+      )}
+    </Popover>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Bulk: mark booking-site payouts received                            */
+/* ------------------------------------------------------------------ */
+
+function BulkPayoutModal({ rows, owed, onClose, onDone }: { rows: Row[]; owed: number; onClose: () => void; onDone: () => void }) {
+  const toast = useToast();
+  const [receivedOn, setReceivedOn] = useState(todayMyt());
+  const [reference, setReference] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const r = await api.post<{ recorded: number; total: number; skipped: { ref: string | null; reason: string }[] }>('/reservations/mark-paid-out', { ids: rows.map(x => x.id), receivedOn, reference: reference || undefined });
+      toast({
+        tone: r.skipped.length ? 'warning' : 'success',
+        title: r.recorded ? `${plural(r.recorded, 'payout')} recorded, ${rm(r.total)}.` : 'No payout recorded.',
+        body: r.skipped.length ? `${plural(r.skipped.length, 'booking')} left alone: ${r.skipped.slice(0, 3).map(s => `${s.ref ?? 'one'} (${s.reason.replace(/\.$/, '').toLowerCase()})`).join(', ')}${r.skipped.length > 3 ? ' …' : ''}.` : 'They have left Booking-site payout pending.',
+      });
+      onDone();
+    } catch (err) { toast({ tone: 'critical', title: 'Payouts not recorded.', body: err instanceof Error ? err.message : 'Try again in a moment.' }); }
+    setBusy(false);
+  }
+  return (
+    <CentreModal title="Mark payouts received" sub={`Records one payout per booking for what it still has outstanding: ${plural(rows.length, 'booking')}, ${rm(owed)} in all.`} onClose={() => { if (!busy) onClose(); }}>
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
+        <div className="max-h-[180px] overflow-y-auto border border-solid border-line rounded-control">
+          {rows.map(r => (
+            <div key={r.id} className="flex justify-between gap-3 px-3 py-2 text-meta [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
+              <span className="min-w-0 truncate"><span className="font-mono">{r.externalRef}</span> · {r.guestName || '—'}</span>
+              <span className="[font-variant-numeric:tabular-nums] whitespace-nowrap">{rm(r.outstanding)}</span>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
+          <Field label="Arrived on" type="date" value={receivedOn} max={todayMyt()} onChange={e => setReceivedOn(e.target.value)} required />
+          <Field label="Bank reference (optional)" value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. AIRBNB 2610" />
+        </div>
+        <div className="flex justify-end gap-[9px]">
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!receivedOn}>{busy ? 'Recording…' : 'Mark received'}</Button>
+        </div>
+      </form>
+    </CentreModal>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /* CSV import — parse + validate                                        */
 /* ------------------------------------------------------------------ */
 
-interface ParsedRow { line: number; label: string; error?: string; row?: Row }
+interface ImportRow { unitNumber: string; propertyName: string; guestName: string; guestPhone: string | null; channel: BookingChannel; checkIn: string; checkOut: string; guestsCount: number; grossBookingValue: number; externalRef: string | null }
+interface ParsedRow { line: number; label: string; error?: string; row?: ImportRow }
 
 /** Minimal RFC-4180-ish parser: handles quoted fields, escaped quotes and CRLF. */
 function parseCsv(text: string): string[][] {
@@ -477,39 +685,31 @@ function parseCsv(text: string): string[][] {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function buildImport(text: string, UNITS: RosterUnit[]): ParsedRow[] {
-  const grid = parseCsv(text);
+  const grid = parseCsv(text.replace(/^﻿/, ''));
   if (grid.length < 2) return [{ line: 0, label: 'File', error: 'No data rows found. Expected a header row plus at least one reservation.' }];
   const header = grid[0].map(h => h.trim().toLowerCase());
   const idx = (name: string) => header.indexOf(name);
-  const iUnit = idx('unit'), iGuest = idx('guest'), iChannel = idx('channel'), iIn = idx('checkin'), iOut = idx('checkout'), iGuests = idx('guests'), iRate = idx('rate'), iPhone = idx('phone');
+  const iUnit = idx('unit'), iGuest = idx('guest'), iChannel = idx('channel'), iIn = idx('checkin'), iOut = idx('checkout'), iGuests = idx('guests'), iRate = idx('rate'), iPhone = idx('phone'), iRef = idx('reference');
   if (iUnit < 0 || iGuest < 0 || iChannel < 0 || iIn < 0 || iOut < 0) {
-    return [{ line: 0, label: 'Header', error: 'Missing columns. Required header: unit, guest, channel, checkin, checkout (optional: guests, rate, phone).' }];
+    return [{ line: 0, label: 'Header', error: 'Missing columns. Required header: unit, guest, channel, checkin, checkout (optional: guests, rate, phone, reference).' }];
   }
   return grid.slice(1).map((cols, n) => {
     const line = n + 2;
     const get = (i: number) => (i >= 0 ? (cols[i] ?? '').trim() : '');
     const unitNumber = get(iUnit), guest = get(iGuest), channelRaw = get(iChannel).toLowerCase();
-    const checkIn = get(iIn), checkOut = get(iOut), guestsRaw = get(iGuests), rateRaw = get(iRate), phone = get(iPhone);
+    const checkIn = get(iIn), checkOut = get(iOut), guestsRaw = get(iGuests), rateRaw = get(iRate), phone = get(iPhone), ref = get(iRef);
     const label = `${guest || '(no name)'} · ${unitNumber || '(no unit)'}`;
     const unit = UNITS.find(u => u.unitNumber.toLowerCase() === unitNumber.toLowerCase());
-    if (!unit) return { line, label, error: `Unknown unit "${unitNumber}". Use one of ${UNITS.map(u => u.unitNumber).join(', ')}.` };
+    if (!unit) return { line, label, error: `Unknown unit "${unitNumber}".` };
     if (!guest) return { line, label, error: 'Guest name is required.' };
-    if (!(channelRaw in CHANNEL_META)) return { line, label, error: `Unknown channel "${channelRaw}". Use airbnb, booking_com, agoda or direct.` };
+    if (!['airbnb', 'booking_com', 'agoda', 'direct'].includes(channelRaw)) return { line, label, error: `Unknown channel "${channelRaw}". Use airbnb, booking_com, agoda or direct.` };
     if (!ISO_DATE.test(checkIn) || !ISO_DATE.test(checkOut)) return { line, label, error: 'Dates must be YYYY-MM-DD.' };
     if (nightsBetween(checkIn, checkOut) < 1) return { line, label, error: 'Check-out must be after check-in.' };
     const guestsCount = guestsRaw ? Number(guestsRaw) : 2;
     if (!Number.isFinite(guestsCount) || guestsCount < 0) return { line, label, error: 'Guests must be a number.' };
     const rateNum = rateRaw ? Number(rateRaw.replace(/[^0-9.]/g, '')) : 0;
     if (!Number.isFinite(rateNum) || rateNum < 0) return { line, label, error: 'Rate must be a number (RM).' };
-    const id = crypto.randomUUID();
-    const row: Row = {
-      id, externalRef: `IMP-${id.slice(0, 6).toUpperCase()}`, guestName: guest, guestsCount,
-      guestPhone: phone || null, unitNumber: unit.unitNumber, propertyName: unit.propertyName,
-      channel: channelRaw as BookingChannel, state: 'confirmed', checkIn, checkOut,
-      checkInTime: '15:00', checkOutTime: '11:00', nights: nightsBetween(checkIn, checkOut),
-      grossBookingValue: Math.round(rateNum * 100), channelFee: 0, collectedRevenue: 0, createdAt: new Date().toISOString(),
-    };
-    return { line, label, row };
+    return { line, label, row: { unitNumber: unit.unitNumber, propertyName: unit.propertyName, guestName: guest, guestPhone: phone || null, channel: channelRaw as BookingChannel, checkIn, checkOut, guestsCount, grossBookingValue: Math.round(rateNum * 100), externalRef: ref || null } };
   });
 }
 
@@ -517,69 +717,105 @@ function buildImport(text: string, UNITS: RosterUnit[]): ParsedRow[] {
 /* Modals                                                              */
 /* ------------------------------------------------------------------ */
 
-
-interface CreatePrefill { guestName?: string; phone?: string; email?: string; unitId?: string; checkIn?: string; checkOut?: string }
+type Kind = 'direct' | 'ota' | 'owner_stay';
+interface CreatePrefill { guestName?: string; phone?: string; email?: string; unitId?: string; checkIn?: string; checkOut?: string; kind?: Kind }
+interface CreateInput {
+  unitId: string; channel: BookingChannel; guestName: string; phone: string; email: string; checkIn: string; checkOut: string;
+  checkInTime: string; checkOutTime: string; guestsCount: number; grossSen: number; externalRef: string; notes: string;
+}
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
-  units: RosterUnit[];
-  prefill?: CreatePrefill | null;
-  onClose: () => void;
-  onCreate: (input: { unitId: string; channel: BookingChannel; guestName: string; phone: string; email: string; checkIn: string; checkOut: string; guestsCount: number; grossSen: number }) => Promise<void>;
+  units: RosterUnit[]; prefill?: CreatePrefill | null; onClose: () => void; onCreate: (input: CreateInput) => Promise<void>;
 }) {
   // No unit is chosen for the user: the list may still be loading, and a silent default books the wrong unit.
+  const [kind, setKind] = useState<Kind>(prefill?.kind ?? 'direct');
   const [unitId, setUnitId] = useState(prefill?.unitId ?? '');
-  const [channel, setChannel] = useState<BookingChannel>('direct');
+  const [site, setSite] = useState<BookingChannel>('airbnb');
   const [guestName, setGuestName] = useState(prefill?.guestName ?? '');
   const [phone, setPhone] = useState(prefill?.phone ?? '');
   const [email, setEmail] = useState(prefill?.email ?? '');
   const [checkIn, setCheckIn] = useState(prefill?.checkIn && ISO_DAY.test(prefill.checkIn) ? prefill.checkIn : '');
   const [checkOut, setCheckOut] = useState(prefill?.checkOut && ISO_DAY.test(prefill.checkOut) ? prefill.checkOut : '');
+  const [inTime, setInTime] = useState('15:00');
+  const [outTime, setOutTime] = useState('11:00');
   const [guestsCount, setGuestsCount] = useState('2');
   const [rate, setRate] = useState('');
+  const [ref, setRef] = useState('');
+  const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const owner = kind === 'owner_stay';
   const unitKnown = UNITS.some(u => u.id === unitId);
+  const unitOwner = UNITS.find(u => u.id === unitId)?.ownerName;
   const nights = checkIn && checkOut ? nightsBetween(checkIn, checkOut) : 0;
   const datesValid = !!checkIn && !!checkOut && nights >= 1;
-  const valid = unitKnown && !!guestName.trim() && datesValid && Number(guestsCount) >= 1;
-  const missing = !unitKnown ? 'Pick a unit first.' : !guestName.trim() ? 'Add the guest name.' : !datesValid ? 'Pick a valid date range.' : 'Check the number of guests.';
+  const valid = unitKnown && (owner || !!guestName.trim()) && datesValid && Number(guestsCount) >= 1;
+  const missing = !unitKnown ? 'Pick a unit first.' : !owner && !guestName.trim() ? 'Add the guest name.' : !datesValid ? 'Pick a valid date range.' : 'Check the number of guests.';
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!valid || busy) return;
     setBusy(true);
     await onCreate({
-      unitId, channel, guestName: guestName.trim(), phone: phone.trim(), email: email.trim(),
-      checkIn, checkOut, guestsCount: Number(guestsCount) || 1, grossSen: Math.round((Number(rate) || 0) * 100),
+      unitId, channel: owner ? 'owner_stay' : kind === 'ota' ? site : 'direct',
+      guestName: guestName.trim() || (owner && unitOwner ? unitOwner : ''), phone: phone.trim(), email: email.trim(),
+      checkIn, checkOut, checkInTime: inTime, checkOutTime: outTime, guestsCount: Number(guestsCount) || 1,
+      grossSen: owner ? 0 : Math.round((Number(rate) || 0) * 100), externalRef: kind === 'ota' ? ref.trim() : '', notes: notes.trim(),
     });
     setBusy(false);
   }
 
   return (
-    <CentreModal title="Create reservation" sub="Checked against the unit's other bookings before it is saved." onClose={() => { if (!busy) onClose(); }} maxWidth={500}>
+    <CentreModal title={owner ? 'Owner stay' : 'Create reservation'} sub="Checked against the unit's other bookings before it is saved, then closed on the booking sites the unit is sold on." onClose={() => { if (!busy) onClose(); }} maxWidth={520}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto">
-        <UnitPicker units={UNITS} value={unitId} onChange={setUnitId} />
-        <Select label="Channel" showLabel size="md" value={channel} onChange={v => setChannel(v as BookingChannel)}
-          options={CREATE_CHANNELS.map(c => ({ value: c, label: CHANNEL_META[c].label }))} />
-        <Field label="Guest name" placeholder="Jane Tan" value={guestName} onChange={e => setGuestName(e.target.value)} required />
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
-          <Field label="Phone" placeholder="+60 12-345 6789" value={phone} onChange={e => setPhone(e.target.value)} />
-          <Field label="Email" type="email" placeholder="jane@example.com" value={email} onChange={e => setEmail(e.target.value)} />
+        <div role="radiogroup" aria-label="What is this" className="grid grid-cols-3 gap-1 p-1 rounded-control bg-muted">
+          {([['direct', 'Direct booking'], ['ota', 'Booking site'], ['owner_stay', 'Owner stay']] as const).map(([k, l]) => (
+            <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
+              className={cx('h-9 rounded-[8px] border-none [font:inherit] text-meta cursor-pointer', kind === k ? 'bg-card font-semibold text-ink shadow-sm' : 'bg-transparent text-muted-ink')}>{l}</button>
+          ))}
         </div>
+        <UnitPicker units={UNITS} value={unitId} onChange={setUnitId} />
+        {kind === 'ota' && (
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+            <Select label="Booking site" showLabel size="md" value={site} onChange={v => setSite(v as BookingChannel)}
+              options={(['airbnb', 'booking_com', 'agoda'] as const).map(c => ({ value: c, label: CHANNEL_META[c].label }))} />
+            <Field label="The site's reference" placeholder="e.g. HMF4323EHS" value={ref} onChange={e => setRef(e.target.value)}
+              help="Bookings normally arrive by themselves through Channex. Type one in only if it did not." />
+          </div>
+        )}
+        <Field label={owner ? 'Who is staying (optional)' : 'Guest name'} placeholder={owner ? unitOwner ?? 'The owner' : 'Jane Tan'} value={guestName} onChange={e => setGuestName(e.target.value)} required={!owner} />
+        {!owner && (
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
+            <Field label="Phone" placeholder="+60 12-345 6789" value={phone} onChange={e => setPhone(e.target.value)} />
+            <Field label="Email" type="email" placeholder="jane@example.com" value={email} onChange={e => setEmail(e.target.value)} />
+          </div>
+        )}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <Field label="Check-in" type="date" value={checkIn} min={todayMyt(-1)} onChange={e => setCheckIn(e.target.value)} required />
           <Field label="Check-out" type="date" value={checkOut} min={checkIn || undefined} onChange={e => setCheckOut(e.target.value)} required
             error={checkIn && checkOut && nights < 1 ? 'Check-out must be after check-in.' : undefined} />
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+          <Field label="Check-in from" type="time" value={inTime} onChange={e => setInTime(e.target.value)} help="Earlier for an early check-in." />
+          <Field label="Check-out by" type="time" value={outTime} onChange={e => setOutTime(e.target.value)} help="Later for a late check-out." />
+        </div>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <Field label="Guests" type="number" min={1} max={16} numeric value={guestsCount} onChange={e => setGuestsCount(e.target.value)} />
-          <Field label="Total for the stay (RM)" type="number" min={0} step="0.01" numeric value={rate} onChange={e => setRate(e.target.value)}
-            help={datesValid ? `${fmtNights(nights)} · ${dateRange(checkIn, checkOut)}` : 'What the guest pays for the whole stay.'} />
+          {!owner && (
+            <Field label="Guest total for the stay (RM)" type="number" min={0} step="0.01" numeric value={rate} onChange={e => setRate(e.target.value)}
+              help={datesValid ? `${fmtNights(nights)} · ${dateRange(checkIn, checkOut)}` : 'What the guest pays for the whole stay.'} />
+          )}
+        </div>
+        {owner && <p className="m-0 text-meta text-muted-ink">An owner stay holds the nights and earns nothing. It shows on the calendar and the unit page.</p>}
+        <div className="flex flex-col gap-[6px]">
+          <label htmlFor="cr-notes" className="text-meta font-medium text-muted-ink">Notes (optional)</label>
+          <textarea id="cr-notes" value={notes} onChange={e => setNotes(e.target.value)} rows={2} maxLength={2000} placeholder="e.g. Arrives late, around 21:00"
+            className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
         </div>
         <div className="flex justify-end gap-[9px] pt-1">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Close</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={missing}>{busy ? 'Creating…' : 'Create reservation'}</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={missing}>{busy ? 'Saving…' : owner ? 'Save owner stay' : 'Create reservation'}</Button>
         </div>
       </form>
     </CentreModal>
@@ -590,9 +826,9 @@ function ImportPreviewModal({ rows, onClose, onConfirm }: { rows: ParsedRow[]; o
   const ok = rows.filter(r => r.row).length;
   const bad = rows.length - ok;
   return (
-    <CentreModal title="Import reservations" sub="Review the parsed rows before committing. Rejected rows are left out." onClose={onClose} maxWidth={620}>
+    <CentreModal title="Import reservations" sub="Review the rows before importing. Rejected rows are left out. Each booking is closed on the booking sites its unit is sold on." onClose={onClose} maxWidth={620}>
       <div className="px-[22px] pt-1 pb-3 flex items-center gap-2 flex-wrap flex-none">
-        <span className="text-meta text-muted-ink">{plural(rows.length, 'row')} parsed</span>
+        <span className="text-meta text-muted-ink">{plural(rows.length, 'row')} read</span>
         <Badge tone="success" label={`${num(ok)} ready`} size="sm" />
         {bad > 0 && <Badge tone="critical" label={`${num(bad)} with ${bad === 1 ? 'an error' : 'errors'}`} size="sm" />}
       </div>
@@ -610,7 +846,7 @@ function ImportPreviewModal({ rows, onClose, onConfirm }: { rows: ParsedRow[]; o
         ))}
       </div>
       <div className="px-[22px] py-[14px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-between gap-[9px] flex-wrap flex-none">
-        <span className="text-meta text-muted-ink">Columns: unit, guest, channel, checkin, checkout, guests, rate, phone</span>
+        <span className="text-meta text-muted-ink">Columns: unit, guest, channel, checkin, checkout, guests, rate, phone, reference</span>
         <div className="flex gap-[9px]">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" onClick={onConfirm} disabled={ok === 0} disabledReason="No valid rows to import.">

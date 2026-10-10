@@ -60,7 +60,7 @@ export const WORKBOOK_COLUMNS: Record<string, string[]> = {
 /** The year the workbook's JAN..DEC utility columns belong to. */
 export const WORKBOOK_YEAR = 2026;
 
-export const IMPORT_KINDS = ['listing', 'reservations', 'workbook_units', 'workbook_airbnb', 'workbook_cleaning', 'workbook_expenses', 'workbook_payouts', 'fix_locations'] as const;
+export const IMPORT_KINDS = ['listing', 'reservations', 'workbook_units', 'workbook_airbnb', 'workbook_cleaning', 'workbook_expenses', 'workbook_payouts', 'fix_locations', 'fix_guests'] as const;
 export type ImportKind = typeof IMPORT_KINDS[number];
 export const MAX_ROWS_PER_REQUEST = 600;
 
@@ -339,7 +339,10 @@ export function channelFor(bookingType: unknown, source: unknown, remarks: unkno
 export const guestId = (name: string, phone: string | null, email: string | null) =>
   `hp-guest-${hash(`${name.toLowerCase()}|${(phone ?? '').replace(/[^0-9+]/g, '')}|${(email ?? '').toLowerCase()}`)}`;
 
-const CHANNEL_LABEL: Record<Channel, string> = { airbnb: 'Airbnb', booking_com: 'Booking.com', agoda: 'Agoda', direct: 'Direct', maintenance_block: 'Block', owner_stay: 'Owner stay' };
+/** The name a guest record gets when the source has none: the channel and the booking's reference. */
+export const placeholderGuestName = (channelLabel: string, ref: string) => `${channelLabel} guest ${ref}`;
+
+export const CHANNEL_LABEL: Record<Channel, string> = { airbnb: 'Airbnb', booking_com: 'Booking.com', agoda: 'Agoda', direct: 'Direct', maintenance_block: 'Block', owner_stay: 'Owner stay' };
 
 export function mapReservations(rows: Row[], today: string): ReservationPlan {
   const errors: RowError[] = [], guests = new Map<string, GuestIn>(), reservations: ReservationIn[] = [], codes = new Set<string>();
@@ -367,7 +370,9 @@ export function mapReservations(rows: Row[], today: string): ReservationPlan {
     let gid: string | null = null;
     if (!block) {
       const phone = opt(r['[].Contact Number[]']), email = opt(r['[].User Email[]'])?.toLowerCase() ?? null;
-      const name = opt(r['Guest Name']) ?? ([opt(r['First Name']), opt(r['Last Name'])].filter(Boolean).join(' ') || `${CHANNEL_LABEL[channel]} guest`);
+      // A booking with no name gets its reference in the placeholder: without it every nameless Airbnb booking
+      // hashed to the same guest id and 23 stays collapsed into one "Airbnb guest" (fixed 10 Oct 2026).
+      const name = opt(r['Guest Name']) ?? ([opt(r['First Name']), opt(r['Last Name'])].filter(Boolean).join(' ') || placeholderGuestName(CHANNEL_LABEL[channel], ota ?? code));
       gid = guestId(name, phone, email);
       if (!guests.has(gid)) guests.set(gid, { id: gid, fullName: name.slice(0, 200), email, phone, countryCode: countryCode(r['Nationality']) });
     }
@@ -643,24 +648,37 @@ export const listingOwnerId = (name: string) => opaqueOwnerId('hp-owner-', owner
 /* Workbook: Airbnb earnings                                           */
 /* ------------------------------------------------------------------ */
 
+export interface AirbnbInstalmentIn {
+  /** Deterministic: the booking's code and unit, the line's dates, and a counter for lines with the same dates. */
+  key: string; row: number; checkIn: string; checkOut: string; amount: number; paidOutOn: string | null;
+  /** 数据来源 已完成: Airbnb paid it out. 待处理: listed, not paid out yet. */
+  received: boolean;
+}
 export interface AirbnbEarningIn {
   row: number; code: string; site: 'airbnb' | 'booking_com'; workbookId: string; checkIn: string; checkOut: string;
   gross: number | null; fee: number | null; amount: number | null; idSuffix: string;
-  /** Sen; null = blank. paidOutOn is a date only when 已支付 holds one (today it holds blanks and zeros). */
+  /** Sen; null = blank. paidOutOn is the latest date 已支付 holds (today it holds blanks and zeros). */
   cleaningFee: number | null; tax: number | null; fastPay: number | null; paidOutOn: string | null;
+  /** Every payout line of the booking. A stay of 28 nights or more is paid by Airbnb in monthly instalments, one
+   *  line each; the import used to keep the first and drop the rest. */
+  instalments: AirbnbInstalmentIn[];
 }
 
 /** The workbook's earnings lines: Airbnb (HM...) and a few Booking.com (10-digit) codes. 'OWNER' rows are
- *  owner stays logged there, not bookings, and are skipped. A code booked on two units (one booking, two listings) gets the unit in its new id. */
+ *  owner stays logged there, not bookings, and are skipped. A code booked on two units (one booking, two listings) gets the unit in its new id.
+ *  All lines of one code on one unit are one booking: their money is summed, its stay runs from the first line's
+ *  check-in to the last line's check-out, and each line is kept as an instalment. The caller must send all of a
+ *  code's lines in one request (the screen's chunkByKey does). */
 export function mapAirbnbEarnings(rows: Row[]): { earnings: AirbnbEarningIn[]; errors: RowError[]; skipped: RowError[] } {
-  const errors: RowError[] = [], skipped: RowError[] = [], earnings: AirbnbEarningIn[] = [];
+  const errors: RowError[] = [], skipped: RowError[] = [];
   const unitsPerCode = new Map<string, Set<string>>();
   for (const r of rows) {
     const code = str(r['确认码']).toUpperCase();
     if (!unitsPerCode.has(code)) unitsPerCode.set(code, new Set());
     unitsPerCode.get(code)!.add(str(r['Unit编号']).toUpperCase());
   }
-  const seen = new Set<string>();
+  const groups = new Map<string, AirbnbEarningIn>();
+  const add = (a: number | null, b: number | null) => (a === null && b === null ? null : (a ?? 0) + (b ?? 0));
   rows.forEach((r, i) => {
     const row = rowNo(r, i), code = str(r['确认码']).toUpperCase(), workbookId = str(r['Unit编号']).toUpperCase();
     const site = /^HM[A-Z0-9]{6,}$/.test(code) ? 'airbnb' : /^\d{8,12}$/.test(code) ? 'booking_com' : null;
@@ -668,20 +686,35 @@ export function mapAirbnbEarnings(rows: Row[]): { earnings: AirbnbEarningIn[]; e
     if (!workbookId) return errors.push({ row, reason: `${code}: no unit id.` });
     const checkIn = toDate(r['入住日期']), checkOut = toDate(r['退房日期']);
     if (!checkIn || !checkOut || checkOut <= checkIn) return errors.push({ row, reason: `${code}: dates are missing or check-out is not after check-in.` });
+    const amountRaw = sen(r['金额(Amount)']), fee = sen(r['服务费(Service fee)']), grossRaw = sen(r['总收入(Gross earnings)']);
+    const gross = grossRaw ?? (amountRaw !== null ? amountRaw + (fee ?? 0) : null);
+    const amount = amountRaw === null ? null : Math.max(0, amountRaw);
+    // An Excel date serial is > 20000; the 0s in this column are not dates.
+    const paidOutOn = typeof r['已支付(Paid out)'] === 'number' && (r['已支付(Paid out)'] as number) < 20000 ? null : toDate(r['已支付(Paid out)']);
     const k = `${code}|${workbookId}`;
-    if (seen.has(k)) return skipped.push({ row, reason: `${code} on ${workbookId} appears twice; the first line was used.` });
-    seen.add(k);
-    const amount = sen(r['金额(Amount)']), fee = sen(r['服务费(Service fee)']), grossRaw = sen(r['总收入(Gross earnings)']);
-    const gross = grossRaw ?? (amount !== null ? amount + (fee ?? 0) : null);
-    earnings.push({
-      row, code, site, workbookId, checkIn, checkOut, gross: gross === null ? null : Math.max(0, gross), fee: fee === null ? null : Math.max(0, fee),
-      amount: amount === null ? null : Math.max(0, amount), idSuffix: (unitsPerCode.get(code)?.size ?? 1) > 1 ? `-${slug(workbookId)}` : '',
-      cleaningFee: nonNeg(r['清洁费(Cleaning fee)']), tax: nonNeg(r['Airbnb税费(Tax)']), fastPay: nonNeg(r['快速支付费(Fast pay)']),
-      // An Excel date serial is > 20000; the 0s in this column are not dates.
-      paidOutOn: typeof r['已支付(Paid out)'] === 'number' && (r['已支付(Paid out)'] as number) < 20000 ? null : toDate(r['已支付(Paid out)']),
-    });
+    let g = groups.get(k);
+    if (!g) {
+      g = { row, code, site, workbookId, checkIn, checkOut, gross: null, fee: null, amount: null,
+        idSuffix: (unitsPerCode.get(code)?.size ?? 1) > 1 ? `-${slug(workbookId)}` : '',
+        cleaningFee: null, tax: null, fastPay: null, paidOutOn: null, instalments: [] };
+      groups.set(k, g);
+    }
+    if (checkIn < g.checkIn) g.checkIn = checkIn;
+    if (checkOut > g.checkOut) g.checkOut = checkOut;
+    g.gross = add(g.gross, gross === null ? null : Math.max(0, gross));
+    g.fee = add(g.fee, fee === null ? null : Math.max(0, fee));
+    g.amount = add(g.amount, amount);
+    g.cleaningFee = add(g.cleaningFee, nonNeg(r['清洁费(Cleaning fee)']));
+    g.tax = add(g.tax, nonNeg(r['Airbnb税费(Tax)']));
+    g.fastPay = add(g.fastPay, nonNeg(r['快速支付费(Fast pay)']));
+    if (paidOutOn && (!g.paidOutOn || paidOutOn > g.paidOutOn)) g.paidOutOn = paidOutOn;
+    if (amount) {
+      const base = `${code}${g.idSuffix}-${checkIn}-${checkOut}`;
+      const n = g.instalments.filter(x => x.key.startsWith(base)).length;
+      g.instalments.push({ key: n ? `${base}-${n + 1}` : base, row, checkIn, checkOut, amount, paidOutOn, received: str(r['数据来源']) !== '待处理' });
+    }
   });
-  return { earnings, errors, skipped };
+  return { earnings: [...groups.values()], errors, skipped };
 }
 
 /* ------------------------------------------------------------------ */

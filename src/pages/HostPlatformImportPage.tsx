@@ -143,7 +143,7 @@ export default function HostPlatformImportPage() {
     <>
       <PageHeader
         title="Import from HostPlatform"
-        sub="6 steps · units, bookings and the owner workbook"
+        sub="9 steps · units, bookings, the owner workbook and two clean-ups"
         back={{ label: 'Integrations', onClick: () => { window.location.hash = '#/system/integrations'; } }}
       />
 
@@ -198,16 +198,16 @@ export default function HostPlatformImportPage() {
         action={resPlan && <Button variant="primary" size="sm" loading={runs.reservations?.busy} disabled={!resPlan.reservations.length} disabledReason="No bookings in the files."
           onClick={() => send('reservations', chunks(pick(reservations!.rows, RESERVATION_COLUMNS)))}>Import {n(resPlan.reservations.length)} bookings</Button>} />
 
-      <Step no={4} title="Owner workbook: Airbnb earnings" hint="Sheet 订单数据. Replaces HostPlatform's amounts with the payout, fee and gross from Airbnb's earnings report, and adds stays HostPlatform never had." run={runs.workbook_airbnb}
+      <Step no={4} title="Owner workbook: Airbnb earnings" hint="Sheet 订单数据. Replaces HostPlatform's amounts with the payout, fee and gross from Airbnb's earnings report, and adds stays HostPlatform never had. A stay of 28 nights or more that Airbnb pays in monthly instalments is summed over all its lines, and each instalment is listed on the booking (paid, or still to come)." run={runs.workbook_airbnb}
         waitFor={!wb ? 'Choose the workbook in step 2.' : null}
         preview={wbAirbnb && (
           <Stats items={[
-            ['Lines', n(wbAirbnb.earnings.length)], ['Airbnb', n(wbAirbnb.earnings.filter(e => e.site === 'airbnb').length)],
+            ['Bookings', n(wbAirbnb.earnings.length)], ['Payout lines', n(wbAirbnb.earnings.reduce((s, e) => s + e.instalments.length, 0))], ['Airbnb', n(wbAirbnb.earnings.filter(e => e.site === 'airbnb').length)],
             ['Booking.com', n(wbAirbnb.earnings.filter(e => e.site === 'booking_com').length)], ['Skipped', n(wbAirbnb.skipped.length)],
           ]} errors={wbAirbnb.errors} notes={wbAirbnb.skipped.length ? [`${n(wbAirbnb.skipped.length)} lines are skipped: ${Object.entries(tally(wbAirbnb.skipped, s => s.reason)).map(([k, v]) => `${v} × ${k}`).join(' ')}`] : []} />
         )}
         action={wbAirbnb && <Button variant="primary" size="sm" loading={runs.workbook_airbnb?.busy} disabled={!wbAirbnb.earnings.length} disabledReason="No earnings lines."
-          onClick={() => send('workbook_airbnb', chunkByKey(wb![WORKBOOK_SHEETS.airbnb], r => String(r['确认码'] ?? ''), CHUNK))}>Import {n(wbAirbnb.earnings.length)} lines</Button>} />
+          onClick={() => send('workbook_airbnb', chunkByKey(wb![WORKBOOK_SHEETS.airbnb], r => String(r['确认码'] ?? ''), CHUNK))}>Import {n(wbAirbnb.earnings.length)} bookings</Button>} />
 
       <Step no={5} title="Owner workbook: cleaning records" hint="Sheets 清洁记录 and 清洁单价. Each clean becomes a housekeeping task (done if the date has passed) given to the cleaner named in 负责人, who joins the cleaner roster, and, when the owner pays, a cleaning expense at the unit's price." run={runs.workbook_cleaning}
         waitFor={!wb ? 'Choose the workbook in step 2.' : null}
@@ -248,6 +248,9 @@ export default function HostPlatformImportPage() {
 
       <Step no={8} title="Tidy building states and cities" hint="One-off clean-up of buildings already in Property OS: writes each state and city one way ('W.P Kuala Lumpur' and 'WP' become 'Kuala Lumpur', 'KUALA LUMPUR' becomes 'Kuala Lumpur') and fills a blank one from the postcode or address. A state it does not recognise is left as typed. Needs no file; running it again changes nothing." run={runs.fix_locations}
         action={<Button variant="primary" loading={runs.fix_locations?.busy} onClick={() => send('fix_locations', [[]])}>Tidy buildings</Button>} />
+
+      <Step no={9} title="Split nameless booking-site guests" hint="One-off clean-up. Bookings that came without a guest name all went under one guest called 'Airbnb guest' (or 'Booking.com guest'), so 23 stays looked like one person's. This gives each of those bookings its own guest, named with the booking's reference ('Airbnb guest HM...'), and removes the empty placeholder. Needs no file; running it again changes nothing." run={runs.fix_guests}
+        action={<Button variant="primary" loading={runs.fix_guests?.busy} onClick={() => send('fix_guests', [[]])}>Split guests</Button>} />
     </>
   );
 }

@@ -19,7 +19,7 @@ async function get(path, role) {
 let r = await get('/api/reservations?view=all&size=25');
 const all = r.json;
 check('all: a page of at most 25 with counts and totals', r.status === 200 && all.data.length <= 25 && all.total === all.counts.all && all.totals.bookings === all.total, r.text.slice(0, 300));
-check('upcoming + past + cancelled = all', all.counts.upcoming + all.counts.past + all.counts.cancelled === all.counts.all, JSON.stringify(all.counts));
+check('upcoming + in house + checked out + cancelled = all', all.counts.upcoming + all.counts.inhouse + all.counts.past + all.counts.cancelled === all.counts.all, JSON.stringify(all.counts));
 
 r = await get('/api/reservations');
 check('default view is upcoming, soonest check-in first', r.json.view === 'upcoming' && r.json.data.every((x, i, a) => i === 0 || a[i - 1].checkIn <= x.checkIn), r.text.slice(0, 200));
@@ -30,8 +30,8 @@ check('last page holds the remainder', r.json.page === lastPage && r.json.data.l
 r = await get('/api/reservations?view=all&size=25&page=99999');
 check('a page past the end clamps to the last page', r.json.page === lastPage, String(r.json.page));
 
-r = await get('/api/reservations?view=blocks');
-check('blocks tab only holds blocks and owner stays', r.json.data.every(x => x.channel === 'maintenance_block' || x.channel === 'owner_stay'), r.text.slice(0, 200));
+r = await get('/api/reservations?view=all&size=200');
+check('the list holds no blocks or owner stays', r.json.data.every(x => x.channel !== 'maintenance_block' && x.channel !== 'owner_stay'), r.text.slice(0, 200));
 r = await get('/api/reservations?view=cancelled');
 check('cancelled tab only holds cancelled or no-show', r.json.data.every(x => x.state === 'cancelled' || x.state === 'no_show'), r.text.slice(0, 200));
 
