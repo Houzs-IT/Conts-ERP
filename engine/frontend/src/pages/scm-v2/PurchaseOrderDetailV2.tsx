@@ -11,6 +11,7 @@
 
 import { lazy, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { PoPaymentScheduleCard } from "../renovation/PoPaymentScheduleCard";
 import { LazySlot } from "../../components/LazySlot";
 import { scmListReturnTo } from "../../lib/scmListReturn";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
@@ -1449,6 +1450,8 @@ function PurchaseOrderDetailV2ReadOnly() {
                 emptyLabel="No line items"
               />
             </Section>
+            {/* Renovation PO payment schedule (Conts, 2026-10-09): Mobilise / Completion / Retention. */}
+            <PoPaymentScheduleCard poId={purchaseOrder.id} offerDefault={items.some((l) => l.item_group === "RENOVATION")} />
           </DetailMain>
 
           <DetailAside>

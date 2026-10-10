@@ -107,6 +107,10 @@ const STATUS_TONE: Record<string, { tone: "success" | "warning" | "error" | "neu
      a grey pill — which is what it did for every held order between
      2026-08-21 and this change. */
   on_hold: { tone: "warning", label: "On Hold" },
+  // Renovation contracts (Conts, migration 0065).
+  reno_confirmed: { tone: "neutral", label: "Contract confirmed" },
+  reno_in_progress: { tone: "warning", label: "Works in progress" },
+  reno_completed: { tone: "success", label: "Works completed" },
 };
 
 /* The parameter is NULLABLE, and the guards inside are why. It was typed
