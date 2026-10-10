@@ -1,4 +1,5 @@
 import { type Env, one, run, json, fail, nowIso } from '../../_lib/db';
+import { changedFields } from '../../_lib/history';
 import { requireSession } from '../../_lib/auth';
 import { invalidUnit, typed, saveExpenses, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
 
@@ -25,6 +26,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     if (!(await one(env, 'SELECT 1 AS x FROM properties WHERE id = ?', target))) return fail('NOT_FOUND', 'That building does not exist.', 404, { buildingId: 'Pick a building.' });
   }
   const propertyId: string = target ?? cur.property_id;
+  const was = await snapshot(env, id);
 
   const now = nowIso();
   if (typeof (b as { ownerId?: string }).ownerId === 'string') {
@@ -73,9 +75,20 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b.contract) await saveContract(env, id, cur.owner_id, b.contract);
 
   // Banking details are recorded as changed, never copied into the audit trail.
-  await auditUnit(env, session, 'unit.update', id, {
-    fields: Object.keys(b).filter(k => !['bankAccount', 'ic', 'accountHolder'].includes(k)), ownerDetailsChanged: bankAccount !== undefined || ic !== undefined,
-    ...(target ? { movedFrom: cur.property_id, movedTo: target } : {}),
-  });
+  const { before, after } = changedFields(was, await snapshot(env, id));
+  if (bankAccount !== undefined || ic !== undefined) { before.ownerBankOrId = 'unchanged'; after.ownerBankOrId = 'changed'; }
+  await auditUnit(env, session, 'unit.update', id, after, before);
   return json({ ok: true });
 };
+
+/** The unit as the History panel shows it: names rather than ids, the contract in force. */
+async function snapshot(env: Env, id: string): Promise<Record<string, unknown>> {
+  const r = await one<Record<string, unknown>>(env, `
+    SELECT p.name AS building, u.unit_number AS "unitNumber", u.unit_code AS "unitCode", u.listing_name AS "listingName", u.address,
+           u.package, u.term, u.split_kind AS split, u.split_value AS "splitValue", u.guarantee_period AS "guaranteePeriod", u.bedrooms,
+           o.display_name AS owner, c.management_fee_pct AS "managementFeePct", c.starts_on AS "contractStartsOn", c.renews_on AS "contractRenewsOn",
+           (SELECT string_agg(e.category || ' RM ' || to_char(e.amount / 100.0, 'FM999,990.00'), ', ' ORDER BY e.sort_order) FROM unit_expenses e WHERE e.unit_id = u.id) AS "monthlyCosts"
+    FROM units u LEFT JOIN properties p ON p.id = u.property_id LEFT JOIN owners o ON o.id = u.owner_id LEFT JOIN owner_contracts c ON c.id = u.contract_id
+    WHERE u.id = ?`, id);
+  return r ?? {};
+}

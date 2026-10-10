@@ -1,6 +1,7 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { chargeClean } from '../../../_lib/cleaning';
+import { cleaningNotice } from '../../../_lib/notices';
 
 /** POST /api/tasks/:id/complete { photoIds, note } — a finished turnover, deep clean or inspection flips the unit to Ready.
  *  A task that needs proof is refused without at least one photo or video, unless storage is not set up yet (then the
@@ -35,5 +36,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'task.complete', entityTable: 'tasks', entityId: id, before: { state: t.state }, after: { state: 'resolved', note: b.note ?? null, photoWaived }, source: 'field_app' });
   const cost = isClean ? await chargeClean(env, session, t) : null;
+  await cleaningNotice(env, id, 'completed', session.userId);
   return json({ ok: true, photoWaived, cost });
 };

@@ -186,6 +186,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         email: session.manage ? unit.owner_email : null,
       },
       contract: unit.management_fee_pct != null ? {
+        id: unit.c_id ?? null,
         managementFeePct: unit.management_fee_pct,
         startsOn: unit.starts_on, renewsOn: unit.renews_on,
       } : null,

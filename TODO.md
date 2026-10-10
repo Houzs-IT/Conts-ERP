@@ -15,7 +15,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Per-channel prices (feat/channex-per-channel-prices): each linked unit has four Channex rate plans (Direct, Airbnb, Booking.com, Agoda); one pricing rule in functions/_lib/channelPrice.ts (night's own price, else base + uplift, weekend x1.22; default uplift 12/18/16% of base) shared by Pricing, Calendar and Channex. Needs migration 0041 on production before merge.
 - Production still holds the seeded example data (3 sample units, 5 owners, 5 bookings ...). Owner chose to clear it before real data: scripts/clear-example-data.mjs (listing by default; --apply --confirm=<ref>; keeps users, settings, integrations, automations, audit trail). Then enter the real owner, building and unit, and connect Airbnb first (Booking.com after; Agoda not used yet).
 - Four seeded staff accounts exist on production (management@, finance@, aina@, nurul@theconts.com); owner to confirm whether they are used or switch them off.
-- Still off: the cron worker (wrangler.cron.toml, needs CHANNEX_API_KEY set on it) that retries the Channex outbox every minute; deploying it also starts the notification drain and overdue-task sweep.
+- Still off: the cron worker theconts-cron (Channex outbox retry, email/WhatsApp retry, overdue sweep, 08:00 digest, repair-block release). Owner deploys it with `node scripts/cron-deploy.mjs --secrets` from the Conts ERP Cloudflare account; `node scripts/cron-dry-run.mjs` shows what it would do on a local database.
 - Watch: one listing must never be controlled by both the old connection and Channex; plan the import of existing bookings.
 
 ## Supply Chain as a copy of Houzs (decision: option B, resumed 7 Oct)
@@ -44,14 +44,14 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Migration 0090 (guest_left_at, task_checklist_items, maintenance category/urgency/source/assignee kind, maintenance_windows) must be applied on staging, then production, before this ships.
 - A finished clean now charges its unit (cleaning expense, owner pays). While the owner workbook is still imported, a clean recorded in both could be charged twice if the workbook row is imported after the system clean; chargeClean skips a unit that already has a cleaning expense that day, the import does not check the other way.
 - Demo walkthrough data: scripts/demo-ops-seed.mjs (--apply --confirm=<ref>, --remove); not run on staging or production yet.
-- Calendar block made from "Block unit until fixed" is not removed when the job is done; remove it on the Calendar.
+- Done (feat/s3-history-notify): closing a repair job gives back its calendar block at once (cancelled if not started, ends today if under way), also for blocks made before migration 0095 (matched by the note); the scheduled job sweeps any left.
 - Videos are capped at 50 MB per file (Workers request memory); longer clips need direct-to-R2 upload.
 - `text-critical` / `text-warning` / `text-success` / `text-info` render the pale tint, not the text colour (tokens.css redefines --color-critical etc. as the tint); the new ops screens use the -fg tokens, other pages still use the classes.
 
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.
-- Deploy the timed background job (theconts-cron, wrangler.cron.toml) for delayed notifications and the overdue-task sweep.
+- In-app notifications and record History (feat/s3-history-notify, migration 0095): staff are told inside the app only; email copies go out only where MAIL_API_KEY is set. Payout and expense rows imported from the owner workbook have no History before 10 Oct 2026 (the import never wrote audit rows).
 - Remove leftovers from the old Cloudflare database (scripts/d1-source.toml, D1 setup scripts) once the old D1 is retired.
 
 ## Future (planning only, not started): guests pay online for direct bookings

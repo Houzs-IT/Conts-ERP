@@ -15,6 +15,7 @@ import { HOME, areaOfPath } from './lib/navigation';
  *  the app a static Cloudflare Pages build with no server rewrites, and existing
  *  `#/...` links keep working. */
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
 const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 const BookingsPage = lazy(() => import('./pages/BookingsPage'));
@@ -188,6 +189,7 @@ function Routed() {
       <Route path="/finance/statements/:id/report" element={<Suspense fallback={<Fallback />}><OwnerIncomeReportPage /></Suspense>} />
       <Route element={<AppLayout />}>
         <Route path="/" element={<DashboardPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/portfolio" element={<PortfolioPage />} />
         <Route path="/reservations/calendar" element={<CalendarPage />} />
         <Route path="/reservations/bookings" element={<BookingsPage />} />

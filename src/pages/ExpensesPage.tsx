@@ -13,6 +13,7 @@ import { Select, SearchSelect, type SelectOption } from '../components/Select';
 import { EmptyState } from '../components/States';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
+import { HistoryDisclosure } from '../components/RecordHistory';
 import {
   useUrlState, usePhone, ListCard, Pager, SearchBox, Chip, STICKY_HEAD, shiftMonth,
   useFinanceFilters, type FinanceFilters,
@@ -655,6 +656,7 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
             className="block w-full box-border px-3 py-[10px] border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy font-normal h-auto resize-y leading-[1.5]" />
         </LabeledField>
       </form>
+      {mode === 'edit' && expense && <div className="mt-4"><HistoryDisclosure entity="expenses" id={expense.id} /></div>}
     </Modal>
   );
 }

@@ -1,5 +1,6 @@
 import { type Env, all, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { notifyUsers } from '../../_lib/notify';
 
 /** POST /api/payouts/run { payoutIds } — starts a payout run: the chosen Pending payouts move to Processing,
  *  which means "the bank transfers are being made". Nothing is sent to any bank from here; finance makes the
@@ -31,6 +32,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     started.push(id);
   }
   const total = rows.filter(r => started.includes(r.id)).reduce((n, r) => n + Number(r.amount), 0);
+  if (started.length) {
+    const rm = `RM ${(total / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    await notifyUsers(env, 'finance', {
+      kind: 'payout.run', title: `Payout run ${runRef} started`,
+      body: `${started.length} ${started.length === 1 ? 'payout' : 'payouts'} totalling ${rm} moved to Processing by ${session.fullName}${skipped.length ? `; ${skipped.length} skipped` : ''}. Mark each one paid once the bank confirms it.`,
+      link: '/finance/payouts', entityTable: 'payouts', entityId: runRef, dedupeKey: `payout-run-${runRef}`, except: session.userId,
+    });
+  }
   return json({ run: runRef, started: started.length, total, skipped });
 };
 

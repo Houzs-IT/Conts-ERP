@@ -21,6 +21,7 @@ import { PayoutDetails } from './owners/PayoutDetails';
 import { OwnerAdjustments } from './owners/Adjustments';
 import { ExpensesCard } from './owners/ExpenseEntry';
 import { ModelChip } from './units/ContractTab';
+import { RecordHistory } from '../components/RecordHistory';
 import { MonthStepper, shiftMonth } from './finance/listKit';
 import { cx } from '../lib/design-tokens';
 import {
@@ -242,6 +243,8 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
           </Card>
         </div>
       </div>
+
+      <RecordHistory entity="owners" id={o.id} refreshKey={data} />
 
       {modal === 'link' && <LinkUnitModal owner={o.displayName} units={rosterUnits} onClose={() => setModal(null)} onSubmit={linkUnit} />}
       {modal === 'defaultFee' && <DefaultFeeModal current={o.defaultManagementFeePct} owner={o.displayName} onClose={() => setModal(null)} onSubmit={saveDefaultFee} />}

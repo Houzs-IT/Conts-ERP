@@ -4,6 +4,7 @@ import { notify } from '../../_lib/notify';
 import { resolveUnit } from '../../_lib/ops';
 import { windowsFor } from '../../_lib/cleaning';
 import { CATEGORIES, URGENCIES, SOURCES, ASSIGNEE_KINDS, CHARGE_TO, approvalThreshold, needsApproval } from '../../_lib/maintenance';
+import { repairNotice } from '../../_lib/notices';
 
 /** GET /api/maintenance/issues?state=&unitId= — every job, with its technician, category, urgency, source, repair
  *  windows (and the stays each overlaps), photo and document counts, and what it cost and who paid once done.
@@ -129,5 +130,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     body: `${b.title} reported by ${session.fullName}.${b.blocksUnit ? ' The unit is now out of service.' : ''}`,
     entityTable: 'maintenance_issues', entityId: id, urgent: !!b.blocksUnit || urgency === 'urgent',
   });
+  await repairNotice(env, id, 'reported', session.userId);
   return json({ id, state, ownerApprovalRequired: approval }, 201);
 };

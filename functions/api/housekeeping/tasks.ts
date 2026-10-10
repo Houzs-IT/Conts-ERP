@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE, SHEET_CLEANER, hhmm, linenSet, resolveUnit } from '../../_lib/ops';
+import { cleaningNotice } from '../../_lib/notices';
 
 /** The three cleaning kinds a manual task may be. Inspection/maintenance/delivery
  *  are their own screens; this endpoint only creates cleaning work. */
@@ -157,5 +158,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.create',
     entityTable: 'tasks', entityId: id, after: { unitId: unit.id, kind, title, assigneeId, cleanerId }, source: b?.source ?? 'web',
   });
+  if (assigneeId) await cleaningNotice(env, id, 'assigned', session.userId);
   return json({ id }, 201);
 };

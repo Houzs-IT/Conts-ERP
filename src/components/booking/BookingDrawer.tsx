@@ -13,6 +13,7 @@ import { CHANNEL_META, cx } from '../../lib/design-tokens';
 import { TONE } from '../../lib/vocabulary';
 import { STATUS, channelNote, deliveryToast, type ChannelSync } from '../../lib/bookingStatus';
 import type { BookingChannel, ReservationState } from '../../lib/types';
+import { RecordHistory } from '../RecordHistory';
 
 /* ------------------------------------------------------------------ */
 /* Shapes (GET /api/reservations/:id)                                  */
@@ -745,6 +746,13 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
         <div>
           <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink mb-3">Timeline</div>
           {d ? <Timeline events={d.timeline} /> : <div className="text-meta text-muted-ink">{error ?? 'Loading…'}</div>}
+        </div>
+
+        <div>
+          <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink mb-3">History</div>
+          <div className="rounded-card border border-solid border-line overflow-hidden bg-card">
+            <RecordHistory entity="reservations" id={id} bare pageSize={10} refreshKey={data} />
+          </div>
         </div>
       </div>
 
