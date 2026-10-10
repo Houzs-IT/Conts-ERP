@@ -196,6 +196,26 @@ export default function UsersPage() {
       setBusy(false);
     }
   }
+  // A one-time reset link shown here once, for management to pass on by WhatsApp or in person when the
+  // reset email cannot reach the person. See functions/api/users/[id]/reset-link.ts.
+  const [resetLink, setResetLink] = useState<{ link: string; expiresAt: string; email: string } | null>(null);
+  async function makeResetLink() {
+    if (!editing || busy) return;
+    setBusy(true);
+    try {
+      const res = await api.post<{ link: string; expiresAt: string; email: string }>(`/users/${editing.id}/reset-link`, {});
+      setResetLink(res);
+    } catch (err) {
+      toast({ tone: 'critical', title: 'Could not make a reset link.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function copyResetLink() {
+    if (!resetLink) return;
+    try { await navigator.clipboard.writeText(resetLink.link); toast({ tone: 'success', title: 'Reset link copied.', body: 'Send it to the person directly. It works once and expires in 60 minutes.' }); }
+    catch { toast({ tone: 'warning', title: 'Copy did not work.', body: 'Select the link and copy it by hand.' }); }
+  }
   async function submitEdit(e: FormEvent) {
     e.preventDefault();
     if (!editing || busy) return;
@@ -425,17 +445,28 @@ export default function UsersPage() {
         <Modal
           title={`Edit ${editing.fullName}`}
           sub="Change the role, reporting line or status."
-          onClose={() => setEditing(null)}
+          onClose={() => { setEditing(null); setResetLink(null); }}
           footer={
             <>
               {status(editing).label === 'Invited' && (
                 <Button variant="secondary" size="sm" onClick={resendInvite} disabled={busy}>Resend invitation</Button>
+              )}
+              {status(editing).label !== 'Invited' && editing.isActive && (
+                <Button variant="secondary" size="sm" onClick={makeResetLink} disabled={busy}>Reset link</Button>
               )}
               <Button variant="secondary" size="sm" onClick={() => setEditing(null)} disabled={busy}>Cancel</Button>
               <Button variant="primary" size="sm" type="submit" form="edit-form" loading={busy}>{busy ? 'Saving…' : 'Save changes'}</Button>
             </>
           }
         >
+          {resetLink && (
+            <div className="mb-4 flex flex-col gap-2 rounded-[8px] bg-[var(--color-surface-sunken,#F4F2EE)] p-3">
+              <div className="text-meta font-semibold">Reset link for {resetLink.email}</div>
+              <div className="text-caption text-[var(--color-ink-muted,#706D67)]">Shown once. Send it to the person directly; it works one time and expires in 60 minutes.</div>
+              <input readOnly value={resetLink.link} onFocus={e => e.currentTarget.select()} className="w-full rounded-[6px] border border-[var(--color-line,#E2DFD8)] bg-white px-2 py-1.5 font-mono text-caption" />
+              <div><Button variant="secondary" size="sm" type="button" onClick={copyResetLink}>Copy link</Button></div>
+            </div>
+          )}
           <form id="edit-form" onSubmit={submitEdit} className="flex flex-col gap-4">
             <Field label="Full name" value={editName} onChange={e => setEditName(e.target.value)} error={editErrors.fullName} />
             <Field label="Email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} error={editErrors.email} />
