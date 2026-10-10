@@ -128,6 +128,38 @@ export function lineGroupOf(l: Pick<OpenLine, "category" | "category_group">) {
 
 const db = (c: Ctx) => c.env.DB as unknown as Db;
 
+export interface SiteReceiptStamp {
+  grnId: string; companyId: number; projectId: number; supervisorStaffId: string;
+  photos: Array<{ grn_item_id: string | null; location: string | null; kind: string; r2_key: string; caption: string | null; taken_at: string | null }>;
+  lat: number | null; lng: number | null; accuracyM: number | null; locatedAt?: string | null;
+  supervisorSignatureR2Key: string; customerSignerName: string | null; customerSignatureR2Key: string | null; notes: string | null;
+}
+
+/** Marks a just-created GRN as a site receipt (POD fields + photos) in one transaction, and throws when the
+    GRN row was not stamped. The shared core inserts the GRN without a status, so it carries the column
+    default (POSTED in this schema, not DRAFT); an unstamped receipt would be posted as a warehouse receipt. */
+export async function stampSiteReceipt(d: Db, s: SiteReceiptStamp): Promise<void> {
+  const hasGps = s.lat != null && s.lng != null;
+  const [stamp] = await d.batch!([
+    d.prepare(
+      `UPDATE scm.grns SET received_at_site = true, project_id = ?, site_received_at = now(),
+              site_lat = ?, site_lng = ?, site_accuracy_m = ?, site_located_at = ${hasGps ? "coalesce(?::timestamptz, now())" : "NULL"},
+              supervisor_user_id = ?::uuid, supervisor_signature_r2_key = ?, customer_signer_name = ?, customer_signature_r2_key = ?,
+              site_notes = ?, delivery_note_ref = coalesce(delivery_note_ref, 'Site receipt'), updated_at = now()
+        WHERE id = ?::uuid AND status::text IN ('DRAFT', 'POSTED') AND company_id = ?`,
+    ).bind(s.projectId, hasGps ? s.lat : null, hasGps ? s.lng : null, hasGps ? s.accuracyM : null,
+      ...(hasGps ? [s.locatedAt ?? null] : []),
+      s.supervisorStaffId, s.supervisorSignatureR2Key, s.customerSignerName, s.customerSignatureR2Key, s.notes, s.grnId, s.companyId),
+    d.prepare(
+      `INSERT INTO scm.grn_site_photos (grn_id, grn_item_id, project_id, location, kind, r2_key, caption, taken_at, uploaded_by, company_id)
+       SELECT ?::uuid, x.grn_item_id::uuid, ?, x.location, x.kind, x.r2_key, x.caption, x.taken_at::timestamptz, ?::uuid, ?
+         FROM jsonb_to_recordset(?::text::jsonb) AS x(grn_item_id text, location text, kind text, r2_key text, caption text, taken_at text)
+        WHERE EXISTS (SELECT 1 FROM scm.grns g WHERE g.id = ?::uuid AND g.received_at_site AND g.project_id = ?)`,
+    ).bind(s.grnId, s.projectId, s.supervisorStaffId, s.companyId, JSON.stringify(s.photos), s.grnId, s.projectId),
+  ]) as Array<{ count?: number } | undefined>;
+  if (Number(stamp?.count ?? 0) !== 1) throw new Error(`site receipt stamp matched ${stamp?.count ?? 0} GRN rows`);
+}
+
 async function projectInCompany(c: Ctx, projectId: number, companyId: number): Promise<boolean> {
   const row = await db(c).prepare(`SELECT id FROM projects WHERE id = ? AND project_kind = 'renovation' AND company_id = ?`).bind(projectId, companyId).first();
   return !!row;
@@ -243,23 +275,12 @@ siteReceipts.post("/", async (c) => {
         taken_at: p.takenAt ?? null,
       }));
     try {
-      await db(c).batch!([
-        db(c).prepare(
-          `UPDATE scm.grns SET received_at_site = true, project_id = ?, site_received_at = now(),
-                  site_lat = ?, site_lng = ?, site_accuracy_m = ?, site_located_at = ${hasGps ? "coalesce(?::timestamptz, now())" : "NULL"},
-                  supervisor_user_id = ?::uuid, supervisor_signature_r2_key = ?, customer_signer_name = ?, customer_signature_r2_key = ?,
-                  site_notes = ?, delivery_note_ref = coalesce(delivery_note_ref, 'Site receipt'), updated_at = now()
-            WHERE id = ?::uuid AND status::text = 'DRAFT' AND company_id = ?`,
-        ).bind(projectId, hasGps ? Number(body.lat) : null, hasGps ? Number(body.lng) : null, hasGps ? (body.accuracyM ?? null) : null,
-          ...(hasGps ? [body.locatedAt ?? null] : []),
-          supervisorStaffId, body.supervisorSignatureR2Key, body.customerSignerName?.trim() || null, body.customerSignatureR2Key ?? null,
-          body.notes ?? null, draft.id, draft.companyId),
-        db(c).prepare(
-          `INSERT INTO scm.grn_site_photos (grn_id, grn_item_id, project_id, location, kind, r2_key, caption, taken_at, uploaded_by, company_id)
-           SELECT ?::uuid, x.grn_item_id::uuid, ?, x.location, x.kind, x.r2_key, x.caption, x.taken_at::timestamptz, ?::uuid, ?
-             FROM jsonb_to_recordset(?::text::jsonb) AS x(grn_item_id text, location text, kind text, r2_key text, caption text, taken_at text)`,
-        ).bind(draft.id, projectId, supervisorStaffId, draft.companyId, JSON.stringify(draftPhotos)),
-      ]);
+      await stampSiteReceipt(db(c), {
+        grnId: draft.id, companyId: draft.companyId, projectId, supervisorStaffId, photos: draftPhotos,
+        lat: hasGps ? Number(body.lat) : null, lng: hasGps ? Number(body.lng) : null, accuracyM: hasGps ? (body.accuracyM ?? null) : null,
+        locatedAt: hasGps ? (body.locatedAt ?? null) : undefined, supervisorSignatureR2Key: body.supervisorSignatureR2Key,
+        customerSignerName: body.customerSignerName?.trim() || null, customerSignatureR2Key: body.customerSignatureR2Key ?? null, notes: body.notes ?? null,
+      });
     } catch (e) {
       console.error("[site-receipt] POD stamp failed; removing the draft", e);
       await sb.from("grn_items").delete().eq("grn_id", draft.id);
