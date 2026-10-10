@@ -60,6 +60,9 @@ export function NumericInput(p: EngineProps) {
   const focused = useRef(false);
   const emitted = useRef<{ value: number | null } | null>(null);
   const pendingCaret = useRef<number | null>(null);
+  // Typing a character the cleaner drops (a comma, "RM") leaves the draft unchanged, so React would skip the render
+  // and the caret fix below would wait, stale, for the next keystroke. Bumping this forces that render.
+  const [, rerender] = useState(0);
 
   // Follow the value from outside (a reset, a loaded record) but never fight the user mid-edit: a change that is
   // just our own emission coming back, possibly coerced by the parent (null -> 0), waits until blur.
@@ -85,9 +88,10 @@ export function NumericInput(p: EngineProps) {
 
   function onChange(raw: string, caret: number | null) {
     const { text, notice: why } = cleanNumberText(raw, p.decimals, p.allowNegative);
-    if (text !== raw && caret != null) pendingCaret.current = caretAfterClean(raw, caret, p.decimals, p.allowNegative);
+    pendingCaret.current = text !== raw && caret != null ? caretAfterClean(raw, caret, p.decimals, p.allowNegative) : null;
     setNotice(why ? noticeText(why, p.decimals) : undefined);
     setDraft(text);
+    if (text !== raw) rerender(n => n + 1);
     emit(parseScaled(text, p.decimals));
   }
 
