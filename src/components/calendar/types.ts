@@ -7,6 +7,8 @@ export interface CalendarUnit { id: string; unitNumber: string; propertyId?: str
 export interface CalendarBlock {
   id: string; unitId: string; channel: BookingChannel; state: ReservationState;
   guestName: string; checkIn: string; checkOut: string; grossBookingValue: number; ref: string | null; reason: string | null;
+  /** Why dates are held: maintenance, owner_stay or other (blocks made from the calendar since migration 0092). */
+  blockReason?: string | null;
 }
 
 /** Shared select styling for the calendar's filter row and modals. */

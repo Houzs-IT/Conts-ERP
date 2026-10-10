@@ -1,6 +1,7 @@
-import { WEEKEND_MULTIPLIER, OTA_CHANNELS, upliftFor } from '../../_lib/channelPrice';
+import { OTA_CHANNELS, upliftFor, defaultUpliftShare } from '../../_lib/channelPrice';
 import { type Env, all, json, fail } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
+import { accessFor, canManage, refusalFor } from '../../_lib/access';
 
 /** A unit counts as on a booking site if it had a booking from it within this many days. */
 const CHANNEL_LOOKBACK_DAYS = 180;
@@ -20,7 +21,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const [allUnits, onChannel, connected] = await Promise.all([
     all<any>(env, `
-      SELECT u.id, u.unit_number, u.base_rate, u.property_id, p.name AS property_name
+      SELECT u.id, u.unit_number, u.base_rate, u.weekend_rate, u.property_id, p.name AS property_name
       FROM units u JOIN properties p ON p.id = u.property_id
       ORDER BY p.name, u.unit_number`),
     // Which booking sites each unit is on, so the board shows a rate row only for those. A connection made
@@ -53,7 +54,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const blocks = await all<any>(env, `
     SELECT r.id, r.unit_id, r.channel, r.state, r.check_in, r.check_out, r.gross_booking_value,
-           r.external_ref, r.notes, COALESCE(g.full_name, '') AS guest_name
+           r.external_ref, r.notes, r.block_reason, COALESCE(g.full_name, '') AS guest_name
     FROM reservations r
     LEFT JOIN guests g ON g.id = r.guest_id
     WHERE r.check_out > ? AND r.check_in < ? AND r.state NOT IN ('cancelled', 'no_show')${scoped('r.unit_id')}
@@ -65,6 +66,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     all<any>(env, `SELECT unit_id, rate_date, min_stay, stop_sell FROM unit_restrictions WHERE rate_date >= ? AND rate_date <= ? AND (min_stay > 1 OR stop_sell)${scoped('unit_id')}`, from, to, ...scopeArgs),
   ]);
   const upliftOf = new Map(uplifts.map(x => [`${x.unit_id}:${x.channel}`, x.uplift]));
+  // Whether this person may change prices: the same rule PUT /rates and POST /rates/bulk apply, so the board can
+  // hide Change price and Rate update instead of offering a button that answers 403.
+  const ratesAccess = await accessFor(env, session.role, '/api/rates');
+  const canSetRates = (canManage(session.role, ratesAccess) || session.role === 'operations_manager') && !refusalFor(ratesAccess, 'POST');
+  const weekendOf = (u: any) => (u.weekend_rate == null ? null : Number(u.weekend_rate));
 
   return json({
     from, to, property,
@@ -73,10 +79,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     buildings: [...buildingMap.values()],
     units: units.map(u => ({ id: u.id, unitNumber: u.unit_number, propertyId: u.property_id, propertyName: u.property_name, channels: channelsOf(u.id), linked: OTA_CHANNELS.filter(ch => connectedSet.has(`${u.id}:${ch}`)) })),
     baseRate: Object.fromEntries(units.map(u => [u.id, Number(u.base_rate)])),
-    // What a night costs on a channel when it has no price of its own: (base + that channel's uplift), times
-    // the weekend multiplier on Friday and Saturday. Same rule as the Pricing page and Channex (channelPrice.ts).
+    // What a night costs on a channel when it has no price of its own: the night's web price (weekendRate on
+    // Friday and Saturday when the unit has one, else baseRate) plus that channel's uplift. A default uplift is a
+    // share of the web price, so weekend nights carry their own (weekendUplifts). Same rule as the Pricing page
+    // and Channex (channelPrice.ts).
+    weekendRate: Object.fromEntries(units.map(u => [u.id, weekendOf(u)])),
     uplifts: Object.fromEntries(units.flatMap(u => OTA_CHANNELS.map(ch => [`${u.id}:${ch}`, upliftFor(ch, Number(u.base_rate), upliftOf.get(`${u.id}:${ch}`))]))),
-    weekendMultiplier: WEEKEND_MULTIPLIER,
+    weekendUplifts: Object.fromEntries(units.flatMap(u => OTA_CHANNELS.map(ch => [`${u.id}:${ch}`, upliftFor(ch, weekendOf(u) ?? Number(u.base_rate), upliftOf.get(`${u.id}:${ch}`))]))),
+    // For pricing new web prices in Rate update: uplifts set by hand, and the share each site adds otherwise.
+    savedUplifts: Object.fromEntries(uplifts.map(x => [`${x.unit_id}:${x.channel}`, Number(x.uplift)])),
+    upliftShares: Object.fromEntries(OTA_CHANNELS.map(ch => [ch, defaultUpliftShare(ch)])),
+    canSetRates,
     // Nights priced by hand, keyed "unitId:channel:date" (channel 'web' is the direct rate).
     rates: Object.fromEntries(rates.map(r => [`${r.unit_id}:${r.channel}:${r.rate_date}`, Number(r.rate)])),
     // Nights with a minimum stay above one or closed for sale, keyed "unitId:date".
@@ -88,6 +101,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       grossBookingValue: Number(b.gross_booking_value), ref: b.external_ref,
       // The note is already the block's name when there is no guest; sending it twice doubles the payload.
       reason: b.guest_name || b.channel !== 'maintenance_block' ? b.notes : null,
+      blockReason: b.block_reason ?? null,
     })),
   });
 };

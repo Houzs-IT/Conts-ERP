@@ -1,7 +1,7 @@
 import { type Env, one, all, run } from './db';
 import { enqueueAvailability, enqueueRestrictions } from './channexQueue';
 import { channexCreateRatePlan } from './channex';
-import { OTA_CHANNELS, standardRate, upliftFor, type SalesChannel } from './channelPrice';
+import { OTA_CHANNELS, standardRate, type SalesChannel } from './channelPrice';
 
 /** A unit's Channex listing. `ratePlans` holds one rate plan per sales channel that has one: 'web' is the
  *  direct plan (always present on a linked unit); each OTA gets its own so it can carry its own price. */
@@ -34,14 +34,13 @@ export async function ensureOtaRatePlans(env: Env, unitId: string): Promise<Chan
   const missing = OTA_CHANNELS.filter(c => !m.ratePlans[c]);
   if (!missing.length) return m;
 
-  const u = await one<{ base_rate: number; max_guests: number }>(env, 'SELECT base_rate, max_guests FROM units WHERE id = ?', unitId);
+  const u = await one<{ base_rate: number; weekend_rate: number | null; max_guests: number }>(env, 'SELECT base_rate, weekend_rate, max_guests FROM units WHERE id = ?', unitId);
   const uplifts = await all<{ channel: string; uplift: number }>(env, 'SELECT channel, uplift FROM channel_uplifts WHERE unit_id = ?', unitId);
   const today = new Date().toISOString().slice(0, 10);
   for (const channel of missing) {
-    const uplift = upliftFor(channel, Number(u?.base_rate ?? 0), uplifts.find(x => x.channel === channel)?.uplift);
     const res = await channexCreateRatePlan(env, {
       propertyId: m.propertyId, roomTypeId: m.roomTypeId, maxGuests: Math.max(1, Number(u?.max_guests) || 2),
-      rate: Math.max(1, standardRate(Number(u?.base_rate ?? 0), uplift, today)) / 100, title: OTA_PLAN_TITLE[channel],
+      rate: Math.max(1, standardRate(channel, Number(u?.base_rate ?? 0), u?.weekend_rate, uplifts.find(x => x.channel === channel)?.uplift, today)) / 100, title: OTA_PLAN_TITLE[channel],
     });
     const id = res.body?.data?.id;
     if (!res.ok || !id) throw new Error(`Channex refused the ${OTA_PLAN_TITLE[channel]} rate plan (${res.status})`);

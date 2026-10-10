@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { COMMISSION } from '../lib/pricing';
 import { color } from '../theme';
 import { channel as CH } from '../theme';
 import { Card } from '../components/Card';
@@ -27,7 +28,6 @@ const OTA: OtaChannel[] = ['airbnb', 'booking_com', 'agoda'];
 
 // Commission each platform takes off the guest price. Informational: it is what
 // turns the EXTERNAL sell price into the INTERNAL amount we actually keep.
-const COMMISSION: Record<OtaChannel, number> = { airbnb: 15, booking_com: 15, agoda: 18 };
 
 // Channels a push can target, web rate included.
 const PUSHABLE: BookingChannel[] = ['direct', 'airbnb', 'booking_com', 'agoda'];
@@ -49,21 +49,23 @@ interface Unit {
   costFloor: number;
   /** EXTERNAL. The direct/web sell price, before any channel uplift. */
   baseRate: number;
+  /** EXTERNAL. The direct/web price of a Friday or Saturday night; null sells the weekend at the base rate. */
+  weekendRate: number | null;
   rates: ChannelRate[];
 }
-interface Payload { units: Unit[]; weekendMultiplier: number; generatedAt: string }
+interface Payload { units: Unit[]; generatedAt: string }
 
 const mk = (
   unitId: string, unitNumber: string, propertyName: string,
   costFloor: number, base: number,
   uplift: [number, number, number], sync: [SyncState, SyncState, SyncState],
 ): Unit => ({
-  unitId, unitNumber, propertyName, costFloor, baseRate: base,
+  unitId, unitNumber, propertyName, costFloor, baseRate: base, weekendRate: Math.round(base * 1.22),
   rates: OTA.map((channel, i) => ({ channel, upliftSen: uplift[i], sync: sync[i] })),
 });
 
 const FALLBACK: Payload = {
-  weekendMultiplier: 1.22, generatedAt: '',
+  generatedAt: '',
   units: [
     mk('u1', '#A-12-03', 'Vista Jaya One', 11800, 28400, [3400, 5100, 4500], ['synced', 'synced', 'failed']),
     mk('u2', '#B-08-11', 'Arcoris Mont Kiara', 9900, 23100, [2800, 4200, 3700], ['synced', 'synced', 'synced']),
@@ -155,16 +157,21 @@ function Tag({ label, kind }: { label: string; kind: 'internal' | 'external' }) 
   );
 }
 
+/** A channel's Friday/Saturday price: the weekend web rate (else the base) plus the uplift. An uplift nobody set
+ *  by hand is a share of that night's web price, as the server works it out (functions/_lib/channelPrice.ts). */
+function weekendPrice(u: { baseRate: number; weekendRate: number | null }, r: { upliftSen: number; upliftShare?: number | null }) {
+  const web = u.weekendRate ?? u.baseRate;
+  return web + (r.upliftShare != null ? Math.round(web * r.upliftShare) : r.upliftSen);
+}
+
 export default function PricingPage() {
   const { data, loading, error, reload } = useApi<Payload>('/pricing/rules', FALLBACK);
   const toast = useToast();
 
   const units = data?.units ?? [];
-  const weekendMultiplier = data?.weekendMultiplier ?? 1.22;
-  const weekendPct = Math.round((weekendMultiplier - 1) * 100);
 
   // Optimistic overlays — there is no backend in dev.
-  const [unitEdits, setUnitEdits] = useState<Record<string, { baseRate?: number; costFloor?: number }>>({});
+  const [unitEdits, setUnitEdits] = useState<Record<string, { baseRate?: number; costFloor?: number; weekendRate?: number | null }>>({});
   const [upliftEdits, setUpliftEdits] = useState<Record<string, number>>({}); // key `${unitId}:${channel}`
 
   const [selectedId, setSelectedId] = useState<string | null>(readUnitId());
@@ -185,10 +192,11 @@ export default function PricingPage() {
     return {
       ...u,
       baseRate: ue?.baseRate ?? u.baseRate,
+      weekendRate: ue && 'weekendRate' in ue ? ue.weekendRate ?? null : u.weekendRate,
       costFloor: ue?.costFloor ?? u.costFloor,
       // An uplift nobody set by hand is a share of the base rate, so an edited base rate moves it too: the
       // server prices the other nights that way, and a push must send the same figure.
-      rates: u.rates.map(r => ({ ...r, upliftSen: upliftEdits[`${u.unitId}:${r.channel}`]
+      rates: u.rates.map(r => ({ ...r, upliftShare: upliftEdits[`${u.unitId}:${r.channel}`] !== undefined ? null : r.upliftShare, upliftSen: upliftEdits[`${u.unitId}:${r.channel}`]
         ?? (r.upliftShare != null && ue?.baseRate !== undefined ? Math.round(ue.baseRate * r.upliftShare) : r.upliftSen) })),
     };
   }), [units, unitEdits, upliftEdits]);
@@ -204,6 +212,13 @@ export default function PricingPage() {
     setUnitEdits(e => ({ ...e, [unitId]: { ...e[unitId], baseRate } }));
     toast({ tone: 'success', title: 'Base web rate updated.', body: 'Push to send the new rate to each connected channel.' });
     void api.put('/rates', { unitId, baseRate }).catch(notifyFailure);
+  }
+  function setWeekend(unitId: string, sen: number) {
+    // RM 0 clears it: weekend nights then sell at the base rate.
+    const weekendRate = sen > 0 ? sen : null;
+    setUnitEdits(e => ({ ...e, [unitId]: { ...e[unitId], weekendRate } }));
+    toast({ tone: 'success', title: weekendRate ? 'Weekend rate updated.' : 'Weekend rate cleared.', body: weekendRate ? 'Friday and Saturday nights without their own price use it on every channel.' : 'Friday and Saturday nights now sell at the base rate.' });
+    void api.put('/rates', { unitId, weekendRate }).catch(notifyFailure);
   }
   function setFloor(unitId: string, costFloor: number) {
     setUnitEdits(e => ({ ...e, [unitId]: { ...e[unitId], costFloor } }));
@@ -248,7 +263,7 @@ export default function PricingPage() {
     <>
       <PageHeader
         title="Pricing"
-        sub={`${plural(rows.length, 'unit')}${noRate ? ` · ${noRate} with no base rate` : ''} · weekend nights add ${weekendPct}%`}
+        sub={`${plural(rows.length, 'unit')}${noRate ? ` · ${noRate} with no base rate` : ''} · Friday and Saturday nights use each unit's weekend rate`}
       />
 
       {error && <StaleBanner message={`Showing the last rates we have. ${error}`} onRetry={reload} />}
@@ -322,6 +337,16 @@ export default function PricingPage() {
                 </div>
                 <div className="bg-card py-[14px] px-5 flex flex-col gap-1.5">
                   <div className="flex items-center gap-2">
+                    <span className="text-meta text-muted-ink">Weekend web rate</span>
+                    <Tag label="SELL" kind="external" />
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-caption text-faint">{selected.weekendRate ? 'Fri and Sat nights' : 'Not set · uses the base rate'}</span>
+                    <EditableMoney sen={selected.weekendRate ?? selected.baseRate} ariaLabel="weekend web rate" onCommit={s => setWeekend(selected.unitId, s)} />
+                  </div>
+                </div>
+                <div className="bg-card py-[14px] px-5 flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2">
                     <span className="text-meta text-muted-ink">Cost floor</span>
                     <Tag label="INTERNAL" kind="internal" />
                   </div>
@@ -336,7 +361,7 @@ export default function PricingPage() {
               <div className="sm:hidden">
                 {selected.rates.map(r => {
                   const guestPays = selected.baseRate + r.upliftSen;
-                  const weekend = Math.round(guestPays * weekendMultiplier);
+                  const weekend = weekendPrice(selected, r);
                   const commission = COMMISSION[r.channel];
                   const youKeep = Math.round(guestPays * (1 - commission / 100));
                   const belowFloor = youKeep < selected.costFloor;
@@ -380,7 +405,7 @@ export default function PricingPage() {
 
                   {selected.rates.map(r => {
                     const guestPays = selected.baseRate + r.upliftSen;
-                    const weekend = Math.round(guestPays * weekendMultiplier);
+                    const weekend = weekendPrice(selected, r);
                     const commission = COMMISSION[r.channel];
                     const youKeep = Math.round(guestPays * (1 - commission / 100));
                     const belowFloor = youKeep < selected.costFloor;
