@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -20,6 +20,8 @@ import {
   Roll, AddOwnerModal,
 } from './owners/shared';
 import { useUrlState, usePhone, ListCard, SearchBox, Chip, MonthStepper, STICKY_HEAD, shiftMonth, useFinanceFilters } from './finance/listKit';
+import { MODELS, type RevenueModel } from '../lib/revenueModel';
+import { ModelChip } from './units/ContractTab';
 
 /**
  * Owners list. Each row opens the full owner profile at `#/owners/:id`
@@ -33,20 +35,21 @@ import { useUrlState, usePhone, ListCard, SearchBox, Chip, MonthStepper, STICKY_
  * searched and sorted here, which keeps sorting by net instant.
  */
 
-const COLS = 'grid-cols-[minmax(0,1.7fr)_minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(96px,0.85fr)_minmax(104px,0.9fr)_minmax(96px,0.75fr)]';
+const COLS = 'grid-cols-[minmax(0,1.5fr)_minmax(0,1.1fr)_minmax(0,1.6fr)_minmax(96px,0.85fr)_minmax(104px,0.9fr)_minmax(96px,0.75fr)]';
 
 type SortKey = 'name' | 'units' | 'gross' | 'net';
 const SORT_KEYS: SortKey[] = ['name', 'units', 'gross', 'net'];
-type ModelFilter = '' | 'management' | 'grr' | 'none';
+type ModelFilter = '' | RevenueModel | 'none';
+const modelOf = (u: Owner['units'][number]): RevenueModel => u.revenueModel ?? (u.model === 'grr' ? 'grr' : 'management');
 
-/** Terms shown for an owner in the list. A single-unit owner reads exactly as
- *  that unit's terms; a multi-unit owner shows the shared terms when every unit
- *  matches, otherwise "Mixed" (rather than misleadingly showing only the first
- *  unit's). No units → em dash. */
+/** Terms shown for an owner in the list. A single-unit owner reads exactly as that unit's terms; an owner with
+ *  several units shows them all when they match, else how many differ, and the row opens to one line per unit
+ *  (never only the first unit's terms). No units: em dash. */
 function ownerTerms(o: Owner): string {
   if (o.units.length === 0) return '—';
   const all = o.units.map(terms);
-  return all.every(t => t === all[0]) ? all[0] : 'Mixed';
+  if (all.length === 1) return all[0];
+  return all.every(t => t === all[0]) ? `All ${all.length}: ${all[0]}` : `${new Set(all).size} different terms`;
 }
 const unitsText = (o: Owner) => o.units.length === 0 ? 'No units yet' : o.units.length === 1 ? o.units[0].unitLabel : `${o.units.length} units`;
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
@@ -58,7 +61,9 @@ export default function OwnersPage() {
   const month = /^\d{4}-\d{2}$/.test(url.get('month')) ? url.get('month') : thisMonth;
   const q = url.get('q').toLowerCase();
   const building = url.get('building');
-  const model = (['management', 'grr', 'none'].includes(url.get('model')) ? url.get('model') : '') as ModelFilter;
+  const model = ([...MODELS.map(m => m.key as string), 'none'].includes(url.get('model')) ? url.get('model') : '') as ModelFilter;
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const toggle = (id: string) => setOpen(m => ({ ...m, [id]: !m[id] }));
   const sortRaw = url.get('sort', 'name');
   const desc = sortRaw.startsWith('-');
   const sortKey: SortKey = SORT_KEYS.includes(sortRaw.replace(/^-/, '') as SortKey) ? sortRaw.replace(/^-/, '') as SortKey : 'name';
@@ -72,8 +77,7 @@ export default function OwnersPage() {
   const all = useMemo(() => data?.data ?? [], [data]);
   const counts = useMemo(() => ({
     all: all.length,
-    management: all.filter(o => o.units.some(u => u.model === 'management')).length,
-    grr: all.filter(o => o.units.some(u => u.model === 'grr')).length,
+    ...Object.fromEntries(MODELS.map(m => [m.key, all.filter(o => o.units.some(u => modelOf(u) === m.key)).length])) as Record<RevenueModel, number>,
     none: all.filter(o => o.units.length === 0).length,
   }), [all]);
 
@@ -81,7 +85,7 @@ export default function OwnersPage() {
     const list = all.filter(o =>
       (!q || o.displayName.toLowerCase().includes(q) || (o.email ?? '').toLowerCase().includes(q) || o.units.some(u => u.unitLabel.toLowerCase().includes(q))) &&
       (!building || o.units.some(u => u.buildingId === building)) &&
-      (!model || (model === 'none' ? o.units.length === 0 : o.units.some(u => u.model === model))));
+      (!model || (model === 'none' ? o.units.length === 0 : o.units.some(u => modelOf(u) === model))));
     const val = (o: Owner) => sortKey === 'units' ? o.units.length : sortKey === 'gross' ? grossOf(o) : sortKey === 'net' ? netOf(o) : 0;
     list.sort((a, b) => sortKey === 'name'
       ? a.displayName.localeCompare(b.displayName) * (desc ? -1 : 1)
@@ -138,7 +142,7 @@ export default function OwnersPage() {
           <div className="ml-auto"><MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} /></div>
         </div>
         <div className="px-[22px] pb-3 -mt-1 text-meta text-muted-ink text-pretty">
-          Managed units: revenue collected on bookings that start in the month, less the fee and owner-charged expenses. Guaranteed-rent units pay the owner their fixed monthly amount whatever the bookings bring in, so it is counted on its own and not as a share of revenue. The owner statement is the figure that is paid.
+          Each unit is worked out the way its owner statement is, by its revenue model: income split by night into the month, less the costs the owner pays, then the share, minimum or fixed rent, and owner credits and charges. Guaranteed rent is counted on its own, not as a share of revenue. Until the month's statement is final, these are estimates.
         </div>
       </Card>
 
@@ -155,8 +159,9 @@ export default function OwnersPage() {
         )}
         <div className={cx('flex gap-2', phone ? 'w-full overflow-x-auto pb-1' : 'flex-wrap')}>
           <Chip on={!model} onClick={() => url.set({ model: null })} count={counts.all}>All owners</Chip>
-          <Chip on={model === 'management'} onClick={() => url.set({ model: 'management' })} count={counts.management}>Management fee</Chip>
-          <Chip on={model === 'grr'} onClick={() => url.set({ model: 'grr' })} count={counts.grr}>Guaranteed rent</Chip>
+          {MODELS.filter(m => counts[m.key] > 0 || model === m.key).map(m => (
+            <Chip key={m.key} on={model === m.key} onClick={() => url.set({ model: m.key })} count={counts[m.key]}>{m.label}</Chip>
+          ))}
           <Chip on={model === 'none'} onClick={() => url.set({ model: 'none' })} count={counts.none}>No units</Chip>
         </div>
         {filtered && <Button size="sm" variant="tertiary" onClick={() => url.set({ q: null, building: null, model: null })}>Clear filters</Button>}
@@ -175,7 +180,9 @@ export default function OwnersPage() {
                 <span className="w-[32px] h-[32px] flex-none rounded-full bg-black text-gold grid place-items-center text-caption font-semibold">{initials(o.displayName)}</span>
                 <div className="flex flex-col gap-[2px] min-w-0 flex-1">
                   <span className="text-copy font-medium truncate" title={o.displayName}>{titleCase(o.displayName)}</span>
-                  <span className="text-meta text-muted-ink truncate" title={`${o.units.map(u => u.unitLabel).join(', ') || unitsText(o)} · ${ownerTerms(o)}`}>{unitsText(o)} · {ownerTerms(o)}</span>
+                  {o.units.length <= 1
+                    ? <span className="text-meta text-muted-ink truncate" title={`${o.units.map(u => u.unitLabel).join(', ') || unitsText(o)} · ${ownerTerms(o)}`}>{unitsText(o)} · {ownerTerms(o)}</span>
+                    : o.units.map(u => <span key={u.unitId} className="text-meta text-muted-ink truncate" title={`${u.unitLabel} · ${terms(u)}`}>{u.unitLabel.split(' ').pop()} · {terms(u)}</span>)}
                 </div>
                 <div className="flex flex-col items-end gap-[2px] shrink-0">
                   <MoneyText sen={netOf(o)} mode="exact" tone="auto" strong className="text-copy" />
@@ -197,7 +204,8 @@ export default function OwnersPage() {
               <div>Portal</div>
             </div>
             {rows.map(o => (
-              <div key={o.id} role="row" tabIndex={0} onClick={() => openProfile(o.id)} onKeyDown={e => { if (e.key === 'Enter') openProfile(o.id); }}
+              <Fragment key={o.id}>
+              <div role="row" tabIndex={0} onClick={() => openProfile(o.id)} onKeyDown={e => { if (e.key === 'Enter') openProfile(o.id); }}
                 className={cx(COLS, 'grid gap-[14px] items-center min-h-[52px] py-[7px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-page')}>
                 <div className="flex items-center gap-2.5 min-w-0">
                   <span className="w-[30px] h-[30px] flex-none rounded-full bg-black text-gold grid place-items-center text-caption font-semibold">{initials(o.displayName)}</span>
@@ -207,7 +215,15 @@ export default function OwnersPage() {
                   </div>
                 </div>
                 <span className="text-copy text-muted-ink truncate" title={o.units.map(u => u.unitLabel).join(', ')}>{unitsText(o)}</span>
-                <span className="text-copy text-muted-ink truncate" title={ownerTerms(o)}>{ownerTerms(o)}</span>
+                {o.units.length > 1 ? (
+                  <button type="button" aria-expanded={!!open[o.id]} onClick={e => { e.stopPropagation(); toggle(o.id); }} onKeyDown={e => e.stopPropagation()}
+                    className="flex items-center gap-1.5 min-w-0 p-0 bg-transparent border-none cursor-pointer [font:inherit] text-copy! text-gold-ink text-left">
+                    <Icon name={open[o.id] ? 'ChevronDown' : 'ChevronRight'} size="sm" />
+                    <span className="truncate">{ownerTerms(o)}</span>
+                  </button>
+                ) : (
+                  <span className="text-copy text-muted-ink truncate" title={ownerTerms(o)}>{ownerTerms(o)}</span>
+                )}
                 <MoneyText sen={grossOf(o)} mode="exact" tone="muted" className="text-copy text-right" />
                 <MoneyText sen={netOf(o)} mode="exact" tone="auto" className="text-copy text-right font-medium" />
                 <div className="flex items-center justify-between gap-2 min-w-0">
@@ -215,6 +231,18 @@ export default function OwnersPage() {
                   <Icon name="ChevronRight" size="sm" color="var(--color-muted-ink)" />
                 </div>
               </div>
+              {open[o.id] && o.units.map(u => (
+                <a key={u.unitId} role="row" href={`#/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`}
+                  className={cx(COLS, 'grid gap-[14px] items-center min-h-[40px] py-[5px] px-[22px] bg-page [border-bottom:1px_solid_var(--color-line-soft)] no-underline text-inherit! hover:bg-muted')}>
+                  <span />
+                  <span className="text-meta text-ink truncate pl-2" title={u.unitLabel}>{titleCase(u.unitLabel)}</span>
+                  <span className="min-w-0 truncate"><ModelChip model={modelOf(u)} label={terms(u)} /></span>
+                  <MoneyText sen={u.gross} mode="exact" tone="muted" className="text-meta text-right" />
+                  <MoneyText sen={u.net} mode="exact" tone="auto" className="text-meta text-right" />
+                  <span />
+                </a>
+              ))}
+              </Fragment>
             ))}
             <div className={cx(COLS, 'grid gap-[14px] items-center py-[12px] px-[22px] bg-page text-copy font-semibold')}>
               <span>{filtered ? `${rows.length} of ${plural(all.length, 'owner')}` : plural(rows.length, 'owner')}</span><span /><span />

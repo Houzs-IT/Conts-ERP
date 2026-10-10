@@ -8,6 +8,7 @@ import type { UnitReadiness } from '../../lib/types';
 import { READINESS } from '../../lib/vocabulary';
 import { titleCase } from '../../lib/format';
 import { READY_TONE, type Building, type Unit } from './shared';
+import { MODEL } from '../../lib/revenueModel';
 
 interface Props {
   buildings: Building[];
@@ -19,6 +20,8 @@ interface Props {
   onEditBuilding: (b: Building) => void;
   onAddUnit: (buildingId: string) => void;
   onAddSubUnit: (buildingId: string, parent: Unit) => void;
+  /** Fill the height of its pane (the Units screen's sticky left column) and scroll inside it. */
+  fill?: boolean;
 }
 
 const NO_STATE = 'State not set';
@@ -40,7 +43,7 @@ export function firstUnitId(buildings: Building[], units: Unit[]): string | unde
 /** State, then building, then unit, then sub-unit. Buildings start folded, except the one holding the open
  *  unit, so 20-odd buildings read as a short list. A search (kept in the address as ?q=) opens every
  *  building with a hit and keeps a building whose name matches, or the units in it that do. */
-export default function UnitTree({ buildings, units, selectedId, readiness, canEdit, onSelect, onEditBuilding, onAddUnit, onAddSubUnit }: Props) {
+export default function UnitTree({ buildings, units, selectedId, readiness, canEdit, onSelect, onEditBuilding, onAddUnit, onAddSubUnit, fill }: Props) {
   const [params, setParams] = useSearchParams();
   const q = params.get('q') ?? '';
   const setQ = (v: string) => setParams(p => { const n = new URLSearchParams(p); if (v) n.set('q', v); else n.delete('q'); return n; }, { replace: true });
@@ -104,8 +107,8 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
   };
 
   return (
-    <Card>
-      <div className="py-[10px] px-3 [border-bottom:1px_solid_var(--color-line)] flex flex-col gap-2">
+    <Card style={fill ? { height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 } : undefined}>
+      <div className="py-[10px] px-3 [border-bottom:1px_solid_var(--color-line)] flex flex-col gap-2 flex-none">
         <div className="relative flex items-center">
           <span className="absolute left-[10px] text-muted-ink flex pointer-events-none"><Icon name="Search" size="sm" /></span>
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search code, listing, owner, building" aria-label="Search units"
@@ -127,7 +130,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
           )}
         </div>
       </div>
-      <div ref={listRef} className="relative max-h-[68vh] overflow-y-auto overscroll-contain [scrollbar-width:thin]">
+      <div ref={listRef} className={cx('relative overflow-y-auto overscroll-contain [scrollbar-width:thin]', fill ? 'flex-1 min-h-0' : 'max-h-[68vh]')}>
         {shownGroups.length === 0 && <div className="p-6 text-center text-copy text-muted-ink">{needle ? 'Nothing matches that search.' : 'No buildings yet.'}</div>}
         {shownGroups.map(([state, list]) => (
           <div key={state}>
@@ -172,7 +175,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                               <span className={cx('block text-copy whitespace-nowrap overflow-hidden text-ellipsis', on ? 'font-semibold' : 'font-medium')}>{u.unitCode || 'New unit'}</span>
                               <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName ? titleCase(u.ownerName) : 'No owner yet'}{kids.length ? ` · ${kids.length} sub-unit${kids.length > 1 ? 's' : ''}` : ''}</span>
                             </span>
-                            <span className="text-caption font-bold text-gold-ink flex-none">{u.pkg.replace('Package ', 'Pkg ')}</span>
+                            <span className="text-caption font-bold text-gold-ink flex-none" title={u.termsLabel ?? (u.revenueModel ? MODEL[u.revenueModel].label : u.pkg)}>{u.revenueModel ? MODEL[u.revenueModel].short : u.pkg.replace('Package ', 'Pkg ')}</span>
                           </button>
                           {canEdit && (
                             <button onClick={() => onAddSubUnit(b.id, u)} aria-label={`Add a sub-unit under ${u.unitCode || 'this unit'}`} title="Add sub-unit"

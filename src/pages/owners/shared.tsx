@@ -10,6 +10,7 @@ import { Select, SearchSelect } from '../../components/Select';
 import { cx } from '../../lib/design-tokens';
 import { STATEMENT } from '../../lib/vocabulary';
 import type { StatementState } from '../../lib/types';
+import type { RevenueModel } from '../../lib/revenueModel';
 
 /**
  * Shared owner-side building blocks. Extracted verbatim from OwnersPage so the
@@ -23,10 +24,16 @@ export type FeeModel = 'management' | 'grr';
  *  owner as a default, or the system fallback (25%). */
 export type FeeSource = 'unit' | 'owner-default' | 'fallback';
 
+export interface UnitFigures {
+  income: number; costs: number; operatorShare: number; guarantee: number; topUp: number; fixedRent: number;
+  payoutBeforeAdjustments: number; adjustments: number; netPayout: number; nights: number; costLines: { label: string; amount: number }[];
+}
 export interface UnitLine {
   unitId: string; unitLabel: string; model: FeeModel; feePct?: number; grrAmount?: number;
   feeSource?: FeeSource; buildingId?: string;
   occupancy: number; adr: number; gross: number; net: number;
+  /** The five revenue models (0093) and short terms; figures are the statement engine's for the month (money roles). */
+  revenueModel?: RevenueModel; termsLabel?: string; figures?: UnitFigures;
 }
 export interface Owner {
   id: string; displayName: string; email: string; phone: string | null; ic: string | null;
@@ -37,6 +44,8 @@ export interface Owner {
   /** Owner-level default management fee, applied to units with no per-unit override. Null = none set. */
   defaultManagementFeePct: number | null;
   contract: { feePct: number; startedOn: string; renewsOn: string | null; endsOn?: string | null } | null;
+  /** The owner's statement for the month asked for, if generated. */
+  statement?: { id: string; state: StatementState } | null;
   units: UnitLine[];
 }
 export interface Payload { data: Owner[]; generatedAt: string; month?: string }
@@ -68,7 +77,7 @@ export const guaranteedOf = (o: Owner) => o.units.reduce((s, u) => s + (u.model 
 export const managedGrossOf = (o: Owner) => o.units.reduce((s, u) => s + (u.model === 'grr' ? 0 : u.gross), 0);
 export const managedNetOf = (o: Owner) => o.units.reduce((s, u) => s + (u.model === 'grr' ? 0 : u.net), 0);
 // Exact, because terms sit beside owner money (net payout, P&L) that is shown with sen.
-export const terms = (u: UnitLine) => u.model === 'grr' ? `GRR ${rm(u.grrAmount ?? 0)}/mo` : `${u.feePct ?? 0}% fee`;
+export const terms = (u: UnitLine) => u.termsLabel ?? (u.model === 'grr' ? `GRR ${rm(u.grrAmount ?? 0)}/mo` : `${u.feePct ?? 0}% fee`);
 
 // One statement per past period, combined across all of an owner's units.
 export interface OwnerStatement { id: string; period: string; grossBookingValue: number; netPayout: number; state: StatementState }

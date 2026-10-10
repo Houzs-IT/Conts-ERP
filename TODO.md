@@ -40,6 +40,14 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Before production: a database role for the engine that cannot read schema `pos` (local testing uses the admin connection); reference data the screens need (dropdown options, categories, warehouses) entered or agreed with the owner.
 - Open with the owner: does Conts use AutoCount; which Houzs modules Conts does not need (accounting ledger, consignment, HR commission, POS).
 
+## Operations (Cleaning / Maintenance rework, feat/b1-ops)
+- Migration 0090 (guest_left_at, task_checklist_items, maintenance category/urgency/source/assignee kind, maintenance_windows) must be applied on staging, then production, before this ships.
+- A finished clean now charges its unit (cleaning expense, owner pays). While the owner workbook is still imported, a clean recorded in both could be charged twice if the workbook row is imported after the system clean; chargeClean skips a unit that already has a cleaning expense that day, the import does not check the other way.
+- Demo walkthrough data: scripts/demo-ops-seed.mjs (--apply --confirm=<ref>, --remove); not run on staging or production yet.
+- Calendar block made from "Block unit until fixed" is not removed when the job is done; remove it on the Calendar.
+- Videos are capped at 50 MB per file (Workers request memory); longer clips need direct-to-R2 upload.
+- `text-critical` / `text-warning` / `text-success` / `text-info` render the pale tint, not the text colour (tokens.css redefines --color-critical etc. as the tint); the new ops screens use the -fg tokens, other pages still use the classes.
+
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.
@@ -157,3 +165,15 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner questions, contract defaults in use: typed amount allowed when it differs from measure x rate (flagged *); rounding per line to the sen; QT-YYMM-NNN; PO split 30/65/5; credit note to the sales-return account; supply-by-owner goods get no PO; promotion column = unit price.
 - Not yet observed on a running engine: SKU photo upload through R2, phone site receipt submit, revenue and credit-note journals, the PO payment-schedule card; scripts/api-checks/renovation-project.mjs is written but not yet run.
 - Site receipt POST goes through the REST goods-receipt core and counts toward the free plan's 50 outside calls per request. Engine ESLint cannot run in Conts (engine/scripts/eslint and lint-ratchet.mjs were not copied).
+
+## Owners and revenue models (batch 4, 10 Oct)
+- Migration 0093 (revenue_model, contract history, receipts, Indah Water category) is not applied to staging or production yet; apply after the PR merges, dry-run first.
+- Long-term let units still show on the calendar and stay on channels: hiding them is the calendar's job (batch 3), not done here.
+- The sidebar still says "Adjustments" where it means owner credits and charges, if anywhere: navigation belongs to batch 1.
+- Expense receipt upload checked through the API only (document kind 'receipt', expenses.receipt_document_id); the file picker in the Record expense form was not clicked through in a browser.
+- 26 units with no contract record still run on their own split (units.split_kind); saving their Contract tab creates the contract.
+## Calendar and rates (b3, 10 Oct)
+- Migration 0092 (units.weekend_rate, reservations.block_reason) is not yet applied to staging or production. It backfills weekend_rate = round(base_rate x 1.22) for every priced unit so live Fri/Sat prices do not move; units created later sell the weekend at the base rate until a weekend rate is set (Pricing page).
+- Channex full sync (functions/_lib/channexQueue.ts) still counts inquiries as taken nights; the board and the clash check do not. Decide whether an inquiry should close the nights on the booking sites.
+- The booking drawer (src/components/booking) still offers Change dates on Airbnb / Booking.com / Agoda bookings; the board now refuses dragging them.
+- Rate update lists the units on the board, so with one building filtered it offers only that building; open it with All buildings to price across buildings.

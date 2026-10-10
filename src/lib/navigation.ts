@@ -34,12 +34,12 @@ export const NAV: NavGroup[] = [
     { key: 'guests', label: 'Guests', icon: 'users', path: '/reservations/guests', area: 'reservations' },
     { key: 'inbox', label: 'Inbox', icon: 'inbox', path: '/communication/inbox', area: 'comms', badge: 'inbox' },
   ] },
+  // Three screens (owner, 10 Oct): Inspections is gone and "All tasks" is the History tab of Cleaning and
+  // Maintenance; the old addresses redirect (App.tsx). Housekeeping is called Cleaning everywhere.
   { label: 'OPERATIONS', workspace: 'rental', items: [
     { key: 'today', label: 'Today', icon: 'clipboard-check', path: '/operations/today', area: 'operations', badge: 'today' },
-    { key: 'housekeeping', label: 'Housekeeping', icon: 'sparkles', path: '/operations/housekeeping', area: 'operations' },
+    { key: 'cleaning', label: 'Cleaning', icon: 'sparkles', path: '/operations/cleaning', area: 'operations' },
     { key: 'maintenance', label: 'Maintenance', icon: 'wrench', path: '/operations/maintenance', area: 'operations', badge: 'maintenance' },
-    { key: 'inspections', label: 'Inspections', icon: 'clipboard-list', path: '/operations/inspections', area: 'operations' },
-    { key: 'tasks', label: 'All tasks', icon: 'list-checks', path: '/operations/tasks', area: 'operations' },
   ] },
   { label: 'PROPERTIES', workspace: 'rental', items: [
     // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).

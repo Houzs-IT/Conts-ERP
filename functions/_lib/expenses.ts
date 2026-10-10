@@ -1,7 +1,9 @@
 import { type Env, one } from './db';
 
-export const EXPENSE_CATEGORIES = ['internet', 'electricity', 'water', 'cleaning', 'housekeeping', 'maintenance', 'utilities', 'consumables', 'furniture', 'management_fee', 'channel_fee', 'other'];
-export const CHARGE_TO = ['owner', 'guest_deposit', 'the_conts', 'warranty'];
+export const EXPENSE_CATEGORIES = ['internet', 'electricity', 'water', 'sewerage', 'cleaning', 'housekeeping', 'maintenance', 'utilities', 'consumables', 'furniture', 'management_fee', 'channel_fee', 'other'];
+/** Who pays an expense ("Paid by" on screen). Only 'owner' reaches the owner statement; the rest stay in the unit's
+ *  own profit and loss. owner = Owner (via statement), the_conts = Company, tenant = Tenant, guest_deposit = Guest. */
+export const CHARGE_TO = ['owner', 'the_conts', 'tenant', 'guest_deposit', 'warranty'];
 
 /** SQL: true when an owner statement covering this expense's date has been finalised, sent or paid.
  *  Alias `e` is the expense and `u` its unit. */

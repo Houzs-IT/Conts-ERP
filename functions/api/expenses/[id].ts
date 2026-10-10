@@ -16,7 +16,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b.category !== undefined && !EXPENSE_CATEGORIES.includes(b.category)) fields.category = 'Choose a category.';
   if (b.amount !== undefined && (!Number.isInteger(b.amount) || b.amount < 0)) fields.amount = 'Enter an amount of RM 0.00 or more.';
   if (b.incurredOn !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.incurredOn))) fields.incurredOn = 'A date is required.';
-  if (b.chargeTo !== undefined && !CHARGE_TO.includes(b.chargeTo)) fields.chargeTo = 'Choose who is charged.';
+  if (b.chargeTo !== undefined && !CHARGE_TO.includes(b.chargeTo)) fields.chargeTo = 'Choose who pays.';
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the highlighted fields.', 422, fields);
 
   const cur = await one<any>(env, 'SELECT id, unit_id, category, amount, incurred_on, description, reference, charge_to FROM expenses WHERE id = ?', id);
@@ -31,7 +31,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     typeof b.reference === 'string' ? b.reference : null, b.chargeTo ?? null, id);
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'expense.update', entityTable: 'expenses', entityId: id,
-    before: { category: cur.category, amount: cur.amount, incurredOn: cur.incurred_on }, after: { category: b.category ?? cur.category, amount: b.amount ?? cur.amount, incurredOn: b.incurredOn ?? cur.incurred_on },
+    before: { category: cur.category, amount: cur.amount, incurredOn: cur.incurred_on, chargeTo: cur.charge_to },
+    after: { category: b.category ?? cur.category, amount: b.amount ?? cur.amount, incurredOn: b.incurredOn ?? cur.incurred_on, chargeTo: b.chargeTo ?? cur.charge_to },
   });
   return json({ ok: true });
 };
