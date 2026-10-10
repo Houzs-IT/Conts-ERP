@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -158,7 +159,7 @@ function StatusPill({ status }: { status: Status }) {
 
 /* ---------- receive (create) drawer ---------- */
 
-interface RcvLine { poLineId: string; itemCode: string; description: string; uom: string; ordered: number; already: number; unitPriceSen: number; receive: string; accepted: string }
+interface RcvLine { poLineId: string; itemCode: string; description: string; uom: string; ordered: number; already: number; unitPriceSen: number; receive: number | null; accepted: number | null }
 
 function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: OpenPo[]; canWrite: boolean; onClose: () => void; onCreated: (g: Grn) => void }) {
   const [poId, setPoId] = useState('');
@@ -177,16 +178,22 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
     if (!poLines) { try { const r = await api.get<{ data: { lines: PoLine[] } }>(`/purchase-orders/${id}`); poLines = r.data.lines; } catch { poLines = []; } }
     setLines((poLines ?? []).filter(l => l.qty - l.receivedQty > 0).map(l => {
       const outstanding = l.qty - l.receivedQty;
-      return { poLineId: l.id, itemCode: l.itemCode, description: l.description, uom: l.uom, ordered: l.qty, already: l.receivedQty, unitPriceSen: l.unitPriceSen, receive: String(outstanding), accepted: String(outstanding) };
+      return { poLineId: l.id, itemCode: l.itemCode, description: l.description, uom: l.uom, ordered: l.qty, already: l.receivedQty, unitPriceSen: l.unitPriceSen, receive: outstanding, accepted: outstanding };
     }));
   }
 
-  const willReceive = lines.filter(l => (Number(l.receive) || 0) > 0);
-  const total = willReceive.reduce((s, l) => s + (Number(l.accepted) || 0) * l.unitPriceSen, 0);
+  const willReceive = lines.filter(l => (l.receive ?? 0) > 0);
+  const total = willReceive.reduce((s, l) => s + (l.accepted ?? 0) * l.unitPriceSen, 0);
   const canSave = canWrite && poId !== '' && willReceive.length > 0;
+  const [tried, setTried] = useState(false);
+  const today = new Date().toISOString().slice(0, 10);
+  const dateError = tried && !receivedAt ? 'Required.' : undefined;
+  const acceptError = (l: RcvLine) => (tried && (l.receive ?? 0) > 0 && l.accepted == null ? 'Required.' : undefined);
 
   function submit() {
-    const payloadLines = willReceive.map(l => ({ purchaseOrderLineId: l.poLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qtyReceived: Number(l.receive) || 0, qtyAccepted: Math.min(Number(l.receive) || 0, Number(l.accepted) || 0) }));
+    setTried(true);
+    if (!receivedAt || receivedAt > today || willReceive.some(l => l.accepted == null || l.accepted > (l.receive ?? 0))) return;
+    const payloadLines = willReceive.map(l => ({ purchaseOrderLineId: l.poLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qtyReceived: l.receive ?? 0, qtyAccepted: l.accepted ?? 0 }));
     api.post('/goods-receipts', { purchaseOrderId: poId, receivedAt, deliveryNoteRef: dnRef, notes, warehouseId: warehouseId || undefined, lines: payloadLines }).catch(notifyFailure);
     onCreated({
       id: `grn-new-${crypto.randomUUID().slice(0, 8)}`, grnNumber: `GRN-${new Date().getFullYear()}-NEW`, poNumber: po?.poNumber ?? '', purchaseOrderId: poId,
@@ -211,7 +218,7 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
               {openPos.map(p => <option key={p.id} value={p.id}>{p.poNumber} · {p.supplierName}</option>)}
             </select>
           </div>
-          <Field label="Received date" type="date" value={receivedAt} onChange={e => setReceivedAt(e.target.value)} />
+          <DateField label="Received date" required max={today} value={receivedAt} onChange={setReceivedAt} error={dateError} />
           <Field label="Delivery note ref" placeholder="Optional" value={dnRef} onChange={e => setDnRef(e.target.value)} />
           <div className="flex flex-col gap-[7px]">
             <label className="text-[12px] font-medium text-muted-ink">Receive into warehouse</label>
@@ -241,8 +248,8 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.ordered}</td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px] text-muted-ink">{l.already}</td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.ordered - l.already}</td>
-                      <td className="py-2 px-3 text-right"><NumCell value={l.receive} onChange={v => setLines(ls => ls.map((x, j) => j === i ? { ...x, receive: v } : x))} /></td>
-                      <td className="py-2 px-3 text-right"><NumCell value={l.accepted} onChange={v => setLines(ls => ls.map((x, j) => j === i ? { ...x, accepted: v } : x))} /></td>
+                      <td className="py-2 px-3 text-right"><NumCell label="Receive now" value={l.receive} onChange={v => setLines(ls => ls.map((x, j) => j === i ? { ...x, receive: v } : x))} /></td>
+                      <td className="py-2 px-3 text-right"><NumCell label="Accept" value={l.accepted} max={l.receive ?? 0} error={acceptError(l)} onChange={v => setLines(ls => ls.map((x, j) => j === i ? { ...x, accepted: v } : x))} /></td>
                     </tr>
                   ))}
                 </tbody>
@@ -264,8 +271,8 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
   );
 }
 
-function NumCell({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return <input type="number" min={0} value={value} onChange={e => onChange(e.target.value)}
+function NumCell({ label, value, onChange, max, error }: { label: string; value: number | null; onChange: (v: number | null) => void; max?: number; error?: string }) {
+  return <NumberInput aria-label={label} min={0} max={max} error={error} value={value} onChange={onChange}
     className="h-8 w-[80px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" />;
 }
 

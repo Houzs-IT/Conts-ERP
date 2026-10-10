@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Drawer } from '../components/Dialog';
+import { DateField } from '../components/inputs';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
@@ -49,7 +50,7 @@ export default function LoadingListPage() {
             {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}
           </select>
           <label className="text-[12px] font-medium text-muted-ink ml-2">Date</label>
-          <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" />
+          <DateField aria-label="Date" value={dateFilter} onChange={setDateFilter} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" />
         </div>
         <div className="flex items-baseline gap-2.5">
           <span className="text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink">Units to load</span>

@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { MoneyInput, NumberInput, PhoneInput, phoneProblem } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -49,11 +50,8 @@ const FALLBACK: Payload = {
   ],
 };
 
-const senToRm = (sen: number | null | undefined) => (sen == null ? '' : String(sen / 100));
-const rmToSen = (v: string): number => { const n = Number(v); return v.trim() && Number.isFinite(n) ? Math.round(n * 100) : 0; };
-
-type Draft = Omit<Supplier, 'creditLimitSen'> & { creditLimit: string };
-const toDraft = (s: Supplier): Draft => ({ ...s, creditLimit: senToRm(s.creditLimitSen) });
+type Draft = Omit<Supplier, 'creditLimitSen' | 'rating'> & { creditLimitSen: number | null; rating: number | null };
+const toDraft = (s: Supplier): Draft => s;
 const emptyDraft = (): Draft => toDraft(S({ id: '', code: '', name: '' }));
 
 export default function SuppliersPage() {
@@ -82,16 +80,15 @@ export default function SuppliersPage() {
   );
 
   function save(draft: Draft, isNew: boolean) {
-    const { creditLimit, ...rest } = draft;
-    const body = { ...rest, creditLimitSen: rmToSen(creditLimit) };
+    const body = { ...draft, creditLimitSen: draft.creditLimitSen ?? 0, rating: draft.rating ?? 0 };
     if (isNew) {
       const local = S({ ...body, id: `sup-new-${crypto.randomUUID().slice(0, 8)}` });
       setAdded(a => [local, ...a]);
       api.post('/suppliers', body).catch(notifyFailure);
       toast({ tone: 'success', title: 'Supplier added.', body: `${body.code} ${body.name}` });
     } else {
-      setEdits(e => ({ ...e, [rest.id]: { ...e[rest.id], ...body } }));
-      api.patch(`/suppliers/${rest.id}`, body).catch(notifyFailure);
+      setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...body } }));
+      api.patch(`/suppliers/${draft.id}`, body).catch(notifyFailure);
       toast({ tone: 'success', title: 'Supplier updated.', body: `${body.code} ${body.name}` });
     }
     setDrawer(null);
@@ -198,7 +195,18 @@ function StatusPill({ status }: { status: Status }) {
 function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Draft; isNew: boolean; onClose: () => void; onSave: (d: Draft, isNew: boolean) => void; onDelete?: () => void }) {
   const [f, setF] = useState<Draft>(draft);
   const set = <K extends keyof Draft>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value as Draft[K] }));
+  const setPhone = (k: 'phone' | 'mobile' | 'whatsappNumber') => (v: string) => setF(s => ({ ...s, [k]: v }));
   const canSave = f.code.trim() !== '' && f.name.trim() !== '';
+  const [tried, setTried] = useState(false);
+  const ratingError = tried && f.rating != null && (f.rating < 0 || f.rating > 5) ? 'Must be 0 to 5.' : undefined;
+  const phoneError = (v: string) => (tried ? phoneProblem(v) : undefined);
+
+  function submit() {
+    setTried(true);
+    const ratingBad = f.rating != null && (f.rating < 0 || f.rating > 5);
+    if (ratingBad || [f.phone, f.mobile, f.whatsappNumber].some(v => phoneProblem(v))) return;
+    onSave(f, isNew);
+  }
 
   return (
     <Drawer open onClose={onClose} width={680}>
@@ -218,9 +226,9 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
         <Section title="Contact">
           <Field label="Contact person" value={f.contactPerson} onChange={set('contactPerson')} />
           <Field label="Attention" value={f.attention} onChange={set('attention')} />
-          <Field label="Phone" value={f.phone} onChange={set('phone')} />
-          <Field label="Mobile" value={f.mobile} onChange={set('mobile')} />
-          <Field label="WhatsApp" value={f.whatsappNumber} onChange={set('whatsappNumber')} />
+          <PhoneInput label="Phone" value={f.phone} onChange={setPhone('phone')} error={phoneError(f.phone)} />
+          <PhoneInput label="Mobile" value={f.mobile} onChange={setPhone('mobile')} error={phoneError(f.mobile)} />
+          <PhoneInput label="WhatsApp" value={f.whatsappNumber} onChange={setPhone('whatsappNumber')} error={phoneError(f.whatsappNumber)} />
           <Field label="Fax" value={f.fax} onChange={set('fax')} />
           <Field label="Email" type="email" value={f.email} onChange={set('email')} />
           <Field label="Website" value={f.website} onChange={set('website')} />
@@ -234,11 +242,11 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
         </Section>
         <Section title="Terms & finance">
           <Field label="Payment terms" placeholder="e.g. 30 days" value={f.paymentTerms} onChange={set('paymentTerms')} />
-          <Field label="Credit limit (RM)" type="number" numeric step="0.01" placeholder="0.00" value={f.creditLimit} onChange={set('creditLimit')} />
+          <MoneyInput label="Credit limit (RM)" valueSen={f.creditLimitSen} onChangeSen={v => setF(s => ({ ...s, creditLimitSen: v }))} />
           <Field label="Currency" value={f.currency} onChange={set('currency')} />
           <Field label="Statement type" value={f.statementType} onChange={set('statementType')} />
           <Field label="Aging basis" value={f.agingBasis} onChange={set('agingBasis')} />
-          <Field label="Rating (0–5)" type="number" numeric step="1" min={0} max={5} value={String(f.rating)} onChange={e => setF(s => ({ ...s, rating: Math.max(0, Math.min(5, Math.round(Number(e.target.value) || 0))) }))} />
+          <NumberInput label="Rating (0–5)" min={0} max={5} value={f.rating} onChange={v => setF(s => ({ ...s, rating: v }))} error={ratingError} />
           <Field label="TIN number" value={f.tinNumber} onChange={set('tinNumber')} />
           <Field label="Business reg. no" value={f.businessRegNo} onChange={set('businessRegNo')} />
           <div className="col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
@@ -248,7 +256,7 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
         <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name first" onClick={() => onSave(f, isNew)}>{isNew ? 'Create supplier' : 'Save'}</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name first" onClick={submit}>{isNew ? 'Create supplier' : 'Save'}</Button>
         </div>
       </div>
     </Drawer>

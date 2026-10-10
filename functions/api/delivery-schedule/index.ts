@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { isScheduleStatus, isTimeSlot, toSchedulePayload, type ScheduleRow } from '../../_lib/delivery-schedule';
 import { strOrNull, genId } from '../../_lib/scm-util';
+import { checkDate, invalid, type Fields } from '../../_lib/validate';
 
 const LIST_SQL = `
   SELECT s.id, s.sales_order_id, s.so_doc_no, s.customer_name, s.address, s.zone, s.planned_date, s.time_slot, s.planned_time,
@@ -36,6 +37,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can schedule deliveries.', 403);
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkDate(fields, 'plannedDate', b.plannedDate, { label: 'Planned date' });
+  const bad = invalid(fields); if (bad) return bad;
   const soId = String(b.salesOrderId ?? '').trim();
   const so = await one<{ id: string; doc_no: string; customer_name: string; status: string }>(env, 'SELECT id, doc_no, customer_name, status FROM sales_orders WHERE id = ?', soId);
   if (!so) return fail('VALIDATION', 'Pick a sales order.', 422, { salesOrderId: 'Unknown sales order.' });

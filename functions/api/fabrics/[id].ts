@@ -1,6 +1,7 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { strOrNull, intOrNull, flag } from '../../_lib/scm-util';
+import { checkSen, checkInt, invalid, type Fields } from '../../_lib/validate';
 
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
@@ -9,6 +10,10 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const id = String(params.id);
   if (!await one(env, 'SELECT 1 AS x FROM fabric_library WHERE id = ?', id)) return fail('NOT_FOUND', 'That fabric does not exist.', 404);
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkSen(fields, 'defaultSurchargeSen', b.defaultSurchargeSen, { label: 'Surcharge' });
+  checkInt(fields, 'sortOrder', b.sortOrder, { label: 'Sort order' });
+  const bad = invalid(fields); if (bad) return bad;
   const sets: string[] = []; const args: unknown[] = [];
   if (b.label !== undefined) { const l = String(b.label).trim(); if (!l) return fail('VALIDATION', 'Enter a label.', 422, { label: 'Enter a label.' }); sets.push('label = ?'); args.push(l); }
   if (b.fabricCode !== undefined) { sets.push('fabric_code = ?'); args.push(strOrNull(b.fabricCode)); }

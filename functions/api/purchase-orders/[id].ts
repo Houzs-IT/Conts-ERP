@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { normalizeLines, toPoHeaderPayload, toPoLinePayload, type PoHeaderRow, type PoLineRow } from '../../_lib/purchase-orders';
+import { normalizeLines, toPoHeaderPayload, toPoLinePayload, checkPricedBody, type PoHeaderRow, type PoLineRow } from '../../_lib/purchase-orders';
+import { invalid, type Fields } from '../../_lib/validate';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
 const HEADER_SQL = `
@@ -46,6 +47,10 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   // Edit (header + optional line replacement) — only while SUBMITTED.
   if (cur.status !== 'SUBMITTED') return fail('CONFLICT', 'Only a submitted purchase order can be edited.', 409);
+
+  const fields: Fields = {};
+  checkPricedBody(fields, b, 'poDate', 'PO date');
+  const bad = invalid(fields); if (bad) return bad;
 
   const sets: string[] = [];
   const args: unknown[] = [];

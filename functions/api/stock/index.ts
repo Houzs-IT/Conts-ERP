@@ -3,6 +3,7 @@ import { requireSession } from '../../_lib/auth';
 import { toOnHandPayload, type OnHandRow } from '../../_lib/stock';
 import { onHandOf } from '../../_lib/stock-ops';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
+import { checkInt, invalid, type Fields } from '../../_lib/validate';
 
 /** GET /api/stock?warehouseId=&search= — on-hand per item + warehouse (running sum of moves). */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -37,6 +38,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const itemCode = String(b.itemCode ?? '').trim();
   const warehouseId = String(b.warehouseId ?? '').trim();
+  const fields: Fields = {};
+  checkInt(fields, 'qtyDelta', b.qtyDelta, { label: 'Quantity change' });
+  const bad = invalid(fields); if (bad) return bad;
   const qtyDelta = intOrNull(b.qtyDelta) ?? 0;
   if (!itemCode) return fail('VALIDATION', 'Enter an item code.', 422, { itemCode: 'Enter an item code.' });
   if (!warehouseId || !await one(env, 'SELECT 1 AS x FROM warehouses WHERE id = ?', warehouseId)) return fail('VALIDATION', 'Pick a warehouse.', 422, { warehouseId: 'Unknown warehouse.' });

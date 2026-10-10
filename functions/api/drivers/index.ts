@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { invalidDriver, toDriverPayload, type DriverRow } from '../../_lib/transport';
 import { strOrNull, flag, genId } from '../../_lib/scm-util';
+import { checkPhone, invalid, type Fields } from '../../_lib/validate';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -17,6 +18,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const bad = invalidDriver(b);
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
+  const fields: Fields = {};
+  checkPhone(fields, 'phone', b.phone, { label: 'Phone' });
+  const badPhone = invalid(fields); if (badPhone) return badPhone;
   const code = (b.driverCode as string).trim();
   if (await one(env, 'SELECT 1 AS x FROM drivers WHERE lower(driver_code) = lower(?)', code)) return fail('CONFLICT', 'A driver with this code already exists.', 409, { driverCode: 'This code is already used.' });
   const id = genId('drv');

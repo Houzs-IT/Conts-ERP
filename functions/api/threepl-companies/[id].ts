@@ -2,6 +2,7 @@ import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { toThreePlPayload, type ThreePlRow } from '../../_lib/threepl-companies';
 import { strOrNull, flag } from '../../_lib/scm-util';
+import { checkPhone, invalid, type Fields } from '../../_lib/validate';
 
 const COLS = 'id, code, name, registration_no, contact_name, contact_phone, office_phone, email, address, is_active, notes';
 
@@ -20,6 +21,10 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const id = String(params.id);
   if (!await one(env, 'SELECT 1 AS x FROM threepl_companies WHERE id = ?', id)) return fail('NOT_FOUND', 'That 3PL company does not exist.', 404);
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkPhone(fields, 'contactPhone', b.contactPhone, { label: 'Contact phone' });
+  checkPhone(fields, 'officePhone', b.officePhone, { label: 'Office phone' });
+  const bad = invalid(fields); if (bad) return bad;
   const sets: string[] = []; const args: unknown[] = [];
   const setStr = (col: string, k: string) => { if (b[k] !== undefined) { sets.push(`${col} = ?`); args.push(strOrNull(b[k])); } };
   if (b.name !== undefined) { const n = String(b.name).trim(); if (!n) return fail('VALIDATION', 'Enter a name.', 422, { name: 'Enter a name.' }); sets.push('name = ?'); args.push(n); }

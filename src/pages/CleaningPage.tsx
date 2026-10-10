@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { DateField } from '../components/inputs';
 import Icon from '../components/Icon';
 import { Select, SearchSelect, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
@@ -171,7 +172,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
       <div className="flex items-end gap-2 flex-wrap">
         <Segmented label="Day" value={pick} onChange={setPick}
           options={[{ value: 'today', label: 'Today' }, { value: 'tomorrow', label: 'Tomorrow' }, { value: 'pick', label: 'Pick date' }]} />
-        {pick === 'pick' && <input type="date" aria-label="Day" value={picked} onChange={e => e.target.value && setPicked(e.target.value)} className={cx(INPUT, 'h-9 w-auto')} />}
+        {pick === 'pick' && <DateField aria-label="Day" value={picked} onChange={v => v && setPicked(v)} className={cx(INPUT, 'h-9 w-auto')} />}
         <Select label="Cleaner" value={cleaner} onChange={setCleaner} options={cleanerOptions} placeholder="All cleaners" className="flex-1 min-w-[140px] md:flex-none md:w-[160px]" />
         <Select label="Building" value={building} onChange={setBuilding} options={buildingOptions} placeholder="All buildings" className="flex-1 min-w-[140px] md:flex-none md:w-[180px]" />
         {visibleDepartures.length > 0 && (
@@ -466,7 +467,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
         <SearchSelect label="Unit" value={unitId} onChange={setUnitId} options={unitOptions} placeholder="Search units" size="md" />
       </FormRow>
       <div className="grid grid-cols-2 gap-3">
-        <FormRow label="Day"><input type="date" className={INPUT} value={day} onChange={e => e.target.value && setDay(e.target.value)} /></FormRow>
+        <FormRow label="Day"><DateField aria-label="Day" className={INPUT} value={day} onChange={v => v && setDay(v)} /></FormRow>
         <FormRow label="Type">
           <select className={INPUT} value={kind} onChange={e => setKind(e.target.value)}>
             <option value="turnover">Standard</option><option value="deep_clean">Deep</option><option value="light_clean">Light</option>
@@ -543,8 +544,8 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
       <div className="flex items-end gap-2 flex-wrap">
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit or building" aria-label="Search" className={cx(INPUT, 'h-9 w-[220px]')} />
         <Select label="Cleaner" value={cleaner} onChange={v => { setCleaner(v); setPage(1); }} options={cleaners.map(c => ({ value: c.id, label: c.name }))} placeholder="All cleaners" className="flex-1 min-w-[140px] md:flex-none md:w-[160px]" />
-        <label className="flex items-center gap-1.5 text-meta text-muted-ink">From <input type="date" value={from} onChange={e => { if (e.target.value) { setFrom(e.target.value); setPage(1); } }} className={cx(INPUT, 'h-9 w-auto')} /></label>
-        <label className="flex items-center gap-1.5 text-meta text-muted-ink">To <input type="date" value={to} onChange={e => { if (e.target.value) { setTo(e.target.value); setPage(1); } }} className={cx(INPUT, 'h-9 w-auto')} /></label>
+        <label className="flex items-center gap-1.5 text-meta text-muted-ink">From <DateField aria-label="From" value={from} max={to || undefined} onChange={v => { if (v) { setFrom(v); setPage(1); } }} className={cx(INPUT, 'h-9 w-auto')} /></label>
+        <label className="flex items-center gap-1.5 text-meta text-muted-ink">To <DateField aria-label="To" value={to} min={from || undefined} onChange={v => { if (v) { setTo(v); setPage(1); } }} className={cx(INPUT, 'h-9 w-auto')} /></label>
       </div>
       {error && <StaleBanner message={error} onRetry={reload} />}
       <div className="bg-card rounded-card border border-solid border-line overflow-hidden">

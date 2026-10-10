@@ -6,6 +6,7 @@ import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { Dialog } from '../components/Dialog';
 import { Field } from '../components/Field';
+import { DateField, PhoneInput } from '../components/inputs';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { PageControls } from '../components/PageControls';
@@ -18,7 +19,7 @@ import { api, ApiFailure } from '../lib/api';
 import { useSession } from '../lib/session';
 import { deliveryToast } from '../lib/bookingStatus';
 import { RESERVATION, READINESS } from '../lib/vocabulary';
-import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount } from '../lib/format';
+import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, todayMyt } from '../lib/format';
 import { Select, Menu } from '../components/Select';
 import { EmptyState } from '../components/States';
 import { Chip as FilterChip } from './finance/listKit';
@@ -248,7 +249,7 @@ export default function GuestsPage() {
   function bookStay(g: Guest) {
     navigate('/reservations/bookings?create=1', { state: { guestName: g.fullName, phone: g.phone ?? '', email: g.email ?? '' } });
   }
-  async function addGuest(input: { fullName: string; phone: string; email: string; countryCode: string; language: string }) {
+  async function addGuest(input: { fullName: string; phone: string; email: string; countryCode: string; language: string }): Promise<Record<string, string> | undefined> {
     try {
       const r = await api.post<{ id: string; created: boolean; existingName?: string }>('/guests', input);
       setAdding(false);
@@ -258,7 +259,10 @@ export default function GuestsPage() {
         ? { tone: 'success', title: `${input.fullName} added.`, body: 'Only the guest record was created. Use Book a stay to give them a unit and dates.' }
         : { tone: 'warning', title: 'This guest is already on file.', body: `${r.existingName} has the same ${input.email ? 'email' : 'phone'}. Their record is open; nothing new was created.` });
       reloadAll();
-    } catch (e) { toast({ tone: 'critical', title: 'Guest not added.', body: failMessage(e) }); }
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Guest not added.', body: failMessage(e) });
+      if (e instanceof ApiFailure && e.fields) return e.fields;
+    }
   }
 
   const searching = !!params.get('q');
@@ -670,18 +674,20 @@ function NativeSelect({ id, label, value, onChange, options, placeholder }: { id
 }
 
 /** The guest record only: a stay is booked separately, with a unit and dates. */
-function AddGuestModal({ onClose, onAdd }: { onClose: () => void; onAdd: (input: { fullName: string; phone: string; email: string; countryCode: string; language: string }) => Promise<void> }) {
+function AddGuestModal({ onClose, onAdd }: { onClose: () => void; onAdd: (input: { fullName: string; phone: string; email: string; countryCode: string; language: string }) => Promise<Record<string, string> | undefined> }) {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [countryCode, setCountryCode] = useState('');
   const [language, setLanguage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!fullName.trim()) return;
-    setBusy(true);
-    await onAdd({ fullName: fullName.trim(), phone: phone.trim(), email: email.trim(), countryCode, language });
+    setBusy(true); setErrors({});
+    const bad = await onAdd({ fullName: fullName.trim(), phone: phone.trim(), email: email.trim(), countryCode, language });
+    if (bad) setErrors(bad);
     setBusy(false);
   }
   return (
@@ -689,8 +695,8 @@ function AddGuestModal({ onClose, onAdd }: { onClose: () => void; onAdd: (input:
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
         <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" required />
         <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
-          <Field label="Phone" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+60 12-345 6789" />
-          <Field label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com" />
+          <PhoneInput label="Phone" value={phone} onChange={setPhone} error={errors.phone} />
+          <Field label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com" error={errors.email} />
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
           <NativeSelect id="ag-country" label="Nationality" value={countryCode} onChange={setCountryCode} options={COUNTRIES} placeholder="Not known yet" />
@@ -740,7 +746,7 @@ function EditGuestModal({ g, onClose, onSaved }: { g: Guest; onClose: () => void
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto">
         <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} required error={errors.fullName} />
         <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
-          <Field label="Phone" value={phone} onChange={e => setPhone(e.target.value)} />
+          <PhoneInput label="Phone" value={phone} onChange={setPhone} error={errors.phone} />
           <Field label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} error={errors.email} />
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
@@ -751,7 +757,7 @@ function EditGuestModal({ g, onClose, onSaved }: { g: Guest; onClose: () => void
           <NativeSelect id="eg-idtype" label="ID type" value={idType} onChange={setIdType} options={Object.entries(ID_TYPES).map(([value, label]) => ({ value, label }))} placeholder="Not given" />
           <Field label="ID number" value={idNumber} onChange={e => setIdNumber(e.target.value)} autoComplete="off"
             placeholder={r.hasIdNumber ? `${r.idNumberMasked} on file` : 'e.g. 900101-14-5678'} help={r.hasIdNumber ? 'Leave empty to keep the one on file.' : undefined} />
-          <Field label="Date of birth" type="date" value={dob} onChange={e => setDob(e.target.value)} error={errors.dateOfBirth} />
+          <DateField label="Date of birth" value={dob} min="1900-01-01" max={todayMyt()} onChange={setDob} error={errors.dateOfBirth} />
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>

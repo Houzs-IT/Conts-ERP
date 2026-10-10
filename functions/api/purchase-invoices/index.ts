@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { nextInvoiceNumber, toPiHeaderPayload, type PiHeaderRow } from '../../_lib/purchase-invoices';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
+import { checkDate, checkInt, checkSen, invalid, type Fields } from '../../_lib/validate';
 
 const LIST_SQL = `
   SELECT pi.id, pi.invoice_number, pi.supplier_invoice_ref, pi.supplier_id, pi.purchase_order_id, pi.grn_id, pi.invoice_date,
@@ -39,6 +40,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can post purchase invoices.', 403);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkDate(fields, 'invoiceDate', b.invoiceDate, { label: 'Invoice date' });
+  checkDate(fields, 'dueDate', b.dueDate, { label: 'Due date' });
+  checkSen(fields, 'taxSen', b.taxSen, { label: 'Tax' });
+  if (Array.isArray(b.lines)) (b.lines as Record<string, unknown>[]).forEach((l, i) => {
+    checkInt(fields, `lines.${i}.qty`, l?.qty, { label: 'Quantity', min: 0 });
+    checkSen(fields, `lines.${i}.unitPriceSen`, l?.unitPriceSen, { label: 'Unit price' });
+  });
+  const bad = invalid(fields); if (bad) return bad;
   const grnId = strOrNull(b.grnId);
   let supplierId = String(b.supplierId ?? '').trim();
   let poId: string | null = null;

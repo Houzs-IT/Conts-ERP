@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -104,8 +105,11 @@ function StatusPill({ active }: { active: boolean }) {
 
 function ZoneDrawer({ draft, isNew, knownZones, onClose, onSave, onDelete }: { draft: Zone; isNew: boolean; knownZones: string[]; onClose: () => void; onSave: (d: Zone, isNew: boolean) => void; onDelete?: () => void }) {
   const [f, setF] = useState<Zone>(draft);
-  const num = (v: string) => Math.max(0, Math.min(99, Math.round(Number(v) || 0)));
-  const canSave = f.zone.trim() !== '' && f.prefixEnd >= f.prefixStart;
+  const [start, setStart] = useState<number | null>(draft.prefixStart);
+  const [end, setEnd] = useState<number | null>(draft.prefixEnd);
+  const inRange = (n: number | null) => n != null && n >= 0 && n <= 99;
+  const endError = inRange(start) && inRange(end) && end! < start! ? 'Must not be before the start prefix.' : undefined;
+  const canSave = f.zone.trim() !== '' && inRange(start) && inRange(end) && !endError;
   return (
     <Drawer open onClose={onClose} width={520}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New zone rule' : 'Edit zone rule'}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
@@ -117,8 +121,8 @@ function ZoneDrawer({ draft, isNew, knownZones, onClose, onSave, onDelete }: { d
           </select>
         </div>
         <div className="grid grid-cols-2 gap-3.5">
-          <Field label="Prefix from (00–99)" type="number" numeric min={0} max={99} value={String(f.prefixStart)} onChange={e => setF(s => ({ ...s, prefixStart: num(e.target.value) }))} />
-          <Field label="Prefix to (00–99)" type="number" numeric min={0} max={99} value={String(f.prefixEnd)} onChange={e => setF(s => ({ ...s, prefixEnd: num(e.target.value) }))} />
+          <NumberInput label="Prefix from (00–99)" required min={0} max={99} grouping={false} value={start} onChange={setStart} />
+          <NumberInput label="Prefix to (00–99)" required min={0} max={99} grouping={false} value={end} onChange={setEnd} error={endError} />
         </div>
         <Field label="Label" placeholder="Optional, e.g. Klang Valley" value={f.label} onChange={e => setF(s => ({ ...s, label: e.target.value }))} />
         <div className="flex flex-col gap-[7px]"><label className="text-[12px] font-medium text-muted-ink">Status</label>
@@ -126,13 +130,13 @@ function ZoneDrawer({ draft, isNew, knownZones, onClose, onSave, onDelete }: { d
             <option value="1">Active</option><option value="0">Inactive</option>
           </select>
         </div>
-        <div className="text-[12.5px] text-muted-ink">Covers postcodes <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{String(f.prefixStart).padStart(2, '0')}xxx</span> to <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{String(f.prefixEnd).padStart(2, '0')}xxx</span>.</div>
+        <div className="text-[12.5px] text-muted-ink">Covers postcodes <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{start == null ? '__' : String(start).padStart(2, '0')}xxx</span> to <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{end == null ? '__' : String(end).padStart(2, '0')}xxx</span>.</div>
       </div>
       <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
         <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a zone and a valid prefix range" onClick={() => onSave(f, isNew)}>{isNew ? 'Add rule' : 'Save'}</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a zone and a valid prefix range" onClick={() => onSave({ ...f, prefixStart: start!, prefixEnd: end! }, isNew)}>{isNew ? 'Add rule' : 'Save'}</Button>
         </div>
       </div>
     </Drawer>

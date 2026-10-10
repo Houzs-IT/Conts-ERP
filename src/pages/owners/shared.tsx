@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
+import { MoneyInput, PercentInput, PhoneInput, DateField, phoneProblem } from '../../components/inputs';
 import { useApi } from '../../lib/useApi';
 import type { RosterUnit } from '../../lib/useUnitRoster';
 import { rm, monthLabel, titleCase } from '../../lib/format';
@@ -182,14 +183,14 @@ export function AddOwnerModal({ onClose, onSubmit }: { onClose: () => void; onSu
   const [f, setF] = useState({ displayName: '', email: '', phone: '', ic: '', bankName: '', bankAccount: '', accountHolder: '' });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value }));
   // Email is optional: an owner is often added before their email is known. If given, it must look like one.
-  const canSubmit = f.displayName.trim() !== '' && (f.email.trim() === '' || /.+@.+\..+/.test(f.email));
+  const canSubmit = f.displayName.trim() !== '' && (f.email.trim() === '' || /.+@.+\..+/.test(f.email)) && !phoneProblem(f.phone);
   return (
     <Modal title="Add owner" sub="Create the owner, then link units and preset the fee or GRR." onClose={onClose} submitLabel="Add owner" canSubmit={canSubmit}
       onSubmit={() => onSubmit({ displayName: f.displayName.trim(), email: f.email.trim(), phone: f.phone.trim() || null, ic: f.ic.trim() || null, bankName: f.bankName.trim() || null, bankAccount: f.bankAccount.trim() || null, accountHolder: f.accountHolder.trim() || f.displayName.trim() })}>
       <Field label="Owner name" placeholder="e.g. Lim Chee Keong" value={f.displayName} onChange={set('displayName')} />
       <div className="grid grid-cols-2 gap-3">
         <Field label="Email" type="email" placeholder="owner@email.com" value={f.email} onChange={set('email')} />
-        <Field label="Phone" placeholder="+60 12-345 6789" value={f.phone} onChange={set('phone')} />
+        <PhoneInput label="Phone" value={f.phone} onChange={v => setF(s => ({ ...s, phone: v }))} />
       </div>
       <Field label="IC / passport" placeholder="Accepts both formats" value={f.ic} onChange={set('ic')} />
       <div className="grid grid-cols-2 gap-3">
@@ -207,35 +208,35 @@ export function LinkUnitModal({ owner, units, onClose, onSubmit }: { owner: stri
   const chosen = choices.find(u => u.id === unitId);
   const unitLabel = chosen ? `${chosen.propertyName} ${chosen.unitNumber}` : '';
   const [model, setModel] = useState<FeeModel>('management');
-  const [feePct, setFeePct] = useState('25');
-  const [grr, setGrr] = useState('');
-  const canSubmit = unitId !== '' && (model === 'management' ? feePct !== '' : grr !== '');
+  const [feePct, setFeePct] = useState<number | null>(25);
+  const [grrSen, setGrrSen] = useState<number | null>(null);
+  const canSubmit = unitId !== '' && (model === 'management' ? feePct != null : grrSen != null);
   return (
     <Modal title="Link a unit" sub={`Assign a unit to ${titleCase(owner)} and preset how the owner is paid.`} onClose={onClose} submitLabel="Link unit" canSubmit={canSubmit}
-      onSubmit={() => onSubmit(line(unitId, unitLabel, model, model === 'management' ? Number(feePct) : undefined, model === 'grr' ? Math.round(Number(grr) * 100) : undefined, 0, 0, 0, 0))}>
+      onSubmit={() => onSubmit(line(unitId, unitLabel, model, model === 'management' ? feePct ?? undefined : undefined, model === 'grr' ? grrSen ?? undefined : undefined, 0, 0, 0, 0))}>
       <SearchSelect showLabel label="Unit" allLabel="Choose a unit" placeholder="Search unit or building" value={unitId} onChange={v => setUnitId(v)}
         options={choices.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName, hint: u.ownerName ? `now ${titleCase(u.ownerName)}` : undefined }))} />
       <Select showLabel size="md" label="Payout model" value={model} onChange={v => setModel(v as FeeModel)}
         options={[{ value: 'management', label: 'Management fee (% of revenue)' }, { value: 'grr', label: 'GRR — guaranteed monthly rent' }]} />
       {model === 'management'
-        ? <Field label="Management fee %" type="number" min={0} max={100} numeric value={feePct} onChange={e => setFeePct(e.target.value)} help="Overrides the owner default for this unit. The Conts keeps this share; the owner receives the rest." />
-        : <Field label="Guaranteed rent (RM / month)" type="number" min={0} numeric placeholder="e.g. 3500" value={grr} onChange={e => setGrr(e.target.value)} help="The owner is paid this fixed amount regardless of occupancy." />}
+        ? <PercentInput label="Management fee %" value={feePct} onChange={setFeePct} help="Overrides the owner default for this unit. The Conts keeps this share; the owner receives the rest." />
+        : <MoneyInput label="Guaranteed rent (RM / month)" placeholder="e.g. 3,500.00" valueSen={grrSen} onChangeSen={setGrrSen} help="The owner is paid this fixed amount regardless of occupancy." />}
     </Modal>
   );
 }
 
 export function ContractModal({ owner, onClose, onSubmit }: { owner: string; onClose: () => void; onSubmit: (c: { feePct: number; startedOn: string; renewsOn: string | null }) => void }) {
-  const [feePct, setFeePct] = useState('25');
+  const [feePct, setFeePct] = useState<number | null>(25);
   const [startedOn, setStartedOn] = useState('');
   const [renewsOn, setRenewsOn] = useState('');
   const canSubmit = startedOn !== '';
   return (
     <Modal title="Management agreement" sub={`Record the contract terms for ${titleCase(owner)}.`} onClose={onClose} submitLabel="Save contract" canSubmit={canSubmit}
-      onSubmit={() => onSubmit({ feePct: Number(feePct) || 0, startedOn, renewsOn: renewsOn || null })}>
-      <Field label="Management fee %" type="number" min={0} max={100} numeric value={feePct} onChange={e => setFeePct(e.target.value)} help="Set 0 for a GRR-only arrangement." />
+      onSubmit={() => onSubmit({ feePct: feePct ?? 0, startedOn, renewsOn: renewsOn || null })}>
+      <PercentInput label="Management fee %" value={feePct} onChange={setFeePct} help="Set 0 for a GRR-only arrangement." />
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Start date" type="date" value={startedOn} onChange={e => setStartedOn(e.target.value)} />
-        <Field label="Renews on" type="date" value={renewsOn} onChange={e => setRenewsOn(e.target.value)} />
+        <DateField label="Start date" value={startedOn} onChange={setStartedOn} />
+        <DateField label="Renews on" value={renewsOn} onChange={setRenewsOn} min={startedOn || undefined} />
       </div>
     </Modal>
   );

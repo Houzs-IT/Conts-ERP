@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -90,7 +91,11 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
   const built = () => items.filter(i => i.itemCode.trim()).map(i => ({ itemCode: i.itemCode.trim(), description: i.description.trim() }));
   const canSave = canWrite && warehouseId !== '' && built().length > 0;
 
+  const [tried, setTried] = useState(false);
+
   function submit() {
+    setTried(true);
+    if (!takeDate) return;
     const b = built();
     api.post('/stock-takes', { warehouseId, takeDate, notes, lines: b }).catch(notifyFailure);
     onCreated({ id: `stk-new-${crypto.randomUUID().slice(0, 8)}`, takeNumber: `STK-${new Date().getFullYear()}-NEW`, warehouseName: warehouses.find(w => w.id === warehouseId)?.name ?? '', warehouseId, takeDate, status: 'OPEN', notes, lines: b.map(i => ({ itemCode: i.itemCode, description: i.description, systemQty: 0, countedQty: null, variance: null })) });
@@ -104,7 +109,7 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
           <div className="flex flex-col gap-[7px]"><label className="text-[12px] font-medium text-muted-ink">Warehouse</label>
             <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">{warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
           </div>
-          <Field label="Date" type="date" value={takeDate} onChange={e => setTakeDate(e.target.value)} />
+          <DateField label="Date" required value={takeDate} onChange={setTakeDate} error={tried && !takeDate ? 'Required.' : undefined} />
         </div>
         <div className="flex flex-col gap-2">
           <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">Items to count</div>
@@ -132,7 +137,7 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
 function CountDrawer({ k, canWrite, onClose, onAct }: { k: Take; canWrite: boolean; onClose: () => void; onAct: (k: Take, patch: Record<string, unknown>, optimistic: Partial<Take>, title: string) => void }) {
   const editable = canWrite && k.status === 'OPEN';
   const [lines, setLines] = useState<TakeLine[]>((k.lines ?? []).map(l => ({ ...l })));
-  const setCount = (i: number, v: string) => setLines(ls => ls.map((l, j) => { if (j !== i) return l; const counted = v.trim() === '' ? null : Math.round(Number(v) || 0); return { ...l, countedQty: counted, variance: counted === null ? null : counted - l.systemQty }; }));
+  const setCount = (i: number, counted: number | null) => setLines(ls => ls.map((l, j) => j !== i ? l : { ...l, countedQty: counted, variance: counted === null ? null : counted - l.systemQty }));
 
   function saveCounts() { onAct(k, { lines: lines.map(l => ({ id: l.id, countedQty: l.countedQty })) }, { lines }, 'Counts saved.'); }
   function post() { onAct(k, { status: 'POSTED', lines: lines.map(l => ({ id: l.id, countedQty: l.countedQty })) }, { status: 'POSTED', lines }, 'Stock take posted — on-hand adjusted.'); }
@@ -150,7 +155,7 @@ function CountDrawer({ k, canWrite, onClose, onAct }: { k: Take; canWrite: boole
                 <tr key={l.id ?? i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
                   <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description || l.itemCode}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
                   <td className="py-2 px-3 text-right tabular-nums text-[13px] text-muted-ink">{l.systemQty}</td>
-                  <td className="py-2 px-3 text-right">{editable ? <input type="number" value={l.countedQty ?? ''} onChange={e => setCount(i, e.target.value)} className="h-8 w-[80px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /> : <span className="tabular-nums text-[13px]">{l.countedQty ?? '—'}</span>}</td>
+                  <td className="py-2 px-3 text-right">{editable ? <NumberInput aria-label="Counted quantity" min={0} value={l.countedQty} onChange={v => setCount(i, v)} className="h-8 w-[80px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /> : <span className="tabular-nums text-[13px]">{l.countedQty ?? '—'}</span>}</td>
                   <td className={cx('py-2 px-3 text-right tabular-nums text-[13px] font-semibold', l.variance == null ? 'text-muted-ink' : l.variance === 0 ? 'text-muted-ink' : l.variance > 0 ? 'text-[var(--color-success-fg)]' : 'text-[var(--color-critical-fg)]')}>{l.variance == null ? '—' : l.variance > 0 ? `+${l.variance}` : l.variance}</td>
                 </tr>
               ))}

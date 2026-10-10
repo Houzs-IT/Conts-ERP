@@ -4,10 +4,11 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { MoneyInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api, notifyFailure, ApiFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
@@ -41,7 +42,6 @@ interface Pi { id: string; invoiceNumber: string; supplierId: string; outstandin
 
 const selectCls = 'h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer';
 const labelCls = 'text-[12px] font-medium text-muted-ink';
-const rmToSen = (v: string) => { const n = Number(v); return v.trim() && Number.isFinite(n) ? Math.round(n * 100) : 0; };
 
 export default function CreditNotesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/credit-notes');
@@ -155,19 +155,26 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
   const [noteDate, setNoteDate] = useState(new Date().toISOString().slice(0, 10));
   const [sourceDocNo, setSourceDocNo] = useState('');
   const [reason, setReason] = useState('');
-  const [lines, setLines] = useState<{ description: string; amount: string }[]>([{ description: '', amount: '' }]);
+  const [lines, setLines] = useState<{ description: string; amountSen: number | null }[]>([{ description: '', amountSen: null }]);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
   const isSupplier = kind === 'SCN';
   const si = salesInvoices.find(s => s.id === salesInvoiceId);
-  const built = lines.map(l => ({ description: l.description.trim(), amountSen: rmToSen(l.amount) })).filter(l => l.amountSen > 0);
+  const used = lines.map((l, i) => ({ i, description: l.description.trim(), amountSen: l.amountSen ?? 0 })).filter(l => l.amountSen > 0 || l.description !== '');
+  const built = used.filter(l => l.amountSen > 0).map(({ description, amountSen }) => ({ description, amountSen }));
   const total = built.reduce((s, l) => s + l.amountSen, 0);
   const hasParty = isSupplier ? supplierId !== '' : (salesInvoiceId !== '' || partyName.trim() !== '');
   const canSave = canWrite && hasParty && built.length > 0 && !busy;
-  const setLine = (i: number, k: 'description' | 'amount', v: string) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
+  const setLine = (i: number, patch: Partial<{ description: string; amountSen: number | null }>) => setLines(ls => ls.map((l, j) => j === i ? { ...l, ...patch } : l));
 
   // Waits for the server at every step; "Save and post" is the draft then the post, as in Houzs.
   async function save(post: boolean) {
+    const e: Record<string, string> = {};
+    used.forEach(l => { if (l.amountSen <= 0) e[`amount.${l.i}`] = 'Enter an amount above zero.'; });
+    if (!noteDate) e.noteDate = 'Enter the note date.';
+    setErrors(e);
+    if (Object.keys(e).length) return;
     setBusy(true);
     try {
       const body = isSupplier
@@ -176,7 +183,17 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
       const r = await api.post<{ id: string; noteNumber: string }>('/credit-notes', { ...body, noteDate, sourceDocNo, reason, lines: built });
       if (post) await api.patch(`/credit-notes/${r.id}`, { status: 'POSTED' });
       onDone(post ? `${KIND_LABEL[kind]} posted.` : 'Draft saved.', `${r.noteNumber} · ${rm(total)}`);
-    } catch (e) { notifyFailure(e); } finally { setBusy(false); }
+    } catch (err) {
+      if (err instanceof ApiFailure && err.fields) {
+        const mapped: Record<string, string> = {};
+        for (const [k, v] of Object.entries(err.fields)) {
+          const m = /^lines\.(\d+)\.amountSen$/.exec(k);
+          if (m) { const src = used.filter(l => l.amountSen > 0)[Number(m[1])]; if (src) mapped[`amount.${src.i}`] = v; } else mapped[k] = v;
+        }
+        setErrors(mapped);
+      }
+      notifyFailure(err);
+    } finally { setBusy(false); }
   }
 
   return (
@@ -222,7 +239,7 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
         )}
 
         <div className="grid grid-cols-3 gap-3.5">
-          <Field label="Note date" type="date" value={noteDate} onChange={e => setNoteDate(e.target.value)} />
+          <DateField label="Note date" required value={noteDate} error={errors.noteDate} onChange={setNoteDate} />
           <Field label="Source document (optional)" placeholder="e.g. PRET-2026-0001" value={sourceDocNo} onChange={e => setSourceDocNo(e.target.value)} />
           <Field label="Reason (optional)" placeholder="e.g. Goods returned" value={reason} onChange={e => setReason(e.target.value)} />
         </div>
@@ -232,9 +249,9 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
           <div className="border border-solid border-line rounded-card overflow-hidden">
             {lines.map((l, i) => (
               <div key={i} className={cx('grid grid-cols-[1fr_140px_36px] gap-2.5 items-center py-2 px-3', i > 0 && '[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]')}>
-                <input value={l.description} onChange={e => setLine(i, 'description', e.target.value)} placeholder="Description" aria-label={`Line ${i + 1} description`}
+                <input value={l.description} onChange={e => setLine(i, { description: e.target.value })} placeholder="Description" aria-label={`Line ${i + 1} description`}
                   className="h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" />
-                <input type="number" min={0} step="0.01" value={l.amount} onChange={e => setLine(i, 'amount', e.target.value)} placeholder="Amount (RM)" aria-label={`Line ${i + 1} amount`}
+                <MoneyInput valueSen={l.amountSen} onChangeSen={v => setLine(i, { amountSen: v })} placeholder="Amount (RM)" aria-label={`Line ${i + 1} amount`} error={errors[`amount.${i}`]}
                   className="h-8 box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" />
                 <button type="button" aria-label={`Remove line ${i + 1}`} disabled={lines.length === 1} onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}
                   className="h-8 w-8 grid place-items-center bg-transparent border-none cursor-pointer text-muted-ink rounded-control hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"><Trash2 size={15} /></button>
@@ -242,7 +259,7 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
             ))}
           </div>
           <div className="flex items-center justify-between">
-            <Button size="sm" variant="secondary" icon={<Plus size={14} />} onClick={() => setLines(ls => [...ls, { description: '', amount: '' }])} disabled={lines.length >= 50}>Add line</Button>
+            <Button size="sm" variant="secondary" icon={<Plus size={14} />} onClick={() => setLines(ls => [...ls, { description: '', amountSen: null }])} disabled={lines.length >= 50}>Add line</Button>
             <div className="flex gap-8 text-[15px] font-semibold"><span>Total</span><span className="tabular-nums w-[120px] text-right">{rm(total)}</span></div>
           </div>
         </div>

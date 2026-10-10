@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { MoneyInput, PhoneInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -37,10 +38,8 @@ const FALLBACK: Payload = { generatedAt: '', data: [
   C({ id: 'c2', code: 'CUST-ARC', name: 'Arcoris Owner', contactPerson: 'Mr Tan', phone: '+60198887766', state: 'Kuala Lumpur', paymentTerms: 'COD' }),
 ] };
 
-const senToRm = (sen: number | null | undefined) => (sen == null ? '' : String(sen / 100));
-const rmToSen = (v: string): number => { const n = Number(v); return v.trim() && Number.isFinite(n) ? Math.round(n * 100) : 0; };
-type Draft = Omit<Customer, 'creditLimitSen'> & { creditLimit: string };
-const toDraft = (c: Customer): Draft => ({ ...c, creditLimit: senToRm(c.creditLimitSen) });
+type Draft = Omit<Customer, 'creditLimitSen'> & { creditLimitSen: number | null };
+const toDraft = (c: Customer): Draft => ({ ...c });
 const emptyDraft = (): Draft => toDraft(C({ id: '', code: '', name: '' }));
 
 export default function CustomersPage() {
@@ -60,8 +59,8 @@ export default function CustomersPage() {
   const rows = all.filter(c => (statusFilter === 'all' || c.status === statusFilter) && (!q || `${c.code} ${c.name} ${c.contactPerson}`.toLowerCase().includes(q)));
 
   function save(draft: Draft, isNew: boolean) {
-    const { creditLimit, ...rest } = draft;
-    const body = { ...rest, creditLimitSen: rmToSen(creditLimit) };
+    const { creditLimitSen, ...rest } = draft;
+    const body = { ...rest, creditLimitSen: creditLimitSen ?? 0 };
     if (isNew) { setAdded(a => [C({ ...body, id: `cust-new-${crypto.randomUUID().slice(0, 8)}` }), ...a]); api.post('/customers', body).catch(notifyFailure); toast({ tone: 'success', title: 'Customer added.', body: `${body.code} ${body.name}` }); }
     else { setEdits(e => ({ ...e, [rest.id]: { ...e[rest.id], ...body } })); api.patch(`/customers/${rest.id}`, body).catch(notifyFailure); toast({ tone: 'success', title: 'Customer updated.', body: `${body.code} ${body.name}` }); }
     setDrawer(null);
@@ -134,7 +133,7 @@ function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
         </Section>
         <Section title="Contact">
           <Field label="Contact person" value={f.contactPerson} onChange={set('contactPerson')} />
-          <Field label="Phone" value={f.phone} onChange={set('phone')} />
+          <PhoneInput label="Phone" value={f.phone} onChange={v => setF(s => ({ ...s, phone: v }))} />
           <Field label="Email" type="email" value={f.email} onChange={set('email')} />
           <div className="col-span-2"><Field label="Address" value={f.address} onChange={set('address')} /></div>
           <Field label="Postcode" value={f.postcode} onChange={set('postcode')} />
@@ -142,7 +141,7 @@ function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
         </Section>
         <Section title="Terms & finance">
           <Field label="Payment terms" placeholder="e.g. 30 days" value={f.paymentTerms} onChange={set('paymentTerms')} />
-          <Field label="Credit limit (RM)" type="number" numeric step="0.01" value={f.creditLimit} onChange={set('creditLimit')} />
+          <MoneyInput label="Credit limit (RM)" valueSen={f.creditLimitSen} onChangeSen={v => setF(s => ({ ...s, creditLimitSen: v }))} />
           <Field label="TIN number" value={f.tinNumber} onChange={set('tinNumber')} />
           <Field label="Business reg. no" value={f.businessRegNo} onChange={set('businessRegNo')} />
           <div className="col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>

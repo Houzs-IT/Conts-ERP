@@ -1,6 +1,7 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { strOrNull, intOrNull, flag } from '../../_lib/scm-util';
+import { checkInt, invalid, type Fields } from '../../_lib/validate';
 
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
@@ -9,6 +10,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const id = String(params.id);
   if (!await one(env, 'SELECT 1 AS x FROM vehicles WHERE id = ?', id)) return fail('NOT_FOUND', 'That vehicle does not exist.', 404);
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkInt(fields, 'capacityM3Milli', b.capacityM3Milli, { label: 'Capacity', min: 0 });
+  const bad = invalid(fields); if (bad) return bad;
   const sets: string[] = []; const args: unknown[] = [];
   if (b.code !== undefined) { const c = String(b.code).trim(); if (!c) return fail('VALIDATION', 'Enter a vehicle code.', 422, { code: 'Enter a vehicle code.' }); if (await one(env, 'SELECT 1 AS x FROM vehicles WHERE lower(code)=lower(?) AND id<>?', c, id)) return fail('CONFLICT', 'A vehicle with this code already exists.', 409, { code: 'This code is already used.' }); sets.push('code = ?'); args.push(c); }
   if (b.plate !== undefined) { sets.push('plate = ?'); args.push(strOrNull(b.plate)); }

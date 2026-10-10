@@ -1,6 +1,7 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isCategory, strOrNull, intOrNull } from '../../_lib/products';
+import { checkSen, checkInt, invalid, type Fields } from '../../_lib/validate';
 
 /** PATCH /api/products/:id — edit a product. Only the fields present in the body change. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -13,6 +14,13 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (!cur) return fail('NOT_FOUND', 'That product does not exist.', 404);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkInt(fields, 'unitM3Milli', b.unitM3Milli, { label: 'Unit (m³)', min: 0 });
+  checkSen(fields, 'costPriceSen', b.costPriceSen, { label: 'Cost price' });
+  checkSen(fields, 'basePriceSen', b.basePriceSen, { label: 'Base price' });
+  checkSen(fields, 'price1Sen', b.price1Sen, { label: 'Price 1' });
+  checkSen(fields, 'sellPriceSen', b.sellPriceSen, { label: 'Sell price' });
+  const bad = invalid(fields); if (bad) return bad;
   const sets: string[] = [];
   const args: unknown[] = [];
   const setStr = (col: string, v: unknown) => { if (v !== undefined) { sets.push(`${col} = ?`); args.push(strOrNull(v)); } };

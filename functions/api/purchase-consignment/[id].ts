@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { normalizeLines, toPcHeaderPayload, toPcLinePayload, type PcHeaderRow, type PcLineRow } from '../../_lib/purchase-consignment';
+import { normalizeLines, toPcHeaderPayload, toPcLinePayload, checkPricedBody, type PcHeaderRow, type PcLineRow } from '../../_lib/purchase-consignment';
+import { invalid, type Fields } from '../../_lib/validate';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
 const HEADER_SQL = `
@@ -39,6 +40,10 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   }
   if (b.status !== undefined) return fail('VALIDATION', 'Receiving statuses are set by consignment receipts.', 422);
   if (cur.status !== 'SUBMITTED') return fail('CONFLICT', 'Only a submitted consignment order can be edited.', 409);
+
+  const fields: Fields = {};
+  checkPricedBody(fields, b, 'pcDate', 'PC date');
+  const bad = invalid(fields); if (bad) return bad;
 
   const sets: string[] = [];
   const args: unknown[] = [];

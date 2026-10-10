@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -127,7 +128,7 @@ function StatusPill({ status }: { status: Status }) {
 
 /* ---------- deliver (create) drawer ---------- */
 
-interface DelLine { soLineId: string; itemCode: string; description: string; uom: string; outstanding: number; unitPriceSen: number; qty: string }
+interface DelLine { soLineId: string; itemCode: string; description: string; uom: string; outstanding: number; unitPriceSen: number; qty: number | null }
 
 function DeliverDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[]; canWrite: boolean; onClose: () => void; onCreated: (d: Do) => void }) {
   const [soId, setSoId] = useState('');
@@ -147,18 +148,24 @@ function DeliverDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: Ope
     const s = openSos.find(x => x.id === id);
     let sl = s?.lines;
     if (!sl) { try { const r = await api.get<{ data: { lines: SoLine[] } }>(`/sales-orders/${id}`); sl = r.data.lines; } catch { sl = []; } }
-    setLines((sl ?? []).filter(l => l.qty - l.deliveredQty > 0).map(l => ({ soLineId: l.id, itemCode: l.itemCode, description: l.description, uom: l.uom, outstanding: l.qty - l.deliveredQty, unitPriceSen: l.unitPriceSen, qty: String(l.qty - l.deliveredQty) })));
+    setLines((sl ?? []).filter(l => l.qty - l.deliveredQty > 0).map(l => ({ soLineId: l.id, itemCode: l.itemCode, description: l.description, uom: l.uom, outstanding: l.qty - l.deliveredQty, unitPriceSen: l.unitPriceSen, qty: l.qty - l.deliveredQty })));
   }
 
-  const willDeliver = lines.filter(l => (Number(l.qty) || 0) > 0);
+  const willDeliver = lines.filter(l => (l.qty ?? 0) > 0);
   const canSave = canWrite && soId !== '' && willDeliver.length > 0;
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const qtyError = (l: DelLine) => (l.qty ?? 0) > l.outstanding ? `Only ${l.outstanding} left to deliver.` : fieldErrors[`lines.${willDeliver.indexOf(l)}.qty`];
 
   const [busy, setBusy] = useState(false);
   const [shortStock, setShortStock] = useState<string | null>(null);
 
   // Waits for the server: a refused delivery must never show as raised.
   async function submit(confirmShortStock = false) {
-    const payloadLines = willDeliver.map(l => ({ salesOrderLineId: l.soLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qty: Math.min(Number(l.qty) || 0, l.outstanding) }));
+    if (willDeliver.some(l => (l.qty ?? 0) > l.outstanding)) return;
+    const doDateError = !doDate ? 'Enter the DO date.' : undefined;
+    if (doDateError) { setFieldErrors({ doDate: doDateError }); return; }
+    const payloadLines = willDeliver.map(l => ({ salesOrderLineId: l.soLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qty: l.qty ?? 0 }));
+    setFieldErrors({});
     setBusy(true);
     try {
       const r = await api.post<{ id: string; doNumber: string }>('/delivery-orders', { salesOrderId: soId, doDate, expectedDeliveryAt: expected || null, driverName, vehicle, address1, notes, warehouseId: warehouseId || undefined, lines: payloadLines, confirmShortStock: confirmShortStock || undefined });
@@ -169,7 +176,7 @@ function DeliverDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: Ope
       });
     } catch (e) {
       if (e instanceof ApiFailure && e.code === 'SHORT_STOCK') setShortStock(e.message);
-      else notifyFailure(e);
+      else { if (e instanceof ApiFailure && e.fields) setFieldErrors(e.fields); notifyFailure(e); }
     } finally { setBusy(false); }
   }
 
@@ -188,8 +195,8 @@ function DeliverDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: Ope
               {openSos.map(s => <option key={s.id} value={s.id}>{s.docNo} · {s.customerName}</option>)}
             </select>
           </div>
-          <Field label="DO date" type="date" value={doDate} onChange={e => setDoDate(e.target.value)} />
-          <Field label="Expected delivery" type="date" value={expected} onChange={e => setExpected(e.target.value)} />
+          <DateField label="DO date" required value={doDate} error={fieldErrors.doDate} onChange={setDoDate} />
+          <DateField label="Expected delivery" value={expected} min={doDate || undefined} error={fieldErrors.expectedDeliveryAt} onChange={setExpected} />
           <Field label="Delivery address" placeholder="Optional" value={address1} onChange={e => setAddress1(e.target.value)} />
           <Field label="Driver" placeholder="Optional" value={driverName} onChange={e => setDriverName(e.target.value)} />
           <Field label="Vehicle" placeholder="Optional" value={vehicle} onChange={e => setVehicle(e.target.value)} />
@@ -213,7 +220,7 @@ function DeliverDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: Ope
                     <tr key={l.soLineId} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
                       <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.outstanding}</td>
-                      <td className="py-2 px-3 text-right"><input type="number" min={0} value={l.qty} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} className="h-8 w-[80px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
+                      <td className="py-2 px-3 text-right"><NumberInput aria-label={`Deliver quantity for ${l.itemCode}`} min={0} max={l.outstanding} value={l.qty} error={qtyError(l)} onChange={v => setLines(ls => ls.map((x, j) => j === i ? { ...x, qty: v } : x))} className="h-8 w-[80px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
                     </tr>
                   ))}
                 </tbody>

@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -88,7 +89,7 @@ function ActivePill({ active }: { active: boolean }) {
 function DriverDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onClose: () => void; onSave: (d: Draft) => void; onDelete?: () => void }) {
   const [f, setF] = useState<Draft>(draft);
   const set = <K extends keyof Draft>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value as Draft[K] }));
-  const canSave = f.driverCode.trim() !== '' && f.name.trim() !== '';
+  const canSave = f.driverCode.trim() !== '' && f.name.trim() !== '' && !phoneProblem(f.phone);
   return (
     <Drawer open onClose={onClose} width={480}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
@@ -99,7 +100,7 @@ function DriverDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onCl
         <div className="grid grid-cols-2 gap-3.5">
           <Field label="Driver code" placeholder="e.g. DRV-01" value={f.driverCode} onChange={set('driverCode')} />
           <Field label="Name" value={f.name} onChange={set('name')} />
-          <Field label="Phone" value={f.phone} onChange={set('phone')} />
+          <PhoneInput label="Phone" value={f.phone} onChange={v => setF(s => ({ ...s, phone: v }))} />
           <Field label="IC number" value={f.icNumber} onChange={set('icNumber')} />
           <Field label="Vehicle" placeholder="Plate / label" value={f.vehicle} onChange={set('vehicle')} />
           <div className="flex flex-col gap-[7px]">
@@ -114,7 +115,7 @@ function DriverDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onCl
         <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name" onClick={() => onSave(f)}>{draft.isNew ? 'Create' : 'Save'}</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason={phoneProblem(f.phone) ? 'Fix the phone number' : 'Enter a code and a name'} onClick={() => onSave(f)}>{draft.isNew ? 'Create' : 'Save'}</Button>
         </div>
       </div>
     </Drawer>

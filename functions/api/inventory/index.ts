@@ -2,6 +2,7 @@ import { mayWork } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { resolveUnit } from '../../_lib/ops';
+import { checkSen, checkDate, invalid, type Fields } from '../../_lib/validate';
 
 const CONDITIONS = ['good', 'fair', 'replace_soon', 'damaged'];
 const CATEGORIES = ['furniture', 'appliance', 'electronics', 'linen', 'kitchenware', 'fittings'];
@@ -45,7 +46,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!b?.name?.trim()) return fail('VALIDATION', 'Enter the item name.', 422, { name: 'Enter the item name.' });
   if (b.category !== undefined && !CATEGORIES.includes(b.category)) return fail('VALIDATION', 'Pick a category.', 422, { category: 'Pick a category.' });
   if (b.condition !== undefined && !CONDITIONS.includes(b.condition)) return fail('VALIDATION', 'Unknown condition.', 422);
-  if (b.purchaseCost != null && (!Number.isInteger(b.purchaseCost) || b.purchaseCost < 0)) return fail('VALIDATION', 'The value must be a whole number of sen.', 422);
+  const fields: Fields = {};
+  checkSen(fields, 'purchaseCost', b.purchaseCost, { label: 'Purchase value' });
+  checkDate(fields, 'installedOn', b.installedOn, { label: 'Installed on' });
+  checkDate(fields, 'replaceBy', b.replaceBy, { label: 'Replace by' });
+  const bad = invalid(fields); if (bad) return bad;
 
   const unit = await resolveUnit(env, b.unitId ?? b.unitNumber, b.propertyName);
   if (unit === 'ambiguous') return fail('VALIDATION', 'More than one unit has that number. Say which building.', 422);
@@ -70,6 +75,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<any>().catch(() => null);
   if (!b?.id) return fail('VALIDATION', 'Say which item.', 422);
   if (b.condition !== undefined && !CONDITIONS.includes(b.condition)) return fail('VALIDATION', 'Unknown condition.', 422);
+  const fields: Fields = {};
+  checkDate(fields, 'replaceBy', b.replaceBy, { label: 'Replace by' });
+  const bad = invalid(fields); if (bad) return bad;
   const cur = await one<any>(env, 'SELECT id, condition FROM inventory_items WHERE id = ?', b.id);
   if (!cur) return fail('NOT_FOUND', 'That item no longer exists.', 404);
 

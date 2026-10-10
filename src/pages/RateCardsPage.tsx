@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { MoneyInput, NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -36,8 +37,6 @@ const ZONES = ['KL', 'PJ', 'KLANG', 'KAJANG', 'RAWANG', 'PUCHONG', 'NS', 'MELAKA
 const AGG_LABEL: Record<Agg, string> = { UNIT: 'Per unit (set/item)', DROP: 'Per drop', CUSTOMER: 'Per customer', TRIP: 'Per trip (flat)' };
 const ROUND_LABEL: Record<Rounding, string> = { NONE: 'No rounding', NEAREST_10C: 'Nearest 10 sen', NEAREST_RM: 'Nearest RM' };
 
-const senToRm = (s: number | null): string => (s == null ? '' : String(s / 100));
-const rmToSenOrNull = (v: string): number | null => { const t = v.trim(); if (!t) return null; const n = Number(t); return Number.isFinite(n) ? Math.round(n * 100) : null; };
 
 const FALLBACK: Payload = { generatedAt: '', data: [
   { id: 'rc1', name: 'Own fleet — Klang Valley', carrierCompanyId: '', carrierLabel: 'Own fleet', carrierName: '', basis: 'SET', aggregation: 'UNIT', minChargeSen: 8000, capSen: null, rounding: 'NEAREST_RM', isActive: true, notes: '', ruleCount: 3 },
@@ -152,8 +151,8 @@ function CardDrawer({ card, isNew, carriers, onClose, onSave, onDelete }: { card
           <Sel label="Charged per" value={f.aggregation} onChange={v => set('aggregation', v as Agg)} options={(Object.keys(AGG_LABEL) as Agg[]).map(a => ({ value: a, label: AGG_LABEL[a] }))} />
           <Sel label="Unit basis" value={f.basis} onChange={v => set('basis', v as Basis)} options={[{ value: 'SET', label: 'Set' }, { value: 'ITEM', label: 'Item' }]} />
           <Sel label="Rounding" value={f.rounding} onChange={v => set('rounding', v as Rounding)} options={(Object.keys(ROUND_LABEL) as Rounding[]).map(r => ({ value: r, label: ROUND_LABEL[r] }))} />
-          <Field label="Minimum charge (RM)" type="number" numeric step="0.01" value={senToRm(f.minChargeSen)} onChange={e => set('minChargeSen', rmToSenOrNull(e.target.value))} />
-          <Field label="Charge cap (RM)" type="number" numeric step="0.01" value={senToRm(f.capSen)} onChange={e => set('capSen', rmToSenOrNull(e.target.value))} />
+          <MoneyInput label="Minimum charge (RM)" placeholder="Optional" valueSen={f.minChargeSen} onChangeSen={n => set('minChargeSen', n)} />
+          <MoneyInput label="Charge cap (RM)" placeholder="Optional" valueSen={f.capSen} onChangeSen={n => set('capSen', n)} />
         </div>
 
         <div className="flex flex-col gap-2">
@@ -178,7 +177,7 @@ function CardDrawer({ card, isNew, carriers, onClose, onSave, onDelete }: { card
                         {!needsTier(r.ruleType) && !needsBracket(r.ruleType) && !needsZone(r.ruleType) && <span className="text-[12px] text-muted-ink">per occurrence</span>}
                       </div>
                     </td>
-                    <td className="py-2 px-3 text-right"><input type="number" step="0.01" value={r.amountSen ? String(r.amountSen / 100) : ''} onChange={e => setRule(i, { amountSen: rmToSenOrNull(e.target.value) ?? 0 })} className="h-8 w-[100px] box-border px-2 py-0 text-right font-sans text-[12.5px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
+                    <td className="py-2 px-3 text-right"><MoneyInput aria-label="Amount (RM)" valueSen={r.amountSen || null} onChangeSen={n => setRule(i, { amountSen: n ?? 0 })} className="h-8 w-[100px] box-border px-2 py-0 text-right font-sans text-[12.5px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
                     <td className="py-2 px-3 text-right"><button onClick={() => delRule(i)} aria-label="Remove rule" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><Trash2 size={14} strokeWidth={1.75} /></button></td>
                   </tr>
                 ))}
@@ -204,8 +203,8 @@ function CardDrawer({ card, isNew, carriers, onClose, onSave, onDelete }: { card
 }
 
 function NumIn({ label, value, onChange }: { label: string; value: number | null; onChange: (v: number | null) => void }) {
-  return <input type="number" placeholder={label} value={value ?? ''} onChange={e => { const t = e.target.value.trim(); onChange(t === '' ? null : Math.round(Number(t) || 0)); }}
-    className="h-8 w-[96px] box-border px-2 py-0 font-sans text-[12.5px] text-ink bg-card border border-solid border-line rounded-control outline-none" title={label} />;
+  return <NumberInput aria-label={label} placeholder={label} min={0} grouping={false} value={value} onChange={onChange}
+    className="h-8 w-[96px] box-border px-2 py-0 font-sans text-[12.5px] text-ink bg-card border border-solid border-line rounded-control outline-none" />;
 }
 function Sel({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return <div className="flex flex-col gap-[7px]"><label className="text-[12px] font-medium text-muted-ink">{label}</label><select value={value} onChange={e => onChange(e.target.value)} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>;

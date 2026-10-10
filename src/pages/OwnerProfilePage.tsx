@@ -7,7 +7,7 @@ import { MoneyText } from '../components/MoneyText';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
-import { Field } from '../components/Field';
+import { PercentInput } from '../components/inputs';
 import { Dialog, type DialogSpec } from '../components/Dialog';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -296,10 +296,9 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
 }
 
 function DefaultFeeModal({ current, owner, onClose, onSubmit }: { current: number | null; owner: string; onClose: () => void; onSubmit: (pct: number | null) => void }) {
-  const [pct, setPct] = useState(current != null ? String(current) : '');
+  const [parsed, setParsed] = useState<number | null>(current);
   const [busy, setBusy] = useState(false);
-  const parsed = pct.trim() === '' ? null : Number(pct);
-  const valid = parsed == null || (Number.isFinite(parsed) && parsed >= 0 && parsed <= 100);
+  const valid = parsed == null || (parsed >= 0 && parsed <= 100);
   return (
     <div role="dialog" aria-modal="true" aria-label="Owner default fee" className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
       <div onClick={onClose} className="absolute inset-0" />
@@ -310,8 +309,8 @@ function DefaultFeeModal({ current, owner, onClose, onSubmit }: { current: numbe
             <p className="m-0 text-copy text-muted-ink">Recorded for {titleCase(owner)} for reference. Leave blank to clear it.</p>
           </div>
           <div className="py-4 px-[22px]">
-            <Field label="Default management fee %" type="number" min={0} max={100} numeric value={pct} placeholder="e.g. 22"
-              onChange={e => setPct(e.target.value)} help="A unit's own contract always decides its statement." />
+            <PercentInput label="Default management fee %" value={parsed} placeholder="e.g. 22"
+              onChange={setParsed} help="A unit's own contract always decides its statement." />
           </div>
           <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
             <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>

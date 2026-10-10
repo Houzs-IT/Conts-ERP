@@ -1,3 +1,5 @@
+import { checkDate } from './validate';
+
 /** How an owner is paid for a unit: one revenue model per contract (migration 0093). The model decides how the
  *  monthly statement is worked out (ownerStatement.ts); the Units screen's Contract tab shows only its fields. */
 
@@ -83,6 +85,8 @@ export function invalidDraft(d: ContractDraft): Record<string, string> {
       if (!Number.isFinite(g) || g < 0 || g > 100) f.managementPct = 'Enter 0 to 100.';
     }
   }
+  // The pattern checks above let a non-existent day such as 31 February through.
+  for (const k of ['startsOn', 'endsOn', 'renewsOn', 'guaranteeStartsOn', 'guaranteeEndsOn'] as const) if (!f[k]) checkDate(f, k, d[k]);
   return f;
 }
 

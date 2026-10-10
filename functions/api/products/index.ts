@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { invalidProduct, isCategory, toProductPayload, strOrNull, intOrNull, type ProductRow } from '../../_lib/products';
+import { checkSen, checkInt, invalid as invalidFields, type Fields } from '../../_lib/validate';
 
 const SELECT = `SELECT id, code, name, category, description, base_model, size_code, size_label, branding, barcode,
                        unit_m3_milli, status, cost_price_sen, base_price_sen, price1_sen, sell_price_sen
@@ -40,6 +41,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const bad = invalidProduct(b);
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
+  const fields: Fields = {};
+  checkInt(fields, 'unitM3Milli', b.unitM3Milli, { label: 'Unit (m³)', min: 0 });
+  checkSen(fields, 'costPriceSen', b.costPriceSen, { label: 'Cost price' });
+  checkSen(fields, 'basePriceSen', b.basePriceSen, { label: 'Base price' });
+  checkSen(fields, 'price1Sen', b.price1Sen, { label: 'Price 1' });
+  checkSen(fields, 'sellPriceSen', b.sellPriceSen, { label: 'Sell price' });
+  const badFields = invalidFields(fields); if (badFields) return badFields;
 
   const code = (b.code as string).trim();
   if (await one(env, 'SELECT 1 AS x FROM products WHERE lower(code) = lower(?)', code)) {

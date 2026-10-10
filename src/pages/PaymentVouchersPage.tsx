@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { MoneyInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -136,7 +137,7 @@ function StatusPill({ status }: { status: 'POSTED' | 'CANCELLED' }) {
 
 /* ---------- pay (create) drawer ---------- */
 
-interface PayLine { invoiceId: string; invoiceNumber: string; invoiceDate: string; outstanding: number; pay: string }
+interface PayLine { invoiceId: string; invoiceNumber: string; invoiceDate: string; outstanding: number; paySen: number | null }
 
 function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { suppliers: Opt[]; invoices: Pi[]; canWrite: boolean; onClose: () => void; onCreated: (p: Pv) => void }) {
   const [supplierId, setSupplierId] = useState('');
@@ -144,19 +145,23 @@ function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { supp
   const [reference, setReference] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
-  const [pays, setPays] = useState<Record<string, string>>({});
+  const [pays, setPays] = useState<Record<string, number | null>>({});
 
   const supplier = suppliers.find(s => s.id === supplierId);
   const supplierInvoices = invoices.filter(p => p.supplierId === supplierId && p.outstandingSen > 0);
-  const lines: PayLine[] = supplierInvoices.map(p => ({ invoiceId: p.id, invoiceNumber: p.invoiceNumber, invoiceDate: p.invoiceDate, outstanding: p.outstandingSen, pay: pays[p.id] ?? '' }));
-  const amount = lines.reduce((s, l) => s + Math.min(Math.max(0, Math.round((Number(l.pay) || 0) * 100)), l.outstanding), 0);
+  const lines: PayLine[] = supplierInvoices.map(p => ({ invoiceId: p.id, invoiceNumber: p.invoiceNumber, invoiceDate: p.invoiceDate, outstanding: p.outstandingSen, paySen: pays[p.id] ?? null }));
+  const amount = lines.reduce((s, l) => s + (l.paySen ?? 0), 0);
   const canSave = canWrite && supplierId !== '' && amount > 0;
+  const [tried, setTried] = useState(false);
+  const dateError = tried && !paymentDate ? 'Required.' : undefined;
 
-  function payAll() { const next: Record<string, string> = {}; supplierInvoices.forEach(p => { next[p.id] = String(p.outstandingSen / 100); }); setPays(next); }
+  function payAll() { const next: Record<string, number | null> = {}; supplierInvoices.forEach(p => { next[p.id] = p.outstandingSen; }); setPays(next); }
 
   function submit() {
+    setTried(true);
+    if (!paymentDate || lines.some(l => (l.paySen ?? 0) > l.outstanding)) return;
     const allocations = lines
-      .map(l => ({ purchaseInvoiceId: l.invoiceId, amountSen: Math.min(Math.max(0, Math.round((Number(l.pay) || 0) * 100)), l.outstanding), invoiceNumber: l.invoiceNumber }))
+      .map(l => ({ purchaseInvoiceId: l.invoiceId, amountSen: l.paySen ?? 0, invoiceNumber: l.invoiceNumber }))
       .filter(a => a.amountSen > 0);
     api.post('/payment-vouchers', { supplierId, paymentDate, method, reference, notes, allocations: allocations.map(({ purchaseInvoiceId, amountSen }) => ({ purchaseInvoiceId, amountSen })) }).catch(notifyFailure);
     onCreated({
@@ -188,7 +193,7 @@ function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { supp
               {METHODS.map(m => <option key={m} value={m}>{METHOD_LABEL[m]}</option>)}
             </select>
           </div>
-          <Field label="Payment date" type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} />
+          <DateField label="Payment date" required value={paymentDate} onChange={setPaymentDate} error={dateError} />
           <Field label="Reference" placeholder="Cheque / txn no" value={reference} onChange={e => setReference(e.target.value)} />
         </div>
 
@@ -212,7 +217,7 @@ function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { supp
                       <td className="py-2 px-3 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px]">{l.invoiceNumber}</td>
                       <td className="py-2 px-3 text-[13px] text-muted-ink">{l.invoiceDate ? date(l.invoiceDate) : '—'}</td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.outstanding)}</td>
-                      <td className="py-2 px-3 text-right"><input type="number" min={0} step="0.01" value={l.pay} onChange={e => setPays(p => ({ ...p, [l.invoiceId]: e.target.value }))}
+                      <td className="py-2 px-3 text-right"><MoneyInput aria-label="Pay now" maxSen={l.outstanding} valueSen={l.paySen} onChangeSen={v => setPays(p => ({ ...p, [l.invoiceId]: v }))}
                         className="h-8 w-[110px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
                     </tr>
                   ))}

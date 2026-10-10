@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -110,7 +111,7 @@ function NewDrawer({ openSos, onClose, onCreated }: { openSos: { id: string; doc
             {openSos.map(s => <option key={s.id} value={s.id}>{s.docNo} · {s.customerName}</option>)}
           </select>
         </div>
-        <Field label="Planned date (optional)" type="date" value={plannedDate} onChange={e => setPlannedDate(e.target.value)} />
+        <DateField label="Planned date (optional)" value={plannedDate} onChange={setPlannedDate} />
         <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
       </div>
       <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
@@ -138,7 +139,7 @@ function EditDrawer({ row, onClose, onSaved, onDelete }: { row: Sched; onClose: 
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <div className="text-[13px] text-muted-ink">{row.customerName}</div>
         <div className="grid grid-cols-2 gap-3.5">
-          <Field label="Planned date" type="date" value={f.plannedDate} onChange={e => setF(s => ({ ...s, plannedDate: e.target.value }))} />
+          <DateField label="Planned date" value={f.plannedDate} onChange={v => setF(s => ({ ...s, plannedDate: v }))} />
           <div className="flex flex-col gap-[7px]"><label className="text-[12px] font-medium text-muted-ink">Time slot</label>
             <select value={f.timeSlot} onChange={e => setF(s => ({ ...s, timeSlot: e.target.value as TimeSlot }))} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
               <option value="">Any</option><option value="MORNING">Morning</option><option value="AFTERNOON">Afternoon</option><option value="EVENING">Evening</option>

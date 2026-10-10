@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
+import { MoneyInput, PercentInput, DateField } from '../../components/inputs';
 import { MoneyText } from '../../components/MoneyText';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
@@ -31,22 +32,22 @@ export interface Example {
 interface Payload { month: string; unit: { id: string; label: string; ownerName: string }; current: ContractView; history: ContractView[]; example: Example | null }
 
 interface Draft {
-  revenueModel: RevenueModel; ownerPct: string; managementPct: string; agentPct: string; agentName: string;
-  minimumGuarantee: string; guaranteeStartsOn: string; guaranteeEndsOn: string;
-  monthlyRent: string; deposit: string; tenantName: string; ltFeePct: string;
+  revenueModel: RevenueModel; ownerPct: number | null; managementPct: number | null; agentPct: number | null; agentName: string;
+  minimumGuarantee: number | null; guaranteeStartsOn: string; guaranteeEndsOn: string;
+  monthlyRent: number | null; deposit: number | null; tenantName: string; ltFeePct: number | null;
   startsOn: string; endsOn: string; renewsOn: string; miscCharges: boolean;
 }
-const ringgit = (sen: number | null | undefined) => (sen ? String(sen / 100) : '');
-const toSen = (v: string) => Math.round(Number(v || 0) * 100);
+const senOrEmpty = (sen: number | null | undefined) => (sen ? sen : null);
+const pctOf = (n: number | null | undefined) => (n == null ? null : Number(n.toFixed(2)));
 const pctText = (n: number | null | undefined) => (n == null ? '' : String(Number(n.toFixed(2))));
 
 function draftOf(c: ContractView): Draft {
   return {
     revenueModel: c.revenueModel,
-    ownerPct: pctText(c.ownerPct ?? 75), managementPct: pctText(c.managementPct != null && c.revenueModel !== 'long_term' ? c.managementPct : c.ownerPct != null ? 100 - c.ownerPct - (c.agentPct ?? 0) : 25),
-    agentPct: pctText(c.agentPct ?? 0), agentName: c.agentName ?? '',
-    minimumGuarantee: ringgit(c.minimumGuarantee), guaranteeStartsOn: c.guaranteeStartsOn ?? '', guaranteeEndsOn: c.guaranteeEndsOn ?? '',
-    monthlyRent: ringgit(c.monthlyRent), deposit: ringgit(c.deposit), tenantName: c.tenantName ?? '', ltFeePct: pctText(c.revenueModel === 'long_term' ? c.managementPct : 10),
+    ownerPct: pctOf(c.ownerPct ?? 75), managementPct: pctOf(c.managementPct != null && c.revenueModel !== 'long_term' ? c.managementPct : c.ownerPct != null ? 100 - c.ownerPct - (c.agentPct ?? 0) : 25),
+    agentPct: pctOf(c.agentPct ?? 0), agentName: c.agentName ?? '',
+    minimumGuarantee: senOrEmpty(c.minimumGuarantee), guaranteeStartsOn: c.guaranteeStartsOn ?? '', guaranteeEndsOn: c.guaranteeEndsOn ?? '',
+    monthlyRent: senOrEmpty(c.monthlyRent), deposit: senOrEmpty(c.deposit), tenantName: c.tenantName ?? '', ltFeePct: pctOf(c.revenueModel === 'long_term' ? c.managementPct : 10),
     startsOn: c.startsOn?.slice(0, 10) ?? '', endsOn: c.endsOn?.slice(0, 10) ?? '', renewsOn: c.renewsOn?.slice(0, 10) ?? '', miscCharges: c.miscCharges,
   };
 }
@@ -54,11 +55,11 @@ function bodyOf(d: Draft) {
   const m = d.revenueModel, share = m === 'management' || m === 'management_guarantee';
   return {
     revenueModel: m,
-    ...(share ? { ownerPct: Number(d.ownerPct), managementPct: Number(d.managementPct), agentPct: Number(d.agentPct || 0), agentName: d.agentName || null, miscCharges: d.miscCharges } : {}),
-    ...(m === 'management_guarantee' ? { minimumGuarantee: toSen(d.minimumGuarantee), guaranteeStartsOn: d.guaranteeStartsOn || null, guaranteeEndsOn: d.guaranteeEndsOn || null } : {}),
-    ...(!share ? { monthlyRent: toSen(d.monthlyRent) } : {}),
-    ...(m === 'master_lease' ? { deposit: d.deposit ? toSen(d.deposit) : null } : {}),
-    ...(m === 'long_term' ? { tenantName: d.tenantName, managementPct: Number(d.ltFeePct || 0) } : {}),
+    ...(share ? { ownerPct: d.ownerPct ?? 0, managementPct: d.managementPct ?? 0, agentPct: d.agentPct ?? 0, agentName: d.agentName || null, miscCharges: d.miscCharges } : {}),
+    ...(m === 'management_guarantee' ? { minimumGuarantee: d.minimumGuarantee ?? 0, guaranteeStartsOn: d.guaranteeStartsOn || null, guaranteeEndsOn: d.guaranteeEndsOn || null } : {}),
+    ...(!share ? { monthlyRent: d.monthlyRent ?? 0 } : {}),
+    ...(m === 'master_lease' ? { deposit: d.deposit ?? null } : {}),
+    ...(m === 'long_term' ? { tenantName: d.tenantName, managementPct: d.ltFeePct ?? 0 } : {}),
     startsOn: d.startsOn, endsOn: d.endsOn || null, renewsOn: d.renewsOn || null,
   };
 }
@@ -66,11 +67,13 @@ function bodyOf(d: Draft) {
 function problems(d: Draft): Record<string, string> {
   const f: Record<string, string> = {}, m = d.revenueModel;
   if (m === 'management' || m === 'management_guarantee') {
-    const sum = Number(d.ownerPct || 0) + Number(d.managementPct || 0) + Number(d.agentPct || 0);
+    const sum = (d.ownerPct ?? 0) + (d.managementPct ?? 0) + (d.agentPct ?? 0);
     if (Math.abs(sum - 100) > 0.001) f.ownerPct = `Owner, management and agent add up to ${Number(sum.toFixed(2))}%, not 100%.`;
-    if (m === 'management_guarantee' && !(Number(d.minimumGuarantee) > 0)) f.minimumGuarantee = 'Enter the monthly minimum.';
-  } else if (!(Number(d.monthlyRent) > 0)) f.monthlyRent = 'Enter the monthly rent.';
+    if (m === 'management_guarantee' && !((d.minimumGuarantee ?? 0) > 0)) f.minimumGuarantee = 'Enter the monthly minimum.';
+  } else if (!((d.monthlyRent ?? 0) > 0)) f.monthlyRent = 'Enter the monthly rent.';
   if (m === 'long_term' && !d.tenantName.trim()) f.tenantName = 'Enter the tenant.';
+  if (d.endsOn && d.startsOn && d.endsOn < d.startsOn) f.endsOn = 'The end date is before the start date.';
+  if (m === 'management_guarantee' && d.guaranteeEndsOn && d.guaranteeStartsOn && d.guaranteeEndsOn < d.guaranteeStartsOn) f.guaranteeEndsOn = 'The guarantee ends before it starts.';
   return f;
 }
 
@@ -130,13 +133,14 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
   }
 
   const pct = (k: 'ownerPct' | 'managementPct' | 'agentPct' | 'ltFeePct', label: string) => (
-    <Field label={label} type="number" min={0} max={100} step="0.01" numeric value={d[k]} onChange={e => set({ [k]: e.target.value })} error={shown[k === 'ltFeePct' ? 'managementPct' : k]} />
+    <PercentInput label={label} value={d[k]} onChange={v => set({ [k]: v })} error={shown[k === 'ltFeePct' ? 'managementPct' : k]} />
   );
   const money = (k: 'minimumGuarantee' | 'monthlyRent' | 'deposit', label: string, help?: string) => (
-    <Field label={label} type="number" min={0} step="0.01" numeric placeholder="e.g. 3000" value={d[k]} onChange={e => set({ [k]: e.target.value })} error={shown[k]} help={help} />
+    <MoneyInput label={label} placeholder="e.g. 3,000.00" valueSen={d[k]} onChangeSen={v => set({ [k]: v })} error={shown[k]} help={help} />
   );
   const day = (k: 'startsOn' | 'endsOn' | 'renewsOn' | 'guaranteeStartsOn' | 'guaranteeEndsOn', label: string) => (
-    <Field label={label} type="date" value={d[k]} onChange={e => set({ [k]: e.target.value })} error={shown[k]} />
+    <DateField label={label} value={d[k]} onChange={v => set({ [k]: v })} error={shown[k]}
+      min={k === 'endsOn' || k === 'renewsOn' ? d.startsOn || undefined : k === 'guaranteeEndsOn' ? d.guaranteeStartsOn || undefined : undefined} />
   );
 
   return (

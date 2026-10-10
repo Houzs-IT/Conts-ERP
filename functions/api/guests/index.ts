@@ -4,6 +4,7 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { CONTACT_ROLES, FILTERS, filterWhere, SORTS, type GuestFilter, guestTags, monthYear, statsCte, todayAndTomorrow, hasGuestColumns, MISSING_ID } from '../../_lib/guestList';
 import { like } from '../../_lib/bookingList';
 import { countryCode } from '../../_lib/hostplatformImport';
+import { checkPhone, invalid, type Fields } from '../../_lib/validate';
 
 const OPS = CONTACT_ROLES;
 
@@ -87,6 +88,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const email = typeof b.email === 'string' && b.email.trim() ? b.email.trim().slice(0, 200) : null;
   const phone = typeof b.phone === 'string' && b.phone.trim() ? b.phone.trim().slice(0, 40) : null;
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail('VALIDATION', 'That email does not look right.', 422, { email: 'Check the email.' });
+  const fields: Fields = {};
+  checkPhone(fields, 'phone', b.phone, { label: 'Phone' });
+  const bad = invalid(fields); if (bad) return bad;
 
   const found = email
     ? await one<{ id: string; full_name: string }>(env, 'SELECT id, full_name FROM guests WHERE lower(email) = lower(?) ORDER BY created_at LIMIT 1', email)

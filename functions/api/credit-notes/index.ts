@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { HEADER_SQL, NOTE_KIND_WORD, buildLines, isNoteKind, nextNoteNumber, toNotePayload, type NoteHeaderRow } from '../../_lib/credit-notes';
 import { strOrNull, genId } from '../../_lib/scm-util';
+import { checkSen, checkDate, invalid, type Fields } from '../../_lib/validate';
 
 /** GET /api/credit-notes?kind=&status= — newest first. Finance only, as in Houzs. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -29,6 +30,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const kind = String(b.kind ?? '').trim().toUpperCase();
   if (!isNoteKind(kind)) return fail('VALIDATION', 'Say which note this is: a credit note or debit note to a customer, or a credit note from a supplier.', 422, { kind: 'Pick a note type.' });
+  const fields: Fields = {};
+  checkDate(fields, 'noteDate', b.noteDate, { label: 'Note date' });
+  if (Array.isArray(b.lines)) (b.lines as Record<string, unknown>[]).forEach((l, i) => checkSen(fields, `lines.${i}.amountSen`, l?.amountSen, { label: 'Amount', required: true, min: 1 }));
+  const bad = invalid(fields); if (bad) return bad;
   const built = buildLines(b.lines);
   if ('message' in built) return fail('VALIDATION', built.message, 422, { lines: built.message });
 

@@ -1,5 +1,6 @@
 import { type Env, run, nowIso } from './db';
 import { toPayment, PAYMENT_KINDS } from './bookingMoney';
+import { checkSen, checkDate } from './validate';
 
 /** Recording money against a booking: shared by one booking's Record payment and the bulk "payouts received". */
 
@@ -15,6 +16,8 @@ export function validatePayment(b: any): Record<string, string> | null {
   if (!b?.receivedOn || !ISO_DAY.test(b.receivedOn)) errs.receivedOn = 'Pick the date it was received.';
   else if (b.receivedOn > new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)) errs.receivedOn = 'The date cannot be in the future.';
   if (b?.kind != null && !(PAYMENT_KINDS as readonly string[]).includes(b.kind)) errs.kind = 'Pick what this payment is.';
+  if (!errs.amount) checkSen(errs, 'amount', b.amount, { label: 'Amount' });
+  if (!errs.receivedOn) checkDate(errs, 'receivedOn', b.receivedOn, { label: 'Date' });
   return Object.keys(errs).length ? errs : null;
 }
 

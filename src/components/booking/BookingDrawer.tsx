@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Drawer } from '../Dialog';
 import { Button } from '../Button';
 import { Field } from '../Field';
+import { DateField, TimeField, MoneyInput } from '../inputs';
 import Icon from '../Icon';
 import ChannelMark from '../ChannelMark';
 import { useApi } from '../../lib/useApi';
@@ -367,21 +368,21 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
   const [checkIn, setCheckIn] = useState(d.checkIn);
   const [checkOut, setCheckOut] = useState(d.checkOut);
   const priced = d.channel === 'direct' || d.channel === 'owner_stay';
-  const [total, setTotal] = useState(String(d.money.gross / 100));
+  const [totalSen, setTotalSen] = useState<number | null>(d.money.gross);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const inHouse = d.state === 'checked_in';
   const n = checkIn && checkOut ? nightsBetween(checkIn, checkOut) : 0;
-  const totalSen = Math.round(Number(total) * 100);
-  const priceChanged = priced && total !== '' && Number.isFinite(totalSen) && totalSen !== d.money.gross;
+  const priceChanged = priced && totalSen != null && totalSen !== d.money.gross;
   const changed = checkIn !== d.checkIn || checkOut !== d.checkOut || priceChanged;
-  const valid = !!checkIn && !!checkOut && n >= 1 && changed && (!priced || (total !== '' && totalSen >= 0));
+  const valid = !!checkIn && !!checkOut && n >= 1 && changed && (!priced || (totalSen != null && totalSen >= 0));
   const perNight = d.nights > 0 && d.money.gross > 0 ? d.money.gross / d.nights : 0;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!valid) return;
-    setBusy(true); setError(null);
+    setBusy(true); setError(null); setFieldErrors({});
     try {
       const res = await api.patch<{ effects?: { channel: ChannelSync } }>(`/reservations/${d.id}/dates`, {
         checkIn, checkOut, confirm: true, ...(priceChanged ? { grossBookingValue: totalSen } : {}),
@@ -389,6 +390,7 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
       onSaved({ checkIn, checkOut, channel: res?.effects?.channel });
     } catch (err) {
       setError(failMessage(err));
+      if (err instanceof ApiFailure && err.fields) setFieldErrors(err.fields);
       toast({ tone: 'critical', title: 'Dates were not changed.', body: failMessage(err) });
     }
     setBusy(false);
@@ -401,14 +403,15 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
           Now: {dateRange(d.checkIn, d.checkOut)} · {fmtNights(d.nights)}{d.money.gross > 0 ? ` · ${rm(d.money.gross)}` : ''}
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3">
-          <Field label="Check-in" type="date" value={checkIn} onChange={e => setCheckIn(e.target.value)} required disabled={inHouse}
+          <DateField label="Check-in" value={checkIn} onChange={setCheckIn} required disabled={inHouse} error={fieldErrors.checkIn}
             help={inHouse ? 'The guest is already in.' : undefined} />
-          <Field label="Check-out" type="date" value={checkOut} onChange={e => setCheckOut(e.target.value)} required
-            error={checkIn && checkOut && n < 1 ? 'Check-out must be after check-in.' : undefined}
+          <DateField label="Check-out" value={checkOut} min={checkIn || undefined} onChange={setCheckOut} required
+            error={checkIn && checkOut && n < 1 ? 'Check-out must be after check-in.' : fieldErrors.checkOut}
             help={n >= 1 && (checkIn !== d.checkIn || checkOut !== d.checkOut) ? `New stay: ${dateRange(checkIn, checkOut)} · ${fmtNights(n)}` : undefined} />
         </div>
         {priced ? (
-          <Field label="Total for the stay (RM)" type="number" min={0} step="0.01" numeric value={total} onChange={e => setTotal(e.target.value)}
+          <MoneyInput label="Total for the stay (RM)" valueSen={totalSen} onChangeSen={setTotalSen} required
+            error={totalSen == null ? 'Enter the total, or 0.00.' : fieldErrors.grossBookingValue}
             help={perNight > 0 && n >= 1 && n !== d.nights
               ? `At the current ${rm(Math.round(perNight))} a night, ${fmtNights(n)} would be ${rm(Math.round(perNight * n))}. Change the total if the price changes.`
               : 'Stays the same unless you change it.'} />
@@ -433,19 +436,18 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
   const toast = useToast();
   const ota = d.channel === 'airbnb' || d.channel === 'booking_com' || d.channel === 'agoda';
   const [kind, setKind] = useState<Payment['kind']>(ota ? 'ota_payout' : 'guest_payment');
-  const [amount, setAmount] = useState(d.ledger.outstanding > 0 ? (d.ledger.outstanding / 100).toFixed(2) : '');
+  const [sen, setSen] = useState<number | null>(d.ledger.outstanding > 0 ? d.ledger.outstanding : null);
   const [receivedOn, setReceivedOn] = useState(todayIso());
   const [method, setMethod] = useState(ota ? 'Booking site payout' : 'Bank transfer');
   const [reference, setReference] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const sen = Math.round(Number(amount) * 100);
-  const valid = Number.isFinite(sen) && sen > 0 && !!receivedOn;
+  const valid = sen != null && sen > 0 && !!receivedOn;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!valid) return;
+    if (!valid || sen == null) return;
     setBusy(true); setErrors({});
     try {
       await api.post(`/reservations/${d.id}/payments`, { amount: sen, receivedOn, kind, method, reference: reference || undefined, note: note || undefined });
@@ -469,8 +471,8 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
           ))}
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-          <Field label="Amount (RM)" type="number" min={0.01} step="0.01" numeric value={amount} onChange={e => setAmount(e.target.value)} required error={errors.amount} />
-          <Field label={kind === 'refund' ? 'Refunded on' : 'Received on'} type="date" value={receivedOn} max={todayIso()} onChange={e => setReceivedOn(e.target.value)} required error={errors.receivedOn} />
+          <MoneyInput label="Amount (RM)" valueSen={sen} onChangeSen={setSen} minSen={1} required error={errors.amount} />
+          <DateField label={kind === 'refund' ? 'Refunded on' : 'Received on'} value={receivedOn} max={todayIso()} onChange={setReceivedOn} required error={errors.receivedOn} />
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <div className="flex flex-col gap-1.5">
@@ -498,24 +500,28 @@ function TimesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => void; o
   const [inTime, setInTime] = useState(d.checkInTime || '15:00');
   const [outTime, setOutTime] = useState(d.checkOutTime || '11:00');
   const [busy, setBusy] = useState(false);
-  const changed = inTime !== d.checkInTime || outTime !== d.checkOutTime;
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const changed = (inTime !== d.checkInTime || outTime !== d.checkOutTime) && !!inTime && !!outTime;
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!changed) return;
-    setBusy(true);
+    setBusy(true); setErrors({});
     try {
       await api.patch(`/reservations/${d.id}/details`, { checkInTime: inTime, checkOutTime: outTime });
       onSaved(`Check-in from ${inTime} on ${date(d.checkIn)}, check-out by ${outTime} on ${date(d.checkOut)}. Cleaning plans with the new times.`);
-    } catch (err) { toast({ tone: 'critical', title: 'Times not changed.', body: failMessage(err) }); }
+    } catch (err) {
+      if (err instanceof ApiFailure && err.fields) setErrors(err.fields);
+      toast({ tone: 'critical', title: 'Times not changed.', body: failMessage(err) });
+    }
     setBusy(false);
   }
   return (
     <CentreModal title="Check-in and check-out times" sub="For an early check-in or a late check-out. The dates do not change, and the guest is not messaged." onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-          <Field label={`Check-in from (${date(d.checkIn)})`} type="time" value={inTime} onChange={e => setInTime(e.target.value)} required disabled={d.state === 'checked_in'}
-            help={d.state === 'checked_in' ? 'The guest is already in.' : 'Standard 15:00'} />
-          <Field label={`Check-out by (${date(d.checkOut)})`} type="time" value={outTime} onChange={e => setOutTime(e.target.value)} required help="Standard 11:00" />
+          <TimeField label={`Check-in from (${date(d.checkIn)})`} value={inTime} onChange={setInTime} required disabled={d.state === 'checked_in'}
+            help={d.state === 'checked_in' ? 'The guest is already in.' : 'Standard 15:00'} error={errors.checkInTime} />
+          <TimeField label={`Check-out by (${date(d.checkOut)})`} value={outTime} onChange={setOutTime} required help="Standard 11:00" error={errors.checkOutTime} />
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>

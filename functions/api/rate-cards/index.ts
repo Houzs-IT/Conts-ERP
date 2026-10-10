@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { isBasis, isAggregation, isRounding, isRateRuleType, toCardPayload, type CardRow } from '../../_lib/rate-cards';
 import { strOrNull, intOrNull, flag, genId } from '../../_lib/scm-util';
+import { checkSen, checkInt, invalid, type Fields } from '../../_lib/validate';
 
 const LIST_SQL = `
   SELECT c.id, c.name, c.carrier_company_id, c.carrier_label, c.basis, c.aggregation, c.min_charge_sen, c.cap_sen,
@@ -25,6 +26,20 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
 interface RuleInput { ruleType?: unknown; tierPosition?: unknown; bracketMin?: unknown; bracketMax?: unknown; zone?: unknown; amountSen?: unknown }
 
+/** Field checks shared by create and update; every key is optional so a PATCH passes when it leaves one out. */
+export function cardFieldProblems(b: Record<string, unknown>) {
+  const fields: Fields = {};
+  checkSen(fields, 'minChargeSen', b.minChargeSen, { label: 'Minimum charge' });
+  checkSen(fields, 'capSen', b.capSen, { label: 'Charge cap' });
+  if (Array.isArray(b.rules)) (b.rules as RuleInput[]).forEach((r, i) => {
+    checkInt(fields, `rules.${i}.tierPosition`, r?.tierPosition, { label: 'Position', min: 0 });
+    checkInt(fields, `rules.${i}.bracketMin`, r?.bracketMin, { label: 'Bracket min', min: 0 });
+    checkInt(fields, `rules.${i}.bracketMax`, r?.bracketMax, { label: 'Bracket max', min: 0 });
+    checkSen(fields, `rules.${i}.amountSen`, r?.amountSen, { label: 'Amount' });
+  });
+  return invalid(fields);
+}
+
 /** Insert a card's rules from the request payload (used by create + replace). */
 export async function insertRules(env: Env, cardId: string, raw: unknown): Promise<void> {
   const rules = Array.isArray(raw) ? (raw as RuleInput[]) : [];
@@ -45,6 +60,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const name = String(b.name ?? '').trim();
   if (!name) return fail('VALIDATION', 'Enter a card name.', 422, { name: 'Enter a card name.' });
+  const bad = cardFieldProblems(b); if (bad) return bad;
   const carrierCompanyId = strOrNull(b.carrierCompanyId);
   if (carrierCompanyId && !await one(env, 'SELECT 1 AS x FROM threepl_companies WHERE id = ?', carrierCompanyId)) return fail('VALIDATION', 'Unknown carrier.', 422, { carrierCompanyId: 'Unknown carrier.' });
   const id = genId('rc');

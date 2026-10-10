@@ -1,6 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
+import { MoneyInput, NumberInput } from '../../components/inputs';
 import Icon from '../../components/Icon';
 import { Card } from '../../components/Card';
 import { useToast } from '../../components/Toast';
@@ -59,13 +60,13 @@ export function DetailsForm({ u, buildings, money, canEdit, onChange, onOpenCont
           <Field label="" aria-label="Address" value={u.address} onChange={e => onChange({ address: e.target.value })} />
         </Labeled>
         <Labeled label="Bedrooms" hint="NUMBER" help="0 for a studio">
-          <Field label="" aria-label="Bedrooms" type="number" numeric min={0} max={20} value={u.bedrooms == null ? '' : String(u.bedrooms)}
-            onChange={e => onChange({ bedrooms: e.target.value === '' ? undefined : Math.max(0, Math.round(Number(e.target.value) || 0)) })} />
+          <NumberInput label="" aria-label="Bedrooms" min={0} max={20} value={u.bedrooms ?? null}
+            onChange={n => onChange({ bedrooms: n ?? undefined })} />
         </Labeled>
         {money && u.baseRate !== undefined && (
           <Labeled label="Base nightly rate (RM)" hint="AMOUNT" help="The web price before channel uplifts. Saving it re-sends prices to linked channels.">
-            <Field label="" aria-label="Base nightly rate" type="number" numeric min={1} value={String(Math.round(u.baseRate / 100))}
-              onChange={e => onChange({ baseRate: Math.round(Number(e.target.value || 0) * 100) })} />
+            <MoneyInput label="" aria-label="Base nightly rate" minSen={100} valueSen={u.baseRate}
+              onChangeSen={sen => onChange({ baseRate: sen ?? 0 })} />
           </Labeled>
         )}
       </Grid3>
@@ -141,7 +142,7 @@ export function DocumentsCard({ unitId, unitLabel, documents, onUploaded }: { un
 
 export function ExpensesEditor({ u, canEdit, onChange }: { u: Unit; canEdit: boolean; onChange: Change }) {
   const total = u.expenses.reduce((s, e) => s + e.amount, 0);
-  const setAmt = (id: string, rmv: string) => onChange({ expenses: u.expenses.map(e => e.id === id ? { ...e, amount: Math.round(Number(rmv || 0) * 100) } : e) });
+  const setAmt = (id: string, sen: number | null) => onChange({ expenses: u.expenses.map(e => e.id === id ? { ...e, amount: sen ?? 0 } : e) });
   const remove = (id: string) => onChange({ expenses: u.expenses.filter(e => e.id !== id) });
   return (
     <fieldset disabled={!canEdit} className="p-5 m-0 border-0 min-w-0">
@@ -152,7 +153,7 @@ export function ExpensesEditor({ u, canEdit, onChange }: { u: Unit; canEdit: boo
             <input aria-label="Expense category" value={e.category} onChange={ev => onChange({ expenses: u.expenses.map(x => x.id === e.id ? { ...x, category: ev.target.value } : x) })} className="field-input h-[38px]! min-w-0" />
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="text-meta text-muted-ink">RM</span>
-              <input aria-label={`${e.category} amount`} type="number" value={String(Math.round(e.amount / 100))} onChange={ev => setAmt(e.id, ev.target.value)} className="field-input h-[38px]! min-w-0 text-right tabular-nums" />
+              <MoneyInput aria-label={`${e.category} amount`} valueSen={e.amount} onChangeSen={sen => setAmt(e.id, sen)} className="field-input h-[38px]! min-w-0 text-right tabular-nums" />
             </div>
             {canEdit ? (
               <button onClick={() => remove(e.id)} aria-label={`Remove ${e.category}`} title="Remove"

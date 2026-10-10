@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { invalidCategory, toCategoryPayload, type CategoryRow } from '../../_lib/categories';
 import { strOrNull, intOrNull, flag } from '../../_lib/scm-util';
+import { checkInt, invalid as invalidFields, type Fields } from '../../_lib/validate';
 
 const COLS = 'id, label, icon, tbc, hero_image_key, sort_order';
 
@@ -22,6 +23,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const bad = invalidCategory(b);
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
+  const fields: Fields = {};
+  checkInt(fields, 'sortOrder', b.sortOrder, { label: 'Sort order' });
+  const badFields = invalidFields(fields); if (badFields) return badFields;
 
   const id = (b.id as string).trim();
   if (await one(env, 'SELECT 1 AS x FROM product_categories WHERE lower(id) = lower(?)', id)) {

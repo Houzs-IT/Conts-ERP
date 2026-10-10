@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { MoneyInput, NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -60,8 +61,6 @@ const FALLBACK: Payload = {
   ],
 };
 
-const senToRm = (sen: number | null | undefined) => (sen == null ? '' : String(sen / 100));
-const rmToSen = (v: string): number | null => { const n = Number(v); return v.trim() && Number.isFinite(n) ? Math.round(n * 100) : null; };
 const priceLabel = (sen: number | null | undefined) => (sen == null ? '—' : rm(sen));
 
 /** Split one CSV line into cells, honouring double-quoted fields. */
@@ -84,17 +83,17 @@ function splitCsv(line: string): string[] {
 type Draft = {
   id?: string; code: string; name: string; category: Category; sizeLabel: string;
   baseModel: string; branding: string; barcode: string; description: string;
-  basePrice: string; price1: string; costPrice: string; unitM3: string; status: 'ACTIVE' | 'INACTIVE';
+  basePriceSen: number | null; price1Sen: number | null; costPriceSen: number | null; unitM3: number | null; status: 'ACTIVE' | 'INACTIVE';
 };
 const emptyDraft = (): Draft => ({
   code: '', name: '', category: 'SOFA', sizeLabel: '', baseModel: '', branding: '', barcode: '',
-  description: '', basePrice: '', price1: '', costPrice: '', unitM3: '', status: 'ACTIVE',
+  description: '', basePriceSen: null, price1Sen: null, costPriceSen: null, unitM3: null, status: 'ACTIVE',
 });
 const draftFrom = (p: Product): Draft => ({
   id: p.id, code: p.code, name: p.name, category: p.category, sizeLabel: p.sizeLabel,
   baseModel: p.baseModel, branding: p.branding, barcode: p.barcode, description: p.description,
-  basePrice: senToRm(p.basePriceSen), price1: senToRm(p.price1Sen), costPrice: senToRm(p.costPriceSen),
-  unitM3: p.unitM3Milli ? String(p.unitM3Milli / 1000) : '', status: p.status,
+  basePriceSen: p.basePriceSen, price1Sen: p.price1Sen, costPriceSen: p.costPriceSen ?? null,
+  unitM3: p.unitM3Milli ? p.unitM3Milli / 1000 : null, status: p.status,
 });
 
 export default function ProductsPage() {
@@ -108,7 +107,7 @@ export default function ProductsPage() {
   const [search, setSearch] = useState('');
   const [drawer, setDrawer] = useState<Draft | null>(null);
   const [editPrices, setEditPrices] = useState(false);
-  const [priceEdits, setPriceEdits] = useState<Record<string, { basePrice?: string; price1?: string }>>({});
+  const [priceEdits, setPriceEdits] = useState<Record<string, { basePriceSen?: number | null; price1Sen?: number | null }>>({});
 
   const [added, setAdded] = useState<Product[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Product>>>({});
@@ -132,15 +131,15 @@ export default function ProductsPage() {
   }
 
   function submitDraft(f: Draft) {
-    const basePriceSen = rmToSen(f.basePrice);
-    const price1Sen = f.category === 'MATTRESS' || f.category === 'SERVICE' ? null : rmToSen(f.price1);
-    const unitM3Milli = f.unitM3.trim() && Number.isFinite(Number(f.unitM3)) ? Math.round(Number(f.unitM3) * 1000) : 0;
+    const basePriceSen = f.basePriceSen;
+    const price1Sen = f.category === 'MATTRESS' || f.category === 'SERVICE' ? null : f.price1Sen;
+    const unitM3Milli = f.unitM3 == null ? 0 : Math.round(f.unitM3 * 1000);
     const shared: Partial<Product> = {
       code: f.code.trim(), name: f.name.trim(), category: f.category, sizeLabel: f.sizeLabel.trim(),
       baseModel: f.baseModel.trim(), branding: f.branding.trim(), barcode: f.barcode.trim(), description: f.description.trim(),
       unitM3Milli, status: f.status, basePriceSen, price1Sen, sellPriceSen: basePriceSen,
     };
-    const apiBody: Record<string, unknown> = { ...shared, costPriceSen: rmToSen(f.costPrice) };
+    const apiBody: Record<string, unknown> = { ...shared, costPriceSen: f.costPriceSen };
     if (f.id) {
       patch(f.id, shared, apiBody);
       toast({ tone: 'success', title: 'Product updated.', body: `${f.code.trim()} ${f.name.trim()}` });
@@ -163,8 +162,8 @@ export default function ProductsPage() {
   function savePrices() {
     for (const [id, e] of Object.entries(priceEdits)) {
       const body: Partial<Product> = {};
-      if (e.basePrice !== undefined) body.basePriceSen = rmToSen(e.basePrice);
-      if (e.price1 !== undefined) body.price1Sen = rmToSen(e.price1);
+      if (e.basePriceSen !== undefined) body.basePriceSen = e.basePriceSen;
+      if (e.price1Sen !== undefined) body.price1Sen = e.price1Sen;
       if (Object.keys(body).length) patch(id, body);
     }
     const n = Object.keys(priceEdits).length;
@@ -297,11 +296,11 @@ export default function ProductsPage() {
                         <td className="py-[13px] px-4"><span className="inline-block text-[11px] font-semibold uppercase tracking-[0.06em] bg-[var(--color-gold-50)] text-gold-ink px-2.5 py-0.5 rounded-full">{CAT_LABEL[p.category]}</span></td>
                         <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.sizeLabel || '—'}</td>
                         <td className="py-[13px] px-4 text-right tabular-nums text-[13px]" onClick={e => editPrices && e.stopPropagation()}>
-                          {editPrices ? <PriceInput value={pe.basePrice ?? senToRm(p.basePriceSen)} onChange={v => setPriceEdits(s => ({ ...s, [p.id]: { ...s[p.id], basePrice: v } }))} /> : priceLabel(p.basePriceSen)}
+                          {editPrices ? <PriceInput label={`Base price for ${p.code}`} valueSen={pe.basePriceSen !== undefined ? pe.basePriceSen : p.basePriceSen} onChange={v => setPriceEdits(s => ({ ...s, [p.id]: { ...s[p.id], basePriceSen: v } }))} /> : priceLabel(p.basePriceSen)}
                         </td>
                         <td className="py-[13px] px-4 text-right tabular-nums text-[13px]" onClick={e => editPrices && e.stopPropagation()}>
                           {p.category === 'MATTRESS' || p.category === 'SERVICE' ? <span className="text-faint">—</span>
-                            : editPrices ? <PriceInput value={pe.price1 ?? senToRm(p.price1Sen)} onChange={v => setPriceEdits(s => ({ ...s, [p.id]: { ...s[p.id], price1: v } }))} /> : priceLabel(p.price1Sen)}
+                            : editPrices ? <PriceInput label={`Price 1 for ${p.code}`} valueSen={pe.price1Sen !== undefined ? pe.price1Sen : p.price1Sen} onChange={v => setPriceEdits(s => ({ ...s, [p.id]: { ...s[p.id], price1Sen: v } }))} /> : priceLabel(p.price1Sen)}
                         </td>
                         <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums">{p.barcode || '—'}</td>
                         <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{p.unitM3Milli ? (p.unitM3Milli / 1000).toFixed(3) : '—'}</td>
@@ -343,9 +342,9 @@ function StatusPill({ status }: { status: 'ACTIVE' | 'INACTIVE' }) {
   );
 }
 
-function PriceInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function PriceInput({ label, valueSen, onChange }: { label: string; valueSen: number | null; onChange: (v: number | null) => void }) {
   return (
-    <input type="number" step="0.01" value={value} onChange={e => onChange(e.target.value)} aria-label="Price"
+    <MoneyInput valueSen={valueSen} onChangeSen={onChange} aria-label={label}
       className="h-8 w-[110px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" />
   );
 }
@@ -382,10 +381,10 @@ function ProductDrawer({ draft, onClose, onSubmit, onDelete }: { draft: Draft; o
           {isMattress && <Field label="Branding" placeholder="e.g. HILTON" value={f.branding} onChange={set('branding')} />}
           <Field label="Barcode" placeholder="optional" value={f.barcode} onChange={set('barcode')} />
           <div className="col-span-2"><Field label="Description" placeholder="Secondary description" value={f.description} onChange={set('description')} /></div>
-          <Field label={isMattress ? 'Price (RM)' : 'Base price / Price 2 (RM)'} type="number" numeric step="0.01" placeholder="0.00" value={f.basePrice} onChange={set('basePrice')} />
-          {!hidePrice1 && <Field label="Price 1 (RM)" type="number" numeric step="0.01" placeholder="0.00" value={f.price1} onChange={set('price1')} />}
-          <Field label="Cost price (RM)" type="number" numeric step="0.01" placeholder="0.00" value={f.costPrice} onChange={set('costPrice')} />
-          <Field label="Unit (m³)" type="number" numeric step="0.001" placeholder="0.000" value={f.unitM3} onChange={set('unitM3')} />
+          <MoneyInput label={isMattress ? 'Price (RM)' : 'Base price / Price 2 (RM)'} valueSen={f.basePriceSen} onChangeSen={v => setF(s => ({ ...s, basePriceSen: v }))} />
+          {!hidePrice1 && <MoneyInput label="Price 1 (RM)" valueSen={f.price1Sen} onChangeSen={v => setF(s => ({ ...s, price1Sen: v }))} />}
+          <MoneyInput label="Cost price (RM)" valueSen={f.costPriceSen} onChangeSen={v => setF(s => ({ ...s, costPriceSen: v }))} />
+          <NumberInput label="Unit (m³)" decimals={3} placeholder="0.000" min={0} value={f.unitM3} onChange={v => setF(s => ({ ...s, unitM3: v }))} />
           {f.id && (
             <div className="flex flex-col gap-[7px]">
               <label className="text-[12px] font-medium text-muted-ink">Status</label>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { TimeField } from '../components/inputs';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -55,7 +56,7 @@ export default function DeliveryTimeArrangementPage() {
                       <option value="">Any</option><option value="MORNING">Morning</option><option value="AFTERNOON">Afternoon</option><option value="EVENING">Evening</option>
                     </select>
                   </td>
-                  <td className="py-[13px] px-4"><input type="time" disabled={!canWrite} value={r.plannedTime} onChange={e => setTime(r, e.target.value)} className={cx('h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-60')} /></td>
+                  <td className="py-[13px] px-4"><TimeField aria-label={`Specific time for ${r.soDocNo}`} disabled={!canWrite} value={r.plannedTime} onChange={v => setTime(r, v)} className={cx('h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-60')} /></td>
                 </tr>
               ))}
             </tbody>

@@ -1,5 +1,6 @@
 import { type Env, one, run, json, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { isIsoDate } from '../../_lib/validate';
 import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked } from '../../_lib/expenses';
 
 /** PATCH /api/expenses/:id { category?, description?, amount?, incurredOn?, reference?, chargeTo? }
@@ -15,7 +16,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const fields: Record<string, string> = {};
   if (b.category !== undefined && !EXPENSE_CATEGORIES.includes(b.category)) fields.category = 'Choose a category.';
   if (b.amount !== undefined && (!Number.isInteger(b.amount) || b.amount < 0)) fields.amount = 'Enter an amount of RM 0.00 or more.';
-  if (b.incurredOn !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.incurredOn))) fields.incurredOn = 'A date is required.';
+  if (b.incurredOn !== undefined && !isIsoDate(String(b.incurredOn))) fields.incurredOn = 'A date is required.';
   if (b.chargeTo !== undefined && !CHARGE_TO.includes(b.chargeTo)) fields.chargeTo = 'Choose who pays.';
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the highlighted fields.', 422, fields);
 

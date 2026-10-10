@@ -2,6 +2,7 @@ import { type Env, all, json, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { moneySchema, moneySql, MONEY_ROLES } from '../../_lib/bookingMoney';
 import { insertPayment, clean } from '../../_lib/bookingPayments';
+import { checkDate, invalid, type Fields } from '../../_lib/validate';
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -21,6 +22,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!ids.length || ids.length > 500) return fail('VALIDATION', 'Pick between 1 and 500 bookings.', 422);
   if (!b.receivedOn || !ISO_DAY.test(b.receivedOn)) return fail('VALIDATION', 'Pick the date the payout arrived.', 422, { receivedOn: 'Pick the date the payout arrived.' });
   if (b.receivedOn > new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)) return fail('VALIDATION', 'The date cannot be in the future.', 422, { receivedOn: 'The date cannot be in the future.' });
+  const fields: Fields = {};
+  checkDate(fields, 'receivedOn', b.receivedOn, { label: 'Arrived on', required: true });
+  const bad = invalid(fields); if (bad) return bad;
 
   const m = moneySql(schema);
   const rows = await all<{ id: string; external_ref: string | null; channel: string; state: string; outstanding: number }>(env, `

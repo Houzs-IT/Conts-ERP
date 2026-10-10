@@ -1,5 +1,6 @@
 /** Supplier master, ported from 2990's SCM. Money is integer sen. Conts is
  *  single-tenant, so 2990's per-company scoping is dropped. */
+import { checkInt, checkPhone, checkSen, type Fields } from './validate';
 
 export const SUPPLIER_STATUSES = ['ACTIVE', 'INACTIVE', 'BLOCKED'] as const;
 export type SupplierStatus = typeof SUPPLIER_STATUSES[number];
@@ -33,6 +34,15 @@ export function toSupplierPayload(r: SupplierRow) {
     supplierType: r.supplier_type ?? '', category: r.category ?? '', businessNature: r.business_nature ?? '',
     tinNumber: r.tin_number ?? '', businessRegNo: r.business_reg_no ?? '', rating: r.rating, notes: r.notes ?? '',
   };
+}
+
+/** Field checks for the number, money and phone fields of a create or edit body. Absent values pass. */
+export function checkSupplierFields(fields: Fields, b: Record<string, unknown>) {
+  checkSen(fields, 'creditLimitSen', b.creditLimitSen, { label: 'Credit limit' });
+  checkInt(fields, 'rating', b.rating, { label: 'Rating', min: 0, max: 5 });
+  checkPhone(fields, 'phone', b.phone, { label: 'Phone' });
+  checkPhone(fields, 'mobile', b.mobile, { label: 'Mobile' });
+  checkPhone(fields, 'whatsappNumber', b.whatsappNumber, { label: 'WhatsApp' });
 }
 
 /** The first problem with a create body, or null. */

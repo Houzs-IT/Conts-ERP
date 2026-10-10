@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { MoneyInput, NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -103,6 +104,8 @@ function ActivePill({ active }: { active: boolean }) {
 function FabricDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onClose: () => void; onSave: (d: Draft) => void; onDelete?: () => void }) {
   const [f, setF] = useState<Draft>(draft);
   const set = <K extends keyof Draft>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value as Draft[K] }));
+  const [surchargeSen, setSurchargeSen] = useState<number | null>(draft.defaultSurchargeSen || null);
+  const [sortOrder, setSortOrder] = useState<number | null>(draft.sortOrder);
   const canSave = f.id.trim() !== '' && f.label.trim() !== '';
   return (
     <Drawer open onClose={onClose} width={520}>
@@ -121,10 +124,10 @@ function FabricDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onCl
               <option value="standard">Standard</option><option value="premium">Premium</option><option value="luxury">Luxury</option>
             </select>
           </div>
-          <Field label="Surcharge (RM)" type="number" numeric step="0.01" value={f.defaultSurchargeSen ? String(f.defaultSurchargeSen / 100) : ''} onChange={e => setF(s => ({ ...s, defaultSurchargeSen: e.target.value.trim() ? Math.round(Number(e.target.value) * 100) : 0 }))} />
+          <MoneyInput label="Surcharge (RM)" valueSen={surchargeSen} onChangeSen={setSurchargeSen} />
           <Field label="Sofa tier" placeholder="e.g. T2" value={f.sofaTier} onChange={set('sofaTier')} />
           <Field label="Bedframe tier" placeholder="e.g. T2" value={f.bedframeTier} onChange={set('bedframeTier')} />
-          <Field label="Sort order" type="number" numeric value={String(f.sortOrder)} onChange={e => setF(s => ({ ...s, sortOrder: Math.round(Number(e.target.value) || 0) }))} />
+          <NumberInput label="Sort order" grouping={false} allowNegative value={sortOrder} onChange={setSortOrder} />
           <div className="flex flex-col gap-[7px]">
             <label className="text-[12px] font-medium text-muted-ink">Status</label>
             <select value={f.active ? '1' : '0'} onChange={e => setF(s => ({ ...s, active: e.target.value === '1' }))} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
@@ -137,7 +140,7 @@ function FabricDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onCl
         <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter an id and a label" onClick={() => onSave(f)}>{draft.isNew ? 'Create' : 'Save'}</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter an id and a label" onClick={() => onSave({ ...f, defaultSurchargeSen: surchargeSen ?? 0, sortOrder: sortOrder ?? 0 })}>{draft.isNew ? 'Create' : 'Save'}</Button>
         </div>
       </div>
     </Drawer>

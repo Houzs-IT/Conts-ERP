@@ -1,6 +1,7 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { strOrNull, intOrNull, flag } from '../../_lib/scm-util';
+import { checkInt, invalid, type Fields } from '../../_lib/validate';
 
 /** PATCH /api/categories/:id — id is immutable; label/icon/tbc/hero/sort change. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -12,6 +13,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (!await one(env, 'SELECT 1 AS x FROM product_categories WHERE id = ?', id)) return fail('NOT_FOUND', 'That category does not exist.', 404);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkInt(fields, 'sortOrder', b.sortOrder, { label: 'Sort order' });
+  const bad = invalid(fields); if (bad) return bad;
   const sets: string[] = [];
   const args: unknown[] = [];
   if (b.label !== undefined) { const l = String(b.label).trim(); if (!l) return fail('VALIDATION', 'Enter a label.', 422, { label: 'Enter a label.' }); sets.push('label = ?'); args.push(l); }

@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { nextSiNumber, toSiHeaderPayload, type SiHeaderRow } from '../../_lib/sales-invoices';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
+import { checkSen, checkDate, invalid, type Fields } from '../../_lib/validate';
 
 const LIST_SQL = `
   SELECT si.id, si.invoice_number, si.delivery_order_id, si.sales_order_id, si.customer_name, si.invoice_date, si.due_date,
@@ -31,6 +32,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can raise sales invoices.', 403);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkDate(fields, 'invoiceDate', b.invoiceDate, { label: 'Invoice date' });
+  checkDate(fields, 'dueDate', b.dueDate, { label: 'Due date', min: typeof b.invoiceDate === 'string' ? b.invoiceDate : undefined });
+  checkSen(fields, 'taxSen', b.taxSen, { label: 'Tax' });
+  const bad = invalid(fields); if (bad) return bad;
   const doId = String(b.deliveryOrderId ?? '').trim();
   const dord = await one<{ id: string; customer_name: string; sales_order_id: string | null; status: string }>(env, 'SELECT id, customer_name, sales_order_id, status FROM delivery_orders WHERE id = ?', doId);
   if (!dord) return fail('VALIDATION', 'Pick a delivery order.', 422, { deliveryOrderId: 'Unknown delivery order.' });

@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -117,8 +118,8 @@ function LeaveDrawer({ drivers, canWrite, onClose, onCreate }: { drivers: Driver
           </select>
         </div>
         <div className="grid grid-cols-2 gap-3.5">
-          <Field label="From" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
-          <Field label="To" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+          <DateField label="From" required value={startDate} onChange={setStartDate} />
+          <DateField label="To" required min={startDate || undefined} value={endDate} onChange={setEndDate} />
         </div>
         <Field label="Reason" placeholder="e.g. Annual leave" value={reason} onChange={e => setReason(e.target.value)} />
       </div>

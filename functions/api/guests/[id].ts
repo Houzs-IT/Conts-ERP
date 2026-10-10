@@ -3,6 +3,7 @@ import { type Env, all, one, run, json, fail, audit } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { CONTACT_ROLES, guestTags, monthYear, todayAndTomorrow, hasGuestColumns, maskId, MANUAL_TAGS } from '../../_lib/guestList';
 import { countryCode } from '../../_lib/hostplatformImport';
+import { checkPhone, isIsoDate } from '../../_lib/validate';
 
 const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 864e5));
 const at = (date: string, time: string) => `${date}T${time}:00+08:00`;
@@ -103,14 +104,14 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const errs: Record<string, string> = {};
   if (b.fullName !== undefined) { const v = text(b.fullName, 200); if (!v) errs.fullName = 'Enter the guest name.'; else next.full_name = v; }
   if (b.email !== undefined) { const v = text(b.email, 200); if (v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) errs.email = 'Check the email.'; else next.email = v; }
-  if (b.phone !== undefined) next.phone = text(b.phone, 40);
+  if (b.phone !== undefined) { checkPhone(errs, 'phone', b.phone, { label: 'Phone' }); if (!errs.phone) next.phone = text(b.phone, 40); }
   if (b.language !== undefined) next.language = text(b.language, 40);
   if (b.countryCode !== undefined) { const v = b.countryCode ? countryCode(String(b.countryCode)) : null; if (b.countryCode && !v) errs.countryCode = 'Pick a country.'; else next.country_code = v; }
   if (b.idType !== undefined) { const v = b.idType || null; if (v && !ID_TYPES.includes(v)) errs.idType = 'Pick MyKad, passport or other.'; else next.id_type = v; }
   if (b.idNumber !== undefined) next.id_number = text(b.idNumber, 40);
   if (b.dateOfBirth !== undefined) {
     const v = b.dateOfBirth || null;
-    if (v && (!ISO_DAY.test(v) || v > todayAndTomorrow().today || v < '1900-01-01')) errs.dateOfBirth = 'Pick a real date of birth.'; else next.date_of_birth = v;
+    if (v && (!ISO_DAY.test(v) || !isIsoDate(v) || v > todayAndTomorrow().today || v < '1900-01-01')) errs.dateOfBirth = 'Pick a real date of birth.'; else next.date_of_birth = v;
   }
   if (b.notes !== undefined) next.notes = text(b.notes, 4000);
   if (b.tags !== undefined) {

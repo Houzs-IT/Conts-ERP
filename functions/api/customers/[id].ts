@@ -2,6 +2,7 @@ import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isCustomerStatus, toCustomerPayload, type CustomerRow } from '../../_lib/customers';
 import { strOrNull, intOrNull } from '../../_lib/scm-util';
+import { checkSen, checkPhone, invalid, type Fields } from '../../_lib/validate';
 
 const COLS = `id, code, name, status, contact_person, phone, email, address, area, postcode, state, country,
               payment_terms, credit_limit_sen, currency, tin_number, business_reg_no, customer_type, notes`;
@@ -21,6 +22,10 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const id = String(params.id);
   if (!await one(env, 'SELECT 1 AS x FROM customers WHERE id = ?', id)) return fail('NOT_FOUND', 'That customer does not exist.', 404);
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkPhone(fields, 'phone', b.phone);
+  checkSen(fields, 'creditLimitSen', b.creditLimitSen, { label: 'Credit limit' });
+  const bad = invalid(fields); if (bad) return bad;
   const sets: string[] = []; const args: unknown[] = [];
   const setStr = (col: string, k: string) => { if (b[k] !== undefined) { sets.push(`${col} = ?`); args.push(strOrNull(b[k])); } };
   if (b.name !== undefined) { const n = String(b.name).trim(); if (!n) return fail('VALIDATION', 'Enter a name.', 422, { name: 'Enter a name.' }); sets.push('name = ?'); args.push(n); }

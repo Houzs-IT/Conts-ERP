@@ -1,7 +1,7 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isBasis, isAggregation, isRounding, toCardPayload, toRulePayload, type CardRow, type RuleRow } from '../../_lib/rate-cards';
-import { insertRules } from './index';
+import { insertRules, cardFieldProblems } from './index';
 import { strOrNull, intOrNull, flag } from '../../_lib/scm-util';
 
 const CARD_SQL = `
@@ -27,6 +27,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const id = String(params.id);
   if (!await one(env, 'SELECT 1 AS x FROM delivery_rate_cards WHERE id = ?', id)) return fail('NOT_FOUND', 'That rate card does not exist.', 404);
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const bad = cardFieldProblems(b); if (bad) return bad;
   const sets: string[] = []; const args: unknown[] = [];
   if (b.name !== undefined) { const n = String(b.name).trim(); if (!n) return fail('VALIDATION', 'Enter a card name.', 422, { name: 'Enter a card name.' }); sets.push('name = ?'); args.push(n); }
   if (b.carrierCompanyId !== undefined) { const cc = strOrNull(b.carrierCompanyId); if (cc && !await one(env, 'SELECT 1 AS x FROM threepl_companies WHERE id = ?', cc)) return fail('VALIDATION', 'Unknown carrier.', 422, { carrierCompanyId: 'Unknown carrier.' }); sets.push('carrier_company_id = ?'); args.push(cc); }

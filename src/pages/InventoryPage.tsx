@@ -8,6 +8,7 @@ import { Chip } from './finance/listKit';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { Field } from '../components/Field';
+import { MoneyInput, DateField } from '../components/inputs';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useUnitRoster } from '../lib/useUnitRoster';
@@ -267,8 +268,9 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
   const [f, setF] = useState({
     name: '', unitNumber: units[0]?.unitNumber ?? '', newProperty: '', newUnit: '',
     category: 'furniture' as Category, quantity: '1', condition: 'good' as Condition,
-    value: '', installedOn: '', replaceBy: '', notes: '',
+    installedOn: '', replaceBy: '', notes: '',
   });
+  const [valueSen, setValueSen] = useState<number | null>(null);
   const set = <K extends keyof typeof f>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value }));
   const addingNewUnit = f.unitNumber === '__new';
 
@@ -279,19 +281,19 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const canSubmit = f.name.trim() !== '' && (addingNewUnit ? f.newProperty.trim() !== '' && f.newUnit.trim() !== '' : f.unitNumber !== '');
+  const canSubmit = f.name.trim() !== '' && (addingNewUnit ? f.newProperty.trim() !== '' && f.newUnit.trim() !== '' : f.unitNumber !== '')
+    && (!f.installedOn || f.installedOn <= todayMyt()) && (!f.replaceBy || !f.installedOn || f.replaceBy >= f.installedOn);
 
   function submit() {
     const unit = addingNewUnit
       ? { unitNumber: f.newUnit.trim(), propertyName: f.newProperty.trim() }
       : units.find(u => u.unitNumber === f.unitNumber)!;
-    const valNum = Number(f.value);
     onSubmit({
       id: crypto.randomUUID(),
       unitNumber: unit.unitNumber, propertyName: unit.propertyName,
       name: f.name.trim(), category: f.category, quantity: f.quantity.trim() || '1',
       condition: f.condition, suppliedInHouse: true,
-      purchaseCost: f.value.trim() !== '' && !Number.isNaN(valNum) ? Math.round(valNum * 100) : null,
+      purchaseCost: valueSen,
       installedOn: f.installedOn || null,
       lastChecked: todayMyt(),
       replaceBy: f.replaceBy || null,
@@ -328,12 +330,12 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
 
             <div className="grid grid-cols-2 gap-3">
               <Select size="md" showLabel label="Condition" value={f.condition} onChange={v => set('condition')({ target: { value: v } })} options={CONDITIONS.map(c => ({ value: c, label: COND_LABEL[c] }))} />
-              <Field label="Purchase value (RM)" type="number" min={0} step="0.01" numeric placeholder="e.g. 3200" value={f.value} onChange={set('value')} />
+              <MoneyInput label="Purchase value (RM)" placeholder="e.g. 3,200.00" valueSen={valueSen} onChangeSen={setValueSen} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Installed on" type="date" value={f.installedOn} onChange={set('installedOn')} />
-              <Field label="Replace by" type="date" value={f.replaceBy} onChange={set('replaceBy')} help="Optional — sets the replacement schedule." />
+              <DateField label="Installed on" value={f.installedOn} onChange={v => setF(s => ({ ...s, installedOn: v }))} max={todayMyt()} />
+              <DateField label="Replace by" value={f.replaceBy} onChange={v => setF(s => ({ ...s, replaceBy: v }))} min={f.installedOn || undefined} help="Optional — sets the replacement schedule." />
             </div>
 
             <Field label="Notes" placeholder="Optional — condition detail, warranty, supplier" value={f.notes} onChange={set('notes')} />

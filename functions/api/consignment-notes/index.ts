@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { isCnStatus, normalizeCnLines, toCnHeaderPayload, type CnHeaderRow } from '../../_lib/consignment-notes';
 import { strOrNull, genId } from '../../_lib/scm-util';
+import { checkSen, checkInt, checkDate, checkPhone, invalid, type Fields } from '../../_lib/validate';
 
 const COLS = 'id, cn_number, consignee_name, consignee_phone, cn_date, status, notes, total_sen, created_at, updated_at';
 
@@ -25,6 +26,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const consigneeName = String(b.consigneeName ?? '').trim();
   if (!consigneeName) return fail('VALIDATION', 'Enter a consignee name.', 422, { consigneeName: 'Enter a consignee name.' });
+  const fields: Fields = {};
+  checkPhone(fields, 'consigneePhone', b.consigneePhone);
+  checkDate(fields, 'cnDate', b.cnDate, { label: 'Date' });
+  if (Array.isArray(b.lines)) (b.lines as Record<string, unknown>[]).forEach((l, i) => {
+    checkInt(fields, `lines.${i}.qtyConsigned`, l?.qtyConsigned, { label: 'Quantity', min: 0 });
+    checkSen(fields, `lines.${i}.unitPriceSen`, l?.unitPriceSen, { label: 'Unit price' });
+  });
+  const bad = invalid(fields); if (bad) return bad;
   const lines = normalizeCnLines(b.lines);
   if (!lines.length) return fail('VALIDATION', 'Add at least one line.', 422, { lines: 'Add at least one line.' });
 

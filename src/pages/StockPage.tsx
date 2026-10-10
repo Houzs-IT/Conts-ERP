@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -138,9 +139,9 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 function AdjustDrawer({ warehouses, canWrite, onClose, onDone }: { warehouses: Opt[]; canWrite: boolean; onClose: () => void; onDone: (m: Movement) => void }) {
   const [itemCode, setItemCode] = useState('');
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
-  const [qty, setQty] = useState('');
+  const [qty, setQty] = useState<number | null>(null);
   const [note, setNote] = useState('');
-  const qtyDelta = Math.round(Number(qty) || 0);
+  const qtyDelta = qty ?? 0;
   const canSave = canWrite && itemCode.trim() !== '' && warehouseId !== '' && qtyDelta !== 0;
 
   function submit() {
@@ -164,7 +165,7 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onDone }: { warehouses: O
               {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
           </div>
-          <Field label="Quantity change (+/−)" type="number" numeric placeholder="e.g. -1 or 5" value={qty} onChange={e => setQty(e.target.value)} help="Positive to add stock, negative to remove." />
+          <NumberInput label="Quantity change (+/−)" allowNegative placeholder="e.g. -1 or 5" value={qty} onChange={setQty} help="Positive to add stock, negative to remove." />
           <div className="col-span-2"><Field label="Note" placeholder="Reason for the adjustment" value={note} onChange={e => setNote(e.target.value)} /></div>
         </div>
       </div>

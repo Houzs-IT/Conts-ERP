@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { DateField } from '../components/inputs';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -54,7 +55,7 @@ export default function DeliveryDateArrangementPage() {
                   <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{r.soDocNo}</td>
                   <td className="py-[13px] px-4 text-[13.5px]">{r.customerName}</td>
                   <td className="py-[13px] px-4"><StatusPill status={r.status} /></td>
-                  <td className="py-[13px] px-4 text-right"><input type="date" disabled={!canWrite} value={r.plannedDate} onChange={e => setDate(r, e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-60" /></td>
+                  <td className="py-[13px] px-4 text-right"><DateField aria-label={`Planned date for ${r.soDocNo}`} disabled={!canWrite} value={r.plannedDate} onChange={v => setDate(r, v)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none disabled:opacity-60" /></td>
                 </tr>
               ))}
             </tbody>

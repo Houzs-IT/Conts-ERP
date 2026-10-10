@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { MoneyInput, NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -114,8 +115,8 @@ export default function FleetHealthPage() {
 
 function RecDrawer({ draft, isNew, vehicles, onClose, onSave, onDelete }: { draft: Rec; isNew: boolean; vehicles: Vehicle[]; onClose: () => void; onSave: (d: Rec, isNew: boolean) => void; onDelete?: () => void }) {
   const [f, setF] = useState<Rec>(draft);
-  const canSave = f.vehicleId !== '' && f.serviceDate !== '';
-  const numOrNull = (v: string) => { const t = v.trim(); return t === '' ? null : Math.max(0, Math.round(Number(t) || 0)); };
+  const dueBeforeService = !!f.nextDueDate && !!f.serviceDate && f.nextDueDate < f.serviceDate;
+  const canSave = f.vehicleId !== '' && f.serviceDate !== '' && !dueBeforeService;
   return (
     <Drawer open onClose={onClose} width={600}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'Log maintenance' : 'Edit record'}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
@@ -132,12 +133,12 @@ function RecDrawer({ draft, isNew, vehicles, onClose, onSave, onDelete }: { draf
               {TYPES.map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
             </select>
           </div>
-          <Field label="Service date" type="date" value={f.serviceDate} onChange={e => setF(s => ({ ...s, serviceDate: e.target.value }))} />
-          <Field label="Odometer (km)" type="number" numeric value={f.odometerKm == null ? '' : String(f.odometerKm)} onChange={e => setF(s => ({ ...s, odometerKm: numOrNull(e.target.value) }))} />
-          <Field label="Cost (RM)" type="number" numeric step="0.01" value={f.costSen ? String(f.costSen / 100) : ''} onChange={e => setF(s => ({ ...s, costSen: Math.max(0, Math.round(Number(e.target.value) * 100 || 0)) }))} />
+          <DateField label="Service date" required value={f.serviceDate} onChange={v => setF(s => ({ ...s, serviceDate: v }))} />
+          <NumberInput label="Odometer (km)" min={0} value={f.odometerKm} onChange={n => setF(s => ({ ...s, odometerKm: n }))} />
+          <MoneyInput label="Cost (RM)" valueSen={f.costSen || null} onChangeSen={n => setF(s => ({ ...s, costSen: n ?? 0 }))} />
           <Field label="Vendor" placeholder="Optional" value={f.vendor} onChange={e => setF(s => ({ ...s, vendor: e.target.value }))} />
-          <Field label="Next due date" type="date" value={f.nextDueDate} onChange={e => setF(s => ({ ...s, nextDueDate: e.target.value }))} />
-          <Field label="Next due (km)" type="number" numeric value={f.nextDueKm == null ? '' : String(f.nextDueKm)} onChange={e => setF(s => ({ ...s, nextDueKm: numOrNull(e.target.value) }))} />
+          <DateField label="Next due date" min={f.serviceDate || undefined} value={f.nextDueDate} onChange={v => setF(s => ({ ...s, nextDueDate: v }))} />
+          <NumberInput label="Next due (km)" min={0} value={f.nextDueKm} onChange={n => setF(s => ({ ...s, nextDueKm: n }))} />
           <div className="flex flex-col gap-[7px]"><label className="text-[12px] font-medium text-muted-ink">Status</label>
             <select value={f.status} onChange={e => setF(s => ({ ...s, status: e.target.value as Status }))} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
               <option value="DONE">Done</option><option value="SCHEDULED">Scheduled</option>
@@ -150,7 +151,7 @@ function RecDrawer({ draft, isNew, vehicles, onClose, onSave, onDelete }: { draf
         <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a vehicle and a service date" onClick={() => onSave(f, isNew)}>{isNew ? 'Log record' : 'Save'}</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason={dueBeforeService ? 'The next due date cannot be before the service date' : 'Pick a vehicle and a service date'} onClick={() => onSave(f, isNew)}>{isNew ? 'Log record' : 'Save'}</Button>
         </div>
       </div>
     </Drawer>

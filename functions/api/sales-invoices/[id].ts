@@ -1,5 +1,6 @@
 import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { checkSen, invalid, type Fields } from '../../_lib/validate';
 import { recomputeSiStatus, toSiHeaderPayload, toSiLinePayload, type SiHeaderRow, type SiLineRow } from '../../_lib/sales-invoices';
 
 const HEADER_SQL = `
@@ -31,6 +32,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   // Record a receipt.
   if (b.receiveSen !== undefined) {
+    const fields: Fields = {};
+    checkSen(fields, 'receiveSen', b.receiveSen, { label: 'Receipt' });
+    const bad = invalid(fields); if (bad) return bad;
     const amt = Math.max(0, Number(b.receiveSen) || 0);
     if (amt <= 0) return fail('VALIDATION', 'Enter a receipt amount.', 422);
     if (cur.status === 'CANCELLED') return fail('CONFLICT', 'A cancelled invoice cannot take a receipt.', 409);

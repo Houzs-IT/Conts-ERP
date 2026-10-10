@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { MoneyInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -125,7 +126,7 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
   const [lines, setLines] = useState<DoLine[]>([]);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [dueDate, setDueDate] = useState('');
-  const [tax, setTax] = useState('');
+  const [taxSen, setTaxSen] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const dord = openDos.find(d => d.id === doId);
 
@@ -137,12 +138,12 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
     setLines(dl ?? []);
   }
   const subtotal = lines.reduce((s, l) => s + l.lineTotalSen, 0);
-  const taxSen = Math.max(0, Math.round((Number(tax) || 0) * 100));
-  const total = subtotal + taxSen;
-  const canSave = canWrite && doId !== '' && lines.length > 0;
+  const total = subtotal + (taxSen ?? 0);
+  const dueError = dueDate && invoiceDate && dueDate < invoiceDate ? 'Due date cannot be before the invoice date.' : undefined;
+  const canSave = canWrite && doId !== '' && lines.length > 0 && invoiceDate !== '' && !dueError;
 
   function submit() {
-    api.post('/sales-invoices', { deliveryOrderId: doId, invoiceDate, dueDate: dueDate || null, taxSen, notes }).catch(notifyFailure);
+    api.post('/sales-invoices', { deliveryOrderId: doId, invoiceDate, dueDate: dueDate || null, taxSen: taxSen ?? 0, notes }).catch(notifyFailure);
     onCreated({ id: `si-new-${crypto.randomUUID().slice(0, 8)}`, invoiceNumber: `SINV-${new Date().getFullYear()}-NEW`, doNumber: dord?.doNumber ?? '', soDocNo: '', customerName: dord?.customerName ?? '', invoiceDate, dueDate, status: 'SENT', totalSen: total, paidSen: 0, outstandingSen: total, notes, lines });
   }
 
@@ -161,8 +162,8 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
               {openDos.map(d => <option key={d.id} value={d.id}>{d.doNumber} · {d.customerName}</option>)}
             </select>
           </div>
-          <Field label="Invoice date" type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} />
-          <Field label="Due date" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+          <DateField label="Invoice date" required value={invoiceDate} onChange={setInvoiceDate} />
+          <DateField label="Due date" value={dueDate} min={invoiceDate || undefined} error={dueError} onChange={setDueDate} />
         </div>
         {doId && (
           <div className="overflow-x-auto border border-solid border-line rounded-card">
@@ -186,7 +187,7 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
           <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
           <div className="flex flex-col gap-1.5 items-end justify-end">
             <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Subtotal</span><span className="tabular-nums w-[120px] text-right">{rm(subtotal)}</span></div>
-            <div className="flex gap-8 text-[13px] items-center"><span className="text-muted-ink">Tax</span><input type="number" step="0.01" value={tax} placeholder="0.00" onChange={e => setTax(e.target.value)} className="h-8 w-[120px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /></div>
+            <div className="flex gap-8 text-[13px] items-center"><span className="text-muted-ink">Tax</span><MoneyInput aria-label="Tax (RM)" valueSen={taxSen} onChangeSen={setTaxSen} className="h-8 w-[120px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /></div>
             <div className="flex gap-8 text-[15px] font-semibold"><span>Total</span><span className="tabular-nums w-[120px] text-right">{rm(total)}</span></div>
           </div>
         </div>
@@ -200,8 +201,7 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
 }
 
 function ViewDrawer({ si, canWrite, onClose, onAct }: { si: Si; canWrite: boolean; onClose: () => void; onAct: (s: Si, patch: Record<string, unknown>, optimistic: Partial<Si>, title: string) => void }) {
-  const [recv, setRecv] = useState('');
-  const recvSen = Math.max(0, Math.round((Number(recv) || 0) * 100));
+  const [recvSen, setRecvSen] = useState<number | null>(null);
   return (
     <Drawer open onClose={onClose} width={720}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
@@ -238,8 +238,8 @@ function ViewDrawer({ si, canWrite, onClose, onAct }: { si: Si; canWrite: boolea
         {canWrite && si.status !== 'CANCELLED' && si.outstandingSen > 0 && (
           <div className="flex items-center gap-2.5 justify-end">
             <span className="text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink">Record receipt</span>
-            <input type="number" step="0.01" value={recv} placeholder="0.00" onChange={e => setRecv(e.target.value)} className="h-9 w-[130px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" />
-            <Button size="sm" variant="secondary" disabled={recvSen <= 0} disabledReason="Enter an amount" onClick={() => { const amt = Math.min(recvSen, si.outstandingSen); onAct(si, { receiveSen: amt }, { paidSen: si.paidSen + amt, outstandingSen: si.outstandingSen - amt }, 'Receipt recorded.'); setRecv(''); }}>Record</Button>
+            <MoneyInput aria-label="Receipt amount (RM)" valueSen={recvSen} onChangeSen={setRecvSen} className="h-9 w-[130px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" />
+            <Button size="sm" variant="secondary" disabled={!recvSen || recvSen <= 0} disabledReason="Enter an amount" onClick={() => { const amt = Math.min(recvSen ?? 0, si.outstandingSen); onAct(si, { receiveSen: amt }, { paidSen: si.paidSen + amt, outstandingSen: si.outstandingSen - amt }, 'Receipt recorded.'); setRecvSen(null); }}>Record</Button>
           </div>
         )}
       </div>

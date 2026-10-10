@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { isSoStatus, normalizeLines, computeTotals, toSoHeaderPayload, type SoHeaderRow } from '../../_lib/sales-orders';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
+import { checkSen, checkInt, checkDate, checkPhone, invalid, type Fields } from '../../_lib/validate';
 
 const today = () => nowIso().slice(0, 10);
 const COLS = `id, doc_no, customer_name, customer_phone, customer_po, so_date, target_date, status, currency,
@@ -38,6 +39,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
   const customerName = String(b.customerName ?? '').trim();
   if (!customerName) return fail('VALIDATION', 'Enter a customer name.', 422, { customerName: 'Enter a customer name.' });
+  const fields: Fields = {};
+  checkPhone(fields, 'customerPhone', b.customerPhone);
+  checkDate(fields, 'soDate', b.soDate, { label: 'SO date' });
+  checkDate(fields, 'targetDate', b.targetDate, { label: 'Target date' });
+  checkSen(fields, 'taxSen', b.taxSen, { label: 'Tax' });
+  checkSen(fields, 'depositSen', b.depositSen, { label: 'Deposit' });
+  if (Array.isArray(b.lines)) (b.lines as Record<string, unknown>[]).forEach((l, i) => {
+    checkInt(fields, `lines.${i}.qty`, l?.qty, { label: 'Quantity', min: 0 });
+    checkSen(fields, `lines.${i}.unitPriceSen`, l?.unitPriceSen, { label: 'Unit price' });
+    checkSen(fields, `lines.${i}.discountSen`, l?.discountSen, { label: 'Discount' });
+  });
+  const bad = invalid(fields); if (bad) return bad;
   const lines = normalizeLines(b.lines);
   if (!lines.length) return fail('VALIDATION', 'Add at least one line.', 422, { lines: 'Add at least one line.' });
 

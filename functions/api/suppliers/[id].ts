@@ -1,6 +1,7 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { isSupplierStatus, toSupplierPayload, strOrNull, intOrNull, normPhone, type SupplierRow } from '../../_lib/suppliers';
+import { isSupplierStatus, checkSupplierFields, toSupplierPayload, strOrNull, intOrNull, normPhone, type SupplierRow } from '../../_lib/suppliers';
+import { invalid, type Fields } from '../../_lib/validate';
 
 const COLS = `id, code, name, status, contact_person, attention, phone, mobile, whatsapp_number, fax, email, website,
               address, area, postcode, state, country, payment_terms, credit_limit_sen, currency, statement_type,
@@ -25,6 +26,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (!await one(env, 'SELECT 1 AS x FROM suppliers WHERE id = ?', id)) return fail('NOT_FOUND', 'That supplier does not exist.', 404);
 
   const b = await request.json<Record<string, unknown>>().catch(() => null) ?? {};
+  const fields: Fields = {};
+  checkSupplierFields(fields, b);
+  const bad = invalid(fields); if (bad) return bad;
   const sets: string[] = [];
   const args: unknown[] = [];
   const put = (col: string, v: unknown) => { sets.push(`${col} = ?`); args.push(v); };

@@ -5,6 +5,7 @@ import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { Dialog } from '../components/Dialog';
 import { Field } from '../components/Field';
+import { MoneyInput } from '../components/inputs';
 import { EmptyState } from '../components/States';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -497,12 +498,12 @@ function AdjustDialog({ target, busy, onClose, onSubmit }: {
   target: Statement; busy: boolean; onClose: () => void; onSubmit: (label: string, amountSen: number) => void;
 }) {
   const [label, setLabel] = useState('');
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState<number | null>(null);
   const [direction, setDirection] = useState<'deduct' | 'add'>('deduct');
   const ref = useRef<HTMLDivElement>(null);
 
-  const sen = Math.round(Number(amount) * 100) * (direction === 'deduct' ? -1 : 1);
-  const valid = label.trim() !== '' && Number.isFinite(sen) && sen !== 0;
+  const sen = (amount ?? 0) * (direction === 'deduct' ? -1 : 1);
+  const valid = label.trim() !== '' && sen !== 0;
   const preview = valid ? target.netPayout + sen : target.netPayout;
 
   useEffect(() => {
@@ -535,7 +536,7 @@ function AdjustDialog({ target, busy, onClose, onSubmit }: {
                 ))}
               </div>
             </div>
-            <Field label="Amount (RM)" type="number" min={0} numeric placeholder="e.g. 150.00" value={amount} onChange={e => setAmount(e.target.value)} />
+            <MoneyInput label="Amount (RM)" placeholder="e.g. 150.00" valueSen={amount} onChangeSen={setAmount} />
             <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-[12px] flex items-center justify-between">
               <span className="text-muted-ink">Net payout after adjustment</span>
               <span className="font-semibold tabular-nums">{rm(preview)}</span>

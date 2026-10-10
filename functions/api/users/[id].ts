@@ -1,5 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { checkPhone } from '../../_lib/validate';
 import { ROLES } from '../../_lib/roles';
 
 /** PATCH /api/users/:id { role?, isActive?, managerId?, fullName?, email?, phone? } — management only.
@@ -20,6 +21,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const fields: Record<string, string> = {};
   if (b.fullName !== undefined && !b.fullName.trim()) fields.fullName = 'Enter a name.';
   if (b.email !== undefined && !String(b.email).trim().includes('@')) fields.email = 'Enter a valid email address.';
+  checkPhone(fields, 'phone', b.phone);
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the account details.', 422, fields);
 
   const before = await one<any>(env, 'SELECT role, is_active, manager_id, full_name, email, phone FROM users WHERE id = ?', id);

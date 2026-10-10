@@ -6,6 +6,7 @@ import { Button } from '../components/Button';
 import { TableSkeleton } from '../components/DataState';
 import { EmptyState } from '../components/States';
 import { Select } from '../components/Select';
+import { MoneyInput, NumberInput } from '../components/inputs';
 import { rm } from '../lib/format';
 
 // ---- Maintenance SKU catalog: the master list of repair items with a preset selling price.
@@ -42,11 +43,6 @@ export const SKU_FALLBACK: SkuPayload = {
 
 const INPUT_CX = 'block w-full box-border h-10 px-3 py-0 text-ink bg-white border border-solid border-line rounded-control outline-none font-sans text-copy font-normal';
 const LABEL_CX = 'text-meta font-medium text-muted-ink';
-
-const toSen = (s: string): number | null => {
-  const n = parseFloat(s.replace(/[^0-9.]/g, ''));
-  return Number.isFinite(n) ? Math.round(n * 100) : null;
-};
 
 /** "1h 25m" / "45m" / "3h" — the gap between two stamps, for the job's duration. Null when it can't be shown. */
 export function durationLabel(startedAt?: string | null, endedAt?: string | null): string | null {
@@ -158,20 +154,19 @@ function SkuModal({ sku, onClose, onSave, onToggleActive }: {
   const [name, setName] = useState(sku?.name ?? '');
   const [category, setCategory] = useState<SkuCategory>(sku?.category ?? 'general');
   const [unitLabel, setUnitLabel] = useState<UnitLabel>(sku?.unitLabel ?? 'job');
-  const [price, setPrice] = useState(sku?.defaultPrice != null ? (sku.defaultPrice / 100).toFixed(2) : '');
+  const [priceSen, setPriceSen] = useState<number | null>(sku?.defaultPrice ?? null);
   const [trackStock, setTrackStock] = useState(sku?.trackStock ?? false);
-  const [stock, setStock] = useState(sku?.stockOnHand != null ? String(sku.stockOnHand) : '0');
+  const [stockQty, setStockQty] = useState<number | null>(sku?.stockOnHand ?? 0);
   const [notes, setNotes] = useState(sku?.notes ?? '');
 
-  const priceSen = toSen(price);
-  const stockQty = Math.max(0, Math.round(Number(stock.replace(/[^0-9]/g, '')) || 0));
-  const valid = code.trim() && name.trim() && priceSen != null && priceSen >= 0;
+  const stockOk = !trackStock || (stockQty != null && stockQty >= 0);
+  const valid = code.trim() && name.trim() && priceSen != null && priceSen >= 0 && stockOk;
 
   function submit() {
     if (!valid || priceSen == null) return;
     onSave({
       code: code.trim(), name: name.trim(), category, unitLabel, defaultPrice: priceSen,
-      trackStock, stockOnHand: trackStock ? stockQty : 0, notes: notes.trim(),
+      trackStock, stockOnHand: trackStock ? stockQty ?? 0 : 0, notes: notes.trim(),
     });
   }
 
@@ -185,15 +180,15 @@ function SkuModal({ sku, onClose, onSave, onToggleActive }: {
         )}
         <div className="flex-1" />
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={submit} disabled={!valid} disabledReason="Add a code, name and price first.">
+        <Button size="sm" variant="primary" onClick={submit} disabled={!valid} disabledReason={stockOk ? 'Add a code, name and price first.' : 'Enter how many are on hand.'}>
           {sku ? 'Save' : 'Add item'}
         </Button>
       </>}>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
         <LabeledField label="Code"><input value={code} onChange={e => setCode(e.target.value)} placeholder="ELE-BULB" disabled={!!sku}
           className={cx(INPUT_CX, sku && 'opacity-60 cursor-not-allowed')} /></LabeledField>
-        <LabeledField label="Preset price (RM)"><input inputMode="decimal" value={price} onChange={e => setPrice(e.target.value)} placeholder="15.00"
-          className={cx(INPUT_CX, 'text-right tabular-nums')} /></LabeledField>
+        <LabeledField label="Preset price (RM)"><MoneyInput valueSen={priceSen} onChangeSen={setPriceSen} placeholder="15.00" aria-label="Preset price (RM)"
+          className={INPUT_CX} /></LabeledField>
       </div>
       <LabeledField label="Name"><input value={name} onChange={e => setName(e.target.value)} placeholder="Change a lightbulb" className={INPUT_CX} /></LabeledField>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
@@ -210,8 +205,8 @@ function SkuModal({ sku, onClose, onSave, onToggleActive }: {
         {trackStock ? (
           <div className="flex items-center gap-2.5">
             <span className={LABEL_CX}>On hand</span>
-            <input inputMode="numeric" value={stock} onChange={e => setStock(e.target.value)}
-              className={cx(INPUT_CX, 'w-24 text-right tabular-nums')} />
+            <NumberInput value={stockQty} onChange={setStockQty} min={0} aria-label="On hand"
+              className={cx(INPUT_CX, 'w-24')} />
             <span className="text-meta text-muted-ink">A job can draw parts from this to exchange.</span>
           </div>
         ) : (
@@ -235,9 +230,9 @@ export function ExchangeModal({ jobLabel, skus, onClose, onExchange }: {
   // Only stocked, active items with something on hand can be drawn.
   const available = skus.filter(s => s.active && s.trackStock && s.stockOnHand > 0);
   const [skuId, setSkuId] = useState(available[0]?.id ?? '');
-  const [qty, setQty] = useState('1');
+  const [qty, setQty] = useState<number | null>(1);
   const sku = available.find(s => s.id === skuId) ?? null;
-  const n = Math.max(0, Math.round(Number(qty.replace(/[^0-9]/g, '')) || 0));
+  const n = qty ?? 0;
   const valid = !!sku && n >= 1 && n <= sku.stockOnHand;
 
   return (
@@ -259,7 +254,7 @@ export function ExchangeModal({ jobLabel, skus, onClose, onExchange }: {
             options={available.map(s => ({ value: s.id, label: `${s.code} · ${s.name} · ${s.stockOnHand} in stock` }))} />
           <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-[14px] items-end">
             <LabeledField label="Quantity">
-              <input inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} className={cx(INPUT_CX, 'text-right tabular-nums')} />
+              <NumberInput value={qty} onChange={setQty} min={1} max={sku?.stockOnHand} aria-label="Quantity" className={INPUT_CX} />
             </LabeledField>
             {sku && (
               <div className="text-meta text-muted-ink pb-2.5">

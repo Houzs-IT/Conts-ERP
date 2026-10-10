@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { DateField, DateTimeField, MoneyInput } from '../components/inputs';
 import Icon from '../components/Icon';
 import { Select, SearchSelect, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
@@ -215,7 +216,7 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
   const [busy, setBusy] = useState<string | null>(null);
   const [assignee, setAssignee] = useState(i.vendorName ?? '');
   const [assigneeKind, setAssigneeKind] = useState<'in_house' | 'contractor'>(i.assigneeKind ?? 'contractor');
-  const [quote, setQuote] = useState(i.quotedAmount != null ? (i.quotedAmount / 100).toFixed(2) : '');
+  const [quoteSen, setQuoteSen] = useState<number | null>(i.quotedAmount);
   const [windowOpen, setWindowOpen] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
@@ -232,7 +233,6 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
     finally { setBusy(null); }
   }
 
-  const quoteSen = quote.trim() === '' ? null : Math.round(Number(quote) * 100);
   const steps: { label: string; at: string | null; on: boolean; note?: string }[] = [
     { label: 'Reported', at: i.reportedAt, on: true, note: `${SOURCE[i.source] ?? i.source}${i.reporter ? `, ${i.reporter}` : ''}` },
     { label: 'Assigned', at: null, on: !!i.vendorName, note: i.vendorName ?? undefined },
@@ -300,9 +300,8 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
         <section className="flex flex-col gap-2">
           <h3 className="m-0 text-copy font-semibold">Quote</h3>
           <div className="flex gap-2">
-            <div className="relative flex-1"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink">RM</span>
-              <input className={cx(INPUT, 'pl-10 text-right [font-variant-numeric:tabular-nums]')} inputMode="decimal" value={quote} onChange={e => setQuote(e.target.value.replace(/[^\d.]/g, ''))} placeholder="0.00" aria-label="Quote in RM" /></div>
-            <Button size="sm" variant="secondary" className="h-10" disabled={quoteSen === i.quotedAmount || (quoteSen != null && !Number.isFinite(quoteSen))} disabledReason="Change the amount first."
+            <div className="flex-1 min-w-0"><MoneyInput prefix className={INPUT} valueSen={quoteSen} onChangeSen={setQuoteSen} aria-label="Quote in RM" /></div>
+            <Button size="sm" variant="secondary" className="h-10" disabled={quoteSen === i.quotedAmount} disabledReason="Change the amount first."
               loading={busy === 'quote'} onClick={() => void act('quote', () => api.patch(`/maintenance/issues/${i.id}`, { quotedAmount: quoteSen }), 'Quote saved.',
                 quoteSen != null && quoteSen > threshold && i.chargeTo === 'owner' && !i.ownerApprovedAt ? 'Above the threshold: the job now waits for the owner.' : undefined)}>Save quote</Button>
           </div>
@@ -403,11 +402,11 @@ const errText = (e: unknown) => e instanceof ApiFailure ? e.message : 'Not saved
 
 function NewJobModal({ onClose, onDone, money, threshold }: { onClose: () => void; onDone: (id: string) => void; money: boolean; threshold: number }) {
   const units = useUnitRoster();
-  const [f, setF] = useState({ unitId: '', title: '', category: 'other', urgency: 'normal', reportSource: 'staff', detail: '', assigneeName: '', assigneeKind: 'contractor', quote: '', chargeTo: 'owner' });
+  const [f, setF] = useState({ unitId: '', title: '', category: 'other', urgency: 'normal', reportSource: 'staff', detail: '', assigneeName: '', assigneeKind: 'contractor', chargeTo: 'owner' });
+  const [quoteSen, setQuoteSen] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(x => ({ ...x, [k]: e.target.value }));
-  const quoteSen = f.quote.trim() ? Math.round(Number(f.quote) * 100) : null;
   async function save() {
     if (!f.unitId) { setError('Pick the unit.'); return; }
     if (!f.title.trim()) { setError('Say what is wrong.'); return; }
@@ -416,7 +415,7 @@ function NewJobModal({ onClose, onDone, money, threshold }: { onClose: () => voi
       const r = await api.post<{ id: string }>('/maintenance/issues', {
         unitId: f.unitId, title: f.title.trim(), detail: f.detail.trim() || undefined, category: f.category, urgency: f.urgency, reportSource: f.reportSource,
         assigneeName: f.assigneeName.trim() || undefined, assigneeKind: f.assigneeName.trim() ? f.assigneeKind : undefined,
-        quotedAmount: money && quoteSen != null && Number.isFinite(quoteSen) ? quoteSen : undefined, chargeTo: f.chargeTo,
+        quotedAmount: money && quoteSen != null ? quoteSen : undefined, chargeTo: f.chargeTo,
       });
       onDone(r.id);
     } catch (e) { setError(errText(e)); setBusy(false); }
@@ -437,7 +436,7 @@ function NewJobModal({ onClose, onDone, money, threshold }: { onClose: () => voi
       </div>
       <div className="grid grid-cols-2 gap-3">
         {money && <FormRow label="Quote, RM (optional)" hint={quoteSen != null && quoteSen > threshold && f.chargeTo === 'owner' ? 'Above the threshold: the owner approves first.' : undefined}>
-          <input className={cx(INPUT, 'text-right')} inputMode="decimal" value={f.quote} onChange={e => setF(x => ({ ...x, quote: e.target.value.replace(/[^\d.]/g, '') }))} placeholder="0.00" /></FormRow>}
+          <MoneyInput className={INPUT} valueSen={quoteSen} onChangeSen={setQuoteSen} aria-label="Quote in RM" /></FormRow>}
         <FormRow label="Who pays"><select className={INPUT} value={f.chargeTo} onChange={set('chargeTo')}>{(['owner', 'the_conts', 'guest_deposit'] as ChargeTo[]).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}</select></FormRow>
       </div>
     </OpsModal>
@@ -452,6 +451,8 @@ function WindowModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function save() {
+    if (!start || !end) { setError('Pick when the window starts and ends.'); return; }
+    if (end <= start) { setError('The end must be after the start.'); return; }
     setBusy(true); setError(null);
     try { const r = await api.post<{ overlaps: unknown[] }>(`/maintenance/issues/${issue.id}/windows`, { startsAt: start, endsAt: end, note: note.trim() || undefined }); onDone(r.overlaps.length); }
     catch (e) { setError(errText(e)); setBusy(false); }
@@ -459,8 +460,8 @@ function WindowModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => 
   return (
     <OpsModal title="Add repair window" sub={`When the technician may enter ${issue.propertyName} ${issue.unitNumber}. Malaysia time.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Add window', () => void save())}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <FormRow label="From" error={error}><input type="datetime-local" className={INPUT} value={start} onChange={e => setStart(e.target.value)} /></FormRow>
-        <FormRow label="To"><input type="datetime-local" className={INPUT} value={end} onChange={e => setEnd(e.target.value)} /></FormRow>
+        <FormRow label="From" error={error}><DateTimeField aria-label="From" className={INPUT} value={start} onChange={setStart} required /></FormRow>
+        <FormRow label="To"><DateTimeField aria-label="To" className={INPUT} value={end} min={start || undefined} onChange={setEnd} required /></FormRow>
       </div>
       <FormRow label="Note (optional)" hint="e.g. Between guests, or: guest agreed, will be out 14:00 to 16:00"><input className={INPUT} value={note} onChange={e => setNote(e.target.value)} maxLength={300} /></FormRow>
     </OpsModal>
@@ -480,21 +481,21 @@ function BlockModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => v
   return (
     <OpsModal title="Block unit until fixed" sub={`${issue.propertyName} ${issue.unitNumber} comes off sale for these nights, and shows as under maintenance.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Block unit', () => void save())}>
       <div className="grid grid-cols-2 gap-3">
-        <FormRow label="First night" error={error}><input type="date" className={INPUT} value={from} onChange={e => e.target.value && setFrom(e.target.value)} /></FormRow>
-        <FormRow label="Back on sale"><input type="date" className={INPUT} value={to} onChange={e => e.target.value && setTo(e.target.value)} /></FormRow>
+        <FormRow label="First night" error={error}><DateField aria-label="First night" className={INPUT} value={from} onChange={v => v && setFrom(v)} /></FormRow>
+        <FormRow label="Back on sale"><DateField aria-label="Back on sale" className={INPUT} value={to} min={from || undefined} onChange={v => v && setTo(v)} /></FormRow>
       </div>
     </OpsModal>
   );
 }
 
 function CompleteModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => void; onDone: () => void }) {
-  const [amount, setAmount] = useState(issue.quotedAmount != null ? (issue.quotedAmount / 100).toFixed(2) : '');
+  const [amountSen, setAmountSen] = useState<number | null>(issue.quotedAmount);
   const [payer, setPayer] = useState<ChargeTo>(issue.chargeTo);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function save() {
-    const sen = Math.round(Number(amount || '0') * 100);
-    if (!Number.isFinite(sen) || sen < 0) { setError('Enter the final cost.'); return; }
+    const sen = amountSen ?? 0;
+    if (sen < 0) { setError('Enter the final cost.'); return; }
     setBusy(true); setError(null);
     try { await api.post(`/maintenance/issues/${issue.id}/complete`, { finalAmount: sen, chargeTo: payer }); onDone(); }
     catch (e) { setError(errText(e)); setBusy(false); }
@@ -502,7 +503,7 @@ function CompleteModal({ issue, onClose, onDone }: { issue: Issue; onClose: () =
   return (
     <OpsModal title="Mark job done" sub={`${issue.propertyName} ${issue.unitNumber} · ${issue.title}`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Mark done', () => void save())}>
       <FormRow label="Final cost, RM" error={error} hint="Recorded as a maintenance expense on the unit. RM 0 records nothing.">
-        <input className={cx(INPUT, 'text-right')} inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value.replace(/[^\d.]/g, ''))} placeholder="0.00" />
+        <MoneyInput className={INPUT} valueSen={amountSen} onChangeSen={setAmountSen} aria-label="Final cost in RM" />
       </FormRow>
       <FormRow label="Who pays">
         <select className={INPUT} value={payer} onChange={e => setPayer(e.target.value as ChargeTo)}>{(['owner', 'the_conts', 'guest_deposit', 'warranty'] as ChargeTo[]).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}</select>
@@ -513,12 +514,13 @@ function CompleteModal({ issue, onClose, onDone }: { issue: Issue; onClose: () =
 }
 
 function ThresholdModal({ value, onClose, onSave }: { value: number; onClose: () => void; onSave: (sen: number) => void }) {
-  const [rmValue, setRm] = useState((value / 100).toFixed(0));
+  const [sen, setSen] = useState<number | null>(value);
+  const [error, setError] = useState<string | null>(null);
   const phone = !useMedia('(min-width: 640px)');
   return (
     <OpsModal title="Owner approval threshold" sub="A repair the owner pays, quoted above this, waits for the owner's approval before work starts." onClose={onClose}
-      footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" onClick={() => onSave(Math.round(Number(rmValue || '0') * 100))}>Save</Button></>}>
-      <FormRow label="Threshold, RM"><input className={cx(INPUT, 'text-right', phone && 'text-heading')} inputMode="decimal" value={rmValue} onChange={e => setRm(e.target.value.replace(/[^\d.]/g, ''))} /></FormRow>
+      footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" onClick={() => { if (sen == null) { setError('Enter the threshold.'); return; } onSave(sen); }}>Save</Button></>}>
+      <FormRow label="Threshold, RM" error={error}><MoneyInput className={cx(INPUT, phone && 'text-heading')} valueSen={sen} onChangeSen={v => { setSen(v); setError(null); }} aria-label="Threshold in RM" /></FormRow>
     </OpsModal>
   );
 }
