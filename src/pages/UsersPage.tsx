@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import PermissionsChart from '../components/PermissionsChart';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
+import { Dialog, type DialogSpec } from '../components/Dialog';
+import Icon from '../components/Icon';
 import { Field } from '../components/Field';
 import { Select } from '../components/Select';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
+import { useSession } from '../lib/session';
 import { api, ApiFailure } from '../lib/api';
 import { count, date, plural } from '../lib/format';
 import { ROLE_LABEL } from '../lib/vocabulary';
@@ -39,7 +42,7 @@ const roleTone: Record<UserRole, Tone> = {
 interface Row {
   id: string; fullName: string; email: string; phone: string; role: UserRole;
   managerId: string | null;
-  isActive: boolean; mustChangePassword: boolean; lastLoginAt: string | null;
+  isActive: boolean; mustChangePassword: boolean; isLocked?: boolean; lastLoginAt: string | null;
 }
 interface Payload { data: Row[]; generatedAt: string }
 
@@ -62,6 +65,7 @@ const FALLBACK: Payload = {
  *  users, never part of the staff account states. */
 function status(u: Row): { label: string; tone: Tone } {
   if (!u.isActive) return { label: 'Inactive', tone: 'neutral' };
+  if (u.isLocked) return { label: 'Locked', tone: 'critical' };
   if (u.role === 'owner') return { label: 'Portal only', tone: 'neutral' };
   if (u.mustChangePassword && !u.lastLoginAt) return { label: 'Invited', tone: 'warning' };
   return { label: 'Active', tone: 'success' };
@@ -70,7 +74,7 @@ function status(u: Row): { label: string; tone: Tone } {
 const initials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('');
 
 /* ------------------------------- styles ------------------------------- */
-const LIST_COLS_CLASS = 'grid-cols-[minmax(180px,1.6fr)_minmax(180px,1.4fr)_150px_140px_120px_110px]';
+const LIST_COLS_CLASS = 'grid-cols-[minmax(150px,1.5fr)_minmax(160px,1.4fr)_130px_120px_100px_90px_32px]';
 // Left accent on org cards — the -line tone shade, as a box-shadow inset (kept off
 // the border so it does not change the card geometry). Static per-tone literals so
 // the JIT scanner sees each class.
@@ -181,15 +185,15 @@ export default function UsersPage() {
   }
   // Re-send the invitation to someone who was invited but never signed in — a fresh
   // temporary password, emailed immediately. See functions/api/users/[id]/resend-invite.ts.
-  async function resendInvite() {
-    if (!editing || busy) return;
+  async function resendInvite(u: Row) {
+    if (busy) return;
     setBusy(true);
     try {
-      const res = await api.post<{ delivery: string; reason?: string }>(`/users/${editing.id}/resend-invite`, {});
-      if (res.delivery === 'sent') toast({ tone: 'success', title: `Invitation re-sent to ${editing.email}.`, body: 'A fresh temporary password is on its way.' });
+      const res = await api.post<{ delivery: string; reason?: string }>(`/users/${u.id}/resend-invite`, {});
+      if (res.delivery === 'sent') toast({ tone: 'success', title: `Invitation re-sent to ${u.email}.`, body: 'A fresh temporary password is on its way.' });
       else if (res.delivery === 'failed') toast({ tone: 'critical', title: 'Invitation could not be sent.', body: res.reason ?? 'The email provider is not configured — see IT.' });
       else toast({ tone: 'warning', title: 'Invitation queued, not yet delivered.', body: res.reason ?? 'It will send shortly.' });
-      setEditing(null);
+      setEditing(null); setConfirm(null);
     } catch (err) {
       toast({ tone: 'critical', title: 'Could not re-send the invitation.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
     } finally {
@@ -199,14 +203,40 @@ export default function UsersPage() {
   // A one-time reset link shown here once, for management to pass on by WhatsApp or in person when the
   // reset email cannot reach the person. See functions/api/users/[id]/reset-link.ts.
   const [resetLink, setResetLink] = useState<{ link: string; expiresAt: string; email: string } | null>(null);
-  async function makeResetLink() {
-    if (!editing || busy) return;
+  async function makeResetLink(u: Row) {
+    if (busy) return;
     setBusy(true);
     try {
-      const res = await api.post<{ link: string; expiresAt: string; email: string }>(`/users/${editing.id}/reset-link`, {});
+      const res = await api.post<{ link: string; expiresAt: string; email: string }>(`/users/${u.id}/reset-link`, {});
       setResetLink(res);
     } catch (err) {
       toast({ tone: 'critical', title: 'Could not make a reset link.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+    } finally {
+      setBusy(false);
+    }
+  }
+  /* ---------------------------- row actions --------------------------- */
+  // Passwords stay hashed. The one exception is Reset password: the server returns a temporary password
+  // once, it is shown here once to be passed on, and it is dropped from memory when this box closes.
+  // See functions/api/users/[id]/security.ts.
+  const { user: me } = useSession();
+  const canManage = me?.role === 'management';
+  const [confirm, setConfirm] = useState<DialogSpec | null>(null);
+  const [tempShown, setTempShown] = useState<{ name: string; email: string; password: string } | null>(null);
+
+  async function act(u: Row, call: () => Promise<unknown>, done: string, body?: string) {
+    setBusy(true);
+    try {
+      const res = (await call()) as { delivery?: string; reason?: string } | undefined;
+      if (res?.delivery && res.delivery !== 'sent') {
+        toast(res.delivery === 'failed'
+          ? { tone: 'critical', title: 'The email could not be sent.', body: res.reason ?? 'The email provider is not configured.' }
+          : { tone: 'warning', title: 'Email queued, not yet delivered.', body: res.reason ?? 'It will send shortly.' });
+      } else toast({ tone: 'success', title: done, body });
+      reload();
+      setConfirm(null);
+    } catch (err) {
+      toast({ tone: 'critical', title: `Nothing changed for ${u.fullName}.`, body: err instanceof Error ? err.message : 'Try again in a moment.' });
     } finally {
       setBusy(false);
     }
@@ -216,6 +246,66 @@ export default function UsersPage() {
     try { await navigator.clipboard.writeText(resetLink.link); toast({ tone: 'success', title: 'Reset link copied.', body: 'Send it to the person directly. It works once and expires in 60 minutes.' }); }
     catch { toast({ tone: 'warning', title: 'Copy did not work.', body: 'Select the link and copy it by hand.' }); }
   }
+  const security = (u: Row, action: string) => () => api.post(`/users/${u.id}/security`, { action });
+  const setActive = (u: Row, isActive: boolean) => async () => {
+    await api.patch(`/users/${u.id}`, { isActive });
+    setEdits(m => ({ ...m, [u.id]: { ...m[u.id], isActive } }));
+  };
+
+  function actionsFor(u: Row): RowAction[] {
+    const self = u.id === me?.id;
+    const invited = status(u).label === 'Invited';
+    const items: RowAction[] = [{ key: 'edit', label: 'Edit details', icon: 'Pencil', run: () => openEdit(u) }];
+    if (!canManage) return items;
+    if (u.isActive && invited) items.push({ key: 'invite', label: 'Resend invitation', icon: 'Send', run: () => setConfirm({
+      title: `Resend the invitation to ${u.fullName}?`,
+      body: 'They get a fresh temporary password by email. The one in the first email stops working.',
+      meta: `Sent to ${u.email}`, confirmLabel: 'Resend invitation', busyLabel: 'Sending…',
+      onConfirm: () => resendInvite(u),
+    }) });
+    if (u.isActive && !invited) items.push({ key: 'reset', label: 'Email a password reset link', icon: 'Mail', run: () => setConfirm({
+      title: `Send ${u.fullName} a password reset link?`,
+      body: 'They get an email with a link to choose a new password. It works once and expires in 60 minutes. Their current password keeps working until they use it.',
+      meta: `Sent to ${u.email}`, confirmLabel: 'Send link', busyLabel: 'Sending…',
+      onConfirm: () => act(u, security(u, 'reset_email'), `Reset link sent to ${u.email}.`),
+    }) });
+    if (u.isActive && !invited) items.push({ key: 'link', label: 'Get a reset link to pass on', icon: 'Link', run: () => makeResetLink(u) });
+    if (u.isActive && !self) items.push({ key: 'temp', label: 'Reset password', icon: 'KeyRound', run: () => setConfirm({
+      title: `Reset ${u.fullName}'s password?`,
+      body: 'Their current password stops working and they are signed out on every device now. You get a temporary password to give them; when they sign in with it, they must choose their own before they can do anything else.',
+      confirmLabel: 'Reset and sign out', busyLabel: 'Resetting…', danger: true,
+      onConfirm: () => act(u, async () => {
+        const res = await api.post<{ tempPassword: string }>(`/users/${u.id}/security`, { action: 'temp_password' });
+        setTempShown({ name: u.fullName, email: u.email, password: res.tempPassword });
+      }, `${u.fullName}'s password was reset.`, 'They have been signed out on every device.'),
+    }) });
+    if (!self) items.push({ key: 'revoke', label: 'Sign out everywhere', icon: 'LogOut', run: () => setConfirm({
+      title: `Sign ${u.fullName} out everywhere?`,
+      body: 'Ends their sessions on every phone and computer straight away. Their password does not change, so they can sign in again. Use this for a lost phone or a shared computer.',
+      confirmLabel: 'Sign out everywhere', busyLabel: 'Signing out…', danger: true,
+      onConfirm: () => act(u, security(u, 'revoke_sessions'), `${u.fullName} has been signed out on every device.`),
+    }) });
+    if (u.isActive && u.isLocked) items.push({ key: 'unlock', label: 'Unlock account', icon: 'LockOpen', run: () => setConfirm({
+      title: `Unlock ${u.fullName}'s account?`,
+      body: 'Too many wrong passwords locked this account for a while. Unlocking lets them try again now instead of waiting.',
+      confirmLabel: 'Unlock', busyLabel: 'Unlocking…',
+      onConfirm: () => act(u, security(u, 'unlock'), `${u.fullName}'s account is unlocked.`),
+    }) });
+    if (u.isActive && !self) items.push({ key: 'off', label: 'Switch off account', icon: 'UserX', danger: true, run: () => setConfirm({
+      title: `Switch off ${u.fullName}'s account?`,
+      body: 'They are signed out at once and cannot sign in. Nothing is deleted: their password, history and records stay, and you can switch the account back on at any time.',
+      confirmLabel: 'Switch off', busyLabel: 'Switching off…', danger: true,
+      onConfirm: () => act(u, setActive(u, false), `${u.fullName}'s account is switched off.`),
+    }) });
+    if (!u.isActive) items.push({ key: 'on', label: 'Switch account back on', icon: 'UserCheck', run: () => setConfirm({
+      title: `Switch ${u.fullName}'s account back on?`,
+      body: 'They can sign in again with their existing password.',
+      confirmLabel: 'Switch on', busyLabel: 'Saving…',
+      onConfirm: () => act(u, setActive(u, true), `${u.fullName}'s account is switched back on.`),
+    }) });
+    return items;
+  }
+
   async function submitEdit(e: FormEvent) {
     e.preventDefault();
     if (!editing || busy) return;
@@ -331,13 +421,13 @@ export default function UsersPage() {
           <div className="py-3 px-5 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] flex items-center justify-between gap-3 flex-wrap">
             <span className="text-meta text-muted-ink">Role sets what a person can do. The reporting line is separate — see the organisation chart.</span>
           </div>
-          {/* Phones: one stacked row per person instead of a 940px table that hides role and status off-screen. */}
+          {/* Phones: one stacked row per person instead of a 910px table that hides role and status off-screen. */}
           <div className="sm:hidden">
             {loading && rows.length === 0 ? <TableSkeleton rows={5} cols={2} /> : rows.map(u => {
               const s = status(u);
               return (
-                <button key={u.id} onClick={() => openEdit(u)}
-                  className="flex items-center gap-3 w-full text-left py-3 px-4 bg-transparent border-none rounded-none cursor-pointer [font:inherit] [border-bottom:1px_solid_var(--color-line-soft)]">
+                <div key={u.id} onClick={() => openEdit(u)}
+                  className="flex items-center gap-3 w-full box-border text-left py-3 px-4 cursor-pointer [border-bottom:1px_solid_var(--color-line-soft)]">
                   <span className={cx('w-[32px] h-[32px] flex-none rounded-full grid place-items-center text-caption font-semibold', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>
                     {initials(u.fullName)}
                   </span>
@@ -346,23 +436,24 @@ export default function UsersPage() {
                     <span className="text-meta text-muted-ink truncate" title={u.email}>{u.email}</span>
                     <span className="flex items-center gap-1.5 flex-wrap"><Badge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /><Badge tone={s.tone} label={s.label} size="sm" /></span>
                   </span>
-                </button>
+                  <RowActions name={u.fullName} items={actionsFor(u)} />
+                </div>
               );
             })}
           </div>
           <div className="overflow-x-auto max-sm:hidden">
-            <div className="min-w-[940px]">
+            <div className="min-w-[910px]">
               <div className={cx('grid', LIST_COLS_CLASS, 'gap-3.5 py-2.5 px-5 bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-meta font-semibold text-muted-ink')}>
-                <div>Name</div><div>Email</div><div>Role</div><div>Reports to</div><div>Last sign-in</div><div>Status</div>
+                <div>Name</div><div>Email</div><div>Role</div><div>Reports to</div><div>Last sign-in</div><div>Status</div><div><span className="sr-only">Actions</span></div>
               </div>
               {loading && rows.length === 0 ? <TableSkeleton rows={7} cols={6} /> : rows.map(u => {
                 const s = status(u);
                 const manager = u.managerId ? nameById[u.managerId] : null;
                 return (
-                  <button
+                  <div
                     key={u.id}
                     onClick={() => openEdit(u)}
-                    className={cx('grid', LIST_COLS_CLASS, 'gap-3.5 items-center w-full text-left min-h-[50px] py-2 px-5 bg-transparent border-none rounded-none cursor-pointer [font:inherit] [border-bottom:1px_solid_var(--color-line-soft)]')}
+                    className={cx('grid', LIST_COLS_CLASS, 'gap-3.5 items-center w-full box-border text-left min-h-[50px] py-2 px-5 cursor-pointer hover:bg-muted [border-bottom:1px_solid_var(--color-line-soft)]')}
                   >
                     <span className="flex items-center gap-2.5 min-w-0">
                       <span className={cx('w-[30px] h-[30px] flex-none rounded-full grid place-items-center text-caption font-semibold', TONE[roleTone[u.role]].bg, TONE[roleTone[u.role]].text)}>
@@ -378,7 +469,8 @@ export default function UsersPage() {
                     <span className={cx('text-copy whitespace-nowrap overflow-hidden text-ellipsis', manager ? 'text-ink' : 'text-faint')}>{manager ?? '—'}</span>
                     <span className="text-copy text-muted-ink">{u.lastLoginAt ? date(u.lastLoginAt) : 'Never'}</span>
                     <span><Badge tone={s.tone} label={s.label} /></span>
-                  </button>
+                    <span className="flex justify-end"><RowActions name={u.fullName} items={actionsFor(u)} /></span>
+                  </div>
                 );
               })}
             </div>
@@ -445,28 +537,14 @@ export default function UsersPage() {
         <Modal
           title={`Edit ${editing.fullName}`}
           sub="Change the role, reporting line or status."
-          onClose={() => { setEditing(null); setResetLink(null); }}
+          onClose={() => setEditing(null)}
           footer={
             <>
-              {status(editing).label === 'Invited' && (
-                <Button variant="secondary" size="sm" onClick={resendInvite} disabled={busy}>Resend invitation</Button>
-              )}
-              {status(editing).label !== 'Invited' && editing.isActive && (
-                <Button variant="secondary" size="sm" onClick={makeResetLink} disabled={busy}>Reset link</Button>
-              )}
               <Button variant="secondary" size="sm" onClick={() => setEditing(null)} disabled={busy}>Cancel</Button>
               <Button variant="primary" size="sm" type="submit" form="edit-form" loading={busy}>{busy ? 'Saving…' : 'Save changes'}</Button>
             </>
           }
         >
-          {resetLink && (
-            <div className="mb-4 flex flex-col gap-2 rounded-[8px] bg-[var(--color-surface-sunken,#F4F2EE)] p-3">
-              <div className="text-meta font-semibold">Reset link for {resetLink.email}</div>
-              <div className="text-caption text-[var(--color-ink-muted,#706D67)]">Shown once. Send it to the person directly; it works one time and expires in 60 minutes.</div>
-              <input readOnly value={resetLink.link} onFocus={e => e.currentTarget.select()} className="w-full rounded-[6px] border border-[var(--color-line,#E2DFD8)] bg-white px-2 py-1.5 font-mono text-caption" />
-              <div><Button variant="secondary" size="sm" type="button" onClick={copyResetLink}>Copy link</Button></div>
-            </div>
-          )}
           <form id="edit-form" onSubmit={submitEdit} className="flex flex-col gap-4">
             <Field label="Full name" value={editName} onChange={e => setEditName(e.target.value)} error={editErrors.fullName} />
             <Field label="Email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} error={editErrors.email} />
@@ -489,6 +567,53 @@ export default function UsersPage() {
               <span className="text-copy">Account is active</span>
             </label>
           </form>
+        </Modal>
+      )}
+
+      <Dialog spec={confirm} busy={busy} onClose={() => setConfirm(null)} />
+
+      {resetLink && (
+        <Modal
+          title={`Reset link for ${resetLink.email}`}
+          sub="For when the reset email cannot reach them. Send it to the person directly; it works once and expires in 60 minutes. It is shown only now."
+          onClose={() => setResetLink(null)}
+          footer={
+            <>
+              <Button variant="secondary" size="sm" onClick={copyResetLink}>Copy link</Button>
+              <Button variant="primary" size="sm" onClick={() => setResetLink(null)}>Done</Button>
+            </>
+          }
+        >
+          <input readOnly value={resetLink.link} aria-label="Reset link" onFocus={e => e.currentTarget.select()}
+            className="w-full box-border rounded-control border border-solid border-line bg-page px-2.5 py-2 font-mono text-caption" />
+        </Modal>
+      )}
+
+      {tempShown && (
+        <Modal
+          title={`Temporary password for ${tempShown.name}`}
+          sub="Give this to them in person or by a private message. It is shown only now; close this box and it cannot be seen again."
+          onClose={() => setTempShown(null)}
+          footer={
+            <>
+              <Button variant="secondary" size="sm" onClick={() => {
+                navigator.clipboard?.writeText(tempShown.password).then(
+                  () => toast({ tone: 'success', title: 'Copied.' }),
+                  () => toast({ tone: 'warning', title: 'Could not copy. Select the password and copy it by hand.' }));
+              }}>Copy password</Button>
+              <Button variant="primary" size="sm" onClick={() => setTempShown(null)}>Done</Button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            <div className="py-3 px-3.5 rounded-control bg-page border border-solid border-line">
+              <div className="text-meta text-muted-ink">Sign in as {tempShown.email} with</div>
+              <div className="text-heading font-semibold font-mono mt-1 select-all break-all">{tempShown.password}</div>
+            </div>
+            <span className="text-meta text-muted-ink leading-[1.5]">
+              They have been signed out on every device. When they sign in with this, they must choose their own password before they can do anything else.
+            </span>
+          </div>
         </Modal>
       )}
 
@@ -522,6 +647,52 @@ export default function UsersPage() {
         </Modal>
       )}
     </>
+  );
+}
+
+/* ------------------------------ row actions ------------------------------ */
+interface RowAction { key: string; label: string; icon: string; danger?: boolean; run: () => void }
+
+/** The "..." button at the end of a row. The menu uses fixed positioning so the table's horizontal
+ *  scroll box cannot clip it on the last rows; clicks stop here so they do not also open Edit. */
+function RowActions({ name, items }: { name: string; items: RowAction[] }) {
+  const [at, setAt] = useState<{ top: number; right: number } | null>(null);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!at) return;
+    const close = (e: Event) => { if (!ref.current?.contains(e.target as Node)) setAt(null); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setAt(null); };
+    const shut = () => setAt(null);
+    document.addEventListener('mousedown', close); document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', shut, true); window.addEventListener('resize', shut);
+    return () => {
+      document.removeEventListener('mousedown', close); document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', shut, true); window.removeEventListener('resize', shut);
+    };
+  }, [at]);
+  return (
+    <span ref={ref} onClick={e => e.stopPropagation()} className="flex-none">
+      <button type="button" aria-label={`Actions for ${name}`} aria-haspopup="menu" aria-expanded={!!at}
+        onClick={e => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setAt(at ? null : { top: Math.min(r.bottom + 4, window.innerHeight - 40 * items.length - 16), right: window.innerWidth - r.right });
+        }}
+        className="w-8 h-8 grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted hover:text-ink">
+        <Icon name="MoreHorizontal" size="sm" />
+      </button>
+      {at && (
+        <div role="menu" style={{ top: at.top, right: at.right }}
+          className="fixed z-[55] w-[240px] p-1 bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)]">
+          {items.map(a => (
+            <button key={a.key} type="button" role="menuitem" onClick={() => { setAt(null); a.run(); }}
+              className={cx('w-full text-left flex gap-2.5 items-center px-2.5 py-2 rounded-[8px] border-none bg-transparent [font:inherit] text-copy cursor-pointer hover:bg-muted',
+                a.danger ? 'text-[var(--color-critical-fg)]' : 'text-ink')}>
+              <Icon name={a.icon} size="sm" />{a.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
   );
 }
 
