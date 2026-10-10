@@ -157,3 +157,10 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner questions, contract defaults in use: typed amount allowed when it differs from measure x rate (flagged *); rounding per line to the sen; QT-YYMM-NNN; PO split 30/65/5; credit note to the sales-return account; supply-by-owner goods get no PO; promotion column = unit price.
 - Not yet observed on a running engine: SKU photo upload through R2, phone site receipt submit, revenue and credit-note journals, the PO payment-schedule card; scripts/api-checks/renovation-project.mjs is written but not yet run.
 - Site receipt POST goes through the REST goods-receipt core and counts toward the free plan's 50 outside calls per request. Engine ESLint cannot run in Conts (engine/scripts/eslint and lint-ratchet.mjs were not copied).
+
+## Owners and revenue models (batch 4, 10 Oct)
+- Migration 0093 (revenue_model, contract history, receipts, Indah Water category) is not applied to staging or production yet; apply after the PR merges, dry-run first.
+- Long-term let units still show on the calendar and stay on channels: hiding them is the calendar's job (batch 3), not done here.
+- The sidebar still says "Adjustments" where it means owner credits and charges, if anywhere: navigation belongs to batch 1.
+- Expense receipt upload checked through the API only (document kind 'receipt', expenses.receipt_document_id); the file picker in the Record expense form was not clicked through in a browser.
+- 26 units with no contract record still run on their own split (units.split_kind); saving their Contract tab creates the contract.

@@ -41,7 +41,7 @@ export interface ReportRow { key: string; label: string; quantity: number | null
 export interface YearRow { month: string; label: string; gross: number | null; deductions: number | null; operator: number | null; net: number | null; source: 'statement' | 'computed' | 'workbook' | 'none' }
 export interface ReportUnit {
   unitId: string; code: string; refNo: string; address: string | null; propertyName: string; unitNumber: string;
-  basis: 'share' | 'fixed_rent'; nights: number; days: number; occupancy: number;
+  basis: 'share' | 'fixed_rent'; model: string | null; nights: number; days: number; occupancy: number;
   gross: number; deductions: ReportRow[]; deductionsTotal: number; net: number; operatorPct: number | null; operatorShare: number;
   guarantee: number; topUp: number; fixedRent: number; payoutBeforeAdjustments: number;
   adjustments: { id: string; description: string; amount: number }[]; netPayout: number;
@@ -85,7 +85,7 @@ export async function buildReport(q: Query, statementId: string, onlyUnit: strin
     const code = unitCode(u.property_name, u.unit_number);
     out.push({
       unitId: u.unit_id, code, refNo: `${period.slice(2, 4)}${period.slice(5, 7)}-${code}`, address: u.address, propertyName: u.property_name, unitNumber: u.unit_number,
-      basis: u.basis, nights: Number(u.nights), days: Number(u.days), occupancy: Number(u.days) ? Number(u.nights) / Number(u.days) : 0,
+      basis: u.basis, model: u.revenue_model ?? null, nights: Number(u.nights), days: Number(u.days), occupancy: Number(u.days) ? Number(u.nights) / Number(u.days) : 0,
       gross: Number(u.gross_income), deductions, deductionsTotal: Number(u.deductions), net: Number(u.net_income),
       operatorPct: u.owner_pct === null ? null : 100 - Number(u.owner_pct), operatorShare: Number(u.operator_share),
       guarantee: Number(u.guarantee), topUp: Number(u.top_up), fixedRent: Number(u.fixed_rent), payoutBeforeAdjustments: Number(u.payout_before_adjustments),
@@ -132,7 +132,7 @@ async function yearToDate(q: Query, unitId: string, ownerId: string, period: str
     const lv = live.get(month);
     // A month the workbook paid but whose bookings were never imported (before March 2026) shows what was paid.
     if (paidOf.has(month) && (!lv || lv.nights === 0)) return { month, label, gross: null, deductions: null, operator: null, net: paidOf.get(month)!, source: 'workbook' as const };
-    if (!lv || (lv.nights === 0 && lv.deductions === 0 && lv.payoutBeforeAdjustments === 0)) return { month, label, gross: null, deductions: null, operator: null, net: null, source: 'none' as const };
+    if (!lv || lv.terms.basis === 'none' || (lv.nights === 0 && lv.gross === 0 && lv.deductions === 0 && lv.payoutBeforeAdjustments === 0)) return { month, label, gross: null, deductions: null, operator: null, net: null, source: 'none' as const };
     return lv.terms.basis === 'fixed_rent'
       ? { month, label, gross: lv.fixedRent, deductions: 0, operator: 0, net: lv.payoutBeforeAdjustments, source: 'computed' as const }
       : { month, label, gross: lv.gross, deductions: lv.deductions, operator: lv.operatorShare, net: lv.payoutBeforeAdjustments, source: 'computed' as const };

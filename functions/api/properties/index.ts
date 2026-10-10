@@ -1,6 +1,8 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { masked } from '../../_lib/properties';
+import { statementSettings } from '../../_lib/ownerStatement';
+import { contractView } from '../../_lib/unitContract';
 
 const area = (city: string, postcode: string | null) => (postcode ? `${city}, ${postcode}` : city);
 
@@ -17,12 +19,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     SELECT u.id, u.property_id, u.parent_unit_id, u.unit_number, u.bedrooms, u.base_rate, u.listing_name, u.unit_code, u.address, u.package, u.term, u.split_kind, u.split_value, u.guarantee_period,
            p.state, p.address_line, o.display_name AS owner_name, o.ic_number, o.bank_name, o.bank_account_number, o.bank_account_holder,
            c.management_fee_pct, c.starts_on, c.renews_on, c.minimum_guarantee, c.minimum_guarantee_annual, c.guarantee_starts_on, c.guarantee_ends_on,
+           c.id AS c_id, c.revenue_model, c.model, c.grr_amount, c.agent_fee_pct, u.misc_charges,
            (SELECT COUNT(*) FROM documents d WHERE d.unit_id = u.id AND d.kind = 'contract') AS contract_docs
     FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
     LEFT JOIN owner_contracts c ON c.id = u.contract_id
     ORDER BY p.name, u.unit_number`);
   const expenses = await all<any>(env, 'SELECT id, unit_id, category, amount, note FROM unit_expenses ORDER BY unit_id, sort_order');
   const docs = await all<any>(env, `SELECT id, unit_id, file_name FROM documents WHERE kind = 'contract' AND unit_id IS NOT NULL ORDER BY created_at`);
+  const { defaultFeePct } = await statementSettings((sql, ...args) => all(env, sql, ...args));
 
   return json({
     generatedAt: nowIso(),
@@ -36,6 +40,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       ic: banking ? masked(u.ic_number) : '', bankName: banking ? (u.bank_name ?? '') : '',
       bankAccount: banking ? masked(u.bank_account_number) : '', accountHolder: banking ? (u.bank_account_holder ?? u.owner_name) : '',
       pkg: u.package, term: u.term, split: u.split_kind, splitValue: u.split_value, guaranteePeriod: u.guarantee_period ?? 'month',
+      // The revenue model and its short terms ("Share 75/20/5", "GRR RM 3,000/mo"); the figures only for roles that see money.
+      ...(() => { const v = contractView(u.c_id ? { ...u, id: u.c_id } : null, u, defaultFeePct); return { revenueModel: v.revenueModel, termsLabel: banking ? v.termsLabel : null }; })(),
       bedrooms: u.bedrooms, ...(banking ? { baseRate: Number(u.base_rate) } : {}),
       expenses: expenses.filter(e => e.unit_id === u.id).map(e => ({ id: e.id, category: e.category, amount: Number(e.amount), note: e.note })),
       contract: {

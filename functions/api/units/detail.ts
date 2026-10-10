@@ -3,6 +3,14 @@ import { requireSession } from '../../_lib/auth';
 import { stampMyt } from '../../_lib/ops';
 import { stayMonths, metrics, monthEndExclusive, daysInMonth as daysInMonthOf } from '../../_lib/revenue';
 import { loadInputs, computeMonth, statementSettings, fmtPct, type Query } from '../../_lib/ownerStatement';
+import { contractView, unitExample } from '../../_lib/unitContract';
+import { MODEL_LABEL } from '../../_lib/revenueModel';
+
+const PAYER_LABEL: Record<string, string> = { the_conts: 'Company', tenant: 'Tenant', guest_deposit: 'Guest', warranty: 'Warranty' };
+const CATEGORY_LABEL: Record<string, string> = {
+  electricity: 'Electricity', water: 'Water', internet: 'Internet', sewerage: 'Indah Water', cleaning: 'Cleaning', housekeeping: 'Cleaning',
+  maintenance: 'Maintenance', utilities: 'Utilities', other: 'Misc', consumables: 'Consumables', furniture: 'Furniture',
+};
 
 /**
  * The whole unit record in one request. Seven tabs of a detail page firing seven
@@ -23,7 +31,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const unit = await one<any>(env, `
     SELECT u.*, p.name AS property_name, p.address_line, p.city, p.state, p.postcode,
            o.id AS owner_id, o.display_name AS owner_name, o.email AS owner_email,
-           c.management_fee_pct, c.renews_on, c.starts_on
+           c.management_fee_pct, c.renews_on, c.starts_on, c.id AS c_id, c.revenue_model, c.model, c.minimum_guarantee, c.grr_amount,
+           c.agent_fee_pct, c.agent_name, c.tenant_name, c.deposit_amount, c.ends_on, c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges AS c_misc
     FROM units u
     JOIN properties p ON p.id = u.property_id
     JOIN owners o ON o.id = u.owner_id
@@ -47,7 +56,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // into the month. The money chain is the month so far worked out the way the owner statement will be.
   const monthEndEx = monthEndExclusive(month), daysInMonth = daysInMonthOf(month);
   const q: Query = (sql, ...args) => all(env, sql, ...args);
-  const [channels, stays, tasks, maintenance, inventory, access, documents, activity, perfRows, rating, statement] = await Promise.all([
+  const [channels, stays, tasks, maintenance, inventory, access, documents, activity, perfRows, rating, statement, settings, example, otherPaid] = await Promise.all([
     all<{ channel: string }>(env,
       'SELECT channel FROM unit_channels WHERE unit_id = ? AND is_active = 1', unitId),
 
@@ -103,23 +112,53 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     money ? Promise.all([statementSettings(q), loadInputs(q, `${month}-01`, monthEndEx, { unitId })])
       .then(([settings, inputs]) => computeMonth(month, inputs, settings, 'dated').find(x => x.unitId === unitId) ?? null)
       : Promise.resolve(null),
+    statementSettings(q),
+    money ? unitExample(q, unitId, month) : Promise.resolve(null),
+    // Costs on the unit paid by someone other than the owner: the unit's own profit and loss, never the statement.
+    money ? all<any>(env, `SELECT category, charge_to, SUM(amount) AS total FROM expenses
+      WHERE unit_id = ? AND charge_to <> 'owner' AND incurred_on >= ? AND incurred_on < ? GROUP BY 1, 2 ORDER BY 3 DESC`, unitId, `${month}-01`, monthEndEx) : Promise.resolve([]),
   ]);
   const perf = metrics(perfRows, daysInMonth);
 
   let pnl: { label: string; amount: number; type: string }[] | undefined;
   const m = statement;
   if (m) {
-    pnl = m.terms.basis === 'fixed_rent'
+    pnl = m.terms.basis === 'none'
+      ? [{ label: 'Master lease: no owner statement', amount: 0, type: 'gross' }]
+      : m.terms.basis === 'fixed_rent'
       ? [{ label: 'Fixed monthly rent', amount: m.fixedRent, type: 'gross' }]
       : [
-        { label: 'Hospitality income', amount: m.gross, type: 'gross' },
+        { label: m.terms.model === 'long_term' ? 'Monthly rent from tenant' : 'Hospitality income', amount: m.gross, type: 'gross' },
         ...m.deductionGroups.filter(g => g.amount).map(g => ({ label: g.label, amount: -g.amount, type: 'expense' })),
-        { label: `${fmtPct(100 - (m.ownerPct ?? 0))} to operator`, amount: -m.operatorShare, type: 'fee' },
+        { label: m.terms.model === 'long_term' ? `Management fee ${fmtPct(100 - (m.ownerPct ?? 0))} of the rent` : `${fmtPct(100 - (m.ownerPct ?? 0))} to operator`, amount: -m.operatorShare, type: 'fee' },
         ...(m.topUp ? [{ label: 'Minimum guarantee top-up', amount: m.topUp, type: 'adjustment' }] : []),
       ];
-    if (m.adjustmentsTotal) pnl.push({ label: 'Owner adjustments', amount: m.adjustmentsTotal, type: 'adjustment' });
-    pnl.push({ label: 'Net payout', amount: m.netPayout, type: 'net' });
+    if (m.adjustmentsTotal) pnl.push({ label: 'Owner credits & charges', amount: m.adjustmentsTotal, type: 'adjustment' });
+    pnl.push({ label: 'Net payout to owner', amount: m.netPayout, type: 'net' });
   }
+  // The company's side of the unit this month: what it keeps or pays under the contract, and the costs it (or a
+  // tenant or guest) paid, which never reach the owner statement.
+  let companyPnl: { label: string; amount: number; type: string }[] | undefined;
+  if (m && example) {
+    const others = otherPaid.map(r => ({ label: `${CATEGORY_LABEL[r.category] ?? r.category} (paid by ${PAYER_LABEL[r.charge_to] ?? r.charge_to})`, amount: -Number(r.total), type: 'expense' }));
+    const othersTotal = others.reduce((n, l) => n + l.amount, 0);
+    if (example.company) {
+      companyPnl = [
+        { label: 'Unit income (bookings)', amount: example.company.income, type: 'gross' },
+        { label: 'Costs on the unit (all payers)', amount: -example.company.costs, type: 'expense' },
+        { label: m.terms.model === 'master_lease' ? 'Lease rent paid to owner' : 'Guaranteed rent paid to owner', amount: -example.company.rentToOwner, type: 'fee' },
+        { label: 'Company result', amount: example.company.result, type: 'net' },
+      ];
+    } else {
+      companyPnl = [
+        { label: m.terms.model === 'long_term' ? 'Management fee' : 'Operator share (management and agent)', amount: m.operatorShare, type: 'gross' },
+        ...(m.topUp ? [{ label: 'Minimum guarantee top-up paid', amount: -m.topUp, type: 'fee' }] : []),
+        ...others,
+        { label: 'Company result', amount: m.operatorShare - m.topUp + othersTotal, type: 'net' },
+      ];
+    }
+  }
+  const terms = contractView(unit.c_id ? { ...unit, id: unit.c_id, misc_charges: unit.c_misc } : null, unit, settings.defaultFeePct);
 
   return json({
     generatedAt: new Date().toISOString(),
@@ -150,6 +189,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         managementFeePct: unit.management_fee_pct,
         startsOn: unit.starts_on, renewsOn: unit.renews_on,
       } : null,
+      revenueModel: terms.revenueModel, revenueModelLabel: MODEL_LABEL[terms.revenueModel], termsLabel: terms.termsLabel,
       ...(money ? { baseRate: unit.base_rate } : {}),
     },
     performance: {
@@ -163,6 +203,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       ...(money ? { revenue: perf.collected, gross: perf.gross } : {}),
     },
     pnl,
+    companyPnl,
     stays: stays.map(s => ({
       id: s.id, guestName: s.guest_name || null, channel: s.channel, state: s.state,
       checkIn: s.check_in, checkOut: s.check_out, guestsCount: s.guests_count,

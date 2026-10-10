@@ -24,12 +24,27 @@ import type { UnitReadiness } from '../lib/types';
 import UnitTree, { firstUnitId } from './units/UnitTree';
 import AccessTab from './units/AccessTab';
 import BookingsTab from './units/BookingsTab';
-import { SaveBar, DetailsForm, ContractFields, DocumentsCard, ExpensesEditor, BuildingModal, ConfirmAdd } from './units/UnitForms';
+import { SaveBar, DetailsForm, DocumentsCard, ExpensesEditor, BuildingModal, ConfirmAdd } from './units/UnitForms';
+import ContractTab, { ModelChip } from './units/ContractTab';
+import { ExpensesCard } from './owners/ExpenseEntry';
+import { todayMyt } from '../lib/format';
 import { PROPERTIES_FALLBACK, DETAIL_FALLBACK, mkUnit } from './units/fallback';
 import {
   READY_TONE, TASK_TONE, COND_TONE, MASTER_ROLES, STATES, cap,
   type Unit, type Building, type PropertiesPayload, type UnitDetail, type RosterRow,
 } from './units/shared';
+
+/** True at the width where the tree becomes a sticky pane (Tailwind xl). */
+function useWide() {
+  const q = '(min-width: 1280px)';
+  const [on, setOn] = useState(() => typeof window !== 'undefined' && window.matchMedia(q).matches);
+  useEffect(() => {
+    const m = window.matchMedia(q), f = () => setOn(m.matches);
+    m.addEventListener('change', f);
+    return () => m.removeEventListener('change', f);
+  }, []);
+  return on;
+}
 
 /** The unit lifecycle states an operator can set by hand, in the order they read on the record. */
 const READINESS_OPTIONS: UnitReadiness[] = ['ready', 'occupied', 'cleaning', 'dirty', 'inspection', 'maintenance', 'blocked'];
@@ -55,6 +70,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   const toast = useToast();
   const { user } = useSession();
   const canEdit = !!user && MASTER_ROLES.includes(user.role);
+  const wide = useWide();
 
   const props = useApi<PropertiesPayload>('/properties', PROPERTIES_FALLBACK);
   const roster = useApi<{ data: RosterRow[] }>('/units');
@@ -109,7 +125,9 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   async function save() {
     if (!form) return;
     const before = original.find(u => u.id === form.id);
-    const { baseRate, ...body } = form;
+    // The contract is saved on its own tab (PUT /units/:id/contract); never sent from here, so an older copy in
+    // this form cannot overwrite it.
+    const { baseRate, contract: _contract, revenueModel: _model, termsLabel: _terms, ...body } = form;
     setSaving(true);
     try {
       await api.patch(`/units/${form.id}`, body);
@@ -211,7 +229,9 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       {(props.error || detail.error) && <StaleBanner message={`Showing the last record we have. ${props.error ?? detail.error}`} onRetry={reloadAll} />}
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,300px)_minmax(0,1fr)] gap-5 items-start min-w-0">
-        <div className="flex flex-col gap-2 min-w-0">
+        {/* On a wide screen the tree is its own pane: it stays put under the top bar, as tall as the window, and
+            scrolls by itself, so it never runs out while the record on the right scrolls. */}
+        <div className="flex flex-col gap-2 min-w-0 xl:sticky xl:top-0 xl:h-[calc(100vh-100px)] xl:z-[1]">
           {/* Below the wide-desktop breakpoint the tree folds away behind a picker once a unit is open. */}
           <button onClick={() => setTreeOpen(o => !o)} aria-expanded={treeOpen}
             className="xl:hidden flex items-center gap-3 w-full py-[11px] px-[14px] bg-card border border-solid border-line rounded-card cursor-pointer [font:inherit] text-left">
@@ -222,8 +242,8 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
             </span>
             <span className="text-meta font-medium text-gold-ink flex-none">{treeOpen ? 'Close' : 'Change unit'}</span>
           </button>
-          <div className={cx(treeOpen ? 'block' : 'hidden', 'xl:block min-w-0')}>
-            <UnitTree buildings={buildings} units={units} selectedId={openId} readiness={readiness} canEdit={canEdit}
+          <div className={cx(treeOpen ? 'block' : 'hidden', 'xl:block min-w-0 xl:flex-1 xl:min-h-0')}>
+            <UnitTree fill={wide} buildings={buildings} units={units} selectedId={openId} readiness={readiness} canEdit={canEdit}
               onSelect={select} onEditBuilding={b => setModal({ kind: 'editBuilding', building: b })}
               onAddUnit={id => setModal({ kind: 'unit', buildingId: id })} onAddSubUnit={(bid, p) => setModal({ kind: 'subunit', buildingId: bid, parent: p })} />
           </div>
@@ -313,14 +333,13 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
             onDragOver={e => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files.item(0); if (f) takeFile(f); }}
-            className={cx('h-[140px] sm:h-[200px] rounded-control grid place-items-center overflow-hidden bg-muted', dragOver ? '[border:1px_dashed_var(--color-gold)]' : '[border:1px_solid_var(--color-line-soft)]')}
+            className={cx('h-[84px] sm:h-[112px] rounded-control grid place-items-center overflow-hidden bg-muted', dragOver ? '[border:1px_dashed_var(--color-gold)]' : '[border:1px_solid_var(--color-line-soft)]')}
             style={photo ? { background: `center / cover no-repeat url(${photo})` } : undefined}>
             {!photo && (
-              <div className="flex flex-col items-center gap-[7px] text-center px-4">
-                <Icon name="Image" size="lg" color={color.faint} />
-                <span className="text-copy font-medium text-ink">Drop a photo of this unit</span>
+              <div className="flex items-center gap-[10px] text-center px-4">
+                <Icon name="Image" size="base" color={color.faint} />
                 <span className="text-meta text-muted-ink">
-                  or <button onClick={() => fileRef.current?.click()} className="[font:inherit] text-meta! bg-transparent [border:none] p-0 cursor-pointer text-gold-ink underline">browse files</button>
+                  <span className="font-medium text-ink">Drop a photo of this unit</span> or <button onClick={() => fileRef.current?.click()} className="[font:inherit] text-meta! bg-transparent [border:none] p-0 cursor-pointer text-gold-ink underline">browse files</button>
                 </span>
               </div>
             )}
@@ -341,20 +360,20 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
                   options={READINESS_OPTIONS.map(r => ({ value: r, label: READINESS[r].label }))} />
               </span>
               {form?.parentUnitId && <Badge tone="warning" label="Sub-unit" />}
-              {form && <Badge tone="neutral" label={form.pkg} />}
+              {u.revenueModel && <span title={`Revenue model: ${u.revenueModelLabel}. Change it on the Contract tab.`}><ModelChip model={u.revenueModel} label={u.termsLabel ?? u.revenueModelLabel} /></span>}
               {u.channels.length > 0 && (
                 <span className="inline-flex items-center gap-1.5" aria-label={`Sold on ${u.channels.map(c => CH[c].label).join(', ')}`}>
                   {u.channels.map(c => <span key={c} title={CH[c].label} className="flex"><ChannelMark ch={c} size={22} /></span>)}
                 </span>
               )}
-              {!u.isListed && <Badge tone="neutral" label="Not listed" />}
+              {!u.isListed && <span title="This unit is not for sale on Airbnb, Booking.com or any other channel, so no bookings come in through them. Connect it under Channels on the Overview tab."><Badge tone="neutral" label="Not listed on any channel" /></span>}
             </div>
           </div>
           {/* Owner names run long (several co-owners, company names); they wrap instead of running off a phone. */}
           <div className="flex flex-col gap-1 min-w-0 max-w-full sm:max-w-[45%] items-start">
             <span className="text-meta text-muted-ink">Owner</span>
             <a href={`#/owners/${encodeURIComponent(u.owner.id)}`} className="text-heading font-semibold no-underline text-ink! [overflow-wrap:anywhere]">{titleCase(u.owner.name)}</a>
-            {u.contract && <span className="text-meta text-muted-ink">{u.contract.managementFeePct}% · {u.contract.renewsOn ? `renews ${date(u.contract.renewsOn)}` : 'No renewal date'}</span>}
+            {u.contract && <span className="text-meta text-muted-ink">{u.termsLabel ?? `${u.contract.managementFeePct}%`} · {u.contract.renewsOn ? `renews ${date(u.contract.renewsOn)}` : 'No renewal date'}</span>}
           </div>
         </div>
 
@@ -421,21 +440,17 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       {shown === 'details' && (form ? (
         <Card>
           <SaveBar title="Details & owner" sub="Listing, building, owner and revenue model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave} />
-          <DetailsForm u={form} buildings={buildings} money={money} canEdit={canEdit} onChange={onChange} />
+          <DetailsForm u={form} buildings={buildings} money={money} canEdit={canEdit} onChange={onChange} onOpenContract={() => setTab('contract')} />
         </Card>
       ) : needsForm)}
 
-      {shown === 'contract' && (
-        <>
-          {form ? (
-            <Card>
-              <SaveBar title="Contract" sub="The management agreement with the owner." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave} />
-              <ContractFields u={form} canEdit={canEdit} onChange={onChange} />
-            </Card>
-          ) : needsForm}
+      {shown === 'contract' && (money
+        ? <ContractTab key={u.id} unitId={u.id} canEdit={canEdit} onSaved={reload}
+            footer={<DocumentsCard unitId={u.id} unitLabel={unitLabel} documents={d.documents ?? []} onUploaded={reloadDetail} />} />
+        : <>
+          <Card><div className="p-8 text-center text-copy text-muted-ink">The owner's contract is visible to finance and management.</div></Card>
           <DocumentsCard unitId={u.id} unitLabel={unitLabel} documents={d.documents ?? []} onUploaded={reloadDetail} />
-        </>
-      )}
+        </>)}
 
       {shown === 'access' && <AccessTab key={u.id} unitId={u.id} unitLabel={unitLabel} />}
 
@@ -516,9 +531,10 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 
       {shown === 'financials' && d.pnl && (
         <>
+          <ExpensesCard title="Expenses this month" unitId={u.id} month={todayMyt().slice(0, 7)} units={[{ id: u.id, label: unitLabel }]} canEdit={canEdit} onChanged={reloadDetail} />
           {form && (
             <Card>
-              <SaveBar title="Monthly expenses" sub="Recurring costs deducted from the owner statement." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave}
+              <SaveBar title="Recurring monthly costs" sub="The unit's usual monthly costs, for reference and the expenses report. Record the actual bills above." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave}
                 extra={<Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={expensesReport}>Generate report</Button>} />
               <ExpensesEditor u={form} canEdit={canEdit} onChange={onChange} />
             </Card>
@@ -538,9 +554,26 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               );
             })}
             <div className="py-[13px] px-5 text-meta text-muted-ink [text-wrap:pretty]">
-              Bookings that check in this month, less the management fee and the expenses recorded this month. The month is not closed yet, so the figures still move.
+              The owner statement for the month so far, by the unit's revenue model: income split by night into the month, less the costs the owner pays. The month is not closed yet, so the figures still move.
             </div>
           </Card>
+          {d.companyPnl && (
+            <Card>
+              <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
+                <span className="text-heading font-semibold">Company side</span>
+                <span className="text-meta text-muted-ink">What the company keeps or pays on this unit, {periodLabel.toLowerCase()}. Costs paid by the company, a tenant or a guest show here, never on the owner statement.</span>
+              </div>
+              {d.companyPnl.map((l, i) => {
+                const net = l.type === 'net';
+                return (
+                  <div key={i} className={cx('flex items-center justify-between gap-5 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0', net ? 'py-[15px] px-5 bg-page' : 'py-3 px-5 bg-card')}>
+                    <span className={cx(net ? 'text-copy font-semibold text-ink' : 'text-copy font-normal text-muted-ink')}>{l.label}</span>
+                    <MoneyText sen={l.amount} mode="exact" className={cx('text-right', net ? 'text-heading font-semibold' : 'text-copy font-medium')} />
+                  </div>
+                );
+              })}
+            </Card>
+          )}
         </>
       )}
 
