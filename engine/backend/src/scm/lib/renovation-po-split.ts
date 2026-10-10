@@ -57,6 +57,16 @@ interface CandidateRow {
   ordered_qty: number;
 }
 
+/** Whether a contract line is meant to get a PO at all (the same rules groupForPo applies, before quantity).
+    A line with a cost but no supplier still needs one: the split blocks until a supplier is picked. Lines that
+    never get one (system rows, owner-supplied goods, in-house work) also never get a proof of delivery. */
+export function needsPurchaseOrder(l: { itemCode: string | null; supplyByOwner: boolean; category: string | null; supplierId: string | null; unitCostSen: number }): boolean {
+  if (String(l.itemCode ?? '').startsWith('RENO-')) return false;
+  if (l.supplyByOwner && categoryGroupOf(l.category) !== 'WORKS') return false;
+  if (!l.supplierId && Number(l.unitCostSen) === 0) return false;
+  return true;
+}
+
 /** Pure grouping, exported for tests. */
 export function groupForPo(rows: CandidateRow[]): SplitPreview {
   const out: SplitPreview = { groups: [], blocked: [], skipped: [], alreadyOrdered: [] };
