@@ -50,6 +50,8 @@ export interface ContractLine {
   subCategory: string | null;
   stageOverride: string | null;
   supplyByOwner: boolean;
+  /** false when the line never gets a PO, so it needs no proof of delivery (see pod.ts). */
+  needsPod?: boolean;
   qty: number;
   room: string | null;
   description: string | null;

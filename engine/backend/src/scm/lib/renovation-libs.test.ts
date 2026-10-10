@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'vitest';
 import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections } from './renovation-validate';
 import { renovationFenceApplies } from './renovation-write-fence';
-import { groupForPo } from './renovation-po-split';
+import { groupForPo, needsPurchaseOrder } from './renovation-po-split';
 import { quotationTransitionAllowed, revisionDocNo, mergeHeader } from './renovation-quotation';
 import { contractTransitionAllowed, mirrorRowsFor } from './renovation-so';
 import { isPayable } from './renovation-po-schedule';
@@ -155,6 +155,23 @@ describe('PO split grouping', () => {
     expect(r.skipped.map((l) => l.description)).toEqual(['owner lamp', 'in house']);
     expect(r.blocked.map((l) => l.description)).toEqual(['no supplier']);
     expect(r.alreadyOrdered.map((l) => l.description)).toEqual(['done']);
+  });
+
+  test('needsPurchaseOrder agrees with the split: only lines the split would order (or blocks) need one', () => {
+    const rows = [
+      row({ description: 'cabinet' }),
+      row({ description: 'labour', category: 'WORKS', supply_by_owner: true }),
+      row({ description: 'owner lamp', supply_by_owner: true }),
+      row({ description: 'in house', supplier_id: null, unit_cost_sen: 0 }),
+      row({ description: 'no supplier', supplier_id: null }),
+      row({ description: 'system', item_code: 'RENO-ADJUST' }),
+    ];
+    const r = groupForPo(rows);
+    const ordered = new Set([...r.groups.flatMap((g) => g.lines), ...r.blocked].map((l) => l.description));
+    for (const x of rows) {
+      const need = needsPurchaseOrder({ itemCode: x.item_code, supplyByOwner: x.supply_by_owner, category: x.category, supplierId: x.supplier_id, unitCostSen: x.unit_cost_sen });
+      expect(need, x.description).toBe(ordered.has(x.description));
+    }
   });
 
   test('measured lines order one unit at measure x cost; partly ordered lines order the rest', () => {
