@@ -4,6 +4,7 @@ import { findClash, clashResponseBody, upsertGuest, nextBookingRef, holdOnChanne
 import { VIEWS, TODOS, fromSql, columnsSql, parseListQuery, viewWhere, todoWhere, toRow } from '../../_lib/bookingList';
 import { moneySchema, moneySql } from '../../_lib/bookingMoney';
 import { checkSen, checkInt, checkDate, checkPhone, invalid, type Fields } from '../../_lib/validate';
+import { bookingNotice } from '../../_lib/notices';
 
 /** GET /api/reservations?view=&todo=&ch=&building=&from=&to=&page=&size=&sort=&q=&ref=&guest=&unit=&stay=&gross=&status=
  *  One page of the Bookings list; each tab's count and each to-do card's count and amount under the same searches
@@ -91,5 +92,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.create', entityTable: 'reservations', entityId: id, after: { unitId: b.unitId, checkIn: b.checkIn, checkOut: b.checkOut, channel, externalRef: ref } });
   const sync = await holdOnChannels(env, b.unitId, b.checkIn, b.checkOut, false, id);
+  await bookingNotice(env, id, 'created', session.userId);
   return json({ id, externalRef: ref, effects: { channel: sync } }, 201);
 };

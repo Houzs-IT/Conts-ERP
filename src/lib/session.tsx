@@ -2,14 +2,19 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { api, ApiFailure } from './api';
 import type { SessionUser } from './types';
 
+/** The password was right and the account has two-step sign-in on: the code is asked for next. */
+export interface TwoStep { challenge: string; backupOnly: boolean }
+type SignedIn = { home: string; twoStep?: undefined } | { home?: undefined; twoStep: TwoStep };
+
 interface SessionCtx {
   user: SessionUser | null;
   loading: boolean;
-  login: (email: string, password: string, remember: boolean) => Promise<{ home: string }>;
+  login: (email: string, password: string, remember: boolean) => Promise<SignedIn>;
+  verifyCode: (challenge: string, code: string) => Promise<SignedIn>;
   logout: () => Promise<void>;
   requestReset: (email: string) => Promise<void>;
   changePassword: (password: string) => Promise<void>;
-  resetPassword: (token: string, password: string) => Promise<{ home: string }>;
+  resetPassword: (token: string, password: string) => Promise<SignedIn>;
   checkResetToken: (token: string) => Promise<void>;
   can: (resource: string, action: string) => boolean;
   refresh: () => Promise<void>;
@@ -54,12 +59,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { void refresh(); }, []);
 
-  const login = async (email: string, password: string, remember: boolean) => {
-    const res = await api.post<{ user: SessionUser; home: string }>('/auth/login', { email, password, remember });
+  type SignInAnswer = { user: SessionUser; home: string; twoStep?: undefined } | { twoStep: true; challenge: string; backupOnly: boolean };
+  const finish = (res: SignInAnswer): SignedIn => {
+    if (res.twoStep) return { twoStep: { challenge: res.challenge, backupOnly: res.backupOnly } };
     setUser(res.user);
     window.location.hash = res.home;
     return { home: res.home };
   };
+
+  const login = async (email: string, password: string, remember: boolean) =>
+    finish(await api.post<SignInAnswer>('/auth/login', { email, password, remember }));
+
+  /** The second step: a code from the authenticator app or a backup code. */
+  const verifyCode = async (challenge: string, code: string) =>
+    finish(await api.post<SignInAnswer>('/auth/login-2fa', { challenge, code }));
 
   const logout = async () => {
     try { await api.post('/auth/logout'); } catch (e) { if (!(e instanceof ApiFailure)) throw e; }
@@ -80,12 +93,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   /** Completes the emailed reset link: verifies the token server-side and, on
    *  success, signs the person straight in — same shape as login(). */
-  const resetPassword = async (token: string, password: string) => {
-    const res = await api.post<{ user: SessionUser; home: string }>('/auth/reset-password', { token, password });
-    setUser(res.user);
-    window.location.hash = res.home;
-    return { home: res.home };
-  };
+  const resetPassword = async (token: string, password: string) =>
+    finish(await api.post<SignInAnswer>('/auth/reset-password', { token, password }));
 
   /** Checked the moment a reset link opens, before anyone types a password —
    *  an already-used or expired token otherwise renders an identical form and
@@ -105,7 +114,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <Ctx.Provider value={{ user, loading, login, logout, requestReset, changePassword, resetPassword, checkResetToken, can, refresh }}>
+    <Ctx.Provider value={{ user, loading, login, verifyCode, logout, requestReset, changePassword, resetPassword, checkResetToken, can, refresh }}>
       {children}
     </Ctx.Provider>
   );

@@ -7,6 +7,7 @@ import { Button } from '../components/Button';
 import { Dialog } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useCrew } from '../lib/useCrew';
 import { api, notifyFailure } from '../lib/api';
@@ -223,11 +224,18 @@ const PORTFOLIO_FALLBACK: PortfolioPayload = {
 
 const go = (hash: string) => { window.location.hash = hash; };
 
-/* Portfolio table track template, as one arbitrary Tailwind grid-cols class so
- * header and rows stay in lockstep. The literal lives here verbatim (repeat()
- * expanded) so Tailwind can extract it. Was: minmax(190px,2fr)
- * repeat(4,minmax(78px,0.9fr)) minmax(120px,1.1fr). */
-const PCOLS = 'grid-cols-[minmax(190px,2fr)_minmax(78px,0.9fr)_minmax(78px,0.9fr)_minmax(78px,0.9fr)_minmax(78px,0.9fr)_minmax(120px,1.1fr)]';
+const NUM = 'tabular-nums whitespace-nowrap';
+const TOP_COLUMNS: Column<PortfolioRow>[] = [
+  { key: 'unit', label: 'Unit', value: u => u.unitNumber, text: u => `${u.unitNumber} ${u.propertyName}`, exportValue: u => u.unitNumber,
+    hideable: false, width: 190, sub: u => u.propertyName,
+    render: u => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block">{u.unitNumber}</span> },
+  { key: 'occupancy', label: 'Occupancy', type: 'number', value: u => u.occupancy, width: 90, render: u => <span className={NUM}>{u.occupancy.toFixed(1)}%</span> },
+  { key: 'adr', label: 'ADR', type: 'money', value: u => u.adr, width: 90, render: u => <span className={NUM}>{rm(u.adr, { cents: false })}</span> },
+  { key: 'revpar', label: 'RevPAR', type: 'money', value: u => u.revpar, width: 90, render: u => <span className={NUM}>{rm(u.revpar, { cents: false })}</span> },
+  { key: 'revenue', label: 'Revenue', type: 'money', value: u => u.revenue, width: 100, render: u => <span className={`${NUM} font-medium`}>{rm(u.revenue, { cents: false })}</span> },
+  { key: 'exception', label: 'Exception', type: 'status', value: u => u.exception?.label ?? null, status: u => u.exception, width: 130, align: 'right',
+    render: u => (u.exception ? <Badge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-meta text-faint">None</span>) },
+];
 
 /* The exception tone drives the 3px left accent. It uses the design's -line
  * (non-text) shade, which lives only as a CSS var, applied per tone as a single
@@ -483,53 +491,19 @@ export default function DashboardPage() {
         <div className="pt-0 px-5 pb-3 -mt-2 text-meta text-muted-ink min-h-[18px]">
           {portfolio.data ? `The ${Math.min(TOP_UNITS, allRows.length)} highest by revenue of ${plural(portfolio.data.units, 'listed unit')} in ${plural(portfolio.data.buildings, 'building')}${period ? ` · ${monthLabel(period)} to date` : ''}` : ''}
         </div>
-        {/* Phone: compact rows. */}
-        <div className="md:hidden [border-top:1px_solid_var(--color-line)]">
-          {portfolio.loading && rows.length === 0 ? <TableSkeleton rows={4} cols={2} /> : rows.map(u => (
-            <a key={u.unitId} href={`#/properties/units/${encodeURIComponent(u.unitId)}`}
-              className="flex items-center justify-between gap-3 py-3 px-4 [border-bottom:1px_solid_var(--color-line-soft)] no-underline text-inherit hover:text-inherit">
+        <DataTable<PortfolioRow> id="dashboard.topunits" urlPrefix="top." bare noViews noToolbar pageSize={0} maxHeight="none"
+          columns={TOP_COLUMNS} rows={portfolio.data ? rows : null} rowKey={u => u.unitId} noun={['unit', 'units']}
+          onRowClick={u => go(`#/properties/units/${encodeURIComponent(u.unitId)}`)}
+          empty={{ title: 'No listed units for this month yet.', icon: 'BarChart3' }}
+          renderCard={u => (
+            <span className="flex items-center justify-between gap-3">
               <span className="flex flex-col gap-px min-w-0">
                 <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber} <span className="font-normal text-meta text-muted-ink">· {u.propertyName}</span></span>
                 <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{u.occupancy.toFixed(1)}% occupied · ADR {rm(u.adr, { cents: false })}</span>
               </span>
               <span className="flex-none text-copy font-semibold [font-variant-numeric:tabular-nums]">{rm(u.revenue, { cents: false })}</span>
-            </a>
-          ))}
-        </div>
-        <div className="hidden md:block overflow-x-auto">
-          <div className="min-w-[760px]">
-            <div className={cx(PCOLS, 'grid gap-[14px] py-[9px] px-[22px] bg-muted [border-top:1px_solid_var(--color-line)] [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink')}>
-              <div>Unit</div>
-              <div className="text-right">Occupancy</div>
-              <div className="text-right">ADR</div>
-              <div className="text-right">RevPAR</div>
-              <div className="text-right">Revenue</div>
-              <div className="text-right">Exception</div>
-            </div>
-            {portfolio.loading && rows.length === 0 ? <TableSkeleton rows={4} cols={6} /> : rows.map(u => (
-              <div
-                key={u.unitId}
-                role="button"
-                tabIndex={0}
-                onClick={() => go(`#/properties/units/${encodeURIComponent(u.unitId)}`)}
-                onKeyDown={ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(`#/properties/units/${encodeURIComponent(u.unitId)}`); } }}
-                className={cx(PCOLS, 'grid gap-[14px] items-center min-h-[52px] py-[7px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer')}
-              >
-                <div className="flex flex-col gap-px min-w-0">
-                  <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
-                  <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={u.propertyName}>{u.propertyName}</span>
-                </div>
-                <div className="text-right text-copy [font-variant-numeric:tabular-nums]">{u.occupancy.toFixed(1)}%</div>
-                <div className="text-right text-copy [font-variant-numeric:tabular-nums]">{rm(u.adr, { cents: false })}</div>
-                <div className="text-right text-copy [font-variant-numeric:tabular-nums]">{rm(u.revpar, { cents: false })}</div>
-                <div className="text-right text-copy font-medium [font-variant-numeric:tabular-nums]">{rm(u.revenue, { cents: false })}</div>
-                <div className="text-right">
-                  {u.exception ? <Badge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-meta text-faint">None</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+            </span>
+          )} />
       </Card>
 
       {/* Assign cleaner — a chooser, so a local form modal (shared Dialog is confirm-only). */}

@@ -1,14 +1,14 @@
 import { mayWork } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { CONTACT_ROLES, FILTERS, filterWhere, SORTS, type GuestFilter, guestTags, monthYear, statsCte, todayAndTomorrow, hasGuestColumns, MISSING_ID } from '../../_lib/guestList';
+import { CONTACT_ROLES, FILTERS, filterWhere, guestSort, type GuestFilter, guestTags, monthYear, statsCte, todayAndTomorrow, hasGuestColumns, MISSING_ID } from '../../_lib/guestList';
 import { like } from '../../_lib/bookingList';
 import { countryCode } from '../../_lib/hostplatformImport';
 import { checkPhone, invalid, type Fields } from '../../_lib/validate';
 
 const OPS = CONTACT_ROLES;
 
-/** GET /api/guests?q=&filter=&sort=&page=&size= — one page of the guest directory with lifetime
+/** GET /api/guests?q=&filter=&sort=<key>[:asc|desc]&page=&size= — one page of the guest directory with lifetime
  *  figures, plus the count behind each filter. The full profile is GET /api/guests/:id. Merged duplicates are hidden. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -20,9 +20,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sp = new URL(request.url).searchParams;
   const rawFilter = sp.get('filter') ?? '';
   const filter: GuestFilter = (FILTERS as readonly string[]).includes(rawFilter) ? rawFilter as GuestFilter : 'all';
-  const sortKey = SORTS[sp.get('sort') ?? ''] ? sp.get('sort')! : 'name';
+  const sort = guestSort(sp.get('sort'));
   const size = Number(sp.get('size'));
-  const pageSize = [25, 50, 100].includes(size) ? size : 50;
+  // export=1: the table's Export reads every matching guest in pages of up to 1,000.
+  const pageSize = sp.get('export') === '1' && Number.isInteger(size) && size >= 1 && size <= 1000 ? size : [25, 50, 100].includes(size) ? size : 50;
   const q = (sp.get('q') ?? '').trim().slice(0, 80);
   const except = (sp.get('except') ?? '').slice(0, 80);
 
@@ -59,10 +60,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            COALESCE(s.value, 0) AS value, s.last_check_in, s.channel
     FROM guests g LEFT JOIN s ON s.guest_id = g.id
     WHERE ${where} AND ${filterWhere(filter, cols)}
-    ORDER BY ${SORTS[sortKey]} LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`, ...args) : [];
+    ORDER BY ${sort.sql} LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`, ...args) : [];
 
   return json({
-    generatedAt: nowIso(), filter, sort: sortKey, page, pageSize, total, registrationReady: cols,
+    generatedAt: nowIso(), filter, sort: `${sort.key}:${sort.dir}`, page, pageSize, total, registrationReady: cols,
     counts: Object.fromEntries(FILTERS.map(f => [f, Number(counts?.[f] ?? 0)])),
     data: rows.map(g => ({
       id: g.id, fullName: g.full_name,

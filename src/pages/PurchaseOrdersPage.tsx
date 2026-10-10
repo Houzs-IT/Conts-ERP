@@ -1,17 +1,16 @@
 import { useMemo, useState } from 'react';
 import { Search, Plus, Trash2, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { MoneyInput, NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
@@ -80,6 +79,15 @@ export default function PurchaseOrdersPage() {
     (!q || `${p.poNumber} ${p.supplierName} ${p.supplierCode}`.toLowerCase().includes(q)),
   );
 
+  const columns = useMemo<Column<Po>[]>(() => [
+    { key: 'poNumber', label: 'PO number', type: 'ref', value: p => p.poNumber, hideable: false },
+    { key: 'supplier', label: 'Supplier', value: p => p.supplierName, sub: p => p.supplierCode, text: p => `${p.supplierName} ${p.supplierCode}` },
+    { key: 'poDate', label: 'PO date', type: 'date', value: p => p.poDate || null },
+    { key: 'expectedAt', label: 'Expected', type: 'date', value: p => p.expectedAt || null },
+    { key: 'status', label: 'Status', type: 'status', value: p => p.status, status: p => ({ label: STATUS_LABEL[p.status], tone: STATUS_TONE[p.status] }) },
+    { key: 'total', label: 'Total', type: 'money', value: p => p.totalSen },
+  ], []);
+
   function openNew() {
     setIsNew(true);
     setDrawer({ id: '', poNumber: '', supplierId: suppliers[0]?.id ?? '', supplierCode: '', supplierName: '', status: 'SUBMITTED', poDate: new Date().toISOString().slice(0, 10), expectedAt: '', warehouseId: warehouses[0]?.id ?? '', currency: 'MYR', subtotalSen: 0, taxSen: 0, totalSen: 0, notes: '', lines: [] });
@@ -114,53 +122,23 @@ export default function PurchaseOrdersPage() {
       <PageHeader title="Purchase orders" sub={`${all.length} orders · buy-side documents`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={openNew}>New PO</Button> : undefined} />
 
-      {error && <StaleBanner message={`Showing the last order list we have. ${error}`} onRetry={reload} />}
-
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">
-          {FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}
-        </div>
-        <div className="relative">
-          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search PO or supplier..." aria-label="Search purchase orders"
-            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[260px] max-w-full" />
-        </div>
-      </div>
-
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[820px]">
-            <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-                {['PO number', 'Supplier', 'PO date', 'Expected', 'Status', 'Total'].map((h, i) => (
-                  <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 5 ? 'text-right' : 'text-left')}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading && all.length === 0 ? (
-                <tr><td colSpan={6}><TableSkeleton rows={6} cols={6} /></td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={6}>
-                  <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
-                    <span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No purchase orders match.' : 'No purchase orders yet.'}</span>
-                    <span className="text-[12.5px] text-muted-ink max-w-[380px]">{q || statusFilter !== 'all' ? 'Clear the search or status filter.' : 'Raise a PO to order stock from a supplier.'}</span>
-                  </div>
-                </td></tr>
-              ) : rows.map(p => (
-                <tr key={p.id} onClick={() => openExisting(p)} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
-                  <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{p.poNumber}</span></td>
-                  <td className="py-[13px] px-4"><div className="flex flex-col"><span className="text-[13.5px]">{p.supplierName}</span><span className="text-[11.5px] text-muted-ink">{p.supplierCode}</span></div></td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.poDate ? date(p.poDate) : '—'}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.expectedAt ? date(p.expectedAt) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={p.status} /></td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{rm(p.totalSen)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Po>
+        id="scm.purchase-orders" columns={columns} rows={data ? rows : null} rowKey={p => p.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={openExisting}
+        noun={['purchase order', 'purchase orders']} exportName="purchase-orders"
+        toolbar={<>
+          <div className="flex gap-2 flex-wrap">
+            {FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}
+          </div>
+          <div className="relative">
+            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search PO or supplier..." aria-label="Search purchase orders"
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[260px] max-w-full" />
+          </div>
+        </>}
+        filtered={!!q || statusFilter !== 'all'} onClearFilters={() => { setSearch(''); setStatusFilter('all'); }}
+        empty={{ title: 'No purchase orders yet.', body: 'Raise a PO to order stock from a supplier.', action: canWrite ? { label: 'New PO', onClick: openNew } : undefined }} />
 
       {drawer && <PoDrawer po={drawer} isNew={isNew} suppliers={suppliers} warehouses={warehouses} canWrite={canWrite}
         onClose={() => setDrawer(null)} onCreate={saveNew} onSave={saveEdit} onCancelPo={cancelPo} />}

@@ -6,7 +6,8 @@ import { DateField, DateTimeField, MoneyInput } from '../components/inputs';
 import Icon from '../components/Icon';
 import { Select, SearchSelect, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
-import { EmptyState, Skeleton } from '../components/States';
+import { Skeleton } from '../components/States';
+import { DataTable, type Column } from '../components/DataTable';
 import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
@@ -15,12 +16,14 @@ import { useSession } from '../lib/session';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { useMedia } from '../lib/useMedia';
 import { cx } from '../lib/design-tokens';
-import { rm } from '../lib/format';
+import { rm, plural } from '../lib/format';
+import { runEach, skippedNote } from '../lib/bulk';
 import {
   Chip, PillTabs, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, MediaGrid, MediaDrop, uploadTo, CATEGORY, stamp, hm, mytDay,
   type ChipTone, type MediaItem,
 } from '../components/ops/OpsUi';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
+import { HistoryDisclosure } from '../components/RecordHistory';
 
 /* ---------- the API's shape (functions/api/maintenance/issues.ts) ---------- */
 
@@ -43,6 +46,7 @@ const PAYER: Record<ChargeTo, string> = { owner: 'Owner (on the statement)', the
 const PAYER_SHORT: Record<ChargeTo, string> = { owner: 'owner pays', the_conts: 'company pays', guest_deposit: 'guest pays', warranty: 'warranty' };
 const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office' };
 const MONEY_ROLES = ['management', 'finance_admin', 'operations_manager'];
+const FIELD_ROLES = ['housekeeper', 'technician'];
 
 const awaitingOwner = (i: Issue) => i.state !== 'resolved' && i.ownerApprovalRequired && !i.ownerApprovedAt && i.chargeTo === 'owner';
 function statusOf(i: Issue): { label: string; tone: ChipTone } {
@@ -115,14 +119,15 @@ export default function MaintenancePage() {
 
   const list = (
     <>
-      {error && <StaleBanner message={`Showing the last jobs we have. ${error}`} onRetry={reload} />}
-      {tab === 'history' && rows.length > 0 && money && (
-        <div className="text-copy text-muted-ink flex-none">{rows.length} {rows.length === 1 ? 'job' : 'jobs'} · {rm(historySpend)} spent{q ? ` matching "${q}"` : ''}</div>
-      )}
-      <IssueTable rows={rows} loading={loading && !data} selected={selected} onSelect={setSelected} money={money}
-        empty={<EmptyState bare icon="Wrench" kind={category || building || q ? 'filtered' : 'empty'}
-          title={category || building || q ? 'No jobs match these filters.' : tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : 'No open repairs.'}
-          action={category || building || q ? { label: 'Clear filters', onClick: () => { setCategory(''); setBuilding(''); setQ(''); } } : tab === 'open' ? { label: 'New job', onClick: () => setCreating(true) } : undefined} />} />
+      {error && data && <StaleBanner message={`Showing the last jobs we have. ${error}`} onRetry={reload} />}
+      <IssueTable tab={tab} rows={data ? rows : null} loading={loading} error={data ? null : error} onRetry={reload} selected={selected} onSelect={setSelected}
+        money={money} canBulk={!FIELD_ROLES.includes(user!.role)} onChanged={reload}
+        filtered={!!(category || building || q)} onClearFilters={() => { setCategory(''); setBuilding(''); setQ(''); }}
+        above={tab === 'history' && rows.length > 0 && money ? (
+          <div className="text-copy text-muted-ink py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">{rows.length} {rows.length === 1 ? 'job' : 'jobs'} · {rm(historySpend)} spent{q ? ` matching "${q}"` : ''}</div>
+        ) : undefined}
+        empty={{ title: tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : tab === 'history' ? 'No jobs yet.' : 'No open repairs.',
+          action: tab === 'open' ? { label: 'New job', onClick: () => setCreating(true) } : undefined }} />
     </>
   );
 
@@ -168,43 +173,117 @@ export default function MaintenancePage() {
 
 /* ---------- the list ---------- */
 
-const COLS = 'md:grid md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.7fr)_minmax(0,0.7fr)_minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1fr)] md:gap-2.5 md:items-center';
+const jobLabel = (i: Issue) => `${i.propertyName} ${i.unitNumber}`;
+type Move = 'start' | 'end' | 'reopen';
+/** Why a ticked job is left alone by a move, or null when the move applies. */
+function moveSkip(i: Issue, move: Move): string | null {
+  if (move === 'reopen') return i.state === 'resolved' ? null : 'Not finished';
+  if (i.state === 'resolved') return 'Already finished';
+  if (move === 'start') return i.startedAt ? 'Already started' : awaitingOwner(i) ? "Waiting for the owner's approval" : null;
+  return !i.startedAt ? 'Not started' : i.endedAt ? 'Repair already finished' : null;
+}
+const MOVE_DONE: Record<Move, string> = { start: 'started', end: 'marked repair finished', reopen: 'reopened' };
 
-function IssueTable({ rows, loading, selected, onSelect, money, empty }: { rows: Issue[]; loading: boolean; selected: string | null; onSelect: (id: string) => void; money: boolean; empty: ReactNode }) {
+function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, money, canBulk, onChanged, filtered, onClearFilters, empty, above }: {
+  tab: Tab; rows: Issue[] | null; loading: boolean; error: string | null; onRetry: () => void; selected: string | null; onSelect: (id: string) => void;
+  money: boolean; canBulk: boolean; onChanged: () => void; filtered: boolean; onClearFilters: () => void;
+  empty: { title: string; action?: { label: string; onClick: () => void } }; above?: ReactNode;
+}) {
+  const toast = useToast();
+  const [assigning, setAssigning] = useState<{ rows: Issue[]; clear: () => void } | null>(null);
+  const [busy, setBusy] = useState<Move | null>(null);
+
+  async function bulkMove(picked: Issue[], move: Move, clear: () => void) {
+    const todo = picked.filter(i => !moveSkip(i, move));
+    const left = picked.filter(i => moveSkip(i, move)).map(i => ({ label: jobLabel(i), reason: moveSkip(i, move)! }));
+    setBusy(move);
+    const res = await runEach(todo, i => (move === 'start' ? api.post(`/maintenance/issues/${i.id}/start`, {})
+      : move === 'end' ? api.post(`/maintenance/issues/${i.id}/end`, {})
+      : api.patch(`/maintenance/issues/${i.id}`, { state: 'reopened' })), jobLabel);
+    setBusy(null);
+    const failed = [...res.failed, ...left];
+    toast({
+      tone: res.ok === 0 ? 'critical' : failed.length ? 'warning' : 'success',
+      title: res.ok ? `${plural(res.ok, 'job')} ${MOVE_DONE[move]}.` : 'No job changed.',
+      body: skippedNote(failed) || undefined,
+    });
+    clear(); onChanged();
+  }
+
+  const columns = useMemo<Column<Issue>[]>(() => [
+    { key: 'unit', label: 'Unit', value: i => i.unitNumber, text: i => `${i.unitNumber} ${i.propertyName}`, sub: i => i.propertyName, hideable: false, width: 120,
+      render: i => <b className="text-ink">{i.unitNumber}</b> },
+    { key: 'issue', label: 'Issue', value: i => i.title, width: 280,
+      sub: i => <>From {SOURCE[i.source] ?? i.source}{i.reporter ? ` (${i.reporter})` : ''} · {stamp(i.reportedAt)}{i.windows.length > 0 && ` · window ${stamp(i.windows[0].startsAt)}`}{i.blocksUnit && ' · unit blocked'}</>,
+      render: i => <span className="block whitespace-normal text-ink">{i.title}</span> },
+    { key: 'category', label: 'Category', value: i => i.category, text: i => CATEGORY[i.category] ?? i.category, width: 120, filter: false },
+    { key: 'urgency', label: 'Urgency', type: 'status', value: i => i.urgency,
+      status: i => (i.urgency === 'urgent' ? { label: 'Urgent', tone: 'critical' } : { label: 'Normal', tone: 'neutral' }), width: 110, phone: 'meta' },
+    { key: 'assignee', label: 'Assigned to', value: i => i.vendorName, text: i => (i.vendorName ? `${i.vendorName} ${i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}` : 'Unassigned'), width: 180,
+      render: i => (i.vendorName
+        ? <span className="block truncate">{i.vendorName}<span className="text-muted-ink"> {i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}</span></span>
+        : <span className="text-[var(--color-critical-fg)]">Unassigned</span>) },
+    ...(money ? [{ key: 'cost', label: 'Cost', type: 'money' as const, value: (i: Issue) => i.finalAmount ?? i.quotedAmount, width: 120, title: 'The final cost, or the quote while the job is open.',
+      render: (i: Issue) => { const c = i.finalAmount ?? i.quotedAmount; return c == null ? <span className="text-faint">—</span> : <span className="tabular-nums whitespace-nowrap">{rm(c, { cents: false })}{i.finalAmount == null && <span className="text-muted-ink text-meta"> quote</span>}</span>; } }] : []),
+    { key: 'status', label: 'Status', type: 'status', value: i => statusOf(i).label, status: i => { const s = statusOf(i); return { label: s.label, tone: s.tone === 'gold' ? 'neutral' : s.tone }; }, width: 170 },
+    { key: 'reported', label: 'Reported', type: 'datetime', value: i => i.reportedAt, hidden: true, width: 150 },
+    { key: 'resolved', label: 'Finished', type: 'datetime', value: i => i.resolvedAt, hidden: true, width: 150 },
+  ], [money]);
+
   return (
-    <section className="bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
-      <div className={cx('hidden text-meta text-muted-ink px-[18px] py-2.5 bg-[#F4F1EB]', COLS)}>
-        <div>Unit</div><div>Issue</div><div>Category</div><div>Urgency</div><div>Assigned to</div><div className="text-right">Cost</div><div>Status</div>
+    <>
+      <DataTable<Issue>
+        id="maintenance.jobs" columns={columns} rows={rows} rowKey={i => i.id} loading={loading} error={error} onRetry={onRetry}
+        onRowClick={i => onSelect(i.id)} rowTone={i => (i.id === selected ? 'gold' : i.state === 'resolved' ? 'muted' : null)}
+        noun={['job', 'jobs']} exportName="maintenance-jobs" selectionKey={tab} above={above}
+        filtered={filtered} onClearFilters={onClearFilters}
+        empty={{ title: empty.title, icon: 'Wrench', action: empty.action }}
+        selectable={canBulk}
+        bulkActions={(picked, clear) => {
+          const can = (m: Move) => picked.some(i => !moveSkip(i, m));
+          return <>
+            <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setAssigning({ rows: picked, clear })}>Assign</Button>
+            {can('start') && <Button size="sm" variant="secondary" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'} onClick={() => void bulkMove(picked, 'start', clear)}>Start repair</Button>}
+            {can('end') && <Button size="sm" variant="secondary" icon={<Icon name="Flag" size="sm" />} loading={busy === 'end'} onClick={() => void bulkMove(picked, 'end', clear)}>Repair finished</Button>}
+            {money && can('reopen') && <Button size="sm" variant="secondary" icon={<Icon name="RotateCcw" size="sm" />} loading={busy === 'reopen'} onClick={() => void bulkMove(picked, 'reopen', clear)}>Reopen</Button>}
+          </>;
+        }}
+      />
+      {assigning && <BulkAssignModal rows={assigning.rows} onClose={() => setAssigning(null)}
+        onDone={() => { assigning.clear(); setAssigning(null); onChanged(); }} />}
+    </>
+  );
+}
+
+/** One technician or contractor for every ticked job (PATCH each job, as the detail panel does). */
+function BulkAssignModal({ rows, onClose, onDone }: { rows: Issue[]; onClose: () => void; onDone: () => void }) {
+  const toast = useToast();
+  const [name, setName] = useState('');
+  const [kind, setKind] = useState<'in_house' | 'contractor'>('contractor');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function save() {
+    if (!name.trim()) { setError('Enter a name.'); return; }
+    setBusy(true); setError(null);
+    const todo = rows.filter(i => i.state !== 'resolved');
+    const left = rows.filter(i => i.state === 'resolved').map(i => ({ label: jobLabel(i), reason: 'Finished, reopen it first' }));
+    const res = await runEach(todo, i => api.patch(`/maintenance/issues/${i.id}`, { assigneeName: name.trim(), assigneeKind: kind }), jobLabel);
+    const failed = [...res.failed, ...left];
+    toast({
+      tone: res.ok === 0 ? 'critical' : failed.length ? 'warning' : 'success',
+      title: res.ok ? `${plural(res.ok, 'job')} assigned to ${name.trim()}.` : 'No job assigned.',
+      body: skippedNote(failed) || undefined,
+    });
+    onDone();
+  }
+  return (
+    <OpsModal title="Assign jobs" sub={`${plural(rows.length, 'job')} ticked. Each goes to the same technician or contractor.`} onClose={onClose} busy={busy}
+      footer={footer(onClose, busy, 'Assign', () => void save())}>
+      <div className="grid grid-cols-[1fr_130px] gap-3">
+        <FormRow label="Assign to" error={error}><input className={INPUT} value={name} onChange={e => setName(e.target.value)} placeholder="Technician or contractor" maxLength={80} autoFocus /></FormRow>
+        <FormRow label="Kind"><select className={INPUT} value={kind} onChange={e => setKind(e.target.value as 'in_house' | 'contractor')}><option value="in_house">In-house</option><option value="contractor">Contractor</option></select></FormRow>
       </div>
-      {loading ? <div className="p-4 flex flex-col gap-2">{[0, 1, 2].map(i => <Skeleton key={i} height={44} />)}</div>
-        : rows.length === 0 ? empty
-        : rows.map(i => {
-          const st = statusOf(i);
-          const cost = i.finalAmount ?? i.quotedAmount;
-          return (
-            <div key={i.id} role="button" tabIndex={0} aria-pressed={i.id === selected} onClick={() => onSelect(i.id)}
-              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(i.id); } }}
-              className={cx('px-4 md:px-[18px] py-3 [border-top:1px_solid_var(--color-line-soft)] first:border-t-0 text-copy cursor-pointer flex flex-col gap-1 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
-                i.id === selected ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'hover:bg-page', i.state === 'resolved' && 'text-muted-ink')}>
-              <div className="flex items-baseline gap-2 md:block"><b className="text-ink">{i.unitNumber}</b><div className="text-meta text-muted-ink">{i.propertyName}</div></div>
-              <div className="min-w-0">
-                <div className="text-ink">{i.title}</div>
-                <div className="text-meta text-muted-ink">From {SOURCE[i.source] ?? i.source}{i.reporter ? ` (${i.reporter})` : ''} · {stamp(i.reportedAt)}
-                  {i.windows.length > 0 && ` · window ${stamp(i.windows[0].startsAt)}`}{i.blocksUnit && ' · unit blocked'}</div>
-              </div>
-              <div className="hidden md:block">{CATEGORY[i.category] ?? i.category}</div>
-              <div className="flex gap-1.5 flex-wrap md:block">
-                {i.urgency === 'urgent' ? <Chip tone="critical">Urgent</Chip> : <span className="hidden md:inline">Normal</span>}
-                <span className="md:hidden"><Chip tone="neutral">{CATEGORY[i.category] ?? i.category}</Chip></span>
-                <span className="md:hidden"><Chip tone={st.tone}>{st.label}</Chip></span>
-              </div>
-              <div className={cx('truncate', !i.vendorName && 'text-[var(--color-critical-fg)]')}>{i.vendorName ? <>{i.vendorName}<span className="text-muted-ink"> {i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}</span></> : 'Unassigned'}</div>
-              <div className="md:text-right [font-variant-numeric:tabular-nums]">{money && cost != null ? <>{rm(cost, { cents: false })}{i.finalAmount == null && <span className="text-muted-ink text-meta"> quote</span>}</> : <span className="text-faint">—</span>}</div>
-              <div className="hidden md:block"><Chip tone={st.tone} className="whitespace-normal">{st.label}</Chip></div>
-            </div>
-          );
-        })}
-    </section>
+    </OpsModal>
   );
 }
 
@@ -383,6 +462,8 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
           </div>
         </div>
       )}
+
+      <HistoryDisclosure entity="maintenance_issues" id={i.id} refreshKey={i} />
 
       {windowOpen && <WindowModal issue={i} onClose={() => setWindowOpen(false)} onDone={(n) => { setWindowOpen(false); toast({ tone: n ? 'warning' : 'success', title: 'Repair window added.', body: n ? `It overlaps ${n} ${n === 1 ? 'stay' : 'stays'}. Make sure the guest agreed.` : 'No guest is in the unit then.' }); refresh(); }} />}
       {blockOpen && <BlockModal issue={i} onClose={() => setBlockOpen(false)} onDone={() => { setBlockOpen(false); toast({ tone: 'success', title: 'Unit blocked.', body: 'The dates are off sale on the calendar until the repair is done.' }); refresh(); }} />}

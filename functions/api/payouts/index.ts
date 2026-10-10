@@ -1,6 +1,6 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { notify } from '../../_lib/notify';
+import { notify, notifyUsers } from '../../_lib/notify';
 import { refOf } from '../../_lib/ops';
 
 const STATES = ['failed', 'pending', 'processing', 'paid'];
@@ -148,6 +148,12 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
     SELECT o.display_name, o.email, y.amount, o.bank_account_last4
     FROM payouts y JOIN owners o ON o.id = y.owner_id WHERE y.id = ?`, id);
 
+  if (state === 'failed') {
+    await notifyUsers(env, 'finance', {
+      kind: 'payout.failed', title: `Payout to ${owner?.display_name ?? 'an owner'} failed`,
+      body: failureReason ?? null, link: '/finance/payouts', entityTable: 'payouts', entityId: id, except: session.userId,
+    });
+  }
   if (owner && (state === 'paid' || state === 'failed')) {
     const amount = `RM ${(owner.amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}`;
     await notify(env, {

@@ -2,6 +2,8 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/
 import { requireSession } from '../../../../_lib/auth';
 import { CHARGE_TO } from '../../../../_lib/maintenance';
 import { isPeriodLocked } from '../../../../_lib/expenses';
+import { releaseRepairBlocks } from '../../../../_lib/repairBlocks';
+import { repairNotice } from '../../../../_lib/notices';
 
 /** POST /api/maintenance/issues/:id/complete { finalAmount, chargeTo? } — closes the job, puts a blocked unit back on sale and
  *  raises the expense on the unit with the payer chosen (owner through the statement, the company, the guest's deposit,
@@ -39,5 +41,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
       crypto.randomUUID(), cur.unit_id, id, cur.title, amount, day, chargeTo, session.userId, now);
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.complete', entityTable: 'maintenance_issues', entityId: id, before: { state: cur.state }, after: { state: 'resolved', finalAmount: amount, chargeTo } });
-  return json({ ok: true, chargeTo, expensed: amount > 0 });
+  // The calendar block "Block unit until fixed" made is given back now, not left for someone to remove by hand.
+  const released = await releaseRepairBlocks(env, [id], { id: session.userId, label: session.fullName });
+  await repairNotice(env, id, 'done', session.userId);
+  return json({ ok: true, chargeTo, expensed: amount > 0, blocksReleased: released.length });
 };

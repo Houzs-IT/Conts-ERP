@@ -1,20 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
 import { BookingDrawer, MessageGuestModal, StatusPill, CentreModal } from '../components/booking/BookingDrawer';
 import { UnitPicker } from '../components/booking/UnitPicker';
-import { channelNote } from '../lib/bookingStatus';
+import { channelNote, STATUS } from '../lib/bookingStatus';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
 import { Field } from '../components/Field';
 import { DateField, TimeField, NumberInput, MoneyInput, PhoneInput } from '../components/inputs';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
-import { EmptyState } from '../components/States';
 import { Select } from '../components/Select';
-import { PageControls } from '../components/PageControls';
+import { DataTable, type Column } from '../components/DataTable';
+import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
+import { fetchAllPages } from '../lib/export';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
@@ -71,25 +70,14 @@ const FALLBACK: Payload = {
   totals: { bookings: 1, nights: 3, gross: 85200, fees: 12780, outstanding: 72420 }, buildings: [], paymentsReady: true,
 };
 
-const COLS = 'grid-cols-[minmax(140px,1.1fr)_minmax(160px,1.4fr)_minmax(130px,1.1fr)_minmax(150px,1.2fr)_minmax(110px,0.8fr)_minmax(110px,0.8fr)_44px]';
-const COLS_PICK = 'grid-cols-[28px_minmax(140px,1.1fr)_minmax(160px,1.4fr)_minmax(130px,1.1fr)_minmax(150px,1.2fr)_minmax(110px,0.8fr)_minmax(110px,0.8fr)_44px]';
-
-type ColKey = 'reference' | 'guest' | 'unit' | 'stay' | 'gross' | 'status';
-const COLUMNS: { key: ColKey; label: string; align?: 'right'; title?: string }[] = [
-  { key: 'reference', label: 'Reference' },
-  { key: 'guest', label: 'Guest' },
-  { key: 'unit', label: 'Unit' },
-  { key: 'stay', label: 'Check-in to check-out' },
-  { key: 'gross', label: 'Guest total', align: 'right', title: 'What the guest paid for the stay: room, fees and the taxes we collect. Tax a booking site keeps is not included.' },
-  { key: 'status', label: 'Status' },
-];
 /** Searches the server reads. The column searches are kept for links from global search (?ref=, ?guest=). */
 const SEARCH_PARAMS = ['q', 'ref', 'guest', 'unit', 'channel', 'stay', 'gross', 'status'];
-const FILTER_PARAMS = ['ch', 'building', 'from', 'to'];
+const FILTER_PARAMS = ['ch', 'building', 'from', 'to', 'grossMin', 'grossMax'];
 /** URL parameters the server reads. The drawer's `open` stays out so opening a booking does not refetch the list. */
 const API_PARAMS = ['view', 'todo', 'sort', 'page', 'size', ...SEARCH_PARAMS, ...FILTER_PARAMS];
 const CHANNEL_CHOICES: BookingChannel[] = ['airbnb', 'booking_com', 'agoda', 'direct'];
 const MONEY_ROLES = ['management', 'finance_admin', 'operations_manager'];
+const OPS_ROLES = ['management', 'operations_manager', 'operations_staff'];
 
 const nightsBetween = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 864e5);
 const num = (v: number) => v.toLocaleString('en-MY');
@@ -104,6 +92,7 @@ export default function BookingsPage() {
   const toast = useToast();
   const { user } = useSession();
   const canMoney = !!user && MONEY_ROLES.includes(user.role);
+  const canOps = !!user && OPS_ROLES.includes(user.role);
 
   // URL-as-state (react-router, HashRouter): tab, card, filters, sort, page and search live in the query
   // string, so a link or a refresh shows the same list. The calendar deep-links with ?create=1.
@@ -116,7 +105,6 @@ export default function BookingsPage() {
   const view: ViewKey = VIEWS.some(v => v.key === rawView) ? (rawView as ViewKey) : 'upcoming';
   const rawTodo = params.get('todo');
   const todo: TodoKey | null = TODOS.some(t => t.key === rawTodo) ? (rawTodo as TodoKey) : null;
-  const [sortKey, sortDir] = (params.get('sort') ?? '').split(':') as [ColKey | undefined, string | undefined];
 
   const apiQuery = useMemo(() => {
     const p = new URLSearchParams();
@@ -142,6 +130,9 @@ export default function BookingsPage() {
     updateParams(p => { [...SEARCH_PARAMS, ...FILTER_PARAMS, 'todo'].forEach(k => p.delete(k)); p.delete('page'); });
   }
   useEffect(() => () => window.clearTimeout(timer.current), []);
+  // A saved view can change the search; keep the box in step.
+  const urlQ = params.get('q') ?? '';
+  useEffect(() => { setDraft(d => (d.trim() === urlQ.trim() ? d : urlQ)); }, [urlQ]);
   const searching = SEARCH_PARAMS.some(k => params.get(k)) || FILTER_PARAMS.some(k => params.get(k));
 
   const [openId, setOpenId] = useState<string | null>(null);
@@ -154,8 +145,8 @@ export default function BookingsPage() {
   const [prefill, setPrefill] = useState<CreatePrefill | null>(null);
   const [importRows, setImportRows] = useState<ParsedRow[] | null>(null);
   const [messageRow, setMessageRow] = useState<Row | null>(null);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkPayout, setBulkPayout] = useState<{ rows: Row[]; clear: () => void } | null>(null);
+  const [bulkAssign, setBulkAssign] = useState<{ ids: string[]; clear: () => void } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -174,20 +165,12 @@ export default function BookingsPage() {
 
   const rows = data?.data ?? [];
   const onPage = openId ? rows.find(r => r.id === openId) ?? null : null;
-  const page = data?.page ?? 1;
-  const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: 0 });
     if (window.matchMedia('(max-width: 767.98px)').matches) document.querySelector('main')?.scrollTo({ top: 0 });
   }, [data?.page, data?.view, data?.todo]);
-  // A selection belongs to the payout card it was made on.
-  useEffect(() => { setPicked(new Set()); }, [todo, apiQuery]);
-  const pageSize = data?.pageSize ?? 50;
   const total = data?.total ?? 0;
   const counts = data?.counts;
   const totals = data?.totals;
-  const refreshing = loading && !!data;
-  const pickMode = todo === 'payout' && canMoney && !!data?.paymentsReady;
 
   function setView(key: ViewKey) {
     updateParams(p => { if (key === 'upcoming') p.delete('view'); else p.set('view', key); p.delete('todo'); p.delete('page'); });
@@ -199,16 +182,6 @@ export default function BookingsPage() {
     });
   }
   function setParam(k: string, v: string) { updateParams(p => { if (v) p.set(k, v); else p.delete(k); p.delete('page'); }); }
-  function toggleSort(key: ColKey) {
-    updateParams(p => {
-      const [c, dir] = (p.get('sort') ?? '').split(':');
-      if (c === key) { if (dir === 'asc') p.set('sort', `${key}:desc`); else p.delete('sort'); }
-      else p.set('sort', `${key}:asc`);
-      p.delete('page');
-    });
-  }
-  function goPage(n: number) { updateParams(p => { if (n <= 1) p.delete('page'); else p.set('page', String(n)); }); }
-  function setSize(n: number) { updateParams(p => { if (n === 50) p.delete('size'); else p.set('size', String(n)); p.delete('page'); }); }
 
   async function createReservation(input: CreateInput): Promise<Record<string, string> | undefined> {
     const unit = UNITS.find(u => u.id === input.unitId);
@@ -275,6 +248,7 @@ export default function BookingsPage() {
     reload();
   }
 
+  // The money CSV: every column the server has (room, fees, taxes, each payment), not just the table's columns.
   async function exportCsv() {
     setExporting(true);
     try {
@@ -284,28 +258,87 @@ export default function BookingsPage() {
     setExporting(false);
   }
 
+  /** Every booking under the current tab, card, filters and sort, for the table's Export. */
+  async function fetchAll(onProgress: (got: number, of: number) => void) {
+    const q: Record<string, string> = { export: '1' };
+    for (const k of API_PARAMS) { const v = params.get(k); if (v && k !== 'page' && k !== 'size') q[k] = v; }
+    const r = await fetchAllPages<Row>(async (page, size) => {
+      const p = await api.get<Payload>('/reservations', { ...q, page, size });
+      return { rows: p.data, total: p.total };
+    }, { onProgress });
+    return r.rows;
+  }
+
+  const moneyTodo = !!TODOS.find(t => t.key === todo)?.money;
+  const columns = useMemo<Column<Row>[]>(() => [
+    { key: 'reference', label: 'Reference', type: 'ref', value: r => r.externalRef, sortKey: 'reference', width: 150, hideable: false,
+      filter: { kind: 'text', param: 'ref' },
+      render: b => (
+        <span className="flex items-center gap-[9px] min-w-0">
+          <ChannelMark ch={b.channel} size={20} />
+          <span className="font-mono text-meta whitespace-nowrap overflow-hidden text-ellipsis" title={`${CHANNEL_META[b.channel].label} · ${b.externalRef ?? ''}`}>{b.externalRef ?? '—'}</span>
+        </span>
+      ) },
+    { key: 'guest', label: 'Guest', value: r => r.guestName, sortKey: 'guest', width: 170, filter: { kind: 'text', param: 'guest' },
+      render: b => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block" title={b.guestName}>{b.guestName || '—'}</span>,
+      sub: b => [b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, nationalityOf(b)].filter(Boolean).join(' · ') || '—' },
+    { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, sortKey: 'unit', width: 140,
+      filter: { kind: 'text', param: 'unit' }, exportValue: r => r.unitNumber, sub: b => b.propertyName },
+    { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150, filter: false },
+    { key: 'channel', label: 'Channel', type: 'channel', value: r => r.channel, sortKey: 'channel', hidden: true, width: 130,
+      filter: { kind: 'select', param: 'ch', multi: false, options: CHANNEL_CHOICES.map(c => ({ value: c, label: CHANNEL_META[c].label })) } },
+    { key: 'stay', label: 'Check-in to check-out', type: 'date', value: r => r.checkIn, sortKey: 'stay', width: 160,
+      filter: { kind: 'date', params: ['from', 'to'], hint: 'Stays that touch these dates' },
+      render: b => <span className="whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span>, sub: b => fmtNights(b.nights),
+      exportKind: 'text', exportValue: r => `${r.checkIn} to ${r.checkOut}` },
+    { key: 'checkIn', label: 'Check-in', type: 'date', value: r => r.checkIn, hidden: true, filter: false, sortKey: 'stay' },
+    { key: 'checkOut', label: 'Check-out', type: 'date', value: r => r.checkOut, hidden: true, filter: false },
+    { key: 'nights', label: 'Nights', type: 'number', value: r => r.nights, hidden: true, sortKey: 'nights', filter: false, width: 80 },
+    { key: 'guests', label: 'Guests', type: 'number', value: r => r.guestsCount, hidden: true, sortKey: 'guests', filter: false, width: 80 },
+    { key: 'phone', label: 'Phone', value: r => r.guestPhone, hidden: true, filter: false, width: 140 },
+    { key: 'nationality', label: 'Nationality', value: r => nationalityOf(r), hidden: true, filter: false, width: 130 },
+    { key: 'gross', label: 'Guest total', type: 'money', value: r => (r.grossBookingValue > 0 ? r.grossBookingValue : null), sortKey: 'gross', width: 120,
+      title: 'What the guest paid for the stay: room, fees and the taxes we collect. Tax a booking site keeps is not included.',
+      filter: { kind: 'number', params: ['grossMin', 'grossMax'] },
+      render: b => <span className="font-medium tabular-nums whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>,
+      sub: b => (moneyTodo && b.outstanding > 0 ? <span className="text-[var(--color-warning-fg)] tabular-nums">{rm(b.outstanding, { cents: false })} owed</span> : null) },
+    { key: 'fee', label: 'Commission', type: 'money', value: r => r.channelFee, hidden: true, sortKey: 'fee', filter: false },
+    { key: 'expected', label: 'Expected to receive', type: 'money', value: r => r.expectedPayout, hidden: true, filter: false },
+    { key: 'received', label: 'Received', type: 'money', value: r => r.received, hidden: true, filter: false },
+    { key: 'outstanding', label: 'Outstanding', type: 'money', value: r => (['cancelled', 'no_show'].includes(r.state) ? 0 : r.outstanding), hidden: true, filter: false },
+    { key: 'status', label: 'Status', type: 'status', value: r => r.state, text: r => STATUS[r.state]?.label ?? r.state, sortKey: 'status', width: 130,
+      filter: { kind: 'select', param: 'status', multi: false, options: (Object.keys(STATUS) as ReservationState[]).map(s => ({ value: STATUS[s].label, label: STATUS[s].label })) },
+      render: b => <StatusPill state={b.state} size="sm" /> },
+    { key: 'created', label: 'Booked on', type: 'datetime', value: r => r.createdAt, hidden: true, sortKey: 'created', filter: false },
+    { key: 'chat', label: 'Chat', width: 56, align: 'center', noExport: true, sortable: false, filter: false,
+      render: b => (
+        <button type="button" title="Message guest" aria-label={`Message ${b.guestName}`}
+          onClick={e => { e.stopPropagation(); setMessageRow(b); }}
+          className="w-8 h-8 grid place-items-center rounded-control text-muted-ink bg-transparent border-none cursor-pointer hover:bg-muted">
+          <Icon name="MessageSquare" size="sm" />
+        </button>
+      ) },
+  ], [moneyTodo]);
+
   const viewMeta = VIEWS.find(v => v.key === view)!;
   const todoMeta = todo ? TODOS.find(t => t.key === todo)! : null;
   const sub = counts && todoMeta ? `${todoMeta.label}: ${plural(counts.all, 'booking')}${searching ? ' matching the filters' : ''}`
   : counts
     ? `${num(counts.upcoming)} upcoming · ${num(counts.inhouse)} in house · ${plural(counts.all, 'booking')} in total${searching ? ' matching the filters' : ''}`
     : 'Loading bookings';
-  const pickedRows = rows.filter(r => picked.has(r.id));
-  const pickedOwed = pickedRows.reduce((n, r) => n + r.outstanding, 0);
-  const cols = pickMode ? COLS_PICK : COLS;
 
   return (
     <>
       <PageHeader title="Bookings" sub={sub}
         actions={<>
           <Button size="sm" variant="secondary" icon={<Icon name="Upload" size="sm" />} onClick={pickImportFile}>Import</Button>
-          <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportCsv} loading={exporting}
-            disabled={!data || total === 0} disabledReason="Nothing to export for this tab and these filters.">Download CSV</Button>
+          <Button size="sm" variant="secondary" icon={<Icon name="FileText" size="sm" />} onClick={exportCsv} loading={exporting}
+            title="Every booking under these filters with the full money breakdown and each payment, as CSV."
+            disabled={!data || total === 0} disabledReason="Nothing to export for this tab and these filters.">Money CSV</Button>
         </>}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => { setPrefill(null); setCreating(true); }}>Create reservation</Button>} />
 
       <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onImportFile} className="hidden" aria-hidden />
-      {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       {/* To do: four cards that filter the list */}
       <div className="grid grid-cols-4 gap-3 mb-4 max-lg:grid-cols-2" role="group" aria-label="To do">
@@ -326,34 +359,48 @@ export default function BookingsPage() {
         })}
       </div>
 
-      <Card>
-        {/* Tabs and filters */}
-        <div className="flex items-center gap-2 flex-wrap py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
-          <div role="tablist" aria-label="Booking views" className="flex gap-2 overflow-x-auto [scrollbar-width:none] max-md:w-full">
-            {VIEWS.map(v => {
-              const on = !todo && view === v.key;
-              const n = counts?.[v.key];
-              return (
-                <button key={v.key} role="tab" aria-selected={on} onClick={() => setView(v.key)}
-                  className={cx('flex-none h-8 inline-flex items-center gap-[6px] px-[13px] py-0 rounded-pill cursor-pointer [font-family:inherit] text-copy border border-solid whitespace-nowrap',
-                    on ? 'font-semibold border-transparent bg-black text-white' : 'font-medium border-line bg-page text-muted-ink')}>
-                  {v.label}
-                  <span className={cx('[font-variant-numeric:tabular-nums] min-w-[1ch]', on ? 'opacity-80' : 'opacity-70')}>{n === undefined ? '' : num(n)}</span>
-                </button>
-              );
-            })}
+      <DataTable<Row>
+        id="bookings" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
+        loading={loading} error={error} onRetry={reload} onRowClick={b => setOpenId(b.id)}
+        server={{ total, page: data?.page ?? 1, pageSize: data?.pageSize ?? 50, sizes: [25, 50, 100, 200], defaultPageSize: 50, fetchAll }}
+        viewParams={['view', 'todo', 'building', 'q']} filtered={searching || !!todo} onClearFilters={clearAll}
+        noun={['booking', 'bookings']} exportName="bookings" selectionKey={`${view}|${todo ?? ''}`}
+        empty={{ title: todoMeta?.empty ?? viewMeta.empty, icon: 'CalendarDays' }}
+        selectable={canMoney || canOps}
+        bulkActions={(picked, clear) => <>
+          {canOps && (
+            <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setBulkAssign({ ids: picked.map(r => r.id), clear })}>Assign cleaner</Button>
+          )}
+          {canMoney && data?.paymentsReady && (
+            <Button size="sm" variant="primary" icon={<Icon name="CheckCircle2" size="sm" />} onClick={() => setBulkPayout({ rows: picked, clear })}>Mark payouts received</Button>
+          )}
+        </>}
+        header={
+          <div className="flex items-center gap-2 flex-wrap py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
+            <div role="tablist" aria-label="Booking views" className="flex gap-2 overflow-x-auto [scrollbar-width:none] max-md:w-full">
+              {VIEWS.map(v => {
+                const on = !todo && view === v.key;
+                const n = counts?.[v.key];
+                return (
+                  <button key={v.key} role="tab" aria-selected={on} onClick={() => setView(v.key)}
+                    className={cx('flex-none h-8 inline-flex items-center gap-[6px] px-[13px] py-0 rounded-pill cursor-pointer [font-family:inherit] text-copy border border-solid whitespace-nowrap',
+                      on ? 'font-semibold border-transparent bg-black text-white' : 'font-medium border-line bg-page text-muted-ink')}>
+                    {v.label}
+                    <span className={cx('[font-variant-numeric:tabular-nums] min-w-[1ch]', on ? 'opacity-80' : 'opacity-70')}>{n === undefined ? '' : num(n)}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2 flex-wrap ml-auto max-md:ml-0 max-md:w-full">
+              <ChannelFilter value={params.get('ch') ?? ''} onChange={v => setParam('ch', v)} />
+              <Select label="Building" value={params.get('building') ?? ''} onChange={v => setParam('building', v)} className="w-[170px] max-md:w-full max-md:order-last"
+                options={[{ value: '', label: 'All buildings' }, ...(data?.buildings ?? []).map(b => ({ value: b.id, label: b.name }))]} />
+              <DateFilter from={params.get('from') ?? ''} to={params.get('to') ?? ''}
+                onChange={(f, t) => updateParams(p => { if (f) p.set('from', f); else p.delete('from'); if (t) p.set('to', t); else p.delete('to'); p.delete('page'); })} />
+            </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap ml-auto max-md:ml-0 max-md:w-full">
-            <ChannelFilter value={params.get('ch') ?? ''} onChange={v => setParam('ch', v)} />
-            <Select label="Building" value={params.get('building') ?? ''} onChange={v => setParam('building', v)} className="w-[170px] max-md:w-full max-md:order-last"
-              options={[{ value: '', label: 'All buildings' }, ...(data?.buildings ?? []).map(b => ({ value: b.id, label: b.name }))]} />
-            <DateFilter from={params.get('from') ?? ''} to={params.get('to') ?? ''}
-              onChange={(f, t) => updateParams(p => { if (f) p.set('from', f); else p.delete('from'); if (t) p.set('to', t); else p.delete('to'); p.delete('page'); })} />
-          </div>
-        </div>
-
-        {/* Search and the totals of the whole filtered set */}
-        <div className="flex items-center gap-3 flex-wrap py-[10px] px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
+        }
+        toolbar={<>
           <label className="relative flex-[1_1_260px] min-w-[200px] max-w-[420px]">
             <span className="absolute left-[11px] top-1/2 -translate-y-1/2 text-muted-ink grid pointer-events-none"><Icon name="Search" size="sm" /></span>
             <input value={draft} onChange={e => setSearch(e.target.value)} placeholder="Guest, phone, reference, unit or building"
@@ -361,152 +408,47 @@ export default function BookingsPage() {
               className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink font-sans text-copy pl-[33px] pr-3 py-0 outline-none" />
           </label>
           {(searching || todo) && <Button variant="tertiary" size="sm" icon={<Icon name="X" size="sm" />} onClick={clearAll}>Clear filters</Button>}
-          <dl className="m-0 ml-auto flex items-center gap-x-5 gap-y-1 flex-wrap text-meta min-h-[20px] max-md:ml-0 max-md:w-full">
-            {totals && <>
-              {todoMeta && <span className="font-semibold text-ink">{todoMeta.label}</span>}
-              <Total label="Bookings" value={num(totals.bookings)} />
-              <Total label="Nights" value={num(totals.nights)} />
-              <Total label="Guest total" value={rm(totals.gross, { cents: false })} />
-              <Total label="Commission" value={rm(totals.fees, { cents: false })} />
-              {todoMeta?.money && <Total label={todo === 'unpaid' ? 'Owed by guests' : 'Owed by booking sites'} value={rm(totals.outstanding, { cents: false })}
-                title={todo === 'unpaid' ? 'Guest total less what has been received, for these direct bookings.' : 'The payout expected less what has arrived, for these finished stays.'} />}
-            </>}
+        </>}
+        above={totals && (
+          <dl className="m-0 flex items-center gap-x-5 gap-y-1 flex-wrap text-meta min-h-[20px] py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
+            {todoMeta && <span className="font-semibold text-ink">{todoMeta.label}</span>}
+            <Total label="Bookings" value={num(totals.bookings)} />
+            <Total label="Nights" value={num(totals.nights)} />
+            <Total label="Guest total" value={rm(totals.gross, { cents: false })} />
+            <Total label="Commission" value={rm(totals.fees, { cents: false })} />
+            {todoMeta?.money && <Total label={todo === 'unpaid' ? 'Owed by guests' : 'Owed by booking sites'} value={rm(totals.outstanding, { cents: false })}
+              title={todo === 'unpaid' ? 'Guest total less what has been received, for these direct bookings.' : 'The payout expected less what has arrived, for these finished stays.'} />}
+            {todo === 'payout' && canMoney && <span className="text-muted-ink">Tick the stays the booking site has paid out, then mark them received.</span>}
           </dl>
-        </div>
-
-        {pickMode && (
-          <div className="flex items-center gap-3 flex-wrap py-[10px] px-[22px] max-md:px-4 bg-page [border-bottom:1px_solid_var(--color-line-soft)] text-meta">
-            <span className="text-muted-ink">{picked.size ? `${plural(picked.size, 'booking')} picked · ${rm(pickedOwed)} outstanding` : 'Tick the stays the booking site has paid out, then mark them received.'}</span>
-            <div className="ml-auto flex gap-2 max-md:ml-0">
-              <Button size="sm" variant="secondary" onClick={() => setPicked(picked.size === rows.length ? new Set() : new Set(rows.map(r => r.id)))} disabled={!rows.length}>
-                {picked.size === rows.length && rows.length ? 'Clear selection' : 'Pick this page'}
-              </Button>
-              <Button size="sm" variant="primary" icon={<Icon name="CheckCircle2" size="sm" />} onClick={() => setBulkOpen(true)} disabled={!picked.size} disabledReason="Pick at least one booking.">
-                Mark payouts received
-              </Button>
-            </div>
-          </div>
         )}
-
-        {/* Desktop and tablet: the sortable table. Its own scroll area keeps the header in view. */}
-        <div ref={scrollRef} className="max-md:hidden overflow-auto max-h-[calc(100dvh-400px)] min-h-[360px]" aria-busy={loading}>
-          <div className="min-w-[960px]">
-            <div className={cx(cols, 'sticky top-0 z-[2] grid gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink')}>
-              {pickMode && <span />}
-              {COLUMNS.map(c => {
-                const active = sortKey === c.key;
-                return (
-                  <button key={c.key} type="button" onClick={() => toggleSort(c.key)} title={c.title ?? `Sort by ${c.label}`}
-                    className={cx('flex items-center gap-1 [font-family:inherit] text-meta font-semibold text-muted-ink bg-transparent border-none cursor-pointer p-0 whitespace-nowrap', c.align === 'right' && 'justify-end')}>
-                    <span>{c.label}</span>
-                    <Icon name={active ? (sortDir === 'desc' ? 'ChevronDown' : 'ChevronUp') : 'ChevronsUpDown'} size="sm" color={active ? 'var(--color-ink)' : 'var(--color-line)'} />
-                  </button>
-                );
-              })}
-              <div className="flex items-center justify-center">Chat</div>
-            </div>
-
-            {!data ? <TableSkeleton rows={8} cols={7} /> : rows.length === 0 ? (
-              <EmptyList searching={searching} message={todoMeta?.empty ?? viewMeta.empty} onClear={clearAll} />
-            ) : (
-              <div className={cx('transition-opacity duration-150', refreshing && 'opacity-55')}>
-                {rows.map(b => {
-                  const nat = nationalityOf(b);
-                  return (
-                    <div key={b.id} role="button" tabIndex={0} onClick={() => setOpenId(b.id)}
-                      onKeyDown={e => { if (e.key === 'Enter') setOpenId(b.id); }}
-                      className={cx(cols, 'grid gap-[14px] items-center min-h-[56px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-page', picked.has(b.id) && 'bg-gold-tint')}>
-                      {pickMode && (
-                        <span onClick={e => e.stopPropagation()} className="grid place-items-center">
-                          <input type="checkbox" aria-label={`Pick ${b.externalRef ?? b.guestName}`} checked={picked.has(b.id)} className="w-4 h-4 cursor-pointer"
-                            onChange={() => setPicked(s => { const n = new Set(s); if (n.has(b.id)) n.delete(b.id); else n.add(b.id); return n; })} />
-                        </span>
-                      )}
-                      <div className="flex items-center gap-[9px] min-w-0">
-                        <ChannelMark ch={b.channel} size={20} />
-                        <span className="font-mono text-meta whitespace-nowrap overflow-hidden text-ellipsis" title={`${CHANNEL_META[b.channel].label} · ${b.externalRef ?? ''}`}>{b.externalRef ?? '—'}</span>
-                      </div>
-                      <div className="flex flex-col gap-px min-w-0">
-                        <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={b.guestName}>{b.guestName || '—'}</span>
-                        <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{[b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, nat].filter(Boolean).join(' · ') || '—'}</span>
-                      </div>
-                      <div className="flex flex-col gap-px min-w-0">
-                        <span className="text-copy whitespace-nowrap overflow-hidden text-ellipsis" title={b.unitNumber}>{b.unitNumber}</span>
-                        <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={b.propertyName}>{b.propertyName}</span>
-                      </div>
-                      <div className="flex flex-col gap-px min-w-0">
-                        <span className="text-copy whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span>
-                        <span className="text-meta text-muted-ink">{fmtNights(b.nights)}</span>
-                      </div>
-                      <div className="flex flex-col gap-px items-end min-w-0">
-                        <span className="text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>
-                        {todoMeta?.money && b.outstanding > 0 && <span className="text-meta text-[var(--color-warning-fg)] [font-variant-numeric:tabular-nums] whitespace-nowrap">{rm(b.outstanding, { cents: false })} owed</span>}
-                      </div>
-                      <div><StatusPill state={b.state} size="sm" /></div>
-                      <div className="flex justify-center">
-                        <button type="button" title="Message guest" aria-label={`Message ${b.guestName}`}
-                          onClick={e => { e.stopPropagation(); setMessageRow(b); }}
-                          className="w-8 h-8 grid place-items-center rounded-control text-muted-ink bg-transparent border-none cursor-pointer hover:bg-muted">
-                          <Icon name="MessageSquare" size="sm" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Phones: one condensed card per booking, no wide table */}
-        <div className="md:hidden" aria-busy={loading}>
-          {!data ? <TableSkeleton rows={6} cols={2} /> : rows.length === 0 ? (
-            <EmptyList searching={searching} message={todoMeta?.empty ?? viewMeta.empty} onClear={clearAll} />
-          ) : (
-            <ul className={cx('list-none m-0 p-0 transition-opacity duration-150', refreshing && 'opacity-55')}>
-              {rows.map(b => (
-                <li key={b.id} className={cx('[border-bottom:1px_solid_var(--color-line-soft)] flex items-start', picked.has(b.id) && 'bg-gold-tint')}>
-                  {pickMode && (
-                    <label className="pl-4 pt-[15px] flex-none">
-                      <input type="checkbox" aria-label={`Pick ${b.externalRef ?? b.guestName}`} checked={picked.has(b.id)} className="w-5 h-5"
-                        onChange={() => setPicked(s => { const n = new Set(s); if (n.has(b.id)) n.delete(b.id); else n.add(b.id); return n; })} />
-                    </label>
-                  )}
-                  <button type="button" onClick={() => setOpenId(b.id)}
-                    className="flex-1 min-w-0 text-left [font:inherit] text-ink bg-transparent border-none cursor-pointer py-3 px-4 flex gap-3 items-start">
-                    <ChannelMark ch={b.channel} size={22} />
-                    <span className="flex flex-col gap-[3px] min-w-0 flex-1">
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{b.guestName || '—'}</span>
-                        <span className="text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>
-                      </span>
-                      <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? '—'} · {b.unitNumber} · {b.propertyName}</span>
-                      <span className="flex items-center justify-between gap-2 pt-[2px]">
-                        <span className="text-meta whitespace-nowrap min-w-0 overflow-hidden text-ellipsis">{dateRange(b.checkIn, b.checkOut)} · {fmtNights(b.nights)}</span>
-                        <StatusPill state={b.state} size="sm" />
-                      </span>
-                      {todoMeta?.money && b.outstanding > 0 && <span className="text-meta text-[var(--color-warning-fg)]">{rm(b.outstanding)} owed</span>}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {data && total > 0 && (
-          <PageControls page={page} pageSize={pageSize} total={total} onPage={goPage} onSize={setSize} sizes={[25, 50, 100, 200]}
-            noun={total === 1 ? 'booking' : 'bookings'} className="[border-top:1px_solid_var(--color-line)] max-md:px-4" />
+        renderCard={b => (
+          <span className="flex gap-3 items-start">
+            <ChannelMark ch={b.channel} size={22} />
+            <span className="flex flex-col gap-[3px] min-w-0 flex-1">
+              <span className="flex items-center justify-between gap-2">
+                <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{b.guestName || '—'}</span>
+                <span className="text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>
+              </span>
+              <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? '—'} · {b.unitNumber} · {b.propertyName}</span>
+              <span className="flex items-center justify-between gap-2 pt-[2px]">
+                <span className="text-meta whitespace-nowrap min-w-0 overflow-hidden text-ellipsis">{dateRange(b.checkIn, b.checkOut)} · {fmtNights(b.nights)}</span>
+                <StatusPill state={b.state} size="sm" />
+              </span>
+              {todoMeta?.money && b.outstanding > 0 && <span className="text-meta text-[var(--color-warning-fg)]">{rm(b.outstanding)} owed</span>}
+            </span>
+          </span>
         )}
-      </Card>
+      />
 
       <BookingDrawer id={openId} summary={onPage} onClose={() => setOpenId(null)} onChanged={reload} onDuplicated={newId => setOpenId(newId)} />
 
       {creating && <CreateReservationModal units={UNITS} prefill={prefill} onClose={() => setCreating(false)} onCreate={createReservation} />}
       {importRows && <ImportPreviewModal rows={importRows} onClose={() => setImportRows(null)} onConfirm={commitImport} />}
       {messageRow && <MessageGuestModal r={messageRow} onClose={() => setMessageRow(null)} />}
-      {bulkOpen && <BulkPayoutModal rows={pickedRows} owed={pickedOwed} onClose={() => setBulkOpen(false)}
-        onDone={() => { setBulkOpen(false); setPicked(new Set()); reload(); }} />}
+      {bulkPayout && <BulkPayoutModal rows={bulkPayout.rows} onClose={() => setBulkPayout(null)}
+        onDone={() => { bulkPayout.clear(); setBulkPayout(null); reload(); }} />}
+      {bulkAssign && <BulkAssignCleaner reservationIds={bulkAssign.ids} onClose={() => setBulkAssign(null)}
+        onDone={() => { bulkAssign.clear(); setBulkAssign(null); reload(); }} />}
     </>
   );
 }
@@ -518,12 +460,6 @@ function Total({ label, value, title }: { label: string; value: string; title?: 
       <dd className="m-0 font-semibold text-ink [font-variant-numeric:tabular-nums]">{value}</dd>
     </div>
   );
-}
-
-function EmptyList({ searching, message, onClear }: { searching: boolean; message: string; onClear: () => void }) {
-  return searching
-    ? <EmptyState bare kind="filtered" title="No bookings match these filters." action={{ label: 'Clear filters', onClick: onClear }} />
-    : <EmptyState bare icon="CalendarDays" title={message} />;
 }
 
 /* ------------------------------------------------------------------ */
@@ -618,7 +554,11 @@ function DateFilter({ from, to, onChange }: { from: string; to: string; onChange
 /* Bulk: mark booking-site payouts received                            */
 /* ------------------------------------------------------------------ */
 
-function BulkPayoutModal({ rows, owed, onClose, onDone }: { rows: Row[]; owed: number; onClose: () => void; onDone: () => void }) {
+function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClose: () => void; onDone: () => void }) {
+  // Only booking-site stays that still owe a payout can be marked; the rest of the ticked rows are named, not sent.
+  const rows = ticked.filter(r => ['airbnb', 'booking_com', 'agoda'].includes(r.channel) && !['cancelled', 'no_show', 'inquiry'].includes(r.state) && r.outstanding > 0);
+  const left = ticked.length - rows.length;
+  const owed = rows.reduce((n, r) => n + r.outstanding, 0);
   const toast = useToast();
   const [receivedOn, setReceivedOn] = useState(todayMyt());
   const [reference, setReference] = useState('');
@@ -638,7 +578,7 @@ function BulkPayoutModal({ rows, owed, onClose, onDone }: { rows: Row[]; owed: n
     setBusy(false);
   }
   return (
-    <CentreModal title="Mark payouts received" sub={`Records one payout per booking for what it still has outstanding: ${plural(rows.length, 'booking')}, ${rm(owed)} in all.`} onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal title="Mark payouts received" sub={`Records one payout per booking for what it still has outstanding: ${plural(rows.length, 'booking')}, ${rm(owed)} in all.${left ? ` ${plural(left, 'ticked booking')} ${left === 1 ? 'is' : 'are'} left out: not a booking-site stay, cancelled, or nothing owed.` : ''}`} onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
         <div className="max-h-[180px] overflow-y-auto border border-solid border-line rounded-control">
           {rows.map(r => (
@@ -654,7 +594,7 @@ function BulkPayoutModal({ rows, owed, onClose, onDone }: { rows: Row[]; owed: n
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!receivedOn}>{busy ? 'Recording…' : 'Mark received'}</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!receivedOn || !rows.length} disabledReason={!rows.length ? 'None of the ticked bookings is waiting for a booking-site payout.' : 'Pick the date.'}>{busy ? 'Recording…' : 'Mark received'}</Button>
         </div>
       </form>
     </CentreModal>

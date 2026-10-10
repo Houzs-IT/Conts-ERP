@@ -1,17 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { TONE, cx } from '../lib/design-tokens';
 
 /** Vehicles master — the delivery fleet, drawn in Conts. Capacity is stored in milli-m3. */
 
@@ -41,6 +39,14 @@ export default function VehiclesPage() {
 
   const rows = useMemo(() => [...added, ...(data?.data ?? [])].filter(v => !removed.has(v.id)).map(v => ({ ...v, ...edits[v.id] })), [added, data, edits, removed]);
 
+  const columns = useMemo<Column<Vehicle>[]>(() => [
+    { key: 'code', label: 'Code', type: 'ref', value: v => v.code, hideable: false },
+    { key: 'plate', label: 'Plate', value: v => v.plate || null },
+    { key: 'type', label: 'Type', value: v => v.vehicleType || null },
+    { key: 'capacity', label: 'Capacity (m³)', type: 'number', value: v => v.capacityM3Milli ? v.capacityM3Milli / 1000 : null, render: v => <span className="tabular-nums">{v.capacityM3Milli ? (v.capacityM3Milli / 1000).toFixed(1) : '—'}</span> },
+    { key: 'status', label: 'Status', type: 'status', value: v => (v.active ? 'ACTIVE' : 'INACTIVE'), status: v => v.active ? { label: 'Active', tone: 'success' } : { label: 'Inactive', tone: 'neutral' } },
+  ], []);
+
   function save(d: Draft) {
     const body = { code: d.code.trim(), plate: d.plate.trim(), vehicleType: d.vehicleType.trim(), capacityM3Milli: d.capacityM3Milli, active: d.active, notes: d.notes.trim() };
     if (d.isNew) { setAdded(a => [{ ...body, id: `veh-new-${crypto.randomUUID().slice(0, 8)}` }, ...a]); api.post('/vehicles', body).catch(notifyFailure); toast({ tone: 'success', title: 'Vehicle added.', body: body.code }); }
@@ -53,37 +59,15 @@ export default function VehiclesPage() {
     <>
       <PageHeader title="Vehicles" sub={`${rows.length} vehicles · ${rows.filter(v => v.active).length} active`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(emptyDraft())}>New vehicle</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last vehicle list we have. ${error}`} onRetry={reload} />}
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[620px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-              {['Code', 'Plate', 'Type', 'Capacity (m³)', 'Status'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 3 ? 'text-right' : 'text-left')}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && rows.length === 0 ? <tr><td colSpan={5}><TableSkeleton rows={5} cols={5} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={5}><div className="py-[38px] px-[22px] text-center text-[14px] font-semibold">No vehicles yet.</div></td></tr>
-              : rows.map(v => (
-                <tr key={v.id} onClick={() => { if (canWrite) setDrawer({ ...v, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
-                  <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{v.code}</span></td>
-                  <td className="py-[13px] px-4 text-[13.5px] tabular-nums">{v.plate || '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{v.vehicleType || '—'}</td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{v.capacityM3Milli ? (v.capacityM3Milli / 1000).toFixed(1) : '—'}</td>
-                  <td className="py-[13px] px-4"><ActivePill active={v.active} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Vehicle>
+        id="scm.vehicles" columns={columns} rows={data ? rows : null} rowKey={v => v.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={canWrite ? v => setDrawer({ ...v, isNew: false }) : undefined}
+        noun={['vehicle', 'vehicles']} exportName="vehicles"
+        empty={{ title: 'No vehicles yet.', body: 'Add the lorries and vans in your delivery fleet.', action: canWrite ? { label: 'New vehicle', onClick: () => setDrawer(emptyDraft()) } : undefined }} />
       {drawer && <VehicleDrawer draft={drawer} onClose={() => setDrawer(null)} onSave={save} onDelete={drawer.isNew ? undefined : () => { const v = rows.find(x => x.id === drawer.id); if (v) remove(v); }} />}
     </>
   );
-}
-
-function ActivePill({ active }: { active: boolean }) {
-  const t = active ? TONE.success : TONE.neutral;
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', t.bg, t.text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{active ? 'Active' : 'Inactive'}</span>;
 }
 
 function VehicleDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onClose: () => void; onSave: (d: Draft) => void; onDelete?: () => void }) {

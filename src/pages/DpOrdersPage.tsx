@@ -1,17 +1,16 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
-import { Card } from '../components/Card';
+import { DataTable, type Column } from '../components/DataTable';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { date } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import { STATUS_LABEL, STATUS_TONE, SLOT_LABEL, DRIVERS_FALLBACK, VEHICLES_FALLBACK, SO_FALLBACK, schedFallback, type Sched, type SchedPayload, type SchedStatus, type TimeSlot } from '../lib/schedule';
 
@@ -41,6 +40,16 @@ export default function DpOrdersPage() {
   const q = search.trim().toLowerCase();
   const rows = all.filter(r => (statusFilter === 'all' || r.status === statusFilter) && (!q || `${r.soDocNo} ${r.customerName}`.toLowerCase().includes(q)));
 
+  const columns = useMemo<Column<Sched>[]>(() => [
+    { key: 'so', label: 'Sales order', type: 'ref', value: r => r.soDocNo, hideable: false, width: 150 },
+    { key: 'customer', label: 'Customer', value: r => r.customerName, width: 200 },
+    { key: 'planned', label: 'Planned date', type: 'date', value: r => r.plannedDate || null, width: 130 },
+    { key: 'slot', label: 'Slot', value: r => (r.timeSlot ? SLOT_LABEL[r.timeSlot] : null), text: r => `${r.timeSlot ? SLOT_LABEL[r.timeSlot] : ''}${r.plannedTime ? ` ${r.plannedTime}` : ''}`.trim(),
+      render: r => <span className="text-muted-ink">{r.timeSlot ? SLOT_LABEL[r.timeSlot] : '—'}{r.plannedTime ? ` · ${r.plannedTime}` : ''}</span>, width: 120, filter: { kind: 'select' } },
+    { key: 'driver', label: 'Driver / vehicle', value: r => (r.driverName || r.vehicleCode ? `${r.driverName || '—'}${r.vehicleCode ? ` · ${r.vehicleCode}` : ''}` : 'Unassigned'), width: 180 },
+    { key: 'status', label: 'Status', type: 'status', value: r => STATUS_LABEL[r.status], text: r => STATUS_LABEL[r.status], render: r => <StatusPill status={r.status} />, width: 130 },
+  ], []);
+
   function created(r: Sched) { setAdded(a => [r, ...a]); toast({ tone: 'success', title: 'Added to the schedule.', body: `${r.soDocNo} · ${r.customerName}` }); setDrawer(null); }
   function saved(r: Sched) { setEdits(e => ({ ...e, [r.id]: { ...e[r.id], ...r } })); toast({ tone: 'success', title: 'Schedule updated.', body: r.soDocNo }); setDrawer(null); }
   function remove(r: Sched) { setRemoved(s => new Set(s).add(r.id)); api.del(`/delivery-schedule/${r.id}`).catch(notifyFailure); toast({ tone: 'success', title: 'Removed from schedule.', body: r.soDocNo }); setDrawer(null); }
@@ -55,29 +64,11 @@ export default function DpOrdersPage() {
         <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search SO or customer..." aria-label="Search DP orders"
           className="h-9 box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
       </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[820px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-              {['Sales order', 'Customer', 'Planned date', 'Slot', 'Driver / vehicle', 'Status'].map(h => <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={6}><TableSkeleton rows={5} cols={6} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={6}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No deliveries match.' : 'Nothing in the queue.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Add a sales order to the schedule, then arrange its date, time and driver.</span></div></td></tr>
-              : rows.map(r => (
-                <tr key={r.id} onClick={() => { if (canWrite) setDrawer({ mode: 'edit', row: r }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{r.soDocNo}</td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{r.customerName}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)] tabular-nums">{r.plannedDate ? date(r.plannedDate) : '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink">{r.timeSlot ? SLOT_LABEL[r.timeSlot] : '—'}{r.plannedTime ? ` · ${r.plannedTime}` : ''}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink">{r.driverName || r.vehicleCode ? `${r.driverName || '—'}${r.vehicleCode ? ` · ${r.vehicleCode}` : ''}` : 'Unassigned'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={r.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Sched> id="dp-orders" columns={columns} rows={data || all.length ? rows : null} rowKey={r => r.id}
+        loading={loading && all.length === 0} onRowClick={canWrite ? r => setDrawer({ mode: 'edit', row: r }) : undefined}
+        noun={['delivery', 'deliveries']} exportName="dp-orders" pageSize={0} filtered={!!q || statusFilter !== 'all'}
+        onClearFilters={() => { setSearch(''); setStatusFilter('all'); }}
+        empty={{ title: 'Nothing in the queue.', body: 'Add a sales order to the schedule, then arrange its date, time and driver.' }} />
       {drawer?.mode === 'new' && <NewDrawer openSos={openSos} onClose={() => setDrawer(null)} onCreated={created} />}
       {drawer?.mode === 'edit' && <EditDrawer row={drawer.row} onClose={() => setDrawer(null)} onSaved={saved} onDelete={() => remove(drawer.row)} />}
     </>

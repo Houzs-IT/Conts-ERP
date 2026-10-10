@@ -1,10 +1,11 @@
 import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { checkPhone } from '../../_lib/validate';
+import { ROLES } from '../../_lib/roles';
 
 const MANAGE = ['management'];
 
-type Field = { def: string | number | boolean; legacy?: string; kind: 'text' | 'longtext' | 'email' | 'phone' | 'choice' | 'number' | 'bool' | 'time'; min?: number; max?: number; integer?: boolean; options?: string[]; required?: boolean };
+type Field = { def: string | number | boolean; legacy?: string; kind: 'text' | 'longtext' | 'email' | 'phone' | 'choice' | 'number' | 'bool' | 'time' | 'roles'; min?: number; max?: number; integer?: boolean; options?: string[]; required?: boolean };
 
 /** Every setting, its default, and how to check a saved value. Stored as one row per setting, keyed "section.name". */
 const SPEC: Record<string, Record<string, Field>> = {
@@ -47,6 +48,12 @@ const SPEC: Record<string, Record<string, Field>> = {
     yearTerms: { def: '', kind: 'longtext' },
     miscChargeMonthly: { def: 10000, kind: 'number', min: 0, max: 10_000_000, integer: true },
   },
+  // Maker-checker (functions/_lib/approvals.ts), sen. An expense above expenseThreshold waits for approval; a finance
+  // admin may approve requests below financeAdminLimit, management any amount. Defaults match APPROVAL_DEFAULTS.
+  approvals: {
+    expenseThreshold: { def: 50000, kind: 'number', min: 0, max: 100_000_000, integer: true },
+    financeAdminLimit: { def: 200000, kind: 'number', min: 0, max: 100_000_000, integer: true },
+  },
   security: {
     // Staff stay signed in through a normal work week; the owner portal is a brief,
     // occasional check-in so it times out sooner — see functions/_lib/auth.ts securitySettings().
@@ -55,6 +62,8 @@ const SPEC: Record<string, Record<string, Field>> = {
     absoluteTimeoutHours: { def: 720, kind: 'number', min: 1, max: 720 },
     lockoutAttempts: { def: 5, kind: 'number', min: 3, max: 20, integer: true },
     lockoutMinutes: { def: 15, kind: 'number', min: 1, max: 120, integer: true },
+    // Comma-separated roles that must use two-step sign-in (functions/_lib/signIn.ts twoStepSetupDue).
+    require2faRoles: { def: '', kind: 'roles' },
   },
 };
 
@@ -70,6 +79,7 @@ function problem(f: Field, v: unknown): string | null {
   if (f.kind === 'number' && f.integer && !Number.isInteger(v)) return 'Enter a whole number.';
   if (f.kind === 'number') return typeof v === 'number' && Number.isFinite(v) && v >= (f.min ?? -Infinity) && v <= (f.max ?? Infinity) ? null : `Enter a number from ${f.min} to ${f.max}.`;
   if (f.kind === 'bool') return typeof v === 'boolean' ? null : 'Choose on or off.';
+  if (f.kind === 'roles') return typeof v === 'string' && v.split(',').filter(Boolean).every(r => ROLES.includes(r)) ? null : 'Pick roles from the list.';
   if (typeof v !== 'string' || v.length > (f.kind === 'longtext' ? 4000 : 300)) return f.kind === 'longtext' ? 'Keep it under 4,000 characters.' : 'Enter text.';
   if (f.required && v.trim() === '') return 'This cannot be empty.';
   if (f.kind === 'choice') return f.options!.includes(v) ? null : 'Pick one of the options.';

@@ -1,18 +1,17 @@
 import { useMemo, useState } from 'react';
 import { Search, Plus, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, ApiFailure } from '../lib/api';
 import { ShortStockPrompt } from '../components/ShortStockPrompt';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { date } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
@@ -66,6 +65,15 @@ export default function DeliveryOrdersPage() {
   const q = search.trim().toLowerCase();
   const rows = all.filter(p => (statusFilter === 'all' || p.status === statusFilter) && (!q || `${p.doNumber} ${p.soDocNo} ${p.customerName}`.toLowerCase().includes(q)));
 
+  const columns = useMemo<Column<Do>[]>(() => [
+    { key: 'doNumber', label: 'DO number', type: 'ref', value: p => p.doNumber, hideable: false },
+    { key: 'so', label: 'SO', type: 'ref', value: p => p.soDocNo || null },
+    { key: 'customer', label: 'Customer', value: p => p.customerName },
+    { key: 'doDate', label: 'DO date', type: 'date', value: p => p.doDate || null },
+    { key: 'driver', label: 'Driver', value: p => p.driverName, text: p => `${p.driverName || '—'}${p.vehicle ? ` · ${p.vehicle}` : ''}`, render: p => <span className="text-[12.5px] text-[var(--color-ink-2)]">{p.driverName || '—'}{p.vehicle ? ` · ${p.vehicle}` : ''}</span> },
+    { key: 'status', label: 'Status', type: 'status', value: p => p.status, status: p => ({ label: STATUS_LABEL[p.status], tone: STATUS_TONE[p.status] }) },
+  ], []);
+
   function created(d: Do) { setAdded(a => [d, ...a]); toast({ tone: 'success', title: 'Delivery order raised.', body: `${d.doNumber} · ${d.customerName}` }); setDrawer(null); }
   function act(d: Do, patch: Record<string, unknown>, optimistic: Partial<Do>, title: string) {
     setEdits(e => ({ ...e, [d.id]: { ...e[d.id], ...optimistic } }));
@@ -78,40 +86,21 @@ export default function DeliveryOrdersPage() {
     <>
       <PageHeader title="Delivery orders" sub={`${all.length} deliveries`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New delivery</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last delivery list we have. ${error}`} onRetry={reload} />}
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
-        <div className="relative">
-          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search DO, SO or customer..." aria-label="Search delivery orders"
-            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
-        </div>
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[820px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-              {['DO number', 'SO', 'Customer', 'DO date', 'Driver', 'Status'].map(h => (
-                <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>
-              ))}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={6}><TableSkeleton rows={6} cols={6} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={6}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No delivery orders match.' : 'No delivery orders yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Deliver a sales order to raise a delivery order.</span></div></td></tr>
-              : rows.map(p => (
-                <tr key={p.id} onClick={() => setDrawer({ mode: 'view', d: p })} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{p.doNumber}</td>
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[12px] text-muted-ink">{p.soDocNo || '—'}</td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{p.customerName}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.doDate ? date(p.doDate) : '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{p.driverName || '—'}{p.vehicle ? ` · ${p.vehicle}` : ''}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={p.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Do>
+        id="scm.delivery-orders" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={p => setDrawer({ mode: 'view', d: p })}
+        noun={['delivery order', 'delivery orders']} exportName="delivery-orders"
+        toolbar={<>
+          <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+          <div className="relative">
+            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search DO, SO or customer..." aria-label="Search delivery orders"
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
+          </div>
+        </>}
+        filtered={!!q || statusFilter !== 'all'} onClearFilters={() => { setSearch(''); setStatusFilter('all'); }}
+        empty={{ title: 'No delivery orders yet.', body: 'Deliver a sales order to raise a delivery order.', action: canWrite ? { label: 'New delivery', onClick: () => setDrawer({ mode: 'new' }) } : undefined }} />
       {drawer?.mode === 'new' && <DeliverDrawer openSos={openSos} canWrite={canWrite} onClose={() => setDrawer(null)} onCreated={created} />}
       {drawer?.mode === 'view' && <ViewDrawer d={drawer.d} canWrite={canWrite} onClose={() => setDrawer(null)} onAct={act} />}
     </>
@@ -241,7 +230,15 @@ function DeliverDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: Ope
 
 /* ---------- view drawer ---------- */
 
+const lineColumns: Column<DoLine>[] = [
+  { key: 'item', label: 'Item', value: l => l.description, sub: l => <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{l.itemCode}</span>, text: l => `${l.description} ${l.itemCode}` },
+  { key: 'qty', label: 'Qty', type: 'number', value: l => l.qty },
+  { key: 'price', label: 'Unit price', type: 'money', value: l => l.unitPriceSen },
+  { key: 'total', label: 'Line total', type: 'money', value: l => l.lineTotalSen },
+];
+
 function ViewDrawer({ d, canWrite, onClose, onAct }: { d: Do; canWrite: boolean; onClose: () => void; onAct: (d: Do, patch: Record<string, unknown>, optimistic: Partial<Do>, title: string) => void }) {
+  const lineRows = useMemo(() => (d.lines ?? []).map((l, i) => ({ ...l, key: String(i) })), [d.lines]);
   const advanceLabel = (() => { const i = FLOW.indexOf(d.status); return i >= 0 && i < FLOW.length - 1 ? STATUS_LABEL[FLOW[i + 1]] : null; })();
   return (
     <Drawer open onClose={onClose} width={720}>
@@ -257,20 +254,12 @@ function ViewDrawer({ d, canWrite, onClose, onAct }: { d: Do; canWrite: boolean;
           <Meta label="Driver" value={[d.driverName, d.vehicle].filter(Boolean).join(' · ') || '—'} />
         </div>
         {(d.address1 || d.city) && <div className="text-[13px]"><span className="text-muted-ink">Deliver to: </span>{[d.address1, d.city, d.state, d.postcode].filter(Boolean).join(', ')}</div>}
-        <div className="overflow-x-auto border border-solid border-line rounded-card">
-          <table className="w-full border-collapse min-w-[460px]">
-            <thead><tr className="bg-muted">{['Item', 'Qty', 'Unit price', 'Line total'].map((th, i) => <th key={th} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i === 0 ? 'text-left' : 'text-right')}>{th}</th>)}</tr></thead>
-            <tbody>
-              {(d.lines ?? []).map((l, i) => (
-                <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
-                  <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.qty}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.unitPriceSen)}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.lineTotalSen)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="border border-solid border-line rounded-card overflow-hidden">
+          <DataTable<DoLine & { key: string }>
+            id="scm.delivery-order.lines" urlPrefix="lines." bare noViews noToolbar pageSize={0}
+            columns={lineColumns} rows={lineRows} rowKey={l => l.key}
+            noun={['line', 'lines']} exportName={`${d.doNumber}-lines`}
+            empty={{ title: 'No lines on this delivery.' }} />
         </div>
         {d.notes && <div className="text-[13px]"><span className="text-muted-ink">Notes: </span>{d.notes}</div>}
       </div>

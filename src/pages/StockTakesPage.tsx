@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
@@ -42,6 +41,13 @@ export default function StockTakesPage() {
 
   const rows = useMemo(() => [...added, ...(data?.data ?? [])].map(k => ({ ...k, ...edits[k.id] })), [added, data, edits]);
 
+  const columns = useMemo<Column<Take>[]>(() => [
+    { key: 'take', label: 'Take', type: 'ref', value: k => k.takeNumber, hideable: false },
+    { key: 'warehouse', label: 'Warehouse', value: k => k.warehouseName },
+    { key: 'date', label: 'Date', type: 'date', value: k => k.takeDate || null },
+    { key: 'status', label: 'Status', type: 'status', value: k => k.status, status: k => ({ label: STATUS_LABEL[k.status], tone: STATUS_TONE[k.status] }) },
+  ], []);
+
   function created(k: Take) { setAdded(a => [k, ...a]); toast({ tone: 'success', title: 'Stock take started.', body: k.takeNumber }); setDrawer(null); }
   function act(k: Take, patch: Record<string, unknown>, optimistic: Partial<Take>, title: string) {
     setEdits(e => ({ ...e, [k.id]: { ...e[k.id], ...optimistic } }));
@@ -54,28 +60,12 @@ export default function StockTakesPage() {
     <>
       <PageHeader title="Stock takes" sub={`${rows.length} counts`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New stock take</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last take list we have. ${error}`} onRetry={reload} />}
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[560px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-              {['Take', 'Warehouse', 'Date', 'Status'].map(h => <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && rows.length === 0 ? <tr><td colSpan={4}><TableSkeleton rows={5} cols={4} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={4}><div className="py-[38px] px-[22px] text-center text-[14px] font-semibold">No stock takes yet.</div></td></tr>
-              : rows.map(k => (
-                <tr key={k.id} onClick={() => setDrawer({ mode: 'view', k })} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{k.takeNumber}</td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{k.warehouseName}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{k.takeDate ? date(k.takeDate) : '—'}</td>
-                  <td className="py-[13px] px-4"><span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[STATUS_TONE[k.status]].bg, TONE[STATUS_TONE[k.status]].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[k.status]}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Take>
+        id="scm.stock-takes" columns={columns} rows={data ? rows : null} rowKey={k => k.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={k => setDrawer({ mode: 'view', k })}
+        noun={['stock take', 'stock takes']} exportName="stock-takes"
+        empty={{ title: 'No stock takes yet.', body: 'Start a count to check on-hand stock in a warehouse.', action: canWrite ? { label: 'New stock take', onClick: () => setDrawer({ mode: 'new' }) } : undefined }} />
       {drawer?.mode === 'new' && <CreateDrawer warehouses={warehouses} canWrite={canWrite} onClose={() => setDrawer(null)} onCreated={created} />}
       {drawer?.mode === 'view' && <CountDrawer k={drawer.k} canWrite={canWrite} onClose={() => setDrawer(null)} onAct={act} />}
     </>

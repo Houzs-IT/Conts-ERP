@@ -3,6 +3,8 @@ import { type Env, all, one, json, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { assignCleaner, MYT_DATE, type RosterCleaner } from '../../_lib/ops';
 import { CLEAN_KINDS_SQL, isDay } from '../../_lib/cleaning';
+import { notifyUsers } from '../../_lib/notify';
+import { day } from '../../_lib/notices';
 
 /** POST /api/housekeeping/assign-building { buildingId, date, cleanerId, onlyUnassigned? }
  *  Every unfinished clean in one building on one day goes to one cleaner (time clashes are accepted: the
@@ -29,8 +31,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   let assigned = 0;
   for (const t of tasks) {
-    const res = await assignCleaner(env, session, t.id, { ...cleaner, busy: 0 }, true);
+    const res = await assignCleaner(env, session, t.id, { ...cleaner, busy: 0 }, true, true);
     if (res.ok) assigned++;
+  }
+  if (assigned && cleaner.user_id) {
+    await notifyUsers(env, [cleaner.user_id], { kind: 'cleaning.assigned', title: `${assigned} ${assigned === 1 ? 'clean' : 'cleans'} assigned to you`, body: `For ${day(b.date)}. Open Cleaning to see the units and times.`, link: '/operations/cleaning', entityTable: 'properties', entityId: b.buildingId, dedupeKey: `building-${b.buildingId}-${b.date}-${cleaner.id}`, except: session.userId });
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.assign_building', entityTable: 'properties', entityId: b.buildingId, after: { date: b.date, cleanerId: cleaner.id, assigned } });
   return json({ ok: true, assigned, assigneeName: cleaner.full_name });

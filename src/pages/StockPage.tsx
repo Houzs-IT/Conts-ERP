@@ -1,17 +1,15 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Search, Plus, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { date } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 
 /** Stock — ported from 2990's SCM inventory (quantity-only first cut). On-hand is the
@@ -53,6 +51,44 @@ export default function StockPage() {
   const movements = [...added, ...(moves.data?.data ?? [])].filter(m => !q || m.itemCode.toLowerCase().includes(q));
   const totalUnits = onhand.reduce((s, r) => s + r.onHand, 0);
 
+  const onhandColumns = useMemo<Column<OnHand>[]>(() => [
+    { key: 'item', label: 'Item code', type: 'ref', value: r => r.itemCode, hideable: false },
+    { key: 'name', label: 'Description', value: r => r.itemName, width: 220 },
+    { key: 'warehouse', label: 'Warehouse', value: r => r.warehouseName, filter: { kind: 'select' } },
+    { key: 'onhand', label: 'On hand', type: 'number', value: r => r.onHand,
+      render: r => <span className={cx('tabular-nums font-semibold', r.onHand < 0 ? 'text-[var(--color-critical-fg)]' : '')}>{r.onHand}</span> },
+  ], []);
+  const moveColumns = useMemo<Column<Movement>[]>(() => [
+    { key: 'date', label: 'Date', type: 'date', value: m => m.movedAt },
+    { key: 'item', label: 'Item code', type: 'ref', value: m => m.itemCode, hideable: false },
+    { key: 'warehouse', label: 'Warehouse', value: m => m.warehouseName, filter: { kind: 'select' } },
+    { key: 'type', label: 'Type', value: m => m.movementType, text: m => MV_LABEL[m.movementType] ?? m.movementType, filter: { kind: 'select' } },
+    { key: 'ref', label: 'Ref', value: m => m.refType, width: 90 },
+    { key: 'qty', label: 'Qty', type: 'number', value: m => m.qtyDelta, width: 90,
+      render: m => <span className={cx('tabular-nums font-semibold', m.qtyDelta < 0 ? 'text-[var(--color-critical-fg)]' : 'text-[var(--color-success-fg)]')}>{m.qtyDelta > 0 ? `+${m.qtyDelta}` : m.qtyDelta}</span> },
+    { key: 'note', label: 'Note', value: m => m.note, width: 200 },
+  ], []);
+
+  const tabs = (
+    <div className="flex gap-2 flex-wrap">
+      <Chip label="On hand" active={tab === 'onhand'} onClick={() => setTab('onhand')} />
+      <Chip label="Movements" active={tab === 'moves'} onClick={() => setTab('moves')} />
+    </div>
+  );
+  const whSelect = (
+    <select value={whFilter} onChange={e => setWhFilter(e.target.value)} aria-label="Warehouse" className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
+      <option value="all">All warehouses</option>
+      {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+    </select>
+  );
+  const searchBox = (
+    <div className="relative">
+      <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+      <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item code..." aria-label="Search stock"
+        className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[220px] max-w-full" />
+    </div>
+  );
+
   function adjusted(m: Movement) { setAdded(a => [m, ...a]); toast({ tone: 'success', title: 'Stock adjusted.', body: `${m.itemCode} ${m.qtyDelta > 0 ? '+' : ''}${m.qtyDelta}` }); setAdjusting(false); reload(); }
 
   return (
@@ -60,72 +96,23 @@ export default function StockPage() {
       <PageHeader title="Stock" sub={`${onhand.length} lines · ${totalUnits} units on hand`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setAdjusting(true)}>Stock adjustment</Button> : undefined} />
 
-      {error && <StaleBanner message={`Showing the last stock snapshot we have. ${error}`} onRetry={reload} />}
-
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">
-          <Chip label="On hand" active={tab === 'onhand'} onClick={() => setTab('onhand')} />
-          <Chip label="Movements" active={tab === 'moves'} onClick={() => setTab('moves')} />
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {tab === 'onhand' && (
-            <select value={whFilter} onChange={e => setWhFilter(e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
-              <option value="all">All warehouses</option>
-              {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </select>
-          )}
-          <div className="relative">
-            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item code..." aria-label="Search stock"
-              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[220px] max-w-full" />
-          </div>
-        </div>
-      </div>
-
-      <Card>
-        <div className="overflow-x-auto">
-          {tab === 'onhand' ? (
-            <table className="w-full border-collapse min-w-[620px]">
-              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-                {['Item code', 'Description', 'Warehouse', 'On hand'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 3 ? 'text-right' : 'text-left')}>{h}</th>)}
-              </tr></thead>
-              <tbody>
-                {loading && onhand.length === 0 ? <tr><td colSpan={4}><TableSkeleton rows={6} cols={4} /></td></tr>
-                : onhand.length === 0 ? <tr><td colSpan={4}><div className="py-[38px] px-[22px] text-center text-[14px] font-semibold">No stock on hand.</div></td></tr>
-                : onhand.map(r => (
-                  <tr key={`${r.itemCode}-${r.warehouseId}`} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
-                    <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{r.itemCode}</td>
-                    <td className="py-[13px] px-4 text-[13.5px]">{r.itemName || '—'}</td>
-                    <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{r.warehouseName}</td>
-                    <td className={cx('py-[13px] px-4 text-right tabular-nums text-[14px] font-semibold', r.onHand < 0 ? 'text-[var(--color-critical-fg)]' : '')}>{r.onHand}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <table className="w-full border-collapse min-w-[720px]">
-              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-                {['Date', 'Item code', 'Warehouse', 'Type', 'Ref', 'Qty', 'Note'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 5 ? 'text-right' : 'text-left')}>{h}</th>)}
-              </tr></thead>
-              <tbody>
-                {moves.loading && movements.length === 0 ? <tr><td colSpan={7}><TableSkeleton rows={6} cols={7} /></td></tr>
-                : movements.length === 0 ? <tr><td colSpan={7}><div className="py-[38px] px-[22px] text-center text-[14px] font-semibold">No movements yet.</div></td></tr>
-                : movements.map(m => (
-                  <tr key={m.id} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
-                    <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{m.movedAt ? date(m.movedAt) : '—'}</td>
-                    <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px]">{m.itemCode}</td>
-                    <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{m.warehouseName}</td>
-                    <td className="py-[13px] px-4 text-[12.5px]">{MV_LABEL[m.movementType] ?? m.movementType}</td>
-                    <td className="py-[13px] px-4 text-[12px] text-muted-ink">{m.refType || '—'}</td>
-                    <td className={cx('py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold', m.qtyDelta < 0 ? 'text-[var(--color-critical-fg)]' : 'text-[var(--color-success-fg)]')}>{m.qtyDelta > 0 ? `+${m.qtyDelta}` : m.qtyDelta}</td>
-                    <td className="py-[13px] px-4 text-[12.5px] text-muted-ink max-w-[200px] truncate">{m.note || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </Card>
+      {tab === 'onhand' ? (
+        <DataTable<OnHand>
+          id="scm.stock" urlPrefix="onhand." columns={onhandColumns} rows={data ? onhand : null} rowKey={r => `${r.itemCode}-${r.warehouseId}`}
+          loading={loading} error={error} onRetry={reload} pageSize={0}
+          noun={['stock line', 'stock lines']} exportName="stock-on-hand"
+          header={tabs} toolbar={<>{whSelect}{searchBox}</>}
+          filtered={!!q || whFilter !== 'all'} onClearFilters={() => { setSearch(''); setWhFilter('all'); }}
+          empty={{ title: 'No stock on hand.' }} />
+      ) : (
+        <DataTable<Movement>
+          id="scm.stock-movements" urlPrefix="moves." columns={moveColumns} rows={moves.data ? movements : null} rowKey={m => m.id}
+          loading={moves.loading} error={moves.error} onRetry={moves.reload} pageSize={0}
+          noun={['movement', 'movements']} exportName="stock-movements"
+          header={tabs} toolbar={searchBox}
+          filtered={!!q} onClearFilters={() => setSearch('')}
+          empty={{ title: 'No movements yet.' }} />
+      )}
 
       {adjusting && <AdjustDrawer warehouses={warehouses} canWrite={canWrite} onClose={() => setAdjusting(false)} onDone={adjusted} />}
     </>

@@ -10,7 +10,8 @@ const isDate = (v: string | null): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.t
 /** GET /api/tasks — the work list, one page at a time.
  *  ?state=active (default, everything not done) | all | <state>
  *  &kind=all | cleaning | <kind>  &building=<property id>  &assignee=none | u:<user> | c:<cleaner> | s:<sheet code>
- *  &from=&to= (task day, Malaysia)  &q= (unit, building or title)  &id=  &page=1  &pageSize=50 */
+ *  &from=&to= (task day, Malaysia)  &q= (unit, building or title)  &id=  &page=1  &pageSize=50 (or size=)
+ *  &sort=day|unit|building|kind|cleaner|finished|state:asc|desc (left out: the order the state reads best in) */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -23,7 +24,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const from = sp.get('from'), to = sp.get('to');
   const q = (sp.get('q') ?? '').trim().slice(0, 80);
   const id = sp.get('id');
-  const pageSize = Math.min(100, Math.max(1, Number(sp.get('pageSize')) || 50));
+  // export=1: the table's Export reads every matching task in pages of up to 1,000.
+  const pageSize = Math.min(sp.get('export') === '1' ? 1000 : 100, Math.max(1, Number(sp.get('size') ?? sp.get('pageSize')) || 50));
   const page = Math.max(1, Math.floor(Number(sp.get('page')) || 1));
 
   const day = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
@@ -53,6 +55,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const full = [cond || 'WHERE TRUE', stateWhere].filter(Boolean).join(' AND ');
   // Finished work reads newest first; open work reads in the order it falls due.
   const order = state === 'resolved' ? 'DESC' : 'ASC';
+  const [sortKey, sortDir] = (sp.get('sort') ?? '').split(':');
+  const SORTS: Record<string, string> = {
+    day, unit: 'u.unit_number', building: 'p.name', kind: 't.kind', cleaner: 'COALESCE(cl.full_name, a.full_name)',
+    finished: 't.completed_at', state: 't.state',
+  };
+  const orderBy = SORTS[sortKey]
+    ? `${SORTS[sortKey]} ${sortDir === 'desc' ? 'DESC' : 'ASC'} NULLS LAST, t.id`
+    : `COALESCE(t.due_at, t.scheduled_for, t.created_at) ${order}, t.id`;
 
   const counts = await all<{ state: string; n: number }>(env, `SELECT t.state, COUNT(*)::int AS n ${base} ${cond} GROUP BY t.state`, ...args);
   const rows = await all<any>(env, `
@@ -64,7 +74,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     LEFT JOIN users a ON a.id = t.assignee_id
     LEFT JOIN cleaners cl ON cl.id = t.cleaner_id
     ${full}
-    ORDER BY COALESCE(t.due_at, t.scheduled_for, t.created_at) ${order}, t.id
+    ORDER BY ${orderBy}
     LIMIT ? OFFSET ?`, ...args, ...stateArgs, pageSize, (page - 1) * pageSize);
 
   const byState = Object.fromEntries(counts.map(c => [c.state, Number(c.n)]));

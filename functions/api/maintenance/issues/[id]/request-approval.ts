@@ -1,5 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
+import { repairNotice } from '../../../../_lib/notices';
 
 /** POST /api/maintenance/issues/:id/request-approval — puts the quote in front of the owner; work waits until they decide. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -15,5 +16,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
 
   await run(env, `UPDATE maintenance_issues SET owner_approval_required = 1, owner_approved_at = NULL, state = 'waiting', updated_at = ? WHERE id = ?`, nowIso(), id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.request_approval', entityTable: 'maintenance_issues', entityId: id, before: { state: cur.state }, after: { state: 'waiting' } });
+  await repairNotice(env, id, 'approval_requested', session.userId);
   return json({ ok: true });
 };

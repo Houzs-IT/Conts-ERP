@@ -7,15 +7,20 @@ import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, ApiFailure } from '../lib/api';
-import { monthLabel, dateShort, date, todayMyt, plural, count as fmtCount, titleCase } from '../lib/format';
+import { isStaged, stagedToast } from '../lib/approvals';
+import { refreshNavCounts } from '../lib/navBadges';
+import { monthLabel, dateShort, todayMyt, plural, count as fmtCount, titleCase } from '../lib/format';
+import { DataTable, type Column } from '../components/DataTable';
+import { fetchAllPages } from '../lib/export';
 import { MoneyText, moneyString } from '../components/MoneyText';
 import { Select, SearchSelect, type SelectOption } from '../components/Select';
 import { EmptyState } from '../components/States';
 import { MoneyInput, DateField } from '../components/inputs';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
+import { HistoryDisclosure } from '../components/RecordHistory';
 import {
-  useUrlState, usePhone, ListCard, Pager, SearchBox, Chip, STICKY_HEAD, shiftMonth,
+  useUrlState, usePhone, ListCard, SearchBox, Chip, shiftMonth,
   useFinanceFilters, type FinanceFilters,
 } from './finance/listKit';
 
@@ -71,12 +76,13 @@ interface Payload {
 }
 
 const PAGE_SIZE = 50;
-const SORTS = ['date', 'date_asc', 'amount', 'amount_asc', 'unit'] as const;
+const SIZES = [25, 50, 100, 200];
+const SORTS = ['date', 'date_asc', 'amount', 'amount_asc', 'unit', 'unit_desc'] as const;
 type Sort = typeof SORTS[number];
-
-// Desktop list grid. Every column can shrink, so the table fits the content width
-// without a sideways scrollbar (which would stop the header sticking).
-const COLS_CLASS = 'grid-cols-[minmax(0,2.1fr)_minmax(0,1.3fr)_minmax(0,0.95fr)_minmax(0,0.85fr)_minmax(0,0.9fr)_minmax(92px,0.9fr)_62px]';
+/** The table writes `sort=<column>:asc|desc`; the endpoint reads its own names. Old links carry those names directly. */
+const SORT_PARAM: Record<string, Sort> = {
+  'date:desc': 'date', 'date:asc': 'date_asc', 'amount:desc': 'amount', 'amount:asc': 'amount_asc', 'unit:asc': 'unit', 'unit:desc': 'unit_desc',
+};
 
 const thisMonth = () => todayMyt().slice(0, 7);
 
@@ -107,13 +113,15 @@ export default function ExpensesPage() {
   const owner = url.get('owner');
   const q = url.get('q');
   const view: 'grouped' | 'list' = url.get('view') === 'list' ? 'list' : 'grouped';
-  const sort: Sort = (SORTS as readonly string[]).includes(url.get('sort')) ? url.get('sort') as Sort : 'date';
+  const rawSort = url.get('sort');
+  const sort: Sort = SORT_PARAM[rawSort] ?? ((SORTS as readonly string[]).includes(rawSort) ? rawSort as Sort : 'date');
   const page = Math.max(1, Number(url.get('page')) || 1);
+  const size = SIZES.includes(Number(url.get('size'))) ? Number(url.get('size')) : PAGE_SIZE;
 
   const base = { month, category: cat, building, unit, owner, q };
   // The grouped view's first paint only needs the totals; each category loads its rows when opened.
   const path = view === 'list'
-    ? `/finance/expenses?${qs(base, { view: 'list', sort, page, pageSize: PAGE_SIZE })}`
+    ? `/finance/expenses?${qs(base, { view: 'list', sort, page, pageSize: size })}`
     : `/finance/expenses?${qs(base, { pageSize: 0 })}`;
   const { data, loading, error, reload } = useApi<Payload>(path);
   const [edits, setEdits] = useState<Record<string, Partial<Expense>>>({});
@@ -152,8 +160,10 @@ export default function ExpensesPage() {
   async function createExpense(input: { unitId: string; category: Category; amount: number; incurredOn: string; reference: string; description: string }) {
     try {
       setFormFields({});
-      await api.post('/expenses', input);
+      const res = await api.post<unknown>('/expenses', input);
       setCreating(false);
+      // Above the approval threshold it waits for a second person and is not on the list yet.
+      if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); return; }
       toast({ tone: 'success', title: 'Expense added.', body: `${catLabel(input.category)} · ${moneyString(input.amount, 'exact')} on ${dateShort(input.incurredOn)}.` });
       refresh();
     } catch (e) {
@@ -165,7 +175,8 @@ export default function ExpensesPage() {
   async function saveEdit(id: string, delta: Partial<Expense>) {
     try {
       setFormFields({});
-      await api.patch(`/expenses/${id}`, delta);
+      const res = await api.patch<unknown>(`/expenses/${id}`, delta);
+      if (isStaged(res)) { setEditing(null); toast(stagedToast(res)); void refreshNavCounts(); return; }
       setEdits(e => ({ ...e, [id]: { ...e[id], ...delta } }));
       setEditing(null);
       toast({ tone: 'success', title: 'Expense updated.', body: 'The change lands on this period’s statement.' });
@@ -193,6 +204,41 @@ export default function ExpensesPage() {
     } catch (e) { notifyFailure(e); }
   }
 
+  /** Every expense under the current filters and sort, for the table's Export. */
+  async function fetchAll(onProgress: (got: number, of: number) => void) {
+    const scope = { ...base, month: month || data?.filtersApplied.month || '' };
+    const r = await fetchAllPages<Expense>(async (pg, sz) => {
+      const p = await api.get<Payload>(`/finance/expenses?${qs(scope, { view: 'list', sort, page: pg, pageSize: sz, export: 1 })}`);
+      return { rows: p.data.map(withEdits), total: p.total };
+    }, { onProgress });
+    return r.rows;
+  }
+
+  const columns = useMemo<Column<Expense>[]>(() => [
+    { key: 'description', label: 'Description', value: r => r.description || catLabel(r.category), hideable: false, width: 230, filter: false,
+      sub: r => (r.chargeTo !== 'owner' ? `Charged to ${CHARGE_LABEL[r.chargeTo] ?? r.chargeTo}` : null) },
+    { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, exportValue: r => r.unitNumber,
+      sortKey: 'unit', width: 140, filter: false, sub: r => r.propertyName },
+    { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, filter: false, width: 150 },
+    { key: 'category', label: 'Category', type: 'status', value: r => r.category, width: 130,
+      status: r => ({ label: catLabel(r.category), tone: catTone(r.category) }),
+      filter: { kind: 'select', param: 'category', multi: false, options: (Object.keys(CAT_LABEL) as Category[]).map(c => ({ value: c, label: CAT_LABEL[c] })) } },
+    { key: 'date', label: 'Date', type: 'date', value: r => r.incurredOn, sortKey: 'date', width: 120, filter: false,
+      sub: r => (r.locked ? 'Statement final' : null) },
+    { key: 'reference', label: 'Reference', type: 'ref', value: r => r.reference, width: 130, filter: false },
+    { key: 'chargeTo', label: 'Charged to', value: r => CHARGE_LABEL[r.chargeTo] ?? r.chargeTo, hidden: true, filter: false, width: 130 },
+    { key: 'amount', label: 'Amount', type: 'money', value: r => r.amount, sortKey: 'amount', width: 120, filter: false,
+      render: r => <MoneyText sen={r.amount} mode="exact" className="font-medium" /> },
+    { key: 'edit', label: '', width: 84, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
+      render: r => (
+        <Button size="sm" variant="secondary" onClick={e => { e.stopPropagation(); setEditing(r); }}
+          title={r.locked ? `The ${monthLabel(r.incurredOn.slice(0, 7))} statement is final, so this expense is locked.` : 'Edit this expense'}
+          style={r.locked ? { color: 'var(--color-text-muted)' } : undefined}>
+          {r.locked ? 'Locked' : 'Edit'}
+        </Button>
+      ) },
+  ], []);
+
   const withEdits = (e: Expense): Expense => ({ ...e, ...edits[e.id] });
   const rows = (data?.data ?? []).map(withEdits);
   const firstLoad = loading && !data;
@@ -213,7 +259,7 @@ export default function ExpensesPage() {
         primary={<Button size="sm" variant="primary" onClick={() => setCreating(true)}>Add expense</Button>}
       />
 
-      {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={refresh} />}
+      {error && view === 'grouped' && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={refresh} />}
 
       {/* Category chips carry counts for the month and the other filters, so a click never lands on nothing. */}
       <div className={cx('flex gap-[7px] shrink-0', phone ? 'overflow-x-auto -mx-4 px-4 pb-1 [scrollbar-width:none]' : 'flex-wrap')}>
@@ -258,74 +304,41 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      <ListCard busy={loading && !!data}>
-        {firstLoad ? (
-          <div className="p-2"><TableSkeleton rows={8} cols={view === 'grouped' ? 3 : 6} /></div>
-        ) : total === 0 ? (
-          filtered
-            ? <EmptyState bare kind="filtered" title="No expenses match these filters." action={{ label: 'Clear filters', onClick: clearFilters }} />
-            : <EmptyState bare title={monthAll ? 'No expenses yet.' : `No expenses in ${monthLabel(shownMonth)}.`} body="Add one, or step to another month." />
-        ) : view === 'grouped' ? (
-          <GroupedTree
-            key={`${path}#${nonce}`}
-            title="Total deductions" period={monthAll ? 'All months' : monthLabel(shownMonth)}
-            total={totalAmount} count={total}
-            cats={cat ? cats.filter(c => c.category === cat) : cats}
-            base={base} sort={sort} withEdits={withEdits} onEdit={setEditing}
-            openInList={c => url.set({ view: 'list', category: c, page: null })}
-          />
-        ) : phone ? (
-          <div>
-            {rows.map(r => <ExpenseCard key={r.id} e={r} onEdit={() => setEditing(r)} />)}
+      {view === 'list' ? (
+        <DataTable<Expense>
+          id="expenses" columns={columns} rows={data && data.pageSize > 0 ? rows : null} rowKey={r => r.id}
+          loading={loading} error={error} onRetry={refresh} onRowClick={r => setEditing(r)}
+          server={{ total, page: data?.page ?? page, pageSize: data?.pageSize || size, sizes: SIZES, defaultPageSize: PAGE_SIZE, fetchAll }}
+          viewParams={['month', 'category', 'building', 'unit', 'owner', 'q']} filtered={filtered} onClearFilters={clearFilters}
+          noun={['expense', 'expenses']} exportName="expenses"
+          empty={{ title: monthAll ? 'No expenses yet.' : `No expenses in ${monthLabel(shownMonth)}.`, body: 'Add one, or step to another month.' }}
+          selectable
+          renderCard={r => <ExpenseCard e={r} />}
+          footer={data && total > 0 ? <>
             <TotalBar count={total} amount={totalAmount} />
-          </div>
-        ) : (
-          <div role="table" aria-label="Expenses">
-            <div role="row" className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] px-[22px]', STICKY_HEAD)}>
-              <div>Description</div>
-              <SortHead label="Unit" active={sort === 'unit'} onClick={() => setFilter({ sort: 'unit' })} />
-              <div>Category</div>
-              <SortHead label="Date" active={sort.startsWith('date')} dir={sort === 'date_asc' ? 'asc' : 'desc'} onClick={() => setFilter({ sort: sort === 'date' ? 'date_asc' : null })} />
-              <div>Reference</div>
-              <SortHead label="Amount" right active={sort.startsWith('amount')} dir={sort === 'amount_asc' ? 'asc' : 'desc'} onClick={() => setFilter({ sort: sort === 'amount' ? 'amount_asc' : 'amount' })} />
-              <div />
-            </div>
-
-            {rows.map(r => {
-              const locked = !!r.locked;
-              return (
-                <div role="row" key={r.id} className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[50px] py-[7px] px-[22px] leading-[1.35] [border-bottom:1px_solid_var(--color-line-soft)]')}>
-                  <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-copy truncate" title={r.description}>{r.description || catLabel(r.category)}</span>
-                    {r.chargeTo !== 'owner' && <span className="text-meta text-muted-ink">Charged to {CHARGE_LABEL[r.chargeTo] ?? r.chargeTo}</span>}
-                  </div>
-                  <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-copy truncate" title={r.unitNumber}>{r.unitNumber}</span>
-                    <span className="text-meta text-muted-ink truncate" title={r.propertyName}>{r.propertyName}</span>
-                  </div>
-                  <div className="min-w-0"><Badge tone={catTone(r.category)} label={catLabel(r.category)} /></div>
-                  <div className="flex flex-col gap-px min-w-0">
-                    <span className="text-copy tabular-nums whitespace-nowrap">{date(r.incurredOn)}</span>
-                    {locked && <span className="text-caption text-muted-ink">Statement final</span>}
-                  </div>
-                  <div className="font-mono text-caption text-muted-ink truncate" title={r.reference ?? undefined}>{r.reference ?? '—'}</div>
-                  <div className="text-right text-copy font-medium"><MoneyText sen={r.amount} mode="exact" /></div>
-                  <div className="flex justify-end">
-                    <Button size="sm" variant="secondary" onClick={() => setEditing(r)} title={locked ? `The ${monthLabel(r.incurredOn.slice(0, 7))} statement is final, so this expense is locked.` : 'Edit this expense'}
-                      style={locked ? { color: 'var(--color-text-muted)' } : undefined}>
-                      {locked ? 'Locked' : 'Edit'}
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-            <TotalBar count={total} amount={totalAmount} />
-          </div>
-        )}
-        {view === 'list' && !firstLoad && <Pager page={page} pageSize={PAGE_SIZE} total={total} unit="expenses" onPage={p => url.set({ page: p > 1 ? p : null })} />}
-      </ListCard>
-
-      {view === 'list' && total > PAGE_SIZE && <span className="text-meta text-muted-ink">Totals cover everything the filters match, not just this page.</span>}
+            {total > (data.pageSize || size) && <div className="px-[22px] pb-3 bg-page text-meta text-muted-ink max-md:px-4">Totals cover everything the filters match, not just this page.</div>}
+          </> : null}
+        />
+      ) : (
+        <ListCard busy={loading && !!data}>
+          {firstLoad ? (
+            <div className="p-2"><TableSkeleton rows={8} cols={3} /></div>
+          ) : total === 0 ? (
+            filtered
+              ? <EmptyState bare kind="filtered" title="No expenses match these filters." action={{ label: 'Clear filters', onClick: clearFilters }} />
+              : <EmptyState bare title={monthAll ? 'No expenses yet.' : `No expenses in ${monthLabel(shownMonth)}.`} body="Add one, or step to another month." />
+          ) : (
+            <GroupedTree
+              key={`${path}#${nonce}`}
+              title="Total deductions" period={monthAll ? 'All months' : monthLabel(shownMonth)}
+              total={totalAmount} count={total}
+              cats={cat ? cats.filter(c => c.category === cat) : cats}
+              base={base} sort={sort} withEdits={withEdits} onEdit={setEditing}
+              openInList={c => url.set({ view: 'list', category: c, page: null })}
+            />
+          )}
+        </ListCard>
+      )}
 
       {creating && <ExpenseModal mode="create" fieldErrors={formFields} filters={filters} defaultBuilding={building} defaultUnit={unit} onClose={() => { setCreating(false); setFormFields({}); }} onSubmit={createExpense} />}
       {editing && (
@@ -355,15 +368,6 @@ export default function ExpensesPage() {
   );
 }
 
-function SortHead({ label, active, dir = 'desc', right, onClick }: { label: string; active: boolean; dir?: 'asc' | 'desc'; right?: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick} aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}
-      className={cx('p-0 bg-transparent border-none cursor-pointer font-sans text-meta font-semibold inline-flex items-center gap-1', right ? 'justify-end' : '', active ? 'text-ink' : 'text-muted-ink')}>
-      {label}{active && <span aria-hidden className="text-caption">{dir === 'asc' ? '▲' : '▼'}</span>}
-    </button>
-  );
-}
-
 function TotalBar({ count, amount }: { count: number; amount: number }) {
   return (
     <div className="flex items-center justify-between gap-3 py-[12px] px-[22px] bg-page text-copy font-semibold">
@@ -373,20 +377,20 @@ function TotalBar({ count, amount }: { count: number; amount: number }) {
   );
 }
 
-/** Phone row: what, where, when on the left; amount and category on the right. */
-function ExpenseCard({ e, onEdit }: { e: Expense; onEdit: () => void }) {
+/** Phone row: what, where, when on the left; amount and category on the right. Tapping it opens the edit dialog. */
+function ExpenseCard({ e }: { e: Expense }) {
   return (
-    <button onClick={onEdit} className="w-full text-left flex gap-3 items-start py-[11px] px-4 bg-card border-none [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer font-sans text-ink">
-      <div className="flex flex-col gap-[3px] min-w-0 flex-1">
+    <span className="flex gap-3 items-start text-ink">
+      <span className="flex flex-col gap-[3px] min-w-0 flex-1">
         <span className="text-copy font-medium truncate">{e.description || catLabel(e.category)}</span>
         <span className="text-meta text-muted-ink truncate">{e.propertyName} {e.unitNumber}</span>
         <span className="text-meta text-muted-ink">{dateShort(e.incurredOn)}{e.locked ? ' · locked' : ''}</span>
-      </div>
-      <div className="flex flex-col items-end gap-[5px] shrink-0">
+      </span>
+      <span className="flex flex-col items-end gap-[5px] shrink-0">
         <MoneyText sen={e.amount} mode="exact" strong className="text-copy" />
         <Badge tone={catTone(e.category)} label={catLabel(e.category)} size="sm" />
-      </div>
-    </button>
+      </span>
+    </span>
   );
 }
 
@@ -654,6 +658,7 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
             className="block w-full box-border px-3 py-[10px] border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy font-normal h-auto resize-y leading-[1.5]" />
         </LabeledField>
       </form>
+      {mode === 'edit' && expense && <div className="mt-4"><HistoryDisclosure entity="expenses" id={expense.id} /></div>}
     </Modal>
   );
 }

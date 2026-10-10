@@ -20,7 +20,8 @@ import { usePhone, SearchBox } from './finance/listKit';
 import { EmptyState } from '../components/States';
 import { SYNC } from '../lib/vocabulary';
 import { TONE, cx } from '../lib/design-tokens';
-import type { BookingChannel, SyncState } from '../lib/types';
+import type { BookingChannel, SyncState, Tone } from '../lib/types';
+import { DataTable, type Column } from '../components/DataTable';
 
 // The channels that carry an uplift over the web rate. Direct is the web rate
 // itself, so it never appears in the uplift table — only as the reference.
@@ -55,6 +56,7 @@ interface Unit {
   rates: ChannelRate[];
 }
 interface Payload { units: Unit[]; generatedAt: string }
+type RateRow = ChannelRate & { guestPays: number; weekend: number; commission: number; youKeep: number; belowFloor: boolean; syncLabel: string; syncTone: Tone };
 
 const mk = (
   unitId: string, unitNumber: string, propertyName: string,
@@ -78,9 +80,6 @@ const FALLBACK: Payload = {
 // The push range starts today (Malaysia) and runs two weeks by default; it used to be fixed dates in the past.
 const TODAY = () => todayMyt();
 const DEFAULT_TO = () => todayMyt(13);
-
-// Grid track template shared by the uplift table header and its rows.
-const COLS = 'grid-cols-[minmax(120px,1.5fr)_minmax(92px,1fr)_minmax(84px,1fr)_minmax(80px,0.9fr)_minmax(90px,1fr)_minmax(104px,1fr)]';
 
 // Money input. The original object's `font:inherit` made font-family AND font-size
 // inherit from context (12px in the date label, 16px in a rate cell). Reproduced
@@ -257,6 +256,37 @@ export default function PricingPage() {
     });
   }
 
+  const rateRows: RateRow[] = selected ? selected.rates.map(r => {
+    const guestPays = selected.baseRate + r.upliftSen;
+    const commission = COMMISSION[r.channel];
+    const youKeep = Math.round(guestPays * (1 - commission / 100));
+    const s = r.sync === 'not_connected' ? { label: 'Not connected', tone: 'neutral' as const } : SYNC[r.sync];
+    return { ...r, guestPays, weekend: weekendPrice(selected, r), commission, youKeep, belowFloor: youKeep < selected.costFloor, syncLabel: s.label, syncTone: s.tone };
+  }) : [];
+  const rateColumns: Column<RateRow>[] = [
+    { key: 'channel', label: 'Channel', type: 'channel', value: r => r.channel, hideable: false, width: 150,
+      render: r => (
+        <span className="flex items-center gap-2.5 min-w-0">
+          <ChannelMark ch={r.channel} size={20} />
+          <span className="flex flex-col min-w-0">
+            <span className="text-copy">{CH[r.channel].label}</span>
+            <span className="text-caption text-faint">{r.commission}% fee</span>
+          </span>
+        </span>
+      ) },
+    { key: 'uplift', label: 'Uplift', type: 'money', value: r => r.upliftSen, width: 110,
+      render: r => <EditableMoney sen={r.upliftSen} ariaLabel={`${CH[r.channel].label} uplift`} onCommit={s2 => selected && setUplift(selected.unitId, r.channel, s2)} /> },
+    { key: 'guestPays', label: 'Guest pays', type: 'money', value: r => r.guestPays, width: 100,
+      render: r => <span className="font-semibold tabular-nums">{rm(r.guestPays, { cents: false })}</span> },
+    { key: 'weekend', label: 'Weekend', type: 'money', value: r => r.weekend, width: 100,
+      render: r => <span className="text-muted-ink tabular-nums">{rm(r.weekend, { cents: false })}</span> },
+    { key: 'youKeep', label: 'You keep', type: 'money', value: r => r.youKeep, width: 110,
+      render: r => <span className={cx('tabular-nums', r.belowFloor ? TONE.critical.text : 'text-ink')}>{rm(r.youKeep, { cents: false })}</span>,
+      sub: r => (r.belowFloor ? <span className={cx('text-caption', TONE.critical.text)}>Below floor</span> : null) },
+    { key: 'sync', label: 'Sync', type: 'status', value: r => r.sync, status: r => ({ label: r.syncLabel, tone: r.syncTone }), width: 130,
+      render: r => <Badge tone={r.syncTone} label={r.syncLabel} size="sm" /> },
+  ];
+
   return (
     <>
       <PageHeader
@@ -355,83 +385,30 @@ export default function PricingPage() {
                 </div>
               </div>
 
-              {/* Phones: one block per channel, every figure visible, instead of a 580px table cut off at "Guest pays". */}
-              <div className="sm:hidden">
-                {selected.rates.map(r => {
-                  const guestPays = selected.baseRate + r.upliftSen;
-                  const weekend = weekendPrice(selected, r);
-                  const commission = COMMISSION[r.channel];
-                  const youKeep = Math.round(guestPays * (1 - commission / 100));
-                  const belowFloor = youKeep < selected.costFloor;
-                  const s = r.sync === 'not_connected' ? { label: 'Not connected', tone: 'neutral' as const } : SYNC[r.sync];
-                  return (
-                    <div key={r.channel} className="py-3 px-4 flex flex-col gap-2.5 [border-bottom:1px_solid_var(--color-line-soft)]">
-                      <div className="flex items-center gap-2.5">
-                        <ChannelMark ch={r.channel} size={20} />
-                        <div className="flex flex-col min-w-0 flex-1">
-                          <span className="text-copy">{CH[r.channel].label}</span>
-                          <span className="text-caption text-faint">{commission}% fee</span>
-                        </div>
-                        <Badge tone={s.tone} label={s.label} size="sm" />
-                      </div>
-                      <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-2">
-                        <div className="flex flex-col gap-0.5"><dt className="text-caption text-muted-ink">Uplift</dt>
-                          <dd className="m-0"><EditableMoney sen={r.upliftSen} ariaLabel={`${CH[r.channel].label} uplift`} onCommit={s2 => setUplift(selected.unitId, r.channel, s2)} /></dd></div>
-                        <div className="flex flex-col gap-0.5"><dt className="text-caption text-muted-ink">Guest pays</dt>
-                          <dd className="m-0 text-copy font-semibold [font-variant-numeric:tabular-nums]">{rm(guestPays, { cents: false })}</dd></div>
-                        <div className="flex flex-col gap-0.5"><dt className="text-caption text-muted-ink">Weekend</dt>
-                          <dd className="m-0 text-copy text-muted-ink [font-variant-numeric:tabular-nums]">{rm(weekend, { cents: false })}</dd></div>
-                        <div className="flex flex-col gap-0.5"><dt className="text-caption text-muted-ink">You keep</dt>
-                          <dd className={cx('m-0 text-copy [font-variant-numeric:tabular-nums]', belowFloor ? TONE.critical.text : 'text-ink')}>{rm(youKeep, { cents: false })}{belowFloor && ' · below floor'}</dd></div>
-                      </dl>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Uplift table */}
-              <div className="overflow-x-auto max-sm:hidden">
-                <div className="min-w-[580px]">
-                  <div className={cx(COLS, 'grid gap-3 py-[9px] px-5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink')}>
-                    <div>Channel</div>
-                    <div className="text-right">Uplift</div>
-                    <div className="text-right">Guest pays</div>
-                    <div className="text-right">Weekend</div>
-                    <div className="text-right">You keep</div>
-                    <div>Sync</div>
-                  </div>
-
-                  {selected.rates.map(r => {
-                    const guestPays = selected.baseRate + r.upliftSen;
-                    const weekend = weekendPrice(selected, r);
-                    const commission = COMMISSION[r.channel];
-                    const youKeep = Math.round(guestPays * (1 - commission / 100));
-                    const belowFloor = youKeep < selected.costFloor;
-                    const s = r.sync === 'not_connected' ? { label: 'Not connected', tone: 'neutral' as const } : SYNC[r.sync];
-                    return (
-                      <div key={r.channel} className={cx(COLS, 'grid gap-3 items-center min-h-[52px] py-2 px-5 [border-bottom:1px_solid_var(--color-line-soft)]')}>
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <ChannelMark ch={r.channel} size={20} />
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-copy">{CH[r.channel].label}</span>
-                            <span className="text-caption text-faint">{commission}% fee</span>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <EditableMoney sen={r.upliftSen} ariaLabel={`${CH[r.channel].label} uplift`} onCommit={s2 => setUplift(selected.unitId, r.channel, s2)} />
-                        </div>
-                        <span className="text-copy font-semibold text-right [font-variant-numeric:tabular-nums]">{rm(guestPays, { cents: false })}</span>
-                        <span className="text-copy text-right text-muted-ink [font-variant-numeric:tabular-nums]">{rm(weekend, { cents: false })}</span>
-                        <div className="flex flex-col items-end gap-0.5">
-                          <span className={cx('text-copy text-right [font-variant-numeric:tabular-nums]', belowFloor ? TONE.critical.text : 'text-ink')}>{rm(youKeep, { cents: false })}</span>
-                          {belowFloor && <span className={cx('text-caption', TONE.critical.text)}>Below floor</span>}
-                        </div>
-                        <div><Badge tone={s.tone} label={s.label} size="sm" /></div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              <DataTable<RateRow> id="pricing.channels" urlPrefix="ch." bare noViews noToolbar pageSize={0} maxHeight="none"
+                columns={rateColumns} rows={rateRows} rowKey={r => r.channel} noun={['channel', 'channels']}
+                renderCard={r => (
+                  <span className="flex flex-col gap-2.5">
+                    <span className="flex items-center gap-2.5">
+                      <ChannelMark ch={r.channel} size={20} />
+                      <span className="flex flex-col min-w-0 flex-1">
+                        <span className="text-copy">{CH[r.channel].label}</span>
+                        <span className="text-caption text-faint">{r.commission}% fee</span>
+                      </span>
+                      <Badge tone={r.syncTone} label={r.syncLabel} size="sm" />
+                    </span>
+                    <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-2">
+                      <div className="flex flex-col gap-0.5"><dt className="text-caption text-muted-ink">Uplift</dt>
+                        <dd className="m-0"><EditableMoney sen={r.upliftSen} ariaLabel={`${CH[r.channel].label} uplift`} onCommit={s2 => selected && setUplift(selected.unitId, r.channel, s2)} /></dd></div>
+                      <div className="flex flex-col gap-0.5"><dt className="text-caption text-muted-ink">Guest pays</dt>
+                        <dd className="m-0 text-copy font-semibold [font-variant-numeric:tabular-nums]">{rm(r.guestPays, { cents: false })}</dd></div>
+                      <div className="flex flex-col gap-0.5"><dt className="text-caption text-muted-ink">Weekend</dt>
+                        <dd className="m-0 text-copy text-muted-ink [font-variant-numeric:tabular-nums]">{rm(r.weekend, { cents: false })}</dd></div>
+                      <div className="flex flex-col gap-0.5"><dt className="text-caption text-muted-ink">You keep</dt>
+                        <dd className={cx('m-0 text-copy [font-variant-numeric:tabular-nums]', r.belowFloor ? TONE.critical.text : 'text-ink')}>{rm(r.youKeep, { cents: false })}{r.belowFloor && ' · below floor'}</dd></div>
+                    </dl>
+                  </span>
+                )} />
 
               <div className="py-[10px] px-5 [border-bottom:1px_solid_var(--color-line)] flex gap-4 flex-wrap text-caption text-muted-ink">
                 <span className="inline-flex items-center gap-1.5"><Tag label="SELL" kind="external" /> what the guest pays on the channel</span>

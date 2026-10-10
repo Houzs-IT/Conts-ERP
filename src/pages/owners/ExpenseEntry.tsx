@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
@@ -6,10 +6,13 @@ import { Select } from '../../components/Select';
 import { MoneyInput, DateField } from '../../components/inputs';
 import { MoneyText } from '../../components/MoneyText';
 import Icon from '../../components/Icon';
+import { DataTable, type Column } from '../../components/DataTable';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, downloadFile, notifyFailure } from '../../lib/api';
-import { monthLabel, date, todayMyt, titleCase } from '../../lib/format';
+import { isStaged, stagedToast } from '../../lib/approvals';
+import { refreshNavCounts } from '../../lib/navBadges';
+import { monthLabel, date as fmtDate, todayMyt, titleCase } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { PAYERS, PAYER_LABEL, ENTRY_CATEGORIES, CATEGORY_LABEL } from '../../lib/revenueModel';
 
@@ -75,10 +78,12 @@ export function ExpenseEntryModal({ units, defaultUnitId, month, onClose, onSave
         receiptDocumentId = (await api.post<{ id: string }>('/documents', fd)).id;
       }
       const cat = ENTRY_CATEGORIES.find(c => c.value === f.category)?.label ?? f.category;
-      await api.post('/expenses', {
+      const res = await api.post<unknown>('/expenses', {
         unitId: f.unitId, category: f.category, amount, incurredOn: f.incurredOn, chargeTo: f.chargeTo,
         description: f.description.trim() || `${cat} ${monthLabel(f.incurredOn.slice(0, 7))}`, receiptDocumentId,
       });
+      // Above the approval threshold the expense waits for a second person.
+      if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); onSaved(); onClose(); return; }
       toast({ tone: 'success', title: 'Expense recorded.', body: `${cat}, ${PAYER_LABEL[f.chargeTo]} pays.${f.chargeTo === 'owner' ? ' It goes on the owner statement.' : ' It stays off the owner statement.'}` });
       onSaved(); onClose();
     } catch (e) {
@@ -194,6 +199,23 @@ export function ExpensesCard({ title = 'Expenses recorded to units', ownerId, un
   const otherTotal = rows.filter(r => r.chargeTo !== 'owner').reduce((n, r) => n + r.amount, 0);
   const saved = () => { reload(); onChanged?.(); };
   const many = units.length > 1;
+  const columns = useMemo<Column<ExpenseRow>[]>(() => [
+    ...(many ? [{ key: 'unit', label: 'Unit', value: (r: ExpenseRow) => r.unitNumber, sub: (r: ExpenseRow) => r.propertyName, width: 110,
+      text: (r: ExpenseRow) => `${r.propertyName} ${r.unitNumber}` }] : []),
+    { key: 'description', label: 'Expense', value: r => r.description || CATEGORY_LABEL[r.category] || r.category, hideable: false, width: 200,
+      sub: r => CATEGORY_LABEL[r.category] ?? r.category },
+    { key: 'category', label: 'Category', value: r => CATEGORY_LABEL[r.category] ?? r.category, hidden: true, width: 130, filter: { kind: 'select' } },
+    { key: 'date', label: 'Date', type: 'date', value: r => r.incurredOn, width: 110 },
+    { key: 'payer', label: 'Paid by', value: r => PAYER_LABEL[r.chargeTo] ?? r.chargeTo, width: 110, filter: { kind: 'select' },
+      render: r => <span className={cx('text-meta', r.chargeTo === 'owner' ? 'text-ink font-medium' : 'text-muted-ink')}>{PAYER_LABEL[r.chargeTo] ?? r.chargeTo}</span> },
+    { key: 'reference', label: 'Reference', value: r => r.reference, hidden: true, width: 130 },
+    { key: 'amount', label: 'Amount', type: 'money', value: r => r.amount, width: 110,
+      render: r => <MoneyText sen={r.amount} mode="exact" className="text-copy font-medium" /> },
+    { key: 'receipt', label: 'Receipt', width: 80, noExport: true, sortable: false, filter: false,
+      render: r => r.receiptDocumentId
+        ? <button type="button" onClick={() => downloadFile(`/documents/${r.receiptDocumentId}/download`).catch(notifyFailure)} className="p-0 bg-transparent border-none cursor-pointer text-meta text-gold-ink underline [font:inherit]">Receipt</button>
+        : <span className="text-muted-ink">—</span> },
+  ], [many]);
   return (
     <Card>
       <div className="flex items-start justify-between gap-3 flex-wrap py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
@@ -208,31 +230,23 @@ export function ExpensesCard({ title = 'Expenses recorded to units', ownerId, un
           </div>
         )}
       </div>
-      {loading && !data ? <div className="py-4 px-5 text-copy text-muted-ink">Loading expenses…</div>
-        : error ? <div className="py-4 px-5 text-copy text-critical">{error}</div>
-        : rows.length === 0 ? <div className="py-4 px-5 text-copy text-muted-ink">No expenses recorded for {monthLabel(month)}.</div>
-        : (
-          <div>
-            {rows.map(r => (
-              <div key={r.id} className={cx('grid gap-x-3 gap-y-0.5 items-center py-[10px] px-5 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0',
-                many ? 'grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(90px,0.8fr)_minmax(0,1.6fr)_minmax(80px,0.7fr)_auto]' : 'grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1.6fr)_minmax(80px,0.7fr)_auto]')}>
-                {many && <span className="text-meta text-muted-ink truncate sm:text-copy sm:text-ink col-span-2 sm:col-span-1" title={`${r.propertyName} ${r.unitNumber}`}>{r.unitNumber}</span>}
-                <div className="flex flex-col min-w-0">
-                  <span className="text-copy truncate" title={r.description}>{r.description || CATEGORY_LABEL[r.category] || r.category}</span>
-                  <span className="text-meta text-muted-ink">
-                    {CATEGORY_LABEL[r.category] ?? r.category} · {date(r.incurredOn)}
-                    {r.receiptDocumentId && <> · <button type="button" onClick={() => downloadFile(`/documents/${r.receiptDocumentId}/download`).catch(notifyFailure)} className="p-0 bg-transparent border-none cursor-pointer text-gold-ink underline [font:inherit]">Receipt</button></>}
-                  </span>
-                </div>
-                <span className={cx('hidden sm:inline text-meta', r.chargeTo === 'owner' ? 'text-ink font-medium' : 'text-muted-ink')}>{PAYER_LABEL[r.chargeTo] ?? r.chargeTo}</span>
-                <div className="flex flex-col items-end">
-                  <MoneyText sen={r.amount} mode="exact" className="text-copy font-medium" />
-                  <span className="sm:hidden text-caption text-muted-ink">{PAYER_LABEL[r.chargeTo] ?? r.chargeTo} pays</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      <DataTable<ExpenseRow> id={ownerId ? 'owner.expenses' : 'unit.expenses'} urlPrefix="exp." bare noViews pageSize={0} maxHeight="480px"
+        columns={columns} rows={data ? rows : null} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
+        noun={['expense', 'expenses']} exportName={`Expenses ${month}`}
+        empty={{ title: `No expenses recorded for ${monthLabel(month)}.`, icon: 'Receipt' }}
+        renderCard={r => (
+          <span className="flex items-start justify-between gap-3 min-w-0">
+            <span className="flex flex-col min-w-0">
+              {many && <span className="text-meta text-muted-ink truncate">{r.unitNumber}</span>}
+              <span className="text-copy truncate" title={r.description}>{r.description || CATEGORY_LABEL[r.category] || r.category}</span>
+              <span className="text-meta text-muted-ink">{CATEGORY_LABEL[r.category] ?? r.category} · {fmtDate(r.incurredOn)}</span>
+            </span>
+            <span className="flex flex-col items-end shrink-0">
+              <MoneyText sen={r.amount} mode="exact" className="text-copy font-medium" />
+              <span className="text-caption text-muted-ink">{PAYER_LABEL[r.chargeTo] ?? r.chargeTo} pays</span>
+            </span>
+          </span>
+        )} />
       {modal === 'add' && <ExpenseEntryModal units={units} defaultUnitId={unitId} month={month} onClose={() => setModal(null)} onSaved={saved} />}
       {modal === 'utilities' && <UtilitiesModal ownerId={ownerId} unitId={unitId} month={month} onClose={() => setModal(null)} onSaved={saved} />}
     </Card>

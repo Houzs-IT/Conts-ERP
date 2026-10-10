@@ -3,6 +3,8 @@ import { requireSession } from '../../_lib/auth';
 import { PLACEHOLDER_OWNER } from '../../_lib/hostplatformImport';
 import { loadInputs, computeMonth, statementSettings, hasActivity, type UnitMonth, type Query } from '../../_lib/ownerStatement';
 import { monthEndExclusive } from '../../_lib/revenue';
+import { auditMany } from '../../_lib/history';
+import { notifyUsers } from '../../_lib/notify';
 
 /** POST /api/statements/generate { period: "2026-09" }
  *  One provisional statement per owner, built by the owner workbook's rules (functions/_lib/ownerStatement.ts):
@@ -108,6 +110,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const count = statements.length;
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'statement.generate', entityTable: 'owner_statements', entityId: period, after: { period, count, skipped } });
+  // Each statement's own History shows when it was (re)built and its figures at that point.
+  await auditMany(env, statements.map(s => ({
+    actorId: session.userId, actorLabel: session.fullName, action: 'statement.generate', entityTable: 'owner_statements', entityId: String(s.id),
+    before: existingOf.has(String(s.owner_id)) ? { state: 'provisional' } : undefined,
+    after: { period, state: 'provisional', grossBookingValue: s.gross_booking_value, managementFee: s.management_fee, expensesTotal: s.expenses_total, adjustmentsTotal: s.adjustments_total, netPayout: s.net_payout },
+  })));
+  if (count) {
+    await notifyUsers(env, 'finance', {
+      kind: 'statement.generated', title: `Owner statements for ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(period.slice(5, 7)) - 1]} ${period.slice(0, 4)} generated`,
+      body: `${count} provisional ${count === 1 ? 'statement is' : 'statements are'} ready to check${skipped ? `; ${skipped} already final were left as they are` : ''}.`,
+      link: '/finance/statements', entityTable: 'owner_statements', entityId: period, except: session.userId,
+    });
+  }
   return json({ period, count, skipped, warnings: months.reduce((n, m) => n + m.warnings.length, 0) }, 202);
 };
 

@@ -1,16 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { TONE, cx } from '../lib/design-tokens';
+import { cx } from '../lib/design-tokens';
 
 /** Product Models — model master, ported from 2990's SCM (logic) and drawn in Conts.
  *  A model groups SKUs of one design. The deep variant/allowed-options editor is a
@@ -72,6 +71,15 @@ export default function ProductModelsPage() {
     (!q || `${m.modelCode} ${m.name} ${m.branding}`.toLowerCase().includes(q)),
   );
 
+  const columns = useMemo<Column<Model>[]>(() => [
+    { key: 'code', label: 'Model code', type: 'ref', value: m => m.modelCode, hideable: false },
+    { key: 'name', label: 'Name', value: m => m.name },
+    { key: 'category', label: 'Category', value: m => m.category, text: m => CAT_LABEL[m.category], filter: { kind: 'select' },
+      render: m => <span className="inline-block text-[11px] font-semibold uppercase tracking-[0.06em] bg-[var(--color-gold-50)] text-gold-ink px-2.5 py-0.5 rounded-full">{CAT_LABEL[m.category]}</span> },
+    { key: 'branding', label: 'Branding', value: m => m.branding },
+    { key: 'status', label: 'Status', type: 'status', value: m => (m.active ? 'ACTIVE' : 'INACTIVE'), status: m => (m.active ? { label: 'Active', tone: 'success' } : { label: 'Inactive', tone: 'neutral' }) },
+  ], []);
+
   function save(d: Draft, isNew: boolean) {
     const body = { modelCode: d.modelCode.trim(), name: d.name.trim(), category: d.category, branding: d.branding.trim(), description: d.description.trim(), photoUrl: d.photoUrl.trim(), active: d.active };
     if (isNew) {
@@ -101,54 +109,24 @@ export default function ProductModelsPage() {
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyDraft(), isNew: true })}>New model</Button> : undefined}
       />
 
-      {error && <StaleBanner message={`Showing the last model list we have. ${error}`} onRetry={reload} />}
-
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">
-          <Chip label="All" active={cat === 'all'} onClick={() => setCat('all')} />
-          {CATEGORIES.map(c => <Chip key={c} label={CAT_LABEL[c]} active={cat === c} onClick={() => setCat(c)} />)}
-        </div>
-        <div className="relative">
-          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search models..." aria-label="Search models"
-            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
-        </div>
-      </div>
-
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[720px]">
-            <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-                {['Model code', 'Name', 'Category', 'Branding', 'Status'].map(h => (
-                  <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading && all.length === 0 ? (
-                <tr><td colSpan={5}><TableSkeleton rows={6} cols={5} /></td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={5}>
-                  <div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center">
-                    <span className="text-[14px] font-semibold">{q || cat !== 'all' ? 'No models match.' : 'No models yet.'}</span>
-                    <span className="text-[12.5px] text-muted-ink max-w-[380px]">{q || cat !== 'all' ? 'Clear the search or category to see the full list.' : 'A model groups the SKUs of one design — add one to start.'}</span>
-                  </div>
-                </td></tr>
-              ) : rows.map(m => (
-                <tr key={m.id} onClick={() => { if (canWrite) setDrawer({ draft: { ...m }, isNew: false }); }}
-                  className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
-                  <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{m.modelCode}</span></td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{m.name}</td>
-                  <td className="py-[13px] px-4"><span className="inline-block text-[11px] font-semibold uppercase tracking-[0.06em] bg-[var(--color-gold-50)] text-gold-ink px-2.5 py-0.5 rounded-full">{CAT_LABEL[m.category]}</span></td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{m.branding || '—'}</td>
-                  <td className="py-[13px] px-4"><ActivePill active={m.active} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Model>
+        id="scm.product-models" columns={columns} rows={data ? rows : null} rowKey={m => m.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={canWrite ? m => setDrawer({ draft: { ...m }, isNew: false }) : undefined}
+        noun={['model', 'models']} exportName="product-models"
+        toolbar={<>
+          <div className="flex gap-2 flex-wrap">
+            <Chip label="All" active={cat === 'all'} onClick={() => setCat('all')} />
+            {CATEGORIES.map(c => <Chip key={c} label={CAT_LABEL[c]} active={cat === c} onClick={() => setCat(c)} />)}
+          </div>
+          <div className="relative">
+            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search models..." aria-label="Search models"
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
+          </div>
+        </>}
+        filtered={!!q || cat !== 'all'} onClearFilters={() => { setSearch(''); setCat('all'); }}
+        empty={{ title: 'No models yet.', body: 'A model groups the SKUs of one design — add one to start.', action: canWrite ? { label: 'New model', onClick: () => setDrawer({ draft: emptyDraft(), isNew: true }) } : undefined }} />
 
       {drawer && <ModelDrawer draft={drawer.draft} isNew={drawer.isNew} onClose={() => setDrawer(null)} onSave={save}
         onDelete={drawer.isNew ? undefined : () => { const m = all.find(x => x.id === drawer.draft.id); if (m) remove(m); }} />}
@@ -165,15 +143,6 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
         active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>
       {label}
     </button>
-  );
-}
-
-function ActivePill({ active }: { active: boolean }) {
-  const t = active ? TONE.success : TONE.neutral;
-  return (
-    <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', t.bg, t.text)}>
-      <span className="w-1.5 h-1.5 rounded-full bg-current" />{active ? 'Active' : 'Inactive'}
-    </span>
   );
 }
 

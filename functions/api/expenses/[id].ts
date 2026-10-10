@@ -2,6 +2,7 @@ import { type Env, one, run, json, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isIsoDate } from '../../_lib/validate';
 import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked } from '../../_lib/expenses';
+import { approvalSettings, stage } from '../../_lib/approvals';
 
 /** PATCH /api/expenses/:id { category?, description?, amount?, incurredOn?, reference?, chargeTo? }
  *  Refused once the statement covering the expense is final, and also if the new date would land in a final statement. */
@@ -24,6 +25,20 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (!cur) return fail('NOT_FOUND', 'That expense no longer exists.', 404);
   if (await isPeriodLocked(env, cur.unit_id, cur.incurred_on)) return fail('PERIOD_LOCKED', 'The owner statement for that month is final, so this expense is locked.', 409);
   if (b.incurredOn && await isPeriodLocked(env, cur.unit_id, b.incurredOn)) return fail('PERIOD_LOCKED', 'That month\'s owner statement is already final.', 409, { incurredOn: 'This period is locked.' });
+
+  const { expenseThreshold } = await approvalSettings(env);
+  if (b.amount !== undefined && b.amount > expenseThreshold && b.amount > Number(cur.amount)) {
+    // Raising an expense above the threshold needs the same second person as adding one that size.
+    const changes = { category: b.category ?? null, description: typeof b.description === 'string' ? b.description.slice(0, 300) : null, amount: b.amount,
+      incurredOn: b.incurredOn ?? null, reference: typeof b.reference === 'string' ? b.reference : null, chargeTo: b.chargeTo ?? null };
+    const staged = await stage(env, session, {
+      kind: 'expense', entity: 'units', entityId: cur.unit_id, amount: b.amount,
+      reason: String(b.reason ?? '').trim() || `Expense raised from RM ${(Number(cur.amount) / 100).toFixed(2)} to RM ${(b.amount / 100).toFixed(2)}`,
+      summary: `Expense ${cur.category} on ${cur.incurred_on} raised from RM ${(Number(cur.amount) / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })} to RM ${(b.amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}`,
+      payload: { op: 'update', expenseId: id, unitId: cur.unit_id, changes },
+    });
+    return json(staged, 202);
+  }
 
   await run(env, `
     UPDATE expenses SET category = COALESCE(?, category), description = COALESCE(?, description), amount = COALESCE(?, amount),

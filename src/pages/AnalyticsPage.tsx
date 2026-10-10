@@ -6,11 +6,10 @@ import PageHeader from '../components/PageHeader';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import ChannelMark, { channelLabel } from '../components/ChannelMark';
 import { useApi } from '../lib/useApi';
-import { rm, rmCompact, monthLabel, fileStamp, plural, MONTHS } from '../lib/format';
-import { Button } from '../components/Button';
-import Icon from '../components/Icon';
+import { rm, rmCompact, monthLabel, plural, MONTHS } from '../lib/format';
+import { DataTable, type Column } from '../components/DataTable';
 import type { BookingChannel, Tone } from '../lib/types';
-import { useUrlState, usePhone, ListCard, SearchBox, STICKY_HEAD } from './finance/listKit';
+import { useUrlState, SearchBox } from './finance/listKit';
 import { Select } from '../components/Select';
 import { EmptyState } from '../components/States';
 
@@ -219,21 +218,6 @@ export default function AnalyticsPage() {
   const idle = d.units.filter(u => (u.nights ?? (u.revenue > 0 ? 1 : 0)) === 0).length;
   const weakest = ranked.filter(u => (u.nights ?? (u.revenue > 0 ? 1 : 0)) > 0).slice(-4).reverse();
 
-  function exportCsv() {
-    const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
-    const head = ['Building', 'Unit', 'Revenue (RM)', 'Booked nights', 'Occupancy %', 'ADR (RM)', 'RevPAR (RM)', 'Rating'];
-    const lines = [
-      `# Performance, ${RANGE_SUB[range]}${d.points.length ? ` (${monthLabel(d.points[0].period)} to ${monthLabel(d.points[d.points.length - 1].period)})` : ''}. Revenue = gross booking value, each stay split by night into the months it covers; occupancy = booked nights / nights available on listed units.`,
-      head.map(esc).join(','),
-      ...d.units.map(u => [u.propertyName, u.unitNumber, (u.revenue / 100).toFixed(2), u.nights ?? '', u.occupancy.toFixed(1), (u.adr / 100).toFixed(2), (u.revpar / 100).toFixed(2), u.rating ?? ''].map(esc).join(',')),
-    ];
-    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-    const href = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = href; a.download = `performance-${range}-${fileStamp()}.csv`; a.click();
-    URL.revokeObjectURL(href);
-  }
-
   const loading = q.loading && !q.data;
 
   return (
@@ -241,7 +225,6 @@ export default function AnalyticsPage() {
       <PageHeader
         title="Performance"
         sub={`${RANGE_SUB[range]} · revenue collected on stays that start in each month`}
-        actions={<Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportCsv} disabled={d.units.length === 0} disabledReason="Nothing to export for this range yet.">Export CSV</Button>}
       />
 
       {q.error && <StaleBanner message={`Showing the last figures we have. ${q.error}`} onRetry={q.reload} />}
@@ -345,7 +328,7 @@ export default function AnalyticsPage() {
         ))}
       </div>
 
-      <UnitTable units={d.units} metric={metric} loading={loading} />
+      <UnitTable units={d.units} metric={metric} loading={loading} range={range} />
 
       {/* Channel mix ------------------------------------------------------- */}
       <Card>
@@ -377,19 +360,11 @@ export default function AnalyticsPage() {
 
 /* --------------------------------------------------------------- pieces -- */
 
-type UnitSort = 'unit' | Metric;
-const UNIT_COLS = 'grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.7fr)]';
-
-/** Every listed unit for the window, sortable by any metric, with a building filter and a total row. */
-function UnitTable({ units, metric, loading }: { units: UnitRow[]; metric: Metric; loading: boolean }) {
+/** Every listed unit for the window, sortable and filterable by any column, with a building filter and totals. */
+function UnitTable({ units, metric, loading, range }: { units: UnitRow[]; metric: Metric; loading: boolean; range: Range }) {
   const url = useUrlState();
-  const phone = usePhone();
   const q = url.get('uq').toLowerCase();
   const building = url.get('ub');
-  const raw = url.get('usort');
-  const sortKey: UnitSort = (['unit', ...METRIC_ORDER] as string[]).includes(raw.replace(/^-/, '')) ? raw.replace(/^-/, '') as UnitSort : metric;
-  // `usort` is a key, '-' in front for largest first; none means the focused metric, largest first.
-  const asc = !!raw && !raw.startsWith('-');
 
   const buildings = useMemo(() => {
     const m = new Map<string, string>();
@@ -397,97 +372,70 @@ function UnitTable({ units, metric, loading }: { units: UnitRow[]; metric: Metri
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label }));
   }, [units]);
 
+  // Largest first by the metric in focus until someone sorts by a column.
   const rows = useMemo(() => {
-    const list = units.filter(u =>
+    const m = METRICS[metric];
+    return units.filter(u =>
       (!building || (u.buildingId ?? u.propertyName) === building) &&
-      (!q || `${u.propertyName} ${u.unitNumber}`.toLowerCase().includes(q)));
-    list.sort((a, b) => {
-      if (sortKey === 'unit') return `${a.propertyName} ${a.unitNumber}`.localeCompare(`${b.propertyName} ${b.unitNumber}`) * (asc ? 1 : -1);
-      const m = METRICS[sortKey];
-      return (m.pick(a) - m.pick(b)) * (asc ? 1 : -1) || a.unitNumber.localeCompare(b.unitNumber);
-    });
-    return list;
-  }, [units, building, q, sortKey, asc]);
+      (!q || `${u.propertyName} ${u.unitNumber}`.toLowerCase().includes(q)))
+      .sort((a, b) => m.pick(b) - m.pick(a) || a.unitNumber.localeCompare(b.unitNumber));
+  }, [units, building, q, metric]);
 
   const revenue = rows.reduce((n, u) => n + u.revenue, 0);
   const nights = rows.reduce((n, u) => n + (u.nights ?? 0), 0);
-  const sortBy = (k: UnitSort) => url.set({ usort: sortKey === k ? (asc ? `-${k}` : k) : (k === 'unit' ? k : `-${k}`) });
-  const Head = ({ k, label, right }: { k: UnitSort; label: string; right?: boolean }) => (
-    <button onClick={() => sortBy(k)} aria-sort={sortKey === k ? (asc ? 'ascending' : 'descending') : undefined}
-      className={cx('p-0 bg-transparent border-none cursor-pointer font-sans text-meta font-semibold inline-flex items-center gap-1', right ? 'justify-end' : '', sortKey === k ? 'text-ink' : 'text-muted-ink')}>
-      {label}{sortKey === k && <span aria-hidden className="text-caption">{asc ? '▲' : '▼'}</span>}
-    </button>
-  );
+  const narrowed = !!q || !!building;
+  const NUM = 'tabular-nums whitespace-nowrap';
+
+  const columns = useMemo<Column<UnitRow>[]>(() => [
+    { key: 'unit', label: 'Unit', value: u => u.unitNumber, text: u => `${u.propertyName} ${u.unitNumber}`, exportValue: u => u.unitNumber,
+      hideable: false, width: 180, sub: u => u.propertyName,
+      render: u => <span className="font-medium truncate block" title={u.unitNumber}>{u.unitNumber}</span> },
+    { key: 'building', label: 'Building', value: u => u.propertyName, hidden: true, width: 150 },
+    { key: 'revenue', label: 'Revenue', type: 'money', value: u => u.revenue, width: 120, render: u => <span className={NUM}>{rm(u.revenue, { cents: false })}</span> },
+    { key: 'nights', label: 'Booked nights', type: 'number', value: u => u.nights ?? null, hidden: true, width: 100 },
+    { key: 'occupancy', label: 'Occupancy', type: 'number', value: u => u.occupancy, width: 100, render: u => <span className={NUM}>{u.occupancy.toFixed(1)}%</span> },
+    { key: 'adr', label: 'ADR', type: 'money', value: u => u.adr, width: 100, render: u => <span className={NUM}>{rm(u.adr, { cents: false })}</span> },
+    { key: 'revpar', label: 'RevPAR', type: 'money', value: u => u.revpar, width: 100, render: u => <span className={NUM}>{rm(u.revpar, { cents: false })}</span> },
+    { key: 'rating', label: 'Rating', type: 'number', value: u => u.rating, width: 80,
+      render: u => <span className="tabular-nums text-muted-ink">{u.rating === null ? '—' : u.rating.toFixed(2)}</span> },
+  ], []);
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-end justify-between gap-3 flex-wrap">
-        <div className="flex flex-col gap-[2px]">
+    <DataTable<UnitRow>
+      id="analytics.units" columns={columns} rows={loading ? null : rows} rowKey={u => u.unitId}
+      noun={['unit', 'units']} exportName={`performance-${range}`}
+      viewParams={['uq', 'ub']} filtered={narrowed} onClearFilters={() => url.set({ uq: null, ub: null })}
+      empty={{ title: 'No listed units in this window.', icon: 'BarChart3' }}
+      header={
+        <div className="flex flex-col gap-[2px] pt-4 pb-1 px-[22px] max-md:px-4">
           <span className="text-heading font-semibold">All units</span>
           <span className="text-meta text-muted-ink">{rows.length === units.length ? plural(units.length, 'listed unit') : `${rows.length} of ${plural(units.length, 'listed unit')}`}</span>
         </div>
-        <div className="flex gap-2 flex-wrap flex-[1_1_420px] justify-end">
-          <SearchBox className="flex-[1_1_200px] max-w-[300px]" label="Search units" placeholder="Search unit" value={url.get('uq')} onChange={v => url.set({ uq: v || null })} />
-          <Select className="flex-[1_1_160px] max-w-[240px]" label="Building" value={building} onChange={v => url.set({ ub: v || null })} options={[{ value: '', label: 'All buildings' }, ...buildings]} />
+      }
+      toolbar={<>
+        <SearchBox className="flex-[1_1_200px] max-w-[300px]" label="Search units" placeholder="Search unit" value={url.get('uq')} onChange={v => url.set({ uq: v || null, page: null })} />
+        <Select className="flex-[1_1_160px] max-w-[240px]" label="Building" value={building} onChange={v => url.set({ ub: v || null, page: null })} options={[{ value: '', label: 'All buildings' }, ...buildings]} />
+      </>}
+      above={rows.length > 0 && (
+        <div className="flex items-center gap-x-5 gap-y-1 flex-wrap text-meta py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
+          <span className="font-semibold text-ink">Total · {plural(rows.length, 'unit')}</span>
+          <span><span className="text-muted-ink">Revenue </span><span className="font-semibold tabular-nums">{rm(revenue, { cents: false })}</span></span>
+          <span title="Revenue divided by booked nights"><span className="text-muted-ink">ADR </span><span className="font-semibold tabular-nums">{nights ? rm(Math.round(revenue / nights), { cents: false }) : '—'}</span></span>
         </div>
-      </div>
-      <ListCard>
-        {loading ? <TableSkeleton rows={8} cols={phone ? 2 : 6} /> : rows.length === 0 ? (
-          units.length === 0
-            ? <EmptyState bare title="No listed units in this window." />
-            : <EmptyState bare kind="filtered" title="No units match these filters." action={{ label: 'Clear filters', onClick: () => url.set({ uq: null, ub: null }) }} />
-        ) : phone ? (
-          <div>
-            {rows.map(u => (
-              <div key={u.unitId} className="flex items-center gap-3 py-[10px] px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
-                <div className="flex flex-col gap-[2px] min-w-0 flex-1">
-                  <span className="text-copy font-medium truncate">{u.unitNumber}</span>
-                  <span className="text-meta text-muted-ink truncate">{u.propertyName} · {u.occupancy.toFixed(1)}% occupied</span>
-                </div>
-                <div className="flex flex-col items-end gap-[2px] shrink-0">
-                  <span className="text-copy font-semibold tabular-nums">{METRICS[metric].full(METRICS[metric].pick(u))}</span>
-                  <span className="text-caption text-muted-ink">{METRICS[metric].label}</span>
-                </div>
-              </div>
-            ))}
-            <div className="flex items-center justify-between py-3 px-4 bg-page text-copy font-semibold">
-              <span>Total revenue</span><span className="tabular-nums">{rm(revenue, { cents: false })}</span>
-            </div>
-          </div>
-        ) : (
-          <div role="table" aria-label="Units">
-            <div role="row" className={cx('grid', UNIT_COLS, 'gap-[14px] px-5 py-[9px]', STICKY_HEAD)}>
-              <Head k="unit" label="Unit" />
-              <Head k="revenue" label="Revenue" right />
-              <Head k="occupancy" label="Occupancy" right />
-              <Head k="adr" label="ADR" right />
-              <Head k="revpar" label="RevPAR" right />
-              <div className="text-right">Rating</div>
-            </div>
-            {rows.map(u => (
-              <div role="row" key={u.unitId} className={cx('grid', UNIT_COLS, 'gap-[14px] items-center min-h-[46px] px-5 py-[6px] [border-bottom:1px_solid_var(--color-line-soft)] text-copy')}>
-                <div className="flex flex-col gap-px min-w-0">
-                  <span className="font-medium truncate" title={u.unitNumber}>{u.unitNumber}</span>
-                  <span className="text-meta text-muted-ink truncate" title={u.propertyName}>{u.propertyName}</span>
-                </div>
-                <span className="text-right tabular-nums whitespace-nowrap">{rm(u.revenue, { cents: false })}</span>
-                <span className="text-right tabular-nums whitespace-nowrap">{u.occupancy.toFixed(1)}%</span>
-                <span className="text-right tabular-nums whitespace-nowrap">{rm(u.adr, { cents: false })}</span>
-                <span className="text-right tabular-nums whitespace-nowrap">{rm(u.revpar, { cents: false })}</span>
-                <span className="text-right tabular-nums text-muted-ink">{u.rating === null ? '—' : u.rating.toFixed(2)}</span>
-              </div>
-            ))}
-            <div className={cx('grid', UNIT_COLS, 'gap-[14px] items-center px-5 py-[11px] bg-page text-copy font-semibold')}>
-              <span>Total · {plural(rows.length, 'unit')}</span>
-              <span className="text-right tabular-nums whitespace-nowrap">{rm(revenue, { cents: false })}</span>
-              <span />
-              <span className="text-right tabular-nums whitespace-nowrap" title="Revenue divided by booked nights">{nights ? rm(Math.round(revenue / nights), { cents: false }) : '—'}</span>
-              <span /><span />
-            </div>
-          </div>
-        )}
-      </ListCard>
-    </div>
+      )}
+      renderCard={u => (
+        <span className="flex items-center gap-3">
+          <span className="flex flex-col gap-[2px] min-w-0 flex-1">
+            <span className="text-copy font-medium truncate">{u.unitNumber}</span>
+            <span className="text-meta text-muted-ink truncate">{u.propertyName} · {u.occupancy.toFixed(1)}% occupied</span>
+          </span>
+          <span className="flex flex-col items-end gap-[2px] shrink-0">
+            <span className="text-copy font-semibold tabular-nums">{METRICS[metric].full(METRICS[metric].pick(u))}</span>
+            <span className="text-caption text-muted-ink">{METRICS[metric].label}</span>
+          </span>
+        </span>
+      )}
+    />
   );
 }
 

@@ -1,18 +1,17 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, ApiFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { date } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
+import { cx } from '../lib/design-tokens';
 
 /** Stock Transfers — move stock between warehouses; posts TRANSFER_OUT/IN movements. */
 
@@ -37,6 +36,14 @@ export default function StockTransfersPage() {
 
   const rows = useMemo(() => [...added, ...(data?.data ?? [])].map(t => ({ ...t, ...edits[t.id] })), [added, data, edits]);
 
+  const columns = useMemo<Column<Transfer>[]>(() => [
+    { key: 'transfer', label: 'Transfer', type: 'ref', value: t => t.transferNumber, hideable: false },
+    { key: 'from', label: 'From', value: t => t.fromName },
+    { key: 'to', label: 'To', value: t => t.toName },
+    { key: 'date', label: 'Date', type: 'date', value: t => t.transferDate || null },
+    { key: 'status', label: 'Status', type: 'status', value: t => t.status, status: t => t.status === 'POSTED' ? { label: 'Posted', tone: 'success' } : { label: 'Cancelled', tone: 'neutral' } },
+  ], []);
+
   function created(t: Transfer) { setAdded(a => [t, ...a]); toast({ tone: 'success', title: 'Stock transferred.', body: t.transferNumber }); setDrawer(null); }
   function cancel(t: Transfer) { setEdits(e => ({ ...e, [t.id]: { ...e[t.id], status: 'CANCELLED' } })); api.patch(`/stock-transfers/${t.id}`, { status: 'CANCELLED' }).catch(notifyFailure); toast({ tone: 'success', title: 'Transfer cancelled.', body: t.transferNumber }); setDrawer(null); }
 
@@ -44,29 +51,12 @@ export default function StockTransfersPage() {
     <>
       <PageHeader title="Stock transfers" sub={`${rows.length} transfers · between warehouses`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New transfer</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last transfer list we have. ${error}`} onRetry={reload} />}
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[680px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-              {['Transfer', 'From', 'To', 'Date', 'Status'].map(h => <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && rows.length === 0 ? <tr><td colSpan={5}><TableSkeleton rows={5} cols={5} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={5}><div className="py-[38px] px-[22px] text-center text-[14px] font-semibold">No stock transfers yet.</div></td></tr>
-              : rows.map(t => (
-                <tr key={t.id} onClick={() => setDrawer({ mode: 'view', t })} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
-                  <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{t.transferNumber}</td>
-                  <td className="py-[13px] px-4 text-[13px]">{t.fromName}</td>
-                  <td className="py-[13px] px-4 text-[13px]">{t.toName}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{t.transferDate ? date(t.transferDate) : '—'}</td>
-                  <td className="py-[13px] px-4"><span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', t.status === 'POSTED' ? cx(TONE.success.bg, TONE.success.text) : cx(TONE.neutral.bg, TONE.neutral.text))}><span className="w-1.5 h-1.5 rounded-full bg-current" />{t.status === 'POSTED' ? 'Posted' : 'Cancelled'}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Transfer>
+        id="scm.stock-transfers" columns={columns} rows={data ? rows : null} rowKey={t => t.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={t => setDrawer({ mode: 'view', t })}
+        noun={['transfer', 'transfers']} exportName="stock-transfers"
+        empty={{ title: 'No stock transfers yet.', body: 'Move stock from one warehouse to another.', action: canWrite ? { label: 'New transfer', onClick: () => setDrawer({ mode: 'new' }) } : undefined }} />
       {drawer?.mode === 'new' && <CreateDrawer warehouses={warehouses} canWrite={canWrite} onClose={() => setDrawer(null)} onCreated={created} />}
       {drawer?.mode === 'view' && <ViewDrawer t={drawer.t} canWrite={canWrite} onClose={() => setDrawer(null)} onCancel={cancel} />}
     </>
@@ -154,17 +144,21 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
   );
 }
 
+const lineColumns: Column<Line & { i: number }>[] = [
+  { key: 'item', label: 'Item', value: l => l.description || l.itemCode, sub: l => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px]">{l.itemCode}</span>, hideable: false },
+  { key: 'qty', label: 'Qty', type: 'number', value: l => l.qty },
+];
+
 function ViewDrawer({ t, canWrite, onClose, onCancel }: { t: Transfer; canWrite: boolean; onClose: () => void; onCancel: (t: Transfer) => void }) {
   return (
     <Drawer open onClose={onClose} width={620}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{t.transferNumber}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="text-[13px]"><span className="text-muted-ink">{t.fromName}</span> → <span className="text-muted-ink">{t.toName}</span> · {t.transferDate ? date(t.transferDate) : ''}</div>
-        <div className="overflow-x-auto border border-solid border-line rounded-card">
-          <table className="w-full border-collapse min-w-[360px]">
-            <thead><tr className="bg-muted">{['Item', 'Qty'].map((th, i) => <th key={th} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i === 1 ? 'text-right' : 'text-left')}>{th}</th>)}</tr></thead>
-            <tbody>{(t.lines ?? []).map((l, i) => (<tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]"><td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description || l.itemCode}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td><td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.qty}</td></tr>))}</tbody>
-          </table>
+        <div className="border border-solid border-line rounded-card overflow-hidden">
+          <DataTable<Line & { i: number }> id="scm.stock-transfers.lines" urlPrefix="lines." bare noViews noToolbar pageSize={0}
+            columns={lineColumns} rows={(t.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)}
+            noun={['line', 'lines']} exportName={`${t.transferNumber}-lines`} empty={{ title: 'No lines.' }} />
         </div>
       </div>
       <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">

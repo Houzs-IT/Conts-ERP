@@ -1,16 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { TONE, cx } from '../lib/design-tokens';
 
 /** Racks & Bins — ported from 2990's SCM (warehouse_racks), drawn in Conts. Rack/bin location
  *  master inside a warehouse. */
@@ -46,6 +44,14 @@ export default function RacksBinsPage() {
   const q = search.trim().toLowerCase();
   const rows = all.filter(r => (whFilter === 'all' || r.warehouseId === whFilter) && (!q || `${r.rack} ${r.position}`.toLowerCase().includes(q)));
 
+  const columns = useMemo<Column<Rack>[]>(() => [
+    { key: 'rack', label: 'Rack / bin', type: 'ref', value: r => r.rack, hideable: false },
+    { key: 'warehouse', label: 'Warehouse', value: r => r.warehouseName || r.warehouseCode, filter: { kind: 'select' } },
+    { key: 'position', label: 'Position', value: r => r.position },
+    { key: 'reserved', label: 'Reserved', type: 'status', align: 'center', width: 120, value: r => (r.reserved ? 'Reserved' : 'Not reserved'), status: r => (r.reserved ? { label: 'Reserved', tone: 'warning' } : null) },
+    { key: 'status', label: 'Status', type: 'status', value: r => r.status, status: r => (r.status === 'ACTIVE' ? { label: 'Active', tone: 'success' } : { label: 'Inactive', tone: 'neutral' }) },
+  ], []);
+
   function save(draft: Rack, isNew: boolean) {
     const wh = warehouses.find(w => w.id === draft.warehouseId);
     const withWh = { ...draft, warehouseCode: wh?.code ?? draft.warehouseCode, warehouseName: wh?.name ?? draft.warehouseName };
@@ -59,48 +65,27 @@ export default function RacksBinsPage() {
     <>
       <PageHeader title="Racks & bins" sub={`${all.length} rack locations`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyRack(warehouses[0]?.id ?? ''), isNew: true })}>New rack</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last racks we have. ${error}`} onRetry={reload} />}
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex items-center gap-2.5">
-          <label className="text-[12px] font-medium text-muted-ink">Warehouse</label>
-          <select value={whFilter} onChange={e => setWhFilter(e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
-            <option value="all">All warehouses</option>
-            {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}
-          </select>
-        </div>
-        <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search rack / position..." aria-label="Search racks"
-          className="h-9 box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[220px] max-w-full" />
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[680px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-              {['Rack / bin', 'Warehouse', 'Position', 'Reserved', 'Status'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 3 ? 'text-center' : 'text-left')}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={5}><TableSkeleton rows={6} cols={5} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={5}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || whFilter !== 'all' ? 'No racks match.' : 'No racks yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Map out the rack and bin locations in each warehouse.</span></div></td></tr>
-              : rows.map(r => (
-                <tr key={r.id} onClick={() => { if (canWrite) setDrawer({ draft: r, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
-                  <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{r.rack}</span></td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{r.warehouseName || r.warehouseCode || '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink">{r.position || '—'}</td>
-                  <td className="py-[13px] px-4 text-center">{r.reserved ? <span className={cx('inline-flex items-center text-[11.5px] font-semibold px-2 py-0.5 rounded-full', TONE.warning.bg, TONE.warning.text)}>Reserved</span> : <span className="text-muted-ink">—</span>}</td>
-                  <td className="py-[13px] px-4"><StatusPill active={r.status === 'ACTIVE'} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Rack>
+        id="scm.racks-bins" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={canWrite ? r => setDrawer({ draft: r, isNew: false }) : undefined}
+        noun={['rack', 'racks']} exportName="racks-bins"
+        toolbar={<>
+          <div className="flex items-center gap-2.5">
+            <label className="text-[12px] font-medium text-muted-ink">Warehouse</label>
+            <select value={whFilter} onChange={e => setWhFilter(e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
+              <option value="all">All warehouses</option>
+              {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}
+            </select>
+          </div>
+          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search rack / position..." aria-label="Search racks"
+            className="h-9 box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[220px] max-w-full" />
+        </>}
+        filtered={!!q || whFilter !== 'all'} onClearFilters={() => { setSearch(''); setWhFilter('all'); }}
+        empty={{ title: 'No racks yet.', body: 'Map out the rack and bin locations in each warehouse.', action: canWrite ? { label: 'New rack', onClick: () => setDrawer({ draft: emptyRack(warehouses[0]?.id ?? ''), isNew: true }) } : undefined }} />
       {drawer && <RackDrawer draft={drawer.draft} isNew={drawer.isNew} warehouses={warehouses} onClose={() => setDrawer(null)} onSave={save} onDelete={drawer.isNew ? undefined : () => remove(drawer.draft)} />}
     </>
   );
-}
-
-function StatusPill({ active }: { active: boolean }) {
-  const t = active ? TONE.success : TONE.neutral;
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', t.bg, t.text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{active ? 'Active' : 'Inactive'}</span>;
 }
 
 function RackDrawer({ draft, isNew, warehouses, onClose, onSave, onDelete }: { draft: Rack; isNew: boolean; warehouses: Wh[]; onClose: () => void; onSave: (d: Rack, isNew: boolean) => void; onDelete?: () => void }) {

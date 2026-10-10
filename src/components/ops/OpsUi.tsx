@@ -3,6 +3,7 @@ import { Button } from '../Button';
 import Icon from '../Icon';
 import { cx } from '../../lib/design-tokens';
 import { api, ApiFailure } from '../../lib/api';
+import { MONTHS, weekdayDay, dateShort } from '../../lib/format';
 
 /* ---------- small pieces shared by Cleaning, Maintenance, Today and the field app ---------- */
 
@@ -47,10 +48,11 @@ export function TimeLeft({ at, now, done }: { at: string | null | undefined; now
 export const hm = (iso: string | null | undefined) => iso
   ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuala_Lumpur' }) : '';
 /** "Sat 10 Oct" for a YYYY-MM-DD day. */
-export const dayLabel = (day: string) => new Date(`${day}T00:00:00+08:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' });
+// Built from format.ts, not Intl: en-GB now prints "Sept", which the date rules do not allow.
+export const dayLabel = (day: string) => `${weekdayDay(day)} ${MONTHS[Number(day.slice(5, 7)) - 1]}`;
 /** "10 Oct 14:00" from an ISO instant. */
 export const stamp = (iso: string | null | undefined) => iso
-  ? `${new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' })} ${hm(iso)}` : '';
+  ? `${dateShort(iso)} ${hm(iso)}` : '';
 /** YYYY-MM-DD in Malaysia, offset by days. */
 export const mytDay = (offset = 0) => new Date(Date.now() + 8 * 3600e3 + offset * 864e5).toISOString().slice(0, 10);
 

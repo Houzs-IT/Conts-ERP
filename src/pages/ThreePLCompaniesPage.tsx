@@ -1,17 +1,16 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { TONE, cx } from '../lib/design-tokens';
+import { cx } from '../lib/design-tokens';
 
 /** 3PL Companies — ported from 2990's SCM, drawn in Conts. Third-party logistics providers
  *  that drivers/vehicles can belong to. A master. */
@@ -46,6 +45,15 @@ export default function ThreePLCompaniesPage() {
   const q = search.trim().toLowerCase();
   const rows = all.filter(c => (filter === 'all' || (filter === 'active') === c.isActive) && (!q || `${c.code} ${c.name} ${c.contactName}`.toLowerCase().includes(q)));
 
+  const columns = useMemo<Column<ThreePl>[]>(() => [
+    { key: 'code', label: 'Code', type: 'ref', value: c => c.code, hideable: false },
+    { key: 'name', label: 'Name', value: c => c.name },
+    { key: 'contact', label: 'Contact', value: c => c.contactName },
+    { key: 'phone', label: 'Phone', value: c => c.contactPhone || c.officePhone },
+    { key: 'email', label: 'Email', value: c => c.email },
+    { key: 'status', label: 'Status', type: 'status', value: c => (c.isActive ? 'active' : 'inactive'), status: c => (c.isActive ? { label: 'Active', tone: 'success' } : { label: 'Inactive', tone: 'neutral' }) },
+  ], []);
+
   function save(draft: ThreePl, isNew: boolean) {
     if (isNew) { setAdded(a => [T({ ...draft, id: `tpl-new-${crypto.randomUUID().slice(0, 8)}` }), ...a]); api.post('/threepl-companies', draft).catch(notifyFailure); toast({ tone: 'success', title: '3PL company added.', body: `${draft.code} ${draft.name}` }); }
     else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...draft } })); api.patch(`/threepl-companies/${draft.id}`, draft).catch(notifyFailure); toast({ tone: 'success', title: '3PL company updated.', body: `${draft.code} ${draft.name}` }); }
@@ -57,40 +65,23 @@ export default function ThreePLCompaniesPage() {
     <>
       <PageHeader title="3PL companies" sub={`${all.length} providers · ${all.filter(c => c.isActive).length} active`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: T({ id: '', code: '', name: '' }), isNew: true })}>New company</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last 3PL list we have. ${error}`} onRetry={reload} />}
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">
-          {(['all', 'active', 'inactive'] as const).map(f => <Chip key={f} label={f === 'all' ? 'All' : f === 'active' ? 'Active' : 'Inactive'} active={filter === f} onClick={() => setFilter(f)} />)}
-        </div>
-        <div className="relative">
-          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search 3PL companies..." aria-label="Search 3PL companies"
-            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
-        </div>
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[720px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-              {['Code', 'Name', 'Contact', 'Phone', 'Email', 'Status'].map((h) => <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={6}><TableSkeleton rows={6} cols={6} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={6}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || filter !== 'all' ? 'No companies match.' : 'No 3PL companies yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Add the third-party couriers and hauliers you dispatch through.</span></div></td></tr>
-              : rows.map(c => (
-                <tr key={c.id} onClick={() => { if (canWrite) setDrawer({ draft: c, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
-                  <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{c.code}</span></td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{c.name}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{c.contactName || '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums">{c.contactPhone || c.officePhone || '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink">{c.email || '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill active={c.isActive} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<ThreePl>
+        id="scm.threepl-companies" columns={columns} rows={data ? rows : null} rowKey={c => c.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={canWrite ? c => setDrawer({ draft: c, isNew: false }) : undefined}
+        noun={['company', 'companies']} exportName="3pl-companies"
+        toolbar={<>
+          <div className="flex gap-2 flex-wrap">
+            {(['all', 'active', 'inactive'] as const).map(f => <Chip key={f} label={f === 'all' ? 'All' : f === 'active' ? 'Active' : 'Inactive'} active={filter === f} onClick={() => setFilter(f)} />)}
+          </div>
+          <div className="relative">
+            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search 3PL companies..." aria-label="Search 3PL companies"
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
+          </div>
+        </>}
+        filtered={!!q || filter !== 'all'} onClearFilters={() => { setSearch(''); setFilter('all'); }}
+        empty={{ title: 'No 3PL companies yet.', body: 'Add the third-party couriers and hauliers you dispatch through.', action: canWrite ? { label: 'New company', onClick: () => setDrawer({ draft: T({ id: '', code: '', name: '' }), isNew: true }) } : undefined }} />
       {drawer && <ThreePlDrawer draft={drawer.draft} isNew={drawer.isNew} onClose={() => setDrawer(null)} onSave={save} onDelete={drawer.isNew ? undefined : () => remove(drawer.draft)} />}
     </>
   );
@@ -98,10 +89,6 @@ export default function ThreePLCompaniesPage() {
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-function StatusPill({ active }: { active: boolean }) {
-  const t = active ? TONE.success : TONE.neutral;
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', t.bg, t.text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{active ? 'Active' : 'Inactive'}</span>;
 }
 
 function ThreePlDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: ThreePl; isNew: boolean; onClose: () => void; onSave: (d: ThreePl, isNew: boolean) => void; onDelete?: () => void }) {

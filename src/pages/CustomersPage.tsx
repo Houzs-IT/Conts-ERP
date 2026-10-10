@@ -1,18 +1,17 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { MoneyInput, PhoneInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
+import { cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 
 /** Customers (debtors) — sell-side counterpart of Suppliers, drawn in Conts. Money sen. */
@@ -58,6 +57,16 @@ export default function CustomersPage() {
   const q = search.trim().toLowerCase();
   const rows = all.filter(c => (statusFilter === 'all' || c.status === statusFilter) && (!q || `${c.code} ${c.name} ${c.contactPerson}`.toLowerCase().includes(q)));
 
+  const columns = useMemo<Column<Customer>[]>(() => [
+    { key: 'code', label: 'Code', type: 'ref', value: c => c.code, hideable: false },
+    { key: 'name', label: 'Name', value: c => c.name },
+    { key: 'contact', label: 'Contact', value: c => c.contactPerson },
+    { key: 'phone', label: 'Phone', value: c => c.phone },
+    { key: 'terms', label: 'Terms', value: c => c.paymentTerms },
+    { key: 'credit', label: 'Credit limit', type: 'money', value: c => c.creditLimitSen, render: c => c.creditLimitSen ? <span className="tabular-nums">{rm(c.creditLimitSen, { cents: false })}</span> : <span className="text-muted-ink">—</span> },
+    { key: 'status', label: 'Status', type: 'status', value: c => c.status, status: c => ({ label: STATUS_LABEL[c.status], tone: STATUS_TONE[c.status] }) },
+  ], []);
+
   function save(draft: Draft, isNew: boolean) {
     const { creditLimitSen, ...rest } = draft;
     const body = { ...rest, creditLimitSen: creditLimitSen ?? 0 };
@@ -71,39 +80,21 @@ export default function CustomersPage() {
     <>
       <PageHeader title="Customers" sub={`${all.length} customers · ${all.filter(c => c.status === 'ACTIVE').length} active`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyDraft(), isNew: true })}>New customer</Button> : undefined} />
-      {error && <StaleBanner message={`Showing the last customer list we have. ${error}`} onRetry={reload} />}
-      <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap"><Chip label="All" active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />{STATUSES.map(s => <Chip key={s} label={STATUS_LABEL[s]} active={statusFilter === s} onClick={() => setStatusFilter(s)} />)}</div>
-        <div className="relative">
-          <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-          <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customers..." aria-label="Search customers"
-            className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
-        </div>
-      </div>
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[760px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
-              {['Code', 'Name', 'Contact', 'Phone', 'Terms', 'Credit limit', 'Status'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 5 ? 'text-right' : 'text-left')}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading && all.length === 0 ? <tr><td colSpan={7}><TableSkeleton rows={6} cols={7} /></td></tr>
-              : rows.length === 0 ? <tr><td colSpan={7}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No customers match.' : 'No customers yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Add the customers you sell to.</span></div></td></tr>
-              : rows.map(c => (
-                <tr key={c.id} onClick={() => { if (canWrite) setDrawer({ draft: toDraft(c), isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
-                  <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{c.code}</span></td>
-                  <td className="py-[13px] px-4 text-[13.5px]">{c.name}</td>
-                  <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{c.contactPerson || '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums">{c.phone || '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{c.paymentTerms || '—'}</td>
-                  <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{c.creditLimitSen ? rm(c.creditLimitSen, { cents: false }) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={c.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable<Customer>
+        id="customers" columns={columns} rows={data ? rows : null} rowKey={c => c.id}
+        loading={loading} error={error} onRetry={reload} pageSize={0}
+        onRowClick={canWrite ? c => setDrawer({ draft: toDraft(c), isNew: false }) : undefined}
+        noun={['customer', 'customers']} exportName="customers"
+        toolbar={<>
+          <div className="flex gap-2 flex-wrap"><Chip label="All" active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />{STATUSES.map(s => <Chip key={s} label={STATUS_LABEL[s]} active={statusFilter === s} onClick={() => setStatusFilter(s)} />)}</div>
+          <div className="relative">
+            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
+            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customers..." aria-label="Search customers"
+              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
+          </div>
+        </>}
+        filtered={!!q || statusFilter !== 'all'} onClearFilters={() => { setSearch(''); setStatusFilter('all'); }}
+        empty={{ title: 'No customers yet.', body: 'Add the customers you sell to.', action: canWrite ? { label: 'New customer', onClick: () => setDrawer({ draft: emptyDraft(), isNew: true }) } : undefined }} />
       {drawer && <CustomerDrawer draft={drawer.draft} isNew={drawer.isNew} onClose={() => setDrawer(null)} onSave={save} onDelete={drawer.isNew ? undefined : () => { const c = all.find(x => x.id === drawer.draft.id); if (c) remove(c); }} />}
     </>
   );
@@ -111,10 +102,6 @@ export default function CustomersPage() {
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-function StatusPill({ status }: { status: Status }) {
-  const t = STATUS_TONE[status];
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}</span>;
 }
 
 function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Draft; isNew: boolean; onClose: () => void; onSave: (d: Draft, isNew: boolean) => void; onDelete?: () => void }) {
