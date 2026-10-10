@@ -67,8 +67,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     window.location.hash = '/';
   };
 
-  /** Always resolves. The server returns the same body whether or not the
-   *  account exists, so the UI must not branch on the result. */
+  /** Throws with the server's plain-language reason when no reset email went out (no account, switched off,
+   *  too many requests, email not set up); the login screen shows that message. */
   const requestReset = async (email: string) => {
     await api.post('/auth/forgot-password', { email });
   };
