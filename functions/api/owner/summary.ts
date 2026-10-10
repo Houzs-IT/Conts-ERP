@@ -33,13 +33,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (st) {
     const lines = await all<any>(env, 'SELECT * FROM statement_lines WHERE statement_id = ? ORDER BY sort_order', st.id);
     if (lines.length) {
-      const fee = lines.find(l => l.line_type === 'management_fee');
+      // One fee line per unit: the owner sees their total, so a second unit's share is never dropped.
+      const fees = lines.filter(l => l.line_type === 'management_fee');
+      const fee = fees.length ? {
+        label: fees.length === 1 ? String(fees[0].description).replace(/ (\d+(\.\d+)?)%$/, ' · $1%') : `To operator · ${fees.length} units`,
+        amount: -Math.abs(fees.reduce((n, l) => n + Number(l.amount), 0)),
+      } : null;
       const costs = lines.filter(l => l.line_type === 'expense');
       const byCategory = new Map<string, any[]>();
       for (const c of costs) byCategory.set(c.category ?? 'other', [...(byCategory.get(c.category ?? 'other') ?? []), c]);
       grossToNet = [
         { label: 'Gross booking value', amount: Number(st.gross_booking_value), type: 'gross' },
-        ...(fee ? [{ label: String(fee.description).replace(/ (\d+(\.\d+)?)%$/, ' · $1%'), amount: -Math.abs(Number(fee.amount)), type: 'fee' }] : []),
+        ...(fee ? [{ ...fee, type: 'fee' }] : []),
         ...[...byCategory.entries()].map(([cat, list]) => list.length === 1
           ? { label: `${CATEGORY_LABEL[cat] ?? 'Other'} · ${list[0].description}`, amount: -Math.abs(Number(list[0].amount)), type: 'expense', ...(list[0].reference ? { reference: list[0].reference } : {}) }
           : { label: `${CATEGORY_LABEL[cat] ?? 'Other'} · ${list.length} items`, amount: -list.reduce((n, l) => n + Math.abs(Number(l.amount)), 0), type: 'expense' }),
