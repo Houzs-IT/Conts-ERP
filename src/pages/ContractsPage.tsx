@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { color } from '../theme';
 import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/Badge';
+import { HistoryDisclosure } from '../components/RecordHistory';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { Field } from '../components/Field';
@@ -387,6 +388,7 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
       </div>
       <Field label="Renews on" type="date" value={renewsOn} onChange={e => setRenewsOn(e.target.value)} help="Optional. Used as the end date when no end date is recorded." />
       <OfferLetterField value={offerLetter} onChange={setOfferLetter} />
+      {existing && <HistoryDisclosure entity="owner_contracts" id={existing.id} />}
     </Modal>
   );
 }

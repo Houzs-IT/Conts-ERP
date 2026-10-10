@@ -21,6 +21,7 @@ import { fetchAllPages } from '../lib/export';
 import { cx } from '../lib/design-tokens';
 import { rm, plural } from '../lib/format';
 import type { Tone } from '../lib/types';
+import { HistoryDisclosure } from '../components/RecordHistory';
 import {
   Chip, CLEAN_STATUS, KIND_LABEL, TimeLeft, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton,
   MediaGrid, MediaDrop, uploadTo, Checklist, ReportDamageModal, dayLabel, hm, stamp, minutesLabel, mytDay,
@@ -57,6 +58,7 @@ interface Detail {
   access: { id: string; kind: string; label: string; instruction: string; masked: string; hasCode: boolean }[]; mayReveal: boolean;
   cost: { amount: number; source: 'unit' | 'history' | 'default'; charged: boolean } | null;
   damage: { id: string; title: string; state: string; reportedAt: string }[];
+  day?: string | null;
 }
 
 type Tab = 'board' | 'history';
@@ -129,6 +131,24 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const ready = rows.filter(r => r.status === 'ready').length;
   const sel = rows.find(r => r.id === selected) ?? null;
   useEffect(() => { if (selected && data && !rows.some(r => r.id === selected)) setSelected(null); }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ?task=<id> (from a notification): open that clean on its own day.
+  const [params, setParams] = useSearchParams();
+  const linkedTask = params.get('task');
+  useEffect(() => {
+    if (!linkedTask) return;
+    let live = true;
+    api.get<{ day: string | null }>(`/housekeeping/tasks/${encodeURIComponent(linkedTask)}`).then(t => {
+      if (!live) return;
+      if (t.day) {
+        if (t.day === mytDay(0)) setPick('today'); else if (t.day === mytDay(1)) setPick('tomorrow'); else { setPick('pick'); setPicked(t.day); }
+      }
+      setSelected(linkedTask);
+    }).catch(() => {}).finally(() => {
+      if (live) setParams(p => { const n = new URLSearchParams(p); n.delete('task'); return n; }, { replace: true });
+    });
+    return () => { live = false; };
+  }, [linkedTask]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function act(key: string, fn: () => Promise<unknown>, ok: { title: string; body?: string }) {
     setBusy(key);
@@ -438,6 +458,8 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
         </p>
       )}
       {done && row.completedAt && <p className="m-0 text-meta text-muted-ink">Completed {stamp(row.completedAt)}.</p>}
+
+      <HistoryDisclosure entity="tasks" id={row.id} refreshKey={data} />
 
       {damage && (
         <ReportDamageModal unitId={row.unitId} unitLabel={unitLabel} taskId={row.id} onClose={() => setDamage(false)}

@@ -9,7 +9,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change owner fees.', 403);
 
   const id = String(params.id);
-  const owner = await one<{ id: string; display_name: string }>(env, 'SELECT id, display_name FROM owners WHERE id = ?', id);
+  const owner = await one<{ id: string; display_name: string; default_management_fee_pct: number | null }>(env, 'SELECT id, display_name, default_management_fee_pct FROM owners WHERE id = ?', id);
   if (!owner) return fail('NOT_FOUND', 'That owner no longer exists.', 404);
 
   const b = await request.json<any>().catch(() => null);
@@ -24,7 +24,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   }
 
   await run(env, 'UPDATE owners SET default_management_fee_pct = ?, updated_at = ? WHERE id = ?', pct, nowIso(), id);
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'owner.update', entityTable: 'owners', entityId: id, after: { defaultManagementFeePct: pct } });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'owner.update', entityTable: 'owners', entityId: id, before: { defaultManagementFeePct: owner.default_management_fee_pct == null ? null : Number(owner.default_management_fee_pct) }, after: { defaultManagementFeePct: pct } });
   return json({ ok: true, defaultManagementFeePct: pct });
 };
 

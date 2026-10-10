@@ -3,6 +3,7 @@ import type { Session } from './auth';
 import { findClash, clashResponseBody } from './reservations';
 import { channexConfigured } from './channex';
 import { channexMappingFor, syncAvailabilityIfLinked } from './channexSync';
+import { bookingNotice } from './notices';
 
 /**
  * Booking status: which moves are allowed, who may make them, and what each one does.
@@ -225,6 +226,7 @@ export async function applyMove(env: Env, session: Session & { manage?: boolean 
     actorId: session.userId, actorLabel: session.fullName, action: 'reservation.status', entityTable: 'reservations', entityId: id,
     before: { state: cur.state }, after: { state: target, ...(why ? { reason: why } : {}), ...(effects.tasksRemoved ? { tasksRemoved: effects.tasksRemoved } : {}) },
   });
+  if (target === 'cancelled' || target === 'no_show' || target === 'checked_out') await bookingNotice(env, id, target, session.userId);
   return { id, state: target, effects };
 }
 

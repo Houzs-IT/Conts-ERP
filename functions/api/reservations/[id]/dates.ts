@@ -4,6 +4,7 @@ import { findClash, clashResponseBody } from '../../../_lib/reservations';
 import { syncAvailabilityIfLinked, channexMappingFor } from '../../../_lib/channexSync';
 import { channexConfigured } from '../../../_lib/channex';
 import { dayLabel } from '../../../_lib/bookingLifecycle';
+import { bookingNotice } from '../../../_lib/notices';
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 /** States whose dates can still move. A finished, cancelled or no-show stay is history. */
@@ -56,6 +57,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     before: { checkIn: cur.check_in, checkOut: cur.check_out, ...(gross != null ? { grossBookingValue: Number(cur.gross_booking_value) } : {}) },
     after: { checkIn: b.checkIn, checkOut: b.checkOut, ...(gross != null ? { grossBookingValue: gross } : {}) },
   });
+  if (cur.state !== 'inquiry') await bookingNotice(env, id, 'dates', session.userId, { from: { checkIn: cur.check_in, checkOut: cur.check_out } });
 
   // A live stay holds its nights on the channels; an inquiry does not hold dates, so there is nothing to move.
   let channel: 'queued' | 'not_linked' | 'failed' | null = null;

@@ -87,8 +87,8 @@ export async function saveContract(env: Env, unitId: string, ownerId: string, c:
   return id;
 }
 
-export async function auditUnit(env: Env, session: Session, action: string, unitId: string, after: unknown) {
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action, entityTable: 'units', entityId: unitId, after });
+export async function auditUnit(env: Env, session: Session, action: string, unitId: string, after: unknown, before?: unknown) {
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action, entityTable: 'units', entityId: unitId, before, after });
 }
 
 export { all };

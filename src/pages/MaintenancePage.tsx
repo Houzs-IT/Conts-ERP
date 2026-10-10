@@ -22,6 +22,7 @@ import {
   type ChipTone, type MediaItem,
 } from '../components/ops/OpsUi';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
+import { HistoryDisclosure } from '../components/RecordHistory';
 
 /* ---------- the API's shape (functions/api/maintenance/issues.ts) ---------- */
 
@@ -462,6 +463,8 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
           </div>
         </div>
       )}
+
+      <HistoryDisclosure entity="maintenance_issues" id={i.id} refreshKey={i} />
 
       {windowOpen && <WindowModal issue={i} onClose={() => setWindowOpen(false)} onDone={(n) => { setWindowOpen(false); toast({ tone: n ? 'warning' : 'success', title: 'Repair window added.', body: n ? `It overlaps ${n} ${n === 1 ? 'stay' : 'stays'}. Make sure the guest agreed.` : 'No guest is in the unit then.' }); refresh(); }} />}
       {blockOpen && <BlockModal issue={i} onClose={() => setBlockOpen(false)} onDone={() => { setBlockOpen(false); toast({ tone: 'success', title: 'Unit blocked.', body: 'The dates are off sale on the calendar until the repair is done.' }); refresh(); }} />}

@@ -1,6 +1,7 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { CATEGORIES, URGENCIES, ASSIGNEE_KINDS, CHARGE_TO, approvalThreshold, needsApproval } from '../../../_lib/maintenance';
+import { repairNotice } from '../../../_lib/notices';
 
 /** PATCH /api/maintenance/issues/:id — any of:
  *   { assigneeId | assigneeName, assigneeKind }  the technician or contractor (a NAME: outside vendors are not accounts)
@@ -83,5 +84,6 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   await run(env, `UPDATE maintenance_issues SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...args, now, id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: name !== undefined ? 'maintenance.assign' : 'maintenance.edit', entityTable: 'maintenance_issues', entityId: id, before, after });
+  if (name !== undefined && after.assignee !== before.assignee) await repairNotice(env, id, 'assigned', session.userId);
   return json({ ok: true, state });
 };

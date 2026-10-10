@@ -23,6 +23,7 @@ import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fm
 import { Select, Menu } from '../components/Select';
 import { Chip as FilterChip } from './finance/listKit';
 import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } from '../lib/types';
+import { RecordHistory } from '../components/RecordHistory';
 
 /* ------------------------------------------------------------------ */
 /* Model                                                               */
@@ -536,6 +537,8 @@ function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, o
           ))
         )}
       </div>
+
+      <RecordHistory entity="guests" id={g.id} refreshKey={g} />
     </>
   );
 }

@@ -2,6 +2,7 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
 import { CLEAN_KINDS_SQL, LIVE_STAY_SQL } from '../../_lib/cleaning';
+import { bookingNotice } from '../../_lib/notices';
 
 /** POST /api/housekeeping/guest-left { taskId } | { reservationId } | { taskId, undo: true }
  *  The departing guest has gone: the clean shows "Guest out, ready to clean" at once. A booking still Checked in
@@ -80,5 +81,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'task.guest_left', entityTable: 'tasks', entityId: task.id, after: { guestLeftAt: leftAt, reservationId: reservation?.id ?? null, checkedOut, created }, source: field ? 'field_app' : 'web' });
+  // Whoever has the clean, and operations, learn the unit is free to clean (once per booking or clean).
+  if (reservation) await bookingNotice(env, reservation.id, 'checked_out', session.userId);
   return json({ ok: true, taskId: task.id, guestLeftAt: leftAt, bookingCheckedOut: checkedOut, cleanCreated: created });
 };

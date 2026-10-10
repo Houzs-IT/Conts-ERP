@@ -31,6 +31,7 @@ import ContractTab, { ModelChip } from './units/ContractTab';
 import { ExpensesCard } from './owners/ExpenseEntry';
 import { todayMyt } from '../lib/format';
 import { PROPERTIES_FALLBACK, DETAIL_FALLBACK, mkUnit } from './units/fallback';
+import { RecordHistory } from '../components/RecordHistory';
 import {
   READY_TONE, TASK_TONE, COND_TONE, MASTER_ROLES, STATES, cap,
   type Unit, type Building, type PropertiesPayload, type UnitDetail, type RosterRow,
@@ -57,7 +58,7 @@ const CHARGE_LABEL: Record<string, string> = { owner: 'Owner', guest_deposit: 'G
 const TABS = [
   ['overview', 'Overview', 'Overview'], ['details', 'Details', 'Details and owner'], ['contract', 'Contract', 'Contract and documents'],
   ['access', 'Access', 'Access and keys'], ['reservations', 'Bookings', 'Bookings'], ['operations', 'Housekeeping', 'Cleaning, maintenance and fit-out'],
-  ['financials', 'Financials', 'Financials'], ['activity', 'Activity', 'Activity'],
+  ['financials', 'Financials', 'Financials'], ['activity', 'History', 'History of changes'],
 ] as const;
 type Tab = typeof TABS[number][0];
 const isTab = (t: string | null): t is Tab => TABS.some(([k]) => k === t);
@@ -553,15 +554,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       )}
 
       {shown === 'activity' && (
-        <Card>
-          <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
-            <span className="text-heading font-semibold">Activity</span>
-            <span className="text-meta text-muted-ink">Who did what, when, and from where. Read straight from the audit trail.</span>
-          </div>
-          <DataTable<ActivityRow> id="unit.activity" urlPrefix="act." bare noViews pageSize={0} maxHeight="none"
-            columns={ACTIVITY_COLUMNS} rows={d.activity} rowKey={a => `${a.occurredAt}|${a.actorLabel}|${a.action}`}
-            noun={['event', 'events']} exportName={`${stem}-activity`} empty={{ title: 'Nothing recorded yet.', icon: 'History' }} />
-        </Card>
+        <RecordHistory key={u.id} entity="units" id={u.id} refreshKey={d}
+          also={u.contract?.id ? [['owner_contracts', u.contract.id]] : undefined} />
       )}
     </>
   );
@@ -570,7 +564,6 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 type TaskRow = UnitDetail['tasks'][number];
 type JobRow = UnitDetail['maintenance'][number];
 type ItemRow = UnitDetail['inventory'][number];
-type ActivityRow = UnitDetail['activity'][number];
 
 const TASK_COLUMNS: Column<TaskRow>[] = [
   { key: 'title', label: 'Task', value: t => t.title, hideable: false, width: 220 },
@@ -607,9 +600,3 @@ const ITEM_COLUMNS: Column<ItemRow>[] = [
     render: i => <span className="tabular-nums whitespace-nowrap">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span> },
 ];
 
-const ACTIVITY_COLUMNS: Column<ActivityRow>[] = [
-  { key: 'who', label: 'Who', type: 'person', value: a => a.actorLabel, hideable: false, width: 180 },
-  { key: 'action', label: 'Action', value: a => a.action.replace(/[._]/g, ' '), width: 200 },
-  { key: 'source', label: 'From', value: a => a.source.replace(/_/g, ' '), width: 130 },
-  { key: 'when', label: 'When', type: 'datetime', value: a => a.occurredAt, width: 160 },
-];

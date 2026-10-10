@@ -5,6 +5,7 @@ import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { Dialog, type DialogSpec } from '../components/Dialog';
+import { HistoryDrawer } from '../components/RecordHistory';
 import { useToast } from '../components/Toast';
 import { Select } from '../components/Select';
 import { MoneyText, moneyString } from '../components/MoneyText';
@@ -74,6 +75,13 @@ export default function PayoutsPage() {
 
   const [confirm, setConfirm] = useState<{ payout: Payout; kind: 'retry' | 'paid' } | null>(null);
   const [bulkPaid, setBulkPaid] = useState<{ rows: Payout[]; clear: () => void } | null>(null);
+  const [historyOf, setHistoryOf] = useState<Payout | null>(null);
+  const historyButton = (r: Payout) => (
+    <button type="button" onClick={() => setHistoryOf(r)} aria-label={`History of the payout to ${titleCase(r.ownerName)}`} title="History"
+      className="w-8 h-8 flex-none grid place-items-center rounded-control border border-solid border-line bg-card text-muted-ink cursor-pointer hover:bg-muted hover:text-ink">
+      <Icon name="History" size="sm" />
+    </button>
+  );
   const [busy, setBusy] = useState(false);
   const [runOpen, setRunOpen] = useState(false);
 
@@ -156,16 +164,17 @@ export default function PayoutsPage() {
     { key: 'status', label: 'Status', type: 'status', value: r => r.state, width: 120,
       status: r => ({ label: PAYOUT[r.state].label, tone: PAYOUT[r.state].tone }) },
     { key: 'failure', label: 'Failure reason', value: r => r.failureReason, hidden: true, width: 220 },
-    { key: 'action', label: 'Action', width: 130, align: 'right', noExport: true, sortable: false, filter: false,
+    { key: 'action', label: 'Action', width: 170, align: 'right', noExport: true, sortable: false, filter: false,
       render: r => (
-        <span className="flex justify-end" onClick={e => e.stopPropagation()}>
+        <span className="flex justify-end items-center gap-2" onClick={e => e.stopPropagation()}>
           {r.state === 'failed' && <Button size="sm" variant="primary" onClick={() => setConfirm({ payout: r, kind: 'retry' })}>Try again</Button>}
           {r.state === 'processing' && <Button size="sm" variant="secondary" onClick={() => setConfirm({ payout: r, kind: 'paid' })}>Mark paid</Button>}
           {r.state === 'pending' && <span className="text-caption text-muted-ink">In the next run</span>}
           {r.state === 'paid' && <span className="text-caption text-faint">Settled</span>}
+          {historyButton(r)}
         </span>
       ) },
-  ], []);
+  ], []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const spec: DialogSpec | null = bulkPaid
     ? {
@@ -250,6 +259,7 @@ export default function PayoutsPage() {
             <span className="flex flex-col items-end gap-[5px] shrink-0">
               <MoneyText sen={r.amount} mode="exact" strong className="text-copy" />
               <Badge tone={PAYOUT[r.state].tone} label={PAYOUT[r.state].label} size="sm" />
+              <span onClick={e => e.stopPropagation()}>{historyButton(r)}</span>
             </span>
           </span>
         )}
@@ -262,6 +272,8 @@ export default function PayoutsPage() {
       />
 
       <Dialog spec={spec} busy={busy} onClose={() => { if (!busy) { setConfirm(null); setBulkPaid(null); } }} />
+      <HistoryDrawer onClose={() => setHistoryOf(null)}
+        target={historyOf && { entity: 'payouts', id: historyOf.id, title: `Payout to ${titleCase(historyOf.ownerName)}`, sub: `${moneyString(historyOf.amount, 'exact')}${historyOf.period ? ` · ${monthLabel(historyOf.period)} statement` : ''}` }} />
       {runOpen && <RunDialog onClose={() => setRunOpen(false)} onDone={() => { setRunOpen(false); reload(); runs.reload(); void refreshNavCounts(); }} />}
     </>
   );
