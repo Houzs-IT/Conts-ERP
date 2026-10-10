@@ -3,6 +3,7 @@ import { Search, Plus, Trash2, X } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -11,15 +12,14 @@ import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
+import { statusLabel } from '../lib/status';
 
 /** Purchase Orders — ported from 2990's SCM (core priced document), drawn in Conts.
  *  Header + priced lines + status flow. Money is integer sen; the form takes RM. */
 
 type Status = 'SUBMITTED' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CANCELLED';
-const STATUS_LABEL: Record<Status, string> = { SUBMITTED: 'Submitted', PARTIALLY_RECEIVED: 'Partly received', RECEIVED: 'Received', CANCELLED: 'Cancelled' };
-const STATUS_TONE: Record<Status, Tone> = { SUBMITTED: 'info', PARTIALLY_RECEIVED: 'warning', RECEIVED: 'success', CANCELLED: 'neutral' };
 const FILTERS: (Status | 'all')[] = ['all', 'SUBMITTED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED'];
 
 interface Line { id?: string; itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; discountSen: number; lineTotalSen: number; receivedQty?: number }
@@ -120,7 +120,7 @@ export default function PurchaseOrdersPage() {
 
       <div className="flex items-center justify-between gap-5 flex-wrap">
         <div className="flex gap-2 flex-wrap">
-          {FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}
+          {FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('purchase_order', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}
         </div>
         <div className="relative">
           <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
@@ -133,7 +133,7 @@ export default function PurchaseOrdersPage() {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[820px]">
             <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
                 {['PO number', 'Supplier', 'PO date', 'Expected', 'Status', 'Total'].map((h, i) => (
                   <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 5 ? 'text-right' : 'text-left')}>{h}</th>
                 ))}
@@ -150,12 +150,12 @@ export default function PurchaseOrdersPage() {
                   </div>
                 </td></tr>
               ) : rows.map(p => (
-                <tr key={p.id} onClick={() => openExisting(p)} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
+                <tr key={p.id} onClick={() => openExisting(p)} className="[border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-muted">
                   <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{p.poNumber}</span></td>
                   <td className="py-[13px] px-4"><div className="flex flex-col"><span className="text-[13.5px]">{p.supplierName}</span><span className="text-[11.5px] text-muted-ink">{p.supplierCode}</span></div></td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.poDate ? date(p.poDate) : '—'}</td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.expectedAt ? date(p.expectedAt) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={p.status} /></td>
+                  <td className="py-[13px] px-4"><StatusBadge entity="purchase_order" value={p.status} /></td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{rm(p.totalSen)}</td>
                 </tr>
               ))}
@@ -191,10 +191,6 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
         active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>
   );
 }
-function StatusPill({ status }: { status: Status }) {
-  const t = STATUS_TONE[status];
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}</span>;
-}
 
 /* ---------- editor / viewer drawer ---------- */
 
@@ -229,7 +225,7 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <div className="flex items-center gap-3">
           <h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New purchase order' : po.poNumber}</h2>
-          {!isNew && <StatusPill status={po.status} />}
+          {!isNew && <StatusBadge entity="purchase_order" value={po.status} />}
         </div>
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
@@ -268,7 +264,7 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
               </tr></thead>
               <tbody>
                 {lines.map((l, i) => (
-                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
                     <td className="p-1.5"><CellInput value={l.itemCode} onChange={v => setLine(i, 'itemCode', v)} disabled={!editable} w="130px" /></td>
                     <td className="p-1.5"><CellInput value={l.description} onChange={v => setLine(i, 'description', v)} disabled={!editable} w="100%" /></td>
                     <td className="p-1.5"><CellInput value={l.uom} onChange={v => setLine(i, 'uom', v)} disabled={!editable} w="70px" /></td>
@@ -276,7 +272,7 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
                     <td className="p-1.5"><CellInput value={l.unitPrice} onChange={v => setLine(i, 'unitPrice', v)} disabled={!editable} w="96px" right num /></td>
                     <td className="p-1.5"><CellInput value={l.discount} onChange={v => setLine(i, 'discount', v)} disabled={!editable} w="90px" right num /></td>
                     <td className="p-1.5 text-right tabular-nums text-[13px] whitespace-nowrap">{rm(lineTotal(l))}</td>
-                    <td className="p-1.5 text-center">{editable && <button onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} aria-label="Remove line" className="text-muted-ink hover:text-[var(--color-critical-fg)] bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button>}</td>
+                    <td className="p-1.5 text-center">{editable && <button onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} aria-label="Remove line" className="text-muted-ink hover:text-danger bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button>}</td>
                   </tr>
                 ))}
                 {lines.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-[12.5px] text-muted-ink">No lines yet.</td></tr>}
@@ -298,9 +294,9 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
         </div>
       </div>
 
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <div>{!isNew && canWrite && po.status !== 'CANCELLED' && po.status !== 'RECEIVED' &&
-          <Button size="sm" variant="danger" onClick={() => onCancelPo(po)}>Cancel PO</Button>}</div>
+          <ConfirmButton confirm={{ title: `Cancel ${po.poNumber}?`, body: 'It is marked Cancelled and can no longer receive goods.', meta: po.supplierName, confirmLabel: 'Cancel PO', cancelLabel: 'Keep PO' }} onConfirm={() => onCancelPo(po)}>Cancel PO</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
           {editable && <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a supplier and add at least one line" onClick={submit}>{isNew ? 'Raise PO' : 'Save'}</Button>}

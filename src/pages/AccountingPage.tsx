@@ -54,17 +54,17 @@ export default function AccountingPage() {
         <div className="overflow-x-auto">
           {tab === 'ap' ? (
             <table className="w-full border-collapse min-w-[560px]">
-              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
                 {['Supplier', 'Open invoices', 'Overdue', 'Outstanding'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i >= 1 ? 'text-right' : 'text-left')}>{h}</th>)}
               </tr></thead>
               <tbody>
                 {loading ? <tr><td colSpan={4}><TableSkeleton rows={4} cols={4} /></td></tr>
                 : d.payables.length === 0 ? <tr><td colSpan={4}><div className="py-[38px] text-center text-[14px] font-semibold">Nothing owed to suppliers.</div></td></tr>
                 : d.payables.map(p => (
-                  <tr key={p.code} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                  <tr key={p.code} className="[border-bottom:1px_solid_var(--color-line-soft)]">
                     <td className="py-[13px] px-4"><div className="flex flex-col"><span className="text-[13.5px]">{p.name}</span><span className="text-[11.5px] text-muted-ink">{p.code}</span></div></td>
                     <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{p.invoices}</td>
-                    <td className={cx('py-[13px] px-4 text-right tabular-nums text-[13px]', p.overdue ? 'text-[var(--color-critical-fg)] font-semibold' : 'text-muted-ink')}>{p.overdue || '—'}</td>
+                    <td className={cx('py-[13px] px-4 text-right tabular-nums text-[13px]', p.overdue ? 'text-danger font-semibold' : 'text-muted-ink')}>{p.overdue || '—'}</td>
                     <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{rm(p.outstandingSen)}</td>
                   </tr>
                 ))}
@@ -72,17 +72,17 @@ export default function AccountingPage() {
             </table>
           ) : (
             <table className="w-full border-collapse min-w-[560px]">
-              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
                 {['Customer', 'Open invoices', 'Overdue', 'Outstanding'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i >= 1 ? 'text-right' : 'text-left')}>{h}</th>)}
               </tr></thead>
               <tbody>
                 {loading ? <tr><td colSpan={4}><TableSkeleton rows={4} cols={4} /></td></tr>
                 : d.receivables.length === 0 ? <tr><td colSpan={4}><div className="py-[38px] text-center text-[14px] font-semibold">Nothing owed by customers.</div></td></tr>
                 : d.receivables.map(r => (
-                  <tr key={r.name} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                  <tr key={r.name} className="[border-bottom:1px_solid_var(--color-line-soft)]">
                     <td className="py-[13px] px-4 text-[13.5px]">{r.name}</td>
                     <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{r.invoices}</td>
-                    <td className={cx('py-[13px] px-4 text-right tabular-nums text-[13px]', r.overdue ? 'text-[var(--color-critical-fg)] font-semibold' : 'text-muted-ink')}>{r.overdue || '—'}</td>
+                    <td className={cx('py-[13px] px-4 text-right tabular-nums text-[13px]', r.overdue ? 'text-danger font-semibold' : 'text-muted-ink')}>{r.overdue || '—'}</td>
                     <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{rm(r.outstandingSen)}</td>
                   </tr>
                 ))}

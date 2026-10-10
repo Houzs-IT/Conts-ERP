@@ -3,6 +3,7 @@ import { Search, Plus, Trash2 } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -11,15 +12,15 @@ import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
+import { statusLabel } from '../lib/status';
+import { PhoneText } from '../components/PhoneText';
 
 /** Customers (debtors) — sell-side counterpart of Suppliers, drawn in Conts. Money sen. */
 
 type Status = 'ACTIVE' | 'INACTIVE' | 'BLOCKED';
 const STATUSES: Status[] = ['ACTIVE', 'INACTIVE', 'BLOCKED'];
-const STATUS_LABEL: Record<Status, string> = { ACTIVE: 'Active', INACTIVE: 'Inactive', BLOCKED: 'Blocked' };
-const STATUS_TONE: Record<Status, Tone> = { ACTIVE: 'success', INACTIVE: 'neutral', BLOCKED: 'critical' };
 
 interface Customer {
   id: string; code: string; name: string; status: Status; contactPerson: string; phone: string; email: string;
@@ -74,7 +75,7 @@ export default function CustomersPage() {
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyDraft(), isNew: true })}>New customer</Button> : undefined} />
       {error && <StaleBanner message={`Showing the last customer list we have. ${error}`} onRetry={reload} />}
       <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap"><Chip label="All" active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />{STATUSES.map(s => <Chip key={s} label={STATUS_LABEL[s]} active={statusFilter === s} onClick={() => setStatusFilter(s)} />)}</div>
+        <div className="flex gap-2 flex-wrap"><Chip label="All" active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />{STATUSES.map(s => <Chip key={s} label={statusLabel('customer', s)} active={statusFilter === s} onClick={() => setStatusFilter(s)} />)}</div>
         <div className="relative">
           <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
           <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customers..." aria-label="Search customers"
@@ -84,21 +85,21 @@ export default function CustomersPage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[760px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['Code', 'Name', 'Contact', 'Phone', 'Terms', 'Credit limit', 'Status'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 5 ? 'text-right' : 'text-left')}>{h}</th>)}
             </tr></thead>
             <tbody>
               {loading && all.length === 0 ? <tr><td colSpan={7}><TableSkeleton rows={6} cols={7} /></td></tr>
               : rows.length === 0 ? <tr><td colSpan={7}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No customers match.' : 'No customers yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Add the customers you sell to.</span></div></td></tr>
               : rows.map(c => (
-                <tr key={c.id} onClick={() => { if (canWrite) setDrawer({ draft: toDraft(c), isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
+                <tr key={c.id} onClick={() => { if (canWrite) setDrawer({ draft: toDraft(c), isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
                   <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{c.code}</span></td>
                   <td className="py-[13px] px-4 text-[13.5px]">{c.name}</td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{c.contactPerson || '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums">{c.phone || '—'}</td>
+                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums"><PhoneText value={c.phone} whatsapp={false} /></td>
                   <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{c.paymentTerms || '—'}</td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{c.creditLimitSen ? rm(c.creditLimitSen, { cents: false }) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={c.status} /></td>
+                  <td className="py-[13px] px-4"><StatusBadge entity="customer" value={c.status} /></td>
                 </tr>
               ))}
             </tbody>
@@ -113,10 +114,6 @@ export default function CustomersPage() {
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
 }
-function StatusPill({ status }: { status: Status }) {
-  const t = STATUS_TONE[status];
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}</span>;
-}
 
 function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Draft; isNew: boolean; onClose: () => void; onSave: (d: Draft, isNew: boolean) => void; onDelete?: () => void }) {
   const [f, setF] = useState<Draft>(draft);
@@ -129,7 +126,7 @@ function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
         <Section title="Identity">
           <Field label="Code" placeholder="e.g. CUST-VJ" value={f.code} onChange={set('code')} />
           <Field label="Name" value={f.name} onChange={set('name')} />
-          <Sel label="Status" value={f.status} onChange={set('status')} options={STATUSES.map(s => ({ value: s, label: STATUS_LABEL[s] }))} />
+          <Sel label="Status" value={f.status} onChange={set('status')} options={STATUSES.map(s => ({ value: s, label: statusLabel('customer', s) }))} />
           <Field label="Type" placeholder="Individual / Company" value={f.customerType} onChange={set('customerType')} />
         </Section>
         <Section title="Contact">
@@ -148,8 +145,8 @@ function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
           <div className="col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
         </Section>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete customer ${draft.name}?`, body: 'It is deleted for good and drops off the customer list.', confirmLabel: 'Delete customer', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name first" onClick={() => onSave(f, isNew)}>{isNew ? 'Create customer' : 'Save'}</Button>

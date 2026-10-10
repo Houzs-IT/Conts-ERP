@@ -4,6 +4,7 @@
  * result. Mutations never retry; reads may be wrapped by `useCachedJson`.
  */
 import { z } from 'zod';
+import { friendlyMessage } from './api';
 
 export class FetchJsonError extends Error {
   constructor(public status: number, message: string, public body?: unknown) {
@@ -19,9 +20,11 @@ export async function fetchJson<T>(url: string, schema: z.ZodType<T>, init?: Req
     ...init,
   });
   const text = await res.text();
-  const body = text ? JSON.parse(text) : null;
+  let body: unknown = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = null; }
   if (!res.ok) {
-    throw new FetchJsonError(res.status, (body as any)?.error?.message ?? 'Request failed. Please try again.', body);
+    const e = (body as { error?: { code?: string; message?: string } } | null)?.error;
+    throw new FetchJsonError(res.status, friendlyMessage(res.status, e?.code, e?.message), body);
   }
   return schema.parse(body);
 }

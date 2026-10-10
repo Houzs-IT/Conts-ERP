@@ -2,18 +2,19 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 're
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import PermissionsChart from '../components/PermissionsChart';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Select } from '../components/Select';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
-import { api, ApiFailure } from '../lib/api';
+import { api, ApiFailure, errorMessage } from '../lib/api';
 import { count, date, plural } from '../lib/format';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone, UserRole } from '../lib/types';
+import { PhoneText } from '../components/PhoneText';
 
 /* ------------------------------------------------------------------ *
  * Users and roles — three tabs (routes.json → SYSTEM → UsersPage):
@@ -75,11 +76,11 @@ const LIST_COLS_CLASS = 'grid-cols-[minmax(180px,1.6fr)_minmax(180px,1.4fr)_150p
 // the border so it does not change the card geometry). Static per-tone literals so
 // the JIT scanner sees each class.
 const ORG_ACCENT: Record<Tone, string> = {
-  success:  '[box-shadow:inset_3px_0_0_var(--color-success-line,#16845B)]',
-  warning:  '[box-shadow:inset_3px_0_0_var(--color-warning-line,#B7791F)]',
-  critical: '[box-shadow:inset_3px_0_0_var(--color-critical-line,#C2413B)]',
-  info:     '[box-shadow:inset_3px_0_0_var(--color-info-line,#2E6DA4)]',
-  neutral:  '[box-shadow:inset_3px_0_0_var(--color-neutral-line,#C7C1B6)]',
+  success:  '[box-shadow:inset_3px_0_0_var(--color-success-line)]',
+  warning:  '[box-shadow:inset_3px_0_0_var(--color-warning-line)]',
+  critical: '[box-shadow:inset_3px_0_0_var(--color-critical-line)]',
+  info:     '[box-shadow:inset_3px_0_0_var(--color-info-line)]',
+  neutral:  '[box-shadow:inset_3px_0_0_var(--color-neutral-line)]',
 };
 
 /** Local modal shell — the shared Dialog is confirmation-only, so form-bearing
@@ -102,7 +103,7 @@ function Modal({ title, sub, onClose, children, footer, width = 460 }: {
           {sub && <p className="m-0 text-copy leading-[1.5] text-muted-ink">{sub}</p>}
         </div>
         <div className="py-4 px-[22px]">{children}</div>
-        <div className="py-3.5 px-[22px] [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page flex justify-end gap-2 flex-wrap sticky bottom-0">{footer}</div>
+        <div className="py-3.5 px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-2 flex-wrap sticky bottom-0">{footer}</div>
       </div>
     </div>
   );
@@ -160,7 +161,7 @@ export default function UsersPage() {
       resetInvite();
     } catch (err) {
       if (err instanceof ApiFailure && err.fields) setFieldErrors(err.fields);
-      toast({ tone: 'critical', title: 'The invitation was not sent.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'The invitation was not sent.', body: errorMessage(err, 'Try again in a moment.') });
       setBusy(false);
     }
   }
@@ -191,7 +192,7 @@ export default function UsersPage() {
       else toast({ tone: 'warning', title: 'Invitation queued, not yet delivered.', body: res.reason ?? 'It will send shortly.' });
       setEditing(null);
     } catch (err) {
-      toast({ tone: 'critical', title: 'Could not re-send the invitation.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Could not re-send the invitation.', body: errorMessage(err, 'Try again in a moment.') });
     } finally {
       setBusy(false);
     }
@@ -206,7 +207,7 @@ export default function UsersPage() {
       const res = await api.post<{ link: string; expiresAt: string; email: string }>(`/users/${editing.id}/reset-link`, {});
       setResetLink(res);
     } catch (err) {
-      toast({ tone: 'critical', title: 'Could not make a reset link.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Could not make a reset link.', body: errorMessage(err, 'Try again in a moment.') });
     } finally {
       setBusy(false);
     }
@@ -244,7 +245,7 @@ export default function UsersPage() {
       setEditing(null);
     } catch (err) {
       if (err instanceof ApiFailure && err.fields) setEditErrors(err.fields);
-      toast({ tone: 'critical', title: `${editing.fullName} was not updated.`, body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: `${editing.fullName} was not updated.`, body: errorMessage(err, 'Try again in a moment.') });
     }
     setBusy(false);
   }
@@ -281,7 +282,7 @@ export default function UsersPage() {
       if (changed) reload();
       setOrgOpen(false);
     } catch (err) {
-      toast({ tone: 'critical', title: 'Reporting line was not saved.', body: err instanceof Error ? err.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Reporting line was not saved.', body: errorMessage(err, 'Try again in a moment.') });
     }
     setBusy(false);
   }
@@ -305,7 +306,7 @@ export default function UsersPage() {
         )}
       />
 
-      <div role="tablist" aria-label="Users and roles sections" className="flex shrink-0 gap-1 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] overflow-x-auto mt-0.5">
+      <div role="tablist" aria-label="Users and roles sections" className="flex shrink-0 gap-1 [border-bottom:1px_solid_var(--color-line)] overflow-x-auto mt-0.5">
         {tabs.map(t => {
           const on = tab === t.key;
           return (
@@ -316,7 +317,7 @@ export default function UsersPage() {
               onClick={() => setTab(t.key)}
               className={cx(
                 'px-1.5 py-3 mr-4 bg-transparent border-none cursor-pointer font-sans text-copy whitespace-nowrap',
-                on ? 'font-semibold text-ink [box-shadow:inset_0_-2px_0_var(--color-gold,#C8A46A)]' : 'font-normal text-muted-ink',
+                on ? 'font-semibold text-ink [box-shadow:inset_0_-2px_0_var(--color-gold)]' : 'font-normal text-muted-ink',
               )}
             >{t.label}</button>
           );
@@ -328,7 +329,7 @@ export default function UsersPage() {
       {/* ------------------------------ Users tab ------------------------------ */}
       {tab === 'users' && (
         <Card>
-          <div className="py-3 px-5 [border-bottom:1px_solid_var(--color-line,#DEDAD3)] flex items-center justify-between gap-3 flex-wrap">
+          <div className="py-3 px-5 [border-bottom:1px_solid_var(--color-line)] flex items-center justify-between gap-3 flex-wrap">
             <span className="text-meta text-muted-ink">Role sets what a person can do. The reporting line is separate — see the organisation chart.</span>
           </div>
           {/* Phones: one stacked row per person instead of a 940px table that hides role and status off-screen. */}
@@ -344,7 +345,7 @@ export default function UsersPage() {
                   <span className="flex flex-col gap-1 min-w-0 flex-1">
                     <span className="text-copy font-medium truncate" title={u.fullName}>{u.fullName}</span>
                     <span className="text-meta text-muted-ink truncate" title={u.email}>{u.email}</span>
-                    <span className="flex items-center gap-1.5 flex-wrap"><Badge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /><Badge tone={s.tone} label={s.label} size="sm" /></span>
+                    <span className="flex items-center gap-1.5 flex-wrap"><StatusBadge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /><StatusBadge tone={s.tone} label={s.label} size="sm" /></span>
                   </span>
                 </button>
               );
@@ -352,7 +353,7 @@ export default function UsersPage() {
           </div>
           <div className="overflow-x-auto max-sm:hidden">
             <div className="min-w-[940px]">
-              <div className={cx('grid', LIST_COLS_CLASS, 'gap-3.5 py-2.5 px-5 bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-meta font-semibold text-muted-ink')}>
+              <div className={cx('grid', LIST_COLS_CLASS, 'gap-3.5 py-2.5 px-5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink')}>
                 <div>Name</div><div>Email</div><div>Role</div><div>Reports to</div><div>Last sign-in</div><div>Status</div>
               </div>
               {loading && rows.length === 0 ? <TableSkeleton rows={7} cols={6} /> : rows.map(u => {
@@ -370,14 +371,14 @@ export default function UsersPage() {
                       </span>
                       <span className="flex flex-col gap-px min-w-0">
                         <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={u.fullName}>{u.fullName}</span>
-                        <span className="text-caption text-muted-ink whitespace-nowrap">{u.phone}</span>
+                        <PhoneText value={u.phone} className="text-caption text-muted-ink" empty="" />
                       </span>
                     </span>
                     <span className="text-copy text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={u.email}>{u.email}</span>
-                    <span><Badge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /></span>
+                    <span><StatusBadge tone={roleTone[u.role]} label={roleLabel(u.role)} size="sm" /></span>
                     <span className={cx('text-copy whitespace-nowrap overflow-hidden text-ellipsis', manager ? 'text-ink' : 'text-faint')}>{manager ?? '—'}</span>
                     <span className="text-copy text-muted-ink">{u.lastLoginAt ? date(u.lastLoginAt) : 'Never'}</span>
-                    <span><Badge tone={s.tone} label={s.label} /></span>
+                    <span><StatusBadge tone={s.tone} label={s.label} /></span>
                   </button>
                 );
               })}
@@ -460,10 +461,10 @@ export default function UsersPage() {
           }
         >
           {resetLink && (
-            <div className="mb-4 flex flex-col gap-2 rounded-[8px] bg-[var(--color-surface-sunken,#F4F2EE)] p-3">
+            <div className="mb-4 flex flex-col gap-2 rounded-[8px] bg-[var(--color-surface-sunken)] p-3">
               <div className="text-meta font-semibold">Reset link for {resetLink.email}</div>
-              <div className="text-caption text-[var(--color-ink-muted,#706D67)]">Shown once. Send it to the person directly; it works one time and expires in 60 minutes.</div>
-              <input readOnly value={resetLink.link} onFocus={e => e.currentTarget.select()} className="w-full rounded-[6px] border border-[var(--color-line,#E2DFD8)] bg-white px-2 py-1.5 font-mono text-caption" />
+              <div className="text-caption text-muted-ink">Shown once. Send it to the person directly; it works one time and expires in 60 minutes.</div>
+              <input readOnly value={resetLink.link} onFocus={e => e.currentTarget.select()} className="w-full rounded-[6px] border border-[var(--color-line)] bg-white px-2 py-1.5 font-mono text-caption" />
               <div><Button variant="secondary" size="sm" type="button" onClick={copyResetLink}>Copy link</Button></div>
             </div>
           )}
@@ -557,7 +558,7 @@ function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, 
         <div key={l.label} className="flex flex-col gap-2.5">
           <div className="flex items-center gap-2.5">
             <span className="text-caption font-semibold tracking-[0.06em] uppercase text-muted-ink">{l.label}</span>
-            <span className="flex-1 h-px bg-[var(--color-line-soft,#EDEAE4)]" />
+            <span className="flex-1 h-px bg-[var(--color-line-soft)]" />
           </div>
           <div className="flex gap-3 flex-wrap">
             {l.people.map(p => {

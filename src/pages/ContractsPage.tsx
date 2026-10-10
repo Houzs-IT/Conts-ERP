@@ -2,19 +2,18 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { color } from '../theme';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { Field } from '../components/Field';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
-import { api } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { rm, date, todayMyt, titleCase, plural } from '../lib/format';
 import { Select } from '../components/Select';
 import { EmptyState } from '../components/States';
 import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
 import { useUrlState, usePhone, ListCard, SearchBox, Chip, STICKY_HEAD } from './finance/listKit';
 
 type FeeModel = 'management' | 'grr';
@@ -48,7 +47,8 @@ const FALLBACK: Payload = {
 
 /** A contract within this many days of its end date is flagged for a renewal conversation. */
 const ENDING_WINDOW_DAYS = 60;
-const STATE_TONE: Record<ContractState, Tone> = { Active: 'success', 'Ending soon': 'warning', Ended: 'neutral' };
+/** The stored-status key for each contract state (lib/status.ts, entity contract). */
+const STATE_KEY: Record<ContractState, string> = { Active: 'active', 'Ending soon': 'ending_soon', Ended: 'ended' };
 const COLS_CLASS = 'grid-cols-[minmax(0,1.5fr)_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,1.05fr)_minmax(96px,0.8fr)_40px]';
 
 const DAY = 86_400_000;
@@ -143,7 +143,7 @@ export default function ContractsPage() {
       toast({ tone: 'success', title: 'Contract added.', body: `Management agreement recorded for ${titleCase(input.ownerName)}.` });
       setModal(null); reload();
     } catch (e) {
-      toast({ tone: 'critical', title: 'Contract was not added.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Contract was not added.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
   async function saveEdit(id: string, input: Omit<Contract, 'id'>) {
@@ -153,7 +153,7 @@ export default function ContractsPage() {
       toast({ tone: 'success', title: 'Contract updated.', body: `Terms saved for ${titleCase(input.ownerName)}.` });
       setModal(null); reload();
     } catch (e) {
-      toast({ tone: 'critical', title: 'Contract was not updated.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Contract was not updated.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
 
@@ -165,7 +165,7 @@ export default function ContractsPage() {
       <div className="flex flex-col gap-[2px] min-w-0">
         <span className="text-copy tabular-nums whitespace-nowrap">{exp ? date(exp) : 'No end date'}</span>
         {d !== null && (s === 'Ending soon' || (d < 0 && d >= -ENDING_WINDOW_DAYS)) && (
-          <span className="self-start"><Badge tone={s === 'Ending soon' ? 'warning' : 'neutral'} label={inDays(d)} size="sm" /></span>
+          <span className="self-start"><StatusBadge tone={s === 'Ending soon' ? 'warning' : 'neutral'} label={inDays(d)} size="sm" /></span>
         )}
       </div>
     );
@@ -182,7 +182,7 @@ export default function ContractsPage() {
       {error && <StaleBanner message={`Showing the last agreements we have. ${error}`} onRetry={reload} />}
 
       {soonList.length > 0 && filter !== 'soon' && (
-        <div role="status" className={cx('flex items-start gap-3 flex-wrap py-[12px] px-[16px] rounded-control [border-left:3px_solid_var(--color-warning-line,#E2B04A)]', TONE.warning.bg)}>
+        <div role="status" className={cx('flex items-start gap-3 flex-wrap py-[12px] px-[16px] rounded-control [border-left:3px_solid_var(--color-warning-line)]', TONE.warning.bg)}>
           <div className="flex flex-col gap-[3px] min-w-0 flex-1">
             <span className={cx('text-copy font-semibold', TONE.warning.text)}>
               {soonList.length} {soonList.length === 1 ? 'contract ends' : 'contracts end'} within {ENDING_WINDOW_DAYS} days
@@ -223,10 +223,10 @@ export default function ContractsPage() {
               return (
                 <div key={r.id} role="button" tabIndex={0} onClick={() => openOwner(r)} onKeyDown={e => { if (e.key === 'Enter') openOwner(r); }}
                   className={cx('min-h-[64px] flex flex-col gap-1 py-3 pr-4 pl-[13px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer',
-                    state === 'Ending soon' ? '[border-left:3px_solid_var(--color-warning-line,#E2B04A)]' : '[border-left:3px_solid_transparent]')}>
+                    state === 'Ending soon' ? '[border-left:3px_solid_var(--color-warning-line)]' : '[border-left:3px_solid_transparent]')}>
                   <span className="flex items-start justify-between gap-2 w-full">
                     <span className="text-copy font-medium min-w-0 [overflow-wrap:anywhere]">{titleCase(r.ownerName)}</span>
-                    <span className="shrink-0"><Badge tone={STATE_TONE[state]} label={state} size="sm" /></span>
+                    <span className="shrink-0"><StatusBadge entity="contract" value={STATE_KEY[state]} size="sm" /></span>
                   </span>
                   <span className="text-meta text-muted-ink truncate w-full" title={r.unitsLabel}>{r.unitsLabel}</span>
                   <span className="flex items-center justify-between gap-2 w-full flex-wrap">
@@ -248,7 +248,7 @@ export default function ContractsPage() {
               return (
                 <div role="row" key={r.id} onClick={() => openOwner(r)}
                   className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[52px] py-[7px] pr-[22px] pl-[19px] [border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-page',
-                    soon ? '[border-left:3px_solid_var(--color-warning-line,#E2B04A)] bg-[color-mix(in_srgb,var(--color-warning-bg)_45%,white)]' : '[border-left:3px_solid_transparent]',
+                    soon ? '[border-left:3px_solid_var(--color-warning-line)] bg-warning-bg' : '[border-left:3px_solid_transparent]',
                     state === 'Ended' ? 'text-muted-ink' : '')}>
                   <div className="flex items-center gap-[10px] min-w-0">
                     <Icon name="FileSignature" size="sm" color={color.textMuted} />
@@ -265,7 +265,7 @@ export default function ContractsPage() {
                   <span className="text-copy font-medium truncate" title={feeLabel(r)}>{feeLabel(r)}</span>
                   <span className="text-copy tabular-nums whitespace-nowrap">{date(r.startsOn)}</span>
                   <EndsCell r={r} />
-                  <div><Badge tone={STATE_TONE[state]} label={state} /></div>
+                  <div><StatusBadge entity="contract" value={STATE_KEY[state]} /></div>
                   <div className="flex justify-end">
                     <button
                       onClick={e => { e.stopPropagation(); setModal({ mode: 'edit', id: r.id }); }}

@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { color } from '../../theme';
 import { Card } from '../../components/Card';
-import { Badge } from '../../components/Badge';
+import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
-import { Dialog, type DialogSpec } from '../../components/Dialog';
+import { ConfirmDialog, type ConfirmSpec } from '../../components/ConfirmDialog';
 import Icon from '../../components/Icon';
 import { StaleBanner, TableSkeleton } from '../../components/DataState';
 import { useApi } from '../../lib/useApi';
-import { api, ApiFailure, notifyFailure } from '../../lib/api';
+import { api, notifyFailure, errorMessage } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 import { useSession } from '../../lib/session';
 import { date, todayMyt } from '../../lib/format';
@@ -66,7 +66,7 @@ export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitL
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [localReveal, setLocalReveal] = useState<Record<string, { by: string; at: string }>>({});
   const [editing, setEditing] = useState<Credential | 'new' | null>(null);
-  const [confirm, setConfirm] = useState<DialogSpec | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   const [busy, setBusy] = useState(false);
 
   const rows = data?.data ?? [];
@@ -79,7 +79,7 @@ export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitL
       if (res?.secret) clear = res.secret;
     } catch (e) {
       if (!clear) {
-        toast({ tone: 'critical', title: 'Could not reveal the code.', body: e instanceof ApiFailure ? e.message : 'Try again in a moment.' });
+        toast({ tone: 'critical', title: 'Could not reveal the code.', body: errorMessage(e, 'Try again in a moment.') });
         return;
       }
     }
@@ -149,7 +149,7 @@ export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitL
               <div className="flex flex-col gap-[3px] min-w-0">
                 <span className="text-copy font-medium">{KIND_LABEL[r.kind] ?? r.kind}</span>
                 <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">{r.label}</span>
-                {r.rotatesAfterStay && <span><Badge tone="info" label="Rotates after each stay" size="sm" /></span>}
+                {r.rotatesAfterStay && <span><StatusBadge tone="info" label="Rotates after each stay" size="sm" /></span>}
               </div>
               <div className="min-w-0">
                 {!r.secret ? (
@@ -185,7 +185,7 @@ export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitL
       </Card>
 
       {editing && <CredentialModal initial={editing === 'new' ? null : editing} unitLabel={unitLabel} onClose={() => setEditing(null)} onSubmit={save} />}
-      <Dialog spec={confirm} busy={busy} onClose={() => setConfirm(null)} />
+      <ConfirmDialog spec={confirm} busy={busy} onClose={() => setConfirm(null)} />
     </>
   );
 }

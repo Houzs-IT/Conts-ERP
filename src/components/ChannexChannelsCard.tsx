@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import { Card } from './Card';
 import { Button } from './Button';
-import { Badge } from './Badge';
+import { StatusBadge } from './StatusBadge';
 import { Drawer } from './Dialog';
+import { useConfirm } from './ConfirmDialog';
 import { Field } from './Field';
 import AirbnbListingPicker from './AirbnbListingPicker';
 import { useApi } from '../lib/useApi';
@@ -24,6 +25,7 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
 }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const [confirmDialog, ask] = useConfirm();
   const [confirming, setConfirming] = useState(false);
   const [connecting, setConnecting] = useState<null | 'booking_com' | 'agoda' | { airbnbChannelId: string }>(null);
   const conns = useApi<{ data: Connection[] }>(linked ? `/units/${unitId}/channels` : null);
@@ -52,7 +54,8 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
   }
 
   async function disconnect(c: Connection) {
-    if (!window.confirm(`Disconnect ${OTA_LABEL[c.ota]} from this unit? Bookings already received stay in Conts.`)) return;
+    const ok = await ask({ title: `Disconnect ${OTA_LABEL[c.ota]} from this unit?`, body: `Prices and availability stop syncing to ${OTA_LABEL[c.ota]} for this unit. Bookings already received stay in Conts. You can connect it again later.`, confirmLabel: `Disconnect ${OTA_LABEL[c.ota]}`, danger: true });
+    if (ok === null) return;
     try {
       await api.del(`/units/${unitId}/channels/${c.id}`);
       toast({ tone: 'success', title: `${OTA_LABEL[c.ota]} disconnected.`, body: 'Prices and availability no longer sync to it for this unit.' });
@@ -68,9 +71,10 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
 
   return (
     <Card>
+      {confirmDialog}
       <div className="pt-[18px] px-[22px] pb-[14px] flex items-center justify-between gap-3">
         <span className="text-heading font-semibold">Channels</span>
-        <Badge tone={linked ? 'success' : 'neutral'} label={linked ? 'In Channex' : 'Not in Channex'} />
+        <StatusBadge tone={linked ? 'success' : 'neutral'} label={linked ? 'In Channex' : 'Not in Channex'} />
       </div>
       <div className="px-[22px] pb-[18px] flex flex-col gap-3 text-[13px] text-muted-ink">
         {linked ? (

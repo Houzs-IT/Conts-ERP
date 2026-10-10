@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import { TableSkeleton } from '../components/DataState';
 import { EmptyState } from '../components/States';
@@ -119,9 +119,9 @@ export function CatalogPanel({
                 <div className="flex items-center gap-[9px] flex-wrap">
                   <span className="font-mono text-caption text-muted-ink">{s.code}</span>
                   <span className="text-copy font-semibold">{s.name}</span>
-                  <Badge tone="neutral" label={CATEGORY_LABEL[s.category]} size="sm" />
-                  {s.trackStock && <Badge tone={stockTone(s.stockOnHand)} label={s.stockOnHand > 0 ? `${s.stockOnHand} in stock` : 'Out of stock'} size="sm" />}
-                  {!s.active && <Badge tone="warning" label="Retired" size="sm" />}
+                  <StatusBadge tone="neutral" label={CATEGORY_LABEL[s.category]} size="sm" />
+                  {s.trackStock && <StatusBadge tone={stockTone(s.stockOnHand)} label={s.stockOnHand > 0 ? `${s.stockOnHand} in stock` : 'Out of stock'} size="sm" />}
+                  {!s.active && <StatusBadge tone="warning" label="Retired" size="sm" />}
                 </div>
                 {s.notes && <span className="text-meta text-muted-ink text-pretty">{s.notes}</span>}
               </div>

@@ -3,6 +3,7 @@ import { Search, Plus, Download, Upload, Pencil, Trash2 } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -12,6 +13,7 @@ import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
 import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
 
 /** Products & Maintenance — the product/item master, ported from Houzs ERP's SKU master.
  *  Browsed by category. Money is integer sen; the form takes RM and converts at the edge. */
@@ -271,7 +273,7 @@ export default function ProductsPage() {
             <div className="overflow-x-auto">
               <table className="w-full border-collapse min-w-[920px]">
                 <thead>
-                  <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+                  <tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
                     {['Product Code', 'Description', 'Category', 'Size', 'Price 2', 'Price 1', 'Barcode', 'Unit (m³)', 'Status'].map((h, i) => (
                       <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 4 || i === 5 || i === 7 ? 'text-right' : 'text-left')}>{h}</th>
                     ))}
@@ -291,7 +293,7 @@ export default function ProductsPage() {
                     const pe = priceEdits[p.id] ?? {};
                     return (
                       <tr key={p.id} onClick={() => { if (!editPrices && canWrite) setDrawer(draftFrom(p)); }}
-                        className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', !editPrices && canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
+                        className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', !editPrices && canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
                         <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{p.code}</span></td>
                         <td className="py-[13px] px-4 text-[13.5px]">{p.name}{p.branding ? <span className="text-muted-ink"> · {p.branding}</span> : ''}</td>
                         <td className="py-[13px] px-4"><span className="inline-block text-[11px] font-semibold uppercase tracking-[0.06em] bg-[var(--color-gold-50)] text-gold-ink px-2.5 py-0.5 rounded-full">{CAT_LABEL[p.category]}</span></td>
@@ -305,7 +307,7 @@ export default function ProductsPage() {
                         </td>
                         <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums">{p.barcode || '—'}</td>
                         <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{p.unitM3Milli ? (p.unitM3Milli / 1000).toFixed(3) : '—'}</td>
-                        <td className="py-[13px] px-4"><StatusPill status={p.status} /></td>
+                        <td className="py-[13px] px-4"><StatusBadge entity="product" value={p.status} /></td>
                       </tr>
                     );
                   })}
@@ -333,15 +335,6 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
   );
 }
 
-function StatusPill({ status }: { status: 'ACTIVE' | 'INACTIVE' }) {
-  const on = status === 'ACTIVE';
-  return (
-    <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full',
-      on ? 'bg-[var(--color-success)] text-[var(--color-success-fg)]' : 'bg-muted text-muted-ink')}>
-      <span className="w-1.5 h-1.5 rounded-full bg-current" />{on ? 'Active' : 'Inactive'}
-    </span>
-  );
-}
 
 function PriceInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
@@ -398,8 +391,8 @@ function ProductDrawer({ draft, onClose, onSubmit, onDelete }: { draft: Draft; o
           )}
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete product ${draft.code}?`, body: 'It is deleted for good and drops off the product list.', confirmLabel: 'Delete product', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSubmit} disabledReason="Enter a code and a name first" onClick={() => onSubmit(f)}>{f.id ? 'Save' : 'Create SKU'}</Button>

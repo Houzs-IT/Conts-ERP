@@ -3,6 +3,7 @@ import { Search, Plus, X } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -11,7 +12,8 @@ import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
 
 /** Payment Vouchers (AP) — ported from 2990's SCM, drawn in Conts. A voucher pays a
  *  supplier's outstanding purchase invoices, driving each invoice's paid status. */
@@ -88,7 +90,7 @@ export default function PaymentVouchersPage() {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[780px]">
             <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
                 {['Voucher', 'Supplier', 'Date', 'Method', 'Reference', 'Status', 'Amount'].map((h, i) => (
                   <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 6 ? 'text-right' : 'text-left')}>{h}</th>
                 ))}
@@ -105,13 +107,13 @@ export default function PaymentVouchersPage() {
                   </div>
                 </td></tr>
               ) : rows.map(p => (
-                <tr key={p.id} onClick={() => setDrawer({ mode: 'view', pv: p })} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
+                <tr key={p.id} onClick={() => setDrawer({ mode: 'view', pv: p })} className="[border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-muted">
                   <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{p.voucherNumber}</td>
                   <td className="py-[13px] px-4"><div className="flex flex-col"><span className="text-[13.5px]">{p.supplierName}</span><span className="text-[11.5px] text-muted-ink">{p.supplierCode}</span></div></td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.paymentDate ? date(p.paymentDate) : '—'}</td>
                   <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{METHOD_LABEL[p.method] ?? p.method}</td>
                   <td className="py-[13px] px-4 text-[12.5px] text-muted-ink">{p.reference || '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={p.status} /></td>
+                  <td className="py-[13px] px-4"><StatusBadge entity="payment_voucher" value={p.status} /></td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{p.status === 'CANCELLED' ? <span className="text-muted-ink line-through">{rm(p.amountSen)}</span> : rm(p.amountSen)}</td>
                 </tr>
               ))}
@@ -128,10 +130,6 @@ export default function PaymentVouchersPage() {
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-function StatusPill({ status }: { status: 'POSTED' | 'CANCELLED' }) {
-  const t = status === 'POSTED' ? TONE.success : TONE.neutral;
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', t.bg, t.text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{status === 'POSTED' ? 'Posted' : 'Cancelled'}</span>;
 }
 
 /* ---------- pay (create) drawer ---------- */
@@ -208,7 +206,7 @@ function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { supp
                 <tbody>
                   {supplierInvoices.length === 0 ? <tr><td colSpan={4} className="py-6 text-center text-[12.5px] text-muted-ink">This supplier has no outstanding invoices.</td></tr>
                   : lines.map(l => (
-                    <tr key={l.invoiceId} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                    <tr key={l.invoiceId} className="[border-top:1px_solid_var(--color-line-soft)]">
                       <td className="py-2 px-3 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px]">{l.invoiceNumber}</td>
                       <td className="py-2 px-3 text-[13px] text-muted-ink">{l.invoiceDate ? date(l.invoiceDate) : '—'}</td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(l.outstanding)}</td>
@@ -227,7 +225,7 @@ function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { supp
           <div className="flex items-end justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Payment total</span><span className="tabular-nums w-[120px] text-right">{rm(amount)}</span></div></div>
         </div>
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a supplier and allocate a payment" onClick={submit}>Post payment</Button>
       </div>
@@ -241,7 +239,7 @@ function ViewDrawer({ pv, canWrite, onClose, onCancel }: { pv: Pv; canWrite: boo
   return (
     <Drawer open onClose={onClose} width={620}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
-        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{pv.voucherNumber}</h2><StatusPill status={pv.status} /></div>
+        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{pv.voucherNumber}</h2><StatusBadge entity="payment_voucher" value={pv.status} /></div>
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
@@ -256,7 +254,7 @@ function ViewDrawer({ pv, canWrite, onClose, onCancel }: { pv: Pv; canWrite: boo
             <thead><tr className="bg-muted">{['Invoice', 'Allocated'].map((th, i) => <th key={th} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i === 0 ? 'text-left' : 'text-right')}>{th}</th>)}</tr></thead>
             <tbody>
               {(pv.allocations ?? []).map((a, i) => (
-                <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
                   <td className="py-2 px-3 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px]">{a.invoiceNumber}</td>
                   <td className="py-2 px-3 text-right tabular-nums text-[13px]">{rm(a.amountSen)}</td>
                 </tr>
@@ -267,8 +265,8 @@ function ViewDrawer({ pv, canWrite, onClose, onCancel }: { pv: Pv; canWrite: boo
         <div className="flex justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Total paid</span><span className="tabular-nums w-[120px] text-right">{rm(pv.amountSen)}</span></div></div>
         {pv.notes && <div className="text-[13px]"><span className="text-muted-ink">Notes: </span>{pv.notes}</div>}
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{canWrite && pv.status === 'POSTED' && <Button size="sm" variant="danger" onClick={() => onCancel(pv)}>Cancel voucher</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{canWrite && pv.status === 'POSTED' && <ConfirmButton confirm={{ title: `Cancel ${pv.voucherNumber}?`, body: 'It is marked Cancelled and the invoices it paid show those amounts as unpaid again.', meta: `${pv.supplierName} · ${rm(pv.amountSen)}`, confirmLabel: 'Cancel voucher', cancelLabel: 'Keep voucher' }} onConfirm={() => onCancel(pv)}>Cancel voucher</ConfirmButton>}</div>
         <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
       </div>
     </Drawer>

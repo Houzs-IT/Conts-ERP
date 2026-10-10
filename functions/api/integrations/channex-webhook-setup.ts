@@ -1,4 +1,4 @@
-import { type Env, json, fail } from '../../_lib/db';
+import { type Env, json, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { channexConfigured, channexListWebhooks, channexCreateWebhook, channexUpdateWebhookMask, CHANNEX_EVENT_MASK } from '../../_lib/channex';
 
@@ -35,10 +35,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (already.attributes?.event_mask === CHANNEX_EVENT_MASK) return json({ alreadyRegistered: true, id: already.id, callbackUrl });
     const upd = await channexUpdateWebhookMask(env, already.id, { callbackUrl, secret: env.CHANNEX_WEBHOOK_SECRET });
     if (!upd.ok) return fail('CHANNEX_ERROR', `Channex refused the webhook update (status ${upd.status}).`, 502);
+    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'channex.webhook_updated', entityTable: 'integrations', entityId: 'channex', after: { callbackUrl, eventMask: CHANNEX_EVENT_MASK } });
     return json({ updated: true, id: already.id, callbackUrl, eventMask: CHANNEX_EVENT_MASK });
   }
 
   const res = await channexCreateWebhook(env, { callbackUrl, secret: env.CHANNEX_WEBHOOK_SECRET });
   if (!res.ok) return fail('CHANNEX_ERROR', `Channex refused the webhook registration (status ${res.status}).`, 502);
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'channex.webhook_registered', entityTable: 'integrations', entityId: 'channex', after: { callbackUrl, eventMask: CHANNEX_EVENT_MASK } });
   return json({ registered: true, id: res.body?.data?.id, callbackUrl, eventMask: CHANNEX_EVENT_MASK });
 };

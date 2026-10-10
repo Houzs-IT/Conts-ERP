@@ -3,6 +3,7 @@ import { Plus, Trash2, X } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -47,14 +48,14 @@ export default function StockTransfersPage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[680px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['Transfer', 'From', 'To', 'Date', 'Status'].map(h => <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>)}
             </tr></thead>
             <tbody>
               {loading && rows.length === 0 ? <tr><td colSpan={5}><TableSkeleton rows={5} cols={5} /></td></tr>
               : rows.length === 0 ? <tr><td colSpan={5}><div className="py-[38px] px-[22px] text-center text-[14px] font-semibold">No stock transfers yet.</div></td></tr>
               : rows.map(t => (
-                <tr key={t.id} onClick={() => setDrawer({ mode: 'view', t })} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
+                <tr key={t.id} onClick={() => setDrawer({ mode: 'view', t })} className="[border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-muted">
                   <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{t.transferNumber}</td>
                   <td className="py-[13px] px-4 text-[13px]">{t.fromName}</td>
                   <td className="py-[13px] px-4 text-[13px]">{t.toName}</td>
@@ -103,7 +104,7 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
           <Sel label="To warehouse" value={to} onChange={setTo} options={warehouses} />
           <Field label="Date" type="date" value={tdate} onChange={e => setTdate(e.target.value)} />
         </div>
-        {from !== '' && to !== '' && from === to && <div className="text-[12.5px] text-[var(--color-critical-fg)]">Source and destination must differ.</div>}
+        {from !== '' && to !== '' && from === to && <div className="text-[12.5px] text-danger">Source and destination must differ.</div>}
         <div className="flex flex-col gap-2">
           <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">Lines</div>
           <div className="overflow-x-auto border border-solid border-line rounded-card">
@@ -111,11 +112,11 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
               <thead><tr className="bg-muted">{['Item code', 'Description', 'Qty', ''].map((th, i) => <th key={th || i} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i === 2 ? 'text-right' : 'text-left')}>{th}</th>)}</tr></thead>
               <tbody>
                 {lines.map((l, i) => (
-                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
                     <td className="p-1.5"><input value={l.itemCode} onChange={e => setLine(i, 'itemCode', e.target.value)} className="h-8 w-[140px] box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
                     <td className="p-1.5"><input value={l.description} onChange={e => setLine(i, 'description', e.target.value)} className="h-8 w-full box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
                     <td className="p-1.5 text-right"><input type="number" min={0} value={l.qty} onChange={e => setLine(i, 'qty', e.target.value)} className="h-8 w-[70px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" /></td>
-                    <td className="p-1.5 text-center"><button onClick={() => setLines(ls => ls.length > 1 ? ls.filter((_, j) => j !== i) : ls)} aria-label="Remove" className="text-muted-ink hover:text-[var(--color-critical-fg)] bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button></td>
+                    <td className="p-1.5 text-center"><button onClick={() => setLines(ls => ls.length > 1 ? ls.filter((_, j) => j !== i) : ls)} aria-label="Remove" className="text-muted-ink hover:text-danger bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button></td>
                   </tr>
                 ))}
               </tbody>
@@ -125,7 +126,7 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
         </div>
         <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick two different warehouses and add a line" loading={busy} onClick={() => void submit()}>Post transfer</Button>
       </div>
@@ -142,12 +143,12 @@ function ViewDrawer({ t, canWrite, onClose, onCancel }: { t: Transfer; canWrite:
         <div className="overflow-x-auto border border-solid border-line rounded-card">
           <table className="w-full border-collapse min-w-[360px]">
             <thead><tr className="bg-muted">{['Item', 'Qty'].map((th, i) => <th key={th} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i === 1 ? 'text-right' : 'text-left')}>{th}</th>)}</tr></thead>
-            <tbody>{(t.lines ?? []).map((l, i) => (<tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]"><td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description || l.itemCode}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td><td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.qty}</td></tr>))}</tbody>
+            <tbody>{(t.lines ?? []).map((l, i) => (<tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]"><td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description || l.itemCode}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td><td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.qty}</td></tr>))}</tbody>
           </table>
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{canWrite && t.status === 'POSTED' && <Button size="sm" variant="danger" onClick={() => onCancel(t)}>Cancel transfer</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{canWrite && t.status === 'POSTED' && <ConfirmButton confirm={{ title: `Cancel ${t.transferNumber}?`, body: `It is marked Cancelled and the stock moves back from ${t.toName} to ${t.fromName}.`, confirmLabel: 'Cancel transfer', cancelLabel: 'Keep transfer' }} onConfirm={() => onCancel(t)}>Cancel transfer</ConfirmButton>}</div>
         <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
       </div>
     </Drawer>

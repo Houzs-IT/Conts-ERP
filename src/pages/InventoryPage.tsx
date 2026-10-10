@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { SearchSelect, Select } from '../components/Select';
-import { Dot } from '../components/Badge';
+import { StatusDot } from '../components/StatusBadge';
 import { EmptyState } from '../components/States';
 import { Chip } from './finance/listKit';
 import { Button } from '../components/Button';
@@ -19,7 +19,6 @@ import type { Tone } from '../lib/types';
 
 type Condition = 'good' | 'fair' | 'replace_soon' | 'damaged';
 const COND_LABEL: Record<Condition, string> = { good: 'Good', fair: 'Fair', replace_soon: 'Replace soon', damaged: 'Damaged' };
-const COND_TONE: Record<Condition, Tone> = { good: 'success', fair: 'neutral', replace_soon: 'warning', damaged: 'critical' };
 const CONDITIONS = Object.keys(COND_LABEL) as Condition[];
 
 type Category = 'furniture' | 'appliance' | 'electronics' | 'linen' | 'kitchenware' | 'fittings';
@@ -166,7 +165,7 @@ export default function InventoryPage() {
         ) : (
         <div className="overflow-x-auto">
           <div className="min-w-[1060px]">
-            <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)] text-meta font-semibold text-muted-ink')}>
+            <div className={cx('grid', COLS_CLASS, 'gap-[14px] py-[9px] px-[22px] bg-muted [border-bottom:1px_solid_var(--color-line)] text-meta font-semibold text-muted-ink')}>
               <div>Item</div><div>Unit</div><div>Category</div><div>Condition</div><div className="text-right">Value</div><div>Replace by</div><div>Notes</div>
             </div>
 
@@ -175,7 +174,7 @@ export default function InventoryPage() {
             ) : rows.map(i => {
               const sTone = scheduleTone(i.replaceBy);
               return (
-                <div key={i.id} className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[54px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]')}>
+                <div key={i.id} className={cx('grid', COLS_CLASS, 'gap-[14px] items-center min-h-[54px] py-[9px] px-[22px] [border-bottom:1px_solid_var(--color-line-soft)]')}>
                   <div className="flex flex-col gap-px min-w-0">
                     <span className="text-copy">{i.name}</span>
                     <span className="text-meta text-muted-ink">
@@ -188,7 +187,7 @@ export default function InventoryPage() {
                   </div>
                   <span className="text-copy text-[var(--color-ink-2)]">{CAT_LABEL[i.category]}</span>
                   <div className="flex items-center gap-2 min-w-0">
-                    <Dot tone={COND_TONE[i.condition]} />
+                    <StatusDot entity="condition" value={i.condition} />
                     <Select label={`Condition of ${i.name}`} className="flex-1" value={i.condition} onChange={v => setCondition(i, v as Condition)}
                       options={CONDITIONS.map(c => ({ value: c, label: COND_LABEL[c] }))} />
                   </div>
@@ -338,7 +337,7 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
 
             <Field label="Notes" placeholder="Optional — condition detail, warranty, supplier" value={f.notes} onChange={set('notes')} />
           </div>
-          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page flex justify-end gap-[9px]">
+          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
             <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
             <Button size="sm" variant="primary" type="submit" disabled={!canSubmit} disabledReason="Add an item name and pick a unit first">Add item</Button>
           </div>

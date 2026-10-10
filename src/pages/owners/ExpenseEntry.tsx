@@ -7,7 +7,7 @@ import { MoneyText } from '../../components/MoneyText';
 import Icon from '../../components/Icon';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
-import { api, ApiFailure, downloadFile, notifyFailure } from '../../lib/api';
+import { api, ApiFailure, downloadFile, notifyFailure, errorMessage } from '../../lib/api';
 import { monthLabel, date, todayMyt, titleCase } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { PAYERS, PAYER_LABEL, ENTRY_CATEGORIES, CATEGORY_LABEL } from '../../lib/revenueModel';
@@ -82,7 +82,7 @@ export function ExpenseEntryModal({ units, defaultUnitId, month, onClose, onSave
       onSaved(); onClose();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFields(e.fields);
-      toast({ tone: 'critical', title: 'Expense was not recorded.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Expense was not recorded.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
 
@@ -138,7 +138,7 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
         body: skipped ? `${r.locked.length ? `${r.locked.length} skipped: that statement is final. ` : ''}${r.recordedElsewhere.length ? `${r.recordedElsewhere.length} already recorded another way.` : ''}` : 'Owner-paid bills go on the owner statement.' });
       onSaved(); onClose();
     } catch (e) {
-      toast({ tone: 'critical', title: 'Bills were not recorded.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Bills were not recorded.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
 

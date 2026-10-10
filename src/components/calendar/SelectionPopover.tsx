@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Icon from '../Icon';
-import { dateShort, plural } from '../../lib/format';
+import { dateShort, plural, rmShort } from '../../lib/format';
 
 export interface NightSelection {
   unitId: string; unitNumber: string;
@@ -50,7 +50,7 @@ export function SelectionPopover({ sel, phone, canSetRates, onBook, onBlock, onP
 
   const free = sel.nights - sel.taken;
   const summary = sel.taken === 0
-    ? `${sel.nights === 1 ? 'Open' : `All ${sel.nights} nights open`}${sel.priceNow > 0 ? ` · now RM ${Math.round(sel.priceNow / 100).toLocaleString('en-MY')} / night` : ''}`
+    ? `${sel.nights === 1 ? 'Open' : `All ${sel.nights} nights open`}${sel.priceNow > 0 ? ` · now ${rmShort(sel.priceNow)} / night` : ''}`
     : `${free} of ${plural(sel.nights, 'night')} open · ${sel.takenBy || 'a booking'} holds ${plural(sel.taken, 'night')}`;
   const blocked = sel.taken > 0;
   const big = 'flex-1 min-w-0 min-h-16 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-0.5 cursor-pointer font-sans text-copy border border-solid disabled:cursor-default disabled:opacity-45';

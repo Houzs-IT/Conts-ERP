@@ -4,6 +4,9 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
+import { StatusBadge } from '../components/StatusBadge';
+import { statusOf, statusLabel } from '../lib/status';
+import { PhoneText } from '../components/PhoneText';
 
 /** Coverage & Fleet — ported from 2990's SCM (Coverage & Fleet), drawn in Conts. A read-only
  *  overview of which vehicles and drivers are available today, aggregating the fleet masters +
@@ -16,10 +19,6 @@ interface Drv { id: string; driverCode: string; name: string; phone: string; act
 interface Summary { vehiclesTotal: number; vehiclesAvailable: number; vehiclesMaintenance: number; driversTotal: number; driversAvailable: number; driversOnLeave: number }
 interface Payload { vehicles: Veh[]; drivers: Drv[]; summary: Summary; generatedAt: string }
 
-const V_TONE: Record<VState, Tone> = { AVAILABLE: 'success', MAINTENANCE: 'warning', INACTIVE: 'neutral' };
-const V_LABEL: Record<VState, string> = { AVAILABLE: 'Available', MAINTENANCE: 'In maintenance', INACTIVE: 'Inactive' };
-const D_TONE: Record<DState, Tone> = { AVAILABLE: 'success', ON_LEAVE: 'warning', INACTIVE: 'neutral' };
-const D_LABEL: Record<DState, string> = { AVAILABLE: 'Available', ON_LEAVE: 'On leave', INACTIVE: 'Inactive' };
 
 const FALLBACK: Payload = {
   generatedAt: '',
@@ -57,15 +56,15 @@ export default function CoverageFleetPage() {
           <div className="px-5 pt-4 pb-2 text-[13px] font-semibold uppercase tracking-[0.1em] text-muted-ink">Vehicles</div>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse min-w-[360px]">
-              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">{['Vehicle', 'Type', 'Status'].map(h => <th key={h} className="py-2.5 px-4 text-left text-[11.5px] font-semibold uppercase tracking-[0.1em] text-muted-ink">{h}</th>)}</tr></thead>
+              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">{['Vehicle', 'Type', 'Status'].map(h => <th key={h} className="py-2.5 px-4 text-left text-[11.5px] font-semibold uppercase tracking-[0.1em] text-muted-ink">{h}</th>)}</tr></thead>
               <tbody>
                 {loading && vehicles.length === 0 ? <tr><td colSpan={3}><TableSkeleton rows={4} cols={3} /></td></tr>
                 : vehicles.length === 0 ? <tr><td colSpan={3}><div className="py-8 text-center text-[12.5px] text-muted-ink">No vehicles.</div></td></tr>
                 : vehicles.map(v => (
-                  <tr key={v.id} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                  <tr key={v.id} className="[border-bottom:1px_solid_var(--color-line-soft)]">
                     <td className="py-[11px] px-4"><div className="flex flex-col"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{v.code}</span>{v.plate && <span className="text-[11.5px] text-muted-ink">{v.plate}</span>}</div></td>
                     <td className="py-[11px] px-4 text-[12.5px] text-muted-ink">{v.vehicleType || '—'}</td>
-                    <td className="py-[11px] px-4"><Pill tone={V_TONE[v.state]} label={V_LABEL[v.state]} extra={v.overdue > 0 ? `${v.overdue} overdue` : ''} /></td>
+                    <td className="py-[11px] px-4"><StatusBadge tone={statusOf('vehicle', v.state).tone} label={`${statusLabel('vehicle', v.state)}${v.overdue > 0 ? ` · ${v.overdue} overdue` : ''}`} dot /></td>
                   </tr>
                 ))}
               </tbody>
@@ -76,15 +75,15 @@ export default function CoverageFleetPage() {
           <div className="px-5 pt-4 pb-2 text-[13px] font-semibold uppercase tracking-[0.1em] text-muted-ink">Drivers</div>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse min-w-[360px]">
-              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">{['Driver', 'Phone', 'Status'].map(h => <th key={h} className="py-2.5 px-4 text-left text-[11.5px] font-semibold uppercase tracking-[0.1em] text-muted-ink">{h}</th>)}</tr></thead>
+              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">{['Driver', 'Phone', 'Status'].map(h => <th key={h} className="py-2.5 px-4 text-left text-[11.5px] font-semibold uppercase tracking-[0.1em] text-muted-ink">{h}</th>)}</tr></thead>
               <tbody>
                 {loading && drivers.length === 0 ? <tr><td colSpan={3}><TableSkeleton rows={4} cols={3} /></td></tr>
                 : drivers.length === 0 ? <tr><td colSpan={3}><div className="py-8 text-center text-[12.5px] text-muted-ink">No drivers.</div></td></tr>
                 : drivers.map(d => (
-                  <tr key={d.id} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                  <tr key={d.id} className="[border-bottom:1px_solid_var(--color-line-soft)]">
                     <td className="py-[11px] px-4"><div className="flex flex-col"><span className="text-[13px]">{d.name}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{d.driverCode}</span></div></td>
-                    <td className="py-[11px] px-4 text-[12.5px] text-muted-ink tabular-nums">{d.phone || '—'}</td>
-                    <td className="py-[11px] px-4"><Pill tone={D_TONE[d.state]} label={D_LABEL[d.state]} /></td>
+                    <td className="py-[11px] px-4 text-[12.5px] text-muted-ink tabular-nums"><PhoneText value={d.phone} whatsapp={false} /></td>
+                    <td className="py-[11px] px-4"><StatusBadge entity="driver" value={d.state} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -105,7 +104,4 @@ function Tile({ label, value, tone }: { label: string; value: string; tone: Tone
       </div>
     </Card>
   );
-}
-function Pill({ tone, label, extra }: { tone: Tone; label: string; extra?: string }) {
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[tone].bg, TONE[tone].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{label}{extra ? ` · ${extra}` : ''}</span>;
 }

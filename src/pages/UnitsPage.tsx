@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { color, tone as T, channel as CH } from '../theme';
+import { color, channel as CH } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { EmptyState } from '../components/States';
 import { Select } from '../components/Select';
 import { MoneyText } from '../components/MoneyText';
-import { Badge, Dot } from '../components/Badge';
+import { StatusBadge, StatusDot } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
@@ -18,8 +18,6 @@ import { api, notifyFailure, downloadFile } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, dateRange, date, dateShort, dateTime, monthLabel, plural, humanize, titleCase } from '../lib/format';
-import { READINESS, TASK } from '../lib/vocabulary';
-import { STATUS } from '../lib/bookingStatus';
 import type { UnitReadiness } from '../lib/types';
 import UnitTree, { firstUnitId } from './units/UnitTree';
 import AccessTab from './units/AccessTab';
@@ -30,9 +28,10 @@ import { ExpensesCard } from './owners/ExpenseEntry';
 import { todayMyt } from '../lib/format';
 import { PROPERTIES_FALLBACK, DETAIL_FALLBACK, mkUnit } from './units/fallback';
 import {
-  READY_TONE, TASK_TONE, COND_TONE, MASTER_ROLES, STATES, cap,
+  MASTER_ROLES, STATES,
   type Unit, type Building, type PropertiesPayload, type UnitDetail, type RosterRow,
 } from './units/shared';
+import { statusLabel, statusOf, TONE_STYLE } from '../lib/status';
 
 /** True at the width where the tree becomes a sticky pane (Tailwind xl). */
 function useWide() {
@@ -306,7 +305,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
     const prev = readiness;
     setReadiness(u.id, next);
     api.patch(`/units/${u.id}/readiness`, { readiness: next })
-      .then(() => { toast({ tone: 'success', title: 'Unit state updated.', body: `${unitLabel} is now ${cap(next)}.` }); reload(); })
+      .then(() => { toast({ tone: 'success', title: 'Unit state updated.', body: `${unitLabel} is now ${statusLabel('readiness', next)}.` }); reload(); })
       .catch(err => { setReadiness(u.id, prev === u.readiness ? null : prev); notifyFailure(err); });
   }
   function takeFile(file: File) {
@@ -355,18 +354,18 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
             <div className="flex items-center gap-3 flex-wrap">
               {/* One control for the state; the dot keeps its colour. A native select, so the list is never clipped by the card. */}
               <span className="inline-flex items-center gap-2" title="Change the unit state">
-                <Dot tone={READY_TONE[readiness]} />
+                <StatusDot entity="readiness" value={readiness} />
                 <Select label="Unit state" className="w-[150px]" value={readiness} onChange={v => changeReadiness(v as UnitReadiness)}
-                  options={READINESS_OPTIONS.map(r => ({ value: r, label: READINESS[r].label }))} />
+                  options={READINESS_OPTIONS.map(r => ({ value: r, label: statusLabel('readiness', r) }))} />
               </span>
-              {form?.parentUnitId && <Badge tone="warning" label="Sub-unit" />}
+              {form?.parentUnitId && <StatusBadge tone="warning" label="Sub-unit" />}
               {u.revenueModel && <span title={`Revenue model: ${u.revenueModelLabel}. Change it on the Contract tab.`}><ModelChip model={u.revenueModel} label={u.termsLabel ?? u.revenueModelLabel} /></span>}
               {u.channels.length > 0 && (
                 <span className="inline-flex items-center gap-1.5" aria-label={`Sold on ${u.channels.map(c => CH[c].label).join(', ')}`}>
                   {u.channels.map(c => <span key={c} title={CH[c].label} className="flex"><ChannelMark ch={c} size={22} /></span>)}
                 </span>
               )}
-              {!u.isListed && <span title="This unit is not for sale on Airbnb, Booking.com or any other channel, so no bookings come in through them. Connect it under Channels on the Overview tab."><Badge tone="neutral" label="Not listed on any channel" /></span>}
+              {!u.isListed && <span title="This unit is not for sale on Airbnb, Booking.com or any other channel, so no bookings come in through them. Connect it under Channels on the Overview tab."><StatusBadge tone="neutral" label="Not listed on any channel" /></span>}
             </div>
           </div>
           {/* Owner names run long (several co-owners, company names); they wrap instead of running off a phone. */}
@@ -415,7 +414,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
                   <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{s.guestName ?? 'No guest'}</span>
                   <span className="text-meta text-muted-ink"><span className="sr-only">{CH[s.channel].label} · </span>{dateRange(s.checkIn, s.checkOut)}</span>
                 </div>
-                <Badge tone={STATUS[s.state].tone} label={STATUS[s.state].label} />
+                <StatusBadge entity="booking" value={s.state} />
               </div>
             ))}
           </Card>
@@ -466,14 +465,14 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
             </div>
             {d.tasks.length === 0 && <div className="py-4 px-5 text-copy text-muted-ink">No tasks for this unit.</div>}
             {d.tasks.map(t => (
-              <div key={t.id} className="flex items-center gap-[14px] py-[14px] px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex-wrap" style={{ borderLeft: `3px solid ${T[TASK_TONE[t.state]].line}` }}>
+              <div key={t.id} className="flex items-center gap-[14px] py-[14px] px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex-wrap" style={{ borderLeft: `3px solid ${TONE_STYLE[statusOf('task', t.state).tone].line}` }}>
                 <div className="flex flex-col gap-0.5 flex-1 min-w-[180px]">
                   <span className="text-copy font-medium">{t.title}</span>
                   <span className="text-meta text-muted-ink">
                     {humanize(t.kind)} · {t.assigneeName ?? 'Unassigned'}{t.completedAt ? ` · done ${dateTime(t.completedAt)}` : t.dueAt ? ` · due ${dateTime(t.dueAt)}` : ''}
                   </span>
                 </div>
-                <Badge tone={TASK_TONE[t.state]} label={TASK[t.state].label} />
+                <StatusBadge entity="task" value={t.state} />
               </div>
             ))}
           </Card>
@@ -488,8 +487,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
                 <div className="flex flex-col gap-[3px] flex-1 min-w-[200px]">
                   <div className="flex items-center gap-[9px] flex-wrap">
                     <span className="text-copy font-semibold">{m.title}</span>
-                    <Badge tone={TASK_TONE[m.state]} label={TASK[m.state].label} />
-                    {m.blocksUnit && <Badge tone="critical" label="Blocks the unit" />}
+                    <StatusBadge entity="task" value={m.state} />
+                    {m.blocksUnit && <StatusBadge tone="critical" label="Blocks the unit" />}
                   </div>
                   <span className="text-meta text-muted-ink">{dateShort(m.reportedAt)}{m.vendorName ? ` · ${m.vendorName}` : ''} · charged to {CHARGE_LABEL[m.chargeTo] ?? humanize(m.chargeTo)}</span>
                   {m.detail && <span className="text-copy [text-wrap:pretty]">{m.detail}</span>}
@@ -518,7 +517,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
                         {i.suppliedInHouse && <span className="text-caption text-muted-ink">Supplied by The Conts</span>}
                       </div>
                       <span className="text-copy">{i.quantity}</span>
-                      <div><Badge tone={COND_TONE[i.condition] ?? 'neutral'} label={cap(i.condition)} /></div>
+                      <div><StatusBadge entity="condition" value={i.condition} /></div>
                       <span className="text-copy text-right tabular-nums">{i.purchaseCost != null ? rm(i.purchaseCost, { cents: false }) : '—'}</span>
                     </div>
                   ))}

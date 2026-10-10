@@ -3,6 +3,7 @@ import { Search, Plus, Trash2 } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -10,7 +11,9 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { TONE, cx } from '../lib/design-tokens';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
+import { PhoneText } from '../components/PhoneText';
 
 /** 3PL Companies — ported from 2990's SCM, drawn in Conts. Third-party logistics providers
  *  that drivers/vehicles can belong to. A master. */
@@ -70,20 +73,20 @@ export default function ThreePLCompaniesPage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[720px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['Code', 'Name', 'Contact', 'Phone', 'Email', 'Status'].map((h) => <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>)}
             </tr></thead>
             <tbody>
               {loading && all.length === 0 ? <tr><td colSpan={6}><TableSkeleton rows={6} cols={6} /></td></tr>
               : rows.length === 0 ? <tr><td colSpan={6}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || filter !== 'all' ? 'No companies match.' : 'No 3PL companies yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Add the third-party couriers and hauliers you dispatch through.</span></div></td></tr>
               : rows.map(c => (
-                <tr key={c.id} onClick={() => { if (canWrite) setDrawer({ draft: c, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
+                <tr key={c.id} onClick={() => { if (canWrite) setDrawer({ draft: c, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
                   <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{c.code}</span></td>
                   <td className="py-[13px] px-4 text-[13.5px]">{c.name}</td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{c.contactName || '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums">{c.contactPhone || c.officePhone || '—'}</td>
+                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums"><PhoneText value={c.contactPhone || c.officePhone} whatsapp={false} /></td>
                   <td className="py-[13px] px-4 text-[12.5px] text-muted-ink">{c.email || '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill active={c.isActive} /></td>
+                  <td className="py-[13px] px-4"><StatusBadge entity="active_flag" value={c.isActive ? 'active' : 'inactive'} /></td>
                 </tr>
               ))}
             </tbody>
@@ -97,10 +100,6 @@ export default function ThreePLCompaniesPage() {
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-function StatusPill({ active }: { active: boolean }) {
-  const t = active ? TONE.success : TONE.neutral;
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', t.bg, t.text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{active ? 'Active' : 'Inactive'}</span>;
 }
 
 function ThreePlDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: ThreePl; isNew: boolean; onClose: () => void; onSave: (d: ThreePl, isNew: boolean) => void; onDelete?: () => void }) {
@@ -130,8 +129,8 @@ function ThreePlDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Thr
           <div className="col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
         </Section>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete 3PL company ${draft.name}?`, body: 'It is deleted for good and drops off the 3PL company list.', confirmLabel: 'Delete company', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name first" onClick={() => onSave(f, isNew)}>{isNew ? 'Create company' : 'Save'}</Button>

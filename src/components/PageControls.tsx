@@ -1,7 +1,8 @@
 import Icon from './Icon';
 import { cx } from '../lib/design-tokens';
+import { count } from '../lib/format';
 
-const n = (v: number) => v.toLocaleString('en-MY');
+const n = count;
 
 /** "1–50 of 4,150" with previous/next and an optional rows-per-page picker, for server-paged lists. */
 export function PageControls({ page, pageSize, total, onPage, onSize, sizes = [25, 50, 100], noun = 'rows', className }: {

@@ -1,5 +1,4 @@
 /** Shared types + constants for the Transportation planning cluster (delivery_schedule). */
-import type { Tone } from './types';
 
 export type SchedStatus = 'UNPLANNED' | 'SCHEDULED' | 'DISPATCHED' | 'DELIVERED' | 'CANCELLED';
 export type TimeSlot = '' | 'MORNING' | 'AFTERNOON' | 'EVENING';
@@ -12,8 +11,6 @@ export interface Sched {
 }
 export interface SchedPayload { data: Sched[]; generatedAt: string }
 
-export const STATUS_LABEL: Record<SchedStatus, string> = { UNPLANNED: 'Unplanned', SCHEDULED: 'Scheduled', DISPATCHED: 'Dispatched', DELIVERED: 'Delivered', CANCELLED: 'Cancelled' };
-export const STATUS_TONE: Record<SchedStatus, Tone> = { UNPLANNED: 'neutral', SCHEDULED: 'info', DISPATCHED: 'warning', DELIVERED: 'success', CANCELLED: 'neutral' };
 export const SLOT_LABEL: Record<Exclude<TimeSlot, ''>, string> = { MORNING: 'Morning', AFTERNOON: 'Afternoon', EVENING: 'Evening' };
 
 export interface Driver { id: string; driverCode: string; name: string }

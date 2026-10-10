@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '../Button';
 import { Field } from '../Field';
 import ChannelMark from '../ChannelMark';
-import { date, dateShort, count, plural } from '../../lib/format';
+import { date, dateShort, count, plural, rmShort, amount } from '../../lib/format';
 import { Select } from '../Select';
 import Icon from '../Icon';
 import { UnitPicker } from '../booking/UnitPicker';
@@ -112,11 +112,10 @@ type PriceMode = 'keep' | 'set' | 'up' | 'down';
 
 const addDayIso = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) + 864e5).toISOString().slice(0, 10);
 const weekdayIso = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay();
-const ringgit = (sen: number) => `RM ${Math.round(sen / 100).toLocaleString('en-MY')}`;
 const span = (xs: number[], f: (n: number) => string) => {
   if (!xs.length) return '—';
   const lo = Math.min(...xs), hi = Math.max(...xs);
-  return lo === hi ? f(lo) : `${f(lo)}–${Math.round(hi / 100).toLocaleString('en-MY')}`;
+  return lo === hi ? f(lo) : `${f(lo)}–${amount(hi, { cents: false })}`;
 };
 
 /** Up to this many units on the board, Rate update starts with all of them ticked. */
@@ -219,7 +218,7 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave }: {
   const stepChip = (n: 1 | 2 | 3, label: string, ok: boolean) => (
     <li key={n}>
       <button type="button" onClick={() => setStep(n)} aria-current={step === n ? 'step' : undefined}
-        className={`h-8 px-3 rounded-full border-none cursor-pointer font-sans text-meta font-medium whitespace-nowrap ${step === n ? 'bg-black text-white' : ok ? 'bg-[var(--color-success)] text-[var(--color-success-fg)]' : 'bg-muted text-muted-ink'}`}>
+        className={`h-8 px-3 rounded-full border-none cursor-pointer font-sans text-meta font-medium whitespace-nowrap ${step === n ? 'bg-black text-white' : ok ? 'bg-success-bg text-success' : 'bg-muted text-muted-ink'}`}>
         {n} {label}
       </button>
     </li>
@@ -291,7 +290,7 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave }: {
                             <input type="checkbox" checked={sel.has(u.id)} onChange={e => toggle([u.id], e.target.checked)} className="w-4 h-4 accent-[var(--color-brand-black)] cursor-pointer" />
                             <span className="flex-1 min-w-0 text-copy text-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
                             <span className="flex-none flex items-center gap-1">{(u.linked ?? []).map(c => <ChannelMark key={c} ch={c} size={14} />)}</span>
-                            <span className="flex-none w-[72px] text-right text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{pricing.baseRate[u.id] ? ringgit(pricing.baseRate[u.id]) : 'No rate'}</span>
+                            <span className="flex-none w-[72px] text-right text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{pricing.baseRate[u.id] ? rmShort(pricing.baseRate[u.id]) : 'No rate'}</span>
                           </label>
                         ))}
                       </div>
@@ -360,7 +359,7 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave }: {
                       const r = rowFor(ch);
                       const markup = ch === 'web' ? 'None' : (() => {
                         const shares = r.ups.map((u, i) => (r.guest[i] - u > 0 ? Math.round((u / (r.guest[i] - u)) * 100) : 0));
-                        return new Set(r.ups).size === 1 ? `+ ${ringgit(r.ups[0])}` : new Set(shares).size === 1 ? `+ ${shares[0]}%` : `+ ${span(r.ups, ringgit)}`;
+                        return new Set(r.ups).size === 1 ? `+ ${rmShort(r.ups[0])}` : new Set(shares).size === 1 ? `+ ${shares[0]}%` : `+ ${span(r.ups, rmShort)}`;
                       })();
                       return (
                         <div key={ch} className={`grid grid-cols-[minmax(150px,1.3fr)_1fr_1fr_1.2fr] gap-3 items-center px-3.5 min-h-12 [border-top:1px_solid_var(--color-line-soft)] ${on || (!pricing_ && !disabled) ? 'text-ink' : 'text-faint'}`}>
@@ -374,8 +373,8 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave }: {
                           </label>
                           {disabled ? <><span className="text-copy">Not connected</span><span className="text-copy">—</span><span className="text-copy">—</span></> : <>
                             <span className="text-copy [font-variant-numeric:tabular-nums]">{markup}</span>
-                            <span className="text-copy font-semibold [font-variant-numeric:tabular-nums]">{span(r.guest, ringgit)}</span>
-                            <span className="text-copy [font-variant-numeric:tabular-nums]">{span(r.keep, ringgit)}{ch !== 'web' && <span className="text-caption text-muted-ink"> after {COMMISSION[ch]}%</span>}</span>
+                            <span className="text-copy font-semibold [font-variant-numeric:tabular-nums]">{span(r.guest, rmShort)}</span>
+                            <span className="text-copy [font-variant-numeric:tabular-nums]">{span(r.keep, rmShort)}{ch !== 'web' && <span className="text-caption text-muted-ink"> after {COMMISSION[ch]}%</span>}</span>
                           </>}
                         </div>
                       );

@@ -3,6 +3,7 @@ import { Search, Plus, X } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -11,15 +12,14 @@ import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
+import { statusLabel } from '../lib/status';
 
 /** Goods Received (GRN) — ported from 2990's SCM, drawn in Conts. Receives against a PO:
  *  each accepted qty fills the PO line's received_qty and advances the PO status. */
 
 type Status = 'POSTED' | 'CLOSED' | 'CANCELLED';
-const STATUS_LABEL: Record<Status, string> = { POSTED: 'Posted', CLOSED: 'Closed', CANCELLED: 'Cancelled' };
-const STATUS_TONE: Record<Status, Tone> = { POSTED: 'success', CLOSED: 'neutral', CANCELLED: 'critical' };
 const FILTERS: (Status | 'all')[] = ['all', 'POSTED', 'CLOSED', 'CANCELLED'];
 
 interface GrnLine { itemCode: string; description: string; uom: string; qtyReceived: number; qtyAccepted: number; qtyRejected: number; unitPriceSen: number; lineTotalSen: number }
@@ -97,7 +97,7 @@ export default function GoodsReceiptsPage() {
 
       <div className="flex items-center justify-between gap-5 flex-wrap">
         <div className="flex gap-2 flex-wrap">
-          {FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}
+          {FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('goods_receipt', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}
         </div>
         <div className="relative">
           <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
@@ -110,7 +110,7 @@ export default function GoodsReceiptsPage() {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[820px]">
             <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
                 {['GRN number', 'PO', 'Supplier', 'Received', 'Status', 'Total'].map((h, i) => (
                   <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 5 ? 'text-right' : 'text-left')}>{h}</th>
                 ))}
@@ -127,12 +127,12 @@ export default function GoodsReceiptsPage() {
                   </div>
                 </td></tr>
               ) : rows.map(g => (
-                <tr key={g.id} onClick={() => setDrawer({ mode: 'view', grn: g })} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
+                <tr key={g.id} onClick={() => setDrawer({ mode: 'view', grn: g })} className="[border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-muted">
                   <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{g.grnNumber}</span></td>
                   <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[12.5px] text-[var(--color-ink-2)]">{g.poNumber}</td>
                   <td className="py-[13px] px-4"><div className="flex flex-col"><span className="text-[13.5px]">{g.supplierName}</span><span className="text-[11.5px] text-muted-ink">{g.supplierCode}</span></div></td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{g.receivedAt ? date(g.receivedAt) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={g.status} /></td>
+                  <td className="py-[13px] px-4"><StatusBadge entity="goods_receipt" value={g.status} /></td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{rm(g.totalSen)}</td>
                 </tr>
               ))}
@@ -150,10 +150,6 @@ export default function GoodsReceiptsPage() {
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active}
     className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-function StatusPill({ status }: { status: Status }) {
-  const t = STATUS_TONE[status];
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}</span>;
 }
 
 /* ---------- receive (create) drawer ---------- */
@@ -236,7 +232,7 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
                 <tbody>
                   {lines.length === 0 ? <tr><td colSpan={6} className="py-6 text-center text-[12.5px] text-muted-ink">This PO has nothing outstanding to receive.</td></tr>
                   : lines.map((l, i) => (
-                    <tr key={l.poLineId} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                    <tr key={l.poLineId} className="[border-top:1px_solid_var(--color-line-soft)]">
                       <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.ordered}</td>
                       <td className="py-2 px-3 text-right tabular-nums text-[13px] text-muted-ink">{l.already}</td>
@@ -256,7 +252,7 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
           <div className="flex items-end justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Received value</span><span className="tabular-nums w-[120px] text-right">{rm(total)}</span></div></div>
         </div>
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a PO and receive at least one line" onClick={submit}>Post GRN</Button>
       </div>
@@ -275,7 +271,7 @@ function ViewDrawer({ grn, canWrite, onClose, onCancel }: { grn: Grn; canWrite: 
   return (
     <Drawer open onClose={onClose} width={760}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
-        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{grn.grnNumber}</h2><StatusPill status={grn.status} /></div>
+        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{grn.grnNumber}</h2><StatusBadge entity="goods_receipt" value={grn.status} /></div>
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
@@ -294,7 +290,7 @@ function ViewDrawer({ grn, canWrite, onClose, onCancel }: { grn: Grn; canWrite: 
             </tr></thead>
             <tbody>
               {(grn.lines ?? []).map((l, i) => (
-                <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
                   <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
                   <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.qtyReceived}</td>
                   <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.qtyAccepted}</td>
@@ -307,8 +303,8 @@ function ViewDrawer({ grn, canWrite, onClose, onCancel }: { grn: Grn; canWrite: 
         </div>
         {grn.notes && <div className="text-[13px]"><span className="text-muted-ink">Notes: </span>{grn.notes}</div>}
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{canWrite && grn.status === 'POSTED' && <Button size="sm" variant="danger" onClick={() => onCancel(grn)}>Cancel GRN</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{canWrite && grn.status === 'POSTED' && <ConfirmButton confirm={{ title: `Cancel ${grn.grnNumber}?`, body: 'It is marked Cancelled, the goods it received come back out of stock and the purchase order counts them as not received.', meta: `${grn.supplierName} · ${rm(grn.totalSen)}`, confirmLabel: 'Cancel GRN', cancelLabel: 'Keep GRN' }} onConfirm={() => onCancel(grn)}>Cancel GRN</ConfirmButton>}</div>
         <div className="flex gap-2.5 items-center"><span className="text-[13px] text-muted-ink">Total</span><span className="text-[15px] font-semibold tabular-nums">{rm(grn.totalSen)}</span>
           <Button size="sm" variant="secondary" onClick={onClose}>Close</Button></div>
       </div>

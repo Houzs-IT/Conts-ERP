@@ -3,6 +3,7 @@ import { Plus, Trash2, X, Check } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -10,7 +11,8 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { TONE, cx } from '../lib/design-tokens';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
 
 /** Delivery Residence Rules — ported from 2990's SCM, drawn in Conts. Per-building-type
  *  delivery config the TMS scheduler reads (service duration, time window, lift/registration). */
@@ -65,20 +67,20 @@ export default function DeliveryResidenceRulesPage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[760px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['Building type', 'Service time', 'Delivery window', 'Lift booking', 'Registration', 'Status'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 3 || i === 4 ? 'text-center' : 'text-left')}>{h}</th>)}
             </tr></thead>
             <tbody>
               {loading && all.length === 0 ? <tr><td colSpan={6}><TableSkeleton rows={5} cols={6} /></td></tr>
               : rows.length === 0 ? <tr><td colSpan={6}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q ? 'No rules match.' : 'No residence rules yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Set per-building delivery windows and access requirements for the planner.</span></div></td></tr>
               : rows.map(r => (
-                <tr key={r.id} onClick={() => { if (canWrite) setDrawer({ draft: r, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
+                <tr key={r.id} onClick={() => { if (canWrite) setDrawer({ draft: r, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
                   <td className="py-[13px] px-4 text-[13.5px]">{r.buildingType}</td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)] tabular-nums">{dur(r.serviceDurationMinutes)}</td>
                   <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums">{r.earliestDeliveryTime || r.latestDeliveryTime ? `${r.earliestDeliveryTime || '—'} – ${r.latestDeliveryTime || '—'}` : 'Any time'}</td>
                   <td className="py-[13px] px-4 text-center">{r.requiresLiftBooking ? <Check size={16} strokeWidth={2} className="inline text-gold-ink" /> : <span className="text-muted-ink">—</span>}</td>
                   <td className="py-[13px] px-4 text-center">{r.requiresRegistration ? <Check size={16} strokeWidth={2} className="inline text-gold-ink" /> : <span className="text-muted-ink">—</span>}</td>
-                  <td className="py-[13px] px-4"><StatusPill active={r.isActive} /></td>
+                  <td className="py-[13px] px-4"><StatusBadge entity="active_flag" value={r.isActive ? 'active' : 'inactive'} /></td>
                 </tr>
               ))}
             </tbody>
@@ -90,10 +92,6 @@ export default function DeliveryResidenceRulesPage() {
   );
 }
 
-function StatusPill({ active }: { active: boolean }) {
-  const t = active ? TONE.success : TONE.neutral;
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', t.bg, t.text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{active ? 'Active' : 'Inactive'}</span>;
-}
 
 function RuleDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Rule; isNew: boolean; onClose: () => void; onSave: (d: Rule, isNew: boolean) => void; onDelete?: () => void }) {
   const [f, setF] = useState<Rule>(draft);
@@ -122,8 +120,8 @@ function RuleDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Rule; 
           </select>
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete the ${draft.buildingType} rule?`, body: 'It is deleted for good and drops off the residence rules list.', confirmLabel: 'Delete rule', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a building type first" onClick={() => onSave(f, isNew)}>{isNew ? 'Add rule' : 'Save'}</Button>

@@ -3,6 +3,7 @@ import { Search, Plus, Trash2 } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -11,16 +12,16 @@ import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
+import { statusLabel } from '../lib/status';
+import { PhoneText } from '../components/PhoneText';
 
 /** Suppliers — supplier master, ported from 2990's SCM (logic) and drawn in Conts.
  *  Money is integer sen; the form takes RM. Bindings/scorecard deferred to later slices. */
 
 type Status = 'ACTIVE' | 'INACTIVE' | 'BLOCKED';
 const STATUSES: Status[] = ['ACTIVE', 'INACTIVE', 'BLOCKED'];
-const STATUS_LABEL: Record<Status, string> = { ACTIVE: 'Active', INACTIVE: 'Inactive', BLOCKED: 'Blocked' };
-const STATUS_TONE: Record<Status, Tone> = { ACTIVE: 'success', INACTIVE: 'neutral', BLOCKED: 'critical' };
 
 interface Supplier {
   id: string; code: string; name: string; status: Status;
@@ -119,7 +120,7 @@ export default function SuppliersPage() {
       <div className="flex items-center justify-between gap-5 flex-wrap">
         <div className="flex gap-2 flex-wrap">
           <Chip label="All" active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />
-          {STATUSES.map(s => <Chip key={s} label={STATUS_LABEL[s]} active={statusFilter === s} onClick={() => setStatusFilter(s)} />)}
+          {STATUSES.map(s => <Chip key={s} label={statusLabel('supplier', s)} active={statusFilter === s} onClick={() => setStatusFilter(s)} />)}
         </div>
         <div className="relative">
           <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
@@ -132,7 +133,7 @@ export default function SuppliersPage() {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[840px]">
             <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
                 {['Code', 'Name', 'Contact', 'Phone', 'Category', 'Terms', 'Credit limit', 'Status'].map((h, i) => (
                   <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 6 ? 'text-right' : 'text-left')}>{h}</th>
                 ))}
@@ -150,15 +151,15 @@ export default function SuppliersPage() {
                 </td></tr>
               ) : rows.map(s => (
                 <tr key={s.id} onClick={() => { if (canWrite) setDrawer({ draft: toDraft(s), isNew: false }); }}
-                  className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
+                  className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
                   <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{s.code}</span></td>
                   <td className="py-[13px] px-4 text-[13.5px]">{s.name}</td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{s.contactPerson || '—'}</td>
-                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums">{s.phone || '—'}</td>
+                  <td className="py-[13px] px-4 text-[12.5px] text-muted-ink tabular-nums"><PhoneText value={s.phone} whatsapp={false} /></td>
                   <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{s.category || '—'}</td>
                   <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{s.paymentTerms || '—'}</td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{s.creditLimitSen ? rm(s.creditLimitSen, { cents: false }) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={s.status} /></td>
+                  <td className="py-[13px] px-4"><StatusBadge entity="supplier" value={s.status} /></td>
                 </tr>
               ))}
             </tbody>
@@ -184,14 +185,6 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
   );
 }
 
-function StatusPill({ status }: { status: Status }) {
-  const t = STATUS_TONE[status];
-  return (
-    <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}>
-      <span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}
-    </span>
-  );
-}
 
 /* ---------- New / Edit drawer ---------- */
 
@@ -210,7 +203,7 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
         <Section title="Identity">
           <Field label="Code" placeholder="e.g. SUP-EMMA" value={f.code} onChange={set('code')} />
           <Field label="Name" placeholder="Supplier name" value={f.name} onChange={set('name')} />
-          <Sel label="Status" value={f.status} onChange={set('status')} options={STATUSES.map(s => ({ value: s, label: STATUS_LABEL[s] }))} />
+          <Sel label="Status" value={f.status} onChange={set('status')} options={STATUSES.map(s => ({ value: s, label: statusLabel('supplier', s) }))} />
           <Field label="Category" placeholder="e.g. Sofa, Bedframe" value={f.category} onChange={set('category')} />
           <Field label="Supplier type" placeholder="Manufacturer / Trader / 3PL" value={f.supplierType} onChange={set('supplierType')} />
           <Field label="Business nature" placeholder="Optional" value={f.businessNature} onChange={set('businessNature')} />
@@ -244,8 +237,8 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
           <div className="col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
         </Section>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete supplier ${draft.name}?`, body: 'It is deleted for good and drops off the supplier list.', confirmLabel: 'Delete supplier', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name first" onClick={() => onSave(f, isNew)}>{isNew ? 'Create supplier' : 'Save'}</Button>

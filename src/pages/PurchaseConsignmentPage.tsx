@@ -3,6 +3,7 @@ import { Search, Plus, Trash2, X } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -11,15 +12,14 @@ import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
+import { statusLabel } from '../lib/status';
 
 /** Purchase Consignment Orders — ported from 2990's SCM, drawn in Conts. A PO for consigned
  *  stock (settle only what's used; return the unsold). Receives/returns = a later slice. */
 
 type Status = 'SUBMITTED' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CANCELLED';
-const STATUS_LABEL: Record<Status, string> = { SUBMITTED: 'Submitted', PARTIALLY_RECEIVED: 'Partly received', RECEIVED: 'Received', CANCELLED: 'Cancelled' };
-const STATUS_TONE: Record<Status, Tone> = { SUBMITTED: 'info', PARTIALLY_RECEIVED: 'warning', RECEIVED: 'success', CANCELLED: 'neutral' };
 const FILTERS: (Status | 'all')[] = ['all', 'SUBMITTED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED'];
 
 interface Line { itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; discountSen: number; lineTotalSen: number }
@@ -85,7 +85,7 @@ export default function PurchaseConsignmentPage() {
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={openNew}>New consignment</Button> : undefined} />
       {error && <StaleBanner message={`Showing the last order list we have. ${error}`} onRetry={reload} />}
       <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('purchase_consignment', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
         <div className="relative">
           <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
           <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search PC or supplier..." aria-label="Search consignment orders"
@@ -95,7 +95,7 @@ export default function PurchaseConsignmentPage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[780px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['PC number', 'Supplier', 'PC date', 'Expected', 'Status', 'Total'].map((h, i) => (
                 <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 5 ? 'text-right' : 'text-left')}>{h}</th>
               ))}
@@ -104,12 +104,12 @@ export default function PurchaseConsignmentPage() {
               {loading && all.length === 0 ? <tr><td colSpan={6}><TableSkeleton rows={5} cols={6} /></td></tr>
               : rows.length === 0 ? <tr><td colSpan={6}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No consignment orders match.' : 'No consignment orders yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Raise a consignment order for stock you settle only when used.</span></div></td></tr>
               : rows.map(p => (
-                <tr key={p.id} onClick={() => { setIsNew(false); setDrawer({ ...p, lines: p.lines ?? [] }); }} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
+                <tr key={p.id} onClick={() => { setIsNew(false); setDrawer({ ...p, lines: p.lines ?? [] }); }} className="[border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-muted">
                   <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{p.pcNumber}</td>
                   <td className="py-[13px] px-4"><div className="flex flex-col"><span className="text-[13.5px]">{p.supplierName}</span><span className="text-[11.5px] text-muted-ink">{p.supplierCode}</span></div></td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.pcDate ? date(p.pcDate) : '—'}</td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.expectedAt ? date(p.expectedAt) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={p.status} /></td>
+                  <td className="py-[13px] px-4"><StatusBadge entity="purchase_consignment" value={p.status} /></td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{rm(p.totalSen)}</td>
                 </tr>
               ))}
@@ -125,10 +125,6 @@ export default function PurchaseConsignmentPage() {
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-function StatusPill({ status }: { status: Status }) {
-  const t = STATUS_TONE[status];
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}</span>;
 }
 
 interface DraftLine { itemCode: string; description: string; uom: string; qty: string; unitPrice: string; discount: string }
@@ -152,7 +148,7 @@ function PcDrawer({ pc, isNew, suppliers, warehouses, canWrite, onClose, onSave,
   return (
     <Drawer open onClose={onClose} width={880}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
-        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New consignment order' : pc.pcNumber}</h2>{!isNew && <StatusPill status={pc.status} />}</div>
+        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New consignment order' : pc.pcNumber}</h2>{!isNew && <StatusBadge entity="purchase_consignment" value={pc.status} />}</div>
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
@@ -180,7 +176,7 @@ function PcDrawer({ pc, isNew, suppliers, warehouses, canWrite, onClose, onSave,
               <thead><tr className="bg-muted">{['Item code', 'Description', 'UOM', 'Qty', 'Unit price', 'Discount', 'Line total', ''].map((th, i) => <th key={th || i} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i >= 3 && i <= 6 ? 'text-right' : 'text-left')}>{th}</th>)}</tr></thead>
               <tbody>
                 {lines.map((l, i) => (
-                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
                     <td className="p-1.5"><Cell value={l.itemCode} onChange={v => setLine(i, 'itemCode', v)} disabled={!editable} w="130px" /></td>
                     <td className="p-1.5"><Cell value={l.description} onChange={v => setLine(i, 'description', v)} disabled={!editable} w="100%" /></td>
                     <td className="p-1.5"><Cell value={l.uom} onChange={v => setLine(i, 'uom', v)} disabled={!editable} w="70px" /></td>
@@ -188,7 +184,7 @@ function PcDrawer({ pc, isNew, suppliers, warehouses, canWrite, onClose, onSave,
                     <td className="p-1.5"><Cell value={l.unitPrice} onChange={v => setLine(i, 'unitPrice', v)} disabled={!editable} w="96px" right num /></td>
                     <td className="p-1.5"><Cell value={l.discount} onChange={v => setLine(i, 'discount', v)} disabled={!editable} w="90px" right num /></td>
                     <td className="p-1.5 text-right tabular-nums text-[13px] whitespace-nowrap">{rm(lineTotal(l))}</td>
-                    <td className="p-1.5 text-center">{editable && <button onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} aria-label="Remove line" className="text-muted-ink hover:text-[var(--color-critical-fg)] bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button>}</td>
+                    <td className="p-1.5 text-center">{editable && <button onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} aria-label="Remove line" className="text-muted-ink hover:text-danger bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button>}</td>
                   </tr>
                 ))}
                 {lines.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-[12.5px] text-muted-ink">No lines yet.</td></tr>}
@@ -206,8 +202,8 @@ function PcDrawer({ pc, isNew, suppliers, warehouses, canWrite, onClose, onSave,
           </div>
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{!isNew && canWrite && pc.status !== 'CANCELLED' && pc.status !== 'RECEIVED' && <Button size="sm" variant="danger" onClick={() => onCancelPc(pc)}>Cancel order</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{!isNew && canWrite && pc.status !== 'CANCELLED' && pc.status !== 'RECEIVED' && <ConfirmButton confirm={{ title: `Cancel ${pc.pcNumber}?`, body: 'It is marked Cancelled and stays on the list for the record.', meta: pc.supplierName, confirmLabel: 'Cancel order', cancelLabel: 'Keep order' }} onConfirm={() => onCancelPc(pc)}>Cancel order</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
           {editable && <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a supplier and add at least one line" onClick={() => { const l = built(); onSave({ ...h, ...totalsOf(l, h.taxSen) }, l); }}>{isNew ? 'Raise order' : 'Save'}</Button>}

@@ -9,17 +9,14 @@ import type { Tone, BookingChannel } from './types';
 
 export interface SemanticStyle { text: string; bg: string; border: string; dot: string; hex: string }
 
-/** These reference the root tokens.css vars directly (var(--color-*-fg/-line/base)).
- *  The base names (--color-critical etc. = the tint) are defined UNLAYERED in the
- *  imported tokens.css and win over Tailwind's @theme layer, so plain `text-critical`
- *  utilities resolve to the tint, not the foreground — hence the explicit -fg refs.
- *  bg = base tint, text = -fg (AA on the tint), border/dot = -line. */
+/** The meaning-based utilities from src/styles/tokens.css (@theme inline): text = AA text colour, bg = tint,
+ *  border / dot = the line colour. critical is the danger tone. */
 export const TONE: Record<Tone, SemanticStyle> = {
-  success:  { text: 'text-[var(--color-success-fg)]',  bg: 'bg-[var(--color-success)]',  border: 'border-[var(--color-success-line)]',  dot: 'bg-[var(--color-success-line)]',  hex: '#11694A' },
-  warning:  { text: 'text-[var(--color-warning-fg)]',  bg: 'bg-[var(--color-warning)]',  border: 'border-[var(--color-warning-line)]',  dot: 'bg-[var(--color-warning-line)]',  hex: '#8A5A12' },
-  critical: { text: 'text-[var(--color-critical-fg)]', bg: 'bg-[var(--color-critical)]', border: 'border-[var(--color-critical-line)]', dot: 'bg-[var(--color-critical-line)]', hex: '#A8352F' },
-  info:     { text: 'text-[var(--color-info-fg)]',     bg: 'bg-[var(--color-info)]',     border: 'border-[var(--color-info-line)]',     dot: 'bg-[var(--color-info-line)]',     hex: '#2E6DA4' },
-  neutral:  { text: 'text-[var(--color-neutral-fg)]',  bg: 'bg-[var(--color-neutral)]',  border: 'border-[var(--color-neutral-line)]',  dot: 'bg-[var(--color-neutral-line)]',  hex: '#706D67' },
+  success: { text: 'text-success', bg: 'bg-success-bg', border: 'border-success-line', dot: 'bg-success-line', hex: '#11694A' },
+  warning: { text: 'text-warning', bg: 'bg-warning-bg', border: 'border-warning-line', dot: 'bg-warning-line', hex: '#8A5A12' },
+  critical: { text: 'text-danger', bg: 'bg-danger-bg', border: 'border-danger-line', dot: 'bg-danger-line', hex: '#A8352F' },
+  info: { text: 'text-info', bg: 'bg-info-bg', border: 'border-info-line', dot: 'bg-info-line', hex: '#2E6DA4' },
+  neutral: { text: 'text-neutral', bg: 'bg-neutral-bg', border: 'border-neutral-line', dot: 'bg-neutral-line', hex: '#706D67' },
 };
 
 export const CHANNEL_META: Record<BookingChannel, { label: string; hex: string; tint: string; ink: string }> = {

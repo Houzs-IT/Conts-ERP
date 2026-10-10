@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Icon from '../../components/Icon';
 import { useToast } from '../../components/Toast';
-import { api } from '../../lib/api';
+import { api, errorMessage } from '../../lib/api';
 import { masked } from '../../lib/format';
 import { bankName } from '../../lib/vocabulary';
 import { Section, type Owner } from './shared';
@@ -23,7 +23,7 @@ export function PayoutDetails({ owner }: { owner: Owner }) {
       const r = await api.get<{ value: string }>(`/owners/${encodeURIComponent(owner.id)}/reveal`, { field });
       setShown(s => ({ ...s, [field]: r.value }));
     } catch (e) {
-      toast({ tone: 'critical', title: 'Not shown.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Not shown.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setBusy(null); }
   }
 

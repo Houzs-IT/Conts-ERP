@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import Icon from '../components/Icon';
 import { ListPager } from '../components/ListPager';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -239,7 +239,7 @@ export default function PortfolioPage() {
                     <span className={cx(NUM, 'text-copy')}>{money ? rm(u.revpar, { cents: false }) : '—'}</span>
                     <span className={cx(NUM, 'text-copy font-medium')}>{money ? rm(u.revenue, { cents: false }) : '—'}</span>
                     {withRating && <span className={cx(NUM, 'text-copy')}>{u.rating != null ? fmtRating(u.rating) : '—'}</span>}
-                    {withException && <div className="min-w-0">{u.exception ? <Badge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-meta text-faint">None</span>}</div>}
+                    {withException && <div className="min-w-0">{u.exception ? <StatusBadge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-meta text-faint">None</span>}</div>}
                   </a>
                 ))}
                 {/* Totals for every unit that matches, not just this page. */}
@@ -268,7 +268,7 @@ export default function PortfolioPage() {
                     <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">
                       {percent(u.occupancy)} occupied{money ? ` · ADR ${rm(u.adr, { cents: false })}` : ''}
                     </span>
-                    {u.exception && <Badge tone={u.exception.tone} label={u.exception.label} size="sm" />}
+                    {u.exception && <StatusBadge tone={u.exception.tone} label={u.exception.label} size="sm" />}
                   </div>
                 </a>
               ))}

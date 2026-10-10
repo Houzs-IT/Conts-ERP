@@ -1,18 +1,18 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api, ApiFailure } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { csvObjects, readXlsx, sheetObjects, type SheetRow } from '../lib/sheets';
 import { count as n, dateRange, plural } from '../lib/format';
 import { moneyString } from '../components/MoneyText';
 import {
   type Row, type RowError, type KnownUnit, type ImportKind,
-  LISTING_COLUMNS, RESERVATION_COLUMNS, WORKBOOK_SHEETS, WORKBOOK_COLUMNS, WORKBOOK_HEADER_ROW,
+  LISTING_COLUMNS, RESERVATION_COLUMNS, WORKBOOK_SHEETS, WORKBOOK_KEY, WORKBOOK_COLUMNS, WORKBOOK_HEADER_ROW,
   mapListing, mapReservations, mapWorkbookUnits, mapAirbnbEarnings, mapCleaning, mapWorkbookExpenses, mapPayoutHistory,
   matchWorkbookUnit, unitKey, todayInKL, chunkByKey, pick, poolSheetRows,
 } from '../../functions/_lib/hostplatformImport';
@@ -88,7 +88,7 @@ export default function HostPlatformImportPage() {
       const out: Record<string, SheetRow[]> = {};
       for (const s of wanted) out[s] = pick(s === WORKBOOK_SHEETS.pool ? poolSheetRows(sheets[s] ?? []) : sheetObjects(sheets[s] ?? [], WORKBOOK_HEADER_ROW[s] ?? 1, s), WORKBOOK_COLUMNS[s]) as SheetRow[];
       setWorkbook({ name: f.name, sheets: out, missing: wanted.filter(s => !names.includes(s)) });
-    } catch (e) { setReadError(e instanceof Error ? e.message : `${f.name} could not be read.`); }
+    } catch (e) { setReadError(errorMessage(e, `${f.name} could not be read.`)); }
   }
 
   /* ---------- previews: the same mapping the server runs ---------- */
@@ -119,7 +119,7 @@ export default function HostPlatformImportPage() {
         result = merge(result, res);
         setRuns(r => ({ ...r, [kind]: { done: i + 1, total: parts.length, result, failed: null, busy: i + 1 < parts.length } }));
       } catch (e) {
-        const msg = e instanceof ApiFailure ? e.message : 'The connection dropped.';
+        const msg = errorMessage(e, 'The connection dropped.');
         setRuns(r => ({ ...r, [kind]: { done: i, total: parts.length, result, failed: `Stopped at part ${i + 1} of ${parts.length}: ${msg} Everything before it is saved; run this step again to finish (nothing is duplicated).`, busy: false } }));
         return;
       }
@@ -148,7 +148,7 @@ export default function HostPlatformImportPage() {
       />
 
       {existing.error && <StaleBanner message={`Could not read the units already in Property OS, so every unit is counted as new in the previews below. ${existing.error}`} onRetry={existing.reload} />}
-      {readError && <div role="alert" className="text-copy text-[var(--color-critical-fg)]">{readError}</div>}
+      {readError && <div role="alert" className="text-copy text-danger">{readError}</div>}
 
       <Card>
         <div className="py-4 px-5 flex flex-col gap-1.5 text-copy leading-[1.5] text-[var(--color-ink-2)]">
@@ -198,7 +198,7 @@ export default function HostPlatformImportPage() {
         action={resPlan && <Button variant="primary" size="sm" loading={runs.reservations?.busy} disabled={!resPlan.reservations.length} disabledReason="No bookings in the files."
           onClick={() => send('reservations', chunks(pick(reservations!.rows, RESERVATION_COLUMNS)))}>Import {n(resPlan.reservations.length)} bookings</Button>} />
 
-      <Step no={4} title="Owner workbook: Airbnb earnings" hint="Sheet 订单数据. Replaces HostPlatform's amounts with the payout, fee and gross from Airbnb's earnings report, and adds stays HostPlatform never had. A stay of 28 nights or more that Airbnb pays in monthly instalments is summed over all its lines, and each instalment is listed on the booking (paid, or still to come)." run={runs.workbook_airbnb}
+      <Step no={4} title="Owner workbook: Airbnb earnings" hint="The Airbnb order data sheet. Replaces HostPlatform's amounts with the payout, fee and gross from Airbnb's earnings report, and adds stays HostPlatform never had. A stay of 28 nights or more that Airbnb pays in monthly instalments is summed over all its lines, and each instalment is listed on the booking (paid, or still to come)." run={runs.workbook_airbnb}
         waitFor={!wb ? 'Choose the workbook in step 2.' : null}
         preview={wbAirbnb && (
           <Stats items={[
@@ -207,9 +207,9 @@ export default function HostPlatformImportPage() {
           ]} errors={wbAirbnb.errors} notes={wbAirbnb.skipped.length ? [`${n(wbAirbnb.skipped.length)} lines are skipped: ${Object.entries(tally(wbAirbnb.skipped, s => s.reason)).map(([k, v]) => `${v} × ${k}`).join(' ')}`] : []} />
         )}
         action={wbAirbnb && <Button variant="primary" size="sm" loading={runs.workbook_airbnb?.busy} disabled={!wbAirbnb.earnings.length} disabledReason="No earnings lines."
-          onClick={() => send('workbook_airbnb', chunkByKey(wb![WORKBOOK_SHEETS.airbnb], r => String(r['确认码'] ?? ''), CHUNK))}>Import {n(wbAirbnb.earnings.length)} bookings</Button>} />
+          onClick={() => send('workbook_airbnb', chunkByKey(wb![WORKBOOK_SHEETS.airbnb], r => String(r[WORKBOOK_KEY.airbnbConfirmation] ?? ''), CHUNK))}>Import {n(wbAirbnb.earnings.length)} bookings</Button>} />
 
-      <Step no={5} title="Owner workbook: cleaning records" hint="Sheets 清洁记录 and 清洁单价. Each clean becomes a housekeeping task (done if the date has passed) given to the cleaner named in 负责人, who joins the cleaner roster, and, when the owner pays, a cleaning expense at the unit's price." run={runs.workbook_cleaning}
+      <Step no={5} title="Owner workbook: cleaning records" hint="The cleaning records and cleaning prices sheets. Each clean becomes a housekeeping task (done if the date has passed) given to the cleaner named in the person-in-charge column, who joins the cleaner roster, and, when the owner pays, a cleaning expense at the unit's price." run={runs.workbook_cleaning}
         waitFor={!wb ? 'Choose the workbook in step 2.' : null}
         preview={wbCleaning && (
           <Stats items={[
@@ -221,7 +221,7 @@ export default function HostPlatformImportPage() {
         action={wbCleaning && <Button variant="primary" size="sm" loading={runs.workbook_cleaning?.busy} disabled={!wbCleaning.cleanings.length} disabledReason="No cleaning records."
           onClick={() => send('workbook_cleaning', chunks(wb![WORKBOOK_SHEETS.cleaning]), { prices: wb![WORKBOOK_SHEETS.cleaningPrices] })}>Import {n(wbCleaning.cleanings.length)} cleans</Button>} />
 
-      <Step no={6} title="Owner workbook: utilities and charges" hint="Sheets 水费, 电费, 网络费, INDAH WATER and 杂费扣款. Each month's bill becomes an expense dated the 1st of that month. 杂费扣款 'Additional Deduction' lines are costs taken off before the split; 'O2' lines are owner adjustments added to the payout after the split, sign as written." run={runs.workbook_expenses}
+      <Step no={6} title="Owner workbook: utilities and charges" hint="The water, electricity, internet, INDAH WATER and miscellaneous deductions sheets. Each month's bill becomes an expense dated the 1st of that month. Miscellaneous deduction 'Additional Deduction' lines are costs taken off before the split; 'O2' lines are owner adjustments added to the payout after the split, sign as written." run={runs.workbook_expenses}
         waitFor={!wb ? 'Choose the workbook in step 2.' : null}
         preview={wbExpenses && (
           <Stats items={[
@@ -234,7 +234,7 @@ export default function HostPlatformImportPage() {
         action={wbExpenses && <Button variant="primary" size="sm" loading={runs.workbook_expenses?.busy} disabled={!wbExpenses.expenses.length} disabledReason="No expenses."
           onClick={() => send('workbook_expenses', chunks(expenseRows))}>Import {n(wbExpenses.expenses.length)} expenses</Button>} />
 
-      <Step no={7} title="Owner workbook: payout history" hint="Sheets OWNER PAYOUT and 整体报告. Each past month becomes a paid owner statement and payout, marked as from the workbook, so owners and finance see the history. The current month and later are never touched. Run after step 6." run={runs.workbook_payouts}
+      <Step no={7} title="Owner workbook: payout history" hint="The OWNER PAYOUT and overall report sheets. Each past month becomes a paid owner statement and payout, marked as from the workbook, so owners and finance see the history. The current month and later are never touched. Run after step 6." run={runs.workbook_payouts}
         waitFor={!wb ? 'Choose the workbook in step 2.' : null}
         preview={wbPayouts && (
           <Stats items={[
@@ -270,7 +270,7 @@ function Step({ no, title, hint, picker, preview, action, run, waitFor }: {
             <span className="text-heading font-semibold">{title}</span>
             <span className="text-meta leading-[1.5] text-muted-ink [text-wrap:pretty]">{hint}</span>
           </div>
-          {state && <Badge tone={state.tone} label={state.label} />}
+          {state && <StatusBadge tone={state.tone} label={state.label} />}
         </div>
         {waitFor && !run && !preview && <div className="text-meta text-muted-ink">{waitFor}</div>}
         {picker}
@@ -283,7 +283,7 @@ function Step({ no, title, hint, picker, preview, action, run, waitFor }: {
             <span className="text-meta text-muted-ink">{n(run.done)} of {plural(run.total, 'part')} sent</span>
           </div>
         )}
-        {run?.failed && <div role="alert" className="text-copy text-[var(--color-critical-fg)]">{run.failed}</div>}
+        {run?.failed && <div role="alert" className="text-copy text-danger">{run.failed}</div>}
         {run?.result && <ResultView r={run.result} />}
       </div>
       {action && (

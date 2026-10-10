@@ -59,14 +59,14 @@ export default function LoadingListPage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[820px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['Delivery order', 'Customer', 'Warehouse', 'Date', 'Driver / vehicle', 'Lines', 'Units'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i >= 5 ? 'text-right' : 'text-left')}>{h}</th>)}
             </tr></thead>
             <tbody>
               {loading && all.length === 0 ? <tr><td colSpan={7}><TableSkeleton rows={5} cols={7} /></td></tr>
               : rows.length === 0 ? <tr><td colSpan={7}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">Nothing to load.</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Delivery orders show here once they are packed (status Loaded) and waiting to dispatch.</span></div></td></tr>
               : rows.map(r => (
-                <tr key={r.id} onClick={() => setDrawer(r)} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
+                <tr key={r.id} onClick={() => setDrawer(r)} className="[border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-muted">
                   <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{r.doNumber}</td>
                   <td className="py-[13px] px-4 text-[13.5px]">{r.customerName}</td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{r.warehouseName || r.warehouseCode || '—'}</td>
@@ -103,7 +103,7 @@ function ItemsDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
               {lines === null ? <tr><td colSpan={2} className="py-6 text-center text-[12.5px] text-muted-ink">Loading…</td></tr>
               : lines.length === 0 ? <tr><td colSpan={2} className="py-6 text-center text-[12.5px] text-muted-ink">No line items.</td></tr>
               : lines.map((l, i) => (
-                <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
                   <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
                   <td className="py-2 px-3 text-right tabular-nums text-[13px] font-semibold">{l.qty} {l.uom}</td>
                 </tr>

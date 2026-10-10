@@ -9,16 +9,17 @@ import { EmptyState, Skeleton } from '../components/States';
 import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
-import { api, ApiFailure } from '../lib/api';
+import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { useMedia } from '../lib/useMedia';
 import { cx } from '../lib/design-tokens';
 import { rm } from '../lib/format';
 import {
-  Chip, PillTabs, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, MediaGrid, MediaDrop, uploadTo, CATEGORY, stamp, hm, mytDay,
-  type ChipTone, type MediaItem,
+  PillTabs, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, MediaGrid, MediaDrop, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem,
 } from '../components/ops/OpsUi';
+import type { AnyTone } from '../lib/status';
+import { StatusBadge } from '../components/StatusBadge';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
 
 /* ---------- the API's shape (functions/api/maintenance/issues.ts) ---------- */
@@ -44,7 +45,7 @@ const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', ins
 const MONEY_ROLES = ['management', 'finance_admin', 'operations_manager'];
 
 const awaitingOwner = (i: Issue) => i.state !== 'resolved' && i.ownerApprovalRequired && !i.ownerApprovedAt && i.chargeTo === 'owner';
-function statusOf(i: Issue): { label: string; tone: ChipTone } {
+function statusOf(i: Issue): { label: string; tone: AnyTone } {
   if (i.state === 'resolved') return { label: i.finalAmount ? `Done · ${PAYER_SHORT[i.chargeTo]}` : 'Done', tone: 'success' };
   if (awaitingOwner(i)) return { label: 'Awaiting owner approval', tone: 'warning' };
   if (i.state === 'in_progress' || i.startedAt) return { label: i.endedAt ? 'Repair finished' : 'In progress', tone: 'info' };
@@ -101,15 +102,15 @@ export default function MaintenancePage() {
 
   async function saveThreshold(sen: number) {
     try { await api.put('/settings', { operations: { maintenanceApprovalThreshold: sen } }); toast({ tone: 'success', title: `Owner approval needed above ${rm(sen)}.` }); setThreshold(false); reload(); }
-    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: e instanceof ApiFailure ? e.message : 'Try again.' }); }
+    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again.') }); }
   }
   async function createSku(input: CatalogInput) {
     try { await api.post('/maintenance/skus', input); toast({ tone: 'success', title: 'Item added.' }); sku.reload(); }
-    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: e instanceof ApiFailure ? e.message : 'Try again.' }); }
+    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again.') }); }
   }
   function updateSku(id: string, delta: Partial<Sku>) {
     api.patch(`/maintenance/skus/${id}`, delta).then(() => { toast({ tone: 'success', title: 'Catalog updated.' }); sku.reload(); })
-      .catch(e => toast({ tone: 'critical', title: 'Not saved.', body: e instanceof ApiFailure ? e.message : 'Try again.' }));
+      .catch(e => toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again.') }));
   }
 
   const list = (
@@ -172,7 +173,7 @@ const COLS = 'md:grid md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.7fr)_minmax(0,0.7
 function IssueTable({ rows, loading, selected, onSelect, money, empty }: { rows: Issue[]; loading: boolean; selected: string | null; onSelect: (id: string) => void; money: boolean; empty: ReactNode }) {
   return (
     <section className="bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
-      <div className={cx('hidden text-meta text-muted-ink px-[18px] py-2.5 bg-[#F4F1EB]', COLS)}>
+      <div className={cx('hidden text-meta text-muted-ink px-[18px] py-2.5 bg-muted', COLS)}>
         <div>Unit</div><div>Issue</div><div>Category</div><div>Urgency</div><div>Assigned to</div><div className="text-right">Cost</div><div>Status</div>
       </div>
       {loading ? <div className="p-4 flex flex-col gap-2">{[0, 1, 2].map(i => <Skeleton key={i} height={44} />)}</div>
@@ -193,13 +194,13 @@ function IssueTable({ rows, loading, selected, onSelect, money, empty }: { rows:
               </div>
               <div className="hidden md:block">{CATEGORY[i.category] ?? i.category}</div>
               <div className="flex gap-1.5 flex-wrap md:block">
-                {i.urgency === 'urgent' ? <Chip tone="critical">Urgent</Chip> : <span className="hidden md:inline">Normal</span>}
-                <span className="md:hidden"><Chip tone="neutral">{CATEGORY[i.category] ?? i.category}</Chip></span>
-                <span className="md:hidden"><Chip tone={st.tone}>{st.label}</Chip></span>
+                {i.urgency === 'urgent' ? <StatusBadge tone="critical">Urgent</StatusBadge> : <span className="hidden md:inline">Normal</span>}
+                <span className="md:hidden"><StatusBadge tone="neutral">{CATEGORY[i.category] ?? i.category}</StatusBadge></span>
+                <span className="md:hidden"><StatusBadge tone={st.tone}>{st.label}</StatusBadge></span>
               </div>
-              <div className={cx('truncate', !i.vendorName && 'text-[var(--color-critical-fg)]')}>{i.vendorName ? <>{i.vendorName}<span className="text-muted-ink"> {i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}</span></> : 'Unassigned'}</div>
+              <div className={cx('truncate', !i.vendorName && 'text-danger')}>{i.vendorName ? <>{i.vendorName}<span className="text-muted-ink"> {i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}</span></> : 'Unassigned'}</div>
               <div className="md:text-right [font-variant-numeric:tabular-nums]">{money && cost != null ? <>{rm(cost, { cents: false })}{i.finalAmount == null && <span className="text-muted-ink text-meta"> quote</span>}</> : <span className="text-faint">—</span>}</div>
-              <div className="hidden md:block"><Chip tone={st.tone} className="whitespace-normal">{st.label}</Chip></div>
+              <div className="hidden md:block"><StatusBadge tone={st.tone} className="whitespace-normal">{st.label}</StatusBadge></div>
             </div>
           );
         })}
@@ -228,7 +229,7 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
   async function act(key: string, fn: () => Promise<unknown>, ok: string, body?: string) {
     setBusy(key);
     try { await fn(); toast({ tone: 'success', title: ok, body }); refresh(); return true; }
-    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: e instanceof ApiFailure ? e.message : 'Try again in a moment.' }); return false; }
+    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); return false; }
     finally { setBusy(null); }
   }
 
@@ -253,10 +254,10 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
         <CloseButton onClick={onClose} />
       </div>
       <div className="flex gap-1.5 flex-wrap">
-        {i.urgency === 'urgent' && <Chip tone="critical">Urgent</Chip>}
-        <Chip tone="neutral">{CATEGORY[i.category] ?? i.category}</Chip>
-        <Chip tone={statusOf(i).tone}>{statusOf(i).label}</Chip>
-        {i.blocksUnit && <Chip tone="critical">Unit blocked</Chip>}
+        {i.urgency === 'urgent' && <StatusBadge tone="critical">Urgent</StatusBadge>}
+        <StatusBadge tone="neutral">{CATEGORY[i.category] ?? i.category}</StatusBadge>
+        <StatusBadge tone={statusOf(i).tone}>{statusOf(i).label}</StatusBadge>
+        {i.blocksUnit && <StatusBadge tone="critical">Unit blocked</StatusBadge>}
       </div>
       {i.detail && <p className="m-0 text-ink whitespace-pre-wrap">{i.detail}</p>}
 
@@ -275,7 +276,7 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
       </ol>
 
       {awaitingOwner(i) && (
-        <div className="rounded-control bg-warning-bg text-[var(--color-warning-fg)] p-3 flex flex-col gap-2">
+        <div className="rounded-control bg-warning-bg text-warning p-3 flex flex-col gap-2">
           <span>The quote{money && i.quotedAmount != null ? ` of ${rm(i.quotedAmount)}` : ''} is above {rm(threshold, { cents: false })}, so the owner approves it first. Work cannot start until then.</span>
           {money && <Button size="sm" variant="secondary" className="self-start" loading={busy === 'approve'}
             onClick={() => void act('approve', () => api.post(`/maintenance/issues/${i.id}/approve`, { approved: true, quotedAmount: i.quotedAmount }), 'Approval recorded.', 'The job can go ahead.')}>Record owner's approval</Button>}
@@ -315,7 +316,7 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
         <div className="grid grid-cols-1 gap-1">
           {(['owner', 'the_conts', 'guest_deposit'] as ChargeTo[]).concat(i.chargeTo === 'warranty' ? ['warranty'] : []).map(p => (
             <label key={p} className={cx('flex items-center gap-2 min-h-8', done ? 'cursor-default' : 'cursor-pointer')}>
-              <input type="radio" name={`payer-${i.id}`} checked={i.chargeTo === p} disabled={done || busy === 'payer'} className="w-4 h-4 accent-[#151515]"
+              <input type="radio" name={`payer-${i.id}`} checked={i.chargeTo === p} disabled={done || busy === 'payer'} className="w-4 h-4 accent-black"
                 onChange={() => void act('payer', () => api.patch(`/maintenance/issues/${i.id}`, { chargeTo: p }), 'Payer changed.')} />
               {PAYER[p]}
             </label>
@@ -330,13 +331,13 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
         </div>
         {i.windows.length === 0 ? <span className="text-muted-ink">{done ? "No window was recorded." : "No time agreed yet. Add when the technician may enter: between guests, or a slot the guest agreed."}</span>
           : i.windows.map(w => (
-            <div key={w.id} className={cx('rounded-control p-2.5 flex flex-col gap-1', w.overlaps.length ? 'bg-critical-bg' : 'bg-[#F4F1EB]')}>
+            <div key={w.id} className={cx('rounded-control p-2.5 flex flex-col gap-1', w.overlaps.length ? 'bg-critical-bg' : 'bg-muted')}>
               <div className="flex items-center gap-2">
                 <b className="flex-1 [font-variant-numeric:tabular-nums]">{stamp(w.startsAt)} – {w.startsAt.slice(0, 10) === w.endsAt.slice(0, 10) ? hm(w.endsAt) : stamp(w.endsAt)}</b>
-                {!done && <button type="button" aria-label="Remove window" className="text-muted-ink cursor-pointer hover:text-[var(--color-critical-fg)]" onClick={() => void act(`w-${w.id}`, () => api.del(`/maintenance/issues/${i.id}/windows/${w.id}`), 'Window removed.')}><Icon name="Trash2" size="sm" /></button>}
+                {!done && <button type="button" aria-label="Remove window" className="text-muted-ink cursor-pointer hover:text-danger" onClick={() => void act(`w-${w.id}`, () => api.del(`/maintenance/issues/${i.id}/windows/${w.id}`), 'Window removed.')}><Icon name="Trash2" size="sm" /></button>}
               </div>
               {w.note && <span className="text-muted-ink">{w.note}</span>}
-              {w.overlaps.map(o => <span key={o.reservationId} className="text-meta text-[var(--color-critical-fg)]">Overlaps the stay of {o.guestName} ({o.checkIn} {o.checkInTime} to {o.checkOut} {o.checkOutTime}). Make sure the guest agreed.</span>)}
+              {w.overlaps.map(o => <span key={o.reservationId} className="text-meta text-danger">Overlaps the stay of {o.guestName} ({o.checkIn} {o.checkInTime} to {o.checkOut} {o.checkOutTime}). Make sure the guest agreed.</span>)}
             </div>
           ))}
       </section>
@@ -399,7 +400,7 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
 function footer(onClose: () => void, busy: boolean, label: string, onSave: () => void) {
   return <><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={onSave}>{label}</Button></>;
 }
-const errText = (e: unknown) => e instanceof ApiFailure ? e.message : 'Not saved. Try again.';
+const errText = (e: unknown) => errorMessage(e, 'Not saved. Try again.');
 
 function NewJobModal({ onClose, onDone, money, threshold }: { onClose: () => void; onDone: (id: string) => void; money: boolean; threshold: number }) {
   const units = useUnitRoster();

@@ -3,6 +3,7 @@ import { Plus, Trash2, X } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -84,7 +85,7 @@ export default function FleetHealthPage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[820px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['Date', 'Vehicle', 'Type', 'Cost', 'Next due', 'Status'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 3 ? 'text-right' : 'text-left')}>{h}</th>)}
             </tr></thead>
             <tbody>
@@ -93,7 +94,7 @@ export default function FleetHealthPage() {
               : rows.map(r => {
                 const isOverdue = r.nextDueDate && r.nextDueDate < today();
                 return (
-                  <tr key={r.id} onClick={() => { if (canWrite) setDrawer({ draft: r, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
+                  <tr key={r.id} onClick={() => { if (canWrite) setDrawer({ draft: r, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
                     <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)] tabular-nums">{r.serviceDate ? date(r.serviceDate) : '—'}</td>
                     <td className="py-[13px] px-4"><div className="flex flex-col"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{r.vehicleCode}</span>{r.vehiclePlate && <span className="text-[11.5px] text-muted-ink">{r.vehiclePlate}</span>}</div></td>
                     <td className="py-[13px] px-4 text-[13px]">{TYPE_LABEL[r.recordType]}</td>
@@ -146,8 +147,8 @@ function RecDrawer({ draft, isNew, vehicles, onClose, onSave, onDelete }: { draf
         </div>
         <Field label="Notes" placeholder="Optional" value={f.notes} onChange={e => setF(s => ({ ...s, notes: e.target.value }))} />
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete this record for ${draft.vehicleCode}?`, body: 'The maintenance record is deleted for good.', confirmLabel: 'Delete record', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a vehicle and a service date" onClick={() => onSave(f, isNew)}>{isNew ? 'Log record' : 'Save'}</Button>

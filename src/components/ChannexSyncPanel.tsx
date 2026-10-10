@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Card } from './Card';
 import { Button } from './Button';
-import { Badge } from './Badge';
+import { StatusBadge } from './StatusBadge';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from './Toast';
@@ -51,7 +51,7 @@ export default function ChannexSyncPanel() {
       <div className="pt-[18px] px-[22px] pb-[14px] flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <span className="text-title font-semibold">Channex sync</span>
-          <Badge tone={!data.configured ? 'neutral' : data.failed ? 'critical' : data.queued ? 'warning' : 'success'}
+          <StatusBadge tone={!data.configured ? 'neutral' : data.failed ? 'critical' : data.queued ? 'warning' : 'success'}
             label={!data.configured ? 'Not connected' : data.failed ? `${data.failed} failed` : data.queued ? `${data.queued} waiting` : 'Up to date'} />
         </div>
         <div className="flex items-center gap-2">
@@ -86,7 +86,7 @@ export default function ChannexSyncPanel() {
                     <td className="py-2 px-[22px] text-copy">{c.unit ?? '—'}</td>
                     <td className="py-2 px-[22px] text-copy">{c.kind === 'availability' ? 'Availability' : 'Prices and restrictions'}{c.fullSync ? ' (full sync)' : ''}</td>
                     <td className="py-2 px-[22px] text-copy tabular-nums">{c.rows}</td>
-                    <td className={cx('py-2 px-[22px] text-copy', ok ? 'text-[var(--color-ink-2)]' : 'text-[var(--color-text-critical,#B42318)]')}>{ok ? 'Accepted' : c.status === 429 ? 'Busy, retrying' : c.status === 0 ? 'No connection, retrying' : `Refused (${c.status})`}</td>
+                    <td className={cx('py-2 px-[22px] text-copy', ok ? 'text-[var(--color-ink-2)]' : 'text-danger')}>{ok ? 'Accepted' : c.status === 429 ? 'Busy, retrying' : c.status === 0 ? 'No connection, retrying' : `Refused (${c.status})`}</td>
                     <td className="py-2 px-[22px] text-meta whitespace-nowrap [font-family:var(--font-mono,ui-monospace,monospace)] select-all">{c.taskId ?? '—'}</td>
                   </tr>
                 );

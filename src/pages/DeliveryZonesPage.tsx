@@ -3,6 +3,7 @@ import { Plus, Trash2, X } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -10,7 +11,8 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { TONE, cx } from '../lib/design-tokens';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
 
 /** Delivery Zones — ported from 2990's SCM zone-classify, drawn in Conts. The postcode-prefix
  *  -> area-zone map. Prefixes are the FIRST TWO digits of a Malaysian postcode (00–99). */
@@ -66,7 +68,7 @@ export default function DeliveryZonesPage() {
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyZone(), isNew: true })}>New rule</Button> : undefined} />
       {error && <StaleBanner message={`Showing the last zone map we have. ${error}`} onRetry={reload} />}
       {usingDefault && (
-        <div className="flex items-center justify-between gap-4 flex-wrap p-4 rounded-card bg-[var(--color-gold-50)] [border:1px_solid_var(--color-line,#DEDAD3)]">
+        <div className="flex items-center justify-between gap-4 flex-wrap p-4 rounded-card bg-[var(--color-gold-50)] [border:1px_solid_var(--color-line)]">
           <div className="text-[13px] text-gold-ink">No custom map yet — postcodes classify by the built-in default. Load it to customise.</div>
           {canWrite && <Button size="sm" variant="secondary" onClick={loadDefault}>Load default map</Button>}
         </div>
@@ -74,18 +76,18 @@ export default function DeliveryZonesPage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[560px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['Zone', 'Postcode prefixes', 'Label', 'Status'].map((h) => <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>)}
             </tr></thead>
             <tbody>
               {loading && rows.length === 0 ? <tr><td colSpan={4}><TableSkeleton rows={6} cols={4} /></td></tr>
               : rows.length === 0 ? <tr><td colSpan={4}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">No custom rules.</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Add postcode-prefix rules, or load the default map to start from.</span></div></td></tr>
               : rows.map(z => (
-                <tr key={z.id} onClick={() => { if (canWrite) setDrawer({ draft: z, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
+                <tr key={z.id} onClick={() => { if (canWrite) setDrawer({ draft: z, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
                   <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{z.zone}</span></td>
                   <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] tabular-nums">{pad(z.prefixStart)}xxx – {pad(z.prefixEnd)}xxx</td>
                   <td className="py-[13px] px-4 text-[12.5px] text-muted-ink">{z.label || '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill active={z.isActive} /></td>
+                  <td className="py-[13px] px-4"><StatusBadge entity="active_flag" value={z.isActive ? 'active' : 'inactive'} /></td>
                 </tr>
               ))}
             </tbody>
@@ -97,10 +99,6 @@ export default function DeliveryZonesPage() {
   );
 }
 
-function StatusPill({ active }: { active: boolean }) {
-  const t = active ? TONE.success : TONE.neutral;
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', t.bg, t.text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{active ? 'Active' : 'Inactive'}</span>;
-}
 
 function ZoneDrawer({ draft, isNew, knownZones, onClose, onSave, onDelete }: { draft: Zone; isNew: boolean; knownZones: string[]; onClose: () => void; onSave: (d: Zone, isNew: boolean) => void; onDelete?: () => void }) {
   const [f, setF] = useState<Zone>(draft);
@@ -128,8 +126,8 @@ function ZoneDrawer({ draft, isNew, knownZones, onClose, onSave, onDelete }: { d
         </div>
         <div className="text-[12.5px] text-muted-ink">Covers postcodes <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{String(f.prefixStart).padStart(2, '0')}xxx</span> to <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{String(f.prefixEnd).padStart(2, '0')}xxx</span>.</div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete the ${draft.zone} zone rule?`, body: 'It is deleted for good and drops off the zone map.', meta: `Postcode prefixes ${draft.prefixStart} to ${draft.prefixEnd}`, confirmLabel: 'Delete rule', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a zone and a valid prefix range" onClick={() => onSave(f, isNew)}>{isNew ? 'Add rule' : 'Save'}</Button>

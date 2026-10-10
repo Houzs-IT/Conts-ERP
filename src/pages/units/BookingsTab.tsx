@@ -1,14 +1,13 @@
 import { useSearchParams } from 'react-router-dom';
 import { Card } from '../../components/Card';
-import { Badge } from '../../components/Badge';
+import { StatusBadge } from '../../components/StatusBadge';
 import ChannelMark from '../../components/ChannelMark';
 import { ListPager } from '../../components/ListPager';
 import { StaleBanner, TableSkeleton } from '../../components/DataState';
 import { channel as CH } from '../../theme';
 import { cx } from '../../lib/design-tokens';
 import { useApi } from '../../lib/useApi';
-import { rm, dateRange, dateShort } from '../../lib/format';
-import { STATUS } from '../../lib/bookingStatus';
+import { rm, dateRange, dateShort, count } from '../../lib/format';
 import { type UnitDetail } from './shared';
 
 type When = 'upcoming' | 'past' | 'cancelled' | 'all';
@@ -50,7 +49,7 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
 
   const money = d?.rows.some(r => r.grossBookingValue !== undefined) ?? false;
   const summary = d && d.total > 0
-    ? `${d.total.toLocaleString('en-MY')} ${d.total === 1 ? 'booking' : 'bookings'}${d.totalGross != null ? ` · ${rm(d.totalGross, { cents: false })} gross` : ''}`
+    ? `${count(d.total)} ${d.total === 1 ? 'booking' : 'bookings'}${d.totalGross != null ? ` · ${rm(d.totalGross, { cents: false })} gross` : ''}`
     : null;
 
   return (
@@ -105,7 +104,7 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
                 <span className="text-copy text-right font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">
                   {s.grossBookingValue != null && s.grossBookingValue > 0 ? rm(s.grossBookingValue, { cents: false }) : money ? '—' : ''}
                 </span>
-                <div><Badge tone={STATUS[s.state].tone} label={STATUS[s.state].label} /></div>
+                <div><StatusBadge entity="booking" value={s.state} /></div>
               </div>
               {/* Phone row */}
               <div className="md:hidden flex items-center gap-3 py-3 px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
@@ -121,7 +120,7 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
                   {s.grossBookingValue != null && s.grossBookingValue > 0 && (
                     <span className="text-copy font-medium [font-variant-numeric:tabular-nums]">{rm(s.grossBookingValue, { cents: false })}</span>
                   )}
-                  <Badge tone={STATUS[s.state].tone} label={STATUS[s.state].label} size="sm" />
+                  <StatusBadge entity="booking" value={s.state} size="sm" />
                 </div>
               </div>
             </div>

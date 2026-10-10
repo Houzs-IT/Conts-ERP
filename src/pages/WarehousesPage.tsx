@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -81,7 +82,7 @@ export default function WarehousesPage() {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[620px]">
             <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
                 {['Code', 'Name', 'Location', 'Default', 'Status'].map(h => (
                   <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>
                 ))}
@@ -94,7 +95,7 @@ export default function WarehousesPage() {
                 <tr><td colSpan={5}><div className="py-[38px] px-[22px] text-center text-[14px] font-semibold">No warehouses yet.</div></td></tr>
               ) : rows.map(w => (
                 <tr key={w.id} onClick={() => { if (canWrite) setDrawer({ ...w, isNew: false }); }}
-                  className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
+                  className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
                   <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{w.code}</span></td>
                   <td className="py-[13px] px-4 text-[13.5px]">{w.name}</td>
                   <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{w.location || '—'}</td>
@@ -153,8 +154,8 @@ function WarehouseDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; o
           </div>
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete warehouse ${draft.name}?`, body: 'It is deleted for good and drops off the warehouse list.', confirmLabel: 'Delete warehouse', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name" onClick={() => onSave(f)}>{draft.isNew ? 'Create' : 'Save'}</Button>

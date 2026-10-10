@@ -57,7 +57,7 @@ export default function UnbilledDeliveriesPage() {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[760px]">
             <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
                 {['Delivery order', 'Customer', 'Sales order', 'Delivered', 'Waiting', 'Lines', 'Value'].map((h, i) => (
                   <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i >= 4 ? 'text-right' : 'text-left')}>{h}</th>
                 ))}
@@ -76,7 +76,7 @@ export default function UnbilledDeliveriesPage() {
               ) : rows.map(r => {
                 const age = ageDays(r.doDate);
                 return (
-                  <tr key={r.id} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                  <tr key={r.id} className="[border-bottom:1px_solid_var(--color-line-soft)]">
                     <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{r.doNumber}</td>
                     <td className="py-[13px] px-4 text-[13.5px]">{r.customerName}</td>
                     <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[12px] text-muted-ink">{r.soDocNo || '—'}</td>

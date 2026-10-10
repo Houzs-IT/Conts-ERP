@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -13,6 +13,7 @@ import { plural } from '../lib/format';
 import { Select } from '../components/Select';
 import { EmptyState } from '../components/States';
 import type { Tone } from '../lib/types';
+import { PhoneText } from '../components/PhoneText';
 
 /* ------------------------------------------------------------------ *
  * Operations -> Cleaners — the housekeeping roster master data.
@@ -147,7 +148,7 @@ function RosterSection({ title, hint, tone, emptyTitle, addLabel, onAdd, cleaner
   return (
     <Card>
       <div className="py-[18px] px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line)]">
-        <span className="text-heading font-semibold flex items-center gap-2"><Badge tone={tone} label={String(cleaners.length)} size="sm" />{title}</span>
+        <span className="text-heading font-semibold flex items-center gap-2"><StatusBadge tone={tone} label={String(cleaners.length)} size="sm" />{title}</span>
         <span className="text-meta text-muted-ink">{hint}</span>
       </div>
       {cleaners.length === 0 ? (
@@ -158,12 +159,12 @@ function RosterSection({ title, hint, tone, emptyTitle, addLabel, onAdd, cleaner
             <div className="flex-1 min-w-[220px] flex flex-col gap-[3px]">
               <div className="flex items-center gap-[9px] flex-wrap">
                 <span className="text-copy font-semibold">{c.name}</span>
-                <Badge tone={EMPLOYMENT_TONE[c.employmentType]} label={EMPLOYMENT_LABEL[c.employmentType]} size="sm" />
-                {!c.isActive && <Badge tone="neutral" label="Inactive" size="sm" />}
+                <StatusBadge tone={EMPLOYMENT_TONE[c.employmentType]} label={EMPLOYMENT_LABEL[c.employmentType]} size="sm" />
+                {!c.isActive && <StatusBadge tone="neutral" label="Inactive" size="sm" />}
               </div>
               <div className="text-meta text-muted-ink flex gap-4 flex-wrap">
                 {c.vendorName && <span>Vendor: {c.vendorName}</span>}
-                {c.phone && <span>{c.phone}</span>}
+                {c.phone && <PhoneText value={c.phone} />}
                 <span>{c.employmentType === 'internal' ? (c.userId ? 'Linked login' : 'No login link') : 'No login'}</span>
                 <span>{plural(c.busy, 'open job')} today</span>
               </div>

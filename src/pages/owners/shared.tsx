@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Badge } from '../../components/Badge';
+import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { useApi } from '../../lib/useApi';
@@ -8,7 +8,6 @@ import { rm, monthLabel, titleCase } from '../../lib/format';
 import { MoneyText } from '../../components/MoneyText';
 import { Select, SearchSelect } from '../../components/Select';
 import { cx } from '../../lib/design-tokens';
-import { STATEMENT } from '../../lib/vocabulary';
 import type { StatementState } from '../../lib/types';
 import type { RevenueModel } from '../../lib/revenueModel';
 
@@ -138,7 +137,7 @@ export function StatementHistory({ o }: { o: Owner }) {
               <div className="text-copy font-medium">{periodLabel(s.period)}</div>
               <MoneyText sen={s.grossBookingValue} mode="exact" tone="muted" className="text-meta text-right" />
               <MoneyText sen={s.netPayout} mode="exact" strong className="text-copy text-right" />
-              <span className="flex justify-end"><Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} size="sm" /></span>
+              <span className="flex justify-end"><StatusBadge entity="statement" value={s.state} size="sm" /></span>
             </a>
           ))}
         </div>

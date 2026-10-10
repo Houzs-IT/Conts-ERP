@@ -49,20 +49,20 @@ export default function MrpPage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[680px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['Item code', 'Description', 'Demand', 'On hand', 'On order', 'Net to buy'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i >= 2 ? 'text-right' : 'text-left')}>{h}</th>)}
             </tr></thead>
             <tbody>
               {loading && rows.length === 0 ? <tr><td colSpan={6}><TableSkeleton rows={6} cols={6} /></td></tr>
               : rows.length === 0 ? <tr><td colSpan={6}><div className="py-[38px] px-[22px] text-center text-[14px] font-semibold">{shortfallOnly ? 'Nothing short — stock and orders cover demand.' : 'No open demand.'}</div></td></tr>
               : rows.map(r => (
-                <tr key={r.itemCode} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                <tr key={r.itemCode} className="[border-bottom:1px_solid_var(--color-line-soft)]">
                   <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{r.itemCode}</td>
                   <td className="py-[13px] px-4 text-[13.5px]">{r.itemName || '—'}</td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{r.demand}</td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px] text-muted-ink">{r.onHand}</td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px] text-muted-ink">{r.onOrder}</td>
-                  <td className={cx('py-[13px] px-4 text-right tabular-nums text-[14px] font-semibold', r.net > 0 ? 'text-[var(--color-critical-fg)]' : 'text-muted-ink')}>{r.net > 0 ? r.net : '—'}</td>
+                  <td className={cx('py-[13px] px-4 text-right tabular-nums text-[14px] font-semibold', r.net > 0 ? 'text-danger' : 'text-muted-ink')}>{r.net > 0 ? r.net : '—'}</td>
                 </tr>
               ))}
             </tbody>

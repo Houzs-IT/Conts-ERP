@@ -39,14 +39,14 @@ export default function DeliveryTimeArrangementPage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[760px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['Sales order', 'Customer', 'Date', 'Time slot', 'Specific time'].map(h => <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>)}
             </tr></thead>
             <tbody>
               {loading && all.length === 0 ? <tr><td colSpan={5}><TableSkeleton rows={5} cols={5} /></td></tr>
               : rows.length === 0 ? <tr><td colSpan={5}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">No dated deliveries.</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Give deliveries a date first in Delivery date arrangement.</span></div></td></tr>
               : rows.map(r => (
-                <tr key={r.id} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                <tr key={r.id} className="[border-bottom:1px_solid_var(--color-line-soft)]">
                   <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{r.soDocNo}</td>
                   <td className="py-[13px] px-4 text-[13.5px]">{r.customerName}</td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)] tabular-nums">{date(r.plannedDate)}</td>

@@ -2,15 +2,16 @@ import { useState, type ReactNode } from 'react';
 import { cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
-import { Dialog, Drawer } from '../components/Dialog';
+import { Drawer } from '../components/Dialog';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import Icon from '../components/Icon';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import ChannexSyncPanel from '../components/ChannexSyncPanel';
-import { api } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { count, date, plural, timeWithZone, masked } from '../lib/format';
 import { INTEGRATION } from '../lib/vocabulary';
 import type { IntegrationState, Tone } from '../lib/types';
@@ -138,7 +139,7 @@ export default function IntegrationsPage() {
       setEdits(e => ({ ...e, [row.id]: { ...e[row.id], lastSyncedAt: new Date().toISOString() } }));
       toast({ tone: 'success', title: `${label} sync started.`, body: 'Pulling new and changed reservations. Any expired channels are skipped and named.' });
     } catch (e) {
-      toast({ tone: 'critical', title: `${label} did not sync.`, body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: `${label} did not sync.`, body: errorMessage(e, 'Try again in a moment.') });
     } finally {
       setSyncing(s => ({ ...s, [row.id]: false }));
     }
@@ -154,7 +155,7 @@ export default function IntegrationsPage() {
       reload();
       toast({ tone: 'success', title: `${label} reconnect requested.` });
     } catch (e) {
-      toast({ tone: 'critical', title: `${label} was not reconnected.`, body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: `${label} was not reconnected.`, body: errorMessage(e, 'Try again in a moment.') });
     } finally {
       setReconnectBusy(false);
     }
@@ -186,13 +187,13 @@ export default function IntegrationsPage() {
                       <span className="text-heading font-semibold">{label}</span>
                       <span className="text-meta text-muted-ink">{syncedLine(row)}</span>
                     </div>
-                    <Badge tone={m.tone} label={m.label} />
+                    <StatusBadge tone={m.tone} label={m.label} />
                   </div>
 
                   <p className="m-0 text-copy leading-[1.5] text-[var(--color-ink-2)] [text-wrap:pretty]">{noteFor(row)}</p>
 
                   {row.lastError && (
-                    <div className="text-meta text-[var(--color-critical-fg)]">{row.lastError}</div>
+                    <div className="text-meta text-danger">{row.lastError}</div>
                   )}
 
                   <div className="mt-auto pt-1 text-meta text-muted-ink">
@@ -231,7 +232,7 @@ export default function IntegrationsPage() {
       )}
 
       {/* Reconnect confirmation — a new key is issued, so it states the consequence. */}
-      <Dialog
+      <ConfirmDialog
         busy={reconnectBusy}
         onClose={() => setReconnectId(null)}
         spec={!reconnectRow ? null : {
@@ -290,7 +291,7 @@ function ManagePanel({
           <span className="text-title font-semibold">{label}</span>
           <span className="text-meta text-muted-ink">{syncedLine(row)}</span>
         </div>
-        <Badge tone={m.tone} label={m.label} />
+        <StatusBadge tone={m.tone} label={m.label} />
         <button onClick={onClose} aria-label="Close" className="flex bg-transparent border-none p-1 cursor-pointer text-muted-ink">
           <Icon name="X" size="base" />
         </button>
@@ -299,7 +300,7 @@ function ManagePanel({
       <div className="py-5 px-[22px] flex flex-col gap-5 flex-1 overflow-y-auto">
         <Section label="Connection">
           <p className="m-0 text-copy leading-[1.5] text-[var(--color-ink-2)] [text-wrap:pretty]">{noteFor(row)}</p>
-          {row.lastError && <div className="mt-2 text-meta text-[var(--color-critical-fg)]">{row.lastError}</div>}
+          {row.lastError && <div className="mt-2 text-meta text-danger">{row.lastError}</div>}
         </Section>
 
         <Section label="Units linked">

@@ -2,17 +2,16 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
-import { Dialog } from '../components/Dialog';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { EmptyState } from '../components/States';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
-import { api } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { rm, date, monthLabel } from '../lib/format';
-import { STATEMENT } from '../lib/vocabulary';
 import type { StatementState } from '../lib/types';
 
 /** `#/finance/statements/:id` — one owner's statement on screen: each unit's month the way the Owner Income
@@ -65,7 +64,7 @@ export default function StatementDetailPage() {
       toast({ tone: 'success', title: kind === 'finalise' ? 'Statement finalised.' : kind === 'send' ? 'Statement sent to the owner.' : 'Marked as paid.' });
       reload();
     } catch (e) {
-      toast({ tone: 'critical', title: 'That did not go through.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'That did not go through.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setBusy(false); setConfirm(null); }
   }
 
@@ -93,7 +92,7 @@ export default function StatementDetailPage() {
         sub={`Owner statement · ${monthLabel(s.period, { long: true })} · ${s.units.length || 'no'} ${s.units.length === 1 ? 'unit' : 'units'}${s.source === 'owner_workbook' ? ' · from the owner workbook' : ''}`}
         right={
           <div className="flex gap-[9px] flex-wrap items-center">
-            <Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} />
+            <StatusBadge entity="statement" value={s.state} />
             <Button size="sm" variant="secondary" icon={<Icon name="ArrowLeft" size="sm" />} onClick={() => navigate('/finance/statements')}>Statements</Button>
             {s.units.length > 0 && (
               <Button size="sm" variant="secondary" icon={<Icon name="FileText" size="sm" />} onClick={() => { window.location.hash = reportHref().slice(1); }}>Owner Income Report</Button>
@@ -168,7 +167,7 @@ export default function StatementDetailPage() {
         </div>
       ))}
 
-      <Dialog
+      <ConfirmDialog
         busy={busy}
         onClose={() => { if (!busy) setConfirm(null); }}
         spec={!confirm ? null : confirm === 'send' ? {
@@ -180,7 +179,7 @@ export default function StatementDetailPage() {
           title: 'Mark this payout as paid?',
           body: 'Record that the money has reached the owner. The statement becomes Paid.',
           meta: `${rm(s.payout?.amount ?? 0)} · ${s.owner.name}`,
-          confirmLabel: 'Mark paid', busyLabel: 'Saving...', onConfirm: () => act('paid'),
+          danger: true, confirmLabel: 'Mark paid', busyLabel: 'Saving...', onConfirm: () => act('paid'),
         }}
       />
     </>

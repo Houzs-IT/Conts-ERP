@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import { Card, CardHeader } from '../../components/Card';
-import { Badge } from '../../components/Badge';
+import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
 import { Field } from '../../components/Field';
 import { Select, Menu, type MenuItem } from '../../components/Select';
-import { Dialog, type DialogSpec } from '../../components/Dialog';
+import { ConfirmDialog, type ConfirmSpec } from '../../components/ConfirmDialog';
 import { MoneyText, moneyString } from '../../components/MoneyText';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
-import { api } from '../../lib/api';
+import { api, errorMessage } from '../../lib/api';
 import { date, monthLabel, todayMyt, plural } from '../../lib/format';
 import type { Tone } from '../../lib/types';
 import type { Owner } from './shared';
@@ -50,7 +50,7 @@ export function OwnerAdjustments({ owner }: { owner: Owner }) {
   const [filter, setFilter] = useState('all');
   const [shown, setShown] = useState(PAGE);
   const [modal, setModal] = useState<null | { kind: 'release' | 'settle'; a: Adjustment } | { kind: 'add' }>(null);
-  const [dialog, setDialog] = useState<DialogSpec | null>(null);
+  const [dialog, setDialog] = useState<ConfirmSpec | null>(null);
   const [busy, setBusy] = useState(false);
 
   const rows = data?.data ?? [];
@@ -65,7 +65,7 @@ export function OwnerAdjustments({ owner }: { owner: Owner }) {
       toast({ tone: 'success', title: done, body: r?.regenerate ? `Regenerate the ${monthLabel(r.regenerate)} statements to take it off that statement.` : after });
       setModal(null); setDialog(null); reload();
     } catch (e) {
-      toast({ tone: 'critical', title: 'Nothing was changed.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Nothing was changed.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
 
@@ -78,7 +78,7 @@ export function OwnerAdjustments({ owner }: { owner: Owner }) {
       key: 'hold', label: 'Hold', icon: 'Pause', hint: 'Keep it off statements until released.', disabledReason: onFinal,
       onSelect: () => setDialog({
         title: 'Hold this credit or charge?', body: 'It stays off every statement generated from now on, until someone releases it.',
-        meta: `${KIND[a.kind]} · ${moneyString(a.amount, 'exact')} · ${a.description}`, confirmLabel: 'Hold', busyLabel: 'Holding...',
+        meta: `${KIND[a.kind]} · ${moneyString(a.amount, 'exact')} · ${a.description}`, danger: true, confirmLabel: 'Hold', busyLabel: 'Holding...',
         onConfirm: () => change(a, { action: 'hold' }, 'Held.'),
       }),
     });
@@ -121,7 +121,7 @@ export function OwnerAdjustments({ owner }: { owner: Owner }) {
                   </div>
                   <div className="flex items-center gap-3 ml-auto">
                     <MoneyText sen={a.amount} mode="exact" strong className="text-copy text-right min-w-[96px]" />
-                    <Badge tone={STATE[a.state].tone} label={STATE[a.state].label} size="sm" />
+                    <StatusBadge tone={STATE[a.state].tone} label={STATE[a.state].label} size="sm" />
                     {items.length > 0
                       ? <Menu label={`Actions for ${a.description}`} items={items} trigger={<span className="grid place-items-center w-8 h-8 rounded-control border border-solid border-line bg-card text-ink"><Icon name="MoreHorizontal" size="sm" /></span>} />
                       : canChange ? <span className="w-8" aria-hidden /> : null}
@@ -144,10 +144,10 @@ export function OwnerAdjustments({ owner }: { owner: Owner }) {
           toast({ tone: 'success', title: body.kind === 'credit' ? 'Credit added.' : 'Charge added.', body: 'The next statement generated for that month carries it.' });
           setModal(null); reload();
         } catch (e) {
-          toast({ tone: 'critical', title: 'Nothing was added.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+          toast({ tone: 'critical', title: 'Nothing was added.', body: errorMessage(e, 'Try again in a moment.') });
         } finally { setBusy(false); }
       }} />}
-      <Dialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
+      <ConfirmDialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
     </Card>
   );
 }

@@ -1,20 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
-import { Dialog } from '../components/Dialog';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { EmptyState } from '../components/States';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
-import { api, ApiFailure } from '../lib/api';
+import { api, ApiFailure, errorMessage } from '../lib/api';
 import { rm, date as fmtDate, time as fmtTime, todayMyt, monthLabel } from '../lib/format';
-import { STATEMENT } from '../lib/vocabulary';
 import { TONE, cx } from '../lib/design-tokens';
 import type { StatementState } from '../lib/types';
 import { useUrlState, usePhone, ListCard, Pager, SearchBox, Chip, STICKY_HEAD, shiftMonth } from './finance/listKit';
+import { statusLabel } from '../lib/status';
 
 interface Statement {
   id: string; period?: string; ownerName: string; unitsLabel: string; state: StatementState;
@@ -124,7 +124,7 @@ export default function StatementsPage() {
       });
     } catch (e) {
       const locked = e instanceof ApiFailure && e.status === 409;
-      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'That period is locked.' : 'Statements were not generated.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'That period is locked.' : 'Statements were not generated.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
 
@@ -139,7 +139,7 @@ export default function StatementsPage() {
         ? { tone: 'warning', title: `${res.finalised} finalised, ${res.failed.length} not.`, body: res.failed[0].reason }
         : { tone: 'success', title: `${res.finalised} ${res.finalised === 1 ? 'statement' : 'statements'} finalised.`, body: 'The figures are now frozen and ready to send.' });
     } catch (e) {
-      toast({ tone: 'critical', title: 'Not finalised.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Not finalised.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
 
@@ -160,7 +160,7 @@ export default function StatementsPage() {
         toast({ tone: 'success', title: `${res.sent} ${res.sent === 1 ? 'statement' : 'statements'} sent.`, body: 'Owners were emailed and the statements are live on their portals.' });
       }
     } catch (e) {
-      toast({ tone: 'critical', title: 'Statements were not sent.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Statements were not sent.', body: errorMessage(e, 'Try again in a moment.') });
     } finally {
       setBusy(false);
       setSel({});
@@ -180,18 +180,18 @@ export default function StatementsPage() {
       toast({ tone: 'success', title: 'Adjustment recorded.', body: `${target.ownerName} — net payout is now ${rm(res.netPayout)}.` });
     } catch (e) {
       const locked = e instanceof ApiFailure && e.status === 409;
-      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'This statement is locked.' : 'Adjustment was not recorded.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'This statement is locked.' : 'Adjustment was not recorded.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
 
   function exportCsv() {
     const genAt = data?.generatedAt || new Date().toISOString();
-    const extra = [stateFilter && `status ${STATEMENT[stateFilter].label}`, q && `search "${q}"`].filter(Boolean).join(', ');
+    const extra = [stateFilter && `status ${statusLabel('statement', stateFilter)}`, q && `search "${q}"`].filter(Boolean).join(', ');
     const filtersLine = `Filters applied: period ${periodLabel(viewPeriod)}${extra ? `, ${extra}` : ''} · generated ${fmtDate(genAt)} ${fmtTime(genAt)}`;
     const scopeLine = `Scope: ${rows.length} owners · ${periodLabel(viewPeriod)} · management + finance view`;
     const head = ['Owner', 'Units', 'Hospitality income', 'To operator', 'Deductions', 'Net payout', 'Status'];
     const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
-    const body = rows.map(r => [r.ownerName, r.unitsLabel, rm(r.grossBookingValue), rm(r.managementFee), rm(r.expensesTotal), rm(r.netPayout), STATEMENT[r.state].label]);
+    const body = rows.map(r => [r.ownerName, r.unitsLabel, rm(r.grossBookingValue), rm(r.managementFee), rm(r.expensesTotal), rm(r.netPayout), statusLabel('statement', r.state)]);
     const lines = [`# ${filtersLine}`, `# ${scopeLine}`, '', head.map(esc).join(','), ...body.map(r => r.map(esc).join(',')),
       ['Total', '', rm(totals.gross), rm(totals.fee), rm(totals.expenses), rm(totals.net), ''].map(esc).join(',')];
     const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
@@ -251,7 +251,7 @@ export default function StatementsPage() {
           <div className={cx('flex gap-[7px] shrink-0', phone ? 'overflow-x-auto -mx-4 px-4 pb-1' : 'flex-wrap')}>
             <Chip on={!stateFilter} onClick={() => url.set({ state: null, page: null })} count={current?.count}>All</Chip>
             {STATE_ORDER.map(s => (
-              <Chip key={s} on={stateFilter === s} onClick={() => url.set({ state: stateFilter === s ? null : s, page: null })} count={current ? current[s] : undefined}>{STATEMENT[s].label}</Chip>
+              <Chip key={s} on={stateFilter === s} onClick={() => url.set({ state: stateFilter === s ? null : s, page: null })} count={current ? current[s] : undefined}>{statusLabel('statement', s)}</Chip>
             ))}
           </div>
           <SearchBox className="max-w-[420px]" label="Search statements" placeholder="Search owner or unit" value={q} onChange={v => url.set({ q: v || null, page: null })} />
@@ -289,7 +289,7 @@ export default function StatementsPage() {
                 return (
                   <div key={s.id} className={cx('flex items-start gap-3 py-[11px] px-4 [border-bottom:1px_solid_var(--color-line-soft)]', sel[s.id] ? 'bg-gold-tint' : 'bg-card')}>
                     <input type="checkbox" disabled={!can} checked={!!sel[s.id]} aria-label={`Select ${s.ownerName}`}
-                      onChange={() => setSel(v => ({ ...v, [s.id]: !v[s.id] }))} className="mt-[3px] w-[17px] h-[17px] accent-[#11694A]" />
+                      onChange={() => setSel(v => ({ ...v, [s.id]: !v[s.id] }))} className="mt-[3px] w-[17px] h-[17px] accent-success" />
                     <button onClick={() => openRow(s)} className="flex flex-col gap-[3px] min-w-0 flex-1 text-left bg-transparent border-none p-0 cursor-pointer font-sans text-ink">
                       <span className="text-[13.5px] font-medium truncate">{s.ownerName}</span>
                       <span className="text-[12px] text-muted-ink truncate">{s.unitsLabel}</span>
@@ -297,7 +297,7 @@ export default function StatementsPage() {
                     </button>
                     <div className="flex flex-col items-end gap-[5px] shrink-0">
                       <span className="text-[13.5px] font-semibold tabular-nums">{rm(s.netPayout, { cents: false })}</span>
-                      <Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} size="sm" />
+                      <StatusBadge entity="statement" value={s.state} size="sm" />
                     </div>
                   </div>
                 );
@@ -340,7 +340,7 @@ export default function StatementsPage() {
                         title={can ? undefined : SELECT_REASON[s.state]}
                         aria-label={can ? `Select ${s.ownerName}` : `${s.ownerName} cannot be selected — ${SELECT_REASON[s.state]}`}
                         onChange={() => setSel(v => ({ ...v, [s.id]: !v[s.id] }))}
-                        className={`w-[17px] h-[17px] accent-[#11694A] ${can ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                        className={`w-[17px] h-[17px] accent-success ${can ? 'cursor-pointer' : 'cursor-not-allowed'}`}
                       />
                     </span>
                     <div className="flex flex-col gap-px min-w-0">
@@ -351,7 +351,7 @@ export default function StatementsPage() {
                     <div className="text-right text-[13px] text-muted-ink tabular-nums whitespace-nowrap">&minus; {rm(s.managementFee, { cents: false })}</div>
                     <div className="text-right text-[13px] text-muted-ink tabular-nums whitespace-nowrap">&minus; {rm(s.expensesTotal, { cents: false })}</div>
                     <div className={cx('text-right text-[13px] font-semibold tabular-nums whitespace-nowrap', s.netPayout < 0 ? TONE.critical.text : '')}>{rm(s.netPayout)}</div>
-                    <div><Badge tone={STATEMENT[s.state].tone} label={STATEMENT[s.state].label} /></div>
+                    <div><StatusBadge entity="statement" value={s.state} /></div>
                     <div className="flex justify-end gap-[6px]" onClick={e => e.stopPropagation()}>
                       {(s.state === 'provisional' || s.state === 'finalised') && (
                         <button
@@ -414,7 +414,7 @@ export default function StatementsPage() {
         />
       )}
 
-      <Dialog
+      <ConfirmDialog
         busy={busy}
         onClose={() => { if (!busy) setSendConfirm(false); }}
         spec={!sendConfirm ? null : {

@@ -3,6 +3,7 @@ import { Search, Plus, Trash2, X } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -11,15 +12,14 @@ import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
+import { statusLabel } from '../lib/status';
 
 /** Consignment Notes (sell-side) — ported from 2990's SCM, drawn in Conts. Consign stock out
  *  to a consignee; track consigned / sold / returned per line. */
 
 type Status = 'OPEN' | 'PARTIALLY_SETTLED' | 'CLOSED' | 'CANCELLED';
-const STATUS_LABEL: Record<Status, string> = { OPEN: 'Open', PARTIALLY_SETTLED: 'Part settled', CLOSED: 'Closed', CANCELLED: 'Cancelled' };
-const STATUS_TONE: Record<Status, Tone> = { OPEN: 'info', PARTIALLY_SETTLED: 'warning', CLOSED: 'success', CANCELLED: 'neutral' };
 const FILTERS: (Status | 'all')[] = ['all', 'OPEN', 'PARTIALLY_SETTLED', 'CLOSED', 'CANCELLED'];
 
 interface Line { id?: string; itemCode: string; description: string; uom: string; qtyConsigned: number; qtySold: number; qtyReturned: number; unitPriceSen: number; lineTotalSen: number }
@@ -67,7 +67,7 @@ export default function ConsignmentNotesPage() {
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New consignment note</Button> : undefined} />
       {error && <StaleBanner message={`Showing the last note list we have. ${error}`} onRetry={reload} />}
       <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('consignment_note', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
         <div className="relative">
           <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
           <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search note or consignee..." aria-label="Search consignment notes"
@@ -77,18 +77,18 @@ export default function ConsignmentNotesPage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[700px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['CN number', 'Consignee', 'Date', 'Status', 'Value'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 4 ? 'text-right' : 'text-left')}>{h}</th>)}
             </tr></thead>
             <tbody>
               {loading && all.length === 0 ? <tr><td colSpan={5}><TableSkeleton rows={5} cols={5} /></td></tr>
               : rows.length === 0 ? <tr><td colSpan={5}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No consignment notes match.' : 'No consignment notes yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Consign stock out to a showroom or retailer.</span></div></td></tr>
               : rows.map(c => (
-                <tr key={c.id} onClick={() => setDrawer({ mode: 'view', cn: c })} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
+                <tr key={c.id} onClick={() => setDrawer({ mode: 'view', cn: c })} className="[border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-muted">
                   <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{c.cnNumber}</td>
                   <td className="py-[13px] px-4 text-[13.5px]">{c.consigneeName}</td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{c.cnDate ? date(c.cnDate) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={c.status} /></td>
+                  <td className="py-[13px] px-4"><StatusBadge entity="consignment_note" value={c.status} /></td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{rm(c.totalSen)}</td>
                 </tr>
               ))}
@@ -104,10 +104,6 @@ export default function ConsignmentNotesPage() {
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-function StatusPill({ status }: { status: Status }) {
-  const t = STATUS_TONE[status];
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}</span>;
 }
 
 interface DraftLine { itemCode: string; description: string; uom: string; qty: string; unitPrice: string }
@@ -151,14 +147,14 @@ function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onC
               <thead><tr className="bg-muted">{['Item code', 'Description', 'UOM', 'Qty', 'Unit price', 'Line total', ''].map((th, i) => <th key={th || i} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i >= 3 && i <= 5 ? 'text-right' : 'text-left')}>{th}</th>)}</tr></thead>
               <tbody>
                 {lines.map((l, i) => (
-                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
                     <td className="p-1.5"><Cell value={l.itemCode} onChange={v => setLine(i, 'itemCode', v)} w="130px" /></td>
                     <td className="p-1.5"><Cell value={l.description} onChange={v => setLine(i, 'description', v)} w="100%" /></td>
                     <td className="p-1.5"><Cell value={l.uom} onChange={v => setLine(i, 'uom', v)} w="70px" /></td>
                     <td className="p-1.5"><Cell value={l.qty} onChange={v => setLine(i, 'qty', v)} w="64px" right num /></td>
                     <td className="p-1.5"><Cell value={l.unitPrice} onChange={v => setLine(i, 'unitPrice', v)} w="96px" right num /></td>
                     <td className="p-1.5 text-right tabular-nums text-[13px] whitespace-nowrap">{rm(lineTotal(l))}</td>
-                    <td className="p-1.5 text-center"><button onClick={() => setLines(ls => ls.length > 1 ? ls.filter((_, j) => j !== i) : ls)} aria-label="Remove line" className="text-muted-ink hover:text-[var(--color-critical-fg)] bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button></td>
+                    <td className="p-1.5 text-center"><button onClick={() => setLines(ls => ls.length > 1 ? ls.filter((_, j) => j !== i) : ls)} aria-label="Remove line" className="text-muted-ink hover:text-danger bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button></td>
                   </tr>
                 ))}
               </tbody>
@@ -171,7 +167,7 @@ function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onC
           <div className="flex items-end justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Consigned value</span><span className="tabular-nums w-[120px] text-right">{rm(total)}</span></div></div>
         </div>
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a consignee and at least one line" onClick={submit}>Raise note</Button>
       </div>
@@ -191,7 +187,7 @@ function SettleDrawer({ cn, canWrite, onClose, onAct }: { cn: Cn; canWrite: bool
   return (
     <Drawer open onClose={onClose} width={760}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
-        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{cn.cnNumber}</h2><StatusPill status={cn.status} /></div>
+        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{cn.cnNumber}</h2><StatusBadge entity="consignment_note" value={cn.status} /></div>
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
@@ -205,7 +201,7 @@ function SettleDrawer({ cn, canWrite, onClose, onAct }: { cn: Cn; canWrite: bool
             <thead><tr className="bg-muted">{['Item', 'Consigned', 'Sold', 'Returned'].map((th, i) => <th key={th} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i === 0 ? 'text-left' : 'text-right')}>{th}</th>)}</tr></thead>
             <tbody>
               {lines.map((l, i) => (
-                <tr key={l.id ?? i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                <tr key={l.id ?? i} className="[border-top:1px_solid_var(--color-line-soft)]">
                   <td className="py-2 px-3"><div className="flex flex-col"><span className="text-[13px]">{l.description}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.itemCode}</span></div></td>
                   <td className="py-2 px-3 text-right tabular-nums text-[13px]">{l.qtyConsigned}</td>
                   <td className="py-2 px-3 text-right">{editable ? <NumCell value={l.qtySold} onChange={v => setLine(i, 'qtySold', v)} /> : <span className="tabular-nums text-[13px]">{l.qtySold}</span>}</td>
@@ -217,8 +213,8 @@ function SettleDrawer({ cn, canWrite, onClose, onAct }: { cn: Cn; canWrite: bool
         </div>
         {cn.notes && <div className="text-[13px]"><span className="text-muted-ink">Notes: </span>{cn.notes}</div>}
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{canWrite && cn.status !== 'CANCELLED' && cn.status !== 'CLOSED' && <Button size="sm" variant="danger" onClick={() => onAct(cn, { status: 'CANCELLED' }, { status: 'CANCELLED' }, 'Note cancelled.')}>Cancel</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{canWrite && cn.status !== 'CANCELLED' && cn.status !== 'CLOSED' && <ConfirmButton confirm={{ title: `Cancel ${cn.cnNumber}?`, body: 'It is marked Cancelled and can no longer be settled.', meta: cn.consigneeName, confirmLabel: 'Cancel note', cancelLabel: 'Keep note' }} onConfirm={() => onAct(cn, { status: 'CANCELLED' }, { status: 'CANCELLED' }, 'Note cancelled.')}>Cancel</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           {canWrite && cn.status !== 'CANCELLED' && cn.status !== 'CLOSED' && <Button size="sm" variant="secondary" onClick={() => onAct(cn, { status: 'CLOSED' }, { status: 'CLOSED' }, 'Note closed.')}>Close</Button>}
           {editable && <Button size="sm" variant="primary" onClick={saveSettlement}>Save settlement</Button>}

@@ -3,6 +3,7 @@ import { Search, Plus, Trash2, X } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -11,15 +12,14 @@ import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
+import { statusLabel } from '../lib/status';
 
 /** Sales Orders — ported from 2990's SCM (core sell-side doc), drawn in Conts. Header +
  *  lines + 9-state status flow + deposit/payment. Customer inline; DO/SI are next modules. */
 
 type Status = 'CONFIRMED' | 'IN_PRODUCTION' | 'READY_TO_SHIP' | 'SHIPPED' | 'DELIVERED' | 'INVOICED' | 'CLOSED' | 'ON_HOLD' | 'CANCELLED';
-const STATUS_LABEL: Record<Status, string> = { CONFIRMED: 'Confirmed', IN_PRODUCTION: 'In production', READY_TO_SHIP: 'Ready to ship', SHIPPED: 'Shipped', DELIVERED: 'Delivered', INVOICED: 'Invoiced', CLOSED: 'Closed', ON_HOLD: 'On hold', CANCELLED: 'Cancelled' };
-const STATUS_TONE: Record<Status, Tone> = { CONFIRMED: 'info', IN_PRODUCTION: 'warning', READY_TO_SHIP: 'info', SHIPPED: 'info', DELIVERED: 'success', INVOICED: 'success', CLOSED: 'neutral', ON_HOLD: 'warning', CANCELLED: 'critical' };
 const FLOW: Status[] = ['CONFIRMED', 'IN_PRODUCTION', 'READY_TO_SHIP', 'SHIPPED', 'DELIVERED', 'INVOICED', 'CLOSED'];
 const FILTERS: (Status | 'all')[] = ['all', 'CONFIRMED', 'IN_PRODUCTION', 'READY_TO_SHIP', 'DELIVERED', 'INVOICED', 'ON_HOLD', 'CANCELLED'];
 
@@ -90,7 +90,7 @@ export default function SalesOrdersPage() {
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={openNew}>New sales order</Button> : undefined} />
       {error && <StaleBanner message={`Showing the last order list we have. ${error}`} onRetry={reload} />}
       <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : STATUS_LABEL[f]} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('sales_order', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
         <div className="relative">
           <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
           <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search SO or customer..." aria-label="Search sales orders"
@@ -100,7 +100,7 @@ export default function SalesOrdersPage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[880px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['SO number', 'Customer', 'SO date', 'Target', 'Status', 'Total', 'Outstanding'].map((h, i) => (
                 <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i >= 5 ? 'text-right' : 'text-left')}>{h}</th>
               ))}
@@ -109,12 +109,12 @@ export default function SalesOrdersPage() {
               {loading && all.length === 0 ? <tr><td colSpan={7}><TableSkeleton rows={6} cols={7} /></td></tr>
               : rows.length === 0 ? <tr><td colSpan={7}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || statusFilter !== 'all' ? 'No sales orders match.' : 'No sales orders yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Raise a sales order for a customer.</span></div></td></tr>
               : rows.map(p => (
-                <tr key={p.id} onClick={() => { setIsNew(false); setDrawer({ ...p, lines: p.lines ?? [] }); }} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)] cursor-pointer hover:bg-muted">
+                <tr key={p.id} onClick={() => { setIsNew(false); setDrawer({ ...p, lines: p.lines ?? [] }); }} className="[border-bottom:1px_solid_var(--color-line-soft)] cursor-pointer hover:bg-muted">
                   <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{p.docNo}</td>
                   <td className="py-[13px] px-4"><div className="flex flex-col"><span className="text-[13.5px]">{p.customerName}</span>{p.customerPo && <span className="text-[11.5px] text-muted-ink">PO {p.customerPo}</span>}</div></td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.soDate ? date(p.soDate) : '—'}</td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{p.targetDate ? date(p.targetDate) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill status={p.status} /></td>
+                  <td className="py-[13px] px-4"><StatusBadge entity="sales_order" value={p.status} /></td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{rm(p.totalSen)}</td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold">{p.status === 'CANCELLED' ? '—' : rm(p.outstandingSen)}</td>
                 </tr>
@@ -130,10 +130,6 @@ export default function SalesOrdersPage() {
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-function StatusPill({ status }: { status: Status }) {
-  const t = STATUS_TONE[status];
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', TONE[t].bg, TONE[t].text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{STATUS_LABEL[status]}</span>;
 }
 
 interface DraftLine { itemCode: string; description: string; uom: string; qty: string; unitPrice: string; discount: string }
@@ -155,13 +151,13 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
   const total = subtotal + Math.max(0, h.taxSen);
   const built = (): Line[] => lines.filter(l => l.itemCode.trim() && l.description.trim()).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), uom: l.uom.trim() || 'UNIT', qty: Number(l.qty) || 0, unitPriceSen: rmToSen(l.unitPrice), discountSen: rmToSen(l.discount), lineTotalSen: lineTotal(l) }));
   const canSave = h.customerName.trim() !== '' && built().length > 0;
-  const advanceLabel = (() => { const i = FLOW.indexOf(h.status); return i >= 0 && i < FLOW.length - 1 ? STATUS_LABEL[FLOW[i + 1]] : null; })();
+  const advanceLabel = (() => { const i = FLOW.indexOf(h.status); return i >= 0 && i < FLOW.length - 1 ? statusLabel('sales_order', FLOW[i + 1]) : null; })();
   const outstanding = Math.max(0, (isNew ? total : h.totalSen) - h.paidSen);
 
   return (
     <Drawer open onClose={onClose} width={880}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
-        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New sales order' : so.docNo}</h2>{!isNew && <StatusPill status={h.status} />}</div>
+        <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New sales order' : so.docNo}</h2>{!isNew && <StatusBadge entity="sales_order" value={h.status} />}</div>
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
@@ -179,7 +175,7 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
               <thead><tr className="bg-muted">{['Item code', 'Description', 'UOM', 'Qty', 'Unit price', 'Discount', 'Line total', ''].map((th, i) => <th key={th || i} className={cx('py-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-ink', i >= 3 && i <= 6 ? 'text-right' : 'text-left')}>{th}</th>)}</tr></thead>
               <tbody>
                 {lines.map((l, i) => (
-                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)]">
                     <td className="p-1.5"><Cell value={l.itemCode} onChange={v => setLine(i, 'itemCode', v)} disabled={!editable} w="130px" /></td>
                     <td className="p-1.5"><Cell value={l.description} onChange={v => setLine(i, 'description', v)} disabled={!editable} w="100%" /></td>
                     <td className="p-1.5"><Cell value={l.uom} onChange={v => setLine(i, 'uom', v)} disabled={!editable} w="70px" /></td>
@@ -187,7 +183,7 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
                     <td className="p-1.5"><Cell value={l.unitPrice} onChange={v => setLine(i, 'unitPrice', v)} disabled={!editable} w="96px" right num /></td>
                     <td className="p-1.5"><Cell value={l.discount} onChange={v => setLine(i, 'discount', v)} disabled={!editable} w="90px" right num /></td>
                     <td className="p-1.5 text-right tabular-nums text-[13px] whitespace-nowrap">{rm(lineTotal(l))}</td>
-                    <td className="p-1.5 text-center">{editable && <button onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} aria-label="Remove line" className="text-muted-ink hover:text-[var(--color-critical-fg)] bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button>}</td>
+                    <td className="p-1.5 text-center">{editable && <button onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} aria-label="Remove line" className="text-muted-ink hover:text-danger bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button>}</td>
                   </tr>
                 ))}
                 {lines.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-[12.5px] text-muted-ink">No lines yet.</td></tr>}
@@ -218,10 +214,10 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
         )}
       </div>
 
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page flex-wrap">
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page flex-wrap">
         <div className="flex gap-2.5">
           {!isNew && canWrite && h.status !== 'CANCELLED' && h.status !== 'DELIVERED' && h.status !== 'INVOICED' && h.status !== 'CLOSED' &&
-            <Button size="sm" variant="danger" onClick={() => onAct(h, { status: 'CANCELLED' }, { status: 'CANCELLED' }, 'Sales order cancelled.')}>Cancel order</Button>}
+            <ConfirmButton confirm={{ title: `Cancel ${h.docNo}?`, body: 'It is marked Cancelled and can no longer be delivered.', meta: `${h.customerName} · ${rm(h.totalSen)}`, confirmLabel: 'Cancel order', cancelLabel: 'Keep order' }} onConfirm={() => onAct(h, { status: 'CANCELLED' }, { status: 'CANCELLED' }, 'Sales order cancelled.')}>Cancel order</ConfirmButton>}
           {!isNew && canWrite && h.status === 'ON_HOLD' && <Button size="sm" variant="secondary" onClick={() => onAct(h, { status: 'CONFIRMED' }, { status: 'CONFIRMED' }, 'Order resumed.')}>Resume</Button>}
           {!isNew && canWrite && FLOW.includes(h.status) && h.status !== 'CLOSED' && <Button size="sm" variant="secondary" onClick={() => onAct(h, { status: 'ON_HOLD' }, { status: 'ON_HOLD' }, 'Order put on hold.')}>Hold</Button>}
         </div>

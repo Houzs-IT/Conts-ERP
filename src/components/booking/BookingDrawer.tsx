@@ -1,17 +1,20 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Drawer } from '../Dialog';
 import { Button } from '../Button';
 import { Field } from '../Field';
 import Icon from '../Icon';
 import ChannelMark from '../ChannelMark';
+import { PhoneText } from '../PhoneText';
 import { useApi } from '../../lib/useApi';
 import { useToast } from '../Toast';
-import { api, ApiFailure } from '../../lib/api';
+import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { rm, date, dateRange, dateTime, time, nights as fmtNights, guests as fmtGuests } from '../../lib/format';
 import { CHANNEL_META, cx } from '../../lib/design-tokens';
-import { TONE } from '../../lib/vocabulary';
-import { STATUS, channelNote, deliveryToast, type ChannelSync } from '../../lib/bookingStatus';
+import { channelNote, deliveryToast, type ChannelSync } from '../../lib/bookingStatus';
+import { statusLabel } from '../../lib/status';
+import { StatusMenu } from '../StatusBadge';
+import { ConfirmDialog } from '../ConfirmDialog';
 import type { BookingChannel, ReservationState } from '../../lib/types';
 
 /* ------------------------------------------------------------------ */
@@ -53,72 +56,19 @@ interface Detail extends Required<Omit<BookingSummary, 'guestPhone'>> {
   can: { changeDates: boolean; changeDatesReason: string | null; recordPayment: boolean; editDetails: boolean; paymentsReady: boolean };
 }
 
+/** Airbnb, Booking.com and Agoda own their bookings' dates; a change is made there and arrives through Channex. */
+const OTA: BookingChannel[] = ['airbnb', 'booking_com', 'agoda'];
 const isBlock = (c: BookingChannel) => c === 'maintenance_block' || c === 'owner_stay';
 const nightsBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
-const failMessage = (e: unknown) => (e instanceof Error ? e.message : 'Try again in a moment.');
+const failMessage = (e: unknown) => (errorMessage(e, 'Try again in a moment.'));
 
 /* ------------------------------------------------------------------ */
 /* Status pill and menu                                                */
 /* ------------------------------------------------------------------ */
 
-export function StatusPill({ state, size = 'md' }: { state: ReservationState; size?: 'sm' | 'md' }) {
-  const s = STATUS[state], t = TONE[s.tone];
-  return (
-    <span className={cx('inline-flex items-center gap-[6px] rounded-pill font-semibold whitespace-nowrap border border-solid',
-      size === 'sm' ? 'h-[22px] px-[9px] text-caption' : 'h-[26px] px-[11px] text-meta')}
-      style={{ background: s.outline ? 'transparent' : t.bg, color: t.fg, borderColor: s.outline ? t.line : 'transparent' }}>
-      <span className="w-[6px] h-[6px] rounded-full flex-none" style={{ background: t.line }} />
-      {s.label}
-    </span>
-  );
-}
-
 const MOVE_ICON: Partial<Record<ReservationState, string>> = {
   pending: 'Clock', confirmed: 'CheckCircle2', checked_in: 'LogIn', checked_out: 'LogOut', cancelled: 'XCircle', no_show: 'UserX',
 };
-
-/** The current status as a coloured pill; clicking it lists only the moves the server allows, with the reason for any it does not. */
-function StatusMenu({ state, moves, busy, onPick }: { state: ReservationState; moves: Move[] | null; busy: boolean; onPick: (m: Move) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } };
-    document.addEventListener('mousedown', onDoc); document.addEventListener('keydown', onKey, true);
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey, true); };
-  }, [open]);
-
-  const locked = moves !== null && moves.length === 0;
-  return (
-    <div ref={ref} className="relative">
-      <button type="button" onClick={() => !locked && moves && setOpen(o => !o)} disabled={busy || !moves} aria-haspopup="menu" aria-expanded={open}
-        title={locked ? 'No further status changes for this booking' : 'Change status'}
-        className={cx('inline-flex items-center gap-1 p-0 bg-transparent border-none [font:inherit]', locked || !moves ? 'cursor-default' : 'cursor-pointer')}>
-        <StatusPill state={state} />
-        {busy ? <span className="text-meta text-muted-ink">Saving…</span>
-          : locked ? <span className="inline-flex items-center gap-1 text-meta text-muted-ink"><Icon name="Lock" size="sm" />Locked</span>
-          : moves ? <Icon name="ChevronDown" size="sm" color="var(--color-text-muted)" /> : null}
-      </button>
-      {open && moves && (
-        <div role="menu" className="absolute z-[60] right-0 top-full mt-1 w-[300px] max-w-[calc(100vw-48px)] p-1 bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)]">
-          {moves.map(m => (
-            <button key={m.to + m.label} type="button" role="menuitem" disabled={!m.allowed}
-              onClick={() => { setOpen(false); onPick(m); }}
-              className={cx('w-full text-left flex gap-[10px] items-start px-[10px] py-[9px] rounded-[8px] border-none bg-transparent [font:inherit]',
-                m.allowed ? 'cursor-pointer hover:bg-muted' : 'cursor-not-allowed opacity-60')}>
-              <span className="mt-[1px]" style={{ color: TONE[STATUS[m.to].tone].fg }}><Icon name={MOVE_ICON[m.to] ?? 'ArrowRight'} size="sm" /></span>
-              <span className="flex flex-col gap-[2px] min-w-0">
-                <span className={cx('text-copy font-semibold', m.to === 'cancelled' || m.to === 'no_show' ? 'text-[var(--color-critical-fg)]' : 'text-ink')}>{m.label}</span>
-                <span className="text-meta text-muted-ink leading-[1.4]">{m.allowed ? m.hint : m.reason}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ------------------------------------------------------------------ */
 /* Money                                                               */
@@ -191,7 +141,7 @@ function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void
                   </span>
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className={cx('text-copy [font-variant-numeric:tabular-nums] whitespace-nowrap', p.status === 'expected' && 'text-[var(--color-warning-fg)]')}>
+                  <span className={cx('text-copy [font-variant-numeric:tabular-nums] whitespace-nowrap', p.status === 'expected' && 'text-warning')}>
                     {p.kind === 'refund' ? `− ${rm(p.amount)}` : rm(p.amount)}{p.status === 'expected' ? ' not received' : ''}
                   </span>
                   {p.source === 'manual' && d.can.recordPayment && (
@@ -210,8 +160,8 @@ function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void
       </div>
 
       {L.disagree && (
-        <div role="note" className="rounded-control border border-solid border-[var(--color-warning-line)] bg-[var(--color-warning-bg)] px-3 py-[10px] text-meta flex flex-col gap-1">
-          <span className="font-semibold text-[var(--color-warning-fg)] flex items-center gap-[6px]"><Icon name="AlertTriangle" size="sm" />Sources disagree</span>
+        <div role="note" className="rounded-control border border-solid border-warning-line bg-warning-bg px-3 py-[10px] text-meta flex flex-col gap-1">
+          <span className="font-semibold text-warning flex items-center gap-[6px]"><Icon name="AlertTriangle" size="sm" />Sources disagree</span>
           <span className="text-ink leading-[1.45]">{L.disagree}</span>
         </div>
       )}
@@ -250,7 +200,7 @@ function Timeline({ events }: { events: TimelineEvent[] }) {
         <li key={i} className="flex gap-3">
           <div className="flex flex-col items-center">
             <span className={cx('w-[11px] h-[11px] rounded-pill border-2 border-solid mt-[3px] flex-none',
-              e.upcoming ? 'bg-card [border-color:var(--color-line)]' : 'bg-[var(--color-success-fg)] [border-color:var(--color-success-fg)]')} />
+              e.upcoming ? 'bg-card [border-color:var(--color-line)]' : 'bg-success [border-color:var(--color-success-fg)]')} />
             {i < events.length - 1 && <span className="w-0.5 flex-1 min-h-[18px] bg-line" />}
           </div>
           <div className="pb-[14px] min-w-0">
@@ -291,38 +241,6 @@ export function CentreModal({ title, sub, onClose, children, maxWidth = 460 }: {
       </div>
     </div>,
     document.body,
-  );
-}
-
-/** Cancel / no-show / remove block: says what happens, asks why, then does it. */
-function ReasonModal({ title, body, meta, confirmLabel, keepLabel, onClose, onConfirm }: {
-  title: string; body: string; meta: string; confirmLabel: string; keepLabel: string; onClose: () => void; onConfirm: (reason: string) => Promise<void>;
-}) {
-  const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!reason.trim()) return;
-    setBusy(true);
-    await onConfirm(reason.trim());
-    setBusy(false);
-  }
-  return (
-    <CentreModal title={title} sub={body} onClose={() => { if (!busy) onClose(); }}>
-      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
-        <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-meta">{meta}</div>
-        <div className="flex flex-col gap-[6px]">
-          <label htmlFor="bk-reason" className="text-meta font-medium text-muted-ink">Reason (required)</label>
-          <textarea id="bk-reason" autoFocus required value={reason} onChange={e => setReason(e.target.value)} rows={3} maxLength={300}
-            placeholder="e.g. Guest asked to cancel by WhatsApp"
-            className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
-        </div>
-        <div className="flex justify-end gap-[9px] flex-wrap">
-          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>{keepLabel}</Button>
-          <Button type="submit" size="sm" variant="danger" loading={busy} disabled={!reason.trim()} disabledReason="Write a reason first.">{busy ? 'Saving…' : confirmLabel}</Button>
-        </div>
-      </form>
-    </CentreModal>
   );
 }
 
@@ -415,7 +333,7 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
         ) : !isBlock(d.channel) && (
           <p className="m-0 text-meta text-muted-ink">The price is set by {CHANNEL_META[d.channel].label}, so it stays as recorded. Change the booking on the site too.</p>
         )}
-        {error && <p role="alert" className="m-0 text-meta text-[var(--color-critical-fg)]">{error}</p>}
+        {error && <p role="alert" className="m-0 text-meta text-danger">{error}</p>}
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Close</Button>
           <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason="Pick a new, valid date range first.">{busy ? 'Saving…' : 'Save new dates'}</Button>
@@ -626,7 +544,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
         e.tasksKept ? `${e.tasksKept} ${e.tasksKept === 1 ? 'task is' : 'tasks are'} already being worked on and ${e.tasksKept === 1 ? 'was' : 'were'} kept.` : '',
         channelNote(e.channel, m.to === 'cancelled' || m.to === 'no_show' ? 'released' : 'held'),
       ].filter(Boolean);
-      toast({ tone: m.to === 'cancelled' || m.to === 'no_show' ? 'neutral' : 'success', title: `${s!.externalRef ?? 'Booking'} is now ${STATUS[res.state].label}.`, body: bits.join(' ') || undefined });
+      toast({ tone: m.to === 'cancelled' || m.to === 'no_show' ? 'neutral' : 'success', title: `${s!.externalRef ?? 'Booking'} is now ${statusLabel('booking', res.state)}.`, body: bits.join(' ') || undefined });
       setAsking(null);
       reload(); onChanged?.(id);
     } catch (err) {
@@ -679,7 +597,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
 
   return (
     <>
-      <div className="relative z-[1] flex-none bg-[#151515] text-white px-[18px] pt-[14px] pb-[16px] flex flex-col gap-[10px]">
+      <div className="relative z-[1] flex-none bg-black text-white px-[18px] pt-[14px] pb-[16px] flex flex-col gap-[10px]">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-[10px] min-w-0">
             <ChannelMark ch={s.channel} size={24} />
@@ -700,7 +618,9 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
         {!block && (
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <span className="text-meta font-medium text-muted-ink">Status</span>
-            <StatusMenu state={s.state} moves={d ? d.moves : null} busy={busy} onPick={pick} />
+            <StatusMenu entity="booking" value={s.state} busy={busy}
+              options={d ? d.moves.map(m => ({ value: m.to, label: m.label, hint: m.allowed ? m.hint : m.reason, disabled: !m.allowed, icon: MOVE_ICON[m.to], danger: m.to === 'cancelled' || m.to === 'no_show' })) : null}
+              onPick={o => { const m = d?.moves.find(x => x.to === o.value && x.label === o.label); if (m) pick(m); }} />
           </div>
         )}
 
@@ -725,7 +645,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
         {!block && d && (
           <div className="flex flex-col gap-1 text-copy">
             <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink mb-1">Guest</div>
-            <div className="flex justify-between gap-3"><span className="text-muted-ink">Phone</span><span className="text-right break-all">{d.guestPhone ? <a href={`tel:${d.guestPhone.replace(/[^0-9+]/g, '')}`} className="text-ink">{d.guestPhone}</a> : '—'}</span></div>
+            <div className="flex justify-between gap-3"><span className="text-muted-ink">Phone</span><span className="text-right break-all"><PhoneText value={d.guestPhone} className="text-ink" /></span></div>
             {d.guestEmail && <div className="flex justify-between gap-3"><span className="text-muted-ink">Email</span><span className="text-right break-all">{d.guestEmail}</span></div>}
             <div className="flex justify-between gap-3"><span className="text-muted-ink">Nationality</span>
               <span className="text-right">{nationality ?? '—'}{nationality && !/malaysia/i.test(nationality) ? <span className="text-muted-ink"> · tourism tax applies</span> : null}</span></div>
@@ -761,8 +681,10 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
           </div>
           {live && (
             <div className="flex gap-[9px]">
-              <Button variant="secondary" style={{ flex: 1 }} onClick={() => setDatesOpen(true)} disabled={!d || !d.can.changeDates}
-                disabledReason={d?.can.changeDatesReason ?? 'Loading…'}>Change dates</Button>
+              {!OTA.includes(s.channel) && (
+                <Button variant="secondary" style={{ flex: 1 }} onClick={() => setDatesOpen(true)} disabled={!d || !d.can.changeDates}
+                  disabledReason={d?.can.changeDatesReason ?? 'Loading…'}>Change dates</Button>
+              )}
               <Button variant="danger" style={{ flex: 1 }} onClick={() => cancelMove && setAsking(cancelMove)} disabled={!cancelMove}
                 disabledReason={d ? 'A guest who is already in cannot be cancelled. Check them out instead.' : 'Loading…'}>Cancel booking</Button>
             </div>
@@ -773,21 +695,24 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
         </>}
       </div>
 
-      {asking === 'remove_block' && (
-        <ReasonModal title={s.channel === 'owner_stay' ? 'Remove this owner stay?' : 'Remove this block?'} body="The nights go back on sale. A unit linked to Channex has them reopened on the booking sites."
-          meta={metaLine} confirmLabel={s.channel === 'owner_stay' ? 'Remove owner stay' : 'Remove block'} keepLabel="Keep it" onClose={() => setAsking(null)} onConfirm={removeBlock} />
-      )}
-      {asking && asking !== 'remove_block' && (
-        <ReasonModal
-          title={asking.to === 'cancelled' ? `Cancel ${s.externalRef ?? 'this booking'}?` : `Mark ${s.guestName || 'this guest'} as a no-show?`}
-          body={asking.to === 'cancelled'
+      <ConfirmDialog busy={busy} onClose={() => { if (!busy) setAsking(null); }}
+        spec={asking === 'remove_block' ? {
+          title: s.channel === 'owner_stay' ? 'Remove this owner stay?' : 'Remove this block?',
+          body: 'The nights go back on sale. A unit linked to Channex has them reopened on the booking sites.',
+          meta: metaLine, danger: true, cancelLabel: 'Keep it', busyLabel: 'Saving…',
+          confirmLabel: s.channel === 'owner_stay' ? 'Remove owner stay' : 'Remove block',
+          reason: { placeholder: 'e.g. Owner no longer needs the unit those nights' },
+          onConfirm: removeBlock,
+        } : asking ? {
+          title: asking.to === 'cancelled' ? `Cancel ${s.externalRef ?? 'this booking'}?` : `Mark ${s.guestName || 'this guest'} as a no-show?`,
+          body: asking.to === 'cancelled'
             ? 'The dates go back on sale. The guest is not messaged and no refund is made from here: do those on the booking site or by message.'
-            : 'The nights from today on go back on sale. The guest is not messaged.'}
-          meta={metaLine}
-          confirmLabel={asking.to === 'cancelled' ? 'Cancel booking' : 'Mark no-show'}
-          keepLabel="Keep booking"
-          onClose={() => setAsking(null)} onConfirm={reason => move(asking, reason)} />
-      )}
+            : 'The nights from today on go back on sale. The guest is not messaged.',
+          meta: metaLine, danger: true, cancelLabel: 'Keep booking', busyLabel: 'Saving…',
+          confirmLabel: asking.to === 'cancelled' ? 'Cancel booking' : 'Mark no-show',
+          reason: { placeholder: 'e.g. Guest asked to cancel by WhatsApp' },
+          onConfirm: reason => move(asking, reason),
+        } : null} />
       {datesOpen && d && (
         <ChangeDatesModal d={d} onClose={() => setDatesOpen(false)}
           onSaved={v => {
@@ -798,14 +723,13 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
       )}
       {timesOpen && d && <TimesModal d={d} onClose={() => setTimesOpen(false)} onSaved={msg => { setTimesOpen(false); saved(msg); }} />}
       {payOpen && d && <RecordPaymentModal d={d} onClose={() => setPayOpen(false)} onSaved={msg => { setPayOpen(false); saved(msg); }} />}
-      {removing && (
-        <CentreModal title="Remove this payment?" sub={`${KIND_LABEL[removing.kind]} of ${rm(removing.amount)}${removing.receivedOn ? ` on ${date(removing.receivedOn)}` : ''}. Use this only for one recorded by mistake; the removal is kept in the audit log.`} onClose={() => { if (!busy) setRemoving(null); }}>
-          <div className="px-[22px] py-4 flex justify-end gap-[9px]">
-            <Button size="sm" variant="secondary" onClick={() => setRemoving(null)} disabled={busy}>Keep it</Button>
-            <Button size="sm" variant="danger" loading={busy} onClick={() => removePayment(removing)}>Remove payment</Button>
-          </div>
-        </CentreModal>
-      )}
+      <ConfirmDialog busy={busy} onClose={() => { if (!busy) setRemoving(null); }}
+        spec={removing ? {
+          title: 'Remove this payment?',
+          body: `${KIND_LABEL[removing.kind]} of ${rm(removing.amount)}${removing.receivedOn ? ` on ${date(removing.receivedOn)}` : ''}. Use this only for one recorded by mistake; the removal is kept in the audit log.`,
+          danger: true, cancelLabel: 'Keep it', confirmLabel: 'Remove payment', busyLabel: 'Removing…',
+          onConfirm: () => removePayment(removing),
+        } : null} />
       {messageOpen && <MessageGuestModal r={{ id, guestName: s.guestName, channel: s.channel }} onClose={() => setMessageOpen(false)} onSent={reload} />}
     </>
   );

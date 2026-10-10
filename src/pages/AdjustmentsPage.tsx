@@ -75,14 +75,14 @@ export default function AdjustmentsPage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[640px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['Date', 'Item', 'Warehouse', 'Change', 'Reason'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 3 ? 'text-right' : 'text-left')}>{h}</th>)}
             </tr></thead>
             <tbody>
               {loading && all.length === 0 ? <tr><td colSpan={5}><TableSkeleton rows={6} cols={5} /></td></tr>
               : rows.length === 0 ? <tr><td colSpan={5}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q || whFilter !== 'all' ? 'No adjustments match.' : 'No adjustments yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Post a manual correction to on-hand stock — it lands in the movement ledger.</span></div></td></tr>
               : rows.map(m => (
-                <tr key={m.id} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                <tr key={m.id} className="[border-bottom:1px_solid_var(--color-line-soft)]">
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)] tabular-nums">{m.movedAt ? date(m.movedAt) : '—'}</td>
                   <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px]">{m.itemCode}</td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{m.warehouseName || m.warehouseCode || '—'}</td>
@@ -145,7 +145,7 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onCreate }: { warehouses:
         <Field label="Note" placeholder="Optional detail" value={note} onChange={e => setNote(e.target.value)} />
         <div className="text-[12.5px] text-muted-ink">Posts <span className={cx('font-semibold', direction === 'in' ? TONE.success.text : TONE.critical.text)}>{direction === 'in' ? '+' : '−'}{magnitude}</span> to the stock ledger for <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{itemCode || '—'}</span>.</div>
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter an item, warehouse and quantity" loading={busy} onClick={() => void submit()}>Post adjustment</Button>
       </div>

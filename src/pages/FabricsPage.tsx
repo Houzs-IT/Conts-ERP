@@ -3,6 +3,7 @@ import { Plus, Trash2, Search } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -11,7 +12,8 @@ import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
 
 /** Fabric library — ported from 2990's SCM, drawn in Conts. Upholstery fabric catalogue
  *  with a pricing tier + surcharge. Furniture-specific. */
@@ -30,7 +32,6 @@ const FALLBACK: Payload = {
 };
 type Draft = Fabric & { isNew: boolean };
 const emptyDraft = (): Draft => ({ id: '', fabricCode: '', label: '', tier: 'standard', defaultSurchargeSen: 0, sofaTier: '', bedframeTier: '', active: true, sortOrder: 0, isNew: true });
-const TIER_TONE: Record<string, 'neutral' | 'info' | 'success'> = { standard: 'neutral', premium: 'info', luxury: 'success' };
 
 export default function FabricsPage() {
   const { data, loading, error, reload } = useApi<Payload>('/fabrics', FALLBACK);
@@ -70,20 +71,20 @@ export default function FabricsPage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[680px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['Code', 'Label', 'Tier', 'Surcharge', 'Sofa / Bed tier', 'Status'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 3 ? 'text-right' : 'text-left')}>{h}</th>)}
             </tr></thead>
             <tbody>
               {loading && rows.length === 0 ? <tr><td colSpan={6}><TableSkeleton rows={5} cols={6} /></td></tr>
               : rows.length === 0 ? <tr><td colSpan={6}><div className="py-[38px] px-[22px] text-center text-[14px] font-semibold">No fabrics yet.</div></td></tr>
               : rows.map(f => (
-                <tr key={f.id} onClick={() => { if (canWrite) setDrawer({ ...f, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
+                <tr key={f.id} onClick={() => { if (canWrite) setDrawer({ ...f, isNew: false }); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
                   <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[12.5px] text-muted-ink">{f.fabricCode || f.id}</td>
                   <td className="py-[13px] px-4 text-[13.5px]">{f.label}</td>
-                  <td className="py-[13px] px-4"><span className={cx('inline-block text-[11px] font-semibold uppercase tracking-[0.06em] px-2.5 py-0.5 rounded-full', TONE[TIER_TONE[f.tier] ?? 'neutral'].bg, TONE[TIER_TONE[f.tier] ?? 'neutral'].text)}>{f.tier}</span></td>
+                  <td className="py-[13px] px-4"><StatusBadge entity="fabric_tier" value={f.tier} /></td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{f.defaultSurchargeSen ? `+ ${rm(f.defaultSurchargeSen)}` : '—'}</td>
                   <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{[f.sofaTier, f.bedframeTier].filter(Boolean).join(' / ') || '—'}</td>
-                  <td className="py-[13px] px-4"><ActivePill active={f.active} /></td>
+                  <td className="py-[13px] px-4"><StatusBadge entity="active_flag" value={f.active ? 'active' : 'inactive'} /></td>
                 </tr>
               ))}
             </tbody>
@@ -95,10 +96,6 @@ export default function FabricsPage() {
   );
 }
 
-function ActivePill({ active }: { active: boolean }) {
-  const t = active ? TONE.success : TONE.neutral;
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', t.bg, t.text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{active ? 'Active' : 'Inactive'}</span>;
-}
 
 function FabricDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onClose: () => void; onSave: (d: Draft) => void; onDelete?: () => void }) {
   const [f, setF] = useState<Draft>(draft);
@@ -133,8 +130,8 @@ function FabricDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onCl
           </div>
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete fabric ${draft.label}?`, body: 'It is deleted for good and drops off the fabric library.', confirmLabel: 'Delete fabric', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter an id and a label" onClick={() => onSave(f)}>{draft.isNew ? 'Create' : 'Save'}</Button>

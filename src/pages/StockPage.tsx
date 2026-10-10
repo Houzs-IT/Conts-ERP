@@ -85,38 +85,38 @@ export default function StockPage() {
         <div className="overflow-x-auto">
           {tab === 'onhand' ? (
             <table className="w-full border-collapse min-w-[620px]">
-              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
                 {['Item code', 'Description', 'Warehouse', 'On hand'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 3 ? 'text-right' : 'text-left')}>{h}</th>)}
               </tr></thead>
               <tbody>
                 {loading && onhand.length === 0 ? <tr><td colSpan={4}><TableSkeleton rows={6} cols={4} /></td></tr>
                 : onhand.length === 0 ? <tr><td colSpan={4}><div className="py-[38px] px-[22px] text-center text-[14px] font-semibold">No stock on hand.</div></td></tr>
                 : onhand.map(r => (
-                  <tr key={`${r.itemCode}-${r.warehouseId}`} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                  <tr key={`${r.itemCode}-${r.warehouseId}`} className="[border-bottom:1px_solid_var(--color-line-soft)]">
                     <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{r.itemCode}</td>
                     <td className="py-[13px] px-4 text-[13.5px]">{r.itemName || '—'}</td>
                     <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{r.warehouseName}</td>
-                    <td className={cx('py-[13px] px-4 text-right tabular-nums text-[14px] font-semibold', r.onHand < 0 ? 'text-[var(--color-critical-fg)]' : '')}>{r.onHand}</td>
+                    <td className={cx('py-[13px] px-4 text-right tabular-nums text-[14px] font-semibold', r.onHand < 0 ? 'text-danger' : '')}>{r.onHand}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           ) : (
             <table className="w-full border-collapse min-w-[720px]">
-              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+              <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
                 {['Date', 'Item code', 'Warehouse', 'Type', 'Ref', 'Qty', 'Note'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 5 ? 'text-right' : 'text-left')}>{h}</th>)}
               </tr></thead>
               <tbody>
                 {moves.loading && movements.length === 0 ? <tr><td colSpan={7}><TableSkeleton rows={6} cols={7} /></td></tr>
                 : movements.length === 0 ? <tr><td colSpan={7}><div className="py-[38px] px-[22px] text-center text-[14px] font-semibold">No movements yet.</div></td></tr>
                 : movements.map(m => (
-                  <tr key={m.id} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                  <tr key={m.id} className="[border-bottom:1px_solid_var(--color-line-soft)]">
                     <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{m.movedAt ? date(m.movedAt) : '—'}</td>
                     <td className="py-[13px] px-4 [font-family:var(--font-mono,ui-monospace,monospace)] text-[13px]">{m.itemCode}</td>
                     <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{m.warehouseName}</td>
                     <td className="py-[13px] px-4 text-[12.5px]">{MV_LABEL[m.movementType] ?? m.movementType}</td>
                     <td className="py-[13px] px-4 text-[12px] text-muted-ink">{m.refType || '—'}</td>
-                    <td className={cx('py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold', m.qtyDelta < 0 ? 'text-[var(--color-critical-fg)]' : 'text-[var(--color-success-fg)]')}>{m.qtyDelta > 0 ? `+${m.qtyDelta}` : m.qtyDelta}</td>
+                    <td className={cx('py-[13px] px-4 text-right tabular-nums text-[13px] font-semibold', m.qtyDelta < 0 ? 'text-danger' : 'text-success')}>{m.qtyDelta > 0 ? `+${m.qtyDelta}` : m.qtyDelta}</td>
                     <td className="py-[13px] px-4 text-[12.5px] text-muted-ink max-w-[200px] truncate">{m.note || '—'}</td>
                   </tr>
                 ))}
@@ -168,7 +168,7 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onDone }: { warehouses: O
           <div className="col-span-2"><Field label="Note" placeholder="Reason for the adjustment" value={note} onChange={e => setNote(e.target.value)} /></div>
         </div>
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter an item, warehouse and a non-zero quantity" onClick={submit}>Post adjustment</Button>
       </div>

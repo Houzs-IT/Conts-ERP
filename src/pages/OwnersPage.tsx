@@ -2,13 +2,13 @@ import { Fragment, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
-import { api } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { rmShort, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
 import { MoneyText } from '../components/MoneyText';
 import { Select } from '../components/Select';
@@ -115,7 +115,7 @@ export default function OwnersPage() {
       setModal(false);
       navigate(`/owners/${encodeURIComponent(made.id)}`);
     } catch (e) {
-      toast({ tone: 'critical', title: 'Owner was not added.', body: e instanceof Error ? e.message : 'Try again in a moment.' });
+      toast({ tone: 'critical', title: 'Owner was not added.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
 
@@ -227,7 +227,7 @@ export default function OwnersPage() {
                 <MoneyText sen={grossOf(o)} mode="exact" tone="muted" className="text-copy text-right" />
                 <MoneyText sen={netOf(o)} mode="exact" tone="auto" className="text-copy text-right font-medium" />
                 <div className="flex items-center justify-between gap-2 min-w-0">
-                  {o.portalInvited ? <Badge tone="success" label="Active" /> : <Badge tone="neutral" label="Not invited" />}
+                  {o.portalInvited ? <StatusBadge tone="success" label="Active" /> : <StatusBadge tone="neutral" label="Not invited" />}
                   <Icon name="ChevronRight" size="sm" color="var(--color-muted-ink)" />
                 </div>
               </div>

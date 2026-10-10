@@ -3,6 +3,7 @@ import { Plus, Trash2, X } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -11,7 +12,8 @@ import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
 
 /** Carriers & Rates (Delivery Rate Cards) — ported from 2990's SCM, drawn in Conts. A card is
  *  one carrier's freight tariff; its rules feed the pure pricing engine. Money integer sen. */
@@ -91,21 +93,21 @@ export default function RateCardsPage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[820px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['Card', 'Carrier', 'Charged', 'Rules', 'Min', 'Cap', 'Status'].map((h, i) => <th key={h} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i >= 3 && i <= 5 ? 'text-right' : 'text-left')}>{h}</th>)}
             </tr></thead>
             <tbody>
               {loading && all.length === 0 ? <tr><td colSpan={7}><TableSkeleton rows={5} cols={7} /></td></tr>
               : rows.length === 0 ? <tr><td colSpan={7}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">{q ? 'No rate cards match.' : 'No rate cards yet.'}</span><span className="text-[12.5px] text-muted-ink max-w-[400px]">Set up a freight tariff per carrier — tiers, sofa brackets, outstation surcharges and the min/cap/rounding envelope.</span></div></td></tr>
               : rows.map(c => (
-                <tr key={c.id} onClick={() => { if (canWrite) void openEdit(c); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
+                <tr key={c.id} onClick={() => { if (canWrite) void openEdit(c); }} className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
                   <td className="py-[13px] px-4 text-[13.5px] font-medium">{c.name}</td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)]">{c.carrierName || c.carrierLabel || '—'}</td>
                   <td className="py-[13px] px-4 text-[12.5px] text-muted-ink">{AGG_LABEL[c.aggregation]}{c.aggregation === 'UNIT' ? ` · ${c.basis === 'ITEM' ? 'item' : 'set'}` : ''}</td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{c.ruleCount}</td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{c.minChargeSen != null ? rm(c.minChargeSen) : '—'}</td>
                   <td className="py-[13px] px-4 text-right tabular-nums text-[13px]">{c.capSen != null ? rm(c.capSen) : '—'}</td>
-                  <td className="py-[13px] px-4"><StatusPill active={c.isActive} /></td>
+                  <td className="py-[13px] px-4"><StatusBadge entity="active_flag" value={c.isActive ? 'active' : 'inactive'} /></td>
                 </tr>
               ))}
             </tbody>
@@ -117,10 +119,6 @@ export default function RateCardsPage() {
   );
 }
 
-function StatusPill({ active }: { active: boolean }) {
-  const t = active ? TONE.success : TONE.neutral;
-  return <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', t.bg, t.text)}><span className="w-1.5 h-1.5 rounded-full bg-current" />{active ? 'Active' : 'Inactive'}</span>;
-}
 
 function needsTier(t: RuleType) { return t === 'POSITIONAL_TIER' || t === 'OVERAGE'; }
 function needsBracket(t: RuleType) { return t === 'SOFA_BRACKET'; }
@@ -164,7 +162,7 @@ function CardDrawer({ card, isNew, carriers, onClose, onSave, onDelete }: { card
               <tbody>
                 {rules.length === 0 ? <tr><td colSpan={4} className="py-6 text-center text-[12.5px] text-muted-ink">No rules yet. Add tiers, sofa brackets, outstation surcharges or occurrence charges.</td></tr>
                 : rules.map((r, i) => (
-                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft,#EDEAE4)] align-top">
+                  <tr key={i} className="[border-top:1px_solid_var(--color-line-soft)] align-top">
                     <td className="py-2 px-3">
                       <select value={r.ruleType} onChange={e => setRule(i, { ruleType: e.target.value as RuleType })} className="h-8 box-border px-2 py-0 font-sans text-[12.5px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
                         {RULE_TYPES.map(t => <option key={t} value={t}>{RULE_LABEL[t]}</option>)}
@@ -192,8 +190,8 @@ function CardDrawer({ card, isNew, carriers, onClose, onSave, onDelete }: { card
           <Sel label="Status" value={f.isActive ? '1' : '0'} onChange={v => set('isActive', v === '1')} options={[{ value: '1', label: 'Active' }, { value: '0', label: 'Inactive' }]} />
         </div>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete rate card ${card.name}?`, body: 'The card and all its rates are deleted for good.', confirmLabel: 'Delete rate card', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a card name first" onClick={() => onSave({ ...f, rules }, isNew)}>{isNew ? 'Create card' : 'Save'}</Button>

@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Card, CardHeader, LinkAction } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import Icon from '../components/Icon';
-import { Badge } from '../components/Badge';
+import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
-import { Dialog } from '../components/Dialog';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -524,7 +524,7 @@ export default function DashboardPage() {
                 <div className="text-right text-copy [font-variant-numeric:tabular-nums]">{rm(u.revpar, { cents: false })}</div>
                 <div className="text-right text-copy font-medium [font-variant-numeric:tabular-nums]">{rm(u.revenue, { cents: false })}</div>
                 <div className="text-right">
-                  {u.exception ? <Badge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-meta text-faint">None</span>}
+                  {u.exception ? <StatusBadge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-meta text-faint">None</span>}
                 </div>
               </div>
             ))}
@@ -562,7 +562,7 @@ export default function DashboardPage() {
       )}
 
       {/* Notify owner — confirmation-only, so the shared Dialog fits. */}
-      <Dialog
+      <ConfirmDialog
         busy={false}
         onClose={() => setNotify(null)}
         spec={!notify || !notify.owner ? null : {

@@ -233,7 +233,7 @@ export default function SystemHealthPage() {
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => { setSensitiveOnly(v => !v); setLimit(100); }} title="Only accounts and passwords, settings, payouts, deletions and failures"
               className={cx('inline-flex h-7 items-center gap-1.5 rounded-control border border-solid px-2.5 text-caption font-semibold cursor-pointer [font-family:inherit]',
-                sensitiveOnly ? 'border-[var(--color-warning-line)] bg-[var(--color-warning)] text-[var(--color-warning-fg)]' : 'border-line bg-card text-muted-ink')}>
+                sensitiveOnly ? 'border-warning-line bg-warning-bg text-warning' : 'border-line bg-card text-muted-ink')}>
               <Icon name="ShieldAlert" size="sm" /> Sensitive only
             </button>
             <div className="inline-flex rounded-control border border-solid border-line bg-card p-0.5">
@@ -253,7 +253,7 @@ export default function SystemHealthPage() {
           </div>
         )}
         {feed.loading && rows.length === 0 ? <TableSkeleton rows={4} cols={4} />
-          : feed.error && rows.length === 0 ? <div className="py-6 text-center text-copy text-[var(--color-critical-fg)]">{feed.error}</div>
+          : feed.error && rows.length === 0 ? <div className="py-6 text-center text-copy text-danger">{feed.error}</div>
           : rows.length === 0 ? <EmptyState bare kind={sensitiveOnly ? 'filtered' : 'empty'} icon="ClipboardCheck" title={`No ${sensitiveOnly ? 'sensitive ' : ''}events in the last ${range}.`}
               action={sensitiveOnly ? { label: 'Show all events', onClick: () => { setSensitiveOnly(false); setLimit(100); } } : undefined} />
           : (

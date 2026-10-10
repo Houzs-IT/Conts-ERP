@@ -1,3 +1,4 @@
+import type { StatusTone } from './status';
 /** Revenue models and expense payers as the screens name them. The server's rules are in
  *  functions/_lib/revenueModel.ts and functions/_lib/ownerStatement.ts. */
 
@@ -17,13 +18,13 @@ export const MODELS: { key: RevenueModel; label: string; short: string; blurb: s
 ];
 export const MODEL: Record<RevenueModel, typeof MODELS[number]> = Object.fromEntries(MODELS.map(m => [m.key, m])) as Record<RevenueModel, typeof MODELS[number]>;
 
-/** Chip colours per model (background, text). Readable in both themes: text on a light tint. */
-export const MODEL_CHIP: Record<RevenueModel, string> = {
-  management: 'bg-[#F4EBDA] text-[#6B4E17]',
-  management_guarantee: 'bg-[#EAF0FA] text-[#1D4F91]',
-  grr: 'bg-[#E6F2EA] text-[#1F6B3A]',
-  master_lease: 'bg-[#EFEAF7] text-[#4F3A84]',
-  long_term: 'bg-[#F1F1EF] text-[#3F3D39]',
+/** The colour each model's label takes (StatusBadge tone). */
+export const MODEL_TONE: Record<RevenueModel, StatusTone> = {
+  management: 'accent',
+  management_guarantee: 'info',
+  grr: 'success',
+  master_lease: 'warning',
+  long_term: 'neutral',
 };
 
 /** Who pays an expense (expenses.charge_to). Only the owner's reach the statement. */

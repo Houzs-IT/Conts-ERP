@@ -3,6 +3,7 @@ import { Search, Plus, Trash2 } from 'lucide-react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
@@ -10,7 +11,8 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { TONE, cx } from '../lib/design-tokens';
+import { cx } from '../lib/design-tokens';
+import { StatusBadge } from '../components/StatusBadge';
 
 /** Product Models — model master, ported from 2990's SCM (logic) and drawn in Conts.
  *  A model groups SKUs of one design. The deep variant/allowed-options editor is a
@@ -119,7 +121,7 @@ export default function ProductModelsPage() {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[720px]">
             <thead>
-              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+              <tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
                 {['Model code', 'Name', 'Category', 'Branding', 'Status'].map(h => (
                   <th key={h} className="py-[11px] px-4 text-left text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap">{h}</th>
                 ))}
@@ -137,12 +139,12 @@ export default function ProductModelsPage() {
                 </td></tr>
               ) : rows.map(m => (
                 <tr key={m.id} onClick={() => { if (canWrite) setDrawer({ draft: { ...m }, isNew: false }); }}
-                  className={cx('[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
+                  className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', canWrite ? 'cursor-pointer hover:bg-muted' : '')}>
                   <td className="py-[13px] px-4"><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] bg-muted border border-solid border-line rounded-full px-2.5 py-0.5">{m.modelCode}</span></td>
                   <td className="py-[13px] px-4 text-[13.5px]">{m.name}</td>
                   <td className="py-[13px] px-4"><span className="inline-block text-[11px] font-semibold uppercase tracking-[0.06em] bg-[var(--color-gold-50)] text-gold-ink px-2.5 py-0.5 rounded-full">{CAT_LABEL[m.category]}</span></td>
                   <td className="py-[13px] px-4 text-[12.5px] text-[var(--color-ink-2)]">{m.branding || '—'}</td>
-                  <td className="py-[13px] px-4"><ActivePill active={m.active} /></td>
+                  <td className="py-[13px] px-4"><StatusBadge entity="active_flag" value={m.active ? 'active' : 'inactive'} /></td>
                 </tr>
               ))}
             </tbody>
@@ -168,14 +170,6 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
   );
 }
 
-function ActivePill({ active }: { active: boolean }) {
-  const t = active ? TONE.success : TONE.neutral;
-  return (
-    <span className={cx('inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full', t.bg, t.text)}>
-      <span className="w-1.5 h-1.5 rounded-full bg-current" />{active ? 'Active' : 'Inactive'}
-    </span>
-  );
-}
 
 /* ---------- New / Edit drawer ---------- */
 
@@ -215,8 +209,8 @@ function ModelDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Draft
         </div>
         <p className="mt-4 text-[12px] text-muted-ink">Variant options (fabrics, sizes, compartments) are edited in the Variants tab — coming in a later slice.</p>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
-        <div>{onDelete && <Button size="sm" variant="danger" icon={<Trash2 size={15} strokeWidth={1.75} />} onClick={onDelete}>Delete</Button>}</div>
+      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+        <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete model ${draft.modelCode}?`, body: 'It is deleted for good and drops off the model list.', confirmLabel: 'Delete model', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a model code and a name first" onClick={() => onSave(f, isNew)}>{isNew ? 'Create model' : 'Save'}</Button>

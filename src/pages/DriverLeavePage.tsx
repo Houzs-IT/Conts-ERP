@@ -68,14 +68,14 @@ export default function DriverLeavePage() {
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[640px]">
-            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line,#DEDAD3)]">
+            <thead><tr className="bg-muted [border-bottom:1px_solid_var(--color-line)]">
               {['Driver', 'From', 'To', 'Days', 'Reason', ''].map((h, i) => <th key={i} className={cx('py-[11px] px-4 text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink whitespace-nowrap', i === 3 ? 'text-right' : 'text-left')}>{h}</th>)}
             </tr></thead>
             <tbody>
               {loading && all.length === 0 ? <tr><td colSpan={6}><TableSkeleton rows={5} cols={6} /></td></tr>
               : rows.length === 0 ? <tr><td colSpan={6}><div className="py-[38px] px-[22px] text-center flex flex-col gap-1.5 items-center"><span className="text-[14px] font-semibold">No leave recorded.</span><span className="text-[12.5px] text-muted-ink max-w-[380px]">Record when a driver is away so the delivery planner can route around it.</span></div></td></tr>
               : rows.map(l => (
-                <tr key={l.id} className="[border-bottom:1px_solid_var(--color-line-soft,#EDEAE4)]">
+                <tr key={l.id} className="[border-bottom:1px_solid_var(--color-line-soft)]">
                   <td className="py-[13px] px-4"><div className="flex flex-col"><span className="text-[13.5px]">{l.driverName}</span><span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[11.5px] text-muted-ink">{l.driverCode}</span></div></td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)] tabular-nums">{date(l.startDate)}</td>
                   <td className="py-[13px] px-4 text-[13px] text-[var(--color-ink-2)] tabular-nums">{date(l.endDate)}</td>
@@ -122,7 +122,7 @@ function LeaveDrawer({ drivers, canWrite, onClose, onCreate }: { drivers: Driver
         </div>
         <Field label="Reason" placeholder="e.g. Annual leave" value={reason} onChange={e => setReason(e.target.value)} />
       </div>
-      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line,#DEDAD3)] bg-page">
+      <div className="flex justify-end items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Pick a driver and a valid date range" onClick={submit}>Record leave</Button>
       </div>
