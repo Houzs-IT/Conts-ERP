@@ -16,6 +16,7 @@ import { useToast } from '../components/Toast';
 import { api } from '../lib/api';
 import { rmShort, date, monthLabel, todayMyt, titleCase } from '../lib/format';
 import { PayoutDetails } from './owners/PayoutDetails';
+import { OwnerAdjustments } from './owners/Adjustments';
 import { cx } from '../lib/design-tokens';
 import {
   type Owner, type UnitLine, type Payload, type FeeSource,
@@ -285,6 +286,8 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
           </Card>
         </div>
       </div>
+
+      <OwnerAdjustments key={o.id} owner={o} />
 
       {modal === 'link' && <LinkUnitModal owner={o.displayName} units={rosterUnits} onClose={() => setModal(null)} onSubmit={linkUnit} />}
       {modal === 'contract' && <ContractModal owner={o.displayName} onClose={() => setModal(null)} onSubmit={addContract} />}

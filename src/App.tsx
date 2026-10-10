@@ -169,7 +169,13 @@ function Routed() {
   }
   // Owners see only their own portal, whatever the address bar says.
   if (user.role === 'owner') {
-    return <OwnerShell><Suspense fallback={<Fallback />}><OwnerPortalPage /></Suspense></OwnerShell>;
+    return (
+      <Routes>
+        {/* Their own Owner Income Report (the API checks it is theirs and final), printed without the shell. */}
+        <Route path="/finance/statements/:id/report" element={<Suspense fallback={<Fallback />}><OwnerIncomeReportPage /></Suspense>} />
+        <Route path="*" element={<OwnerShell><Suspense fallback={<Fallback />}><OwnerPortalPage /></Suspense></OwnerShell>} />
+      </Routes>
+    );
   }
 
   return (

@@ -21,6 +21,10 @@ export async function moveModelCategory(
   companyId: number,
   modelId: string,
   category: string,
+  /* Renovation catalog: a move into a new group (WORKS, BUILTIN, ...) needs the
+     sub-category its SKUs take; omitted, the database clears a stale one and
+     re-derives a legacy category's implied sub (migration 0061). */
+  subCategory?: string | null,
 ): Promise<ModelCategoryMove> {
   const { data: models, error: modelErr } = await scopeToCompanyId(supabase
     .from('product_models')
@@ -60,7 +64,7 @@ export async function moveModelCategory(
 
   const { data: skus, error: skuErr } = await scopeToCompanyId(supabase
     .from('mfg_products')
-    .update({ category, updated_at: new Date().toISOString() })
+    .update({ category, ...(subCategory ? { sub_category: subCategory } : {}), updated_at: new Date().toISOString() })
     .eq('model_id', modelId), companyId)
     .select('code');
   if (skuErr) return { ok: false, error: 'sku_category_update_failed', reason: skuErr.message };

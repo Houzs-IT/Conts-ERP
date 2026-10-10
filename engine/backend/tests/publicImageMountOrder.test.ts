@@ -30,6 +30,7 @@ function buildApp() {
   const pub = new Hono();
   pub.get('/product-models/:id/photo/:key', (c) => c.text('IMG'));
   pub.get('/categories/:id/hero-blob', (c) => c.text('HERO'));
+  pub.get('/mfg-products/:id/photo/:key', (c) => c.text('SKU-IMG'));
   app.route('/api/scm', pub);
 
   // Global gate (stand-in for `auth` + `requireScmAccess`).
@@ -40,6 +41,8 @@ function buildApp() {
   const scm = new Hono();
   scm.get('/product-models/:id/photo/:key', (c) => c.text('IMG-GATED'));
   scm.get('/mfg-products', (c) => c.text('CATALOG'));
+  scm.get('/mfg-products/:id/photos', (c) => c.text('SKU-PHOTO-LIST'));
+  scm.post('/mfg-products/:id/photos', (c) => c.text('SKU-UPLOAD'));
   scm.get('/product-models/:id', (c) => c.text('MODEL'));
   scm.post('/product-models/:id/photo', (c) => c.text('UPLOAD'));
   app.route('/api/scm', scm);
@@ -75,6 +78,17 @@ describe('public image proxy mount order (mirrors src/index.ts)', () => {
   test('POST to the photo path is still gated (only the GET proxy is public)', async () => {
     const res = await app.request('/api/scm/product-models/abc/photo', { method: 'POST' });
     expect(res.status).toBe(401);
+  });
+
+  test('GET a SKU photo (renovation catalog) bypasses auth', async () => {
+    const res = await app.request('/api/scm/mfg-products/p1/photo/k.jpg');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('SKU-IMG');
+  });
+
+  test('SKU photo list and upload stay gated', async () => {
+    expect((await app.request('/api/scm/mfg-products/p1/photos')).status).toBe(401);
+    expect((await app.request('/api/scm/mfg-products/p1/photos', { method: 'POST' })).status).toBe(401);
   });
 
   test('the public route also works WITH a token (authed callers unaffected)', async () => {
