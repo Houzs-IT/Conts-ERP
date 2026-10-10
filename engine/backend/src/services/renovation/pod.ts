@@ -4,7 +4,9 @@
      - a site receipt (GRN received_at_site) on its PO line: photos + signature at the unit
      - a delivery order from our warehouse that is signed/delivered with a POD
        (signature or photo) on the engine's existing MobilePOD
-   A stage completes only when every line it owns has a POD (spec section 5). */
+   A stage completes only when every line it owns has a POD (spec section 5). A line that never gets a PO
+   (owner-supplied goods, in-house work, system rows: needsPod false) needs none, or its stage could never
+   complete (owner decision, 10 Oct 2026). */
 
 import type { StageView } from "./stages";
 
@@ -19,6 +21,11 @@ export interface PodCoverage {
   total: number;
   covered: number;
   missing: string[];
+}
+
+/** Quantity each line needs proof of delivery for; lines with needsPod false are left out. */
+export function podQtyBySoItem(lines: ReadonlyArray<{ soItemId: string; qty: number; needsPod?: boolean }>): Map<string, number> {
+  return new Map(lines.filter((l) => l.needsPod !== false).map((l) => [l.soItemId, l.qty]));
 }
 
 export function podCoverage(

@@ -13,6 +13,7 @@
    Any other read error is thrown: the route answers 409 and no gate opens. */
 
 import { categoryGroupOf, isCatalogGroup, type CatalogGroup } from "../../scm/shared/renovation-catalog";
+import { needsPurchaseOrder } from "../../scm/lib/renovation-po-split";
 import type { BillingFacts, InstalmentFact } from "./billing";
 import { normTrigger } from "./billing";
 import type { LineSupply } from "./conditions";
@@ -392,6 +393,10 @@ export async function loadContractLines(db: Db, docNos: readonly string[]): Prom
         subCategory: r.sub_category ? String(r.sub_category).toUpperCase() : null,
         stageOverride: s("stage_code"),
         supplyByOwner: j.supply_by_owner === true || j.supply_by_owner === "true",
+        needsPod: needsPurchaseOrder({
+          itemCode: r.item_code, supplyByOwner: j.supply_by_owner === true || j.supply_by_owner === "true",
+          category: r.category, supplierId: s("supplier_id"), unitCostSen: Number(j.unit_cost_sen ?? 0),
+        }),
         qty: Number(r.qty ?? 0),
         room: s("room") ?? r.location,
         description: r.description,

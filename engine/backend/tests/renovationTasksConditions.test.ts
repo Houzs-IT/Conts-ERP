@@ -6,7 +6,7 @@ import {
   type WorksLine,
 } from "../src/services/renovation/tradeTasks";
 import { boardConditions, supplyCondition, unitKeyStatus, type LineSupply } from "../src/services/renovation/conditions";
-import { groupEvidence, podCoverage } from "../src/services/renovation/pod";
+import { groupEvidence, podCoverage, podQtyBySoItem } from "../src/services/renovation/pod";
 import { redFlags } from "../src/services/renovation/redFlags";
 import type { ContractLine } from "../src/services/renovation/stages";
 
@@ -117,6 +117,17 @@ describe("POD coverage and evidence", () => {
     const qty = new Map([["a", 2], ["b", 1], ["c", 0]]);
     const pods = new Map([["a", { siteQty: 1, doPodQty: 1 }], ["b", { siteQty: 0, doPodQty: 0 }]]);
     expect(podCoverage({ ownedLineIds: ["a", "b", "c"] }, qty, pods)).toEqual({ total: 2, covered: 1, missing: ["b"] });
+  });
+  test("lines that never get a PO (owner-supplied goods, in-house, system rows) need no POD", () => {
+    const qty = podQtyBySoItem([
+      { soItemId: "tv", qty: 1, needsPod: true },
+      { soItemId: "owner-sink", qty: 1, needsPod: false },
+      { soItemId: "waived", qty: 1, needsPod: false },
+      { soItemId: "legacy", qty: 2 },
+    ]);
+    expect([...qty.entries()]).toEqual([["tv", 1], ["legacy", 2]]);
+    const pods = new Map([["tv", { siteQty: 1, doPodQty: 0 }], ["legacy", { siteQty: 2, doPodQty: 0 }]]);
+    expect(podCoverage({ ownedLineIds: ["tv", "owner-sink", "waived", "legacy"] }, qty, pods)).toEqual({ total: 2, covered: 2, missing: [] });
   });
   test("evidence groups by room, unknown room last", () => {
     const g = groupEvidence([

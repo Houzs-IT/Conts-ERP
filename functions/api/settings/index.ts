@@ -47,6 +47,12 @@ const SPEC: Record<string, Record<string, Field>> = {
     yearTerms: { def: '', kind: 'longtext' },
     miscChargeMonthly: { def: 10000, kind: 'number', min: 0, max: 10_000_000, integer: true },
   },
+  // Maker-checker (functions/_lib/approvals.ts), sen. An expense above expenseThreshold waits for approval; a finance
+  // admin may approve requests below financeAdminLimit, management any amount. Defaults match APPROVAL_DEFAULTS.
+  approvals: {
+    expenseThreshold: { def: 50000, kind: 'number', min: 0, max: 100_000_000, integer: true },
+    financeAdminLimit: { def: 200000, kind: 'number', min: 0, max: 100_000_000, integer: true },
+  },
   security: {
     // Staff stay signed in through a normal work week; the owner portal is a brief,
     // occasional check-in so it times out sooner — see functions/_lib/auth.ts securitySettings().

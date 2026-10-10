@@ -26,6 +26,9 @@ export interface Env {
   /** Encrypts each person's two-step sign-in secret at rest (functions/_lib/twoFactor.ts). Without it, setting up
    *  two-step sign-in is refused with a plain message; signing in with a password still works. */
   TOTP_ENC_KEY?: string;
+  /** Set only on the copy of env that transaction() hands its callback: every query through that copy runs on the
+   *  transaction's one connection. Never set in wrangler. */
+  TX?: postgres.TransactionSql;
 }
 
 // count(*) and sum() come back from Postgres as strings (int8 / numeric). The API
@@ -40,9 +43,22 @@ const numbered = (sql: string) => { let i = 0; return sql.replace(/\?/g, () => `
  *  requests, and Hyperdrive keeps the real pool warm, so this is cheap. The role
  *  `pos_app` has search_path = pos, so table names stay unqualified. */
 async function query<T>(env: Env, sql: string, args: unknown[]): Promise<T[]> {
+  if (env.TX) return (await env.TX.unsafe(numbered(sql), args as never[])) as unknown as T[];
   const db = postgres(env.HYPERDRIVE.connectionString, { max: 1, prepare: false, fetch_types: false, types });
   try {
     return (await db.unsafe(numbered(sql), args as never[])) as unknown as T[];
+  } finally {
+    await db.end({ timeout: 0 });
+  }
+}
+
+/** Runs `fn` in one database transaction: every all/one/run/audit given the env it receives commits together, or
+ *  none of them does if it throws. Used where a money action and its approval must land as one. */
+export async function transaction<T>(env: Env, fn: (tx: Env) => Promise<T>): Promise<T> {
+  if (env.TX) return fn(env);
+  const db = postgres(env.HYPERDRIVE.connectionString, { max: 1, prepare: false, fetch_types: false, types });
+  try {
+    return (await db.begin(sql => fn({ ...env, TX: sql }))) as T;
   } finally {
     await db.end({ timeout: 0 });
   }
