@@ -5,6 +5,7 @@ import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { Dialog, type DialogSpec } from '../components/Dialog';
+import { HistoryDrawer } from '../components/RecordHistory';
 import { useToast } from '../components/Toast';
 import { EmptyState } from '../components/States';
 import { Select } from '../components/Select';
@@ -69,6 +70,13 @@ export default function PayoutsPage() {
   const toast = useToast();
 
   const [confirm, setConfirm] = useState<{ payout: Payout; kind: 'retry' | 'paid' } | null>(null);
+  const [historyOf, setHistoryOf] = useState<Payout | null>(null);
+  const historyButton = (r: Payout) => (
+    <button type="button" onClick={() => setHistoryOf(r)} aria-label={`History of the payout to ${titleCase(r.ownerName)}`} title="History"
+      className="w-8 h-8 flex-none grid place-items-center rounded-control border border-solid border-line bg-card text-muted-ink cursor-pointer hover:bg-muted hover:text-ink">
+      <Icon name="History" size="sm" />
+    </button>
+  );
   const [busy, setBusy] = useState(false);
   const [runOpen, setRunOpen] = useState(false);
 
@@ -185,6 +193,7 @@ export default function PayoutsPage() {
                   <div className="flex flex-col items-end gap-[5px] shrink-0">
                     <MoneyText sen={r.amount} mode="exact" strong className="text-copy" />
                     <Badge tone={PAYOUT[r.state].tone} label={PAYOUT[r.state].label} size="sm" />
+                    {historyButton(r)}
                   </div>
                 </div>
               ))}
@@ -218,11 +227,12 @@ export default function PayoutsPage() {
                       <div className="text-copy text-muted-ink">{valueDate(r)}</div>
                       <div className="text-right"><MoneyText sen={r.amount} mode="exact" strong className="text-copy" /></div>
                       <div><Badge tone={PAYOUT[r.state].tone} label={PAYOUT[r.state].label} /></div>
-                      <div className="flex justify-end">
+                      <div className="flex justify-end items-center gap-2">
                         {r.state === 'failed' && <Button size="sm" variant="primary" onClick={() => setConfirm({ payout: r, kind: 'retry' })}>Try again</Button>}
                         {r.state === 'processing' && <Button size="sm" variant="secondary" onClick={() => setConfirm({ payout: r, kind: 'paid' })}>Mark paid</Button>}
                         {r.state === 'pending' && <span className="text-caption text-muted-ink">In the next run</span>}
                         {r.state === 'paid' && <span className="text-caption text-faint">Settled</span>}
+                        {historyButton(r)}
                       </div>
                     </div>
                   ))}
@@ -240,6 +250,8 @@ export default function PayoutsPage() {
       )}
 
       <Dialog spec={spec} busy={busy} onClose={() => { if (!busy) setConfirm(null); }} />
+      <HistoryDrawer onClose={() => setHistoryOf(null)}
+        target={historyOf && { entity: 'payouts', id: historyOf.id, title: `Payout to ${titleCase(historyOf.ownerName)}`, sub: `${moneyString(historyOf.amount, 'exact')}${historyOf.period ? ` · ${monthLabel(historyOf.period)} statement` : ''}` }} />
       {runOpen && <RunDialog onClose={() => setRunOpen(false)} onDone={() => { setRunOpen(false); reload(); runs.reload(); void refreshNavCounts(); }} />}
     </>
   );

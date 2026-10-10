@@ -12,7 +12,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const id = String(params.id);
   const t = await one<any>(env, `
     SELECT t.id, t.kind, t.state, t.unit_id, t.assignee_id, t.instructions, t.started_at, t.completed_at, t.guest_left_at,
-           u.unit_number, p.name AS property_name
+           COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at, u.unit_number, p.name AS property_name
     FROM tasks t JOIN units u ON u.id = t.unit_id JOIN properties p ON p.id = u.property_id WHERE t.id = ?`, id);
   if (!t) return fail('NOT_FOUND', 'That clean no longer exists. Refresh the list.', 404);
   const field = isFieldRole(session.role);
@@ -39,6 +39,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     // Amounts are for the office only.
     cost: field ? null : { amount: charged ? Number(charged.amount) : price.amount, source: price.source, charged: !!charged },
     damage: damage.map(d => ({ id: d.id, title: d.title, state: d.state, reportedAt: d.reported_at })),
+    // The Malaysian day the clean is on, so a link to it (a notification) can open the right day of the board.
+    day: t.day_at ? new Date(Date.parse(t.day_at) + 8 * 3600e3).toISOString().slice(0, 10) : null,
   });
 };
 

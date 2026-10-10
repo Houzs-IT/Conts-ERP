@@ -14,6 +14,7 @@ import { api } from '../lib/api';
 import { rm, date, monthLabel } from '../lib/format';
 import { STATEMENT } from '../lib/vocabulary';
 import type { StatementState } from '../lib/types';
+import { RecordHistory } from '../components/RecordHistory';
 
 /** `#/finance/statements/:id` — one owner's statement on screen: each unit's month the way the Owner Income
  *  Report prints it (income, deductions, split, owner adjustments, payout), every line behind it with a link to
@@ -167,6 +168,10 @@ export default function StatementDetailPage() {
           </Card>
         </div>
       ))}
+
+      <div className="mt-4">
+        <RecordHistory entity="owner_statements" id={s.id ?? id} also={s.payout ? [['payouts', s.payout.id]] : undefined} refreshKey={s} />
+      </div>
 
       <Dialog
         busy={busy}

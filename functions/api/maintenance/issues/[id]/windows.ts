@@ -2,6 +2,7 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
 import { toInstant } from '../../../../_lib/maintenance';
 import { staysOverlapping } from '../../../../_lib/cleaning';
+import { repairNotice, when } from '../../../../_lib/notices';
 
 /** POST /api/maintenance/issues/:id/windows { startsAt, endsAt, note? } — a time the technician may enter the unit
  *  (between guests, or a slot the guest agreed). Times are Malaysian ("2026-10-10T14:00") or ISO. It is saved even
@@ -29,5 +30,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     wid, id, startsAt, endsAt, note, session.userId, nowIso());
   const overlaps = await staysOverlapping(env, issue.unit_id, startsAt, endsAt);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.window_add', entityTable: 'maintenance_issues', entityId: id, after: { windowId: wid, startsAt, endsAt, note, overlaps: overlaps.length } });
+  await repairNotice(env, id, 'window', session.userId, `Visit ${when(startsAt)} to ${when(endsAt).slice(-5)}${note ? ` (${note})` : ''}`);
   return json({ id: wid, startsAt, endsAt, note, overlaps }, 201);
 };

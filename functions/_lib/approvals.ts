@@ -13,6 +13,7 @@ import { type Env, all, one, run, audit, nowIso, transaction } from './db';
 import type { Session } from './auth';
 import { insertPayment } from './bookingPayments';
 import { isPeriodLocked } from './expenses';
+import { notifyUsers } from './notify';
 
 export const APPROVAL_KINDS = ['guest_refund', 'payout_run', 'owner_adjustment', 'expense', 'debt_write_off'] as const;
 export type ApprovalKind = typeof APPROVAL_KINDS[number];
@@ -168,12 +169,14 @@ export async function stage(env: Env, session: Session, x: StageInput): Promise<
   return { pendingApproval: { id, kind: x.kind, amount: Math.abs(Math.round(x.amount)), summary: x.summary, selfApproval: decisionRule(session, { requested_by: session.userId, amount: x.amount, status: 'pending' }, ctx).self } };
 }
 
-/** Tells the people who may decide that a request is waiting. Stream 3's notifyUsers (functions/_lib/notify.ts) is
- *  the channel once it is on main; until then the Approvals count in the menu is how approvers learn of it. A
- *  notification must never fail the request, so everything here is caught and recorded. TODO.md tracks wiring it. */
+/** Tells the people who may decide that a request is waiting (bell, functions/_lib/notify.ts). A notification must
+ *  never fail the request, so everything here is caught and recorded. */
 async function notifyApprovers(env: Env, r: { id: string; kind: ApprovalKind; amount: number; summary: string; requestedBy: string }) {
   try {
-    void r; // TODO(notifyUsers): notifyUsers(env, { roles: ['management', 'finance_admin'], title: `${KIND_LABEL[r.kind]} waiting for approval`, body: r.summary, link: '/finance/approvals' })
+    await notifyUsers(env, { roles: ['management', 'finance_admin'] }, {
+      kind: 'approval.requested', title: `${KIND_LABEL[r.kind]} waiting for approval`, body: `${r.summary}. Asked by ${r.requestedBy}.`,
+      link: '/finance/approvals', entityTable: 'approval_requests', entityId: r.id, dedupeKey: `approval-requested-${r.id}`,
+    });
   } catch (e) {
     await audit(env, { actorId: null, actorLabel: 'system', action: 'approval.notify_failed', entityTable: 'approval_requests', entityId: r.id, after: { error: String(e).slice(0, 300) } }).catch(() => {});
   }
@@ -224,7 +227,7 @@ export async function decide(env: Env, session: Session, id: string, decision: D
         before: { status: 'pending' }, after: { status: 'approved', kind: cur.kind, amount: Number(cur.amount), note: text, selfApproved: rule.self, result } });
       return { ...cur, status: 'approved' };
     });
-    void notifyRequester(env, row, decision);
+    await notifyRequester(env, row, decision);
     const fresh = await one<any>(env, `${VIEW_SQL} WHERE a.id = ?`, id);
     return { ok: true, view: toView(fresh, session, ctx) };
   } catch (e) {
@@ -233,10 +236,21 @@ export async function decide(env: Env, session: Session, id: string, decision: D
   }
 }
 
-/** Tells the requester the outcome. Same wiring note as notifyApprovers. */
+/** Tells the requester the outcome; an approved payout run also tells finance. */
 async function notifyRequester(env: Env, r: any, decision: Decision) {
   try {
-    void r; void decision; // TODO(notifyUsers): notifyUsers(env, { userIds: [r.requested_by], title: `Your ${KIND_LABEL[r.kind]} request was ${r.status}`, body: r.summary, link: '/finance/approvals' })
+    if (decision === 'cancel') return;
+    await notifyUsers(env, [r.requested_by], {
+      kind: 'approval.decided', title: `Your ${KIND_LABEL[r.kind as ApprovalKind].toLowerCase()} request was ${r.status}`, body: r.summary,
+      link: '/finance/approvals', entityTable: 'approval_requests', entityId: r.id, dedupeKey: `approval-decided-${r.id}`,
+    });
+    // An approved payout run is the moment the transfers start: finance is told so each payout gets marked paid.
+    if (r.kind === 'payout_run' && r.status === 'approved') {
+      await notifyUsers(env, 'finance', {
+        kind: 'payout.run', title: 'Payout run approved: make the transfers', body: `${r.summary}. Mark each payout paid once the bank confirms it.`,
+        link: '/finance/payouts', entityTable: 'approval_requests', entityId: r.id, dedupeKey: `payout-run-${r.id}`,
+      });
+    }
   } catch (e) {
     await audit(env, { actorId: null, actorLabel: 'system', action: 'approval.notify_failed', entityTable: 'approval_requests', entityId: r.id, after: { error: String(e).slice(0, 300) } }).catch(() => {});
   }

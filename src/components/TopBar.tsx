@@ -2,39 +2,26 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { color, radius, text, shell, motion, shadow } from '../theme';
 import { findNav } from '../lib/navigation';
 import { useApi } from '../lib/useApi';
-import { api } from '../lib/api';
 import { useNavCounts } from '../lib/navBadges';
 import { dateRange, relative, titleCase } from '../lib/format';
 import { stateLabel } from '../lib/vocabulary';
 import type { BookingChannel } from '../lib/types';
 import Icon from './Icon';
 import ChannelMark from './ChannelMark';
+import NotificationBell from './NotificationBell';
 
 /* ------------------------------------------------------------------ *
  * Application shell top bar (BUTTONS.md §2).
  *  - Breadcrumbs: group / menu entry / page.
  *  - Global search: `/` opens it; GET /api/search?q= finds units, bookings (by Airbnb, Booking.com or
  *    Agoda reference, guest name, phone or email), guests and owners, grouped by kind.
- *  - Bell: the live alerts from /api/nav/badges (the same counts the menu shows) plus in-app notices.
+ *  - Bell (NotificationBell): the person's unread notices with a count, plus the live alerts from /api/nav/badges.
  * ------------------------------------------------------------------ */
 
 type SearchKind = 'unit' | 'guest' | 'reservation' | 'owner';
 interface SearchResult {
   id: string; label: string; sub: string; kind: SearchKind; target: string;
   channel?: BookingChannel; state?: string; checkIn?: string; checkOut?: string; ref?: string | null;
-}
-
-interface Notif { id: string; title: string; body: string; target: string; at: string; readAt: string | null }
-/** GET /api/notifications answers { data: notification_log rows }, not a bare list. */
-interface NotifPayload { data?: { id: string; template: string; queued_at: string; sent_at: string | null; subject?: string | null }[] }
-
-function toNotifs(raw: NotifPayload | null): Notif[] {
-  if (!raw || !Array.isArray(raw.data)) return [];
-  return raw.data.map(r => ({
-    id: String(r.id),
-    title: r.subject || r.template.replace(/[._]/g, ' ').replace(/^./, c => c.toUpperCase()),
-    body: '', target: '/', at: r.queued_at ? relative(r.queued_at) : '', readAt: r.sent_at,
-  }));
 }
 
 /** Dev fallback so the palette renders without a backend. */
@@ -50,8 +37,6 @@ const KIND: Record<SearchKind, { icon: string; heading: string }> = {
   owner: { icon: 'UserRound', heading: 'Owners' },
 };
 const KIND_ORDER: SearchKind[] = ['reservation', 'unit', 'guest', 'owner'];
-
-const TONE_DOT = { critical: '#C2413B', warning: '#B7791F', info: '#2E6DA4' } as const;
 
 /** The second line of a result, with dates and states in words ("13 Sep – 16 Sep 2026 · Confirmed"). */
 function subline(r: SearchResult) {
@@ -117,32 +102,8 @@ export default function TopBar({
   };
 
   /* ------------------------ notifications ------------------------ */
-  const [bellOpen, setBellOpen] = useState(false);
-  const [readIds, setReadIds] = useState<Record<string, boolean>>({});
   const counts = useNavCounts(path);
-  const alerts = counts?.alerts ?? [];
   const channelSync = counts?.channels;
-
-  const { data: notifRaw } = useApi<NotifPayload>(bellOpen ? '/notifications' : null);
-  const notifs = useMemo(() => toNotifs(notifRaw).map(n => ({ ...n, read: readIds[n.id] ?? !!n.readAt })), [notifRaw, readIds]);
-  const unreadNotifs = notifs.filter(n => !n.read);
-  const attention = alerts.filter(a => a.tone !== 'info').length;
-
-  useEffect(() => {
-    if (!bellOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setBellOpen(false); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [bellOpen]);
-
-  const markAllRead = () => {
-    const ids = unreadNotifs.map(n => n.id);
-    if (!ids.length) return;
-    setReadIds(prev => ({ ...prev, ...Object.fromEntries(ids.map(id => [id, true])) }));
-    api.patch('/notifications', { ids }).catch(() => { setReadIds(prev => { const next = { ...prev }; ids.forEach(id => delete next[id]); return next; }); });
-  };
-
-  const goAlert = (target: string) => { setBellOpen(false); go(target); };
 
   return (
     <div data-print-hide style={compact
@@ -150,7 +111,7 @@ export default function TopBar({
       : { flex: 'none', background: '#FFFFFF', borderBottom: `1px solid ${color.border}`, padding: '14px 28px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
       {!compact && <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '0 1 auto', overflow: 'hidden' }}>
         {(() => {
-          const crumbs = nav ? [nav.group, ...(nav.group !== nav.item ? [nav.item] : []), ...(nav.label !== nav.item ? [nav.label] : []), ...(nav.page ? [nav.page] : [])] : [path === '/account' ? 'My account' : 'Home'];
+          const crumbs = nav ? [nav.group, ...(nav.group !== nav.item ? [nav.item] : []), ...(nav.label !== nav.item ? [nav.label] : []), ...(nav.page ? [nav.page] : [])] : [path === '/account' ? 'My account' : path === '/notifications' ? 'Notifications' : 'Home'];
           return crumbs.map((c, i) => (
             <Fragment key={`${c}-${i}`}>
               {i > 0 && <span aria-hidden style={{ fontSize: text.meta, color: color.borderStrong, flex: 'none' }}>/</span>}
@@ -184,60 +145,7 @@ export default function TopBar({
           </a>
         )}
 
-        <div style={{ position: 'relative', flex: 'none' }}>
-          <button aria-label={attention ? `Notifications, ${attention} need attention` : 'Notifications'} aria-expanded={bellOpen} onClick={() => setBellOpen(v => !v)}
-            style={{ position: 'relative', width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', border: `1px solid ${color.border}`, borderRadius: radius.control, background: '#FFFFFF', color: color.ink, cursor: 'pointer' }}>
-            <Icon name="Bell" size="nav" />
-            {(attention > 0 || unreadNotifs.length > 0) && <span style={{ position: 'absolute', top: 6, right: 7, width: 7, height: 7, borderRadius: radius.pill, background: '#C2413B' }} />}
-          </button>
-
-          {bellOpen && (
-            <>
-              <div onClick={() => setBellOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-              <div role="dialog" aria-label="Notifications" style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 41, width: 360, maxWidth: 'calc(100vw - 32px)', background: '#FFFFFF', border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: shadow.overlay, overflow: 'hidden' }}>
-                <div style={{ padding: '12px 16px', borderBottom: `1px solid ${color.borderMuted}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                  <span style={{ fontSize: text.copy, fontWeight: 600, color: color.ink }}>Notifications</span>
-                  <button type="button" onClick={markAllRead} disabled={unreadNotifs.length === 0} title={unreadNotifs.length === 0 ? 'Nothing unread' : undefined}
-                    style={{ font: 'inherit', fontSize: text.small, color: unreadNotifs.length === 0 ? color.faint : color.inkSecondary, background: 'none', border: 'none', cursor: unreadNotifs.length === 0 ? 'default' : 'pointer', padding: 0 }}>
-                    Mark all read
-                  </button>
-                </div>
-                <div style={{ maxHeight: 420, overflowY: 'auto' }}>
-                  {alerts.length > 0 && (
-                    <div style={{ padding: '8px 16px 4px', fontSize: text.caption, fontWeight: 600, letterSpacing: '0.06em', color: color.textMuted }}>NEEDS ATTENTION</div>
-                  )}
-                  {alerts.map(a => (
-                    <button key={a.key} type="button" onClick={() => goAlert(a.target)}
-                      style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 16px', width: '100%', border: 'none', borderBottom: `1px solid ${color.borderMuted}`, background: '#FFFFFF', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
-                      <span style={{ marginTop: 5, width: 7, height: 7, flex: 'none', borderRadius: radius.pill, background: TONE_DOT[a.tone] }} />
-                      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
-                        <span style={{ fontSize: text.copy, fontWeight: 600, color: color.ink }}>{a.title}</span>
-                        <span style={{ fontSize: text.meta, color: color.textMuted, lineHeight: 1.45, whiteSpace: 'normal' }}>{a.body}</span>
-                      </span>
-                      <Icon name="ChevronRight" size="sm" color={color.faint} style={{ marginTop: 3 }} />
-                    </button>
-                  ))}
-                  {notifs.length > 0 && (
-                    <div style={{ padding: '8px 16px 4px', fontSize: text.caption, fontWeight: 600, letterSpacing: '0.06em', color: color.textMuted }}>RECENT</div>
-                  )}
-                  {notifs.map(n => (
-                    <div key={n.id}
-                      style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 16px', borderBottom: `1px solid ${color.borderMuted}`, background: n.read ? '#FFFFFF' : color.goldTint }}>
-                      <span style={{ marginTop: 5, width: 6, height: 6, flex: 'none', borderRadius: radius.pill, background: n.read ? 'transparent' : '#C2413B' }} />
-                      <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, minWidth: 0, flex: 1 }}>
-                        <span style={{ fontSize: text.copy, fontWeight: n.read ? 400 : 600, color: color.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.title}</span>
-                        <span style={{ fontSize: text.micro, color: color.faint, flex: 'none' }}>{n.at}</span>
-                      </span>
-                    </div>
-                  ))}
-                  {alerts.length === 0 && notifs.length === 0 && (
-                    <div style={{ padding: '22px 16px', fontSize: text.small, color: color.textMuted }}>Nothing needs attention right now.</div>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+        <NotificationBell path={path} navigate={go} size={ctl} />
 
         {action && (
           <button onClick={action.onClick} aria-label={compact ? action.label : undefined} title={compact ? action.label : undefined}

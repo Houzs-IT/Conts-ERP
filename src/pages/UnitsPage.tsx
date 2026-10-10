@@ -29,6 +29,7 @@ import ContractTab, { ModelChip } from './units/ContractTab';
 import { ExpensesCard } from './owners/ExpenseEntry';
 import { todayMyt } from '../lib/format';
 import { PROPERTIES_FALLBACK, DETAIL_FALLBACK, mkUnit } from './units/fallback';
+import { RecordHistory } from '../components/RecordHistory';
 import {
   READY_TONE, TASK_TONE, COND_TONE, MASTER_ROLES, STATES, cap,
   type Unit, type Building, type PropertiesPayload, type UnitDetail, type RosterRow,
@@ -55,7 +56,7 @@ const CHARGE_LABEL: Record<string, string> = { owner: 'Owner', guest_deposit: 'G
 const TABS = [
   ['overview', 'Overview', 'Overview'], ['details', 'Details', 'Details and owner'], ['contract', 'Contract', 'Contract and documents'],
   ['access', 'Access', 'Access and keys'], ['reservations', 'Bookings', 'Bookings'], ['operations', 'Housekeeping', 'Cleaning, maintenance and fit-out'],
-  ['financials', 'Financials', 'Financials'], ['activity', 'Activity', 'Activity'],
+  ['financials', 'Financials', 'Financials'], ['activity', 'History', 'History of changes'],
 ] as const;
 type Tab = typeof TABS[number][0];
 const isTab = (t: string | null): t is Tab => TABS.some(([k]) => k === t);
@@ -578,25 +579,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       )}
 
       {shown === 'activity' && (
-        <Card>
-          <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
-            <span className="text-heading font-semibold">Activity</span>
-            <span className="text-meta text-muted-ink">Who did what, when, and from where. Read straight from the audit trail.</span>
-          </div>
-          {d.activity.length === 0 && <div className="py-4 px-5 text-copy text-muted-ink">Nothing recorded yet.</div>}
-          {d.activity.map((a, i) => (
-            <div key={i} className="flex items-center gap-[14px] py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex-wrap">
-              <span className="w-[30px] h-[30px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-caption font-semibold">
-                {a.actorLabel.split(' ').map(n => n[0]).slice(0, 2).join('')}
-              </span>
-              <div className="flex flex-col gap-px flex-1 min-w-[160px]">
-                <span className="text-copy"><strong className="font-semibold">{a.actorLabel}</strong> · {a.action.replace(/[._]/g, ' ')}</span>
-                <span className="text-meta text-muted-ink">{a.source.replace(/_/g, ' ')}</span>
-              </div>
-              <span className="text-meta text-muted-ink">{dateTime(a.occurredAt)}</span>
-            </div>
-          ))}
-        </Card>
+        <RecordHistory key={u.id} entity="units" id={u.id} refreshKey={d}
+          also={u.contract?.id ? [['owner_contracts', u.contract.id]] : undefined} />
       )}
     </>
   );

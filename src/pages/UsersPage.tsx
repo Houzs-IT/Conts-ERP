@@ -18,6 +18,7 @@ import { count, date, plural } from '../lib/format';
 import { ROLE_LABEL } from '../lib/vocabulary';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone, UserRole } from '../lib/types';
+import { HistoryDisclosure } from '../components/RecordHistory';
 
 /* ------------------------------------------------------------------ *
  * Users and roles — three tabs (routes.json → SYSTEM → UsersPage):
@@ -579,6 +580,7 @@ export default function UsersPage() {
               <span className="text-copy">Account is active</span>
             </label>
           </form>
+          <div className="mt-4"><HistoryDisclosure entity="users" id={editing.id} /></div>
         </Modal>
       )}
 

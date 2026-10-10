@@ -1,4 +1,4 @@
-import { type Env, one, run, nowIso } from './db';
+import { type Env, all, one, run, nowIso } from './db';
 
 /**
  * Every outbound message goes through here. Templates and their triggers are in
@@ -81,8 +81,16 @@ export async function notify(env: Env, s: Send): Promise<{ state: 'sent' | 'queu
     const reason = e instanceof Error ? e.message : 'Unknown delivery error';
     // A failed send is a visible state on the related record, never a silent drop.
     await run(env, "UPDATE notification_log SET state = 'failed', error = ? WHERE id = ?", reason, id);
+    // The scheduled job retries it (worker/scheduled.ts); separate so a database without migration 0095 still records the failure.
+    await run(env, 'UPDATE notification_log SET attempts = 1, next_attempt_at = ? WHERE id = ?', retryAt(1), id).catch(() => {});
     return { state: 'failed', reason };
   }
+}
+
+/** Retries wait 5 min, 20 min, 80 min, ... and stop after MAX_SEND_ATTEMPTS. */
+export const MAX_SEND_ATTEMPTS = 5;
+export function retryAt(attempts: number, now = Date.now()) {
+  return new Date(now + 5 * 60_000 * 4 ** Math.max(0, attempts - 1)).toISOString();
 }
 
 /** The actual provider call, shared by an immediate send above and the quiet-hours drainer
@@ -129,4 +137,113 @@ export async function deliver(env: Env, s: Send): Promise<string> {
   if (!res.ok) throw new Error(`WhatsApp returned ${res.status}`);
   const j = await res.json<{ messages: { id: string }[] }>();
   return j.messages?.[0]?.id ?? 'unknown';
+}
+
+/* ------------------------------------------------------------------ *
+ * In-app notices to staff (pos.user_notifications, migration 0095).
+ * notifyUsers is the one entry point every handler and the scheduled job use; its
+ * signature is relied on by other modules (approvals), so keep it stable.
+ * ------------------------------------------------------------------ */
+
+/** Named groups a handler can address instead of listing roles. */
+export const ROLE_GROUPS: Record<string, string[]> = {
+  ops: ['operations_manager', 'operations_staff'],
+  ops_managers: ['operations_manager'],
+  managers: ['management', 'operations_manager'],
+  finance: ['finance_admin', 'management'],
+  management: ['management'],
+};
+
+/** A role name, a group name from ROLE_GROUPS, a list of user ids, or both kinds at once. */
+export type NotifyTarget = string | string[] | { roles?: string[]; userIds?: (string | null | undefined)[] };
+
+export interface UserNotice {
+  /** What happened, dotted: booking.created, cleaning.assigned, maintenance.done ... */
+  kind: string;
+  title: string;
+  body?: string | null;
+  /** In-app path the notice opens, e.g. /reservations/bookings?open=<id>. */
+  link?: string | null;
+  entityTable?: string;
+  entityId?: string;
+  /** The same key never notifies one person twice (a retried request, the sweep running again). */
+  dedupeKey?: string;
+  /** Leave this person out, normally whoever did the thing. */
+  except?: string | null;
+  /** Also send an email copy, only where mail is configured. */
+  email?: boolean;
+}
+
+function resolveTarget(target: NotifyTarget): { roles: string[]; userIds: string[] } {
+  if (typeof target === 'string') return { roles: ROLE_GROUPS[target] ?? [target], userIds: [] };
+  if (Array.isArray(target)) return { roles: [], userIds: target.filter((x): x is string => !!x) };
+  return {
+    roles: (target.roles ?? []).flatMap(r => ROLE_GROUPS[r] ?? [r]),
+    userIds: (target.userIds ?? []).filter((x): x is string => !!x),
+  };
+}
+
+/**
+ * Writes one in-app notice for every active person the target names. Never throws and never fails the action
+ * that called it: a failure is recorded in audit_log and the caller carries on. Returns how many were written.
+ */
+export async function notifyUsers(env: Env, target: NotifyTarget, n: UserNotice): Promise<{ created: number }> {
+  try {
+    const { roles, userIds } = resolveTarget(target);
+    if (!roles.length && !userIds.length) return { created: 0 };
+    // Lists go as JSON text: the driver runs with fetch_types off, so it cannot send arrays.
+    const people = await all<{ id: string; email: string | null }>(env, `
+      SELECT id, email FROM users
+      WHERE is_active = 1
+        AND (id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+             OR (role <> 'owner' AND role IN (SELECT jsonb_array_elements_text(?::text::jsonb))))
+        AND id IS DISTINCT FROM ?`,
+      JSON.stringify(userIds), JSON.stringify(roles), n.except ?? null);
+    if (!people.length) return { created: 0 };
+    const now = nowIso();
+    const rows = people.map(p => ({
+      id: crypto.randomUUID(), user_id: p.id, kind: n.kind, title: n.title.slice(0, 200), body: n.body ? n.body.slice(0, 1000) : null,
+      link: n.link ?? null, entity_table: n.entityTable ?? null, entity_id: n.entityId ?? null, dedupe_key: n.dedupeKey ?? null, created_at: now,
+    }));
+    const made = await all<{ user_id: string }>(env, `
+      INSERT INTO user_notifications (id, user_id, kind, title, body, link, entity_table, entity_id, dedupe_key, created_at)
+      SELECT x.id, x.user_id, x.kind, x.title, x.body, x.link, x.entity_table, x.entity_id, x.dedupe_key, x.created_at
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, user_id text, kind text, title text, body text, link text, entity_table text, entity_id text, dedupe_key text, created_at text)
+      ON CONFLICT (user_id, dedupe_key) DO NOTHING
+      RETURNING user_id`, JSON.stringify(rows));
+
+    if (n.email && (env as any).MAIL_API_KEY && made.length) {
+      const fresh = new Set(made.map(m => m.user_id));
+      for (const p of people) {
+        if (!fresh.has(p.id) || !p.email) continue;
+        try {
+          await notify(env, { template: `staff.${n.kind}`, recipient: p.email, channel: 'email', subject: n.title, body: [n.body, n.link ? `Open: ${n.link}` : null].filter(Boolean).join('\n\n'), entityTable: n.entityTable, entityId: n.entityId });
+        } catch { /* recorded in notification_log by notify(); the notice above already landed */ }
+      }
+    }
+    return { created: made.length };
+  } catch (e) {
+    await run(env, `INSERT INTO audit_log (actor_id, actor_label, action, entity_table, entity_id, after_state, source, occurred_at) VALUES (NULL, 'Notifications', 'notification.failed', ?, ?, ?, 'system', ?)`,
+      n.entityTable ?? 'user_notifications', n.entityId ?? n.kind, JSON.stringify({ kind: n.kind, error: e instanceof Error ? e.message : String(e) }), nowIso()).catch(() => {});
+    return { created: 0 };
+  }
+}
+
+/** The people a clean is for: the assigned user, or the user behind the assigned cleaner on the roster. */
+export async function taskPeople(env: Env, taskId: string): Promise<string[]> {
+  try {
+    const r = await all<{ id: string | null }>(env, `
+      SELECT t.assignee_id AS id FROM tasks t WHERE t.id = ? AND t.assignee_id IS NOT NULL
+      UNION SELECT c.user_id FROM tasks t JOIN cleaners c ON c.id = t.cleaner_id WHERE t.id = ? AND c.user_id IS NOT NULL`, taskId, taskId);
+    return r.map(x => x.id).filter((x): x is string => !!x);
+  } catch { return []; }
+}
+
+/** A repair job names its technician by name; the active technician or housekeeper account with that name, if any. */
+export async function technicianFor(env: Env, name: string | null | undefined): Promise<string[]> {
+  if (!name?.trim()) return [];
+  try {
+    const r = await all<{ id: string }>(env, `SELECT id FROM users WHERE is_active = 1 AND role IN ('technician','housekeeper','operations_staff','operations_manager') AND lower(full_name) = lower(?)`, name.trim());
+    return r.map(x => x.id);
+  } catch { return []; }
 }
