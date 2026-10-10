@@ -25,7 +25,7 @@ import { useSession } from '../lib/session';
  * always visible whether or not the endpoint answers.
  * ------------------------------------------------------------------ */
 
-type SectionKey = 'company' | 'locale' | 'operations' | 'statements' | 'report' | 'security';
+type SectionKey = 'company' | 'locale' | 'operations' | 'statements' | 'report' | 'approvals' | 'security';
 
 interface Settings {
   company: { legalName: string; companyNumber: string; address: string; supportPhone: string; supportEmail: string };
@@ -34,6 +34,8 @@ interface Settings {
   statements: { cycleDay: number; autoGenerate: boolean; payoutMethod: string };
   /** The Owner Income Report's wording; miscChargeMonthly is sen. Terms are one per line. */
   report: { paymentTerms: string; monthlyTerms: string; yearTerms: string; miscChargeMonthly: number };
+  /** Maker-checker limits, sen (functions/_lib/approvals.ts). */
+  approvals: { expenseThreshold: number; financeAdminLimit: number };
   security: {
     staffInactivityTimeoutMins: number; ownerInactivityTimeoutMins: number;
     absoluteTimeoutHours: number; lockoutAttempts: number; lockoutMinutes: number;
@@ -54,6 +56,7 @@ const FALLBACK: Settings = {
   operations: { checkIn: '15:00', checkOut: '11:00', cleaningWindowHours: 4, linenSets: 2, photoRequiredToMarkReady: true },
   statements: { cycleDay: 1, autoGenerate: true, payoutMethod: 'bank_transfer' },
   report: { paymentTerms: '7th every month', monthlyTerms: '', yearTerms: '', miscChargeMonthly: 10000 },
+  approvals: { expenseThreshold: 50000, financeAdminLimit: 200000 },
   security: { staffInactivityTimeoutMins: 10080, ownerInactivityTimeoutMins: 480, absoluteTimeoutHours: 720, lockoutAttempts: 5, lockoutMinutes: 15 },
 };
 
@@ -221,6 +224,7 @@ export default function SettingsPage() {
     operations: { ...base.operations, ...saved.operations },
     statements: { ...base.statements, ...saved.statements },
     report: { ...base.report, ...saved.report },
+    approvals: { ...FALLBACK.approvals, ...base.approvals, ...saved.approvals },
     security: { ...base.security, ...saved.security },
   }), [base, saved]);
 
@@ -261,7 +265,7 @@ export default function SettingsPage() {
   }
 
   const MESSAGES: Record<SectionKey, { title: string; body?: string }> = {
-    company: { title: 'Company details saved.', body: 'They appear on statements, invoices and guest messages.' },
+    company: { title: 'Company details saved.', body: 'They appear on the letterhead of statements, invoices and receipts.' },
     locale: { title: 'Locale and money settings saved.', body: 'New documents use the updated timezone, currency and date format.' },
     operations: { title: 'Operations defaults saved.', body: 'New reservations and cleaning tasks use these times.' },
     statements: {
@@ -271,6 +275,7 @@ export default function SettingsPage() {
         : 'Automatic generation is off. Generate statements manually each period.',
     },
     report: { title: 'Owner report wording saved.', body: 'Reports opened from now on use it. The miscellaneous charge applies to statements generated from now on.' },
+    approvals: { title: 'Approval limits saved.', body: 'New requests and decisions use them from now on.' },
     security: { title: 'Security settings saved.', body: 'Takes effect immediately, including for anyone already signed in.' },
   };
 
@@ -305,7 +310,7 @@ export default function SettingsPage() {
           {/* --------------------------- Company --------------------------- */}
           <SectionCard
             title="Company"
-            description="Legal identity and support contacts. The Owner Income Report prints these on its letterhead."
+            description="Legal identity and support contacts, printed on the letterhead of every owner statement, guest invoice and official receipt."
             readOnly={readOnly} dirty={dirty('company')} busy={busy === 'company'} saveLabel="Save company"
             onSave={() => save('company')} onDiscard={() => discard('company')}
           >
@@ -495,6 +500,33 @@ export default function SettingsPage() {
               help="One term per line. Printed under the year-to-date page."
               onChange={v => patch('report', { yearTerms: v })}
             />
+          </SectionCard>
+
+          {/* --------------------------- Approvals -------------------------- */}
+          <SectionCard
+            title="Approvals"
+            description="Money leaving the company needs a second person: guest refunds, payout runs, owner credits and charges, debt write-offs, and expenses above the amount below. Nobody approves their own request, except the only management user, with a written reason."
+            readOnly={readOnly} dirty={dirty('approvals')} busy={busy === 'approvals'} saveLabel="Save approvals"
+            onSave={() => save('approvals')} onDiscard={() => discard('approvals')}
+          >
+            <Grid>
+              <Field
+                label="Expenses need approval above (RM)"
+                type="number" numeric min={0} step="0.01"
+                value={draft.approvals.expenseThreshold / 100}
+                error={errors['approvals.expenseThreshold']}
+                help="An expense of this amount or less is recorded at once."
+                onChange={e => patch('approvals', { expenseThreshold: Math.max(0, Math.round(Number(e.target.value) * 100) || 0) }, 'approvals.expenseThreshold')}
+              />
+              <Field
+                label="Finance admins approve below (RM)"
+                type="number" numeric min={0} step="0.01"
+                value={draft.approvals.financeAdminLimit / 100}
+                error={errors['approvals.financeAdminLimit']}
+                help="From this amount up, only management can approve. Management approves any amount."
+                onChange={e => patch('approvals', { financeAdminLimit: Math.max(0, Math.round(Number(e.target.value) * 100) || 0) }, 'approvals.financeAdminLimit')}
+              />
+            </Grid>
           </SectionCard>
 
           {/* --------------------------- Security --------------------------- */}

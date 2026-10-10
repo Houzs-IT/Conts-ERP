@@ -8,6 +8,8 @@ import Icon from '../../components/Icon';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, downloadFile, notifyFailure } from '../../lib/api';
+import { isStaged, stagedToast } from '../../lib/approvals';
+import { refreshNavCounts } from '../../lib/navBadges';
 import { monthLabel, date, todayMyt, titleCase } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { PAYERS, PAYER_LABEL, ENTRY_CATEGORIES, CATEGORY_LABEL } from '../../lib/revenueModel';
@@ -74,10 +76,12 @@ export function ExpenseEntryModal({ units, defaultUnitId, month, onClose, onSave
         receiptDocumentId = (await api.post<{ id: string }>('/documents', fd)).id;
       }
       const cat = ENTRY_CATEGORIES.find(c => c.value === f.category)?.label ?? f.category;
-      await api.post('/expenses', {
+      const res = await api.post<unknown>('/expenses', {
         unitId: f.unitId, category: f.category, amount, incurredOn: f.incurredOn, chargeTo: f.chargeTo,
         description: f.description.trim() || `${cat} ${monthLabel(f.incurredOn.slice(0, 7))}`, receiptDocumentId,
       });
+      // Above the approval threshold the expense waits for a second person.
+      if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); onSaved(); onClose(); return; }
       toast({ tone: 'success', title: 'Expense recorded.', body: `${cat}, ${PAYER_LABEL[f.chargeTo]} pays.${f.chargeTo === 'owner' ? ' It goes on the owner statement.' : ' It stays off the owner statement.'}` });
       onSaved(); onClose();
     } catch (e) {

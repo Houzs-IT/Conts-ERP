@@ -13,6 +13,9 @@ import { CHANNEL_META, cx } from '../../lib/design-tokens';
 import { TONE } from '../../lib/vocabulary';
 import { STATUS, channelNote, deliveryToast, type ChannelSync } from '../../lib/bookingStatus';
 import type { BookingChannel, ReservationState } from '../../lib/types';
+import ApprovalBanner from '../ApprovalBanner';
+import { DocumentsSection, type GuestDocument } from './GuestDocuments';
+import { isStaged, stagedToast, type Approval } from '../../lib/approvals';
 
 /* ------------------------------------------------------------------ */
 /* Shapes (GET /api/reservations/:id)                                  */
@@ -50,7 +53,8 @@ interface Detail extends Required<Omit<BookingSummary, 'guestPhone'>> {
   guestPhone: string | null; guestEmail: string | null; guestId: string | null; nationality: string | null;
   unitId: string; notes: string | null; staffNotes: string | null; createdAt: string;
   money: Money; ledger: Ledger; timeline: TimelineEvent[]; moves: Move[];
-  can: { changeDates: boolean; changeDatesReason: string | null; recordPayment: boolean; editDetails: boolean; paymentsReady: boolean };
+  documents?: GuestDocument[]; approvals?: Approval[];
+  can: { changeDates: boolean; changeDatesReason: string | null; recordPayment: boolean; editDetails: boolean; paymentsReady: boolean; issueDocuments?: boolean; invoiceReason?: string | null };
 }
 
 const isBlock = (c: BookingChannel) => c === 'maintenance_block' || c === 'owner_stay';
@@ -440,17 +444,21 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [reason, setReason] = useState('');
   const sen = Math.round(Number(amount) * 100);
-  const valid = Number.isFinite(sen) && sen > 0 && !!receivedOn;
+  const refund = kind === 'refund';
+  const valid = Number.isFinite(sen) && sen > 0 && !!receivedOn && (!refund || !!reason.trim());
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!valid) return;
     setBusy(true); setErrors({});
     try {
-      await api.post(`/reservations/${d.id}/payments`, { amount: sen, receivedOn, kind, method, reference: reference || undefined, note: note || undefined });
-      const left = kind === 'refund' ? d.ledger.outstanding + sen : Math.max(d.ledger.outstanding - sen, 0);
-      onSaved(`${kind === 'refund' ? 'Refund' : 'Payment'} of ${rm(sen)} recorded. ${left > 0 ? `${rm(left)} still outstanding.` : 'Nothing is outstanding now.'}`);
+      const res = await api.post<unknown>(`/reservations/${d.id}/payments`, { amount: sen, receivedOn, kind, method, reference: reference || undefined, note: note || undefined, reason: refund ? reason.trim() : undefined });
+      // A refund is money leaving: it waits for a second person and nothing is recorded yet.
+      if (isStaged(res)) { toast(stagedToast(res)); onSaved(''); setBusy(false); return; }
+      const left = Math.max(d.ledger.outstanding - sen, 0);
+      onSaved(`Payment of ${rm(sen)} recorded. ${left > 0 ? `${rm(left)} still outstanding.` : 'Nothing is outstanding now.'}`);
     } catch (err) {
       if (err instanceof ApiFailure && err.fields) setErrors(err.fields);
       toast({ tone: 'critical', title: 'Payment not recorded.', body: failMessage(err) });
@@ -483,9 +491,14 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
           <Field label="Reference (optional)" value={reference} onChange={e => setReference(e.target.value)} placeholder="Bank or receipt reference" />
         </div>
         <Field label="Note (optional)" value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Deposit, balance on arrival" />
+        {refund && <>
+          <Field label="Why the guest is refunded (required)" value={reason} onChange={e => setReason(e.target.value)} required maxLength={500}
+            placeholder="e.g. Cancelled 10 days before arrival, full refund" error={errors.reason} />
+          <p className="m-0 text-meta text-muted-ink text-pretty">A refund is money leaving the company. It is sent for approval and recorded only once it is approved.</p>
+        </>}
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason="Enter an amount and a date.">{busy ? 'Saving…' : 'Record payment'}</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={refund ? 'Enter an amount, a date and the reason.' : 'Enter an amount and a date.'}>{busy ? 'Saving…' : refund ? 'Send for approval' : 'Record payment'}</Button>
         </div>
       </form>
     </CentreModal>
@@ -738,7 +751,14 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
             <div>{d?.notes ? <>Note: <span className="text-ink">{d.notes}</span></> : 'No note recorded.'}</div>
             {d && <div className="mt-1">{d.money.gross > 0 ? <>Recorded value: <span className="text-ink [font-variant-numeric:tabular-nums]">{rm(d.money.gross)}</span></> : 'No money is recorded on it.'}</div>}
           </div>
-        ) : d ? <MoneyPanel d={d} onRecord={() => setPayOpen(true)} onRemove={setRemoving} /> : <div className="h-[120px] rounded-card bg-muted animate-pulse" />}
+        ) : d ? <>
+          {(d.approvals?.length ?? 0) > 0 && <ApprovalBanner items={d.approvals!} compact onChanged={() => { reload(); onChanged?.(id); }} />}
+          <MoneyPanel d={d} onRecord={() => setPayOpen(true)} onRemove={setRemoving} />
+          {d.can.issueDocuments && (
+            <DocumentsSection reservationId={d.id} documents={d.documents ?? []} payments={d.ledger.payments}
+              invoiceReason={d.can.invoiceReason ?? null} onChanged={reload} />
+          )}
+        </> : <div className="h-[120px] rounded-card bg-muted animate-pulse" />}
 
         {!block && d && <NotesBox d={d} onSaved={reload} />}
 
@@ -797,7 +817,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
           }} />
       )}
       {timesOpen && d && <TimesModal d={d} onClose={() => setTimesOpen(false)} onSaved={msg => { setTimesOpen(false); saved(msg); }} />}
-      {payOpen && d && <RecordPaymentModal d={d} onClose={() => setPayOpen(false)} onSaved={msg => { setPayOpen(false); saved(msg); }} />}
+      {payOpen && d && <RecordPaymentModal d={d} onClose={() => setPayOpen(false)} onSaved={msg => { setPayOpen(false); if (msg) saved(msg); else { reload(); onChanged?.(id); } }} />}
       {removing && (
         <CentreModal title="Remove this payment?" sub={`${KIND_LABEL[removing.kind]} of ${rm(removing.amount)}${removing.receivedOn ? ` on ${date(removing.receivedOn)}` : ''}. Use this only for one recorded by mistake; the removal is kept in the audit log.`} onClose={() => { if (!busy) setRemoving(null); }}>
           <div className="px-[22px] py-4 flex justify-end gap-[9px]">

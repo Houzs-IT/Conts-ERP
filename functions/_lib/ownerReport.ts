@@ -4,6 +4,7 @@
  *  data by the same rules (ownerStatement.ts), else, for months only the owner workbook knows, show what was paid. */
 import { DEDUCTIONS, loadInputs, computeMonth, statementSettings, type Query } from './ownerStatement';
 import { monthEndExclusive } from './revenue';
+import { companyFrom, type Company } from './letterhead';
 
 const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
@@ -14,23 +15,16 @@ export function unitCode(propertyName: string, unitNumber: string): string {
   return `${tag}-${unitNumber.toUpperCase().replace(/[\s-]/g, '')}`;
 }
 
-export interface Company { legalName: string; companyNumber: string; address: string; phone: string; email: string; logo: string }
+export type { Company } from './letterhead';
 export interface ReportSettings { company: Company; paymentTerms: string; monthlyTerms: string[]; yearTerms: string[] }
 
 export async function reportSettings(q: Query): Promise<ReportSettings> {
   const rows = await q<{ key: string; value: string }>(`SELECT key, value FROM settings WHERE key LIKE 'company.%' OR key LIKE 'org.%' OR key LIKE 'report.%'`);
   const m = new Map(rows.map(r => [r.key, r.value]));
-  const pick = (key: string, legacy: string | null, def: string) => m.get(key) ?? (legacy ? m.get(legacy) : undefined) ?? def;
   const lines = (v: string | undefined) => (v ?? '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
   return {
-    company: {
-      legalName: pick('company.legalName', 'org.legal_name', 'The Conts Sdn. Bhd.'),
-      companyNumber: pick('company.companyNumber', 'org.company_number', ''),
-      address: pick('company.address', 'org.address', ''),
-      phone: pick('company.supportPhone', 'org.support_phone', ''),
-      email: pick('company.supportEmail', null, ''),
-      logo: '/brand/the-conts-logo.png',
-    },
+    // The same details, and the same defaults, as every printed document (letterhead.ts).
+    company: companyFrom(m),
     paymentTerms: m.get('report.paymentTerms') ?? '7th every month',
     monthlyTerms: lines(m.get('report.monthlyTerms')),
     yearTerms: lines(m.get('report.yearTerms')),

@@ -14,6 +14,9 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   if (!p) return fail('NOT_FOUND', 'That payment does not exist.', 404);
   if (p.source !== 'manual') return fail('CONFLICT', 'This payout line comes from the owner workbook. Correct it in the workbook and import step 4 again.', 409);
 
+  const receipt = await one<{ doc_no: string }>(env, `SELECT doc_no FROM issued_documents WHERE payment_id = ? AND doc_type = 'receipt' AND voided_at IS NULL`, p.id).catch(() => null);
+  if (receipt) return fail('HAS_RECEIPT', `Official receipt ${receipt.doc_no} was issued for this payment. Void the receipt first, with the reason.`, 409);
+
   await run(env, 'DELETE FROM booking_payments WHERE id = ?', p.id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.payment_removed', entityTable: 'reservations', entityId: p.reservation_id,
     before: { paymentId: p.id, amount: Number(p.amount), kind: p.kind, receivedOn: p.received_on, method: p.method, reference: p.reference, note: p.note, createdBy: p.created_by, createdAt: p.created_at } });
