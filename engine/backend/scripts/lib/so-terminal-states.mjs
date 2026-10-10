@@ -10,4 +10,4 @@
 /** SO statuses that no longer create demand. Order matches the TS file so the
  *  PostgREST string built there stays byte-identical; every consumer here does
  *  set membership, where order cannot matter. */
-export const SO_TERMINAL_STATES = ["CANCELLED", "CLOSED", "SHIPPED", "DELIVERED", "INVOICED", "DRAFT"];
+export const SO_TERMINAL_STATES = ["CANCELLED", "CLOSED", "SHIPPED", "DELIVERED", "INVOICED", "DRAFT", "RENO_CONFIRMED", "RENO_IN_PROGRESS", "RENO_COMPLETED"];

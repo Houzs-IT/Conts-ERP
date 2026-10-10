@@ -95,15 +95,17 @@ describe('the areas the owner named resolve to the routers he means', () => {
     });
   }
 
-  it('sales orders is EIGHT routers, not just the SO API', () => {
+  it('sales orders is NINE routers, not just the SO API', () => {
     /* The owner asks for "sales orders"; the key he must type also carries
-       amendments, the salesperson handover, quotes, the PWP codes and the three
-       scan/slip intake routes. That is what the lift will actually open, and the
-       runbook says so. */
+       amendments, the salesperson handover, quotes, the PWP codes, the three
+       scan/slip intake routes and the renovation sales documents (Conts,
+       2026-10-09). That is what the lift will actually open, and the runbook
+       says so. */
     expect(prefixesForArea('scm.sales.orders').sort()).toEqual([
       '/mfg-sales-orders/*',
       '/pwp-codes/*',
       '/quotes/*',
+      '/renovation/*',
       '/scan-payment/*',
       '/scan-so/*',
       '/slips/*',

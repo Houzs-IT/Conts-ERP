@@ -123,6 +123,7 @@ export const SCM_AREA_MOUNTS: ReadonlyArray<readonly [string, string]> = [
   ["/scan-pi/*", "scm.procurement.pi"],
   ["/scan-payment/*", "scm.sales.orders"],
   ["/slips/*", "scm.sales.orders"],
+  ["/renovation/*", "scm.sales.orders"],
 ] as const;
 
 /* Routers mounted with NO scmAreaGuard — the cross-area picklists and the
