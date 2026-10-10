@@ -1,11 +1,12 @@
 import { type Env, all, one, run, fail, nowIso } from './db';
 import { accessFor, canManage, type Level } from './access';
+import { notify } from './notify';
 
-export interface SecuritySettings { staffTtlHours: number; ownerTtlHours: number; absoluteDays: number; maxAttempts: number; lockoutMinutes: number }
+export interface SecuritySettings { staffTtlHours: number; ownerTtlHours: number; absoluteDays: number; maxAttempts: number; lockoutMinutes: number; require2faRoles: string[] }
 
 /** Same defaults as the Settings > Security spec (functions/api/settings/index.ts) — used
  *  only for whatever a row is missing there, same as every other setting in that screen. */
-const SECURITY_DEFAULTS: SecuritySettings = { staffTtlHours: 168, ownerTtlHours: 8, absoluteDays: 30, maxAttempts: 5, lockoutMinutes: 15 };
+const SECURITY_DEFAULTS: SecuritySettings = { staffTtlHours: 168, ownerTtlHours: 8, absoluteDays: 30, maxAttempts: 5, lockoutMinutes: 15, require2faRoles: [] };
 
 /** The owner-configurable values from Settings > Security, read live so a change there takes
  *  effect on the very next request — including for someone already signed in, since the
@@ -24,23 +25,78 @@ function parseSecurity(rows: { key: string; value: string }[]): SecuritySettings
     absoluteDays: num('security.absoluteTimeoutHours', SECURITY_DEFAULTS.absoluteDays * 24) / 24,
     maxAttempts: num('security.lockoutAttempts', SECURITY_DEFAULTS.maxAttempts),
     lockoutMinutes: num('security.lockoutMinutes', SECURITY_DEFAULTS.lockoutMinutes),
+    require2faRoles: (map.get('security.require2faRoles') ?? '').split(',').map(r => r.trim()).filter(Boolean),
   };
+}
+
+/** Columns added by migrations that code may reach a database before (0055 sessions_revoked_at, 0098
+ *  totp_enabled_at): the session middleware reads them on every request, so a deploy that lands before its
+ *  migration must not fail every signed-in request. A column found is remembered for the life of the
+ *  worker; a missing one is looked for again after a minute, so applying the migration takes effect soon. */
+const columnSeen = new Map<string, true | number>();
+export async function hasColumn(env: Env, table: string, column: string): Promise<boolean> {
+  const key = `${table}.${column}`;
+  const seen = columnSeen.get(key);
+  if (seen === true) return true;
+  if (typeof seen === 'number' && Date.now() - seen < 60_000) return false;
+  const row = await one<{ n: number }>(env,
+    `SELECT count(*) AS n FROM information_schema.columns WHERE table_schema = 'pos' AND table_name = ? AND column_name = ?`, table, column);
+  const found = Number(row?.n ?? 0) > 0;
+  columnSeen.set(key, found ? true : Date.now());
+  return found;
 }
 
 /** The security settings and the signed-in user's current role and active flag, in one query (one
  *  connection), for the session middleware. The cookie only says who signed in; what they may do is read
  *  from users on every request, so deactivating someone or changing their role takes effect at once. */
-export async function sessionState(env: Env, userId: string): Promise<{ settings: SecuritySettings; user: { role: string; active: boolean; fullName: string } | null }> {
+export async function sessionState(env: Env, userId: string): Promise<{
+  settings: SecuritySettings;
+  user: { role: string; active: boolean; fullName: string; revokedAt: number; twoFactorOn: boolean } | null;
+}> {
+  const [revokedCol, totpCol] = await Promise.all([hasColumn(env, 'users', 'sessions_revoked_at'), hasColumn(env, 'users', 'totp_enabled_at')]);
   const rows = await all<{ key: string; value: string }>(env, `
     SELECT key, value FROM settings WHERE key LIKE 'security.%'
     UNION ALL
-    SELECT '~user', role || '|' || is_active::text || '|' || full_name FROM users WHERE id = ?`, userId);
+    SELECT '~user', role || '|' || is_active::text || '|' || ${revokedCol ? "COALESCE(sessions_revoked_at, '')" : "''"}
+      || '|' || ${totpCol ? "(totp_enabled_at IS NOT NULL)::int::text" : "'0'"} || '|' || full_name FROM users WHERE id = ?`, userId);
   const u = rows.find(r => r.key === '~user');
-  const [role, active, ...name] = (u?.value ?? '').split('|');
+  const [role, active, revoked, totp, ...name] = (u?.value ?? '').split('|');
   return {
     settings: parseSecurity(rows.filter(r => r.key !== '~user')),
-    user: u ? { role, active: active === '1', fullName: name.join('|') } : null,
+    user: u ? { role, active: active === '1', fullName: name.join('|'), revokedAt: revoked ? Date.parse(revoked) : 0, twoFactorOn: totp === '1' } : null,
   };
+}
+
+/** Ends every session this person has open: the middleware refuses any cookie signed before this moment.
+ *  False when the database does not have migration 0055 yet, so the caller can say so instead of failing. */
+export async function revokeSessions(env: Env, userId: string): Promise<boolean> {
+  if (!(await hasColumn(env, 'users', 'sessions_revoked_at'))) return false;
+  await run(env, 'UPDATE users SET sessions_revoked_at = ? WHERE id = ?', nowIso(), userId);
+  return true;
+}
+
+/** Emails a one-hour, single-use reset link. Only the token's hash is stored; the token itself leaves the server
+ *  only inside the email body. Shared by Forgot password and management's "Send password reset" on Users. */
+export async function sendPasswordReset(env: Env, origin: string, user: { id: string; email: string }) {
+  const token = crypto.randomUUID();
+  const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', ENC.encode(token)))]
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+  await run(env,
+    'INSERT INTO password_reset_tokens (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)',
+    hash, user.id, new Date(Date.now() + 60 * 60000).toISOString(), nowIso());
+  return notify(env, {
+    template: 'account.password_reset',
+    recipient: user.email,
+    channel: 'email',
+    subject: 'Reset your Conts ERP password',
+    body: `Use this link to choose a new password:\n\n${origin}/#/reset-password?token=${token}\n\nThe link expires in 60 minutes. If you did not ask for this, you can ignore this email.`,
+    // Keyed by the token, not the user: notify()'s dedup collapses same-hour
+    // calls sharing a template+entity, and a fresh "resend" makes a genuinely
+    // new token each time — keying on user.id would silently drop every resend
+    // within the same clock hour as the first request.
+    entityTable: 'password_reset_tokens', entityId: hash,
+    urgent: true,
+  });
 }
 
 /** Staff sign in far less often than they'd want to be interrupted, so they idle out on a

@@ -111,7 +111,7 @@ export default function TopBar({
       : { flex: 'none', background: '#FFFFFF', borderBottom: `1px solid ${color.border}`, padding: '14px 28px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
       {!compact && <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '0 1 auto', overflow: 'hidden' }}>
         {(() => {
-          const crumbs = nav ? [nav.group, ...(nav.group !== nav.item ? [nav.item] : []), ...(nav.label !== nav.item ? [nav.label] : []), ...(nav.page ? [nav.page] : [])] : [path === '/notifications' ? 'Notifications' : 'Home'];
+          const crumbs = nav ? [nav.group, ...(nav.group !== nav.item ? [nav.item] : []), ...(nav.label !== nav.item ? [nav.label] : []), ...(nav.page ? [nav.page] : [])] : [path === '/account' ? 'My account' : path === '/notifications' ? 'Notifications' : 'Home'];
           return crumbs.map((c, i) => (
             <Fragment key={`${c}-${i}`}>
               {i > 0 && <span aria-hidden style={{ fontSize: text.meta, color: color.borderStrong, flex: 'none' }}>/</span>}

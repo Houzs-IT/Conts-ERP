@@ -1,5 +1,6 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
-import { signSession, cookie, hashPassword, sessionLimits, securitySettings } from '../../_lib/auth';
+import { signSession, cookie, hashPassword, sessionLimits, securitySettings, revokeSessions } from '../../_lib/auth';
+import { logLogin, signChallenge, twoFactorAvailable, twoFactorTables } from '../../_lib/twoFactor';
 import { doorFor, doorRefusal, HOME } from '../../_lib/door';
 import { notify } from '../../_lib/notify';
 
@@ -73,6 +74,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   await run(env,
     'UPDATE users SET password_hash = ?, must_change_password = 0, failed_attempts = 0, locked_until = NULL, updated_at = ? WHERE id = ?',
     newHash, nowIso(), user.id);
+  // Every session from before the reset ends; the one issued below is newer, so it is kept.
+  await revokeSessions(env, user.id);
   // Marked spent rather than deleted: a repeat click of the same link then gets the
   // same clear "expired, request a new one" answer instead of a confusing 404.
   await run(env, 'UPDATE password_reset_tokens SET used_at = ? WHERE token_hash = ?', nowIso(), hash);
@@ -94,6 +97,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     urgent: true,
   });
 
+  // A reset link proves the email inbox, not the second step: someone with two-step sign-in on still enters a
+  // code before they are signed in, through the same step as a normal sign-in.
+  const twoStep = await twoFactorTables(env)
+    && !!(await one<{ enabled: boolean }>(env, 'SELECT totp_enabled_at IS NOT NULL AS enabled FROM users WHERE id = ?', user.id))?.enabled;
+  if (twoStep) {
+    return json({ twoStep: true, challenge: await signChallenge(env, user.id), backupOnly: !twoFactorAvailable(env) }, 200, { 'cache-control': 'no-store' });
+  }
+  await logLogin(env, request, { userId: user.id, email: user.email, result: 'success', method: 'reset_link' });
   const { ttlHours, absoluteDays } = sessionLimits(await securitySettings(env), user.role);
   const sessionToken = await signSession(env.SESSION_SECRET, {
     userId: user.id, email: user.email, role: user.role, fullName: user.full_name,
