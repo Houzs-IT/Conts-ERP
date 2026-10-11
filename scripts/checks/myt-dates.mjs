@@ -9,6 +9,7 @@ const PATTERNS = [
   { re: /new Date\(\)\.toISOString\(\)\.(?:slice|substring|substr)\(0,\s*(?:4|7|10)\)/, msg: 'today / this month / this year read from a UTC clock: use todayMyt() or mytToday()' },
   { re: /new Date\(\)\.toISOString\(\)\.split\(['"]T['"]\)/, msg: 'today read from a UTC clock: use todayMyt() or mytToday()' },
   { re: /\bnowIso\(\)\.(?:slice|substring|substr)\(0,\s*(?:4|7|10)\)/, msg: 'today / this month / this year read from a UTC clock: use mytToday()' },
+  { re: /\bnow\.(?:slice|substring|substr)\(0,\s*(?:4|7|10)\)/, msg: 'the date part of a UTC timestamp (now = nowIso()): use mytToday()' },
   { re: /new Date\(\)\.get(?:FullYear|Month|Date|Day)\(\)/, msg: "a date part read from the device's own clock: use todayMyt()" },
   { re: /to_char\(\s*now\(\)\s*,/i, msg: "SQL now() is UTC: use to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', ...)" },
   { re: /\bCURRENT_DATE\b|now\(\)::date\b/i, msg: "SQL CURRENT_DATE / now()::date is the UTC day: use (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date" },
@@ -28,6 +29,7 @@ export const def = {
     bad: [
       { path: 'src/pages/X.tsx', text: "const [d, setD] = useState(new Date().toISOString().slice(0, 10));" },
       { path: 'functions/api/x.ts', text: "const year = nowIso().slice(0, 4);" },
+      { path: 'functions/api/z.ts', text: "const now = nowIso(); const day = strOrNull(b.day) ?? now.slice(0, 10);" },
       { path: 'functions/api/y.ts', text: "const sql = `WHERE r.check_out >= to_char(now(), 'YYYY-MM-DD')`;" },
       { path: 'src/pages/Y.tsx', text: "const no = `PO-${new Date().getFullYear()}-NEW`;" },
     ],

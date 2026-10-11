@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { nextInvoiceNumber, toPiHeaderPayload, type PiHeaderRow } from '../../_lib/purchase-invoices';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
@@ -77,7 +77,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const id = genId('pinv');
   const invoiceNumber = await nextInvoiceNumber(env);
   const now = nowIso();
-  const invoiceDate = strOrNull(b.invoiceDate) ?? now.slice(0, 10);
+  const invoiceDate = strOrNull(b.invoiceDate) ?? mytToday();
 
   await run(env, `
     INSERT INTO purchase_invoices (id, invoice_number, supplier_invoice_ref, supplier_id, purchase_order_id, grn_id, invoice_date,

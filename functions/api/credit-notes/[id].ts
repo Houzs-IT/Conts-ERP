@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { HEADER_SQL, buildLines, toNotePayload, toNoteLinePayload, type NoteHeaderRow, type NoteLineRow } from '../../_lib/credit-notes';
 import { strOrNull, genId } from '../../_lib/scm-util';
@@ -45,7 +45,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (cur.status !== 'DRAFT') return fail('CONFLICT', `${cur.note_number} is ${cur.status.toLowerCase()} — cancel it and raise it again.`, 409);
   const sets: string[] = ['updated_at = ?'];
   const args: unknown[] = [now];
-  if (b.noteDate !== undefined) { sets.push('note_date = ?'); args.push(strOrNull(b.noteDate) ?? now.slice(0, 10)); }
+  if (b.noteDate !== undefined) { sets.push('note_date = ?'); args.push(strOrNull(b.noteDate) ?? mytToday()); }
   if (b.reason !== undefined) { sets.push('reason = ?'); args.push(strOrNull(b.reason)); }
   if (b.notes !== undefined) { sets.push('notes = ?'); args.push(strOrNull(b.notes)); }
   if (b.sourceDocNo !== undefined) { sets.push('source_doc_no = ?'); args.push(strOrNull(b.sourceDocNo)); }

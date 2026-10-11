@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { HEADER_SQL, NOTE_KIND_WORD, buildLines, isNoteKind, nextNoteNumber, toNotePayload, type NoteHeaderRow } from '../../_lib/credit-notes';
 import { strOrNull, genId } from '../../_lib/scm-util';
@@ -83,7 +83,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const id = genId('cn');
   const noteNumber = await nextNoteNumber(env, kind);
   const now = nowIso();
-  const noteDate = strOrNull(b.noteDate) ?? now.slice(0, 10);
+  const noteDate = strOrNull(b.noteDate) ?? mytToday();
   await run(env, `INSERT INTO credit_notes (id, note_number, kind, party_type, party_name, supplier_id, sales_order_id, sales_invoice_id, purchase_invoice_id,
       source_doc_no, note_date, total_sen, reason, notes, status, created_by, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)`,

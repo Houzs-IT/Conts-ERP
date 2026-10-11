@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { nextSiNumber, toSiHeaderPayload, type SiHeaderRow } from '../../_lib/sales-invoices';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
@@ -55,7 +55,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   await run(env, `INSERT INTO sales_invoices (id, invoice_number, delivery_order_id, sales_order_id, customer_name, invoice_date, due_date, currency, subtotal_sen, tax_sen, total_sen, paid_sen, status, notes, created_by, created_at, updated_at)
                   VALUES (?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, 0, 'SENT', ?, ?, ?, ?)`,
-    id, invoiceNumber, doId, dord.sales_order_id, dord.customer_name, strOrNull(b.invoiceDate) ?? now.slice(0, 10), strOrNull(b.dueDate), subtotal, tax, total, strOrNull(b.notes), session.userId, now, now);
+    id, invoiceNumber, doId, dord.sales_order_id, dord.customer_name, strOrNull(b.invoiceDate) ?? mytToday(), strOrNull(b.dueDate), subtotal, tax, total, strOrNull(b.notes), session.userId, now, now);
   for (let i = 0; i < doLines.length; i++) {
     const l = doLines[i];
     await run(env, `INSERT INTO sales_invoice_lines (id, sales_invoice_id, line_no, item_code, description, uom, qty, unit_price_sen, line_total_sen)

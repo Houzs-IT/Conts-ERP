@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isDoStatus, nextDoNumber, maybeMarkSoDelivered, toDoHeaderPayload, type DoHeaderRow } from '../../_lib/delivery-orders';
 import { postStockMovement, stockShortages, shortageText } from '../../_lib/stock-ops';
@@ -72,7 +72,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const id = genId('do');
   const doNumber = await nextDoNumber(env);
   const now = nowIso();
-  const doDate = strOrNull(b.doDate) ?? now.slice(0, 10);
+  const doDate = strOrNull(b.doDate) ?? mytToday();
   await run(env, `INSERT INTO delivery_orders (id, do_number, sales_order_id, customer_name, do_date, expected_delivery_at, status,
       driver_name, vehicle, address1, city, state, postcode, phone, notes, warehouse_id, created_by, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, 'LOADED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

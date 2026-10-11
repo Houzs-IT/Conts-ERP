@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isSretStatus, nextSalesReturnNumber, toSretHeaderPayload, type SretHeaderRow } from '../../_lib/sales-returns';
 import { postStockMovement } from '../../_lib/stock-ops';
@@ -64,7 +64,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const id = genId('sret');
   const returnNumber = await nextSalesReturnNumber(env);
   const now = nowIso();
-  const returnDate = strOrNull(b.returnDate) ?? now.slice(0, 10);
+  const returnDate = strOrNull(b.returnDate) ?? mytToday();
 
   await run(env, `INSERT INTO sales_returns (id, return_number, sales_order_id, delivery_order_id, customer_name, return_date, reason, status, credit_note_ref, refund_sen, notes, posted_at, created_by, created_at, updated_at)
                   VALUES (?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?, ?, ?, ?)`,

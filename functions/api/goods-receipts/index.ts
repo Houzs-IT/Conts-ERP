@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { nextGrnNumber, recomputePoStatus, toGrnHeaderPayload, type GrnHeaderRow } from '../../_lib/goods-receipts';
 import { postStockMovement } from '../../_lib/stock-ops';
@@ -76,7 +76,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const id = genId('grn');
   const grnNumber = await nextGrnNumber(env);
   const now = nowIso();
-  const receivedAt = strOrNull(b.receivedAt) ?? now.slice(0, 10);
+  const receivedAt = strOrNull(b.receivedAt) ?? mytToday();
   const subtotal = lines.reduce((s, l) => s + l.lineTotalSen, 0);
 
   await run(env, `

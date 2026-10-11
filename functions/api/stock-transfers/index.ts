@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { nextNumber, toTransferPayload, stockShortages, shortageText, type TransferHeaderRow } from '../../_lib/stock-ops';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
@@ -42,7 +42,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const id = genId('trf');
   const transferNumber = await nextNumber(env, 'stock_transfers', 'transfer_number', 'TRF');
   const now = nowIso();
-  const tdate = strOrNull(b.transferDate) ?? now.slice(0, 10);
+  const tdate = strOrNull(b.transferDate) ?? mytToday();
   await run(env, `INSERT INTO stock_transfers (id, transfer_number, from_warehouse_id, to_warehouse_id, transfer_date, status, notes, created_by, created_at, updated_at)
                   VALUES (?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?)`, id, transferNumber, from, to, tdate, strOrNull(b.notes), session.userId, now, now);
   for (let i = 0; i < lines.length; i++) {

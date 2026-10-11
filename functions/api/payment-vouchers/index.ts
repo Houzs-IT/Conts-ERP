@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { nextVoucherNumber, toPvHeaderPayload, PV_METHODS, type PvHeaderRow } from '../../_lib/payment-vouchers';
 import { recomputePiStatus } from '../../_lib/purchase-invoices';
@@ -64,7 +64,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const id = genId('pv');
   const voucherNumber = await nextVoucherNumber(env);
   const now = nowIso();
-  const paymentDate = strOrNull(b.paymentDate) ?? now.slice(0, 10);
+  const paymentDate = strOrNull(b.paymentDate) ?? mytToday();
 
   await run(env, `INSERT INTO payment_vouchers (id, voucher_number, supplier_id, payment_date, method, reference, amount_sen, notes, status, created_by, created_at, updated_at)
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?)`,

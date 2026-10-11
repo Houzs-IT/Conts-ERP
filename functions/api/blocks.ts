@@ -1,4 +1,4 @@
-import { type Env, run, json, fail, audit, nowIso } from '../_lib/db';
+import { type Env, run, json, fail, audit, nowIso, mytToday } from '../_lib/db';
 import { requireSession, isFieldRole } from '../_lib/auth';
 import { findClash, clashResponseBody, withUnitLock } from '../_lib/reservations';
 import { resolveUnit } from '../_lib/ops';
@@ -57,7 +57,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   if (b.issueId) {
-    await run(env, `UPDATE maintenance_issues SET blocks_unit = 1, blocked_from = COALESCE(blocked_from, ?), updated_at = ? WHERE id = ? AND unit_id = ?`, b.from ?? now.slice(0, 10), now, String(b.issueId), unit.id);
+    await run(env, `UPDATE maintenance_issues SET blocks_unit = 1, blocked_from = COALESCE(blocked_from, ?), updated_at = ? WHERE id = ? AND unit_id = ?`, b.from ?? mytToday(), now, String(b.issueId), unit.id);
     await run(env, `UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?`, now, unit.id);
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'unit.block', entityTable: 'units', entityId: unit.id, after: { from: b.from ?? null, to: b.to ?? null, kind, reason: note || null, issueId: b.issueId ?? null } });

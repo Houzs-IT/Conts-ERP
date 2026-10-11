@@ -45,7 +45,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const now = nowIso();
   await run(env, `INSERT INTO consignment_notes (id, cn_number, consignee_name, consignee_phone, cn_date, status, notes, total_sen, created_by, created_at, updated_at)
                   VALUES (?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?)`,
-    id, cnNumber, consigneeName, strOrNull(b.consigneePhone), strOrNull(b.cnDate) ?? now.slice(0, 10), strOrNull(b.notes), total, session.userId, now, now);
+    id, cnNumber, consigneeName, strOrNull(b.consigneePhone), strOrNull(b.cnDate) ?? mytToday(), strOrNull(b.notes), total, session.userId, now, now);
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     await run(env, `INSERT INTO consignment_note_lines (id, consignment_note_id, line_no, item_code, description, uom, qty_consigned, qty_sold, qty_returned, unit_price_sen, line_total_sen)

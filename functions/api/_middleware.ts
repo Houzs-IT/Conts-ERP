@@ -94,7 +94,7 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   }
 
   if (request.method !== 'GET' && (request.headers.get('content-type') ?? '').includes('application/json')) {
-    const body = await request.clone().json().catch(() => undefined);
+    const body = await forward.clone().json().catch(() => undefined);
     const over = overLimit(body);
     if (over) return fail('VALIDATION', over.message, 422, { [over.field]: over.message });
   }
