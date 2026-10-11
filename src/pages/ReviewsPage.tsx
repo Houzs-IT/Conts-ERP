@@ -147,9 +147,9 @@ export default function ReviewsPage() {
             <Stat label="Average rating" value={average != null ? fmtRating(average, true) : '—'} />
           </div>
           <div className="[border-right:1px_solid_var(--color-line-soft)]">
-            <Stat label="Reviews" value={count(total)} />
+            <Stat label="Reviews" value={data ? count(total) : '—'} />
           </div>
-          <Stat label="Replied" value={`${pctReplied}%`} />
+          <Stat label="Replied" value={data ? `${pctReplied}%` : '—'} />
         </div>
       </Card>
 

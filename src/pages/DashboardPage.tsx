@@ -263,6 +263,7 @@ export default function DashboardPage() {
   // keeps the previous payload. Fall back to the local dataset for the active
   // range whenever the live read is not available, so the toggle visibly moves.
   const tp = (trend.error ? null : trend.data) ?? (import.meta.env.DEV ? TREND[range] : EMPTY_TREND);
+  const money = (sen: number) => tp === EMPTY_TREND ? '—' : rm(sen, { cents: false });
 
   const today = useApi<TodayPayload>('/dashboard/today', TODAY_FALLBACK);
   const exc = useApi<ExceptionPayload>('/dashboard/exceptions', EXCEPTION_FALLBACK);
@@ -376,7 +377,7 @@ export default function DashboardPage() {
               <div className="flex flex-col gap-1.5 min-w-0">
                 <Eyebrow>Revenue and occupancy</Eyebrow>
                 <div className="flex items-baseline gap-3 flex-wrap">
-                  <Figure value={rm(tp.totals.grossBookingValue, { cents: false })} className="text-[26px] sm:text-[30px] font-medium tracking-[-0.025em] leading-none" />
+                  <Figure value={money(tp.totals.grossBookingValue)} className="text-[26px] sm:text-[30px] font-medium tracking-[-0.025em] leading-none" />
                   {tp.delta.period && tp.delta.against && (
                     <span className={cx('text-meta font-semibold whitespace-nowrap', TONE[tp.delta.tone].text)}
                       title={`Revenue in ${monthLabel(tp.delta.period)} against ${monthLabel(tp.delta.against)}, the last two complete months`}>
@@ -407,10 +408,10 @@ export default function DashboardPage() {
 
             {/* The four totals are distinct definitions and are never merged. */}
             <TotalsRow items={[
-              { label: 'Gross booking value', value: rm(tp.totals.grossBookingValue, { cents: false }) },
-              { label: 'Collected revenue', value: rm(tp.totals.collectedRevenue, { cents: false }) },
-              { label: 'Management fees', value: rm(tp.totals.managementFees, { cents: false }) },
-              { label: 'Net owner payout', value: rm(tp.totals.netOwnerPayout, { cents: false }) },
+              { label: 'Gross booking value', value: money(tp.totals.grossBookingValue) },
+              { label: 'Collected revenue', value: money(tp.totals.collectedRevenue) },
+              { label: 'Management fees', value: money(tp.totals.managementFees) },
+              { label: 'Net owner payout', value: money(tp.totals.netOwnerPayout) },
             ]} />
           </div>
         </Card>

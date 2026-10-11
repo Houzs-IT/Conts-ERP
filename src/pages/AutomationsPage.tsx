@@ -354,14 +354,14 @@ export default function AutomationsPage() {
     <>
       <PageHeader
         title="Automations"
-        sub={`${running} of ${total} run today · ${total - running} not running yet${qh ? ` · quiet hours ${qh.from}–${qh.to} MYT` : ''}`}
+        sub={data ? `${running} of ${total} run today · ${total - running} not running yet${qh ? ` · quiet hours ${qh.from}–${qh.to} MYT` : ''}` : 'Loading rules…'}
       />
 
       <div className="flex items-start gap-2.5 py-3 px-3.5 rounded-control bg-warning-bg text-warning text-pretty" style={{ borderLeft: '2px solid var(--color-warning-line)' }}>
         <Icon name="CircleAlert" size="sm" style={{ marginTop: 1 }} />
         <span className="text-meta">
-          <strong className="font-semibold">Most rules do not run yet.</strong> {running} are sent by the system when they happen (owner statements and payouts, staff and account emails).
-          The other {total - running}, including every guest message, are written but nothing sends them: they need a timed background sender that is not set up yet and, for guests, the email and WhatsApp keys.
+          <strong className="font-semibold">Most rules do not run yet.</strong> {data ? running : 'Some'} are sent by the system when they happen (owner statements and payouts, staff and account emails).
+          {' '}{data ? `The other ${total - running}` : 'The rest'}, including every guest message, are written but nothing sends them: they need a timed background sender that is not set up yet and, for guests, the email and WhatsApp keys.
           Until then, guests get only the messages staff send from the Inbox and Bookings.
         </span>
       </div>

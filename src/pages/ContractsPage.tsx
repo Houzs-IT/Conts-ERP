@@ -212,7 +212,7 @@ export default function ContractsPage() {
     <>
       <PageHeader
         title="Contracts"
-        sub={`${plural(counts.all, 'management agreement')} · ${counts.soon} ending within ${ENDING_WINDOW_DAYS} days · ${counts.ended} ended`}
+        sub={data ? `${plural(counts.all, 'management agreement')} · ${counts.soon} ending within ${ENDING_WINDOW_DAYS} days · ${counts.ended} ended` : 'Loading contracts…'}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ mode: 'add' })}>Add contract</Button>}
       />
 
@@ -240,7 +240,7 @@ export default function ContractsPage() {
         header={
           <div className={cx('flex gap-2 py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]', phone ? 'overflow-x-auto' : 'flex-wrap')}>
             {FILTERS.map(f => (
-              <Chip key={f.key} on={filter === f.key} onClick={() => url.set({ state: f.key === 'all' ? null : f.key, page: null })} count={counts[f.key]}>{f.label}</Chip>
+              <Chip key={f.key} on={filter === f.key} onClick={() => url.set({ state: f.key === 'all' ? null : f.key, page: null })} count={data ? counts[f.key] : undefined}>{f.label}</Chip>
             ))}
           </div>
         }

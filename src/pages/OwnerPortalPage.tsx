@@ -268,9 +268,9 @@ export default function OwnerPortalPage() {
         <section className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-1">
           <span className="text-[16px] font-semibold tracking-[-0.01em]">Earnings over time</span>
           <span className="text-meta text-muted-ink">
-            Net payout, RM · last {trend.data?.months ?? points.length} months · {trend.data?.unitLabel ?? st.unitsLabel}
+            Net payout, RM · {trend.data ? `last ${trend.data.months} months · ` : ''}{trend.data?.unitLabel ?? st.unitsLabel}
           </span>
-          {points.length ? <TrendChart points={points} /> : (
+          {points.length ? <TrendChart points={points} /> : !trend.data ? null : (
             <EmptyState bare icon="ChartLine" title="No earnings yet" body="Earnings appear after your first statement." />
           )}
         </section>
@@ -278,7 +278,7 @@ export default function OwnerPortalPage() {
         {/* Property health */}
         <section className="bg-card border border-solid border-line rounded-card overflow-hidden flex flex-col">
           <div className="px-5 py-[18px] text-[16px] font-semibold tracking-[-0.01em] [border-bottom:1px_solid_var(--color-line-soft)]">Property health</div>
-          {rows.length === 0 && <EmptyState bare icon="Wrench" title="No maintenance on your property" body="Repairs and quotes that need your approval appear here." />}
+          {health.data && rows.length === 0 && <EmptyState bare icon="Wrench" title="No maintenance on your property" body="Repairs and quotes that need your approval appear here." />}
           {rows.map(i => {
             const v = TASK[i.state];
             const waiting = i.state === 'waiting' && i.quotedAmount != null;
@@ -303,7 +303,7 @@ export default function OwnerPortalPage() {
       {/* Documents */}
       <section className="bg-card border border-solid border-line rounded-card overflow-hidden">
         <div className="px-5 py-[18px] text-[16px] font-semibold tracking-[-0.01em] [border-bottom:1px_solid_var(--color-line-soft)]">Documents</div>
-        {documents.length === 0 && <EmptyState bare icon="FileText" title="No documents yet" body="Your statements and contract will appear here." />}
+        {docs.data && documents.length === 0 && <EmptyState bare icon="FileText" title="No documents yet" body="Your statements and contract will appear here." />}
         {documents.map(d => (
           <div key={d.id} className="px-5 py-3 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center gap-3.5">
             <span className="w-[34px] h-[34px] flex-none grid place-items-center rounded-control bg-muted text-[var(--color-ink-2)]">
