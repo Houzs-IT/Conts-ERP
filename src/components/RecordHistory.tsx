@@ -27,7 +27,7 @@ const ACTION: Record<string, string> = {
   'reservation.details': 'changed the details', 'reservation.prepare': 'prepared the arrival', 'reservation.payment': 'recorded a payment',
   'reservation.payment_removed': 'removed a payment', 'reservation.block_released': 'released the calendar block',
   'reservation.side_effect_failed': 'hit a problem finishing a status change',
-  'document.issue': 'issued a document', 'document.void': 'voided a document', 'message.send': 'sent a message',
+  'reservation.block': 'held these dates', 'document.issue': 'issued a document', 'document.void': 'voided a document', 'message.send': 'sent a message',
   'channex.booking_created': 'received this booking from the booking site', 'channex.booking_updated': 'received a change from the booking site',
   'channex.booking_cancelled': 'received a cancellation from the booking site', 'channex.booking_clash': 'found it clashes with another stay',
   'channex.availability_failed': 'could not update the booking sites',

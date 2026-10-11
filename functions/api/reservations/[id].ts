@@ -34,6 +34,7 @@ function describe(a: { action: string; actor_label: string; before_state: string
   const before = parse(a.before_state) ?? {}, after = parse(a.after_state) ?? {};
   switch (a.action) {
     case 'reservation.create': return { label: 'Booking created', actor: a.actor_label };
+    case 'reservation.block': return { label: after.channel === 'owner_stay' ? 'Owner stay created' : 'Block created', detail: after.reason ? `Note: ${after.reason}` : undefined, actor: a.actor_label };
     case 'reservation.duplicate': return { label: 'Created as a copy of another booking', actor: a.actor_label };
     case 'reservation.status':
     case 'reservation.cancel': {
@@ -108,7 +109,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   // A block or an owner stay is not a booking: its events say so, and it has a start and an end, not a check-in.
   const what = row.channel === 'maintenance_block' ? 'Block' : row.channel === 'owner_stay' ? 'Owner stay' : null;
   const timeline: TimelineEvent[] = [];
-  if (!auditRows.some(a => a.action === 'reservation.create' || a.action === 'reservation.duplicate')) {
+  if (!auditRows.some(a => a.action === 'reservation.create' || a.action === 'reservation.duplicate' || a.action === 'reservation.block')) {
     timeline.push({ at: row.created_at, label: what ? `${what} recorded` : 'Booking recorded', detail: what ? undefined : `Source: ${channel}` });
   }
   for (const a of auditRows) {

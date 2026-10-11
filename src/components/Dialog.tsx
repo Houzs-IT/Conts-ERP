@@ -1,7 +1,20 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
 /** Confirmations live in ConfirmDialog.tsx; this file keeps the side drawer. */
 export function Drawer({ open, onClose, children, width = 480 }: { open: boolean; onClose: () => void; children: ReactNode; width?: number }) {
+  const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      // A dialog opened over the drawer (record payment, a confirmation) closes first; the drawer only on the next Escape.
+      const dialogs = [...document.querySelectorAll('[role=dialog], [role=alertdialog]')];
+      if (dialogs.length && dialogs[dialogs.length - 1] !== panel.current) return;
+      onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
   if (!open) return null;
   return (
     <div style={{
@@ -10,6 +23,7 @@ export function Drawer({ open, onClose, children, width = 480 }: { open: boolean
     }}>
       <div onClick={onClose} style={{ flex: 1 }} />
       <div
+        ref={panel}
         role="dialog"
         aria-modal="true"
         style={{

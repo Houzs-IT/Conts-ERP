@@ -124,6 +124,24 @@ if (created) {
 r = await call('GET', '/api/search?q=Skyline%20D25');
 check('the / search matches every word: "Skyline D25" finds Skyline units D25-..', r.json.some(h => h.kind === 'unit' && /Skyline.*D25/.test(h.label)), r.text.slice(0, 200));
 
+/* ---------- a block reads as a block, and says who made it ---------- */
+{
+  let blk = null;
+  for (const u of units.slice(0, 40)) {
+    const x = await call('POST', '/api/blocks', { unitId: u.id, from: '2027-12-10', to: '2027-12-12', kind: 'maintenance', note: 'api check' });
+    if (x.status === 201) { blk = x.json; break; }
+  }
+  if (blk) {
+    const d = (await call('GET', `/api/reservations/${blk.id}`)).json;
+    const labels = d.timeline.map(t => t.label);
+    check('a block timeline: Block created (with who), Block starts, Block ends; no check-in words', labels.includes('Block created') && labels.includes('Block starts') && labels.includes('Block ends')
+      && !labels.some(l => /Check-in|Check-out|Booking/.test(l)) && d.timeline.find(t => t.label === 'Block created').actor, JSON.stringify(d.timeline));
+    r = await call('GET', `/api/audit?entityTable=reservations&entityId=${blk.id}`);
+    check('the block History has the person who made it', r.json.data.some(a => a.action === 'reservation.block' && a.actorKind === 'person'), r.text.slice(0, 200));
+    await call('POST', `/api/reservations/${blk.id}/cancel`, { reason: 'api check clean-up' });
+  }
+}
+
 /* ---------- duplicate keeps the price breakdown ---------- */
 {
   const direct = (await call('GET', '/api/reservations?view=upcoming&ch=direct&size=50')).json.data;
