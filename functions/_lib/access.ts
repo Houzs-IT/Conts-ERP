@@ -28,7 +28,7 @@ export const AREAS: Area[] = [
   { key: 'dashboard', label: 'Dashboard', group: 'Workspace', api: ['dashboard'] },
   { key: 'portfolio', label: 'Portfolio', group: 'Workspace', api: ['portfolio'], managed: true, strictRead: true, defaults: OPS_NONE },
   { key: 'reservations', label: 'Reservations', group: 'Operations', api: ['reservations', 'guests', 'blocks', 'guest-documents'] },
-  { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks', 'inspections'], defaults: { finance_admin: 'none' } },
+  { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'], defaults: { finance_admin: 'none' } },
   { key: 'properties', label: 'Properties', group: 'Operations', api: ['properties', 'units', 'inventory', 'access-credentials', 'residence-rules'] },
   { key: 'serviceCases', label: 'Service cases', group: 'Operations', api: [] },
   { key: 'projects', label: 'Projects', group: 'Operations', api: [], defaults: { operations_staff: 'view' } },
