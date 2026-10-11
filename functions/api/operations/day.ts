@@ -96,8 +96,9 @@ function progressOf(m: any): string {
  *  repair not finished, or a repair block meant to end by that day. */
 async function maintenanceOnDay(env: Env, date: string, today: string) {
   const from = `${date}T00:00:00+08:00`, to = `${date}T23:59:59+08:00`;
-  // A visit counts as missed once it is over: today that is now, on another day the start of that day.
-  const cutoff = date === today ? new Date().toISOString() : from;
+  // A visit counts as missed once it is over: up to now for today and later days (a visit later today is not missed
+  // yet), up to the start of the day for a past day.
+  const cutoff = date >= today ? new Date().toISOString() : from;
   const rows = await all<any>(env, `
     SELECT m.id, m.title, m.state, m.urgency, m.category, m.vendor_name, m.assignee_user_id, m.blocks_unit, m.blocked_to,
            m.owner_approval_required, m.owner_approved_at, m.charge_to, m.started_at, m.ended_at, m.resolved_at, m.reported_at,
