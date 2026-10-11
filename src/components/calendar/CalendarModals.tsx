@@ -447,7 +447,7 @@ export function RateUpdate({ units, pricing, initial, onClose, onDone, building,
             )}
 
             {step === 4 && <ReviewPanel review={review} units={units} unitCount={chosen.length} nights={nights}
-              restrictions={[minStay !== '' ? `Minimum nights: ${minStay === '1' ? 'none' : `${minStay} nights`}` : '', stop === 'close' ? 'Blocked: nobody can book' : stop === 'open' ? 'Blocked: opened for booking' : ''].filter(Boolean)} />}
+              restrictions={[minStay !== '' ? `Minimum nights: ${minStay === '1' ? 'none' : `${minStay} nights`}` : '', stop === 'close' ? 'Blocked: nobody can book' : stop === 'open' ? 'Blocked: made available again' : ''].filter(Boolean)} />}
           </div>
         </div>
 

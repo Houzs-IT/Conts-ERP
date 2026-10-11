@@ -904,9 +904,10 @@ function BuildingRowHeader({ name, units, folded, showToggle, onToggle, picked, 
           title={`${name} · ${plural(n, 'unit')}${showToggle ? (folded ? ' · show its units' : ' · fold it away') : ''}`}
           className={`flex-1 min-w-0 flex items-center gap-1 ${picked !== null ? 'pl-0' : 'pl-1.5'} pr-2 md:pr-3 min-h-8 py-1 m-0 border-none bg-transparent enabled:hover:bg-muted/60 enabled:cursor-pointer text-left font-sans text-ink`}>
           {showToggle && <span className="w-5 h-5 flex-none grid place-items-center text-muted-ink"><Icon name={folded ? 'ChevronRight' : 'ChevronDown'} size="sm" /></span>}
-          {/* Two lines rather than an ellipsis: on a phone the column is about 100px and building names run longer. */}
-          <span className="min-w-0 flex-1 text-meta font-semibold leading-tight line-clamp-2 [overflow-wrap:anywhere]">{name}</span>
-          <span className="flex-none text-caption font-medium text-muted-ink [font-variant-numeric:tabular-nums]">{n}</span>
+          {/* Wrapped rather than cut off: on a phone the column is about 100px and building names run longer. The unit count
+              is the title on phones. */}
+          <span className="min-w-0 flex-1 text-meta font-semibold leading-tight line-clamp-3 md:line-clamp-2 [overflow-wrap:anywhere]">{name}</span>
+          <span className="hidden md:inline flex-none text-caption font-medium text-muted-ink [font-variant-numeric:tabular-nums]">{n}</span>
         </button>
       </div>
       {showFree && days.map((_, i) => {
