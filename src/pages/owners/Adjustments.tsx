@@ -193,7 +193,7 @@ function ReleaseModal({ a, busy, onClose, onSubmit }: { a: Adjustment; busy: boo
   return (
     <Modal title="Release this credit or charge?" sub={`${moneyString(a.amount, 'exact')} · ${a.description}`} onClose={onClose}
       submitLabel={busy ? 'Releasing...' : 'Release'} canSubmit={!busy} onSubmit={() => onSubmit(month)}>
-      <Select label="Deduct on" showLabel size="md" value={month} onChange={setMonth} options={options} />
+      <Select label={a.kind === 'credit' ? 'Add it on' : 'Deduct it on'} showLabel size="md" value={month} onChange={setMonth} options={options} />
       <p className="m-0 text-meta text-muted-ink text-pretty">
         It goes on this owner's {monthLabel(month, { long: true })} statement when that month is generated, or regenerated while still provisional.
         If that statement is already final, pick a later month.

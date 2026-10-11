@@ -12,6 +12,7 @@ import { Select, SearchSelect } from '../../components/Select';
 import { cx } from '../../lib/design-tokens';
 import type { StatementState } from '../../lib/types';
 import type { RevenueModel } from '../../lib/revenueModel';
+import { TERMS } from '../../lib/statementTerms';
 
 /**
  * Shared owner-side building blocks. Extracted verbatim from OwnersPage so the
@@ -130,9 +131,9 @@ export function StatementHistory({ o }: { o: Owner }) {
   const columns = useMemo<Column<OwnerStatement>[]>(() => [
     { key: 'period', label: 'Month', value: s => s.period, render: s => <span className="text-copy font-medium whitespace-nowrap">{periodLabel(s.period)}</span>,
       exportValue: s => periodLabel(s.period), hideable: false, width: 110, filter: false },
-    { key: 'gross', label: 'Booking revenue', type: 'money', value: s => s.grossBookingValue, width: 120,
+    { key: 'gross', label: TERMS.grossIncome, type: 'money', value: s => s.grossBookingValue, width: 120,
       render: s => <MoneyText sen={s.grossBookingValue} mode="exact" tone="muted" className="text-meta" /> },
-    { key: 'net', label: 'Owner payout', type: 'money', value: s => s.netPayout, width: 120,
+    { key: 'net', label: TERMS.netPayout, type: 'money', value: s => s.netPayout, width: 120,
       render: s => <MoneyText sen={s.netPayout} mode="exact" strong className="text-copy" /> },
     { key: 'state', label: 'Status', type: 'status', value: s => s.state, width: 110, entity: 'statement' },
   ], []);
@@ -214,7 +215,7 @@ export function LinkUnitModal({ owner, units, onClose, onSubmit }: { owner: stri
   const [grrSen, setGrrSen] = useState<number | null>(null);
   const canSubmit = unitId !== '' && (model === 'management' ? feePct != null : grrSen != null);
   return (
-    <Modal title="Link a unit" sub={`Assign a unit to ${titleCase(owner)} and preset how the owner is paid.`} onClose={onClose} submitLabel="Link unit" canSubmit={canSubmit}
+    <Modal title="Link a unit" sub={`Assign a unit to ${titleCase(owner)} and preset how the owner is paid. Share + minimum, master lease and long-term let are set on the unit's Contract tab after linking.`} onClose={onClose} submitLabel="Link unit" canSubmit={canSubmit}
       onSubmit={() => onSubmit(line(unitId, unitLabel, model, model === 'management' ? feePct ?? undefined : undefined, model === 'grr' ? grrSen ?? undefined : undefined, 0, 0, 0, 0))}>
       <SearchSelect showLabel label="Unit" allLabel="Choose a unit" placeholder="Search unit or building" value={unitId} onChange={v => setUnitId(v)}
         options={choices.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName, hint: u.ownerName ? `now ${titleCase(u.ownerName)}` : undefined }))} />
