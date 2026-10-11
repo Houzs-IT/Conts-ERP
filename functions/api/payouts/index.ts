@@ -1,4 +1,5 @@
-import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, audit, nowIso, transaction } from '../../_lib/db';
+import { auditMany } from '../../_lib/history';
 import { requireSession } from '../../_lib/auth';
 import { notify, notifyUsers } from '../../_lib/notify';
 import { refOf } from '../../_lib/ops';
@@ -94,7 +95,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     FROM owner_statements s JOIN owners o ON o.id = s.owner_id
     WHERE s.id IN (${placeholders})`, ...statementIds);
 
-  const created: string[] = [];
+  const created: { id: string; statement_id: string; owner_id: string; amount: number; bank_last4: string }[] = [];
   const skipped: { id: string; reason: string }[] = [];
 
   for (const s of rows) {
@@ -111,16 +112,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       skipped.push({ id: s.id, reason: 'No bank details on file for this owner.' });
       continue;
     }
-    const id = crypto.randomUUID();
-    await run(env, `
-      INSERT INTO payouts (id, statement_id, owner_id, amount, currency, state, method, bank_last4, created_at)
-      VALUES (?, ?, ?, ?, 'MYR', 'pending', 'bank_transfer', ?, ?)`,
-      id, s.id, s.owner_id, s.net_payout, s.bank_account_last4, nowIso());
-    await audit(env, {
-      actorId: session.userId, actorLabel: session.fullName, action: 'payout.create',
-      entityTable: 'payouts', entityId: id, after: { statementId: s.id, amount: s.net_payout },
+    created.push({ id: crypto.randomUUID(), statement_id: s.id, owner_id: s.owner_id, amount: s.net_payout, bank_last4: s.bank_account_last4 });
+  }
+
+  if (created.length) {
+    await transaction(env, async tx => {
+      await run(tx, `
+        INSERT INTO payouts (id, statement_id, owner_id, amount, currency, state, method, bank_last4, created_at)
+        SELECT x.id, x.statement_id, x.owner_id, x.amount, 'MYR', 'pending', 'bank_transfer', x.bank_last4, ?
+        FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, statement_id text, owner_id text, amount integer, bank_last4 text)`,
+        nowIso(), JSON.stringify(created));
+      await auditMany(tx, created.map(p => ({
+        actorId: session.userId, actorLabel: session.fullName, action: 'payout.create',
+        entityTable: 'payouts', entityId: p.id, after: { statementId: p.statement_id, amount: p.amount },
+      })));
     });
-    created.push(id);
   }
 
   return json({ created: created.length, skipped });
