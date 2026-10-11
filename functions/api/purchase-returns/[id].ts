@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { toPretHeaderPayload, toPretLinePayload, type PretHeaderRow, type PretLineRow } from '../../_lib/purchase-returns';
 import { recomputePoStatus } from '../../_lib/goods-receipts';
@@ -52,7 +52,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
         if (gl?.purchase_order_line_id) await run(env, 'UPDATE purchase_order_lines SET received_qty = received_qty + ? WHERE id = ?', l.qty_returned, gl.purchase_order_line_id);
       }
       // Put the returned goods back into the warehouse they left (reverses the RETURN movement).
-      if (cur.warehouse_id && l.qty_returned > 0) await postStockMovement(env, { itemCode: l.item_code, warehouseId: cur.warehouse_id, qtyDelta: l.qty_returned, movementType: 'RETURN', refType: 'PRET-REV', refId: id, note: `${cur.return_number} cancelled`, movedAt: now.slice(0, 10), createdBy: session.userId });
+      if (cur.warehouse_id && l.qty_returned > 0) await postStockMovement(env, { itemCode: l.item_code, warehouseId: cur.warehouse_id, qtyDelta: l.qty_returned, movementType: 'RETURN', refType: 'PRET-REV', refId: id, note: `${cur.return_number} cancelled`, movedAt: mytToday(), createdBy: session.userId });
     }
     if (cur.purchase_order_id) await recomputePoStatus(env, cur.purchase_order_id);
     await run(env, 'UPDATE purchase_returns SET status = ?, updated_at = ? WHERE id = ?', 'CANCELLED', now, id);

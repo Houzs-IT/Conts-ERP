@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { nextNumber, onHandOf, toTakePayload, type TakeHeaderRow } from '../../_lib/stock-ops';
 import { strOrNull, genId } from '../../_lib/scm-util';
@@ -32,10 +32,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!items.length) return fail('VALIDATION', 'Add at least one item to count.', 422, { lines: 'Add an item.' });
 
   const id = genId('stk');
-  const takeNumber = await nextNumber(env, 'stock_takes', 'take_number', 'STK');
+  let takeNumber = '';
   const now = nowIso();
-  await run(env, `INSERT INTO stock_takes (id, take_number, warehouse_id, take_date, status, notes, created_by, created_at, updated_at)
-                  VALUES (?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)`, id, takeNumber, warehouseId, strOrNull(b.takeDate) ?? now.slice(0, 10), strOrNull(b.notes), session.userId, now, now);
+  // The number is the highest so far plus one, so two made at once can pick the same one: the second header insert
+  // then hits the unique number before anything is written, and simply takes the next number (isNumberClash).
+  for (let attempt = 1; ; attempt++) {
+    takeNumber = await nextNumber(env, 'stock_takes', 'take_number', 'STK');
+    try {
+      await run(env, `INSERT INTO stock_takes (id, take_number, warehouse_id, take_date, status, notes, created_by, created_at, updated_at)
+                      VALUES (?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)`, id, takeNumber, warehouseId, strOrNull(b.takeDate) ?? mytToday(), strOrNull(b.notes), session.userId, now, now);
+      break;
+    } catch (e) { if (attempt >= 5 || !isNumberClash(e)) throw e; }
+  }
   for (let i = 0; i < items.length; i++) {
     const system = await onHandOf(env, items[i].itemCode, warehouseId);
     await run(env, 'INSERT INTO stock_take_lines (id, stock_take_id, line_no, item_code, description, system_qty, counted_qty, variance) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)',

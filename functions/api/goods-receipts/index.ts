@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { nextGrnNumber, recomputePoStatus, toGrnHeaderPayload, type GrnHeaderRow } from '../../_lib/goods-receipts';
 import { postStockMovement } from '../../_lib/stock-ops';
@@ -74,16 +74,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!lines.length) return fail('VALIDATION', 'Receive at least one line with a quantity.', 422, { lines: 'Enter a received quantity.' });
 
   const id = genId('grn');
-  const grnNumber = await nextGrnNumber(env);
+  let grnNumber = '';
   const now = nowIso();
-  const receivedAt = strOrNull(b.receivedAt) ?? now.slice(0, 10);
+  const receivedAt = strOrNull(b.receivedAt) ?? mytToday();
   const subtotal = lines.reduce((s, l) => s + l.lineTotalSen, 0);
 
-  await run(env, `
-    INSERT INTO goods_receipts (id, grn_number, purchase_order_id, supplier_id, received_at, delivery_note_ref, status, notes,
-      currency, subtotal_sen, tax_sen, total_sen, posted_at, warehouse_id, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'POSTED', ?, 'MYR', ?, 0, ?, ?, ?, ?, ?, ?)`,
-    id, grnNumber, poId, po.supplier_id, receivedAt, strOrNull(b.deliveryNoteRef), strOrNull(b.notes), subtotal, subtotal, now, warehouseId, session.userId, now, now);
+  // The number is the highest so far plus one, so two made at once can pick the same one: the second header insert
+  // then hits the unique number before anything is written, and simply takes the next number (isNumberClash).
+  for (let attempt = 1; ; attempt++) {
+    grnNumber = await nextGrnNumber(env);
+    try {
+      await run(env, `
+        INSERT INTO goods_receipts (id, grn_number, purchase_order_id, supplier_id, received_at, delivery_note_ref, status, notes,
+          currency, subtotal_sen, tax_sen, total_sen, posted_at, warehouse_id, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'POSTED', ?, 'MYR', ?, 0, ?, ?, ?, ?, ?, ?)`,
+        id, grnNumber, poId, po.supplier_id, receivedAt, strOrNull(b.deliveryNoteRef), strOrNull(b.notes), subtotal, subtotal, now, warehouseId, session.userId, now, now);
+      break;
+    } catch (e) { if (attempt >= 5 || !isNumberClash(e)) throw e; }
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];

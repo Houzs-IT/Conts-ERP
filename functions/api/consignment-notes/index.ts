@@ -1,4 +1,5 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
+import { nextNumber } from '../../_lib/stock-ops';
 import { requireSession } from '../../_lib/auth';
 import { isCnStatus, normalizeCnLines, toCnHeaderPayload, type CnHeaderRow } from '../../_lib/consignment-notes';
 import { strOrNull, genId } from '../../_lib/scm-util';
@@ -39,13 +40,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const total = lines.reduce((s, l) => s + l.lineTotalSen, 0);
   const id = genId('cn');
-  const year = nowIso().slice(0, 4);
-  const mx = await one<{ mx: string | null }>(env, 'SELECT MAX(cn_number) AS mx FROM consignment_notes WHERE cn_number LIKE ?', `CN-${year}-%`);
-  const cnNumber = `CN-${year}-${String((mx?.mx ? Number(mx.mx.split('-')[2]) : 0) + 1).padStart(4, '0')}`;
+  let cnNumber = '';
   const now = nowIso();
-  await run(env, `INSERT INTO consignment_notes (id, cn_number, consignee_name, consignee_phone, cn_date, status, notes, total_sen, created_by, created_at, updated_at)
-                  VALUES (?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?)`,
-    id, cnNumber, consigneeName, strOrNull(b.consigneePhone), strOrNull(b.cnDate) ?? now.slice(0, 10), strOrNull(b.notes), total, session.userId, now, now);
+  // Two notes made at once can pick the same next number; the second header insert then clashes before anything is
+  // written and takes the next one (isNumberClash).
+  for (let attempt = 1; ; attempt++) {
+    cnNumber = await nextNumber(env, 'consignment_notes', 'cn_number', 'CN');
+    try {
+      await run(env, `INSERT INTO consignment_notes (id, cn_number, consignee_name, consignee_phone, cn_date, status, notes, total_sen, created_by, created_at, updated_at)
+                      VALUES (?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?)`,
+        id, cnNumber, consigneeName, strOrNull(b.consigneePhone), strOrNull(b.cnDate) ?? mytToday(), strOrNull(b.notes), total, session.userId, now, now);
+      break;
+    } catch (e) { if (attempt >= 5 || !isNumberClash(e)) throw e; }
+  }
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     await run(env, `INSERT INTO consignment_note_lines (id, consignment_note_id, line_no, item_code, description, uom, qty_consigned, qty_sold, qty_returned, unit_price_sen, line_total_sen)

@@ -12,8 +12,9 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm } from '../lib/format';
+import { rm, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
+import { csvSafe } from '../lib/export';
 
 /** Products & Maintenance — the product/item master, ported from Houzs ERP's SKU master.
  *  Browsed by category. Money is integer sen; the form takes RM and converts at the edge. */
@@ -197,14 +198,14 @@ export default function ProductsPage() {
 
   function exportCsv() {
     const head = ['code', 'name', 'category', 'size_label', 'branding', 'barcode', 'base_price', 'price1', 'unit_m3', 'status'];
-    const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    const esc = (raw: string) => { const v = csvSafe(raw); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
     const body = rows.map(p => [p.code, p.name, p.category, p.sizeLabel, p.branding, p.barcode,
       p.basePriceSen != null ? String(p.basePriceSen / 100) : '', p.price1Sen != null ? String(p.price1Sen / 100) : '',
       p.unitM3Milli ? String(p.unitM3Milli / 1000) : '', p.status].map(v => esc(String(v ?? ''))).join(','));
     const csv = [head.join(','), ...body].join('\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     const a = document.createElement('a');
-    a.href = url; a.download = `products-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+    a.href = url; a.download = `products-${todayMyt()}.csv`; a.click();
     URL.revokeObjectURL(url);
   }
 

@@ -216,3 +216,10 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Done: phones read, format and validate for every country through libphonenumber (src/lib/phone.ts, shared by format.ts, PhoneInput and the server's checkPhone); PhoneInput has a searchable country picker (MY +60 by default). 3,417 of 3,417 local guest phones read in their country's grouping (scripts/api-checks/phone-shapes.mjs).
 - Open: "already on file" for a new guest matches the phone text exactly, so a typed +60 18-980 0069 does not match an imported 60189800069; compare digits (phoneDigits) if duplicates appear.
 - Open: 3 stored guest phones are the right length but outside any known range (2 x +60 2..., 1 x +49), so they show ungrouped.
+
+## System bugs from Houzs / Hookka (fix/audit-system, docs/audits/system-from-sister-erps.md)
+- Done: same nights cannot be booked twice at the same moment (unit lock); status and dates changes are compare-and-set; statement generation is one transaction per period; supply chain numbers retry on a clash; MYT dates everywhere (gate myt-dates); CSV formula guard (gate csv-formula); uploads that are not images, video or PDF download instead of opening; 300 / 10,000-character text limits on every write; bookings CSV import validates each row.
+- Open: the 15-minute email/WhatsApp retry does not claim its rows, so a double-fired cron could resend one message; add a 'sending' state (migration) before the cron worker is deployed.
+- Open: built-in supply chain create screens add a placeholder row before the save answers and keep it if the save fails; only matters if the engine is switched off.
+- Open: field edits are last-write-wins (no version column); status and dates are already protected.
+- Note: booking-lifecycle.mjs signs an operations_staff cookie for the dev user, but the middleware now reads the live role from users, so its three non-management checks fail on any database where that user is management; give the check a real non-management user.

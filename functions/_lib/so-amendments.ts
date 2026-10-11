@@ -1,5 +1,5 @@
 /** Sales Order Amendments, ported from 2990's SCM (core workflow). Money integer sen. */
-import { type Env, all, one, run, nowIso } from './db';
+import { type Env, all, one, run, nowIso, mytToday } from './db';
 
 export const AMEND_STATUSES = ['REQUESTED', 'APPROVED', 'APPLIED', 'REJECTED', 'CANCELLED'] as const;
 export const isAmendStatus = (v: unknown): v is typeof AMEND_STATUSES[number] => typeof v === 'string' && (AMEND_STATUSES as readonly string[]).includes(v);
@@ -32,7 +32,7 @@ export function toAmendLinePayload(r: AmendLineRow) {
 }
 
 export async function nextAmendmentNumber(env: Env): Promise<string> {
-  const year = nowIso().slice(0, 4);
+  const year = mytToday().slice(0, 4);
   const row = await one<{ mx: string | null }>(env, 'SELECT MAX(amendment_no) AS mx FROM so_amendments WHERE amendment_no LIKE ?', `AMD-${year}-%`);
   const last = row?.mx ? Number(row.mx.split('-')[2]) : 0;
   return `AMD-${year}-${String((Number.isFinite(last) ? last : 0) + 1).padStart(4, '0')}`;
