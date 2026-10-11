@@ -27,7 +27,8 @@ const OPS_NONE = { operations_staff: 'none' as Level };
 export const AREAS: Area[] = [
   { key: 'dashboard', label: 'Dashboard', group: 'Workspace', api: ['dashboard'] },
   { key: 'portfolio', label: 'Portfolio', group: 'Workspace', api: ['portfolio'], managed: true, strictRead: true, defaults: OPS_NONE },
-  { key: 'reservations', label: 'Reservations', group: 'Operations', api: ['reservations', 'guests', 'blocks', 'guest-documents'] },
+  // Reservations arrive from the channels through the API; finance reads them but does not create or change them (owner, 11 Oct 2026).
+  { key: 'reservations', label: 'Reservations', group: 'Operations', api: ['reservations', 'guests', 'blocks', 'guest-documents'], defaults: { finance_admin: 'view' } },
   { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'], defaults: { finance_admin: 'none' } },
   { key: 'properties', label: 'Properties', group: 'Operations', api: ['properties', 'units', 'inventory', 'access-credentials', 'residence-rules'] },
   { key: 'serviceCases', label: 'Service cases', group: 'Operations', api: [] },
