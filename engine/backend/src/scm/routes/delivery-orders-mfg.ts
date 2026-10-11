@@ -10,6 +10,7 @@
 //
 // Mounted at '/delivery-orders-mfg' in apps/api/src/index.ts.
 
+import { lineDiscountShare } from '../shared/line-discount-share';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { normalizePhone } from '../shared/phone';
@@ -3909,7 +3910,9 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
   const doRows = sortedPicks.map((line, lineNo) => {
     const qty = pickQtyById.get(line.soItemId)!;
     const unit = line.unitPriceSen;
-    const discount = line.discountSen;
+    /* Conts C5: the pick carries ITS share of the SO line's discount, not the
+       whole discount on every partial delivery (shared/line-discount-share.ts). */
+    const discount = lineDiscountShare(line.discountSen, line.qty, line.qty - line.remaining, qty);
     const unitCost = line.unitCostSen;
     // Audit 2026-06-20 — clamp like the PO create path (negative-money guard).
     const lineTotal = Math.max(0, (qty * unit) - discount);

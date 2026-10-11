@@ -21,6 +21,7 @@
 // core needs them and a lib may not import a route.
 // ----------------------------------------------------------------------------
 
+import { lineDiscountShare } from '../shared/line-discount-share';
 import { normalizePhone, buildVariantSummary, isServiceLine } from '../shared';
 import { scopeToCompanyIdOrOpen } from './companyScope';
 import { mintMonthlyDocNo, insertWithDocNoRetry } from './doc-no';
@@ -493,7 +494,8 @@ export async function createSalesInvoiceFromDoLines(sb: Db, input: SiFromDoInput
     uom: line.uom,
     qty: pickQtyById.get(line.doItemId)!,
     unitPriceSen: line.unitPriceSen,
-    discountSen: line.discountSen,
+    // Conts C5: this invoice's share of the DO line's discount, not all of it.
+    discountSen: lineDiscountShare(line.discountSen, line.delivered, line.delivered - line.remaining, pickQtyById.get(line.doItemId)!),
     unitCostSen: line.unitCostSen,
     variants: line.variants,
     lineDeliveryDate: line.lineDeliveryDate,

@@ -24,7 +24,7 @@ import { statusLabel } from '../lib/status';
 type Status = 'SENT' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'CANCELLED';
 const FILTERS: (Status | 'all')[] = ['all', 'SENT', 'PARTIALLY_PAID', 'PAID', 'OVERDUE', 'CANCELLED'];
 
-interface SiLine { itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; lineTotalSen: number }
+interface SiLine { itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; discountSen?: number; lineTotalSen: number }
 interface Si { id: string; invoiceNumber: string; doNumber: string; soDocNo: string; customerName: string; invoiceDate: string; dueDate: string; status: Status; subtotalSen?: number; taxSen?: number; totalSen: number; paidSen: number; outstandingSen: number; notes: string; lines?: SiLine[] }
 interface Payload { data: Si[]; generatedAt: string }
 interface DoLine { itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; lineTotalSen: number }
@@ -111,6 +111,7 @@ const lineColumns: Column<SiLine>[] = [
   { key: 'item', label: 'Item', value: l => l.description, sub: l => <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{l.itemCode}</span>, text: l => `${l.description} ${l.itemCode}` },
   { key: 'qty', label: 'Qty', type: 'number', value: l => l.qty },
   { key: 'price', label: 'Unit price', type: 'money', value: l => l.unitPriceSen },
+  { key: 'discount', label: 'Discount', type: 'money', value: l => l.discountSen ?? 0 },
   { key: 'total', label: 'Line total', type: 'money', value: l => l.lineTotalSen },
 ];
 
