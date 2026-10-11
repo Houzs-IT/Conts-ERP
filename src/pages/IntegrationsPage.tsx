@@ -10,7 +10,7 @@ import Icon from '../components/Icon';
 import { useToast } from '../components/Toast';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import ChannexSyncPanel from '../components/ChannexSyncPanel';
+import ChannexSyncPanel, { type ChannexState } from '../components/ChannexSyncPanel';
 import { Eyebrow } from '../components/Metric';
 import { api, errorMessage } from '../lib/api';
 import { count, date, plural, timeWithZone, masked } from '../lib/format';
@@ -124,10 +124,14 @@ export default function IntegrationsPage() {
   const [reconnectId, setReconnectId] = useState<string | null>(null);
   const [reconnectBusy, setReconnectBusy] = useState(false);
   const [manageId, setManageId] = useState<string | null>(null);
+  const [channex, setChannex] = useState<ChannexState | null>(null);
   const toast = useToast();
 
   const rows: Row[] = (data?.data ?? []).map(r => ({ ...r, ...edits[r.id] }));
-  const problems = rows.filter(r => r.state === 'expired' || r.state === 'degraded' || r.state === 'failed').length;
+  // The Channex panel above the provider cards counts as one more integration.
+  const problems = rows.filter(r => r.state === 'expired' || r.state === 'degraded' || r.state === 'failed').length + (channex === 'attention' ? 1 : 0);
+  const connected = rows.filter(r => r.state === 'connected' || r.state === 'degraded').length + (channex === 'connected' || channex === 'attention' ? 1 : 0);
+  const notConnected = rows.filter(r => r.state === 'not_connected').length + (channex === 'not_connected' ? 1 : 0);
   const reconnectRow = reconnectId ? rows.find(r => r.id === reconnectId) ?? null : null;
   const manageRow = manageId ? rows.find(r => r.id === manageId) ?? null : null;
 
@@ -164,12 +168,12 @@ export default function IntegrationsPage() {
 
   return (
     <>
-      <PageHeader title="Integrations" sub={`${count(rows.filter(r => r.state === 'connected' || r.state === 'degraded').length)} connected · ${count(rows.filter(r => r.state === 'not_connected').length)} not connected · ${count(problems)} needing attention`}
+      <PageHeader title="Integrations" sub={`${count(connected)} connected · ${count(notConnected)} not connected · ${count(problems)} needing attention`}
         actions={<Button size="sm" variant="secondary" icon={<Icon name="FileUp" size="sm" />} onClick={() => { window.location.hash = '#/system/integrations/hostplatform'; }}>Import from HostPlatform</Button>} />
 
       {error && <StaleBanner message={`Showing the last status we have. ${error}`} onRetry={reload} />}
 
-      <ChannexSyncPanel />
+      <ChannexSyncPanel onState={setChannex} />
 
       {loading && rows.length === 0 ? (
         <Card><TableSkeleton rows={6} cols={3} /></Card>

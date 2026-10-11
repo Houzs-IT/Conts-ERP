@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card } from './Card';
 import { Button } from './Button';
 import { StatusBadge } from './StatusBadge';
@@ -15,7 +15,9 @@ interface Status { notifications?: { secretSet: boolean; registered: boolean | n
 
 /** Channex sync health: units linked, updates waiting or failed, the last calls with Channex's task
  *  ids, and a full sync (500 days, two calls) for going live or recovering after an outage. */
-export default function ChannexSyncPanel() {
+export type ChannexState = 'connected' | 'not_connected' | 'attention';
+
+export default function ChannexSyncPanel({ onState }: { onState?: (state: ChannexState | null) => void } = {}) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const { data, reload } = useApi<Status>(`/integrations/channex/status?page=${page}&pageSize=${pageSize}`);
@@ -24,6 +26,8 @@ export default function ChannexSyncPanel() {
   const canRun = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
   const [busy, setBusy] = useState(false);
   const [hookBusy, setHookBusy] = useState(false);
+  const state: ChannexState | null = !data || data.restricted ? null : !data.configured ? 'not_connected' : data.failed ? 'attention' : 'connected';
+  useEffect(() => { onState?.(state); }, [state, onState]);
   if (!data || data.restricted) return null;
   const n = data.notifications;
   const shown = data.recentCalls;
