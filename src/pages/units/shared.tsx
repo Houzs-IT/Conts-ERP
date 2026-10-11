@@ -4,6 +4,7 @@ import { Select as UiSelect } from '../../components/Select';
 import type { UnitReadiness, TaskState, BookingChannel, ReservationState } from '../../lib/types';
 import type { RevenueModel } from '../../lib/revenueModel';
 import type { OwnerAddress } from '../owners/shared';
+import type { PnlRow } from './PnlTable';
 
 export const BANKS = ['MBBE', 'PBBB', 'CIBB', 'RHBB', 'HLBB', 'AMBB', 'BIMB', 'UOVB', 'OCBC'];
 export const STATES = ['Kuala Lumpur', 'Selangor', 'Penang', 'Johor', 'Melaka', 'Perak', 'Negeri Sembilan'];
@@ -61,9 +62,9 @@ export interface UnitDetail {
     revpar: number; rating: number | null; reviewCount: number;
     revenue?: number; gross?: number;
   };
-  pnl?: { label: string; amount: number; type: string }[];
+  pnl?: PnlRow[];
   /** The company's side of the unit this month (what it keeps or pays, costs others paid). Money roles only. */
-  companyPnl?: { label: string; amount: number; type: string }[];
+  companyPnl?: PnlRow[];
   stays: { id: string; guestName: string | null; channel: BookingChannel; state: ReservationState; checkIn: string; checkOut: string; guestsCount: number; externalRef: string | null; grossBookingValue?: number }[];
   tasks: { id: string; title: string; kind: string; state: TaskState; dueAt: string | null; completedAt: string | null; assigneeName: string | null }[];
   maintenance: { id: string; title: string; detail: string | null; state: TaskState; vendorName: string | null; ownerApprovalRequired: boolean; blocksUnit: boolean; chargeTo: string; reportedAt: string; resolvedAt: string | null; quotedAmount?: number | null; finalAmount?: number | null }[];

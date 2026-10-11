@@ -136,7 +136,7 @@ export const TRANSFER_DOC_SHORT = {
   pi:  'PI',
   pr:  'PR',
   co:  'CO',
-  cn:  'CN',
+  cn:  'CSN',
   cr:  'CR',
   pco: 'Order',
   pcr: 'Receive',

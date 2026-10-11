@@ -30,22 +30,14 @@
  *  and the statement adds up to the sen. */
 import { prorate, nightsInWindow, daysInMonth, monthEndExclusive } from './revenue';
 import { modelOf, type RevenueModel } from './revenueModel';
+import { DEDUCTION_TERMS } from '../../src/lib/statementTerms';
 
 export type Query = <T = any>(sql: string, ...args: unknown[]) => Promise<T[]>;
 
 /** Half away from zero, as the workbook (Google Sheets ROUND) shows money; immune to 2444.9255 being 2444.92549999. */
 export const roundSen = (x: number) => Math.sign(x) * Math.round(Number(Math.abs(x).toFixed(6)));
 
-export const DEDUCTIONS = [
-  ['cleaning_basic', 'Basic Cleaning Fee', 'sessions'],
-  ['cleaning_deep', 'Deep Cleaning Fee', 'sessions'],
-  ['electricity', 'Electricity Usage', 'months'],
-  ['water', 'Water Usage', 'months'],
-  ['internet', 'Wi-Fi Subscription Fee', 'months'],
-  ['sewerage', 'IndahWater Usage', 'tasks'],
-  ['additional', 'Additional Deduction', 'tasks'],
-  ['misc', 'Miscellaneous Charges', 'services'],
-] as const;
+export const DEDUCTIONS = DEDUCTION_TERMS;
 export type DeductionCategory = typeof DEDUCTIONS[number][0];
 
 export interface UnitRow {

@@ -1,5 +1,6 @@
 /** Delivery Orders, ported from 2990's SCM. Delivers a sales order. Money integer sen. */
 import { type Env, all, one, run, nowIso, mytToday } from './db';
+import { lineDiscountOf } from './scm-util';
 
 export const DO_STATUSES = ['LOADED', 'DISPATCHED', 'IN_TRANSIT', 'SIGNED', 'DELIVERED', 'INVOICED', 'CANCELLED'] as const;
 export type DoStatus = typeof DO_STATUSES[number];
@@ -28,7 +29,7 @@ export function toDoHeaderPayload(r: DoHeaderRow) {
   };
 }
 export function toDoLinePayload(r: DoLineRow) {
-  return { id: r.id, salesOrderLineId: r.sales_order_line_id ?? '', lineNo: r.line_no, itemCode: r.item_code, description: r.description, uom: r.uom, qty: r.qty, returnedQty: r.returned_qty, unitPriceSen: r.unit_price_sen, lineTotalSen: r.line_total_sen };
+  return { id: r.id, salesOrderLineId: r.sales_order_line_id ?? '', lineNo: r.line_no, itemCode: r.item_code, description: r.description, uom: r.uom, qty: r.qty, returnedQty: r.returned_qty, unitPriceSen: r.unit_price_sen, discountSen: lineDiscountOf(r.qty, r.unit_price_sen, r.line_total_sen), lineTotalSen: r.line_total_sen };
 }
 
 export async function nextDoNumber(env: Env): Promise<string> {

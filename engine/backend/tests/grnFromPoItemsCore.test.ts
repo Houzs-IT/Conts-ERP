@@ -144,6 +144,8 @@ const poItems = (): Row[] => [
 
 const tables = (): Record<string, Row[]> => ({
   purchase_order_items: poItems(), grns: [], grn_items: [], inventory_movements: [],
+  // Conts C6: a copied line's code must be in Products.
+  mfg_products: [['M1', CO_A], ['M3', CO_A], ['M9', CO_B]].map(([code, company_id]) => ({ code, company_id, status: 'ACTIVE' })),
 });
 
 describe('createDraftGrnsFromPoItemsCore — creates a DRAFT, never posts stock', () => {

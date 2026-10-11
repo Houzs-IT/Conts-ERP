@@ -515,16 +515,26 @@ export function withCompanyCode<T extends Record<string, unknown>>(
  *
  *  HOUZS is NOT its bare company code (owner 2026-08-07): its documents used to
  *  carry no prefix at all, which read as anonymous next to `2990-DO-2608-001`.
- *  `HC-` is the house code the owner chose. Every other company keeps `<CODE>-`.
+ *  Every other company keeps `<CODE>-`.
+ *
+ *  CONTS: in this copy the single company keeps the internal code HOUZS
+ *  (root migrations-pg/0046), so this entry is Conts's own prefix. The Conts
+ *  owner chose `TC-` on 11 Oct 2026 (Houzs's house code is `HC-`). Only NEW
+ *  documents change: every minter reads and advances the series named by its
+ *  full month prefix (`TC-SO-2610`), which no existing `HC-...` number is in,
+ *  so the first TC- number of a series is -001 and no old number is re-issued
+ *  or renamed. Booking references (`TC-2610-0001`, pos.reservations) have no
+ *  document-kind segment and live in another table, so they cannot meet these.
  */
 export const BASE_COMPANY_CODE = "HOUZS";
+export const BASE_DOC_PREFIX = "TC-";
 const DOC_PREFIX_BY_COMPANY: Record<string, string> = {
-  [BASE_COMPANY_CODE]: "HC-",
+  [BASE_COMPANY_CODE]: BASE_DOC_PREFIX,
 };
 
 /**
  * PER-COMPANY DOC-NUMBER PREFIX (Phase 0d). Every company prefixes its doc
- * numbers — HOUZS with `HC-` (e.g. `HC-SO-2608-001`), everyone else with their
+ * numbers — HOUZS with `TC-` in Conts (e.g. `TC-SO-2610-001`), everyone else with their
  * own code (e.g. `2990-SO-2608-001`). The prefix alone keeps the companies'
  * monthly sequences from colliding on the GLOBAL unique doc_no index — no
  * per-company unique constraint (no migration) needed, because a minter's
@@ -550,7 +560,7 @@ export function companyDocPrefix(c: CompanyScopeCtx): string {
      context — as the scan background job did, minting
      "[object Object]-SO-2607-001") degrades to the BASE company's prefix. It
      used to degrade to "", which was the base company's prefix at the time;
-     now that HOUZS mints `HC-`, returning "" would invent a THIRD numbering
+     now that HOUZS mints a prefix, returning "" would invent a THIRD numbering
      shape belonging to no company. */
   if (typeof code !== "string" || !code) return docPrefixForCode(BASE_COMPANY_CODE);
   return docPrefixForCode(code);

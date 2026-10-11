@@ -48,6 +48,7 @@ import {
 } from '../lib/outstanding-po-lines';
 import { checkReceiptCosts, refuseZeroCostReceipt, zeroCostAckColumns, ZERO_COST_RECEIPT_ERROR, type ReceiptCostLine } from '../lib/zero-cost-receipt-guard';
 import { refuseWithoutWriting } from '../lib/no-write-refusal';
+import { unknownProductCodeRefusal } from '../lib/validate-item-codes';
 import { grnInheritedFieldChanges, grnInheritedLockedRefusal, grnHeaderInheritedChanges, grnHeaderInheritedRefusal, type GrnLinePrev, type GrnLinePatch } from '../lib/grn-inherited-lock';
 import { scopeToCompany, activeCompanyId, stampCompany, companyDocPrefix,
   isCrossCompanySource, crossCompanyConversionBlocked, crossCompanySourceRefusal,
@@ -1396,6 +1397,9 @@ grns.post('/', async (c) => {
   if (!Array.isArray(items) || !items.length) return refuseWithoutWriting(c, { error: 'items_required' }, 400);
 
   const sb = c.get('supabase'); const user = c.get('user');
+  // Conts C6: every product line's code must be in Products.
+  const unknownCodes = await unknownProductCodeRefusal(sb, items.map((it) => ({ code: it.itemCode, kind: it.materialKind })), activeCompanyId(c));
+  if (unknownCodes) return refuseWithoutWriting(c, unknownCodes, 409);
   const grnGroupOf = await skuCategoryResolver(sb, items.map((it) => ({ materialKind: 'mfg_product', itemCode: it.itemCode })), activeCompanyId(c) ?? null);
 
   /* Over-receipt guard — PO-linked lines can't accept more than the PO line's
@@ -1739,6 +1743,12 @@ export const createGrnFromPosHandler = async (c: Context<{ Bindings: Env; Variab
   }>).filter((it) => it.qty - (it.received_qty ?? 0) > 0);
 
   if (itemList.length === 0) return refuseWithoutWriting(c, { error: 'nothing_outstanding', message: 'No outstanding lines came back for this PO. Open it and check its received balance before treating it as received in full.' }, 400); // Refusing is right; the VERDICT was not. This read is company-scoped and scopeToCompany fails closed, so [] arrives with error: null whether the order is settled or the company could not be resolved. Five siblings in purchase-returns / purchase-consignment-* were reworded with it; audit:empty-state-claims keeps them honest.
+
+  // Conts C6: a copied line's code must still be in Products.
+  {
+    const unknownCodes = await unknownProductCodeRefusal(sb, itemList.map((it) => ({ code: it.item_code, kind: it.material_kind })), activeCompanyId(c));
+    if (unknownCodes) return refuseWithoutWriting(c, unknownCodes, 409);
+  }
 
   /* Warehouse-required guard (audit gap #6) — this batch-convert never set a
      header warehouse and relied on postGrnAndRollup's defaultWarehouseId
@@ -2654,6 +2664,9 @@ grns.post('/:id/items', async (c) => {
   if (!it.materialName) return refuseWithoutWriting(c, { error: 'material_name_required' }, 400);
 
   const sb = c.get('supabase');
+  // Conts C6: the line's code must be in Products.
+  const unknownAdd = await unknownProductCodeRefusal(sb, [{ code: it.itemCode, kind: it.materialKind }], activeCompanyId(c));
+  if (unknownAdd) return refuseWithoutWriting(c, unknownAdd, 409);
   const addLineGroupOf = await skuCategoryResolver(sb, [{ materialKind: 'mfg_product', itemCode: it.itemCode }], activeCompanyId(c) ?? null);
   const user = c.get('user');
   /* company-scope: PROVE THE PARENT GRN FIRST — the gate PATCH /:id opens with.
@@ -2998,6 +3011,11 @@ grns.patch('/:id/items/:itemId', async (c) => {
     patchCode: it.itemCode,
   });
   if (repoint) return refuseWithoutWriting(c, repoint, 409);
+  // Conts C6: a CHANGED code must be in Products.
+  if (it.itemCode !== undefined && String(it.itemCode ?? '') !== String((prev as { item_code?: string | null }).item_code ?? '')) {
+    const unknownEdit = await unknownProductCodeRefusal(sb, [{ code: it.itemCode, kind: it.materialKind ?? (prev as { material_kind?: string }).material_kind }], activeCompanyId(c));
+    if (unknownEdit) return refuseWithoutWriting(c, unknownEdit, 409);
+  }
   // Inherited-field lock — a PO-linked GRN line's item/variant is read-only
   // (owner 2026-08-20; grn-inherited-lock.ts). Cancel the GRN, edit the PO.
   const grnLockChanges = grnInheritedFieldChanges(prev as GrnLinePrev, it as GrnLinePatch, buildVariantSummary);

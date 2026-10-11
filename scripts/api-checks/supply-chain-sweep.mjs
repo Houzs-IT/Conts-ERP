@@ -66,6 +66,7 @@ await refuses('rate card cap below minimum', 'POST', '/api/rate-cards', { name: 
 
 // Lists send document headers only; the record carries the lines the drawers now fetch.
 {
+  await call('POST', '/api/products', { code: 'SWP-1', name: 'Sweep item', category: 'ACCESSORY' }); // documents only take Products codes (409 once it exists)
   const so = await call('POST', '/api/sales-orders', { customerName: `${tag} buyer`, lines: [{ itemCode: 'SWP-1', description: 'Sweep item', uom: 'UNIT', qty: 2, unitPriceSen: 1000, discountSen: 0 }] });
   check('sales order is raised', so.status === 201, `${so.status} ${so.text}`);
   if (so.json?.id) {

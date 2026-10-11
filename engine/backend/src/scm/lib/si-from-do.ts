@@ -21,6 +21,8 @@
 // core needs them and a lib may not import a route.
 // ----------------------------------------------------------------------------
 
+import { lineDiscountShare } from '../shared/line-discount-share';
+import { unknownProductCodeRefusal } from './validate-item-codes';
 import { normalizePhone, buildVariantSummary, isServiceLine } from '../shared';
 import { scopeToCompanyIdOrOpen } from './companyScope';
 import { mintMonthlyDocNo, insertWithDocNoRetry } from './doc-no';
@@ -416,6 +418,9 @@ export async function createSalesInvoiceFromDoLines(sb: Db, input: SiFromDoInput
     .map((id) => remainingMap.get(id)!)
     .sort((a, b) => a.doNumber.localeCompare(b.doNumber) || (a.lineSeq - b.lineSeq) || a.doItemId.localeCompare(b.doItemId));
   const firstDoId = sortedPicks[0]!.deliveryOrderId;
+  // Conts C6: a copied line's code must still be in Products.
+  const unknownCodes = await unknownProductCodeRefusal(sb, sortedPicks.map((l) => ({ code: l.itemCode })), companyId);
+  if (unknownCodes) return refuse(409, unknownCodes);
   const distinctDoNumbers = [...new Set(sortedPicks.map((l) => l.doNumber))].sort();
 
   const DO_HEADER =
@@ -493,7 +498,8 @@ export async function createSalesInvoiceFromDoLines(sb: Db, input: SiFromDoInput
     uom: line.uom,
     qty: pickQtyById.get(line.doItemId)!,
     unitPriceSen: line.unitPriceSen,
-    discountSen: line.discountSen,
+    // Conts C5: this invoice's share of the DO line's discount, not all of it.
+    discountSen: lineDiscountShare(line.discountSen, line.delivered, line.delivered - line.remaining, pickQtyById.get(line.doItemId)!),
     unitCostSen: line.unitCostSen,
     variants: line.variants,
     lineDeliveryDate: line.lineDeliveryDate,

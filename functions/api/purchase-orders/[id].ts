@@ -1,4 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
+import { refuseUnknownItemCodes } from '../../_lib/products';
 import { requireSession } from '../../_lib/auth';
 import { normalizeLines, toPoHeaderPayload, toPoLinePayload, checkPricedBody, type PoHeaderRow, type PoLineRow } from '../../_lib/purchase-orders';
 import { invalid, type Fields } from '../../_lib/validate';
@@ -69,6 +70,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b.lines !== undefined) {
     const lines = normalizeLines(b.lines);
     if (!lines.length) return fail('VALIDATION', 'A purchase order needs at least one line.', 422, { lines: 'Add at least one line.' });
+    { const unknownCodes = await refuseUnknownItemCodes(env, lines.map(l => l.itemCode)); if (unknownCodes) return unknownCodes; } // every item code must be in Products
     await run(env, 'DELETE FROM purchase_order_lines WHERE purchase_order_id = ?', id);
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];

@@ -1,4 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
+import { refuseUnknownItemCodes } from '../../_lib/products';
 import { requireSession } from '../../_lib/auth';
 import { isPcStatus, normalizeLines, computeTotals, toPcHeaderPayload, checkPricedBody, type PcHeaderRow } from '../../_lib/purchase-consignment';
 import { invalid, type Fields } from '../../_lib/validate';
@@ -49,6 +50,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!supplierId || !await one(env, 'SELECT 1 AS x FROM suppliers WHERE id = ?', supplierId)) return fail('VALIDATION', 'Pick a supplier.', 422, { supplierId: 'Unknown supplier.' });
   const lines = normalizeLines(b.lines);
   if (!lines.length) return fail('VALIDATION', 'Add at least one line.', 422, { lines: 'Add at least one line.' });
+  { const unknownCodes = await refuseUnknownItemCodes(env, lines.map(l => l.itemCode)); if (unknownCodes) return unknownCodes; } // every item code must be in Products
 
   const totals = computeTotals(lines, intOrNull(b.taxSen) ?? 0);
   const id = genId('pc');

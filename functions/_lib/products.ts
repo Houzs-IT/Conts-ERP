@@ -1,5 +1,6 @@
 /** Product master ("Products & Maintenance"), ported from Houzs ERP's mfg_products.
  *  Money is integer sen. Cost is finance-gated — never sent to a non-finance role. */
+import { type Env, all, fail } from './db';
 
 export const PRODUCT_CATEGORIES = [
   'SOFA', 'BEDFRAME', 'ACCESSORY', 'MATTRESS', 'BEDLINES', 'DINING', 'DIFFUSER', 'CARPET', 'SERVICE',
@@ -50,3 +51,15 @@ export const intOrNull = (v: unknown): number | null => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.round(n) : null;
 };
+
+/** Owner, 11 Oct 2026: an item code on any document (sales order, purchase order, delivery, goods receipt, invoice,
+ *  returns) must be in Products. Returns the refusal to send, or null when every code is a product. */
+export async function refuseUnknownItemCodes(env: Env, codes: string[]): Promise<Response | null> {
+  const unique = [...new Set(codes.map(c => c.trim()).filter(Boolean))];
+  if (!unique.length) return null;
+  const found = new Set((await all<{ code: string }>(env, `SELECT code FROM products WHERE code IN (${unique.map(() => '?').join(',')})`, ...unique)).map(r => r.code));
+  const unknown = unique.filter(c => !found.has(c));
+  if (!unknown.length) return null;
+  const msg = `${unknown.length === 1 ? 'This item code is' : 'These item codes are'} not in Products: ${unknown.join(', ')}. Pick a product from the list, or add it under Products first.`;
+  return fail('UNKNOWN_ITEM_CODE', msg, 409, { lines: msg });
+}

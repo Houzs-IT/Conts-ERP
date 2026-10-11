@@ -83,3 +83,15 @@ describe('docMonthTag — a series takes its month from the DOCUMENT date (owner
     expect(docMonthTag('31/03/2026')).toBe(tag);
   });
 });
+
+describe('consignment notes and credit notes never share a series (Conts owner, 11 Oct 2026)', () => {
+  it('a consignment note mints CSN-, a credit note keeps CN-', async () => {
+    const { CONSIGNMENT_NOTE_SERIES, nextMonthlyDocNo } = await import('./doc-no');
+    expect(CONSIGNMENT_NOTE_SERIES).toBe('CSN');
+    const credit = ['TC-CN-2610-001', 'TC-CN-2610-002'];
+    // A month with two credit notes on file: the first consignment note is still -001 of its own series.
+    expect(nextMonthlyDocNo(`TC-${CONSIGNMENT_NOTE_SERIES}-2610`, credit)).toBe('TC-CSN-2610-001');
+    // And the credit-note series is not advanced by consignment numbers.
+    expect(nextMonthlyDocNo('TC-CN-2610', ['TC-CSN-2610-009', ...credit])).toBe('TC-CN-2610-003');
+  });
+});

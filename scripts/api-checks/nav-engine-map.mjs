@@ -37,5 +37,10 @@ check('Project monitor is on the menu and opens the engine monitor view',
   paths(M.navFor('management', true)).includes('/projects/monitor') && M.ENGINE_PATH['/projects/monitor'] === '/projects?view=monitor', M.ENGINE_PATH['/projects/monitor']);
 check('Project monitor is hidden where the engine is not set up', !paths(M.navFor('management', false)).includes('/projects/monitor'));
 
+// Consignment is switched off for Conts (owner, 11 Oct 2026): off every menu, its addresses open Home.
+const consignment = ['/consignment/order', '/sales/consignment-notes', '/consignment/return', '/procurement/consignment', '/consignment/purchase-receive', '/consignment/purchase-return'];
+check('consignment is on no menu', !paths(M.navFor('management', true)).some((p) => consignment.includes(p)) && !paths(M.navFor('management', false)).some((p) => consignment.includes(p)));
+check('consignment addresses are switched off, sales orders are not', consignment.every((p) => M.switchedOff(p)) && !M.switchedOff('/sales/orders') && !M.switchedOff('/accounting/credit-notes'));
+
 console.log(fails ? `\n${fails} failed` : '\nall passed');
 process.exit(fails ? 1 : 0);

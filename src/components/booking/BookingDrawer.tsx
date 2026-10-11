@@ -57,6 +57,7 @@ interface Ledger {
 }
 interface Detail extends Required<Omit<BookingSummary, 'guestPhone'>> {
   guestPhone: string | null; guestEmail: string | null; guestId: string | null; nationality: string | null;
+  country: { code: string; name: string; from: 'nationality' | 'phone' } | null;
   unitId: string; notes: string | null; staffNotes: string | null; createdAt: string;
   money: Money; ledger: Ledger; timeline: TimelineEvent[]; moves: Move[];
   documents?: GuestDocument[]; approvals?: Approval[];
@@ -686,8 +687,15 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
             <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink mb-1">Guest</div>
             <div className="flex justify-between gap-3"><span className="text-muted-ink">Phone</span><span className="text-right break-all"><PhoneText value={d.guestPhone} className="text-ink" /></span></div>
             {d.guestEmail && <div className="flex justify-between gap-3"><span className="text-muted-ink">Email</span><span className="text-right break-all">{d.guestEmail}</span></div>}
-            <div className="flex justify-between gap-3"><span className="text-muted-ink">Nationality</span>
-              <span className="text-right">{nationality ?? '—'}{nationality && !/malaysia/i.test(nationality) ? <span className="text-muted-ink"> · tourism tax applies</span> : null}</span></div>
+            {nationality || !d.country ? (
+              <div className="flex justify-between gap-3"><span className="text-muted-ink">Nationality</span>
+                <span className="text-right">{nationality ?? '—'}{nationality && !/malaysia/i.test(nationality) ? <span className="text-muted-ink"> · tourism tax applies</span> : null}</span></div>
+            ) : (
+              // No nationality on record: the phone number's country says where the guest is likely from, but it is not
+              // a nationality, so it says nothing about tourism tax.
+              <div className="flex justify-between gap-3"><span className="text-muted-ink">Country</span>
+                <span className="text-right">{d.country.name}<span className="text-muted-ink"> · from phone number</span></span></div>
+            )}
             {d.guestId && <a href={`#/reservations/guests?g=${encodeURIComponent(d.guestId)}`} className="self-start mt-1 text-meta text-ink underline">Open guest profile</a>}
           </div>
         )}

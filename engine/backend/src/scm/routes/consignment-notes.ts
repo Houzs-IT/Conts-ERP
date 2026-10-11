@@ -36,7 +36,7 @@ import { reconcileUncostedAfterIn } from '../lib/oversell-retrocost';
 import { computeVariantKey, type VariantAttrs } from '../shared';
 import { validateItemCodes, unknownItemCodeResponse } from '../lib/validate-item-codes';
 import { resolveItemGroups } from '../lib/sku-category';
-import { mintMonthlyDocNo, insertWithDocNoRetry } from '../lib/doc-no';
+import { mintMonthlyDocNo, insertWithDocNoRetry, CONSIGNMENT_NOTE_SERIES } from '../lib/doc-no';
 import { warehouseLabel } from '../lib/warehouse-label';
 import { todayMyt } from '../lib/my-time';
 import { changedLockedCols, identityLockedRefusal } from '../shared/header-inherited-lock';
@@ -167,7 +167,7 @@ const nextNum = async (sb: any, c: any): Promise<string> => {
   const d = new Date();
   const yymm = `${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, '0')}`;
   const p = companyDocPrefix(c);
-  return mintMonthlyDocNo(sb, 'consignment_delivery_orders', 'do_number', `${p}CN-${yymm}`);
+  return mintMonthlyDocNo(sb, 'consignment_delivery_orders', 'do_number', `${p}${CONSIGNMENT_NOTE_SERIES}-${yymm}`);
 };
 
 /* Re-derive the note header's per-category revenue/cost totals + grand total from

@@ -66,6 +66,6 @@ describe('what the resolved code buys the scan job', () => {
     expect(code).not.toBeNull();
     expect(docPrefixForCode(code as string)).toBe('2990-');
     // The branch that used to run: no code at all, degrade to the base company.
-    expect(docPrefixForCode('HOUZS')).toBe('HC-');
+    expect(docPrefixForCode('HOUZS')).toBe('TC-');
   });
 });

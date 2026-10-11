@@ -33,6 +33,7 @@
 //
 // Mounted at '/sales-invoices' in scm/index.ts.
 
+import { lineDiscountShare } from '../shared/line-discount-share';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
@@ -66,7 +67,7 @@ import { doLineRemaining, doRemainingByItemId, checkSiOverRemaining, checkSiReop
 import { siShadowRefusal, unlinkedEditRefusal } from '../lib/unlinked-line-edit-guard';
 import { assertLinkedLineItemsMatch } from '../lib/line-link-item-identity';
 import { resolveSiHeaderSources, resolveDoLineSources } from '../lib/source-po-trace';
-import { validateItemCodes, unknownItemCodeResponse } from '../lib/validate-item-codes';
+import { validateItemCodes, unknownItemCodeResponse, unknownProductCodeRefusal } from '../lib/validate-item-codes';
 import { applyCustomerCreditToSi, creditFromCancelledSi, reverseCancelledSiCredit, reconcileSiOverpay } from '../lib/customer-credits';
 import { recordEntityAudit, diffFields, compactChanges, fieldChange, statusChange } from '../lib/entity-audit';
 import { SI_LINE_AUDIT_FIELDS, SI_LINE_AUDIT_SELECT } from '../lib/entity-audit-fields';
@@ -989,6 +990,9 @@ export const appendDoLinesToSalesInvoiceHandler = async (c: any) => {
   const baseLineNo = typeof (maxNoRow as { line_no?: number | null } | null)?.line_no === 'number'
     ? (maxNoRow as { line_no: number }).line_no + 1
     : null;
+  // Conts C6: a copied line's code must still be in Products.
+  const unknownCodes = await unknownProductCodeRefusal(sb, doLines.map((it) => ({ code: it.item_code })), activeCompanyId(c));
+  if (unknownCodes) return c.json(unknownCodes, 409);
   const rows = doLines
     .map((it) => ({ it, remaining: remainingMap.get(it.id as string) ?? 0 }))
     .filter(({ remaining }) => remaining > 0)
@@ -1001,7 +1005,8 @@ export const appendDoLinesToSalesInvoiceHandler = async (c: any) => {
       uom: it.uom,
       qty: Math.min(Number(it.qty ?? 0), remaining),
       unitPriceSen: it.unit_price_sen,
-      discountSen: it.discount_sen,
+      // Conts C5: this invoice's share of the DO line's discount, not all of it.
+      discountSen: lineDiscountShare(Number(it.discount_sen ?? 0), Number(it.qty ?? 0), Number(it.qty ?? 0) - remaining, Math.min(Number(it.qty ?? 0), remaining)),
       unitCostSen: it.unit_cost_sen,
       variants: it.variants,
       notes: it.notes,

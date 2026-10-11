@@ -10,6 +10,7 @@
 //
 // Mounted at '/delivery-orders-mfg' in apps/api/src/index.ts.
 
+import { lineDiscountShare } from '../shared/line-discount-share';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { normalizePhone } from '../shared/phone';
@@ -92,7 +93,7 @@ import { SO_CONVERT_HEADER, soHeaderToDoSource, missingSourceFields } from '../l
 import { canViewAllSales, canViewScmFinance } from '../lib/houzs-perms';
 import { SO_ITEM_FINANCE_KEYS } from '../lib/finance-keys';
 import { freezeShipCost } from '../lib/fulfillment-costing';
-import { validateItemCodes, unknownItemCodeResponse } from '../lib/validate-item-codes';
+import { validateItemCodes, unknownItemCodeResponse, unknownProductCodeRefusal } from '../lib/validate-item-codes';
 import { resolveItemGroups } from '../lib/sku-category';
 import { buildDoItemRow as buildItemRow, loadCarriedSoLinePhotos, carriedPhotoUrls } from '../lib/do-item-row';
 import { soRemainingByItemId } from '../lib/so-remaining-by-item';
@@ -3715,6 +3716,11 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
        guards determinism if two lines ever shared a seq. */
     .sort((a, b) => a.docNo.localeCompare(b.docNo) || (a.lineSeq - b.lineSeq) || a.soItemId.localeCompare(b.soItemId));
   const firstSoDocNo = sortedPicks[0]!.docNo;
+  // Conts C6: a copied line's code must still be in Products (the source SO's catalogue).
+  {
+    const unknownCodes = await unknownProductCodeRefusal(sb, sortedPicks.map((l) => ({ code: l.itemCode })), doCompanyId);
+    if (unknownCodes) return c.json(unknownCodes, 409);
+  }
 
   /* Sofa batch guard — block any picked sofa line with no production PO (no
      dye-lot batch ⇒ would steal another order's colour lot). Applies even to a
@@ -3909,7 +3915,9 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
   const doRows = sortedPicks.map((line, lineNo) => {
     const qty = pickQtyById.get(line.soItemId)!;
     const unit = line.unitPriceSen;
-    const discount = line.discountSen;
+    /* Conts C5: the pick carries ITS share of the SO line's discount, not the
+       whole discount on every partial delivery (shared/line-discount-share.ts). */
+    const discount = lineDiscountShare(line.discountSen, line.qty, line.qty - line.remaining, qty);
     const unitCost = line.unitCostSen;
     // Audit 2026-06-20 — clamp like the PO create path (negative-money guard).
     const lineTotal = Math.max(0, (qty * unit) - discount);

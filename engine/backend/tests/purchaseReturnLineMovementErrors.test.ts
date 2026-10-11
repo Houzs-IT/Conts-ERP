@@ -109,6 +109,8 @@ function tablesFor(): Record<string, Row[]> {
       unit_price_sen: 1000, line_refund_sen: 5000, item_group: null, variants: null,
     }],
     grns: [{ id: 'grn-1', company_id: CO, warehouse_id: WH }],
+    // Conts C6: a line's code must be in Products.
+    mfg_products: ['AKEMI-Q', 'AKEMI-K'].map((code) => ({ code, company_id: CO, status: 'ACTIVE' })),
     grn_items: [],
     inventory_movements: [],
     entity_audit_log: [],
