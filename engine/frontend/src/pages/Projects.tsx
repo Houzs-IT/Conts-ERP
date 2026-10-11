@@ -7567,7 +7567,7 @@ function LogisticsCrewSection({
   project: ProjectDetail["project"];
   patch: (body: Record<string, any>) => Promise<void>;
 }) {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   // Owner 2026-07-23: EVERYONE may VIEW the logistics crew (Setup / Dismantle /
   // Service), but only LOGISTIC + BD may EDIT it — plus Owner / Management /
   // Super Admin (directors), who edit everything. Everyone else (Sales, ops,
@@ -7575,7 +7575,6 @@ function LogisticsCrewSection({
   // stricter still — see canViewSchedule below.)
   const _pos = (user?.position_name ?? "").toLowerCase();
   const _role = (user?.role_name ?? "").toLowerCase();
-  const _email = (user?.email ?? "").toLowerCase();
   // Logistic = position "Logistic Admin" OR role "Logistic" — Syu / Syasya /
   // Logistic Admin all carry both, so any of them matches (owner 2026-07-23).
   const canEditLogistics =
@@ -7585,13 +7584,9 @@ function LogisticsCrewSection({
     /logistic/.test(_role) ||
     /\bbd\b/.test(_role);
   const readOnly = !canEditLogistics;
-  // Schedule reference is TIGHTER than the rest of the section (owner
-  // 2026-07-23): only BD + weisiang (Lim, weisiang329@gmail.com) may edit it —
-  // plus the Owner / admins (wildcard "*"), who can edit everything.
-  const canEditSchedule =
-    !!user?.permissions?.includes("*") ||
-    /\bbd\b/.test(_role) ||
-    _email === "weisiang329@gmail.com";
+  // Schedule reference is tighter than the rest of the section: editing it
+  // needs projects.manage (or the "*" wildcard), granted per role in Roles.
+  const canEditSchedule = can("projects.manage");
   // …and HIDDEN from everyone else (owner 2026-07-29): logistic may view /
   // download, the edit tier above may edit; nobody else sees the block at all.
   const canViewSchedule =
