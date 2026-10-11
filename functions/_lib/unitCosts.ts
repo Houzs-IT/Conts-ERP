@@ -7,12 +7,15 @@ import { LOCKED_SQL } from './expenses';
 /** A month's costs on a unit, or on every unit of an owner, grouped the way the owner reads them (owner, 11 Oct 2026):
  *    Cleaning        every clean charged to the unit (category cleaning / housekeeping)
  *    Maintenance     repairs (category maintenance, or raised from a maintenance job)
- *    Paid on behalf  bills The Conts pays for the owner: water, electricity, Wi-Fi, Indah Water, the building's
- *                    maintenance fee and anything else
+ *    Paid on behalf  bills The Conts pays for the owner: water, electricity, Wi-Fi, Indah Water, and anything else
  *  Only what the owner pays (charge_to 'owner') is deducted, before the operator's share, exactly as the statement
  *  deducts it (ownerStatement.ts reads the same rows); what the company, a tenant or a guest paid is shown apart.
  *  Owner credits and charges (owner_adjustments, the workbook's O2 lines such as "MAINTENANCE FEE SEPT 26") are listed
- *  with the paid-on-behalf bills but stay where the statement puts them: after the split. */
+ *  with the paid-on-behalf bills but stay where the statement puts them: after the split.
+ *  Maintenance fee (condo): the building's monthly fee comes off AFTER the operator's share, as on the owner's report.
+ *  Added from the unit or owner page it is an owner charge (BillModal posts it to /api/owners/:id/adjustments). One
+ *  saved before that as an 'other' expense ("Building maintenance fee ...") is deducted before the split; it is left
+ *  as it is (no money moves on its own) and flagged so finance can check it. */
 
 /** The statement's deduction rows (ownerStatement.ts DEDUCTIONS, printed on the Owner Income Report as the workbook
  *  names them) in the words the screens use. */
@@ -30,15 +33,16 @@ export const KINDS: { key: string; label: string; group: CostGroup }[] = [
   { key: 'electricity', label: 'Electricity', group: 'paid_on_behalf' },
   { key: 'internet', label: 'Wi-Fi', group: 'paid_on_behalf' },
   { key: 'sewerage', label: 'IndahWater', group: 'paid_on_behalf' },
-  { key: 'building_fee', label: 'Building maintenance fee', group: 'paid_on_behalf' },
-  { key: 'other', label: 'Other', group: 'paid_on_behalf' },
+  { key: 'building_fee', label: 'Maintenance fee (condo)', group: 'paid_on_behalf' },
+  { key: 'other', label: 'Other fees', group: 'paid_on_behalf' },
 ];
 const KIND = new Map(KINDS.map(k => [k.key, k]));
 
-/** The building's maintenance fee has no category of its own: it is stored as 'other' (the statement's Additional
- *  Deduction, where every owner-paid bill outside the named utilities goes) with a description starting
- *  "Building maintenance fee" (BillModal writes it so). */
+/** A maintenance fee saved as an expense before it became an owner charge: category 'other' with a description
+ *  starting "Building maintenance fee". The statement deducts these before the split (Additional Deduction). */
 export const BUILDING_FEE = /^building maintenance fee\b/i;
+/** A maintenance-fee owner charge: "MAINTENANCE FEE SEPT 26", from the workbook ("O2: ...") or added here. */
+export const MAINTENANCE_FEE_CHARGE = /^(o2:\s*)?maintenance fee\b/i;
 
 export function kindOf(e: { category: string; description: string | null; maintenance_id: string | null }): string {
   const c = e.category;
@@ -132,13 +136,18 @@ export async function unitCosts(env: Env, month: string, scope: { unitId?: strin
   };
   for (const it of items) { add(bucket(it.unitId), it); add(all_, it); }
   // Only the month's own credits and charges count in the month's figures; waiting ones are listed, not totalled.
+  // The month's maintenance-fee charges, after the split, shown against the Maintenance fee (condo) kind.
+  const feeAfter = new Map<string, number>();
   for (const a of adj) {
     if (!a.inMonth || a.state === 'held') continue;
     for (const b of [bucket(a.unitId), all_]) { if (a.amount < 0) b.totals.charges += -a.amount; else b.totals.credits += a.amount; }
+    if (a.amount < 0 && MAINTENANCE_FEE_CHARGE.test(a.description)) for (const key of [a.unitId, '']) feeAfter.set(key, (feeAfter.get(key) ?? 0) - a.amount);
   }
-  const shape = (b: typeof all_) => ({
+  // afterSplit: the maintenance-fee charges (building_fee only); amount stays what is deducted before the split.
+  const shape = (b: typeof all_, key: string) => ({
     totals: b.totals,
-    kinds: KINDS.map(k => ({ key: k.key, label: k.label, group: k.group, amount: b.kinds.get(k.key)?.owner ?? 0, others: b.kinds.get(k.key)?.others ?? 0 })),
+    kinds: KINDS.map(k => ({ key: k.key, label: k.label, group: k.group, amount: b.kinds.get(k.key)?.owner ?? 0, others: b.kinds.get(k.key)?.others ?? 0,
+      afterSplit: k.key === 'building_fee' ? feeAfter.get(key) ?? 0 : 0 })),
   });
   const model = (u: any): RevenueModel => modelOf(u);
   return {
@@ -147,9 +156,9 @@ export async function unitCosts(env: Env, month: string, scope: { unitId?: strin
       unitId: u.id, unitLabel: label(u), revenueModel: model(u),
       // A fixed rent or a master lease pays the owner the same whatever the costs: they are the company's.
       deductsFromOwner: model(u) !== 'grr' && model(u) !== 'master_lease',
-      ...shape(bucket(u.id)),
+      ...shape(bucket(u.id), u.id),
     })),
-    total: shape(all_),
+    total: shape(all_, ''),
     items, adjustments: adj,
   };
 }
