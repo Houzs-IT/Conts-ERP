@@ -31,6 +31,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (typeof b?.label === 'string') {
     const label = b.label.trim().slice(0, 120);
     if (!label) return fail('VALIDATION', 'Write the item.', 422, { label: 'Write the item.' });
+    // A double tap, or the same item typed twice, would list it twice.
+    if ((await checklistOf(env, t.id, t.kind)).some(i => i.label.trim().toLowerCase() === label.toLowerCase())) {
+      return fail('DUPLICATE', 'That item is already on the list.', 409, { label: 'Already on the list.' });
+    }
     const key = `c-${crypto.randomUUID()}`;
     await run(env, `INSERT INTO task_checklist_items (id, task_id, item_key, label, sort_order, created_at) VALUES (?, ?, ?, ?, 1000, ?)`,
       crypto.randomUUID(), t.id, key, label, now);

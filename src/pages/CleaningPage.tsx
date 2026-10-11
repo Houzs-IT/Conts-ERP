@@ -184,7 +184,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
           body={building || cleaner ? undefined : 'Cleans appear when guests check out. Add one by hand for a deep clean or a refresh.'}
           action={building || cleaner ? { label: 'Clear filters', onClick: () => { setBuilding(''); setCleaner(''); } } : { label: 'New clean', onClick: () => setCreating(true) }} />
       ) : groups.map(g => (
-        <BuildingCard key={g.id} group={g} now={now} selected={selected} busy={busy}
+        <BuildingCard key={g.id} group={g} now={now} future={date > mytDay(0)} selected={selected} busy={busy}
           onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onPlan={plan}
           onAssign={() => setAssignFor({ buildingId: g.id, name: g.name })} />
       ))}
@@ -229,10 +229,11 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
 
 /* ---------- one building ---------- */
 
-const COLS = 'md:grid md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.6fr)_minmax(0,0.8fr)_minmax(0,1.1fr)] md:items-center md:gap-2.5';
+// Columns follow the card's own width, not the window's: with the detail panel open the list is narrow on a laptop.
+const COLS = '@2xl:grid @2xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.6fr)_minmax(0,0.8fr)_minmax(0,1.1fr)] @2xl:items-center @2xl:gap-2.5';
 
-function BuildingCard({ group, now, selected, busy, onSelect, onGuestLeft, onPlan, onAssign }: {
-  group: { id: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }; now: number; selected: string | null; busy: string | null;
+function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLeft, onPlan, onAssign }: {
+  group: { id: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }; now: number; future: boolean; selected: string | null; busy: string | null;
   onSelect: (id: string) => void; onGuestLeft: (b: { taskId?: string; reservationId?: string }, unit: string) => void; onPlan: (d: Departure) => void; onAssign: () => void;
 }) {
   const count = group.rows.length + group.departures.length;
@@ -241,8 +242,8 @@ function BuildingCard({ group, now, selected, busy, onSelect, onGuestLeft, onPla
   const unassigned = open.filter(r => !r.cleanerId && !r.assigneeId && !r.assigneeName).length;
   const names = [...new Set(group.rows.map(r => r.assigneeName).filter(Boolean))];
   return (
-    <section className="bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
-      <header className="flex items-center justify-between gap-3 flex-wrap px-4 md:px-[18px] py-3 bg-muted">
+    <section className="@container bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
+      <header className="flex items-center justify-between gap-3 flex-wrap px-4 @2xl:px-[18px] py-3 bg-muted">
         <div className="min-w-0">
           <b className="text-heading">{group.name}</b>
           <span className="text-copy text-muted-ink"> · {count} {count === 1 ? 'unit' : 'units'} · {doneN} done</span>
@@ -258,22 +259,22 @@ function BuildingCard({ group, now, selected, busy, onSelect, onGuestLeft, onPla
       </div>
       {group.rows.map(r => <CleanRow key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} />)}
       {group.departures.map(d => (
-        <div key={d.reservationId} className={cx('px-4 md:px-[18px] py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy flex flex-col gap-1.5', COLS)}>
-          <div className="flex items-center gap-2"><b>{d.unitNumber}</b><span className="md:hidden"><StatusBadge tone="critical">No clean planned</StatusBadge></span></div>
+        <div key={d.reservationId} className={cx('px-4 @2xl:px-[18px] py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy flex flex-col gap-1.5', COLS)}>
+          <div className="flex items-center gap-2"><b>{d.unitNumber}</b><span className="@2xl:hidden"><StatusBadge tone="critical">No clean planned</StatusBadge></span></div>
           <div><b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b> · {d.guestName}{d.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late check-out</StatusBadge>}{d.state === 'checked_out' && <StatusBadge tone="gold" className="ml-1">Out</StatusBadge>}</div>
           <div>{d.next ? <><b className="[font-variant-numeric:tabular-nums]">{d.next.checkInTime}</b> · {d.next.guestName}</> : <span className="text-muted-ink">No arrival</span>}</div>
-          <div><span className="md:hidden text-muted-ink">Time left </span><TimeLeft at={d.next?.checkInAt} now={now} /></div>
-          <div className="hidden md:block text-muted-ink">—</div>
-          <div className="hidden md:block text-muted-ink">—</div>
+          <div><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={d.next?.checkInAt} now={now} /></div>
+          <div className="hidden @2xl:block text-muted-ink">—</div>
+          <div className="hidden @2xl:block text-muted-ink">—</div>
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="hidden md:inline"><StatusBadge tone="critical">No clean</StatusBadge></span>
+            <span className="hidden @2xl:inline"><StatusBadge tone="critical">No clean</StatusBadge></span>
             <Button size="sm" variant="primary" loading={busy === `plan-${d.reservationId}`} onClick={() => onPlan(d)}>Plan clean</Button>
-            {d.state !== 'checked_out' && <Button size="sm" variant="secondary" loading={busy === `left-${d.reservationId}`} onClick={() => onGuestLeft({ reservationId: d.reservationId }, d.unitNumber)}>Guest left</Button>}
+            {d.state !== 'checked_out' && !future && <Button size="sm" variant="secondary" loading={busy === `left-${d.reservationId}`} onClick={() => onGuestLeft({ reservationId: d.reservationId }, d.unitNumber)}>Guest left</Button>}
           </div>
         </div>
       ))}
       {group.repairs.length > 0 && (
-        <div className="px-4 md:px-[18px] py-2.5 [border-top:1px_solid_var(--color-line-soft)] bg-page flex flex-col gap-1">
+        <div className="px-4 @2xl:px-[18px] py-2.5 [border-top:1px_solid_var(--color-line-soft)] bg-page flex flex-col gap-1">
           {group.repairs.map(w => (
             <div key={w.id} className="flex items-center gap-2 text-meta flex-wrap">
               <Icon name="Wrench" size="sm" color="var(--color-gold-ink)" />
@@ -290,32 +291,32 @@ function BuildingCard({ group, now, selected, busy, onSelect, onGuestLeft, onPla
 function CleanRow({ r, now, active, busy, onSelect, onGuestLeft }: { r: Row; now: number; active: boolean; busy: boolean; onSelect: () => void; onGuestLeft: () => void }) {
   const st = statusOf('cleaning', r.status);
   const files = r.photoCount + r.videoCount;
-  const canMarkLeft = r.previous && !r.guestOut && r.status !== 'done' && r.status !== 'cleaning';
+  const canMarkLeft = r.previous && !r.guestOut && r.status !== 'done' && r.status !== 'cleaning' && r.day <= mytDay(0);
   return (
     <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); } }}
-      className={cx('px-4 md:px-[18px] py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer flex flex-col gap-1.5 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
+      className={cx('px-4 @2xl:px-[18px] py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer flex flex-col gap-1.5 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
         active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'hover:bg-page', r.status === 'done' && 'text-muted-ink')}>
       <div className="flex items-center gap-2 flex-wrap">
         <b className="text-ink">{r.unitNumber}</b>
         {r.carriedOver && <StatusBadge tone="warning">From {dayLabel(r.day)}</StatusBadge>}
-        <span className="md:hidden ml-auto"><StatusBadge tone={st.tone}>{st.label}</StatusBadge></span>
+        <span className="@2xl:hidden ml-auto"><StatusBadge tone={st.tone}>{st.label}</StatusBadge></span>
       </div>
       <div className="min-w-0">
-        <span className="md:hidden text-muted-ink">Out </span>
+        <span className="@2xl:hidden text-muted-ink">Out </span>
         {r.previous ? <><b className="[font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b> · {r.previous.guestName}</> : <span className="text-muted-ink">No departing guest</span>}
         {r.previous?.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late check-out</StatusBadge>}
         {r.guestOut && r.guestLeftAt && <div className="text-meta text-gold-ink">Left at {hm(r.guestLeftAt)}</div>}
       </div>
       <div className="min-w-0">
-        <span className="md:hidden text-muted-ink">In </span>
+        <span className="@2xl:hidden text-muted-ink">In </span>
         {r.next ? <><b className="[font-variant-numeric:tabular-nums]">{r.next.checkInTime}</b> · {r.next.guestName}</> : <span className="text-muted-ink">No arrival</span>}
         {r.next?.earlyCheckIn && <StatusBadge tone="warning" className="ml-1">Early check-in</StatusBadge>}
       </div>
-      <div><span className="md:hidden text-muted-ink">Time left </span><TimeLeft at={r.next?.checkInAt} now={now} done={r.status === 'done'} /></div>
-      <div><span className="md:hidden text-muted-ink">Type </span>{KIND_LABEL[r.kind] ?? r.kind}</div>
-      <div className={cx('truncate', !r.assigneeName && 'text-danger')}><span className="md:hidden text-muted-ink">Cleaner </span>{r.assigneeName ?? 'Unassigned'}</div>
+      <div><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={r.next?.checkInAt} now={now} done={r.status === 'done'} /></div>
+      <div><span className="@2xl:hidden text-muted-ink">Type </span>{KIND_LABEL[r.kind] ?? r.kind}</div>
+      <div className={cx('truncate', !r.assigneeName && 'text-danger')}><span className="@2xl:hidden text-muted-ink">Cleaner </span>{r.assigneeName ?? 'Unassigned'}</div>
       <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="hidden md:inline"><StatusBadge tone={st.tone} className="whitespace-normal">{r.status === 'done' && files ? `Done · ${files} ${files === 1 ? 'file' : 'files'}` : st.label}</StatusBadge></span>
+        <span className="hidden @2xl:inline"><StatusBadge tone={st.tone} className="whitespace-normal">{r.status === 'done' && files ? `Done · ${files} ${files === 1 ? 'file' : 'files'}` : st.label}</StatusBadge></span>
         {canMarkLeft && (
           <Button size="sm" variant="secondary" loading={busy} onClick={e => { e.stopPropagation(); onGuestLeft(); }}>Guest left</Button>
         )}
@@ -376,7 +377,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
           {row.previous ? <><span><b>{row.previous.checkOutTime}</b> {row.previous.guestName}</span>
             {row.previous.lateCheckOut && <span className="text-meta text-warning">Late check-out</span>}
             {row.guestOut ? <span className="text-meta text-gold-ink font-medium">Guest out{row.guestLeftAt ? ` at ${hm(row.guestLeftAt)}` : ''}</span>
-              : !done && <Button size="sm" variant="secondary" className="mt-1 self-start" onClick={onGuestLeft}>Guest left</Button>}</>
+              : !done && row.day <= mytDay(0) && <Button size="sm" variant="secondary" className="mt-1 self-start" onClick={onGuestLeft}>Guest left</Button>}</>
             : <span className="text-muted-ink">No departing guest</span>}
         </div>
         <div className="rounded-control bg-gold-tint p-2.5 flex flex-col gap-0.5">

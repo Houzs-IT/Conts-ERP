@@ -176,7 +176,7 @@ export function MediaDrop({ upload, onDone, label = 'Add photos or videos', capt
     const files = Array.from(list).filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'));
     const skipped = Array.from(list).length - files.length;
     if (!files.length) { setErrors(skipped ? ['Only photos and videos can be added.'] : []); return; }
-    setErrors(skipped ? [`${skipped} file${skipped === 1 ? ' was' : 's were'} not a photo or video and were skipped.`] : []);
+    setErrors(skipped ? [skipped === 1 ? '1 file was not a photo or video and was skipped.' : `${skipped} files were not photos or videos and were skipped.`] : []);
     setProgress({ done: 0, total: files.length });
     const failed: string[] = [];
     for (let i = 0; i < files.length; i++) {
@@ -236,11 +236,15 @@ export function Checklist({ taskId, items, readOnly, onChange }: { taskId: strin
     try { const r = await api.post<{ data: ChecklistItem[] }>(`/housekeeping/tasks/${taskId}/checklist`, { key: it.key, done: !it.done }); onChange(r.data); setError(null); }
     catch (e) { onChange(items); setError(errorMessage(e, 'Not saved. Try again.')); }
   }
+  const [saving, setSaving] = useState(false);
   async function add() {
     const label = adding.trim();
-    if (!label) return;
+    if (!label || saving) return;
+    if (items.some(x => x.label.trim().toLowerCase() === label.toLowerCase())) { setError('That item is already on the list.'); return; }
+    setSaving(true);
     try { const r = await api.post<{ data: ChecklistItem[] }>(`/housekeeping/tasks/${taskId}/checklist`, { label }); onChange(r.data); setAdding(''); setError(null); }
     catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); }
+    finally { setSaving(false); }
   }
   return (
     <div className="flex flex-col">
@@ -254,7 +258,7 @@ export function Checklist({ taskId, items, readOnly, onChange }: { taskId: strin
         <div className="flex gap-2 mt-1.5">
           <input value={adding} onChange={e => setAdding(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void add(); } }}
             placeholder="Add an item, e.g. Replace kettle" aria-label="Add a checklist item" className={cx(INPUT, 'h-9')} />
-          <Button size="sm" variant="secondary" type="button" onClick={() => void add()} disabled={!adding.trim()} disabledReason="Write the item first.">Add</Button>
+          <Button size="sm" variant="secondary" type="button" loading={saving} onClick={() => void add()} disabled={!adding.trim()} disabledReason="Write the item first.">Add</Button>
         </div>
       )}
       {error && <span className="text-meta text-danger mt-1">{error}</span>}

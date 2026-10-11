@@ -70,10 +70,10 @@ export default function OperationsTodayPage() {
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Stat label="Arriving" value={data?.arrivals.length} hint={data ? `${data.arrivals.filter(a => a.readiness === 'ready').length} units ready` : undefined} />
+        <Stat label="Arriving" value={data?.arrivals.length} hint={data ? `${data.arrivals.filter(a => a.state === 'checked_in' || (a.readiness === 'ready' && (!a.cleanState || a.cleanState === 'resolved'))).length} units ready` : undefined} />
         <Stat label="Leaving" value={data?.departures.length} hint={data ? `${out} out so far` : undefined} />
         <Stat label="Cleans done" value={c ? `${c.done} / ${c.total}` : undefined} hint={c ? `${c.ready} ready to clean · ${c.cleaning} in progress${c.unassigned ? ` · ${c.unassigned} unassigned` : ''}` : undefined} warn={!!c?.unassigned} onClick={() => navigate('/operations/cleaning')} />
-        <Stat label="Repairs today" value={data?.repairs.length} hint={data ? `${data.urgent.length} urgent open` : undefined} warn={!!data?.urgent.length} onClick={() => navigate('/operations/maintenance')} />
+        <Stat label={pick === 'today' ? 'Repairs today' : 'Repairs tomorrow'} value={data?.repairs.length} hint={data ? `${data.urgent.length} urgent open` : undefined} warn={!!data?.urgent.length} onClick={() => navigate('/operations/maintenance')} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
@@ -82,6 +82,7 @@ export default function OperationsTodayPage() {
             <Line key={d.reservationId} channel={d.channel} time={d.checkOutTime} unit={`${d.propertyName} ${d.unitNumber}`} guest={d.guestName}
               right={d.guestOut ? <StatusBadge tone="gold">Guest out{d.taskState === 'resolved' ? ', cleaned' : ''}</StatusBadge>
                 : d.channel === 'owner_stay' ? <StatusBadge tone="neutral">Owner stay</StatusBadge>
+                : data!.date > data!.today ? <StatusBadge tone="neutral">Leaves {d.checkOutTime}</StatusBadge>
                 : <Button size="sm" variant="secondary" loading={busy === d.reservationId} onClick={() => void guestLeft(d)}>Guest out</Button>}
               sub={d.taskId ? undefined : 'No clean planned yet'} subTone="critical" />
           ))}
