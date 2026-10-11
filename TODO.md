@@ -253,7 +253,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Performance "Management fees" over 12 months only counts Aug 2026: the workbook's 整体报告 breakdown exists for that month alone.
 - The sign-in footer phone (+60 17-465 8868) is fixed in LoginPage.tsx; Settings > Support phone is not read there before sign-in.
 - Integrations header counts "2 not connected" from the provider cards only; the Channex panel above it is not counted.
-- A new password equal to the current one is accepted on My account.
 
 ## Reservations click sweep (fix/sweep-reservations, 11 Oct 2026)
 - Inbox: the messages table keeps no delivery state, so after a reload a reply WhatsApp refused looks sent (marked only until the page reloads). Needs a migration (a delivery column) — no number was reserved for this sweep.
