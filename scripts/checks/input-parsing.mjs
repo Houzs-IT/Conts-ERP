@@ -102,6 +102,8 @@ const PHONES = [
   ['27821234567', '+27 82 123 4567'],       // ZA
 ];
 for (const [raw, want] of PHONES) eq(`phone(${raw})`, phone(raw), want);
+// The company phone on guest invoices, receipts and {contact} in guest messages.
+for (const [raw, want] of [['011-6133 3289', '+60 11-6133 3289'], ['0116133 3289', '+60 11-6133 3289'], ['+60 17-465 8868', '+60 17-465 8868'], ['60123456789', '+60 12-345 6789'], ['', '']]) eq(`company phone ${JSON.stringify(raw)}`, phone(raw), want);
 eq('phone digits for links', phoneDigits('0189800069'), '60189800069');
 eq('tel link', phoneHref('+44 7700 900123'), 'tel:+447700900123');
 eq('too few digits shows as typed', phone('12345'), '12345');
