@@ -214,14 +214,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     })),
     tasks: tasks.map(t => ({
       id: t.id, title: t.title, kind: t.kind, state: t.state,
-      dueAt: stampMyt(t.due_at), completedAt: stampMyt(t.completed_at), assigneeName: t.assignee_name || null,
+      // Raw ISO: the table's datetime column formats it (a pre-formatted "31 Aug 12:00" was read back as 2001).
+      dueAt: t.due_at, completedAt: t.completed_at, assigneeName: t.assignee_name || null,
     })),
     maintenance: maintenance.map(m => ({
       id: m.id, title: m.title, detail: m.detail, state: m.state,
       vendorName: m.vendor_name, ownerApprovalRequired: !!m.owner_approval_required,
       blocksUnit: !!m.blocks_unit, chargeTo: m.charge_to,
       // Raw ISO — UnitRecordPage formats these with dateShort(); a pre-formatted value would be
-      // re-parsed there. (dueAt/completedAt/occurredAt below are rendered as-is, so they stay stamped.)
+      // re-parsed there.
       reportedAt: m.reported_at, resolvedAt: m.resolved_at,
       ...(money ? { quotedAmount: m.quoted_amount, finalAmount: m.final_amount } : {}),
     })),

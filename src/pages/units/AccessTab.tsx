@@ -228,7 +228,7 @@ function CredentialModal({ initial, unitLabel, onClose, onSubmit }: { initial: C
   return (
     <CentreModal title={initial ? `Edit ${initial.label}` : 'Add access'} sub={`${unitLabel}. Codes are shown masked, and a code is never written to the audit log.`} onClose={onClose}
       footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason="Fill the name and the instruction" onClick={() => void submit()}>{initial ? 'Save' : 'Add access'}</Button></>}>
-      <Labeled label="Type" hint="DROPDOWN"><Select label="Type" value={kind} onChange={setKind} options={KINDS} /></Labeled>
+      <Labeled label="Type"><Select label="Type" value={kind} onChange={setKind} options={KINDS} /></Labeled>
       <Field label="Name" placeholder="e.g. Main door" value={label} onChange={e => setLabel(e.target.value)} />
       <Field label={initial && hadCode ? 'New code' : 'Code'} placeholder={initial && hadCode ? 'Leave blank to keep the current code' : 'e.g. 4417#  (leave blank if there is none)'}
         value={secret} autoComplete="off" spellCheck={false} disabled={removeCode} onChange={e => setSecret(e.target.value)} />

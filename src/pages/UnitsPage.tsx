@@ -438,7 +438,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           <ChannexChannelsCard unitId={u.id} linked={!!u.channexLinked} canManage={canManageChannels} onChanged={reload} />
           {d.pnl && (
             <Card>
-              <div className="pt-[18px] px-5 pb-[14px]"><span className="text-heading font-semibold">{periodLabel} P and L</span></div>
+              <div className="pt-[18px] px-5 pb-[14px]"><span className="text-heading font-semibold">{periodLabel} P&amp;L</span></div>
               {d.pnl.map((l, i) => {
                 const net = l.type === 'net';
                 return (
@@ -536,7 +536,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
             <Card>
               <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
                 <span className="text-heading font-semibold">Company side</span>
-                <span className="text-meta text-muted-ink">What the company keeps or pays on this unit, {periodLabel.toLowerCase()}. Costs paid by the company, a tenant or a guest show here, never on the owner statement.</span>
+                <span className="text-meta text-muted-ink">What the company keeps or pays on this unit, {periodLabel}. Costs paid by the company, a tenant or a guest show here, never on the owner statement.</span>
               </div>
               {d.companyPnl.map((l, i) => {
                 const net = l.type === 'net';

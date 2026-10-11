@@ -46,28 +46,28 @@ export function DetailsForm({ u, buildings, money, canEdit, onChange, onOpenCont
     <fieldset disabled={!canEdit} className="p-5 m-0 border-0 min-w-0">
       <SectionHead>Listing</SectionHead>
       <Grid3>
-        <Labeled label="Listing name" hint="FREE TEXT" help="Exactly as published on the channels">
+        <Labeled label="Listing name" help="Exactly as published on the channels">
           <Field label="" aria-label="Listing name" value={u.listingName} onChange={e => onChange({ listingName: e.target.value })} />
         </Labeled>
-        <Labeled label="Unit code" hint="FREE TEXT" help="Building prefix plus unit, created by The Conts">
+        <Labeled label="Unit code" help="Building prefix plus unit, created by The Conts">
           <Field label="" aria-label="Unit code" value={u.unitCode} onChange={e => onChange({ unitCode: e.target.value })} />
         </Labeled>
-        <Labeled label="Building" hint="DROPDOWN" help={u.parentUnitId ? 'A sub-unit stays in its parent unit\'s building.' : 'Moving a unit takes its sub-units with it.'}>
+        <Labeled label="Building" help={u.parentUnitId ? 'A sub-unit stays in its parent unit\'s building.' : 'Moving a unit takes its sub-units with it.'}>
           <Select label="Building" value={u.buildingId} disabled={!!u.parentUnitId} onChange={v => onChange({ buildingId: v, state: buildings.find(b => b.id === v)?.state ?? u.state })}
             options={buildings.map(b => ({ value: b.id, label: b.name }))} />
         </Labeled>
-        <Labeled label="State" hint="FROM BUILDING" help="Set on the building. Edit the building to change it.">
+        <Labeled label="State" help="Set on the building. Edit the building to change it.">
           <ReadOnly>{building?.state ?? u.state}</ReadOnly>
         </Labeled>
-        <Labeled label="Address" hint="FREE TEXT" span2>
+        <Labeled label="Address" span2>
           <Field label="" aria-label="Address" value={u.address} onChange={e => onChange({ address: e.target.value })} />
         </Labeled>
-        <Labeled label="Bedrooms" hint="NUMBER" help="0 for a studio">
+        <Labeled label="Bedrooms" help="0 for a studio">
           <NumberInput label="" aria-label="Bedrooms" min={0} max={20} value={u.bedrooms ?? null}
             onChange={n => onChange({ bedrooms: n ?? undefined })} />
         </Labeled>
         {money && u.baseRate !== undefined && (
-          <Labeled label="Base nightly rate (RM)" hint="AMOUNT" help="The web price before channel uplifts. Saving it re-sends prices to linked channels.">
+          <Labeled label="Base nightly rate (RM)" help="The web price before channel uplifts. Saving it re-sends prices to linked channels.">
             <MoneyInput label="" aria-label="Base nightly rate" minSen={100} valueSen={u.baseRate}
               onChangeSen={sen => onChange({ baseRate: sen ?? 0 })} />
           </Labeled>
@@ -76,11 +76,11 @@ export function DetailsForm({ u, buildings, money, canEdit, onChange, onOpenCont
 
       <SectionHead>Owner</SectionHead>
       <Grid3>
-        <Labeled label="Owner name" hint="FREE TEXT"><Field label="" aria-label="Owner name" value={u.ownerName} onChange={e => onChange({ ownerName: e.target.value })} /></Labeled>
-        <Labeled label="IC or passport" hint="FREE TEXT" help="Accepts both formats"><Field label="" aria-label="IC or passport" value={u.ic} onChange={e => onChange({ ic: e.target.value })} /></Labeled>
-        <Labeled label="Bank name" hint="DROPDOWN"><Select label="Bank name" value={u.bankName} onChange={v => onChange({ bankName: v })} options={BANKS.map(b => ({ value: b, label: bankName(b) ?? b }))} /></Labeled>
-        <Labeled label="Bank account" hint="FREE TEXT"><Field label="" aria-label="Bank account" value={u.bankAccount} onChange={e => onChange({ bankAccount: e.target.value })} /></Labeled>
-        <Labeled label="Account holder" hint="FREE TEXT" span2><Field label="" aria-label="Account holder" value={u.accountHolder} onChange={e => onChange({ accountHolder: e.target.value })} /></Labeled>
+        <Labeled label="Owner name"><Field label="" aria-label="Owner name" value={u.ownerName} onChange={e => onChange({ ownerName: e.target.value })} /></Labeled>
+        <Labeled label="IC or passport" help="Accepts both formats"><Field label="" aria-label="IC or passport" value={u.ic} onChange={e => onChange({ ic: e.target.value })} /></Labeled>
+        <Labeled label="Bank name"><Select label="Bank name" value={u.bankName} onChange={v => onChange({ bankName: v })} options={BANKS.map(b => ({ value: b, label: bankName(b) ?? b }))} /></Labeled>
+        <Labeled label="Bank account"><Field label="" aria-label="Bank account" value={u.bankAccount} onChange={e => onChange({ bankAccount: e.target.value })} /></Labeled>
+        <Labeled label="Account holder" span2><Field label="" aria-label="Account holder" value={u.accountHolder} onChange={e => onChange({ accountHolder: e.target.value })} /></Labeled>
       </Grid3>
       <p className="-mt-3 mb-[22px] text-meta text-muted-ink">Owner and bank details belong to the owner, so a change here applies to every unit they own.</p>
 
@@ -195,7 +195,7 @@ export function BuildingModal({ initial, onClose, onSubmit, onDelete }: { initia
       footer={<>{onDelete && <ConfirmButton confirm={{ title: `Delete ${initial ? initial.name : 'this building'}?`, body: 'It has no units, and it is deleted for good.', confirmLabel: 'Delete building', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete building</ConfirmButton>}<Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" disabled={!ok} disabledReason="Fill name and city" onClick={() => onSubmit({ name: name.trim(), city: city.trim(), state })}>{initial ? 'Save' : 'Add building'}</Button></>}>
       <Field label="Building name" placeholder="e.g. Arte Mont Kiara" value={name} onChange={e => setName(e.target.value)} />
       <Field label="City / area" placeholder="e.g. Mont Kiara, 50480 KL" value={city} onChange={e => setCity(e.target.value)} />
-      <Labeled label="State" hint="DROPDOWN" help={initial ? 'Every unit in the building is in this state.' : undefined}><Select label="State" value={state} onChange={setState} options={STATES.map(s => ({ value: s, label: s }))} /></Labeled>
+      <Labeled label="State" help={initial ? 'Every unit in the building is in this state.' : undefined}><Select label="State" value={state} onChange={setState} options={STATES.map(s => ({ value: s, label: s }))} /></Labeled>
     </CentreModal>
   );
 }
