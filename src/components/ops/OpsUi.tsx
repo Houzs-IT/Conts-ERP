@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../Button';
+import Icon from '../Icon';
 import { cx } from '../../lib/design-tokens';
 import { api, errorMessage } from '../../lib/api';
 import { time, weekdayDate, dateTimeShort } from '../../lib/format';
+import { useToast } from '../Toast';
 
 /* ---------- small pieces shared by Cleaning, Maintenance, Today and the field app ---------- */
 
@@ -183,17 +185,27 @@ export function ReportDamageModal({ unitId, unitLabel, taskId, onClose, onDone }
   const [urgency, setUrgency] = useState<'normal' | 'urgent'>('normal');
   const [detail, setDetail] = useState('');
   const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const picked = usePickedMedia();
+  const toast = useToast();
   async function submit() {
     if (!title.trim()) { setError('Say what is broken.'); return; }
     setBusy(true); setError(null);
+    let id: string;
     try {
       const r = await api.post<{ id: string }>('/maintenance/issues', {
         unitId, title: title.trim(), detail: detail.trim() || undefined, category, urgency,
         reportSource: taskId ? 'cleaner' : 'staff', sourceTaskId: taskId, source: 'web',
       });
-      onDone(r.id);
-    } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); setBusy(false); }
+      id = r.id;
+    } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); setBusy(false); return; }
+    if (picked.files.length) {
+      setSending(true);
+      const failed = await picked.send(id);
+      if (failed.length) toast({ tone: 'warning', title: 'Damage reported, but some photos were not added.', body: `Not added: ${failed.join(', ')}. Add them on the Maintenance job.` });
+    }
+    onDone(id);
   }
   return (
     <OpsModal title="Report damage" sub={`${unitLabel}. Opens a Maintenance job on this unit.`} onClose={onClose} busy={busy}
@@ -216,6 +228,85 @@ export function ReportDamageModal({ unitId, unitLabel, taskId, onClose, onDone }
       <FormRow label="Details (optional)">
         <textarea className={TEXTAREA} value={detail} onChange={e => setDetail(e.target.value)} placeholder="Where it is, what you saw" maxLength={2000} />
       </FormRow>
+      <ProblemPhotos picked={picked} sending={sending} />
     </OpsModal>
+  );
+}
+
+/* ---------- photos of the problem, picked before the job exists and sent once it does ---------- */
+
+export interface PickedMedia { key: string; file: File; preview: string | null; video: boolean; state: 'ready' | 'uploading' | 'done' | 'failed'; error?: string }
+
+/** The photos and videos picked in a create form. Previews are freed when the form closes. */
+export function usePickedMedia() {
+  const [files, setFiles] = useState<PickedMedia[]>([]);
+  const live = useRef(files);
+  live.current = files;
+  useEffect(() => () => live.current.forEach(f => f.preview && URL.revokeObjectURL(f.preview)), []);
+  const add = (list: FileList | File[]) => {
+    const media = Array.from(list).filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'));
+    setFiles(fs => [...fs, ...media.map(f => ({ key: crypto.randomUUID(), file: f, video: f.type.startsWith('video/'), state: 'ready' as const, preview: f.type.startsWith('image/') ? URL.createObjectURL(f) : null }))]);
+    return Array.from(list).length - media.length;
+  };
+  const remove = (key: string) => setFiles(fs => { const f = fs.find(x => x.key === key); if (f?.preview) URL.revokeObjectURL(f.preview); return fs.filter(x => x.key !== key); });
+  /** Sends every picked file as a Before photo of the job, one request each, in order. Returns the names that failed;
+   *  the job itself is already saved, so a failed photo never undoes it. */
+  async function send(issueId: string): Promise<string[]> {
+    const failed: string[] = [];
+    for (const f of live.current) {
+      if (f.state === 'done') continue;
+      setFiles(fs => fs.map(x => (x.key === f.key ? { ...x, state: 'uploading' } : x)));
+      try {
+        await uploadTo(`/maintenance/issues/${issueId}/photos`, { kind: 'before' })(f.file);
+        setFiles(fs => fs.map(x => (x.key === f.key ? { ...x, state: 'done' } : x)));
+      } catch (e) {
+        failed.push(f.file.name);
+        setFiles(fs => fs.map(x => (x.key === f.key ? { ...x, state: 'failed', error: errorMessage(e, 'Not added.') } : x)));
+      }
+    }
+    return failed;
+  }
+  return { files, add, remove, send };
+}
+
+/** "Photos of the problem" in a create form: thumbnails of what was picked, a remove button on each, and an add tile.
+ *  While sending, each tile shows waiting, uploading, added or not added. */
+export function ProblemPhotos({ picked, sending }: { picked: ReturnType<typeof usePickedMedia>; sending: boolean }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [skipped, setSkipped] = useState(0);
+  const done = picked.files.filter(f => f.state === 'done').length;
+  return (
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <span className="text-meta font-medium text-muted-ink">Photos of the problem (optional)</span>
+      <div className="grid grid-cols-4 max-[420px]:grid-cols-3 gap-2">
+        {picked.files.map(f => (
+          <div key={f.key} title={f.error ?? f.file.name} className={cx('relative aspect-square rounded-control overflow-hidden bg-sunken', f.state === 'failed' && 'border border-solid border-danger-line')}>
+            {f.preview ? <img src={f.preview} alt={f.file.name} className={cx('w-full h-full object-cover block', f.state === 'failed' && 'opacity-40')} />
+              : <span className="absolute inset-0 grid place-items-center bg-charcoal text-white"><Icon name="Play" size="base" /></span>}
+            {f.state === 'uploading' && <span className="absolute inset-0 grid place-items-center bg-[var(--color-surface-scrim)] text-white text-caption font-medium">Uploading</span>}
+            {f.state === 'done' && <span className="absolute right-1 bottom-1 w-5 h-5 grid place-items-center rounded-full bg-card text-success"><Icon name="Check" size="sm" style={{ width: 12, height: 12 }} /></span>}
+            {f.state === 'failed' && <span className="absolute inset-0 grid place-items-center text-danger text-caption font-medium text-center px-1">Not added</span>}
+            {!sending && f.state !== 'done' && (
+              <button type="button" onClick={() => picked.remove(f.key)} aria-label={`Remove ${f.file.name}`}
+                className="absolute top-1 right-1 w-6 h-6 grid place-items-center rounded-full bg-card text-ink shadow-[var(--shadow-raised)] cursor-pointer hover:bg-muted">
+                <Icon name="X" size="sm" style={{ width: 13, height: 13 }} />
+              </button>
+            )}
+          </div>
+        ))}
+        {!sending && (
+          <button type="button" onClick={() => input.current?.click()}
+            className="aspect-square flex flex-col items-center justify-center gap-1 p-1.5 rounded-control border border-dashed border-line-strong bg-page text-muted-ink cursor-pointer text-center hover:border-gold hover:text-ink">
+            <Icon name="ImagePlus" size="base" />
+            <span className="text-meta font-medium leading-tight">Add photos</span>
+          </button>
+        )}
+      </div>
+      <input ref={input} type="file" multiple accept="image/*,video/*" className="hidden" aria-label="Photos of the problem"
+        onChange={e => { if (e.target.files?.length) setSkipped(picked.add(e.target.files)); e.target.value = ''; }} />
+      {sending && picked.files.length > 0 && <span className="text-meta text-muted-ink" aria-live="polite">Uploading photos: {done} of {picked.files.length} added.</span>}
+      {!sending && skipped > 0 && <span className="text-meta text-danger">{skipped === 1 ? '1 file was' : `${skipped} files were`} not a photo or video and was left out.</span>}
+      {!sending && !picked.files.length && <span className="text-meta text-muted-ink">Saved as the job's Before photos. Photos and videos.</span>}
+    </div>
   );
 }

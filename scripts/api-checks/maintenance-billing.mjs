@@ -1,5 +1,5 @@
 // Maintenance rework (11 Oct 2026): the short create form, the technician list deciding in-house or contractor,
-// quote + billing date + who pays, owner approval reaching the owner's portal, the unit's expense dated the billing
+// quote + billing date + who pays, owner approval (sent by the office only) reaching the owner's portal, the unit's expense dated the billing
 // date (and following it), money collected and the contractor paid, on a finished job too.
 // Needs migration 0108 applied, a fresh local database (see harness.mjs) and DB_URL pointing at it, e.g.
 //   DB_URL=postgres://postgres@127.0.0.1:55791/postgres API_BASE=http://localhost:8813 node scripts/api-checks/maintenance-billing.mjs
@@ -94,11 +94,31 @@ r = await call('GET', `/api/audit?entityTable=maintenance_issues&entityId=${id}`
 const acts = JSON.stringify(r.json ?? r.text);
 check('history records billing date, collected and contractor paid', r.status === 200 && /billingDate/.test(acts) && /contractorPaidAt/.test(acts) && /collectedAt/.test(acts), acts.slice(0, 300));
 
-// A job above the threshold: saving the quote alone asks the owner (the automatic path).
+// No threshold any more (owner, 11 Oct): a large quote alone neither waits nor tells the owner; only the button does.
 r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: 'Replace aircon compressor', category: 'aircon' });
 const big = r.json.id;
 r = await call('PATCH', `/api/maintenance/issues/${big}`, { quotedAmount: 450000, chargeTo: 'owner' });
-check('a quote above the threshold waits for the owner', r.status === 200 && r.json.state === 'waiting', r.text);
+check('a large quote does not wait for the owner by itself', r.status === 200 && r.json.state !== 'waiting', r.text);
 r = await callAsUser(owner, 'GET', '/api/notifications');
-check('and the owner is told without anyone pressing the button', r.json.data.some(n => n.kind === 'maintenance.owner_approval' && n.entityId === big), r.text.slice(0, 300));
+check('and the owner is not told until the office sends it', r.status === 200 && !r.json.data.some(n => n.kind === 'maintenance.owner_approval' && n.entityId === big), r.text.slice(0, 300));
+r = await call('POST', `/api/maintenance/issues/${big}/request-approval`, {});
+it = await get(big);
+check('sending it makes it wait', r.status === 200 && it.state === 'waiting', JSON.stringify(it));
+r = await call('PATCH', `/api/maintenance/issues/${big}`, { chargeTo: 'the_conts' });
+check('the company paying instead stops the wait', r.status === 200 && r.json.state !== 'waiting', r.text);
+r = await call('GET', '/api/maintenance/issues');
+check('the list no longer carries a threshold', r.status === 200 && !('threshold' in r.json), Object.keys(r.json).join());
+// Photos of the problem go up right after the job is made, also from a cleaner reporting damage.
+const BASE = process.env.API_BASE ?? 'http://localhost:8788';
+const { cookieFor } = await import('./harness.mjs');
+const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360f8cf00000301010018dd8db40000000049454e44ae426082', 'hex');
+const photo = async (issueId, role) => { const fd = new FormData(); fd.append('file', new Blob([png], { type: 'image/png' }), 'problem.png'); fd.append('kind', 'before');
+  return (await fetch(`${BASE}/api/maintenance/issues/${issueId}/photos`, { method: 'POST', headers: { cookie: cookieFor(role) }, body: fd })).status; };
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: 'Cracked mirror', category: 'furniture', reportSource: 'cleaner', source: 'field_app' }, 'housekeeper');
+check('a cleaner reports damage', r.status === 201, r.text);
+check('and adds the photo of it', await photo(r.json.id, 'housekeeper') === 201);
+const docs = await call('GET', `/api/maintenance/issues/${r.json.id}/documents`);
+check("it is one of the job's Before photos", docs.json?.data?.length === 1 && docs.json.data[0].stage === 'before', docs.text.slice(0, 200));
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: 'Office job', category: 'other' });
+check('a cleaner cannot add photos to a job they neither reported nor work on', await photo(r.json.id, 'housekeeper') === 403);
 done();
