@@ -116,7 +116,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, statement_id text, unit_id text, basis text, revenue_model text, terms_source text, nights int, days int, gross_income int, deductions int,
           net_income int, owner_pct float8, operator_share int, guarantee int, top_up int, fixed_rent int, payout_before_adjustments int, adjustments_total int, net_payout int, notes text, created_at text)`,
         JSON.stringify(unitRows));
-      await recordPool(tx, period, months.filter(m => m.guarantee > 0 && statements.some(s => s.owner_id === m.ownerId)), now);
     }
 
     return { locked: false as const, statements, existingOf, skipped, months };
@@ -140,30 +139,3 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   return json({ period, count, skipped, warnings: months.reduce((n, m) => n + m.warnings.length, 0), statements: statements.map(s => ({ ownerId: s.owner_id, id: s.id })) }, 202);
 };
-
-/** Package D guarantee pool (水池), one row per unit and month. A month above the minimum adds its surplus to the
- *  pool; a month below draws the shortfall from the pool first and the company pays the rest. A month the owner
- *  workbook already recorded is left as the workbook has it. */
-async function recordPool(env: Env, period: string, months: UnitMonth[], now: string) {
-  if (!months.length) return;
-  const prev = await all<{ unit_id: string; pool_balance: number | null }>(env, `
-    SELECT DISTINCT ON (unit_id) unit_id, pool_balance FROM guarantee_pool_months
-    WHERE month < ? AND unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) ORDER BY unit_id, month DESC`, period, JSON.stringify(months.map(m => m.unitId)));
-  const before = new Map(prev.map(p => [p.unit_id, Number(p.pool_balance ?? 0)]));
-  const rows = months.map(m => {
-    const balance = before.get(m.unitId) ?? 0;
-    const surplus = m.ownerShare - m.guarantee;
-    const fromPool = surplus < 0 ? Math.min(-surplus, Math.max(0, balance)) : 0;
-    return {
-      id: `pool-${m.unitId}-${period.replace('-', '')}`, unit_id: m.unitId, month: period, pool_balance: surplus >= 0 ? balance + surplus : balance - fromPool,
-      paid_from_pool: fromPool, company_top_up: m.topUp - fromPool, created_at: now, updated_at: now,
-    };
-  });
-  await run(env, `
-    INSERT INTO guarantee_pool_months (id, unit_id, month, pool_balance, paid_from_pool, company_top_up, source, created_at, updated_at)
-    SELECT x.id, x.unit_id, x.month, x.pool_balance, x.paid_from_pool, x.company_top_up, 'generated', x.created_at, x.updated_at
-    FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, month text, pool_balance int, paid_from_pool int, company_top_up int, created_at text, updated_at text)
-    ON CONFLICT (unit_id, month) DO UPDATE SET pool_balance = excluded.pool_balance, paid_from_pool = excluded.paid_from_pool,
-      company_top_up = excluded.company_top_up, updated_at = excluded.updated_at
-    WHERE guarantee_pool_months.source = 'generated'`, JSON.stringify(rows));
-}

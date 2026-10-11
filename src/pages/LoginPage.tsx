@@ -19,7 +19,7 @@ const COPY: Record<Screen, { eyebrow: string; heading: string; sub: string; subm
 };
 
 
-const SUPPORT_PHONE = '+60 17-465 8868';
+const SUPPORT_PHONE = '+60 11-6133 3289';
 
 export default function LoginPage({ forceChangePassword = false, resetToken = null }: { forceChangePassword?: boolean; resetToken?: string | null }) {
   const { login, verifyCode, requestReset, changePassword, resetPassword, checkResetToken } = useSession();

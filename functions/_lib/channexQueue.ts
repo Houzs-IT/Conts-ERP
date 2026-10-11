@@ -242,9 +242,10 @@ export async function queueFullSync(env: Env, unitIds?: string[], opts: { prices
   for (let i = 0; i < FULL_SYNC_DAYS; i++) dates.push(addDays(today, i));
   const ids = units.map(u => u.id);
 
+  // An inquiry holds no nights (owner, 11 Oct 2026: inquiries are not managed here; the channels handle them).
   const stays = await all<{ unit_id: string; check_in: string; check_out: string }>(env, `
     SELECT unit_id, check_in, check_out FROM reservations
-    WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND state IN ('inquiry','pending','confirmed','checked_in') AND check_out > ? AND check_in <= ?`, JSON.stringify(ids), today, last);
+    WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND state IN ('pending','confirmed','checked_in') AND check_out > ? AND check_in <= ?`, JSON.stringify(ids), today, last);
   const rates = await all<{ unit_id: string; channel: string; rate_date: string; rate: number }>(env, `
     SELECT unit_id, channel, rate_date, rate FROM channel_rates WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND rate_date BETWEEN ? AND ?`, JSON.stringify(ids), today, last);
   const uplifts = await all<{ unit_id: string; channel: string; uplift: number }>(env, `

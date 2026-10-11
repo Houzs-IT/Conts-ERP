@@ -41,68 +41,85 @@ const types = {
 
 const numbered = (sql: string) => { let i = 0; return sql.replace(/\?/g, () => `$${++i}`); };
 
-/** At most this many database connections open at once for one request. Production reaches Supabase through its
- *  session pooler, which admits 15 clients in all (log: "EMAXCONNSESSION max clients reached in session mode -
- *  max clients are limited to pool_size: 15", 11 Oct 2026); the unit page alone fired about 20 reads at once, so one
- *  person opening one unit could take every connection and the rest of their reads were refused with a 500. */
-const PER_REQUEST = 4;
+/** Connections one request's client may hold open at once. Production reaches Supabase through its session pooler,
+ *  which admits 15 clients in all (log: "EMAXCONNSESSION max clients reached in session mode - max clients are
+ *  limited to pool_size: 15", 11 Oct 2026). Each statement used to open and close its own connection, about 20 for
+ *  one unit page. One connection per request is enough: postgres.js sends a request's statements down it back to back
+ *  without waiting for each answer. Measured against a 15-client Postgres with ten people opening unit pages at once,
+ *  1 gave a 45 ms median and 60-95 ms slowest; 2 and 3 were no faster in the middle and ran over the limit, so their
+ *  slowest pages waited 0.4-1.7 s on the retry below. */
+const PER_REQUEST = 1;
 
-/** A per-request gate, set by the API middleware (functions/api/_middleware.ts) through `withDbGate`. Code running
- *  outside a request (the scheduled worker) has none and is not limited here. */
-class Gate {
-  private open = 0;
-  private waiting: (() => void)[] = [];
-  async take() {
-    if (this.open < PER_REQUEST) { this.open++; return; }
-    await new Promise<void>(go => this.waiting.push(go));
-  }
-  give() {
-    const next = this.waiting.shift();
-    if (next) next(); else this.open--;
-  }
-}
-interface Store<T> { run<R>(store: T, fn: () => R): R; getStore(): T | undefined }
-const gate: Store<Gate> = new ALS();
-export const withDbGate = <T>(fn: () => Promise<T>) => gate.run(new Gate(), fn);
+const open = (env: Env, max: number) =>
+  postgres(env.HYPERDRIVE.connectionString, { max, prepare: false, fetch_types: false, types });
 
 /** The pooler refuses a connection that would exceed its client limit before any statement is sent, so retrying
  *  that refusal cannot run anything twice. Any other error is thrown as it is. */
 // Supabase's pooler says EMAXCONNSESSION; Postgres itself says "too many clients" / "remaining connection slots are reserved".
 const poolFull = (e: unknown) => /EMAXCONNSESSION|max clients reached|too many clients|remaining connection slots/i.test(e instanceof Error ? e.message : String(e));
 
-async function onConnection<T>(work: (db: postgres.Sql) => Promise<T>, env: Env): Promise<T> {
-  const g = gate.getStore();
-  await g?.take();
-  try {
-    for (let attempt = 0; ; attempt++) {
-      const db = postgres(env.HYPERDRIVE.connectionString, { max: 1, prepare: false, fetch_types: false, types });
-      try {
-        return await work(db);
-      } catch (e) {
-        if (!poolFull(e) || attempt >= 5) throw e;
-        await new Promise(r => setTimeout(r, 100 * 2 ** attempt + Math.random() * 100));
-      } finally {
-        await db.end({ timeout: 0 });
-      }
+async function retryPoolFull<T>(work: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await work();
+    } catch (e) {
+      if (!poolFull(e) || attempt >= 5) throw e;
+      await new Promise(r => setTimeout(r, 100 * 2 ** attempt + Math.random() * 100));
     }
-  } finally {
-    g?.give();
   }
 }
 
-/** One short-lived connection per statement. Workers cannot share a connection across
- *  requests, and Hyperdrive keeps the real pool warm, so this is cheap. The role
- *  `pos_app` has search_path = pos, so table names stay unqualified. */
+/** A client of its own, closed when `work` ends: for code outside a request (the scheduled worker), background work
+ *  that outlives its request's client, and transactions. */
+async function onOwnConnection<T>(work: (db: postgres.Sql) => Promise<T>, env: Env): Promise<T> {
+  return retryPoolFull(async () => {
+    const db = open(env, 1);
+    try {
+      return await work(db);
+    } finally {
+      await db.end({ timeout: 0 });
+    }
+  });
+}
+
+/** One client per request, opened on its first statement and closed once the response is ready. A Worker may not use a socket opened by another request, so a client is
+ *  never shared across requests: each request gets its own store through `withRequestDb` (functions/api/_middleware.ts). */
+interface RequestDb { db?: postgres.Sql; closed: boolean }
+interface Store<T> { run<R>(store: T, fn: () => R): R; getStore(): T | undefined }
+const requestDb: Store<RequestDb> = new ALS();
+
+export async function withRequestDb<T>(fn: () => Promise<T>, waitUntil: (p: Promise<unknown>) => void): Promise<T> {
+  const store: RequestDb = { closed: false };
+  try {
+    return await requestDb.run(store, fn);
+  } finally {
+    // Marked closed first, so a statement from work queued with waitUntil that starts later opens its own client;
+    // one already running on this client is let finish (up to 10 s) before the sockets close.
+    store.closed = true;
+    const db = store.db;
+    store.db = undefined;
+    if (db) waitUntil(db.end({ timeout: 10 }).catch(() => {}));
+  }
+}
+
+/** The role `pos_app` has search_path = pos, so table names stay unqualified. */
 async function query<T>(env: Env, sql: string, args: unknown[]): Promise<T[]> {
   if (env.TX) return (await env.TX.unsafe(numbered(sql), args as never[])) as unknown as T[];
-  return onConnection(async db => (await db.unsafe(numbered(sql), args as never[])) as unknown as T[], env);
+  const store = requestDb.getStore();
+  if (!store || store.closed) {
+    return onOwnConnection(async db => (await db.unsafe(numbered(sql), args as never[])) as unknown as T[], env);
+  }
+  const db = store.db ??= open(env, PER_REQUEST);
+  return retryPoolFull(async () => (await db.unsafe(numbered(sql), args as never[])) as unknown as T[]);
 }
 
 /** Runs `fn` in one database transaction: every all/one/run/audit given the env it receives commits together, or
- *  none of them does if it throws. Used where a money action and its approval must land as one. */
+ *  none of them does if it throws. Used where a money action and its approval must land as one. It takes a connection
+ *  of its own rather than one of the request's: a statement inside `fn` that was given the outer env would otherwise
+ *  wait for the very connection the transaction holds. */
 export async function transaction<T>(env: Env, fn: (tx: Env) => Promise<T>): Promise<T> {
   if (env.TX) return fn(env);
-  return onConnection(async db => (await db.begin(sql => fn({ ...env, TX: sql }))) as T, env);
+  return onOwnConnection(async db => (await db.begin(sql => fn({ ...env, TX: sql }))) as T, env);
 }
 
 export async function all<T = Record<string, unknown>>(env: Env, sql: string, ...args: unknown[]) {

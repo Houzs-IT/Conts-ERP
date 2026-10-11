@@ -1,5 +1,5 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
-import { requireSession } from '../../../../_lib/auth';
+import { requireSession, isFieldRole, hasColumn } from '../../../../_lib/auth';
 import { mediaKind } from '../../../../_lib/media';
 
 /** POST /api/maintenance/issues/:id/photos — multipart `file` (a photo or a video), optional `kind` (before/after).
@@ -12,6 +12,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const id = String(params.id);
   const issue = await one<{ id: string; unit_id: string }>(env, 'SELECT id, unit_id FROM maintenance_issues WHERE id = ?', id);
   if (!issue) return fail('NOT_FOUND', 'That job no longer exists.', 404);
+  if (isFieldRole(session.role) && !(await assignedTo(env, id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
 
   const form = await request.formData().catch(() => null);
   const file = form?.get('file');
@@ -30,3 +31,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.photo', entityTable: 'maintenance_issues', entityId: id, after: { documentId: docId, stage, kind: media.kind } });
   return json({ documentId: docId, kind: media.kind }, 201);
 };
+
+/** A job assigned since migration 0105 names its technician's account; older jobs (and a database without the column)
+ *  are matched by the technician's name, the same rule as the field history (functions/api/audit/index.ts). */
+async function assignedTo(env: Env, id: string, userId: string) {
+  const byId = await hasColumn(env, 'maintenance_issues', 'assignee_user_id').catch(() => false);
+  const named = 'lower(m.vendor_name) = (SELECT lower(full_name) FROM users WHERE id = ?)';
+  return !!(await one(env, `
+    SELECT 1 AS x FROM maintenance_issues m
+    WHERE m.id = ? AND (${byId ? `m.assignee_user_id = ? OR (m.assignee_user_id IS NULL AND ${named})` : named})`,
+    id, ...(byId ? [userId] : []), userId));
+}
