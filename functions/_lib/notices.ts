@@ -1,5 +1,5 @@
 import { type Env, one, all } from './db';
-import { notifyUsers, taskPeople, technicianFor } from './notify';
+import { notifyUsers, taskPeople } from './notify';
 
 /** The notices staff get when something happens to a booking, a clean or a repair job. Every function here
  *  is safe to await inside a handler: notifyUsers never throws, and the lookups are wrapped the same way. */
@@ -87,12 +87,12 @@ export async function cleaningNotice(env: Env, id: string, event: 'assigned' | '
   }
 }
 
-interface Issue { id: string; title: string; unit: string; urgency: string | null; vendor_name: string | null; reported_by: string | null }
+interface Issue { id: string; title: string; unit: string; urgency: string | null; vendor_name: string | null; assignee_id: string | null; reported_by: string | null }
 
 async function issue(env: Env, id: string): Promise<Issue | null> {
   try {
     return await one<Issue>(env, `
-      SELECT m.id, m.title, m.urgency, m.vendor_name, m.reported_by, trim(coalesce(p.name, '') || ' ' || u.unit_number) AS unit
+      SELECT m.id, m.title, m.urgency, m.vendor_name, m.assignee_id, m.reported_by, trim(coalesce(p.name, '') || ' ' || u.unit_number) AS unit
       FROM maintenance_issues m JOIN units u ON u.id = m.unit_id LEFT JOIN properties p ON p.id = u.property_id WHERE m.id = ?`, id);
   } catch { return null; }
 }
@@ -106,7 +106,8 @@ export async function repairNotice(env: Env, id: string, event: RepairEvent, by:
   if (!m) return;
   const link = `/operations/maintenance?id=${encodeURIComponent(id)}`;
   const base = { link, entityTable: 'maintenance_issues', entityId: id, except: by };
-  const tech = await technicianFor(env, m.vendor_name);
+  // The technician's account; a contractor has none, so nobody is told by name.
+  const tech = m.assignee_id ? [m.assignee_id] : [];
   const urgent = m.urgency === 'urgent' ? 'Urgent repair' : 'Repair';
   switch (event) {
     case 'reported':

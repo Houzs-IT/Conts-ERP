@@ -23,7 +23,7 @@ async function mayOpen(env: Env, s: { userId: string; role: string }, d: Doc): P
         SELECT 1 AS x FROM tasks t LEFT JOIN cleaners c ON c.id = t.cleaner_id
         WHERE t.id = ? AND (t.assignee_id = ? OR t.completed_by = ? OR c.user_id = ?)`, d.task_id, s.userId, s.userId, s.userId));
     }
-    if (d.maintenance_id) return !!(await one(env, 'SELECT 1 AS x FROM maintenance_issues WHERE id = ? AND reported_by = ?', d.maintenance_id, s.userId));
+    if (d.maintenance_id) return !!(await one(env, 'SELECT 1 AS x FROM maintenance_issues WHERE id = ? AND (reported_by = ? OR assignee_id = ?)', d.maintenance_id, s.userId, s.userId));
     return false;
   }
   const lv = await levelsFor(env, s.role);

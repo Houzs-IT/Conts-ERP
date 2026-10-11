@@ -5,6 +5,7 @@ import { resolveUnit } from '../../_lib/ops';
 import { windowsFor } from '../../_lib/cleaning';
 import { CATEGORIES, URGENCIES, SOURCES, ASSIGNEE_KINDS, CHARGE_TO, approvalThreshold, needsApproval } from '../../_lib/maintenance';
 import { repairNotice } from '../../_lib/notices';
+import { applyTemplate } from '../../_lib/maintenanceTemplates';
 
 /** GET /api/maintenance/issues?state=&unitId= — every job, with its technician, category, urgency, source, repair
  *  windows (and the stays each overlaps), photo and document counts, and what it cost and who paid once done.
@@ -24,8 +25,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            s.code AS sku_code, s.name AS sku_name,
            (SELECT COUNT(*) FROM documents d WHERE d.maintenance_id = m.id AND d.kind IN ('photo','video')) AS photo_count,
            (SELECT COUNT(*) FROM documents d WHERE d.maintenance_id = m.id AND d.kind NOT IN ('photo','video')) AS document_count,
-           (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.maintenance_id = m.id) AS expensed
+           (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.maintenance_id = m.id) AS expensed,
+           (SELECT COUNT(*)::int FROM maintenance_checklist_items c WHERE c.issue_id = m.id) AS steps,
+           (SELECT COUNT(*)::int FROM maintenance_checklist_items c WHERE c.issue_id = m.id AND c.done_at IS NOT NULL) AS steps_done,
+           mt.name AS template_name
     FROM maintenance_issues m
+    LEFT JOIN maintenance_templates mt ON mt.id = m.template_id
     JOIN units u ON u.id = m.unit_id
     JOIN properties p ON p.id = u.property_id
     LEFT JOIN users r ON r.id = m.reported_by
@@ -42,7 +47,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       id: r.id, unitId: r.unit_id, unitNumber: r.unit_number, propertyName: r.property_name, buildingId: r.property_id,
       title: r.title, detail: r.detail, state: r.state,
       category: r.category ?? 'other', urgency: r.urgency ?? 'normal', source: r.source ?? 'staff', sourceTaskId: r.source_task_id ?? null,
-      vendorName: r.vendor_name, assigneeName: r.vendor_name, assigneeKind: r.assignee_kind ?? null,
+      vendorName: r.vendor_name, assigneeName: r.vendor_name, assigneeKind: r.assignee_kind ?? null, assigneeId: r.assignee_id ?? null,
+      templateId: r.template_id ?? null, templateName: r.template_name ?? null, doneNote: r.done_note ?? null,
+      checklist: { done: Number(r.steps_done), total: Number(r.steps) },
       // Raw ISO: the screen formats.
       reportedAt: r.reported_at, resolvedAt: r.resolved_at,
       blocksUnit: !!r.blocks_unit, blockedFrom: r.blocked_from, blockedTo: r.blocked_to,
@@ -103,9 +110,23 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (quoted == null && !field) quoted = sku.default_price;
   }
 
+  let templateId: string | null = null;
+  if (typeof b.templateId === 'string' && b.templateId) {
+    const t = await one<{ id: string }>(env, 'SELECT id FROM maintenance_templates WHERE id = ? AND archived_at IS NULL', b.templateId);
+    if (!t) return fail('NOT_FOUND', 'That template is no longer in use. Pick another or fill the job by hand.', 404, { templateId: 'Pick another template.' });
+    templateId = t.id;
+  }
+  // An in-house technician is an account: the job then shows on that person's phone. A contractor is a name.
+  let assigneeId: string | null = null, techName: string | null = null;
+  if (typeof b.assigneeUserId === 'string' && b.assigneeUserId && !field) {
+    const u = await one<{ id: string; full_name: string }>(env, `SELECT id, full_name FROM users WHERE id = ? AND role = 'technician' AND is_active = 1`, b.assigneeUserId);
+    if (!u) return fail('VALIDATION', 'Pick an active technician.', 422, { assigneeUserId: 'Pick an active technician.' });
+    assigneeId = u.id; techName = u.full_name;
+  }
+
   const threshold = await approvalThreshold(env);
   const approval = needsApproval(quoted, chargeTo, threshold) || !!b.ownerApprovalRequired;
-  const vendor = typeof b.assigneeName === 'string' && b.assigneeName.trim() && !field ? b.assigneeName.trim().slice(0, 80) : null;
+  const vendor = techName ?? (typeof b.assigneeName === 'string' && b.assigneeName.trim() && !field ? b.assigneeName.trim().slice(0, 80) : null);
   const state = approval ? 'waiting' : vendor ? 'assigned' : 'open';
 
   const id = crypto.randomUUID(), now = nowIso();
@@ -113,17 +134,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     INSERT INTO maintenance_issues
       (id, unit_id, reported_by, state, title, detail, sku_id, quoted_amount, owner_approval_required,
        blocks_unit, blocked_from, blocked_to, charge_to, category, urgency, source, source_task_id, vendor_name, assignee_kind,
-       reported_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       assignee_id, template_id, reported_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id, unit.id, session.userId, state, b.title.trim().slice(0, 160), b.detail ? String(b.detail).slice(0, 2000) : null, skuId,
     quoted, approval ? 1 : 0,
     b.blocksUnit ? 1 : 0, b.blocksUnit ? (b.blockedFrom ?? mytToday()) : null, b.blockedTo ?? null,
-    chargeTo, category, urgency, source, sourceTaskId, vendor, vendor ? (b.assigneeKind ?? 'contractor') : null,
-    now, now, now);
+    chargeTo, category, urgency, source, sourceTaskId, vendor, assigneeId ? 'in_house' : vendor ? (b.assigneeKind ?? 'contractor') : null,
+    assigneeId, templateId, now, now, now);
+  if (templateId) await applyTemplate(env, id, templateId, session.userId);
 
   if (b.blocksUnit) await run(env, "UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?", now, unit.id);
 
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.create', entityTable: 'maintenance_issues', entityId: id, after: { unitId: unit.id, title: b.title, category, urgency, source, sourceTaskId, blocksUnit: !!b.blocksUnit, approval }, source: b.source ?? 'web' });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.create', entityTable: 'maintenance_issues', entityId: id, after: { unitId: unit.id, title: b.title, category, urgency, source, sourceTaskId, blocksUnit: !!b.blocksUnit, approval, templateId, assignee: vendor, assigneeId }, source: b.source ?? 'web' });
   await notify(env, {
     template: 'ops.damage_reported', recipient: 'operations@theconts.com', channel: 'in_app',
     subject: b.blocksUnit ? 'Unit blocked' : urgency === 'urgent' ? 'Urgent repair reported' : 'Damage reported',
@@ -131,5 +153,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     entityTable: 'maintenance_issues', entityId: id, urgent: !!b.blocksUnit || urgency === 'urgent',
   });
   await repairNotice(env, id, 'reported', session.userId);
+  if (assigneeId) await repairNotice(env, id, 'assigned', session.userId);
   return json({ id, state, ownerApprovalRequired: approval }, 201);
 };

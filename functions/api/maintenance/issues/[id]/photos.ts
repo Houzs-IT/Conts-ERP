@@ -1,6 +1,7 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
 import { requireSession } from '../../../../_lib/auth';
 import { mediaKind } from '../../../../_lib/media';
+import { fieldOwnsRepair } from '../../../../_lib/maintenanceTemplates';
 
 /** POST /api/maintenance/issues/:id/photos — multipart `file` (a photo or a video), optional `kind` (before/after).
  *  Stored in R2 (binding MEDIA); without that binding the request is refused, not faked. */
@@ -12,6 +13,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const id = String(params.id);
   const issue = await one<{ id: string; unit_id: string }>(env, 'SELECT id, unit_id FROM maintenance_issues WHERE id = ?', id);
   if (!issue) return fail('NOT_FOUND', 'That job no longer exists.', 404);
+  // A technician adds proof of work only to repairs given to their account; whoever reported it may add what they saw.
+  if (!(await fieldOwnsRepair(env, session, id, true))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
 
   const form = await request.formData().catch(() => null);
   const file = form?.get('file');

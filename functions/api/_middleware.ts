@@ -48,6 +48,11 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/tasks\/[^/]+\/(complete|photos)$/],
   ['POST', /^\/api\/maintenance\/issues$/],
   ['POST', /^\/api\/maintenance\/issues\/[^/]+\/photos$/],
+  // A technician's repairs (each handler checks the job is given to their account) and the templates for reporting.
+  ['GET', /^\/api\/field\/maintenance(\/[^/]+)?$/],
+  ['GET', /^\/api\/maintenance\/templates$/],
+  ['GET', /^\/api\/maintenance\/issues\/[^/]+\/(checklist|parts)$/],
+  ['POST', /^\/api\/maintenance\/issues\/[^/]+\/(start|end|checklist|parts)$/],
   ['GET', /^\/api\/documents\/[^/]+\/download$/],
   // The history of their own cleans and repairs (functions/api/audit/index.ts limits it to those).
   ['GET', /^\/api\/audit$/],

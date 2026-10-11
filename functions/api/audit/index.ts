@@ -34,7 +34,7 @@ async function fieldOwns(env: Env, userId: string, table: string, id: string) {
   if (table === 'maintenance_issues') {
     return !!(await one(env, `
       SELECT 1 AS x FROM maintenance_issues m
-      WHERE m.id = ? AND (m.reported_by = ? OR lower(m.vendor_name) = (SELECT lower(full_name) FROM users WHERE id = ?))`, id, userId, userId));
+      WHERE m.id = ? AND (m.reported_by = ? OR m.assignee_id = ?)`, id, userId, userId));
   }
   return false;
 }

@@ -238,12 +238,3 @@ export async function taskPeople(env: Env, taskId: string): Promise<string[]> {
     return r.map(x => x.id).filter((x): x is string => !!x);
   } catch { return []; }
 }
-
-/** A repair job names its technician by name; the active technician or housekeeper account with that name, if any. */
-export async function technicianFor(env: Env, name: string | null | undefined): Promise<string[]> {
-  if (!name?.trim()) return [];
-  try {
-    const r = await all<{ id: string }>(env, `SELECT id FROM users WHERE is_active = 1 AND role IN ('technician','housekeeper','operations_staff','operations_manager') AND lower(full_name) = lower(?)`, name.trim());
-    return r.map(x => x.id);
-  } catch { return []; }
-}

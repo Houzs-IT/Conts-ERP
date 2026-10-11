@@ -4,7 +4,8 @@ import { CATEGORIES, URGENCIES, ASSIGNEE_KINDS, CHARGE_TO, approvalThreshold, ne
 import { repairNotice } from '../../../_lib/notices';
 
 /** PATCH /api/maintenance/issues/:id — any of:
- *   { assigneeId | assigneeName, assigneeKind }  the technician or contractor (a NAME: outside vendors are not accounts)
+ *   { assigneeUserId }                           an in-house technician, by account
+ *   { assigneeName, assigneeKind }               a contractor (a NAME: outside vendors are not accounts)
  *   { category, urgency, chargeTo, title, detail, quotedAmount }
  *   { state: 'reopened' }                        a finished job back to work
  *  A quote (or a change of payer) is checked against the approval threshold: above it, a repair the owner pays waits
@@ -32,13 +33,26 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const before: Record<string, unknown> = {}, after: Record<string, unknown> = {};
   const put = (col: string, key: string, v: unknown) => { sets.push(`${col} = ?`); args.push(v); before[key] = cur[col]; after[key] = v; };
 
-  const name = typeof b?.assigneeName === 'string' ? b.assigneeName : typeof b?.assigneeId === 'string' ? b.assigneeId : undefined;
-  if (name !== undefined) {
-    if (!name.trim()) return fail('VALIDATION', 'Name the technician or contractor.', 422, { assigneeName: 'Enter a name.' });
-    put('vendor_name', 'assignee', name.trim().slice(0, 80));
-    const kind = b?.assigneeKind ?? cur.assignee_kind ?? 'contractor';
-    if (!ASSIGNEE_KINDS.includes(kind)) return fail('VALIDATION', 'In-house or contractor.', 422, { assigneeKind: 'In-house or contractor.' });
-    put('assignee_kind', 'assigneeKind', kind);
+  // An in-house technician is picked by account (assigneeUserId): the job then shows on that person's phone and in
+  // their history. A contractor is a name (assigneeName), with no account.
+  let name: string | undefined;
+  if (typeof b?.assigneeUserId === 'string' && b.assigneeUserId) {
+    const u = await one<{ id: string; full_name: string }>(env, `SELECT id, full_name FROM users WHERE id = ? AND role = 'technician' AND is_active = 1`, b.assigneeUserId);
+    if (!u) return fail('VALIDATION', 'Pick an active technician.', 422, { assigneeUserId: 'Pick an active technician.' });
+    name = u.full_name;
+    put('vendor_name', 'assignee', u.full_name.slice(0, 80));
+    put('assignee_id', 'assigneeId', u.id);
+    put('assignee_kind', 'assigneeKind', 'in_house');
+  } else {
+    name = typeof b?.assigneeName === 'string' ? b.assigneeName : typeof b?.assigneeId === 'string' ? b.assigneeId : undefined;
+    if (name !== undefined) {
+      if (!name.trim()) return fail('VALIDATION', 'Name the technician or contractor.', 422, { assigneeName: 'Enter a name.' });
+      put('vendor_name', 'assignee', name.trim().slice(0, 80));
+      const kind = b?.assigneeKind ?? cur.assignee_kind ?? 'contractor';
+      if (!ASSIGNEE_KINDS.includes(kind)) return fail('VALIDATION', 'In-house or contractor.', 422, { assigneeKind: 'In-house or contractor.' });
+      put('assignee_kind', 'assigneeKind', kind);
+      if (cur.assignee_id) put('assignee_id', 'assigneeId', null);
+    }
   }
   if (b?.category !== undefined) {
     if (!CATEGORIES.includes(b.category)) return fail('VALIDATION', 'Pick a category.', 422, { category: 'Pick a category.' });
@@ -84,6 +98,6 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   await run(env, `UPDATE maintenance_issues SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...args, now, id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: name !== undefined ? 'maintenance.assign' : 'maintenance.edit', entityTable: 'maintenance_issues', entityId: id, before, after });
-  if (name !== undefined && after.assignee !== before.assignee) await repairNotice(env, id, 'assigned', session.userId);
+  if (name !== undefined && (after.assignee !== before.assignee || ('assigneeId' in after && after.assigneeId !== before.assigneeId))) await repairNotice(env, id, 'assigned', session.userId);
   return json({ ok: true, state });
 };
