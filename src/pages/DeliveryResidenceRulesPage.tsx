@@ -101,7 +101,7 @@ function RuleDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Rule; 
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <Field label="Building type" placeholder="e.g. High-rise condo" value={f.buildingType} onChange={e => setF(s => ({ ...s, buildingType: e.target.value }))} />
         <NumberInput label="Service duration (minutes)" required min={0} suffix="min" value={minutes} onChange={setMinutes} error={minutes == null ? 'Enter the service duration.' : undefined} />
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <TimeField label="Earliest delivery" value={f.earliestDeliveryTime} onChange={v => setF(s => ({ ...s, earliestDeliveryTime: v }))} />
           <TimeField label="Latest delivery" min={f.earliestDeliveryTime || undefined} value={f.latestDeliveryTime} onChange={v => setF(s => ({ ...s, latestDeliveryTime: v }))} />
         </div>

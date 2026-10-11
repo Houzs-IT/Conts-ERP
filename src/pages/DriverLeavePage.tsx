@@ -109,7 +109,7 @@ function LeaveDrawer({ drivers, canWrite, onClose, onCreate }: { drivers: Driver
             {drivers.map(d => <option key={d.id} value={d.id}>{d.driverCode} · {d.name}</option>)}
           </select>
         </div>
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <DateField label="From" required value={startDate} onChange={setStartDate} />
           <DateField label="To" required min={startDate || undefined} value={endDate} onChange={setEndDate} />
         </div>

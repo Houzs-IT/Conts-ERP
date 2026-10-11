@@ -109,10 +109,10 @@ function WarehouseDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; o
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow">
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <Field label="Code" placeholder="e.g. WH-MAIN" value={f.code} onChange={set('code')} />
           <Field label="Name" placeholder="Warehouse name" value={f.name} onChange={set('name')} />
-          <div className="col-span-2"><Field label="Location" placeholder="Optional" value={f.location} onChange={set('location')} /></div>
+          <div className="sm:col-span-2"><Field label="Location" placeholder="Optional" value={f.location} onChange={set('location')} /></div>
           <div className="flex flex-col gap-[7px]">
             <label className="text-[12px] font-medium text-muted-ink">Status</label>
             <select value={f.isActive ? '1' : '0'} onChange={e => setF(s => ({ ...s, isActive: e.target.value === '1' }))}

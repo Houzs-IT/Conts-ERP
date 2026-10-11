@@ -179,7 +179,7 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
           <div className="flex flex-col gap-[7px]">
             <label className="text-[12px] font-medium text-muted-ink">Purchase order</label>
             <select value={poId} onChange={e => void pick(e.target.value)}
