@@ -72,12 +72,41 @@ describe('allocateOrderDeposit — the owner\'s split rule', () => {
   });
 
   test('money already taken ON the invoice is not displaced by the order\'s', () => {
-    const slices = allocateOrderDeposit(200_000, [
-      inv({ id: 'a', invoiceNumber: 'HC-SI-2608-001', totalSen: 300_000, ownPaidSen: 250_000 }),
+    const slices = allocateOrderDeposit(400_000, [
+      inv({ id: 'a', invoiceNumber: 'HC-SI-2608-001', totalSen: 300_000, ownPaidSen: 150_000 }),
       inv({ id: 'b', invoiceNumber: 'HC-SI-2608-002', totalSen: 300_000 }),
     ]);
-    expect(slices.get('a')).toBe(50_000);  // only what it still owed
-    expect(slices.get('b')).toBe(150_000); // the rest spilled
+    // Pool = 400,000 − 150,000 already received on the invoices = 250,000.
+    expect(slices.get('a')).toBe(150_000); // only what it still owed
+    expect(slices.get('b')).toBe(100_000); // the rest spilled
+  });
+
+  /* Conts owner decision C4 (11 Oct 2026): the invoice receipt is the record of
+     money received, so an order payment and an invoice receipt are never added
+     for one order — the order's money counts only past what its invoices have
+     already received. */
+  test('C4: a deposit taken on the order AND keyed again on the invoice counts once', () => {
+    // Order collected RM 2,000; the same RM 2,000 then recorded on the RM 5,000 invoice.
+    const slices = allocateOrderDeposit(200_000, [
+      inv({ id: 'a', invoiceNumber: 'TC-SI-2610-001', totalSen: 500_000, ownPaidSen: 200_000 }),
+    ]);
+    expect(slices.get('a')).toBe(0); // owes RM 3,000, not RM 1,000
+  });
+
+  test('C4: order money beyond what the invoices recorded still applies', () => {
+    // Order collected RM 3,000; the invoice has recorded RM 1,000 of it.
+    const slices = allocateOrderDeposit(300_000, [
+      inv({ id: 'a', invoiceNumber: 'TC-SI-2610-001', totalSen: 500_000, ownPaidSen: 100_000 }),
+    ]);
+    expect(slices.get('a')).toBe(200_000); // settled = max(3,000, 1,000) = RM 3,000
+  });
+
+  test('C4: receipts on a cancelled or draft invoice do not use up the order\'s money', () => {
+    const slices = allocateOrderDeposit(200_000, [
+      inv({ id: 'dead', invoiceNumber: 'TC-SI-2610-001', status: 'CANCELLED', totalSen: 500_000, ownPaidSen: 200_000 }),
+      inv({ id: 'live', invoiceNumber: 'TC-SI-2610-002', totalSen: 500_000 }),
+    ]);
+    expect(slices.get('live')).toBe(200_000);
   });
 
   test('a CANCELLED or DRAFT invoice absorbs nothing', () => {
@@ -100,7 +129,7 @@ describe('allocateOrderDeposit — the owner\'s split rule', () => {
      it is, and nothing may lose a customer's money between two invoices. Both
      halves are asserted over generated cases rather than a handful of examples,
      because the failure that matters is the combination nobody thought of. */
-  test('the slices always sum to min(order collected, what the invoices could absorb)', () => {
+  test('the slices always sum to min(order collected less invoice receipts, what the invoices could absorb)', () => {
     let seed = 20260823;
     const rnd = (n: number) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
     for (let round = 0; round < 400; round++) {
@@ -124,8 +153,12 @@ describe('allocateOrderDeposit — the owner\'s split rule', () => {
         .reduce((s, r) => s + Math.max(0, r.totalSen - r.ownPaidSen), 0);
       const allocated = [...slices.values()].reduce((s, v) => s + v, 0);
 
-      // Total-preserving: nothing invented, nothing lost.
-      expect(allocated).toBe(Math.min(collected, absorbable));
+      const receipts = rows
+        .filter((r) => absorbsOrderDeposit(r.status))
+        .reduce((s, r) => s + r.ownPaidSen, 0);
+      // Total-preserving: nothing invented, nothing lost — and never on top of
+      // money the invoices already received (C4).
+      expect(allocated).toBe(Math.min(Math.max(0, collected - receipts), absorbable));
       // Never more than the order actually holds...
       expect(allocated).toBeLessThanOrEqual(collected);
       // ...and never more than any single invoice still owes.
