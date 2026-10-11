@@ -121,3 +121,20 @@ Verdicts: **present** = found in Conts and fixed in this PR; **present, open** =
 - `scripts/api-checks/performance.mjs`: 22 checks against the real-sized local server, covering the calendar
   window, the import cap, the batched finalise and send (states, payouts, history, no double send), and that the
   cached-probe screens still answer.
+
+## Seen working (local, real-sized data, after merging origin/main)
+
+- Booking import from the Bookings screen: a 120-row CSV went out as 3 requests (50, 50, 20), all 201, and 120
+  bookings were created. They were deleted afterwards.
+- Hidden tab: with the page marked hidden for 138 s, nav badges made 0 requests (before: one every 60 s). Shown
+  again, it asked once within 3 s.
+- Icons: 29 screens opened with the new bundle; every menu item still has its icon. Bookings at 375 px: no
+  sideways scroll.
+- Bulk prices queue the same Channex rows as before: 3,150 outbox rows for 10 units, identical field for field
+  to the rows the old code wrote.
+- Statements: the first 50 were finalised and sent with the old code, the other 55 with the new. Result: 105 sent,
+  105 payouts (1 failed for missing bank details, as designed), 105 emails logged and 315 history rows, 3 per
+  statement in both halves.
+- `npm run check`: 14 checks pass. `entry-bundle` failed on the old build (277 KB) while it was still in `dist/`.
+  `tsc --noEmit` and `vite build` are clean. `scripts/api-checks/performance.mjs`: 22 of 22 passed on the first full
+  run. A rerun skips the statement part, because that month is already sent.
