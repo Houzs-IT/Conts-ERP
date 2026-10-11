@@ -11,6 +11,7 @@ import ChannelMark from '../components/ChannelMark';
 import { Field } from '../components/Field';
 import { DateField, TimeField, NumberInput, MoneyInput, PhoneInput } from '../components/inputs';
 import { Select } from '../components/Select';
+import { StatTile, StatRow } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import { fetchAllPages } from '../lib/export';
@@ -354,22 +355,17 @@ export default function BookingsPage() {
       <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onImportFile} className="hidden" aria-hidden />
 
       {/* To do: four cards that filter the list */}
-      <div className="grid grid-cols-4 gap-3 mb-4 max-lg:grid-cols-2" role="group" aria-label="To do">
-        {TODOS.map(t => {
-          const c = data?.todos?.[t.key];
-          const on = todo === t.key;
-          const warn = t.money && (c?.count ?? 0) > 0;
-          return (
-            <button key={t.key} type="button" onClick={() => setTodo(t.key)} aria-pressed={on}
-              className={cx('text-left [font:inherit] rounded-card border border-solid px-4 py-3 cursor-pointer flex flex-col gap-1 min-w-0 transition-colors',
-                on ? 'bg-black text-white border-black' : warn ? 'bg-warning-bg border-warning-line text-ink hover:border-warning' : 'bg-card border-line text-ink hover:border-muted-ink')}>
-              <span className={cx('text-meta', on ? 'text-[rgba(255,255,255,0.75)]' : warn ? 'text-warning' : 'text-muted-ink')}>{t.label}</span>
-              <span className="text-heading font-semibold [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">
-                {c ? num(c.count) : '–'}{t.money && c && c.count > 0 ? <span className="font-medium"> · {rm(c.outstanding, { cents: false })}</span> : null}
-              </span>
-            </button>
-          );
-        })}
+      <div className="mb-4" role="group" aria-label="To do">
+        <StatRow cols={4}>
+          {TODOS.map(t => {
+            const c = data?.todos?.[t.key];
+            const warn = t.money && (c?.count ?? 0) > 0;
+            return (
+              <StatTile key={t.key} label={t.label} onClick={() => setTodo(t.key)} active={todo === t.key} tone={warn ? 'warning' : undefined}
+                value={c ? `${num(c.count)}${t.money && c.count > 0 ? ` · ${rm(c.outstanding, { cents: false })}` : ''}` : '–'} loading={loading && !data} />
+            );
+          })}
+        </StatRow>
       </div>
 
       <DataTable<Row>

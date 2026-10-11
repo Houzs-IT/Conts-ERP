@@ -223,16 +223,16 @@ export default function InboxPage() {
         {/* ---- Selected conversation ---- */}
         <Card>
           {open ? (
-            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line)] flex items-center gap-3 flex-wrap">
+            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center gap-3 flex-wrap">
               {open.channel && <ChannelMark ch={open.channel} size={22} />}
               <div className="flex flex-col gap-px flex-1 min-w-0">
-                <span className="text-copy font-semibold">{open.guestName ?? 'Unknown guest'}</span>
+                <span className="text-[16px] font-semibold tracking-[-0.01em]">{open.guestName ?? 'Unknown guest'}</span>
                 <span className="text-meta text-muted-ink">{open.propertyName} {open.unitNumber}{open.subject ? ` · ${open.subject}` : ''}</span>
               </div>
               <StatusBadge tone="neutral" label={threadChannelLabel(open.channel)} size="sm" />
             </div>
           ) : (
-            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line)] text-meta text-muted-ink">
+            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] text-meta text-muted-ink">
               No conversation selected
             </div>
           )}

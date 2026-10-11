@@ -391,15 +391,15 @@ export default function AutomationsPage() {
           const groupRunning = groupRules.filter(r => r.running).length;
           return (
             <Card key={g.key}>
-              <div className="flex items-center gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line)]">
+              <div className="flex items-center gap-3 pt-5 pb-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
                 <span className="w-[34px] h-[34px] flex-none grid place-items-center rounded-control bg-muted text-ink-2">
                   <Icon name={g.icon} size="sm" />
                 </span>
                 <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-                  <span className="text-heading font-semibold">{g.label}</span>
+                  <span className="text-[16px] font-semibold tracking-[-0.01em]">{g.label}</span>
                   <span className="text-meta text-muted-ink">{g.desc}</span>
                 </div>
-                <span className="text-meta font-medium text-muted-ink whitespace-nowrap">
+                <span className="text-meta font-medium text-muted-ink whitespace-nowrap tabular-nums">
                   {groupRunning} of {groupRules.length} running
                 </span>
               </div>
