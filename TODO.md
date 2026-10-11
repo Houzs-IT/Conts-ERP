@@ -269,3 +269,14 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Generate owner report on the owner page builds only that owner's draft statement (POST /api/statements/generate ownerIds); it is refused only when that owner's statement is already sent, not when other owners' are. Owner to confirm that rule.
 - The old "Recurring monthly costs" rows other than cleaning (never deducted) are listed once on the unit as "never deducted"; owner to decide whether any should become bills paid on behalf.
 
+## Unit costs (feat/unit-costs, no migration)
+- Unit Financials has one Costs panel (cards + one dated table, month stepper) read from GET /api/expenses/breakdown, the rows and month rule (incurred_on in the month) the owner statement uses; "Every expense this month" is gone. Owner page "Every cost" uses the same table.
+- How a cost arrived is read, not stored: task_id = Cleaning job, maintenance_id = Maintenance job, utilities and condo fee = Bill, id 'wb-...' = Imported, else Manual. A source column would need a migration; not added.
+- Finished cleans with no cost (imported as done without a price, or a second clean the same day) are listed on the unit with "Charge N cleaning jobs" (POST /api/expenses/clean-charges), dated the day each was finished. Default guessed: charged at the unit's cleaning price, owner pays; owner to confirm.
+- A second clean on the same unit and day is still never charged automatically (chargeClean's import guard); it shows as uncharged and charging it is skipped too. Owner to decide whether two cleans in a day should both charge.
+- Maintenance: the unit reads category maintenance / maintenance_id rows by incurred_on; feat/maintenance-rework must write the billing date into incurred_on for the month to be right. Not checked against that branch.
+- Add a bill now covers every manual cost (Paid by included; Record expense removed); the bulk "Utility bills, all units" stays on the owner page only and now asks for a bill date (was the month's last day, unseen).
+- Owner adjustments dated in the month are rows of the unit table; held ones and earlier open ones are listed below it as waiting. Their hold/release actions for in-month ones are on the owner page only.
+- The statement and the panel both count rollup headers (parent_expense_id) with their line items; /api/finance/expenses does not. No rollups exist today; if they appear, decide which is right.
+- scripts/api-checks/unit-costs.mjs runs in CI (rbac job). Locally on PGlite use STATEMENTS=lib: POST /api/statements/generate opens a second connection for its transaction and PGlite serves one, so it hangs there.
+

@@ -13,7 +13,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (isFieldRole(session.role) || !session.manage || !MASTER_ROLES.includes(session.role)) {
-    return fail('FORBIDDEN', 'Only finance and management can charge cleans to a unit.', 403);
+    return fail('FORBIDDEN', 'Only finance and management can charge cleaning jobs to a unit.', 403);
   }
   const b = await request.json<any>().catch(() => null);
   const unitId = String(b?.unitId ?? ''), month = String(b?.month ?? '');

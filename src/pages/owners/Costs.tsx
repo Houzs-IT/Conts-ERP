@@ -399,8 +399,8 @@ export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPri
     try {
       const r = await api.post<{ charged: { amount: number }[]; skipped: { reason: string }[] }>('/expenses/clean-charges', { unitId, month });
       const sum = r.charged.reduce((n, c) => n + c.amount, 0);
-      toast({ tone: r.skipped.length ? 'warning' : 'success', title: `${plural(r.charged.length, 'clean')} charged, ${rm(sum)}.`,
-        body: r.skipped.length ? `${plural(r.skipped.length, 'clean')} not charged: ${[...new Set(r.skipped.map(s => s.reason))].join('; ')}.` : `On the ${monthLabel(month)} costs, dated the day each clean was finished.` });
+      toast({ tone: r.skipped.length ? 'warning' : 'success', title: `${plural(r.charged.length, 'cleaning job')} charged, ${rm(sum)}.`,
+        body: r.skipped.length ? `${plural(r.skipped.length, 'cleaning job')} not charged: ${[...new Set(r.skipped.map(s => s.reason))].join('; ')}.` : `On the ${monthLabel(month)} costs, dated the day each was finished.` });
       changed();
     } catch (e) { notifyFailure(e); } finally { setCharging(false); }
   }
@@ -422,14 +422,14 @@ export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPri
           {uncharged.length > 0 && (
             <div className="rounded-control border border-solid border-warning-line bg-warning-bg px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
               <span className="text-copy text-ink min-w-0 flex-[1_1_260px] [text-wrap:pretty]">
-                {plural(uncharged.length, 'finished clean')} in {monthLabel(month)} {uncharged.length === 1 ? 'has' : 'have'} no cost yet
+                {plural(uncharged.length, 'finished cleaning job')} in {monthLabel(month)} {uncharged.length === 1 ? 'has' : 'have'} no cost yet
                 ({uncharged.map(c => fmtDate(c.doneOn)).join(', ')}). Imported as done without a price, or finished on a day that already had a cleaning cost.
               </span>
               {canEdit && (
                 <ConfirmButton variant="secondary" size="sm" onConfirm={chargeCleans} disabled={charging}
-                  confirm={{ title: `Charge ${plural(uncharged.length, 'clean')} to ${unitLabel}?`, danger: false, confirmLabel: 'Charge cleans',
+                  confirm={{ title: `Charge ${plural(uncharged.length, 'cleaning job')} to ${unitLabel}?`, danger: false, confirmLabel: 'Charge cleaning jobs',
                     body: `Each is charged at the unit's cleaning price${cleaningPrice ? ` (${rm(cleaningPrice)} for a standard clean)` : ''}, owner pays, dated the day it was finished. A day that already has a cleaning cost is skipped.` }}>
-                  Charge {plural(uncharged.length, 'clean')}
+                  Charge {plural(uncharged.length, 'cleaning job')}
                 </ConfirmButton>
               )}
             </div>
@@ -455,7 +455,7 @@ export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPri
       </div>
       {data && waiting.length > 0 && (
         <div className="px-5 py-4 [border-top:1px_solid_var(--color-line-soft)] flex flex-col gap-2">
-          <Eyebrow>Owner credits and charges waiting for a statement</Eyebrow>
+          <Eyebrow>Owner adjustments waiting for a statement</Eyebrow>
           <PaidOnBehalfList items={[]} adjustments={waiting} ownerId={ownerId} showUnit={false} canChange={canEdit && data.canChangeAdjustments} onChanged={changed} />
         </div>
       )}
