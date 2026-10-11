@@ -1,7 +1,8 @@
-import { type Env, all, json, fail, audit } from '../../_lib/db';
+import { type Env, all, json, fail, transaction } from '../../_lib/db';
+import { auditMany } from '../../_lib/history';
 import { requireSession } from '../../_lib/auth';
 import { moneySchema, moneySql, MONEY_ROLES } from '../../_lib/bookingMoney';
-import { insertPayment, clean } from '../../_lib/bookingPayments';
+import { insertPayments, clean } from '../../_lib/bookingPayments';
 import { checkDate, invalid, type Fields } from '../../_lib/validate';
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -35,6 +36,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const reference = clean(b.reference, 120);
   let recorded = 0, total = 0;
   const skipped: { id: string; ref: string | null; reason: string }[] = [];
+  const pay: { reservationId: string; amount: number }[] = [];
   for (const id of ids) {
     const r = byId.get(id);
     if (!r) { skipped.push({ id, ref: null, reason: 'Not found.' }); continue; }
@@ -42,10 +44,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (r.state === 'cancelled' || r.state === 'no_show') { skipped.push({ id, ref: r.external_ref, reason: 'Cancelled or no-show.' }); continue; }
     const owed = Number(r.outstanding);
     if (!(owed > 0)) { skipped.push({ id, ref: r.external_ref, reason: 'Nothing outstanding.' }); continue; }
-    const p = await insertPayment(env, { reservationId: id, amount: owed, receivedOn: b.receivedOn, method: 'Booking site payout', reference, kind: 'ota_payout', note: 'Marked received in bulk', userId: session.userId });
-    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.payment', entityTable: 'reservations', entityId: id,
-      after: { paymentId: p.id, amount: owed, kind: 'ota_payout', receivedOn: b.receivedOn, reference, bulk: true } });
+    pay.push({ reservationId: id, amount: owed });
     recorded++; total += owed;
   }
+  // Every payout and its audit row land together, or none of them does.
+  await transaction(env, async tx => {
+    const made = await insertPayments(tx, pay.map(p => ({ ...p, receivedOn: b.receivedOn, method: 'Booking site payout', reference, kind: 'ota_payout', note: 'Marked received in bulk', userId: session.userId })));
+    await auditMany(tx, made.map((p, i) => ({ actorId: session.userId, actorLabel: session.fullName, action: 'reservation.payment', entityTable: 'reservations', entityId: pay[i].reservationId,
+      after: { paymentId: p.id, amount: pay[i].amount, kind: 'ota_payout', receivedOn: b.receivedOn, reference, bulk: true } })));
+  });
   return json({ recorded, total, skipped });
 };

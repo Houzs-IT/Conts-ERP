@@ -27,3 +27,17 @@ export async function insertPayment(env: Env, x: { reservationId: string; amount
     VALUES (?, ?, ?, ?, 'received', ?, ?, ?, ?, 'manual', ?, ?)`, pid, x.reservationId, x.amount, x.receivedOn, x.method, x.reference, x.kind, x.note, x.userId, now);
   return toPayment({ id: pid, reservation_id: x.reservationId, amount: x.amount, received_on: x.receivedOn, status: 'received', method: x.method, reference: x.reference, kind: x.kind, note: x.note, source: 'manual', created_by: x.userId, created_at: now });
 }
+
+type NewPayment = { reservationId: string; amount: number; receivedOn: string; method: string | null; reference: string | null; kind: string; note: string | null; userId: string };
+
+/** insertPayment for many bookings in one INSERT (bulk "payouts received"). Returns the rows in the order given. */
+export async function insertPayments(env: Env, xs: NewPayment[]) {
+  if (!xs.length) return [];
+  const now = nowIso();
+  const rows = xs.map(x => ({ id: crypto.randomUUID(), reservation_id: x.reservationId, amount: x.amount, received_on: x.receivedOn, method: x.method, reference: x.reference, kind: x.kind, note: x.note, created_by: x.userId }));
+  await run(env, `INSERT INTO booking_payments (id, reservation_id, amount, received_on, status, method, reference, kind, note, source, created_by, created_at)
+    SELECT x.id, x.reservation_id, x.amount, x.received_on, 'received', x.method, x.reference, x.kind, x.note, 'manual', x.created_by, ?
+    FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, reservation_id text, amount integer, received_on text, method text, reference text, kind text, note text, created_by text)`,
+    now, JSON.stringify(rows));
+  return rows.map(r => toPayment({ ...r, status: 'received', source: 'manual', created_at: now }));
+}

@@ -14,11 +14,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const id = String(params.id);
   const header = await one<AmendHeaderRow>(env, HEADER_SQL, id);
   if (!header) return fail('NOT_FOUND', 'That amendment does not exist.', 404);
-  const lines = await all<AmendLineRow>(env, 'SELECT id, sales_order_line_id, action, line_no, item_code, description, uom, old_qty, old_unit_price_sen, new_qty, new_unit_price_sen FROM so_amendment_lines WHERE amendment_id = ? ORDER BY line_no', id);
-  return json({ data: { ...toAmendHeaderPayload(header), lines: lines.map(toAmendLinePayload) } });
+  const [lines, rejected] = await Promise.all([
+    all<AmendLineRow>(env, 'SELECT id, sales_order_line_id, action, line_no, item_code, description, uom, old_qty, old_unit_price_sen, new_qty, new_unit_price_sen FROM so_amendment_lines WHERE amendment_id = ? ORDER BY line_no', id),
+    header.status === 'REJECTED'
+      ? one<{ reason: string | null }>(env, `SELECT after_state::jsonb ->> 'reason' AS reason FROM audit_log WHERE entity_table = 'so_amendments' AND entity_id = ? AND action = 'so_amendment.reject' ORDER BY occurred_at DESC LIMIT 1`, id).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+  return json({ data: { ...toAmendHeaderPayload(header), rejectionReason: rejected?.reason ?? '', lines: lines.map(toAmendLinePayload) } });
 };
 
-/** PATCH { action: approve | reject | cancel | apply } */
+/** PATCH { action: approve | reject | cancel | apply, reason? } — a reject needs a reason; so_amendments.reason is the
+ *  request's own reason, so the rejection's is kept in the audit entry (and shown back from there). */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -38,10 +44,13 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   }
   if (action === 'reject' || action === 'cancel') {
     if (cur.status === 'APPLIED' || cur.status === 'REJECTED' || cur.status === 'CANCELLED') return fail('CONFLICT', `A ${cur.status.toLowerCase()} amendment cannot be ${action}ed.`, 409);
+    const reason = typeof b.reason === 'string' ? b.reason.trim().slice(0, 300) : '';
+    if (action === 'reject' && !reason) return fail('VALIDATION', 'Say why the amendment is rejected.', 422, { reason: 'Write why it is rejected.' });
     const next = action === 'reject' ? 'REJECTED' : 'CANCELLED';
     await run(env, 'UPDATE so_amendments SET status = ?, updated_at = ? WHERE id = ?', next, now, id);
-    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: `so_amendment.${action}`, entityTable: 'so_amendments', entityId: id });
-    return json({ id, status: next });
+    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: `so_amendment.${action}`, entityTable: 'so_amendments', entityId: id,
+      ...(action === 'reject' ? { before: { status: cur.status }, after: { status: next, reason } } : {}) });
+    return json({ id, status: next, ...(action === 'reject' ? { rejectionReason: reason } : {}) });
   }
   if (action === 'apply') {
     if (cur.status !== 'APPROVED') return fail('CONFLICT', 'Only an approved amendment can be applied.', 409);

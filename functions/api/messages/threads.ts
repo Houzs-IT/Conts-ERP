@@ -28,7 +28,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         // Raw ISO, not pre-formatted here — the frontend's own time() (src/lib/format.ts) does the
         // display formatting. Sending an already-formatted "14:06" made the frontend call
         // new Date("14:06") on it, which is not a valid date, hence "Invalid Date" on screen.
-        messages: mine.map(m => ({ id: m.id, direction: m.direction, body: m.body, sentAt: m.sent_at, isAutomated: !!m.is_automated })),
+        messages: mine.map(m => ({ id: m.id, direction: m.direction, body: m.body, sentAt: m.sent_at, isAutomated: !!m.is_automated,
+          // Only replies sent once migration 0104 is in carry a delivery state; the rest show as before.
+          ...(m.delivery_state ? { status: m.delivery_state === 'sent' ? 'sent' : 'undelivered', deliveryReason: m.delivery_error ?? null } : {}) })),
       };
     }),
   });

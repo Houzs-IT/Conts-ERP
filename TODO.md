@@ -50,7 +50,6 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 ## Performance (audit 11 Oct 2026, docs/audits/performance-from-sister-erps.md)
 - Owner decision: Workers Paid on the Conts ERP account. On the free plan, Send statements makes one email call per owner (~100 a month) against 50 outside calls per request; calls past 50 fail and are not retried while the cron is off. Until then send 40 at a time.
 - A bulk price update for all 139 units over a year builds 152,205 rate rows in one request (12.6 s locally); UNTESTED against the free plan's CPU limit on Cloudflare.
-- Not yet batched (allow-listed in scripts/checks/no-query-in-loop.mjs): reservations/mark-paid-out (3 queries per booking), expenses/utilities (~6 per bill), payouts/index (payout run), approvals bulk approve.
 - Confirm the Hyperdrive origin is Supabase's session pooler (port 5432), not the transaction pooler.
 - libphonenumber (149 KB) is in the entry script because src/lib/format.ts formats phones; lazy-load it if the entry budget (scripts/checks/entry-bundle.mjs, 180 KB gzipped) gets tight.
 
@@ -100,7 +99,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Done (fix/audit-rbac): the level the Permissions chart shows is the level enforced, built-in or chosen: No access refuses reads in every area (exports and search included), View refuses writes. Reads other screens share (unit list, cleaner names, record history, supply chain reference lists) and cross-screen actions are listed with reasons in ROUTE_AREAS (functions/_lib/access.ts). Housekeepers and technicians are deny-by-default like owners (FIELD_ALLOWED). File downloads check the file's record. Checked by scripts/api-checks/rbac-matrix.mjs (361 route-methods x 8 roles + 40 scenarios) and the require-permission gate in npm run check; catalogue docs/audits/rbac-from-sister-erps.md.
 - Owner to decide: management can make a password reset link for another management account (Users > Reset link), which is a way into that account; limit reset links to non-management accounts?
 - Open: some handlers look a record up before checking the role, so a desk role can tell that a record id exists (404 vs 403); ids are random, low risk.
-- Open: a technician's repair history is matched by vendor name = their name (functions/api/audit/index.ts); link maintenance jobs to the technician's user id instead.
 - Permissions inside the supply chain engine (7 Oct): the sign-on carries the role's level for the 8 engine areas (functions/_lib/scmEngine.ts); the engine turns them into its page access and permission keys per role "Conts: <role>" (engine/backend/src/conts/access.ts, sso.ts) and one hook in Houzs's services/auth.ts (hydrateAuthUser) applies them. Full in all 8 keeps the full-access role. Standard for operations staff: edit in supply chain and service cases, view on projects, no invoices or accounting. Tested on the local engine: scripts/api-checks/scm-engine-access.mjs (17). Needs the engine worker redeployed (owner). Known: Houzs lets a role with Sales order view read sales invoices (read-inherit); raising one is refused. Test accounts chart-*@theconts.test were created on staging by the check.
 - Permissions (8 Oct): the 20 handlers with their own role lists (guests, housekeeping, inventory, maintenance SKUs, channel sync, owners, contracts, reviews, unit readiness, automations, integrations, access codes) follow a chosen level through mayWork / maySee / mayRun in functions/_lib/access.ts. Inviting users, organisation settings and the audit endpoint stay fixed to their roles on purpose (a role that could invite users could make itself management).
 - Permissions, not done: per-person exceptions (owner, 8 Oct: later); production migrations 0049-0050 and the merge, after the owner approves staging.
@@ -210,7 +208,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 ## Standards (docs/UI-STANDARDS.md, checked by npm run check and CI)
 - Done (s1-standards): one status vocabulary (src/lib/status.ts) and StatusBadge / StatusMenu everywhere; text-success / text-danger now render the text colour; ConfirmDialog for every confirm; dates, money, counts and phones through lib/format; plain-English API errors; no Change dates on OTA bookings.
 - Done: the 32 one-click Delete / Cancel buttons on the built-in supply chain screens now ask first (ConfirmButton).
-- Open: rejecting a sales order amendment asks no reason; the amendments API has no field to store one.
 - Open: make the CI workflow (.github/workflows/ci.yml) a required check on main (GitHub > Settings > Branches; owner, needs admin).
 
 ## Form inputs (feat/s6-inputs)
@@ -228,7 +225,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## System bugs from Houzs / Hookka (fix/audit-system, docs/audits/system-from-sister-erps.md)
 - Done: same nights cannot be booked twice at the same moment (unit lock); status and dates changes are compare-and-set; statement generation is one transaction per period; supply chain numbers retry on a clash; MYT dates everywhere (gate myt-dates); CSV formula guard (gate csv-formula); uploads that are not images, video or PDF download instead of opening; 300 / 10,000-character text limits on every write; bookings CSV import validates each row.
-- Open: the 15-minute email/WhatsApp retry does not claim its rows, so a double-fired cron could resend one message; add a 'sending' state (migration) before the cron worker is deployed.
 - Open: built-in supply chain create screens add a placeholder row before the save answers and keep it if the save fails; only matters if the engine is switched off.
 - Open: field edits are last-write-wins (no version column); status and dates are already protected.
 
@@ -250,7 +246,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Performance "Management fees" over 12 months only counts Aug 2026: the workbook's 整体报告 breakdown exists for that month alone.
 
 ## Reservations click sweep (fix/sweep-reservations, 11 Oct 2026)
-- Inbox: the messages table keeps no delivery state, so after a reload a reply WhatsApp refused looks sent (marked only until the page reloads). Needs a migration (a delivery column) — no number was reserved for this sweep.
 - Owner to decide: a guest name "请设置姓名" (Airbnb's "please set your name" placeholder) arrives from the booking data; treat it as no name at import?
 - Owner to decide: changing the dates or total of a booking that already has an issued invoice leaves that invoice for the old stay; warn, or void and reissue?
 - Owner to decide: adding a guest with the phone of an existing guest gives no duplicate warning (merge exists after the fact).
