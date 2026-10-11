@@ -7,6 +7,7 @@ import Icon from './Icon';
 import { Button } from './Button';
 import { Eyebrow } from './Metric';
 import { RefreshLine } from './Loading';
+import { FieldNotificationBell } from './NotificationBell';
 
 /** Owners get one page and no staff navigation: a dark bar, their name, log out. */
 export default function OwnerShell({ children }: { children: ReactNode }) {
@@ -24,6 +25,8 @@ export default function OwnerShell({ children }: { children: ReactNode }) {
           <Eyebrow className="text-gold!">Owner portal</Eyebrow>
           <span style={{ fontSize: text.copy, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user!.fullName}</span>
         </div>
+        {/* A repair quote waiting for their approval reaches them here, not only on the next visit to the portal. */}
+        <FieldNotificationBell />
         <a href={atAccount ? '#/' : '#/account'} aria-label={atAccount ? 'Back to my portal' : 'My account'} title={atAccount ? 'Back to my portal' : 'My account'}
           style={{ width: 44, height: 44, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 'var(--radius-control)', border: '1px solid rgba(255,255,255,0.14)', color: color.onDark }}>
           <Icon name={atAccount ? 'House' : 'ShieldCheck'} size="nav" />
