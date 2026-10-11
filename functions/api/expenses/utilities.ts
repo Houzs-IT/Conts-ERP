@@ -8,6 +8,8 @@ import { CHARGE_TO, isPeriodLocked } from '../../_lib/expenses';
 const KINDS = ['electricity', 'water', 'internet', 'sewerage'];
 const KIND_LABEL: Record<string, string> = { electricity: 'Electricity', water: 'Water', internet: 'Internet', sewerage: 'Indah Water' };
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monthName = (ym: string) => `${MONTH_NAMES[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
 const nextMonth = (ym: string) => { const [y, m] = ym.split('-').map(Number); return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`; };
 
 /** GET /api/expenses/utilities?month=YYYY-MM[&ownerId=|&unitId=] */
@@ -79,7 +81,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await run(env, `
       INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, reference, charge_to, created_by, created_at)
       VALUES (?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?)`,
-      id, a.unit_id, a.kind, `${KIND_LABEL[a.kind]} ${month}${a.provider ? ` (${a.provider})` : ''}`, r.amount, date, a.account_no, r.chargeTo ?? 'owner', session.userId, now);
+      id, a.unit_id, a.kind, `${KIND_LABEL[a.kind]} ${monthName(month)}${a.provider ? ` (${a.provider})` : ''}`, r.amount, date, a.account_no, r.chargeTo ?? 'owner', session.userId, now);
     saved.push(id);
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.utilities', entityTable: 'expenses', entityId: month, after: { month, saved: saved.length, locked: locked.length, recordedElsewhere: elsewhere.length } });

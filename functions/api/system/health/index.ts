@@ -76,7 +76,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
              min(queued_at) FILTER (WHERE state = 'queued') AS oldest
       FROM notification_log WHERE channel = 'email'`, ago(7 * DAY), ago(7 * DAY));
     const week = `${s?.sent ?? 0} sent in 7 days`;
-    if (!configured) return { value: 'Missing', status: 'off', summary: 'Mail key not set', detail: 'Owner statements, invitations and password resets cannot be emailed until a mail key is added.' };
+    // The bell counts these failures and links here, so they are named even when the key is missing.
+    if (!configured) return { value: 'Missing', status: 'off', summary: `Mail key not set${(s?.failed ?? 0) > 0 ? ` · ${s!.failed} failed in 7 days` : ''}`, detail: 'Owner statements, invitations and password resets cannot be emailed until a mail key is added.' };
     if ((s?.failed ?? 0) > 0) return { value: 'Set', status: 'warning', summary: `${s!.failed} failed · ${week}` };
     if (s?.oldest && s.oldest < ago(DAY)) return { value: 'Set', status: 'warning', summary: `${s.waiting} waiting over a day`, detail: 'Emails held overnight are sent by the background jobs.' };
     return { value: 'Set', status: 'ok', summary: (s?.waiting ?? 0) > 0 ? `${week} · ${s!.waiting} waiting` : week };

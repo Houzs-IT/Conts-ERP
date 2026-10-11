@@ -14,6 +14,19 @@ const OPTIONAL_MONEY = {
   deposit_collected: 'depositCollected', deposit_refunded: 'depositRefunded', payout_amount: 'payoutAmount',
   payout_date: 'payoutDate', payment_method: 'paymentMethod', rate_plan: 'ratePlan', guest_nationality: 'guestNationality',
 } as const;
+/** Which optional columns this database has. Remembered once all are there, so opening a booking stops paying a
+ *  catalogue query on every request; until then it is asked each time, so a migration applied later is seen. */
+let optionalSeen: { column_name: string }[] | null = null;
+async function optionalColumns(env: Env): Promise<{ column_name: string }[]> {
+  if (optionalSeen) return optionalSeen;
+  const wanted = [...Object.keys(OPTIONAL_MONEY), 'staff_notes'];
+  const rows = await all<{ column_name: string }>(env, `
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'reservations' AND table_schema = ANY(current_schemas(false))
+      AND column_name IN (${wanted.map(c => `'${c}'`).join(', ')})`);
+  if (rows.length === wanted.length) optionalSeen = rows;
+  return rows;
+}
 const TEXT_FIELDS = new Set(['payout_date', 'payment_method', 'rate_plan', 'guest_nationality']);
 
 const CHANNEL_LABEL: Record<string, string> = {
@@ -76,10 +89,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Bookings are not available to field roles.', 403);
   const id = String(params.id);
 
-  const present = await all<{ column_name: string }>(env, `
-    SELECT column_name FROM information_schema.columns
-    WHERE table_name = 'reservations' AND table_schema = ANY(current_schemas(false))
-      AND column_name IN (${[...Object.keys(OPTIONAL_MONEY), 'staff_notes'].map(c => `'${c}'`).join(', ')})`);
+  const present = await optionalColumns(env);
   const extra = present.map(c => c.column_name).filter(c => c in OPTIONAL_MONEY);
   const hasStaffNotes = present.some(c => c.column_name === 'staff_notes');
   const schema = await moneySchema(env);

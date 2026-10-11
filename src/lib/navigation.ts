@@ -6,9 +6,10 @@ export type BadgeKey = 'today' | 'maintenance' | 'inbox' | 'statements' | 'appro
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
 export interface NavChild { key: string; label: string; path: string; area?: string; badge?: BadgeKey }
+/** `full`: the screen's data is for roles with Full on its area (the server refuses Edit), so it is shown only then. */
 export interface NavItem {
   key: string; label: string; icon: string; path?: string; area?: string;
-  badge?: BadgeKey; children?: NavChild[];
+  badge?: BadgeKey; children?: NavChild[]; full?: boolean;
 }
 export interface NavGroup { label: string; workspace: Workspace; items: NavItem[] }
 
@@ -26,7 +27,7 @@ export const NAV: NavGroup[] = [
   { label: 'HOME', workspace: 'rental', items: [
     { key: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard', path: '/', area: 'dashboard' },
     { key: 'portfolio', label: 'Portfolio', icon: 'layers', path: '/portfolio', area: 'portfolio' },
-    { key: 'analytics', label: 'Performance', icon: 'trending-up', path: '/performance/analytics', area: 'performance' },
+    { key: 'analytics', label: 'Performance', icon: 'trending-up', path: '/performance/analytics', area: 'performance', full: true },
   ] },
   { label: 'RESERVATIONS', workspace: 'rental', items: [
     { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'reservations' },
@@ -56,7 +57,7 @@ export const NAV: NavGroup[] = [
     { key: 'guestDocuments', label: 'Guest documents', icon: 'file-text', path: '/finance/documents', area: 'finance' },
   ] },
   { label: 'GROWTH', workspace: 'rental', items: [
-    { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'performance' },
+    { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'performance', full: true },
     { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'performance' },
     { key: 'automations', label: 'Automations', icon: 'workflow', path: '/communication/automations', area: 'comms' },
   ] },
@@ -164,23 +165,58 @@ export function areaOfPath(path: string): string | null {
     const child = it.children?.find(c => c.path === path);
     if (child) return areaOfChild(it, child);
   }
-  return null;
+  return SUPPLY_OFF_MENU[path]?.[2] ?? null;
+}
+
+/** Whether a screen is closed to this person: No access on its area, or a Full-only screen below Full. */
+export function screenClosed(path: string, access?: Record<string, AccessLevel>): boolean {
+  if (!access) return false;
+  const area = areaOfPath(path);
+  if (!area) return false;
+  if (access[area] === 'none') return true;
+  const item = NAV.flatMap(g => g.items).find(i => i.path === path);
+  return !!item?.full && access[area] !== 'full';
 }
 
 export function navFor(role: UserRole, engine = false, access?: Record<string, AccessLevel>): NavGroup[] {
   const deny = [...denied(role, access), ...(engine ? [] : ENGINE_ONLY_AREAS)];
   if (deny.includes('*')) return [];
   const open = (key: string, area: string) => !deny.includes(key) && !deny.includes(area);
+  const enough = (i: NavItem) => !i.full || !access || FIXED_ROLES.includes(role) || access[areaOfItem(i)] === 'full';
   return NAV
     .map(g => ({ ...g, items: g.items
-      .filter(i => open(i.key, areaOfItem(i)))
+      .filter(i => open(i.key, areaOfItem(i)) && enough(i))
       .map(i => i.children ? { ...i, children: i.children.filter(c => open(c.key, areaOfChild(i, c))) } : i)
       .filter(i => !i.children || i.children.length > 0) }))
     .filter(g => g.items.length > 0);
 }
 
+/** Supply chain screens the owner took out of the sidebar (25 Sep 2026) that are still reachable by address.
+ *  They keep the supply chain sidebar and a proper breadcrumb instead of flipping to Rental under "Home". */
+const SUPPLY_OFF_MENU: Record<string, [group: string, label: string, area: string]> = {
+  '/sales/customers': ['Sales order', 'Customers', 'scSales'],
+  '/sales/unbilled': ['Sales order', 'Unbilled deliveries', 'scInvoices'],
+  '/procurement/categories': ['Procurement', 'Categories', 'scProcurement'],
+  '/procurement/product-models': ['Procurement', 'Product models', 'scProcurement'],
+  '/procurement/payment-vouchers': ['Procurement', 'Payment vouchers', 'scInvoices'],
+  '/furniture/fabrics': ['Procurement', 'Fabric library', 'scProcurement'],
+  '/transport/drivers': ['Transportation', 'Drivers', 'scTransportPlan'],
+  '/transport/driver-leave': ['Transportation', 'Driver leave', 'scTransportPlan'],
+  '/transport/vehicles': ['Transportation', 'Vehicles', 'scTransportPlan'],
+  '/transport/fleet-health': ['Transportation', 'Fleet health', 'scTransportPlan'],
+  '/transport/coverage': ['Transportation', 'Coverage & fleet', 'scTransportPlan'],
+  '/transport/3pl': ['Transportation', '3PL companies', 'scTransportPlan'],
+  '/transport/zones': ['Transportation', 'Delivery zones', 'scTransportPlan'],
+  '/transport/residence-rules': ['Transportation', 'Residence rules', 'scTransportPlan'],
+  '/transport/rate-cards': ['Transportation', 'Carriers & rates', 'scTransportPlan'],
+  // The server keeps these money screens to finance roles (MONEY_ONLY in functions/api/_middleware.ts).
+  '/accounting': ['Accounting', 'Payables & receivables', 'scInvoices'],
+  '/accounting/credit-notes': ['Accounting', 'Credit / debit notes', 'scInvoices'],
+};
+
 /** Which workspace an address belongs to; addresses outside the menu (records, profile) stay where they are. */
 export function workspaceOf(path: string): Workspace | null {
+  if (SUPPLY_OFF_MENU[path]) return 'supply';
   for (const g of NAV) for (const it of g.items) {
     if (it.path && (path === it.path || (it.path !== '/' && path.startsWith(it.path + '/')))) return g.workspace;
     if (it.children?.some(c => c.path === path)) return g.workspace;
@@ -211,6 +247,8 @@ export function findNav(path: string): { group: string; item: string; label: str
     if (it.path === path) return { group: groupName(g.label), item: it.label, label: it.label };
     for (const c of it.children ?? []) if (c.path === path) return { group: it.label, item: it.label, label: c.label };
   }
+  const off = SUPPLY_OFF_MENU[path];
+  if (off) return { group: off[0], item: off[1], label: off[1] };
   const sub = SUB_PAGES.find(([re]) => re.test(path));
   const parent = path.replace(/\/[^/]+$/, '');
   if (parent && parent !== path) {

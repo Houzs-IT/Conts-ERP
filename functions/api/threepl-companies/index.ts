@@ -2,7 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { invalidThreePl, toThreePlPayload, type ThreePlRow } from '../../_lib/threepl-companies';
 import { strOrNull, flag, genId } from '../../_lib/scm-util';
-import { checkPhone, invalid, type Fields } from '../../_lib/validate';
+import { checkPhone, checkEmail, invalid, type Fields } from '../../_lib/validate';
 
 const COLS = 'id, code, name, registration_no, contact_name, contact_phone, office_phone, email, address, is_active, notes';
 
@@ -31,6 +31,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const fields: Fields = {};
   checkPhone(fields, 'contactPhone', b.contactPhone, { label: 'Contact phone' });
   checkPhone(fields, 'officePhone', b.officePhone, { label: 'Office phone' });
+  checkEmail(fields, 'email', b.email);
   const badPhone = invalid(fields); if (badPhone) return badPhone;
   const code = (b.code as string).trim();
   if (await one(env, 'SELECT 1 AS x FROM threepl_companies WHERE lower(code) = lower(?)', code)) return fail('CONFLICT', 'A 3PL company with this code already exists.', 409, { code: 'This code is already used.' });

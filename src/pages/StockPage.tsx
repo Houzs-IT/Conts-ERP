@@ -1,3 +1,4 @@
+import { todayMyt } from '../lib/format';
 import { useMemo, useState } from 'react';
 import { Search, Plus, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -7,7 +8,8 @@ import { NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { cx } from '../lib/design-tokens';
@@ -30,6 +32,7 @@ const MV_FALLBACK: { data: Movement[] } = { data: [
 ] };
 const WH_FALLBACK = { data: [{ id: 'w1', code: 'WH-MAIN', name: 'Main Warehouse' }, { id: 'w2', code: 'WH-KL', name: 'KL Transit Hub' }] };
 
+const REF_LABEL: Record<string, string> = { GRN: 'Goods receipt', DO: 'Delivery order', ADJ: 'Adjustment', TRF: 'Transfer', STK: 'Stock take', PRET: 'Purchase return', SRET: 'Delivery return' };
 const MV_LABEL: Record<string, string> = { RECEIPT: 'Receipt', ISSUE: 'Issue', ADJUSTMENT: 'Adjustment', TRANSFER_IN: 'Transfer in', TRANSFER_OUT: 'Transfer out', RETURN: 'Return', STOCK_TAKE: 'Stock take' };
 
 export default function StockPage() {
@@ -45,6 +48,7 @@ export default function StockPage() {
   const [search, setSearch] = useState('');
   const [adjusting, setAdjusting] = useState(false);
   const [added, setAdded] = useState<Movement[]>([]);
+  useResetOnReload(moves.data, () => setAdded([]));
 
   const q = search.trim().toLowerCase();
   const onhand = (data?.data ?? []).filter(r => (whFilter === 'all' || r.warehouseId === whFilter) && (!q || `${r.itemCode} ${r.itemName}`.toLowerCase().includes(q)));
@@ -62,8 +66,8 @@ export default function StockPage() {
     { key: 'date', label: 'Date', type: 'date', value: m => m.movedAt },
     { key: 'item', label: 'Item code', type: 'ref', value: m => m.itemCode, hideable: false },
     { key: 'warehouse', label: 'Warehouse', value: m => m.warehouseName, filter: { kind: 'select' } },
-    { key: 'type', label: 'Type', value: m => m.movementType, text: m => MV_LABEL[m.movementType] ?? m.movementType, filter: { kind: 'select' } },
-    { key: 'ref', label: 'Ref', value: m => m.refType, width: 90 },
+    { key: 'type', label: 'Type', value: m => MV_LABEL[m.movementType] ?? m.movementType, filter: { kind: 'select' } },
+    { key: 'ref', label: 'Source', value: m => REF_LABEL[m.refType] ?? m.refType, width: 140 },
     { key: 'qty', label: 'Qty', type: 'number', value: m => m.qtyDelta, width: 90,
       render: m => <span className={cx('tabular-nums font-semibold', m.qtyDelta < 0 ? 'text-danger' : 'text-success')}>{m.qtyDelta > 0 ? `+${m.qtyDelta}` : m.qtyDelta}</span> },
     { key: 'note', label: 'Note', value: m => m.note, width: 200 },
@@ -89,11 +93,14 @@ export default function StockPage() {
     </div>
   );
 
-  function adjusted(m: Movement) { setAdded(a => [m, ...a]); toast({ tone: 'success', title: 'Stock adjusted.', body: `${m.itemCode} ${m.qtyDelta > 0 ? '+' : ''}${m.qtyDelta}` }); setAdjusting(false); reload(); }
+  function adjusted(m: Movement, req: Promise<unknown>) {
+    setAdded(a => [m, ...a]); setAdjusting(false);
+    persist(req, { reload: () => { reload(); moves.reload(); }, ok: () => toast({ tone: 'success', title: 'Stock adjusted.', body: `${m.itemCode} ${m.qtyDelta > 0 ? '+' : ''}${m.qtyDelta}` }) });
+  }
 
   return (
     <>
-      <PageHeader title="Stock" sub={`${onhand.length} lines · ${totalUnits} units on hand`}
+      <PageHeader title="Stock" sub={data ? `${onhand.length} ${onhand.length === 1 ? 'line' : 'lines'} · ${totalUnits} units on hand` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setAdjusting(true)}>Stock adjustment</Button> : undefined} />
 
       {tab === 'onhand' ? (
@@ -123,7 +130,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
   return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
 }
 
-function AdjustDrawer({ warehouses, canWrite, onClose, onDone }: { warehouses: Opt[]; canWrite: boolean; onClose: () => void; onDone: (m: Movement) => void }) {
+function AdjustDrawer({ warehouses, canWrite, onClose, onDone }: { warehouses: Opt[]; canWrite: boolean; onClose: () => void; onDone: (m: Movement, req: Promise<unknown>) => void }) {
   const [itemCode, setItemCode] = useState('');
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
   const [qty, setQty] = useState<number | null>(null);
@@ -132,9 +139,9 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onDone }: { warehouses: O
   const canSave = canWrite && itemCode.trim() !== '' && warehouseId !== '' && qtyDelta !== 0;
 
   function submit() {
-    api.post('/stock', { itemCode: itemCode.trim(), warehouseId, qtyDelta, note }).catch(notifyFailure);
+    const req = api.post('/stock', { itemCode: itemCode.trim(), warehouseId, qtyDelta, note });
     const wh = warehouses.find(w => w.id === warehouseId);
-    onDone({ id: `mv-new-${crypto.randomUUID().slice(0, 8)}`, itemCode: itemCode.trim(), warehouseName: wh?.name ?? '', qtyDelta, movementType: 'ADJUSTMENT', refType: 'ADJ', note, movedAt: new Date().toISOString().slice(0, 10) });
+    onDone({ id: `mv-new-${crypto.randomUUID().slice(0, 8)}`, itemCode: itemCode.trim(), warehouseName: wh?.name ?? '', qtyDelta, movementType: 'ADJUSTMENT', refType: 'ADJ', note, movedAt: todayMyt() }, req);
   }
 
   return (

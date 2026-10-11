@@ -8,7 +8,8 @@ import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { cx } from '../lib/design-tokens';
@@ -30,6 +31,8 @@ const FALLBACK: Payload = { generatedAt: '', data: [
   T({ id: 't2', code: '3PL-GDEX', name: 'GDEX Logistics', contactName: 'Mr Lim', contactPhone: '+60312345678', officePhone: '03-1234 5678', isActive: true }),
 ] };
 
+const emailBad = (v: string) => v.trim() !== '' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim());
+
 export default function ThreePLCompaniesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/threepl-companies', FALLBACK);
   const toast = useToast();
@@ -41,6 +44,7 @@ export default function ThreePLCompaniesPage() {
   const [added, setAdded] = useState<ThreePl[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<ThreePl>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].filter(c => !removed.has(c.id)).map(c => ({ ...c, ...edits[c.id] })), [added, data, edits, removed]);
   const q = search.trim().toLowerCase();
@@ -56,15 +60,15 @@ export default function ThreePLCompaniesPage() {
   ], []);
 
   function save(draft: ThreePl, isNew: boolean) {
-    if (isNew) { setAdded(a => [T({ ...draft, id: `tpl-new-${crypto.randomUUID().slice(0, 8)}` }), ...a]); api.post('/threepl-companies', draft).catch(notifyFailure); toast({ tone: 'success', title: '3PL company added.', body: `${draft.code} ${draft.name}` }); }
-    else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...draft } })); api.patch(`/threepl-companies/${draft.id}`, draft).catch(notifyFailure); toast({ tone: 'success', title: '3PL company updated.', body: `${draft.code} ${draft.name}` }); }
+    if (isNew) { setAdded(a => [T({ ...draft, id: `tpl-new-${crypto.randomUUID().slice(0, 8)}` }), ...a]); persist(api.post('/threepl-companies', draft), { reload, ok: () => toast({ tone: 'success', title: '3PL company added.', body: `${draft.code} ${draft.name}` }) }); }
+    else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...draft } })); persist(api.patch(`/threepl-companies/${draft.id}`, draft), { reload, ok: () => toast({ tone: 'success', title: '3PL company updated.', body: `${draft.code} ${draft.name}` }) }); }
     setDrawer(null);
   }
-  function remove(c: ThreePl) { setRemoved(r => new Set(r).add(c.id)); api.del(`/threepl-companies/${c.id}`).catch(notifyFailure); toast({ tone: 'success', title: '3PL company removed.', body: c.code }); setDrawer(null); }
+  function remove(c: ThreePl) { setRemoved(r => new Set(r).add(c.id)); persist(api.del(`/threepl-companies/${c.id}`), { reload, ok: () => toast({ tone: 'success', title: '3PL company removed.', body: c.code }) }); setDrawer(null); }
 
   return (
     <>
-      <PageHeader title="3PL companies" sub={`${all.length} providers · ${all.filter(c => c.isActive).length} active`}
+      <PageHeader title="3PL companies" sub={data ? `${all.length} ${all.length === 1 ? 'provider' : 'providers'} · ${all.filter(c => c.isActive).length} active` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: T({ id: '', code: '', name: '' }), isNew: true })}>New company</Button> : undefined} />
       <DataTable<ThreePl>
         id="scm.threepl-companies" columns={columns} rows={data ? rows : null} rowKey={c => c.id}
@@ -96,7 +100,7 @@ function ThreePlDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Thr
   const [f, setF] = useState<ThreePl>(draft);
   const set = <K extends keyof ThreePl>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value as ThreePl[K] }));
   const phoneBad = !!(phoneProblem(f.contactPhone) || phoneProblem(f.officePhone));
-  const canSave = f.code.trim() !== '' && f.name.trim() !== '' && !phoneBad;
+  const canSave = f.code.trim() !== '' && f.name.trim() !== '' && !phoneBad && !emailBad(f.email);
   return (
     <Drawer open onClose={onClose} width={620}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New 3PL company' : 'Edit 3PL company'}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button></div>
@@ -115,7 +119,7 @@ function ThreePlDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Thr
           <Field label="Contact person" value={f.contactName} onChange={set('contactName')} />
           <PhoneInput label="Contact phone" value={f.contactPhone} onChange={v => setF(s => ({ ...s, contactPhone: v }))} />
           <PhoneInput label="Office phone" value={f.officePhone} onChange={v => setF(s => ({ ...s, officePhone: v }))} />
-          <Field label="Email" type="email" value={f.email} onChange={set('email')} />
+          <Field label="Email" type="email" value={f.email} onChange={set('email')} error={emailBad(f.email) ? 'Check the email, or leave it blank.' : undefined} />
           <div className="col-span-2"><Field label="Address" value={f.address} onChange={set('address')} /></div>
           <div className="col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
         </Section>
@@ -124,7 +128,7 @@ function ThreePlDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Thr
         <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete 3PL company ${draft.name}?`, body: 'It is deleted for good and drops off the 3PL company list.', confirmLabel: 'Delete company', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" disabled={!canSave} disabledReason={phoneBad ? 'Fix the phone numbers first' : 'Enter a code and a name first'} onClick={() => onSave(f, isNew)}>{isNew ? 'Create company' : 'Save'}</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason={phoneBad ? 'Fix the phone numbers first' : emailBad(f.email) ? 'Check the email first' : 'Enter a code and a name first'} onClick={() => onSave(f, isNew)}>{isNew ? 'Create company' : 'Save'}</Button>
         </div>
       </div>
     </Drawer>

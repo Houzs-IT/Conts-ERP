@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { normalizeLines, toPoHeaderPayload, toPoLinePayload, checkPricedBody, type PoHeaderRow, type PoLineRow } from '../../_lib/purchase-orders';
 import { invalid, type Fields } from '../../_lib/validate';
@@ -59,7 +59,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     if (!sup || !await one(env, 'SELECT 1 AS x FROM suppliers WHERE id = ?', sup)) return fail('VALIDATION', 'Unknown supplier.', 422, { supplierId: 'Unknown supplier.' });
     sets.push('supplier_id = ?'); args.push(sup);
   }
-  if (b.poDate !== undefined) { sets.push('po_date = ?'); args.push(strOrNull(b.poDate) ?? nowIso().slice(0, 10)); }
+  if (b.poDate !== undefined) { sets.push('po_date = ?'); args.push(strOrNull(b.poDate) ?? mytToday()); }
   if (b.expectedAt !== undefined) { sets.push('expected_at = ?'); args.push(strOrNull(b.expectedAt)); }
   if (b.warehouseId !== undefined) { sets.push('warehouse_id = ?'); args.push(strOrNull(b.warehouseId)); }
   if (b.currency !== undefined) { sets.push('currency = ?'); args.push(strOrNull(b.currency) ?? 'MYR'); }

@@ -8,7 +8,8 @@ import { MoneyInput, NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date } from '../lib/format';
@@ -23,6 +24,7 @@ import { statusLabel } from '../lib/status';
 type Status = 'REQUESTED' | 'APPROVED' | 'APPLIED' | 'REJECTED' | 'CANCELLED';
 const FILTERS: (Status | 'all')[] = ['all', 'REQUESTED', 'APPROVED', 'APPLIED', 'REJECTED', 'CANCELLED'];
 
+const ACTION_LABEL: Record<AmdLine['action'], string> = { CHANGE: 'Changed', ADD: 'Added', REMOVE: 'Removed' };
 interface AmdLine { id?: string; salesOrderLineId: string; action: 'CHANGE' | 'ADD' | 'REMOVE'; itemCode: string; description: string; uom: string; oldQty: number | null; oldUnitPriceSen: number | null; newQty: number; newUnitPriceSen: number }
 interface Amd { id: string; amendmentNo: string; salesOrderId: string; soDocNo: string; customerName: string; status: Status; reason: string; appliedAt: string; lines?: AmdLine[] }
 interface Payload { data: Amd[]; generatedAt: string }
@@ -51,6 +53,10 @@ export default function SalesOrderAmendmentPage() {
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; amd: Amd } | null>(null);
   const [added, setAdded] = useState<Amd[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Amd>>>({});
+  useResetOnReload(data, () => {
+    setAdded([]); setEdits({});
+    setDrawer(d => { const fresh = d?.mode === 'view' ? data?.data.find(x => x.id === d.amd.id) : undefined; return d?.mode === 'view' && fresh ? { mode: 'view', amd: { ...d.amd, ...fresh } } : d; });
+  });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].map(a => ({ ...a, ...edits[a.id] })), [added, data, edits]);
   const q = search.trim().toLowerCase();
@@ -64,17 +70,16 @@ export default function SalesOrderAmendmentPage() {
     { key: 'status', label: 'Status', type: 'status', value: a => a.status, entity: 'so_amendment' },
   ], []);
 
-  function created(a: Amd) { setAdded(x => [a, ...x]); toast({ tone: 'success', title: 'Amendment raised.', body: `${a.amendmentNo} · ${a.soDocNo}` }); setDrawer(null); }
+  function created(a: Amd, req: Promise<unknown>) { setAdded(x => [a, ...x]); setDrawer(null); persist(req, { reload, ok: () => toast({ tone: 'success', title: 'Amendment raised.', body: a.soDocNo }) }); }
   function act(a: Amd, action: 'approve' | 'reject' | 'cancel' | 'apply', next: Status, label: string) {
     setEdits(e => ({ ...e, [a.id]: { ...e[a.id], status: next } }));
-    api.patch(`/so-amendments/${a.id}`, { action }).catch(notifyFailure);
-    toast({ tone: 'success', title: label, body: a.amendmentNo });
+    persist(api.patch(`/so-amendments/${a.id}`, { action }), { reload, ok: () => toast({ tone: 'success', title: label, body: a.amendmentNo }) });
     setDrawer(null);
   }
 
   return (
     <>
-      <PageHeader title="Sales order amendment" sub={`${all.length} amendments`}
+      <PageHeader title="Sales order amendment" sub={data ? `${all.length} ${all.length === 1 ? 'amendment' : 'amendments'}` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New amendment</Button> : undefined} />
       <DataTable<Amd>
         id="scm.so-amendments" columns={columns} rows={data ? rows : null} rowKey={a => a.id}
@@ -104,7 +109,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 /* ---------- create ---------- */
 interface Edit { line: SoLine; newQty: number | null; newPriceSen: number | null; remove: boolean }
 
-function NewDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[]; canWrite: boolean; onClose: () => void; onCreated: (a: Amd) => void }) {
+function NewDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[]; canWrite: boolean; onClose: () => void; onCreated: (a: Amd, req: Promise<unknown>) => void }) {
   const [soId, setSoId] = useState('');
   const [reason, setReason] = useState('');
   const [rows, setRows] = useState<Edit[]>([]);
@@ -133,8 +138,8 @@ function NewDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[
       salesOrderLineId: r.line.id, action: r.remove ? 'REMOVE' : 'CHANGE', itemCode: r.line.itemCode, description: r.line.description, uom: r.line.uom,
       newQty: r.remove ? 0 : r.newQty ?? 0, newUnitPriceSen: r.remove ? r.line.unitPriceSen : r.newPriceSen ?? 0,
     }));
-    api.post('/so-amendments', { salesOrderId: soId, reason, lines }).catch(notifyFailure);
-    onCreated({ id: `amd-new-${crypto.randomUUID().slice(0, 8)}`, amendmentNo: `AMD-${new Date().getFullYear()}-NEW`, salesOrderId: soId, soDocNo: so?.docNo ?? '', customerName: so?.customerName ?? '', status: 'REQUESTED', reason, appliedAt: '' });
+    const req = api.post('/so-amendments', { salesOrderId: soId, reason, lines });
+    onCreated({ id: `amd-new-${crypto.randomUUID().slice(0, 8)}`, amendmentNo: 'Saving…', salesOrderId: soId, soDocNo: so?.docNo ?? '', customerName: so?.customerName ?? '', status: 'REQUESTED', reason, appliedAt: '' }, req);
   }
 
   return (
@@ -185,7 +190,7 @@ function NewDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[
 /* ---------- view ---------- */
 const lineColumns: Column<AmdLine>[] = [
   { key: 'item', label: 'Item', value: l => l.description, sub: l => <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{l.itemCode}</span>, text: l => `${l.description} ${l.itemCode}` },
-  { key: 'action', label: 'Change', value: l => l.action, filter: false, render: l => <span className={cx('text-[12px] font-semibold', l.action === 'REMOVE' ? TONE.critical.text : l.action === 'ADD' ? TONE.success.text : TONE.info.text)}>{l.action}</span> },
+  { key: 'action', label: 'Change', value: l => ACTION_LABEL[l.action], filter: false, render: l => <span className={cx('text-[12px] font-semibold', l.action === 'REMOVE' ? TONE.critical.text : l.action === 'ADD' ? TONE.success.text : TONE.info.text)}>{ACTION_LABEL[l.action]}</span> },
   { key: 'from', label: 'From', align: 'right', sortable: false, filter: false, value: l => l.oldQty != null ? `${l.oldQty} × ${rm(l.oldUnitPriceSen ?? 0)}` : null, render: l => <span className="tabular-nums text-[12.5px] text-muted-ink">{l.oldQty != null ? `${l.oldQty} × ${rm(l.oldUnitPriceSen ?? 0)}` : '—'}</span> },
   { key: 'to', label: 'To', align: 'right', sortable: false, filter: false, value: l => l.action === 'REMOVE' ? null : `${l.newQty} × ${rm(l.newUnitPriceSen)}`, render: l => <span className="tabular-nums text-[12.5px]">{l.action === 'REMOVE' ? '—' : `${l.newQty} × ${rm(l.newUnitPriceSen)}`}</span> },
 ];

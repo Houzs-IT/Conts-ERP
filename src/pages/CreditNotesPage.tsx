@@ -12,7 +12,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure, ApiFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
@@ -65,7 +65,7 @@ export default function CreditNotesPage() {
 
   const columns = useMemo<Column<Note>[]>(() => [
     { key: 'noteNumber', label: 'Note', type: 'ref', value: n => n.noteNumber, hideable: false },
-    { key: 'kind', label: 'Type', value: n => n.kind, text: n => KIND_LABEL[n.kind], filter: { kind: 'select' } },
+    { key: 'kind', label: 'Type', value: n => KIND_LABEL[n.kind] ?? n.kind, filter: { kind: 'select' } },
     { key: 'party', label: 'Customer / supplier', value: n => n.partyName },
     { key: 'against', label: 'Against', value: n => against(n) || null },
     { key: 'noteDate', label: 'Date', type: 'date', value: n => n.noteDate || null },
@@ -77,7 +77,7 @@ export default function CreditNotesPage() {
 
   return (
     <>
-      <PageHeader title="Credit / debit notes" sub={`${all.length} notes · only posted notes change what is owed`}
+      <PageHeader title="Credit / debit notes" sub={data ? `${all.length} ${all.length === 1 ? 'note' : 'notes'} · only posted notes change what is owed` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New note</Button> : undefined} />
 
       <DataTable<Note>
@@ -126,7 +126,7 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
   const [purchaseInvoiceId, setPurchaseInvoiceId] = useState('');
   const [salesInvoiceId, setSalesInvoiceId] = useState('');
   const [partyName, setPartyName] = useState('');
-  const [noteDate, setNoteDate] = useState(new Date().toISOString().slice(0, 10));
+  const [noteDate, setNoteDate] = useState(todayMyt());
   const [sourceDocNo, setSourceDocNo] = useState('');
   const [reason, setReason] = useState('');
   const [lines, setLines] = useState<{ description: string; amountSen: number | null }[]>([{ description: '', amountSen: null }]);

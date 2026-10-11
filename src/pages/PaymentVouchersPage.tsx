@@ -8,10 +8,11 @@ import { MoneyInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 
@@ -54,6 +55,10 @@ export default function PaymentVouchersPage() {
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; pv: Pv } | null>(null);
   const [added, setAdded] = useState<Pv[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Pv>>>({});
+  useResetOnReload(data, () => {
+    setAdded([]); setEdits({});
+    setDrawer(d => { const fresh = d?.mode === 'view' ? data?.data.find(x => x.id === d.pv.id) : undefined; return d?.mode === 'view' && fresh ? { mode: 'view', pv: { ...d.pv, ...fresh } } : d; });
+  });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].map(p => ({ ...p, ...edits[p.id] })), [added, data, edits]);
   const q = search.trim().toLowerCase();
@@ -64,23 +69,22 @@ export default function PaymentVouchersPage() {
     { key: 'voucherNumber', label: 'Voucher', type: 'ref', value: p => p.voucherNumber, hideable: false },
     { key: 'supplier', label: 'Supplier', value: p => p.supplierName, sub: p => p.supplierCode, text: p => `${p.supplierName} ${p.supplierCode}` },
     { key: 'paymentDate', label: 'Date', type: 'date', value: p => p.paymentDate || null },
-    { key: 'method', label: 'Method', value: p => p.method, text: p => METHOD_LABEL[p.method] ?? p.method, filter: { kind: 'select' } },
+    { key: 'method', label: 'Method', value: p => METHOD_LABEL[p.method] ?? p.method, filter: { kind: 'select' } },
     { key: 'reference', label: 'Reference', value: p => p.reference || null },
     { key: 'status', label: 'Status', type: 'status', value: p => p.status, status: p => p.status === 'POSTED' ? { label: 'Posted', tone: 'success' } : { label: 'Cancelled', tone: 'neutral' } },
     { key: 'amount', label: 'Amount', type: 'money', value: p => p.amountSen, render: p => p.status === 'CANCELLED' ? <span className="tabular-nums text-muted-ink line-through">{rm(p.amountSen)}</span> : <span className="tabular-nums">{rm(p.amountSen)}</span> },
   ], []);
 
-  function created(pv: Pv) { setAdded(a => [pv, ...a]); toast({ tone: 'success', title: 'Payment recorded.', body: `${pv.voucherNumber} · ${rm(pv.amountSen)}` }); setDrawer(null); }
+  function created(pv: Pv, req: Promise<unknown>) { setAdded(a => [pv, ...a]); setDrawer(null); persist(req, { reload, ok: () => toast({ tone: 'success', title: 'Payment recorded.', body: rm(pv.amountSen) }) }); }
   function cancel(p: Pv) {
     setEdits(e => ({ ...e, [p.id]: { ...e[p.id], status: 'CANCELLED' } }));
-    api.patch(`/payment-vouchers/${p.id}`, { status: 'CANCELLED' }).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Payment voucher cancelled.', body: p.voucherNumber });
+    persist(api.patch(`/payment-vouchers/${p.id}`, { status: 'CANCELLED' }), { reload, ok: () => toast({ tone: 'success', title: 'Payment voucher cancelled.', body: p.voucherNumber }) });
     setDrawer(null);
   }
 
   return (
     <>
-      <PageHeader title="Payment vouchers" sub={`${all.length} vouchers · ${rm(paidTotal, { cents: false })} paid`}
+      <PageHeader title="Payment vouchers" sub={data ? `${all.length} ${all.length === 1 ? 'voucher' : 'vouchers'} · ${rm(paidTotal, { cents: false })} paid` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>Record payment</Button> : undefined} />
 
       <DataTable<Pv>
@@ -115,11 +119,11 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 
 interface PayLine { invoiceId: string; invoiceNumber: string; invoiceDate: string; outstanding: number; paySen: number | null }
 
-function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { suppliers: Opt[]; invoices: Pi[]; canWrite: boolean; onClose: () => void; onCreated: (p: Pv) => void }) {
+function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { suppliers: Opt[]; invoices: Pi[]; canWrite: boolean; onClose: () => void; onCreated: (p: Pv, req: Promise<unknown>) => void }) {
   const [supplierId, setSupplierId] = useState('');
   const [method, setMethod] = useState<string>('TRANSFER');
   const [reference, setReference] = useState('');
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState(todayMyt());
   const [notes, setNotes] = useState('');
   const [pays, setPays] = useState<Record<string, number | null>>({});
 
@@ -139,11 +143,11 @@ function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { supp
     const allocations = lines
       .map(l => ({ purchaseInvoiceId: l.invoiceId, amountSen: l.paySen ?? 0, invoiceNumber: l.invoiceNumber }))
       .filter(a => a.amountSen > 0);
-    api.post('/payment-vouchers', { supplierId, paymentDate, method, reference, notes, allocations: allocations.map(({ purchaseInvoiceId, amountSen }) => ({ purchaseInvoiceId, amountSen })) }).catch(notifyFailure);
+    const req = api.post('/payment-vouchers', { supplierId, paymentDate, method, reference, notes, allocations: allocations.map(({ purchaseInvoiceId, amountSen }) => ({ purchaseInvoiceId, amountSen })) });
     onCreated({
-      id: `pv-new-${crypto.randomUUID().slice(0, 8)}`, voucherNumber: `PV-${new Date().getFullYear()}-NEW`, supplierName: supplier?.name ?? '', supplierCode: supplier?.code ?? '', supplierId,
+      id: `pv-new-${crypto.randomUUID().slice(0, 8)}`, voucherNumber: 'Saving…', supplierName: supplier?.name ?? '', supplierCode: supplier?.code ?? '', supplierId,
       paymentDate, method, reference, amountSen: amount, status: 'POSTED', notes, allocations: allocations.map(a => ({ invoiceNumber: a.invoiceNumber, amountSen: a.amountSen })),
-    });
+    }, req);
   }
 
   return (
@@ -203,7 +207,7 @@ function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { supp
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
           <div className="flex items-end justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Payment total</span><span className="tabular-nums w-[120px] text-right">{rm(amount)}</span></div></div>
         </div>
@@ -224,6 +228,7 @@ const ALLOC_COLUMNS: Column<Alloc & { i: number }>[] = [
 ];
 
 function ViewDrawer({ pv, canWrite, onClose, onCancel }: { pv: Pv; canWrite: boolean; onClose: () => void; onCancel: (p: Pv) => void }) {
+  const { record, loading: linesLoading, error: linesError } = useRecord<Pv>('payment-vouchers', pv.id);
   return (
     <Drawer open onClose={onClose} width={620}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
@@ -239,7 +244,7 @@ function ViewDrawer({ pv, canWrite, onClose, onCancel }: { pv: Pv; canWrite: boo
         </div>
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<Alloc & { i: number }>
-            id="scm.payment-voucher.allocations" urlPrefix="alloc." columns={ALLOC_COLUMNS} rows={(pv.allocations ?? []).map((a, i) => ({ ...a, i }))} rowKey={a => String(a.i)}
+            id="scm.payment-voucher.allocations" urlPrefix="alloc." columns={ALLOC_COLUMNS} rows={(record?.allocations ?? pv.allocations ?? []).map((a, i) => ({ ...a, i }))} rowKey={a => String(a.i)} loading={linesLoading} error={linesError}
             bare noViews noToolbar pageSize={0} noun={['allocation', 'allocations']} exportName={`${pv.voucherNumber}-allocations`}
             empty={{ title: 'No invoices on this voucher.' }} />
         </div>

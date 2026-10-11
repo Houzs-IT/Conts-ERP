@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search, Plus, Trash2, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -8,10 +8,11 @@ import { MoneyInput, NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm } from '../lib/format';
+import { rm, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { statusLabel } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
@@ -67,6 +68,7 @@ export default function PurchaseOrdersPage() {
 
   const [added, setAdded] = useState<Po[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Po>>>({});
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); });
 
   const all = useMemo(
     () => [...added, ...(data?.data ?? [])].map(p => ({ ...p, ...edits[p.id] })),
@@ -90,36 +92,33 @@ export default function PurchaseOrdersPage() {
 
   function openNew() {
     setIsNew(true);
-    setDrawer({ id: '', poNumber: '', supplierId: suppliers[0]?.id ?? '', supplierCode: '', supplierName: '', status: 'SUBMITTED', poDate: new Date().toISOString().slice(0, 10), expectedAt: '', warehouseId: warehouses[0]?.id ?? '', currency: 'MYR', subtotalSen: 0, taxSen: 0, totalSen: 0, notes: '', lines: [] });
+    setDrawer({ id: '', poNumber: '', supplierId: suppliers[0]?.id ?? '', supplierCode: '', supplierName: '', status: 'SUBMITTED', poDate: todayMyt(), expectedAt: '', warehouseId: warehouses[0]?.id ?? '', currency: 'MYR', subtotalSen: 0, taxSen: 0, totalSen: 0, notes: '', lines: [] });
   }
   function openExisting(p: Po) { setIsNew(false); setDrawer({ ...p, lines: p.lines ?? [] }); }
 
   function saveNew(po: Po, lines: Line[]) {
     const supplier = suppliers.find(s => s.id === po.supplierId);
-    const local: Po = { ...po, id: `po-new-${crypto.randomUUID().slice(0, 8)}`, poNumber: `PO-${new Date().getFullYear()}-NEW`, supplierCode: supplier?.code ?? '', supplierName: supplier?.name ?? '', lines };
+    const local: Po = { ...po, id: `po-new-${crypto.randomUUID().slice(0, 8)}`, poNumber: 'Saving…', supplierCode: supplier?.code ?? '', supplierName: supplier?.name ?? '', lines };
     setAdded(a => [local, ...a]);
-    api.post('/purchase-orders', body(po, lines)).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Purchase order raised.', body: `${local.poNumber} · ${local.supplierName}` });
+    persist(api.post('/purchase-orders', body(po, lines)), { reload, ok: () => toast({ tone: 'success', title: 'Purchase order raised.', body: local.supplierName }) });
     setDrawer(null);
   }
   function saveEdit(po: Po, lines: Line[]) {
     const supplier = suppliers.find(s => s.id === po.supplierId);
     const patch: Partial<Po> = { ...totalsOf(lines, po.taxSen), supplierId: po.supplierId, supplierCode: supplier?.code ?? po.supplierCode, supplierName: supplier?.name ?? po.supplierName, expectedAt: po.expectedAt, warehouseId: po.warehouseId, notes: po.notes, poDate: po.poDate, lines };
     setEdits(e => ({ ...e, [po.id]: { ...e[po.id], ...patch } }));
-    api.patch(`/purchase-orders/${po.id}`, body(po, lines)).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Purchase order updated.', body: po.poNumber });
+    persist(api.patch(`/purchase-orders/${po.id}`, body(po, lines)), { reload, ok: () => toast({ tone: 'success', title: 'Purchase order updated.', body: po.poNumber }) });
     setDrawer(null);
   }
   function cancelPo(p: Po) {
     setEdits(e => ({ ...e, [p.id]: { ...e[p.id], status: 'CANCELLED' } }));
-    api.patch(`/purchase-orders/${p.id}`, { status: 'CANCELLED' }).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Purchase order cancelled.', body: p.poNumber });
+    persist(api.patch(`/purchase-orders/${p.id}`, { status: 'CANCELLED' }), { reload, ok: () => toast({ tone: 'success', title: 'Purchase order cancelled.', body: p.poNumber }) });
     setDrawer(null);
   }
 
   return (
     <>
-      <PageHeader title="Purchase orders" sub={`${all.length} orders · buy-side documents`}
+      <PageHeader title="Purchase orders" sub={data ? `${all.length} ${all.length === 1 ? 'order' : 'orders'} · buy-side documents` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={openNew}>New PO</Button> : undefined} />
 
       <DataTable<Po>
@@ -180,15 +179,17 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
   po: Po; isNew: boolean; suppliers: Opt[]; warehouses: Opt[]; canWrite: boolean;
   onClose: () => void; onCreate: (p: Po, l: Line[]) => void; onSave: (p: Po, l: Line[]) => void; onCancelPo: (p: Po) => void;
 }) {
-  const editable = canWrite && (isNew || po.status === 'SUBMITTED');
+  const { record, loading: linesLoading, error: linesError } = useRecord<Po>('purchase-orders', isNew ? null : po.id);
+  const editable = canWrite && (isNew || po.status === 'SUBMITTED') && !linesLoading && !linesError;
   const [h, setH] = useState<Po>(po);
   const [lines, setLines] = useState<DraftLine[]>((po.lines ?? []).map(toDraftLine));
+  useEffect(() => { if (record?.lines) setLines(record.lines.map(toDraftLine)); }, [record]);
   const setHf = <K extends keyof Po>(k: K) => (e: { target: { value: string } }) => setH(s => ({ ...s, [k]: e.target.value as Po[K] }));
   const setLine = <K extends keyof DraftLine>(i: number, k: K, v: DraftLine[K]) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
   const [tried, setTried] = useState(false);
   const qtyError = (l: DraftLine) => (tried && isKept(l) && l.qty == null ? 'Required.' : undefined);
 
-  const subtotal = lines.reduce((s, l) => s + lineTotal(l), 0);
+  const subtotal = !isNew && linesLoading ? po.subtotalSen : lines.reduce((s, l) => s + lineTotal(l), 0);
   const total = subtotal + Math.max(0, h.taxSen);
   const built = (): Line[] => lines.filter(isKept).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), uom: l.uom.trim() || 'UNIT', qty: l.qty ?? 0, unitPriceSen: l.unitPriceSen ?? 0, discountSen: l.discountSen ?? 0, lineTotalSen: lineTotal(l) }));
   const canSave = h.supplierId !== '' && built().length > 0;
@@ -256,14 +257,14 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
                     <td className="p-1.5 text-center">{editable && <button onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} aria-label="Remove line" className="text-muted-ink hover:text-danger bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button>}</td>
                   </tr>
                 ))}
-                {lines.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-[12.5px] text-muted-ink">No lines yet.</td></tr>}
+                {lines.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-[12.5px] text-muted-ink">{linesLoading ? 'Loading lines…' : linesError ?? 'No lines yet.'}</td></tr>}
               </tbody>
             </table>
           </div>
           {editable && <div><Button size="sm" variant="secondary" icon={<Plus size={15} strokeWidth={1.75} />} onClick={() => setLines(ls => [...ls, blankLine()])}>Add line</Button></div>}
         </div>
 
-        <div className="grid grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <Field label="Notes" placeholder="Optional" value={h.notes} onChange={setHf('notes')} disabled={!editable} />
           <div className="flex flex-col gap-1.5 items-end justify-end">
             <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Subtotal</span><span className="tabular-nums w-[110px] text-right">{rm(subtotal)}</span></div>

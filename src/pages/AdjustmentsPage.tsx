@@ -1,3 +1,4 @@
+import { todayMyt } from '../lib/format';
 import { useMemo, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -65,7 +66,7 @@ export default function AdjustmentsPage() {
 
   return (
     <>
-      <PageHeader title="Adjustments" sub={`${all.length} stock adjustments`}
+      <PageHeader title="Adjustments" sub={data ? `${all.length} ${all.length === 1 ? 'stock adjustment' : 'stock adjustments'}` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(true)}>New adjustment</Button> : undefined} />
       <DataTable<Mv>
         id="scm.adjustments" columns={columns} rows={data ? rows : null} rowKey={m => m.id}
@@ -107,7 +108,7 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onCreate }: { warehouses:
     const fullNote = note.trim() ? `${reason} — ${note.trim()}` : reason;
     setBusy(true);
     setFields({});
-    const refused = await onCreate({ id: '', itemCode: itemCode.trim(), warehouseId, warehouseCode: wh?.code ?? '', warehouseName: wh?.name ?? '', qtyDelta: delta, note: fullNote, movedAt: new Date().toISOString().slice(0, 10) });
+    const refused = await onCreate({ id: '', itemCode: itemCode.trim(), warehouseId, warehouseCode: wh?.code ?? '', warehouseName: wh?.name ?? '', qtyDelta: delta, note: fullNote, movedAt: todayMyt() });
     setFields(refused ?? {});
     setBusy(false);
   }

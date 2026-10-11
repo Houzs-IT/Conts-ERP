@@ -1,6 +1,6 @@
 /** Sales Returns, ported from 2990's SCM. Sell-side twin of Purchase Returns: a customer
  *  returns goods delivered on a DO. Money integer sen. */
-import { type Env, one, nowIso } from './db';
+import { type Env, one, mytToday } from './db';
 
 export const SRET_STATUSES = ['POSTED', 'COMPLETED', 'CANCELLED'] as const;
 export const isSretStatus = (v: unknown): v is typeof SRET_STATUSES[number] => typeof v === 'string' && (SRET_STATUSES as readonly string[]).includes(v);
@@ -25,7 +25,7 @@ export function toSretLinePayload(r: SretLineRow) {
 }
 
 export async function nextSalesReturnNumber(env: Env): Promise<string> {
-  const year = nowIso().slice(0, 4);
+  const year = mytToday().slice(0, 4);
   const row = await one<{ mx: string | null }>(env, 'SELECT MAX(return_number) AS mx FROM sales_returns WHERE return_number LIKE ?', `SRET-${year}-%`);
   const last = row?.mx ? Number(row.mx.split('-')[2]) : 0;
   return `SRET-${year}-${String((Number.isFinite(last) ? last : 0) + 1).padStart(4, '0')}`;

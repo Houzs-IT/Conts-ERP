@@ -7,7 +7,8 @@ import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 
@@ -40,6 +41,7 @@ export default function RacksBinsPage() {
   const [added, setAdded] = useState<Rack[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Rack>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].filter(r => !removed.has(r.id)).map(r => ({ ...r, ...edits[r.id] })), [added, data, edits, removed]);
   const q = search.trim().toLowerCase();
@@ -56,15 +58,15 @@ export default function RacksBinsPage() {
   function save(draft: Rack, isNew: boolean) {
     const wh = warehouses.find(w => w.id === draft.warehouseId);
     const withWh = { ...draft, warehouseCode: wh?.code ?? draft.warehouseCode, warehouseName: wh?.name ?? draft.warehouseName };
-    if (isNew) { setAdded(a => [{ ...withWh, id: `rk-new-${crypto.randomUUID().slice(0, 8)}` }, ...a]); api.post('/racks', draft).catch(notifyFailure); toast({ tone: 'success', title: 'Rack added.', body: draft.rack }); }
-    else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...withWh } })); api.patch(`/racks/${draft.id}`, { rack: draft.rack, position: draft.position, status: draft.status, reserved: draft.reserved, notes: draft.notes }).catch(notifyFailure); toast({ tone: 'success', title: 'Rack updated.', body: draft.rack }); }
+    if (isNew) { setAdded(a => [{ ...withWh, id: `rk-new-${crypto.randomUUID().slice(0, 8)}` }, ...a]); persist(api.post('/racks', draft), { reload, ok: () => toast({ tone: 'success', title: 'Rack added.', body: draft.rack }) }); }
+    else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...withWh } })); persist(api.patch(`/racks/${draft.id}`, { rack: draft.rack, position: draft.position, status: draft.status, reserved: draft.reserved, notes: draft.notes }), { reload, ok: () => toast({ tone: 'success', title: 'Rack updated.', body: draft.rack }) }); }
     setDrawer(null);
   }
-  function remove(r: Rack) { setRemoved(s => new Set(s).add(r.id)); api.del(`/racks/${r.id}`).catch(notifyFailure); toast({ tone: 'success', title: 'Rack removed.', body: r.rack }); setDrawer(null); }
+  function remove(r: Rack) { setRemoved(s => new Set(s).add(r.id)); persist(api.del(`/racks/${r.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Rack removed.', body: r.rack }) }); setDrawer(null); }
 
   return (
     <>
-      <PageHeader title="Racks & bins" sub={`${all.length} rack locations`}
+      <PageHeader title="Racks & bins" sub={data ? `${all.length} ${all.length === 1 ? 'rack location' : 'rack locations'}` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyRack(warehouses[0]?.id ?? ''), isNew: true })}>New rack</Button> : undefined} />
       <DataTable<Rack>
         id="scm.racks-bins" columns={columns} rows={data ? rows : null} rowKey={r => r.id}

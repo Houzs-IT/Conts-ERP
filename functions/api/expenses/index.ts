@@ -2,7 +2,7 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isIsoDate } from '../../_lib/validate';
 import { resolveUnit } from '../../_lib/ops';
-import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked } from '../../_lib/expenses';
+import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked, expenseCategoryLabel, expenseDayLabel } from '../../_lib/expenses';
 import { approvalSettings, approvalsEnabled, stage } from '../../_lib/approvals';
 
 /** POST /api/expenses { unitId | unitNumber (+propertyName), category, amount, incurredOn, description, reference, chargeTo, receiptDocumentId }
@@ -36,8 +36,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const label = await one<{ name: string }>(env, `SELECT p.name || ' ' || u.unit_number AS name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, unit.id);
     const staged = await stage(env, session, {
       kind: 'expense', entity: 'units', entityId: unit.id, amount: b.amount,
-      reason: String(b.reason ?? '').trim() || String(b.description ?? '').trim() || `${b.category} expense`,
-      summary: `Expense RM ${(b.amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })} on ${label?.name ?? 'unit'} (${b.category}, ${b.incurredOn})${b.description ? `: ${String(b.description).slice(0, 120)}` : ''}`,
+      reason: String(b.reason ?? '').trim() || String(b.description ?? '').trim() || `${expenseCategoryLabel(b.category)} expense`,
+      summary: `Expense RM ${(b.amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })} on ${label?.name ?? 'unit'} (${expenseCategoryLabel(b.category)}, ${expenseDayLabel(b.incurredOn)})${b.description ? `: ${String(b.description).slice(0, 120)}` : ''}`,
       payload: { op: 'create', unitId: unit.id, category: b.category, description: String(b.description ?? '').slice(0, 300), amount: b.amount, incurredOn: b.incurredOn,
         reference: b.reference ?? null, chargeTo: b.chargeTo ?? 'owner', receiptDocumentId: b.receiptDocumentId ?? null,
         maintenanceId: b.maintenanceId ?? null, taskId: b.taskId ?? null, parentExpenseId: b.parentExpenseId ?? null },

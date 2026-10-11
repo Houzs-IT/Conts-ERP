@@ -10,6 +10,11 @@ export interface ExportColumn { label: string; kind: ExportKind }
 /** One cell: text, a number (money in sen), or an ISO date / timestamp string, matching the column kind. */
 export type ExportCell = string | number | null | undefined;
 
+/** A text cell a spreadsheet would run as a formula (=, +, -, @, tab or carriage return first) gets a leading apostrophe,
+ *  so a guest named =HYPERLINK(...) shows as text instead of running when the file is opened. Plain numbers and phone
+ *  numbers (+60 12-345 6789) are left alone. The .xlsx writer needs no guard: its text cells are never formulas. */
+export const csvSafe = (v: string) => (/^[=+\-@\t\r]/.test(v) && !/^[+-]?[\d\s().,-]+$/.test(v) ? `'${v}` : v);
+
 const csvEsc = (v: string) => (/[",\r\n]/.test(v) || /^\s|\s$/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 
 function csvCell(kind: ExportKind, v: ExportCell): string {
@@ -18,14 +23,14 @@ function csvCell(kind: ExportKind, v: ExportCell): string {
   if (kind === 'number') return String(v);
   if (kind === 'date') return String(v).slice(0, 10);
   if (kind === 'datetime') return isoToMyt(String(v));
-  return String(v);
+  return csvSafe(String(v));
 }
 
 /** The header names the unit once, so the cells can be plain numbers a spreadsheet adds up. */
 const headLabel = (c: ExportColumn) => (c.kind === 'money' ? `${c.label} (RM)` : c.label);
 
 export function toCsv(cols: ExportColumn[], rows: ExportCell[][]): string {
-  const lines = [cols.map(c => csvEsc(headLabel(c))).join(',')];
+  const lines = [cols.map(c => csvEsc(csvSafe(headLabel(c)))).join(',')];
   for (const r of rows) lines.push(cols.map((c, i) => csvEsc(csvCell(c.kind, r[i]))).join(','));
   // The BOM makes Excel read the file as UTF-8, so names in other scripts survive.
   return '﻿' + lines.join('\r\n') + '\r\n';

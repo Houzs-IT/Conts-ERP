@@ -8,7 +8,8 @@ import { MoneyInput, NumberInput, PhoneInput, phoneProblem } from '../components
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
@@ -52,6 +53,8 @@ type Draft = Omit<Supplier, 'creditLimitSen' | 'rating'> & { creditLimitSen: num
 const toDraft = (s: Supplier): Draft => s;
 const emptyDraft = (): Draft => toDraft(S({ id: '', code: '', name: '' }));
 
+const emailBad = (v: string) => v.trim() !== '' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim());
+
 export default function SuppliersPage() {
   const { data, loading, error, reload } = useApi<Payload>('/suppliers', FALLBACK);
   const toast = useToast();
@@ -65,6 +68,7 @@ export default function SuppliersPage() {
   const [added, setAdded] = useState<Supplier[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Supplier>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const all = useMemo(
     () => [...added, ...(data?.data ?? [])].filter(s => !removed.has(s.id)).map(s => ({ ...s, ...edits[s.id] })),
@@ -93,20 +97,17 @@ export default function SuppliersPage() {
     if (isNew) {
       const local = S({ ...body, id: `sup-new-${crypto.randomUUID().slice(0, 8)}` });
       setAdded(a => [local, ...a]);
-      api.post('/suppliers', body).catch(notifyFailure);
-      toast({ tone: 'success', title: 'Supplier added.', body: `${body.code} ${body.name}` });
+      persist(api.post('/suppliers', body), { reload, ok: () => toast({ tone: 'success', title: 'Supplier added.', body: `${body.code} ${body.name}` }) });
     } else {
       setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...body } }));
-      api.patch(`/suppliers/${draft.id}`, body).catch(notifyFailure);
-      toast({ tone: 'success', title: 'Supplier updated.', body: `${body.code} ${body.name}` });
+      persist(api.patch(`/suppliers/${draft.id}`, body), { reload, ok: () => toast({ tone: 'success', title: 'Supplier updated.', body: `${body.code} ${body.name}` }) });
     }
     setDrawer(null);
   }
 
   function remove(s: Supplier) {
     setRemoved(r => new Set(r).add(s.id));
-    api.del(`/suppliers/${s.id}`).catch(notifyFailure);
-    toast({ tone: 'success', title: 'Supplier removed.', body: s.code });
+    persist(api.del(`/suppliers/${s.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Supplier removed.', body: s.code }) });
     setDrawer(null);
   }
 
@@ -116,7 +117,7 @@ export default function SuppliersPage() {
     <>
       <PageHeader
         title="Suppliers"
-        sub={`${all.length} suppliers · ${activeCount} active`}
+        sub={data ? `${all.length} ${all.length === 1 ? 'supplier' : 'suppliers'} · ${activeCount} active` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyDraft(), isNew: true })}>New supplier</Button> : undefined}
       />
 
@@ -163,7 +164,7 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
   const [f, setF] = useState<Draft>(draft);
   const set = <K extends keyof Draft>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value as Draft[K] }));
   const setPhone = (k: 'phone' | 'mobile' | 'whatsappNumber') => (v: string) => setF(s => ({ ...s, [k]: v }));
-  const canSave = f.code.trim() !== '' && f.name.trim() !== '';
+  const canSave = f.code.trim() !== '' && f.name.trim() !== '' && !emailBad(f.email);
   const [tried, setTried] = useState(false);
   const ratingError = tried && f.rating != null && (f.rating < 0 || f.rating > 5) ? 'Must be 0 to 5.' : undefined;
   const phoneError = (v: string) => (tried ? phoneProblem(v) : undefined);
@@ -197,7 +198,7 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
           <PhoneInput label="Mobile" value={f.mobile} onChange={setPhone('mobile')} error={phoneError(f.mobile)} />
           <PhoneInput label="WhatsApp" value={f.whatsappNumber} onChange={setPhone('whatsappNumber')} error={phoneError(f.whatsappNumber)} />
           <Field label="Fax" value={f.fax} onChange={set('fax')} />
-          <Field label="Email" type="email" value={f.email} onChange={set('email')} />
+          <Field label="Email" type="email" value={f.email} onChange={set('email')} error={emailBad(f.email) ? 'Check the email, or leave it blank.' : undefined} />
           <Field label="Website" value={f.website} onChange={set('website')} />
         </Section>
         <Section title="Address">
@@ -223,7 +224,7 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
         <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete supplier ${draft.name}?`, body: 'It is deleted for good and drops off the supplier list.', confirmLabel: 'Delete supplier', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name first" onClick={submit}>{isNew ? 'Create supplier' : 'Save'}</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason={emailBad(f.email) ? 'Check the email first' : 'Enter a code and a name first'} onClick={submit}>{isNew ? 'Create supplier' : 'Save'}</Button>
         </div>
       </div>
     </Drawer>

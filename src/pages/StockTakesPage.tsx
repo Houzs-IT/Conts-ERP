@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -8,10 +8,11 @@ import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { date } from '../lib/format';
+import { date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 
@@ -37,6 +38,10 @@ export default function StockTakesPage() {
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; k: Take } | null>(null);
   const [added, setAdded] = useState<Take[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Take>>>({});
+  useResetOnReload(data, () => {
+    setAdded([]); setEdits({});
+    setDrawer(d => { const fresh = d?.mode === 'view' ? data?.data.find(x => x.id === d.k.id) : undefined; return d?.mode === 'view' && fresh ? { mode: 'view', k: { ...d.k, ...fresh } } : d; });
+  });
 
   const rows = useMemo(() => [...added, ...(data?.data ?? [])].map(k => ({ ...k, ...edits[k.id] })), [added, data, edits]);
 
@@ -47,17 +52,16 @@ export default function StockTakesPage() {
     { key: 'status', label: 'Status', type: 'status', value: k => k.status, entity: 'stock_take' },
   ], []);
 
-  function created(k: Take) { setAdded(a => [k, ...a]); toast({ tone: 'success', title: 'Stock take started.', body: k.takeNumber }); setDrawer(null); }
+  function created(k: Take, req: Promise<unknown>) { setAdded(a => [k, ...a]); setDrawer(null); persist(req, { reload, ok: () => toast({ tone: 'success', title: 'Stock take started.', body: k.warehouseName }) }); }
   function act(k: Take, patch: Record<string, unknown>, optimistic: Partial<Take>, title: string) {
     setEdits(e => ({ ...e, [k.id]: { ...e[k.id], ...optimistic } }));
-    api.patch(`/stock-takes/${k.id}`, patch).catch(notifyFailure);
-    toast({ tone: 'success', title, body: k.takeNumber });
+    persist(api.patch(`/stock-takes/${k.id}`, patch), { reload, ok: () => toast({ tone: 'success', title, body: k.takeNumber }) });
     setDrawer(d => d && d.mode === 'view' ? { mode: 'view', k: { ...d.k, ...optimistic } } : d);
   }
 
   return (
     <>
-      <PageHeader title="Stock takes" sub={`${rows.length} counts`}
+      <PageHeader title="Stock takes" sub={data ? `${rows.length} ${rows.length === 1 ? 'count' : 'counts'}` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New stock take</Button> : undefined} />
       <DataTable<Take>
         id="scm.stock-takes" columns={columns} rows={data ? rows : null} rowKey={k => k.id}
@@ -71,9 +75,9 @@ export default function StockTakesPage() {
   );
 }
 
-function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses: Opt[]; canWrite: boolean; onClose: () => void; onCreated: (k: Take) => void }) {
+function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses: Opt[]; canWrite: boolean; onClose: () => void; onCreated: (k: Take, req: Promise<unknown>) => void }) {
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
-  const [takeDate, setTakeDate] = useState(new Date().toISOString().slice(0, 10));
+  const [takeDate, setTakeDate] = useState(todayMyt());
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<{ itemCode: string; description: string }[]>([{ itemCode: '', description: '' }]);
   const setItem = (i: number, k: 'itemCode' | 'description', v: string) => setItems(is => is.map((x, j) => j === i ? { ...x, [k]: v } : x));
@@ -86,8 +90,8 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
     setTried(true);
     if (!takeDate) return;
     const b = built();
-    api.post('/stock-takes', { warehouseId, takeDate, notes, lines: b }).catch(notifyFailure);
-    onCreated({ id: `stk-new-${crypto.randomUUID().slice(0, 8)}`, takeNumber: `STK-${new Date().getFullYear()}-NEW`, warehouseName: warehouses.find(w => w.id === warehouseId)?.name ?? '', warehouseId, takeDate, status: 'OPEN', notes, lines: b.map(i => ({ itemCode: i.itemCode, description: i.description, systemQty: 0, countedQty: null, variance: null })) });
+    const req = api.post('/stock-takes', { warehouseId, takeDate, notes, lines: b });
+    onCreated({ id: `stk-new-${crypto.randomUUID().slice(0, 8)}`, takeNumber: 'Saving…', warehouseName: warehouses.find(w => w.id === warehouseId)?.name ?? '', warehouseId, takeDate, status: 'OPEN', notes, lines: b.map(i => ({ itemCode: i.itemCode, description: i.description, systemQty: 0, countedQty: null, variance: null })) }, req);
   }
 
   return (
@@ -124,8 +128,10 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
 }
 
 function CountDrawer({ k, canWrite, onClose, onAct }: { k: Take; canWrite: boolean; onClose: () => void; onAct: (k: Take, patch: Record<string, unknown>, optimistic: Partial<Take>, title: string) => void }) {
-  const editable = canWrite && k.status === 'OPEN';
+  const { record, loading: linesLoading, error: linesError } = useRecord<Take>('stock-takes', k.id);
+  const editable = canWrite && k.status === 'OPEN' && !linesLoading && !linesError;
   const [lines, setLines] = useState<TakeLine[]>((k.lines ?? []).map(l => ({ ...l })));
+  useEffect(() => { if (record?.lines) setLines(record.lines.map(l => ({ ...l }))); }, [record]);
   const setCount = (i: number, counted: number | null) => setLines(ls => ls.map((l, j) => j !== i ? l : { ...l, countedQty: counted, variance: counted === null ? null : counted - l.systemQty }));
 
   function saveCounts() { onAct(k, { lines: lines.map(l => ({ id: l.id, countedQty: l.countedQty })) }, { lines }, 'Counts saved.'); }
@@ -148,6 +154,7 @@ function CountDrawer({ k, canWrite, onClose, onAct }: { k: Take; canWrite: boole
                   <td className={cx('py-2 px-3 text-right tabular-nums text-[13px] font-semibold', l.variance == null ? 'text-muted-ink' : l.variance === 0 ? 'text-muted-ink' : l.variance > 0 ? 'text-success' : 'text-danger')}>{l.variance == null ? '—' : l.variance > 0 ? `+${l.variance}` : l.variance}</td>
                 </tr>
               ))}
+              {lines.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-[12.5px] text-muted-ink">{linesLoading ? 'Loading lines…' : linesError ?? 'No lines on this stock take.'}</td></tr>}
             </tbody>
           </table>
         </div>

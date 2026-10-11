@@ -8,10 +8,11 @@ import { MoneyInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
@@ -23,7 +24,7 @@ type Status = 'SENT' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'CANCELLED';
 const FILTERS: (Status | 'all')[] = ['all', 'SENT', 'PARTIALLY_PAID', 'PAID', 'OVERDUE', 'CANCELLED'];
 
 interface SiLine { itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; lineTotalSen: number }
-interface Si { id: string; invoiceNumber: string; doNumber: string; soDocNo: string; customerName: string; invoiceDate: string; dueDate: string; status: Status; totalSen: number; paidSen: number; outstandingSen: number; notes: string; lines?: SiLine[] }
+interface Si { id: string; invoiceNumber: string; doNumber: string; soDocNo: string; customerName: string; invoiceDate: string; dueDate: string; status: Status; subtotalSen?: number; taxSen?: number; totalSen: number; paidSen: number; outstandingSen: number; notes: string; lines?: SiLine[] }
 interface Payload { data: Si[]; generatedAt: string }
 interface DoLine { itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; lineTotalSen: number }
 interface OpenDo { id: string; doNumber: string; customerName: string; status: string; lines?: DoLine[] }
@@ -52,6 +53,10 @@ export default function SalesInvoicesPage() {
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; si: Si } | null>(null);
   const [added, setAdded] = useState<Si[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Si>>>({});
+  useResetOnReload(data, () => {
+    setAdded([]); setEdits({});
+    setDrawer(d => { const fresh = d?.mode === 'view' ? data?.data.find(x => x.id === d.si.id) : undefined; return d?.mode === 'view' && fresh ? { mode: 'view', si: { ...d.si, ...fresh } } : d; });
+  });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].map(p => ({ ...p, ...edits[p.id] })), [added, data, edits]);
   const q = search.trim().toLowerCase();
@@ -69,17 +74,16 @@ export default function SalesInvoicesPage() {
     { key: 'outstanding', label: 'Outstanding', type: 'money', value: p => p.status === 'CANCELLED' ? null : p.outstandingSen, render: p => p.status === 'CANCELLED' ? <span className="text-muted-ink">—</span> : <span className="tabular-nums font-semibold">{rm(p.outstandingSen)}</span> },
   ], []);
 
-  function created(si: Si) { setAdded(a => [si, ...a]); toast({ tone: 'success', title: 'Invoice raised.', body: `${si.invoiceNumber} · ${si.customerName}` }); setDrawer(null); }
+  function created(si: Si, req: Promise<unknown>) { setAdded(a => [si, ...a]); setDrawer(null); persist(req, { reload, ok: () => toast({ tone: 'success', title: 'Invoice raised.', body: si.customerName }) }); }
   function act(si: Si, patch: Record<string, unknown>, optimistic: Partial<Si>, title: string) {
     setEdits(e => ({ ...e, [si.id]: { ...e[si.id], ...optimistic } }));
-    api.patch(`/sales-invoices/${si.id}`, patch).catch(notifyFailure);
-    toast({ tone: 'success', title, body: si.invoiceNumber });
+    persist(api.patch(`/sales-invoices/${si.id}`, patch), { reload, ok: () => toast({ tone: 'success', title, body: si.invoiceNumber }) });
     setDrawer(d => d && d.mode === 'view' ? { mode: 'view', si: { ...d.si, ...optimistic } } : d);
   }
 
   return (
     <>
-      <PageHeader title="Sales invoices" sub={`${all.length} invoices · ${rm(outstanding, { cents: false })} outstanding`}
+      <PageHeader title="Sales invoices" sub={data ? `${all.length} ${all.length === 1 ? 'invoice' : 'invoices'} · ${rm(outstanding, { cents: false })} outstanding` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New invoice</Button> : undefined} />
       <DataTable<Si>
         id="scm.sales-invoices" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
@@ -113,10 +117,10 @@ const lineColumns: Column<SiLine>[] = [
   { key: 'total', label: 'Line total', type: 'money', value: l => l.lineTotalSen },
 ];
 
-function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo[]; canWrite: boolean; onClose: () => void; onCreated: (s: Si) => void }) {
+function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo[]; canWrite: boolean; onClose: () => void; onCreated: (s: Si, req: Promise<unknown>) => void }) {
   const [doId, setDoId] = useState('');
   const [lines, setLines] = useState<DoLine[]>([]);
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
+  const [invoiceDate, setInvoiceDate] = useState(todayMyt());
   const [dueDate, setDueDate] = useState('');
   const [taxSen, setTaxSen] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
@@ -136,8 +140,8 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
   const canSave = canWrite && doId !== '' && lines.length > 0 && invoiceDate !== '' && !dueError;
 
   function submit() {
-    api.post('/sales-invoices', { deliveryOrderId: doId, invoiceDate, dueDate: dueDate || null, taxSen: taxSen ?? 0, notes }).catch(notifyFailure);
-    onCreated({ id: `si-new-${crypto.randomUUID().slice(0, 8)}`, invoiceNumber: `SINV-${new Date().getFullYear()}-NEW`, doNumber: dord?.doNumber ?? '', soDocNo: '', customerName: dord?.customerName ?? '', invoiceDate, dueDate, status: 'SENT', totalSen: total, paidSen: 0, outstandingSen: total, notes, lines });
+    const req = api.post('/sales-invoices', { deliveryOrderId: doId, invoiceDate, dueDate: dueDate || null, taxSen: taxSen ?? 0, notes });
+    onCreated({ id: `si-new-${crypto.randomUUID().slice(0, 8)}`, invoiceNumber: 'Saving…', doNumber: dord?.doNumber ?? '', soDocNo: '', customerName: dord?.customerName ?? '', invoiceDate, dueDate, status: 'SENT', totalSen: total, paidSen: 0, outstandingSen: total, notes, lines }, req);
   }
 
   return (
@@ -167,7 +171,7 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
               empty={{ title: 'This delivery order has no lines.' }} />
           </div>
         )}
-        <div className="grid grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
           <div className="flex flex-col gap-1.5 items-end justify-end">
             <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Subtotal</span><span className="tabular-nums w-[120px] text-right">{rm(subtotal)}</span></div>
@@ -185,8 +189,9 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
 }
 
 function ViewDrawer({ si, canWrite, onClose, onAct }: { si: Si; canWrite: boolean; onClose: () => void; onAct: (s: Si, patch: Record<string, unknown>, optimistic: Partial<Si>, title: string) => void }) {
+  const { record, loading: linesLoading, error: linesError } = useRecord<Si>('sales-invoices', si.id);
   const [recvSen, setRecvSen] = useState<number | null>(null);
-  const lineRows = useMemo(() => (si.lines ?? []).map((l, i) => ({ ...l, key: String(i) })), [si.lines]);
+  const lineRows = useMemo(() => (record?.lines ?? si.lines ?? []).map((l, i) => ({ ...l, key: String(i) })), [record, si.lines]);
   return (
     <Drawer open onClose={onClose} width={720}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
@@ -203,11 +208,15 @@ function ViewDrawer({ si, canWrite, onClose, onAct }: { si: Si; canWrite: boolea
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<SiLine & { key: string }>
             id="scm.sales-invoice.lines" urlPrefix="lines." bare noViews noToolbar pageSize={0}
-            columns={lineColumns} rows={lineRows} rowKey={l => l.key}
+            columns={lineColumns} rows={lineRows} rowKey={l => l.key} loading={linesLoading} error={linesError}
             noun={['line', 'lines']} exportName={`${si.invoiceNumber}-lines`}
             empty={{ title: 'No lines on this invoice.' }} />
         </div>
         <div className="flex flex-col gap-1.5 items-end">
+          {!!si.taxSen && <>
+            <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Subtotal</span><span className="tabular-nums w-[120px] text-right">{rm(si.subtotalSen ?? si.totalSen - si.taxSen)}</span></div>
+            <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Tax</span><span className="tabular-nums w-[120px] text-right">{rm(si.taxSen)}</span></div>
+          </>}
           <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Total</span><span className="tabular-nums w-[120px] text-right">{rm(si.totalSen)}</span></div>
           <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Received</span><span className="tabular-nums w-[120px] text-right">{rm(si.paidSen)}</span></div>
           <div className="flex gap-8 text-[15px] font-semibold"><span>Outstanding</span><span className="tabular-nums w-[120px] text-right">{rm(si.outstandingSen)}</span></div>

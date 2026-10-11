@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, ApiFailure } from './api';
+import { invalidateCachePrefix } from './cached-fetch';
 import type { SessionUser } from './types';
 
 /** The password was right and the account has two-step sign-in on: the code is asked for next. */
@@ -77,6 +78,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     try { await api.post('/auth/logout'); } catch (e) { if (!(e instanceof ApiFailure)) throw e; }
     setUser(null);
+    // Cached reads are kept per browser, not per person: the next person on a shared phone or desk must not see them.
+    invalidateCachePrefix('');
     window.location.hash = '/';
   };
 

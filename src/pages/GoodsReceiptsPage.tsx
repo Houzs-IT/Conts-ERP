@@ -9,9 +9,10 @@ import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
@@ -26,7 +27,7 @@ interface GrnLine { itemCode: string; description: string; uom: string; qtyRecei
 interface Grn { id: string; grnNumber: string; poNumber: string; purchaseOrderId: string; supplierName: string; supplierCode: string; receivedAt: string; deliveryNoteRef: string; status: Status; notes: string; totalSen: number; lines?: GrnLine[] }
 interface Payload { data: Grn[]; generatedAt: string }
 interface PoLine { id: string; itemCode: string; description: string; uom: string; qty: number; receivedQty: number; unitPriceSen: number }
-interface OpenPo { id: string; poNumber: string; supplierName: string; status: string; lines?: PoLine[] }
+interface OpenPo { id: string; poNumber: string; supplierName: string; status: string; warehouseId?: string; lines?: PoLine[] }
 
 const FALLBACK: Payload = {
   generatedAt: '',
@@ -68,6 +69,10 @@ export default function GoodsReceiptsPage() {
 
   const [added, setAdded] = useState<Grn[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Grn>>>({});
+  useResetOnReload(data, () => {
+    setAdded([]); setEdits({});
+    setDrawer(d => { const fresh = d?.mode === 'view' ? data?.data.find(x => x.id === d.grn.id) : undefined; return d?.mode === 'view' && fresh ? { mode: 'view', grn: { ...d.grn, ...fresh } } : d; });
+  });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].map(g => ({ ...g, ...edits[g.id] })), [added, data, edits]);
   const q = search.trim().toLowerCase();
@@ -82,11 +87,7 @@ export default function GoodsReceiptsPage() {
     { key: 'total', label: 'Total', type: 'money', value: g => g.totalSen },
   ], []);
 
-  function created(grn: Grn) {
-    setAdded(a => [grn, ...a]);
-    toast({ tone: 'success', title: 'Goods received.', body: `${grn.grnNumber} · ${grn.supplierName}` });
-    setDrawer(null);
-  }
+  function created(grn: Grn, req: Promise<unknown>) { setAdded(a => [grn, ...a]); setDrawer(null); persist(req, { reload, ok: () => toast({ tone: 'success', title: 'Goods received.', body: grn.supplierName }) }); }
   // Waits for the server: it refuses once the received goods have already left the warehouse.
   async function cancel(g: Grn) {
     try {
@@ -99,7 +100,7 @@ export default function GoodsReceiptsPage() {
 
   return (
     <>
-      <PageHeader title="Goods received" sub={`${all.length} receipts · against purchase orders`}
+      <PageHeader title="Goods received" sub={data ? `${all.length} ${all.length === 1 ? 'receipt' : 'receipts'} · against purchase orders` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>Receive goods</Button> : undefined} />
 
       <DataTable<Grn>
@@ -135,10 +136,10 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 
 interface RcvLine { poLineId: string; itemCode: string; description: string; uom: string; ordered: number; already: number; unitPriceSen: number; receive: number | null; accepted: number | null }
 
-function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: OpenPo[]; canWrite: boolean; onClose: () => void; onCreated: (g: Grn) => void }) {
+function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: OpenPo[]; canWrite: boolean; onClose: () => void; onCreated: (g: Grn, req: Promise<unknown>) => void }) {
   const [poId, setPoId] = useState('');
   const [lines, setLines] = useState<RcvLine[]>([]);
-  const [receivedAt, setReceivedAt] = useState(new Date().toISOString().slice(0, 10));
+  const [receivedAt, setReceivedAt] = useState(todayMyt());
   const [dnRef, setDnRef] = useState('');
   const [notes, setNotes] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
@@ -148,6 +149,7 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
   async function pick(id: string) {
     setPoId(id);
     const p = openPos.find(x => x.id === id);
+    if (p?.warehouseId) setWarehouseId(p.warehouseId);
     let poLines = p?.lines;
     if (!poLines) { try { const r = await api.get<{ data: { lines: PoLine[] } }>(`/purchase-orders/${id}`); poLines = r.data.lines; } catch { poLines = []; } }
     setLines((poLines ?? []).filter(l => l.qty - l.receivedQty > 0).map(l => {
@@ -160,7 +162,7 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
   const total = willReceive.reduce((s, l) => s + (l.accepted ?? 0) * l.unitPriceSen, 0);
   const canSave = canWrite && poId !== '' && willReceive.length > 0;
   const [tried, setTried] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayMyt();
   const dateError = tried && !receivedAt ? 'Required.' : undefined;
   const acceptError = (l: RcvLine) => (tried && (l.receive ?? 0) > 0 && l.accepted == null ? 'Required.' : undefined);
 
@@ -168,12 +170,12 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
     setTried(true);
     if (!receivedAt || receivedAt > today || willReceive.some(l => l.accepted == null || l.accepted > (l.receive ?? 0))) return;
     const payloadLines = willReceive.map(l => ({ purchaseOrderLineId: l.poLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qtyReceived: l.receive ?? 0, qtyAccepted: l.accepted ?? 0 }));
-    api.post('/goods-receipts', { purchaseOrderId: poId, receivedAt, deliveryNoteRef: dnRef, notes, warehouseId: warehouseId || undefined, lines: payloadLines }).catch(notifyFailure);
+    const req = api.post('/goods-receipts', { purchaseOrderId: poId, receivedAt, deliveryNoteRef: dnRef, notes, warehouseId: warehouseId || undefined, lines: payloadLines });
     onCreated({
-      id: `grn-new-${crypto.randomUUID().slice(0, 8)}`, grnNumber: `GRN-${new Date().getFullYear()}-NEW`, poNumber: po?.poNumber ?? '', purchaseOrderId: poId,
+      id: `grn-new-${crypto.randomUUID().slice(0, 8)}`, grnNumber: 'Saving…', poNumber: po?.poNumber ?? '', purchaseOrderId: poId,
       supplierName: po?.supplierName ?? '', supplierCode: '', receivedAt, deliveryNoteRef: dnRef, status: 'POSTED', notes, totalSen: total,
       lines: payloadLines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qtyReceived: l.qtyReceived, qtyAccepted: l.qtyAccepted, qtyRejected: l.qtyReceived - l.qtyAccepted, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qtyAccepted * l.unitPriceSen })),
-    });
+    }, req);
   }
 
   return (
@@ -232,7 +234,7 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
           <div className="flex items-end justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Received value</span><span className="tabular-nums w-[120px] text-right">{rm(total)}</span></div></div>
         </div>
@@ -261,6 +263,7 @@ const LINE_COLUMNS: Column<GrnLine & { i: number }>[] = [
 ];
 
 function ViewDrawer({ grn, canWrite, onClose, onCancel }: { grn: Grn; canWrite: boolean; onClose: () => void; onCancel: (g: Grn) => void }) {
+  const { record, loading: linesLoading, error: linesError } = useRecord<Grn>('goods-receipts', grn.id);
   return (
     <Drawer open onClose={onClose} width={760}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
@@ -276,7 +279,7 @@ function ViewDrawer({ grn, canWrite, onClose, onCancel }: { grn: Grn; canWrite: 
         </div>
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<GrnLine & { i: number }>
-            id="scm.goods-receipt.lines" urlPrefix="lines." columns={LINE_COLUMNS} rows={(grn.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)}
+            id="scm.goods-receipt.lines" urlPrefix="lines." columns={LINE_COLUMNS} rows={(record?.lines ?? grn.lines ?? []).map((l, i) => ({ ...l, i }))} rowKey={l => String(l.i)} loading={linesLoading} error={linesError}
             bare noViews noToolbar pageSize={0} noun={['line', 'lines']} exportName={`${grn.grnNumber}-lines`}
             empty={{ title: 'No lines on this receipt.' }} />
         </div>

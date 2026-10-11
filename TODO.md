@@ -47,6 +47,15 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Done (feat/s3-history-notify): closing a repair job gives back its calendar block at once (cancelled if not started, ends today if under way), also for blocks made before migration 0095 (matched by the note); the scheduled job sweeps any left.
 - Videos are capped at 50 MB per file (Workers request memory); longer clips need direct-to-R2 upload.
 
+## Performance (audit 11 Oct 2026, docs/audits/performance-from-sister-erps.md)
+- Owner decision: Workers Paid on the Conts ERP account. On the free plan, Send statements makes one email call per owner (~100 a month) against 50 outside calls per request; calls past 50 fail and are not retried while the cron is off. Until then send 40 at a time.
+- A bulk price update for all 139 units over a year builds 152,205 rate rows in one request (12.6 s locally); UNTESTED against the free plan's CPU limit on Cloudflare.
+- Not yet batched (allow-listed in scripts/checks/no-query-in-loop.mjs): reservations/mark-paid-out (3 queries per booking), expenses/utilities (~6 per bill), payouts/index (payout run), approvals bulk approve.
+- Reviews list and Channex call log stop at 500 rows without paging; add paging before 500 reviews.
+- GETs are not retried on 502/503/504 (a cold Hyperdrive pool after a quiet spell); a single retry for GETs in src/lib/api.ts.
+- Confirm the Hyperdrive origin is Supabase's session pooler (port 5432), not the transaction pooler.
+- libphonenumber (149 KB) is in the entry script because src/lib/format.ts formats phones; lazy-load it if the entry budget (scripts/checks/entry-bundle.mjs, 180 KB gzipped) gets tight.
+
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.
@@ -90,7 +99,10 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## Permissions
 - Editable permissions (feat/role-permissions): Users and roles > Permissions is now a chart management edits, 21 areas x 3 roles (operations manager, operations staff, finance admin), levels none / view / edit / full, saved to pos.role_access (migrations 0049, 0050; staging only). An area with no row keeps the built-in rule, so an empty table changes nothing. functions/_lib/access.ts holds the areas; requireSession sets session.manage, which replaced 142 MASTER_ROLES / canSeeFinance checks; the middleware refuses writes below edit. Tested: scripts/api-checks/role-access.mjs (23).
-- Permissions, known limit: with "No access", reads are refused only for Portfolio, Finance and supply chain invoices; elsewhere the menu and screen are closed and writes refused, but another screen may still read that data (the calendar reads units).
+- Done (fix/audit-rbac): the level the Permissions chart shows is the level enforced, built-in or chosen: No access refuses reads in every area (exports and search included), View refuses writes. Reads other screens share (unit list, cleaner names, record history, supply chain reference lists) and cross-screen actions are listed with reasons in ROUTE_AREAS (functions/_lib/access.ts). Housekeepers and technicians are deny-by-default like owners (FIELD_ALLOWED). File downloads check the file's record. Checked by scripts/api-checks/rbac-matrix.mjs (361 route-methods x 8 roles + 40 scenarios) and the require-permission gate in npm run check; catalogue docs/audits/rbac-from-sister-erps.md.
+- Owner to decide: management can make a password reset link for another management account (Users > Reset link), which is a way into that account; limit reset links to non-management accounts?
+- Open: some handlers look a record up before checking the role, so a desk role can tell that a record id exists (404 vs 403); ids are random, low risk.
+- Open: a technician's repair history is matched by vendor name = their name (functions/api/audit/index.ts); link maintenance jobs to the technician's user id instead.
 - Permissions inside the supply chain engine (7 Oct): the sign-on carries the role's level for the 8 engine areas (functions/_lib/scmEngine.ts); the engine turns them into its page access and permission keys per role "Conts: <role>" (engine/backend/src/conts/access.ts, sso.ts) and one hook in Houzs's services/auth.ts (hydrateAuthUser) applies them. Full in all 8 keeps the full-access role. Standard for operations staff: edit in supply chain and service cases, view on projects, no invoices or accounting. Tested on the local engine: scripts/api-checks/scm-engine-access.mjs (17). Needs the engine worker redeployed (owner). Known: Houzs lets a role with Sales order view read sales invoices (read-inherit); raising one is refused. Test accounts chart-*@theconts.test were created on staging by the check.
 - Permissions (8 Oct): the 20 handlers with their own role lists (guests, housekeeping, inventory, maintenance SKUs, channel sync, owners, contracts, reviews, unit readiness, automations, integrations, access codes) follow a chosen level through mayWork / maySee / mayRun in functions/_lib/access.ts. Inviting users, organisation settings and the audit endpoint stay fixed to their roles on purpose (a role that could invite users could make itself management).
 - Permissions, not done: per-person exceptions (owner, 8 Oct: later); production migrations 0049-0050 and the merge, after the owner approves staging.
@@ -177,7 +189,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Migration 0093 (revenue_model, contract history, receipts, Indah Water category) is not applied to staging or production yet; apply after the PR merges, dry-run first.
 - Long-term let units still show on the calendar and stay on channels: hiding them is the calendar's job (batch 3), not done here.
 - The sidebar still says "Adjustments" where it means owner credits and charges, if anywhere: navigation belongs to batch 1.
-- Expense receipt upload checked through the API only (document kind 'receipt', expenses.receipt_document_id); the file picker in the Record expense form was not clicked through in a browser.
+- Expense receipt upload: clicked through in a browser on 11 Oct (fix/sweep-money-system): Record expense with a PNG receipt, then the Receipt link downloads the same file.
 - 26 units with no contract record still run on their own split (units.split_kind); saving their Contract tab creates the contract.
 ## Calendar and rates (b3, 10 Oct)
 - Migration 0092 (units.weekend_rate, reservations.block_reason) is not yet applied to staging or production. It backfills weekend_rate = round(base_rate x 1.22) for every priced unit so live Fri/Sat prices do not move; units created later sell the weekend at the base rate until a weekend rate is set (Pricing page).
@@ -213,3 +225,30 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Done: phones read, format and validate for every country through libphonenumber (src/lib/phone.ts, shared by format.ts, PhoneInput and the server's checkPhone); PhoneInput has a searchable country picker (MY +60 by default). 3,417 of 3,417 local guest phones read in their country's grouping (scripts/api-checks/phone-shapes.mjs).
 - Open: "already on file" for a new guest matches the phone text exactly, so a typed +60 18-980 0069 does not match an imported 60189800069; compare digits (phoneDigits) if duplicates appear.
 - Open: 3 stored guest phones are the right length but outside any known range (2 x +60 2..., 1 x +49), so they show ungrouped.
+
+## System bugs from Houzs / Hookka (fix/audit-system, docs/audits/system-from-sister-erps.md)
+- Done: same nights cannot be booked twice at the same moment (unit lock); status and dates changes are compare-and-set; statement generation is one transaction per period; supply chain numbers retry on a clash; MYT dates everywhere (gate myt-dates); CSV formula guard (gate csv-formula); uploads that are not images, video or PDF download instead of opening; 300 / 10,000-character text limits on every write; bookings CSV import validates each row.
+- Open: the 15-minute email/WhatsApp retry does not claim its rows, so a double-fired cron could resend one message; add a 'sending' state (migration) before the cron worker is deployed.
+- Open: built-in supply chain create screens add a placeholder row before the save answers and keep it if the save fails; only matters if the engine is switched off.
+- Open: field edits are last-write-wins (no version column); status and dates are already protected.
+- Note: booking-lifecycle.mjs signs an operations_staff cookie for the dev user, but the middleware now reads the live role from users, so its three non-management checks fail on any database where that user is management; give the check a real non-management user.
+
+## Supply chain click sweep (fix/sweep-supply-chain, 11 Oct)
+- Done: built-in supply chain screens wait for the server before saying "saved" and re-read the list (src/lib/persist.ts); document drawers load their lines from the record; tested by scripts/api-checks/supply-chain-sweep.mjs.
+- Owner to decide: Customers, Drivers, Vehicles, 3PL, zones, rate cards, categories, fabrics, payment vouchers, accounting and credit notes have no menu entry since 25 Sep; add them back or leave reachable only by address.
+- Owner to decide: item codes on orders, adjustments and stock takes are free text; should they have to exist in Products?
+- Owner to decide: credit notes may exceed what the invoice still owes (receivables go negative); cap them or allow refunds owed.
+- Owner to decide: credit notes and consignment notes both number CN-YYYY-NNNN.
+- Owner to decide: line discounts on sales and purchase orders are not carried to delivery orders, goods receipts or invoices.
+- Owner to decide: delivery schedule (DP orders, last mile) is not tied to delivery orders, and does not warn about drivers on leave.
+- Owner to decide: sales-order payments and sales-invoice receipts are recorded separately and can count the same money twice.
+
+## Open from the money-and-system sweep (fix/sweep-money-system, 11 Oct 2026)
+- Owner to decide: expenses can be added and edited but never deleted (no button, no endpoint). A wrong expense today can only be edited to RM 0.00.
+- Owner to decide: Portfolio "This month" counts every night booked in the whole month, while "Quarter to date" stops at today; the caption now says so. Pick one rule for both.
+- Owner to decide: should finance admins see Users and roles? The list refuses them (functions/api/users), so their built-in access is now none; management can still raise it, and then the page shows "could not load".
+- Imported paid payouts have no paid date (the workbook has none), so Payouts shows "Date not recorded" for 531 of 536.
+- Performance "Management fees" over 12 months only counts Aug 2026: the workbook's 整体报告 breakdown exists for that month alone.
+- The sign-in footer phone (+60 17-465 8868) is fixed in LoginPage.tsx; Settings > Support phone is not read there before sign-in.
+- Integrations header counts "2 not connected" from the provider cards only; the Channex panel above it is not counted.
+- A new password equal to the current one is accepted on My account.

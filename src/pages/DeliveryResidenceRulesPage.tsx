@@ -8,7 +8,8 @@ import { NumberInput, TimeField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 
@@ -41,6 +42,7 @@ export default function DeliveryResidenceRulesPage() {
   const [added, setAdded] = useState<Rule[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Rule>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].filter(r => !removed.has(r.id)).map(r => ({ ...r, ...edits[r.id] })), [added, data, edits, removed]);
   const q = search.trim().toLowerCase();
@@ -56,15 +58,15 @@ export default function DeliveryResidenceRulesPage() {
   ], []);
 
   function save(draft: Rule, isNew: boolean) {
-    if (isNew) { setAdded(a => [R({ ...draft, id: `rr-new-${crypto.randomUUID().slice(0, 8)}` }), ...a]); api.post('/residence-rules', draft).catch(notifyFailure); toast({ tone: 'success', title: 'Rule added.', body: draft.buildingType }); }
-    else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...draft } })); api.patch(`/residence-rules/${draft.id}`, draft).catch(notifyFailure); toast({ tone: 'success', title: 'Rule updated.', body: draft.buildingType }); }
+    if (isNew) { setAdded(a => [R({ ...draft, id: `rr-new-${crypto.randomUUID().slice(0, 8)}` }), ...a]); persist(api.post('/residence-rules', draft), { reload, ok: () => toast({ tone: 'success', title: 'Rule added.', body: draft.buildingType }) }); }
+    else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...draft } })); persist(api.patch(`/residence-rules/${draft.id}`, draft), { reload, ok: () => toast({ tone: 'success', title: 'Rule updated.', body: draft.buildingType }) }); }
     setDrawer(null);
   }
-  function remove(r: Rule) { setRemoved(s => new Set(s).add(r.id)); api.del(`/residence-rules/${r.id}`).catch(notifyFailure); toast({ tone: 'success', title: 'Rule removed.', body: r.buildingType }); setDrawer(null); }
+  function remove(r: Rule) { setRemoved(s => new Set(s).add(r.id)); persist(api.del(`/residence-rules/${r.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Rule removed.', body: r.buildingType }) }); setDrawer(null); }
 
   return (
     <>
-      <PageHeader title="Residence rules" sub={`${all.length} building-type rules`}
+      <PageHeader title="Residence rules" sub={data ? `${all.length} ${all.length === 1 ? 'building-type rule' : 'building-type rules'}` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: R({ id: '', buildingType: '' }), isNew: true })}>New rule</Button> : undefined} />
       <DataTable<Rule>
         id="scm.residence-rules" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
