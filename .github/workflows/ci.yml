@@ -29,3 +29,66 @@ jobs:
         run: npx vite build
       - name: Standards checks
         run: npm run check
+
+  # Who may call what: every API handler as every role (rbac-matrix.mjs against rbac-matrix.expected.json) and the
+  # editable permissions chart (role-access.mjs), against a real server on a throwaway Postgres built from
+  # migrations-pg and the demo data. A new endpoint, or a change in who can reach one, fails here until
+  # rbac-matrix.expected.json is updated in the same pull request.
+  rbac:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: ci
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # Not a real secret: the signing key of this throwaway server only, and the default in harness.mjs.
+      SESSION_SECRET: smoke-test-secret-not-real-0123456789
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Database (migrations, demo data, test accounts)
+        run: node scripts/ci-api-db.mjs
+        env:
+          CI_DB_URL: postgres://postgres@127.0.0.1:5432/ci
+      - name: Build
+        run: npx vite build
+      - name: Start the API
+        run: |
+          printf 'SESSION_SECRET="%s"\n' "$SESSION_SECRET" > .dev.vars
+          nohup npx wrangler pages dev dist --port 8788 > wrangler.log 2>&1 &
+          for i in $(seq 1 90); do
+            curl -sf http://localhost:8788/api/settings/public > /dev/null && exit 0
+            sleep 2
+          done
+          cat wrangler.log
+          exit 1
+        env:
+          CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgres://pos_app:ci@127.0.0.1:5432/ci
+      - name: Permissions chart (role-access)
+        run: node scripts/api-checks/role-access.mjs
+        env:
+          API_BASE: http://localhost:8788
+      - name: Role x endpoint matrix (rbac-matrix)
+        run: node scripts/api-checks/rbac-matrix.mjs
+        env:
+          BASE: http://localhost:8788
+          BIGDATA_PORT: '5432'
+          BIGDATA_DB: ci
+      - name: Server log
+        if: failure()
+        run: tail -n 200 wrangler.log
