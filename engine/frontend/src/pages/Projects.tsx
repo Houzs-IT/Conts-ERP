@@ -478,7 +478,6 @@ export function Projects() {
     const hubCards = (
       [
         { key: "list", label: "Project List", description: "All projects — status, brand, dates, PIC, budget.", icon: ClipboardList, v: "list" },
-        { key: "monitor", label: "Project Monitor", description: "Renovation queues per team: what needs doing, red flags, site calendar.", icon: Activity, v: "monitor" },
         { key: "calendar", label: "Calendar", description: "Projects & tasks on a month timeline.", icon: Calendar, v: "calendar" },
         { key: "finances", label: "Finances", description: "Revenue, spend and margin across projects.", icon: DollarSign, v: "finances" },
         { key: "maintenance", label: "Project Maintenance", description: "Templates, checklists and defaults.", icon: Wrench, v: "maintenance" },
