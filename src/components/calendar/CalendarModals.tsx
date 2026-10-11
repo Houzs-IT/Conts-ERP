@@ -3,7 +3,7 @@ import { Button } from '../Button';
 import { Field } from '../Field';
 import { DateField, MoneyInput, PercentInput } from '../inputs';
 import ChannelMark from '../ChannelMark';
-import { date, dateShort, count, plural, rmShort, amount } from '../../lib/format';
+import { date, dateShort, count, plural, rmShort, rmRange, amount } from '../../lib/format';
 import { Select } from '../Select';
 import Icon from '../Icon';
 import { UnitPicker } from '../booking/UnitPicker';
@@ -11,6 +11,8 @@ import { CHANNEL } from '../../lib/vocabulary';
 import { COMMISSION, upliftOver } from '../../lib/pricing';
 import type { BookingChannel } from '../../lib/types';
 import { type CalendarUnit } from './types';
+import { runBulk, type BulkBody, type BulkResult } from './bulkRates';
+import { errorMessage } from '../../lib/api';
 
 function CentreModal({ title, sub, onClose, onSave, saveLabel, canSave, disabledReason = 'Fill the fields first', children }: { title: string; sub?: string; onClose: () => void; onSave: () => void; saveLabel: string; canSave: boolean; disabledReason?: string; children: ReactNode }) {
   return (
@@ -104,11 +106,9 @@ export interface RatePricing {
   savedUplifts?: Record<string, number>;
   upliftShares?: Record<string, number>;
 }
-export interface RateUpdateValue {
-  unitIds: string[]; channels: string[]; weekdays: number[] | null;
-  lines: { from: string; to: string; baseRate?: number; adjustPct?: number; minStay?: number | null; stopSell?: boolean }[];
-}
+export type RateUpdateValue = BulkBody;
 interface Range { from: string; to: string }
+type Review = { state: 'checking' | 'ready' | 'saving' | 'failed'; result?: BulkResult; error?: string; progress?: [number, number] };
 type PriceMode = 'keep' | 'set' | 'up' | 'down';
 
 const addDayIso = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) + 864e5).toISOString().slice(0, 10);
@@ -122,13 +122,23 @@ const span = (xs: number[], f: (n: number) => string) => {
 /** Up to this many units on the board, Rate update starts with all of them ticked. */
 const PRESELECT_MAX = 12;
 
-export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, building, preselect, loadingAll }: {
-  units: CalendarUnit[]; pricing: RatePricing; initial: { unitIds?: string[]; from?: string; to?: string }; busy?: boolean;
-  onClose: () => void; onSave: (v: RateUpdateValue) => void;
+export function RateUpdate({ units, pricing, initial, onClose, onDone, building, preselect, loadingAll }: {
+  units: CalendarUnit[]; pricing: RatePricing; initial: { unitIds?: string[]; from?: string; to?: string; step?: 2 | 3 };
+  onClose: () => void;
+  /** Every unit saved. The dialog does the saving itself, a few units per request, after showing old and new. */
+  onDone: (v: RateUpdateValue, r: BulkResult) => void;
   /** The building the board is showing: the picker starts on it, but every unit can be picked. */
   building?: string; preselect?: string[]; loadingAll?: boolean;
 }) {
-  const [step, setStep] = useState<1 | 2 | 3>(initial.unitIds?.length && initial.from ? 3 : initial.unitIds?.length ? 2 : 1);
+  const [step, setStepRaw] = useState<1 | 2 | 3 | 4>(initial.step ?? (initial.unitIds?.length && initial.from ? 3 : initial.unitIds?.length ? 2 : 1));
+  const [review, setReview] = useState<Review | null>(null);
+  // Units already saved by an attempt that then failed part-way: a retry leaves them alone.
+  const [saved, setSaved] = useState<Set<string>>(new Set());
+  const [batch] = useState(() => crypto.randomUUID());
+  const busy = review?.state === 'saving' || review?.state === 'checking';
+  // Going back to change anything starts the check over; the check then shows already-saved units at their new price.
+  const setStep = (n: 1 | 2 | 3 | 4) => { if (busy) return; if (n < 4) { setReview(null); setSaved(new Set()); } setStepRaw(n); };
+  const [weekendSen, setWeekendSen] = useState<number | null>(null);
   const [sel, setSel] = useState<Set<string>>(() => new Set(initial.unitIds ?? preselect ?? (units.length <= PRESELECT_MAX ? units.map(u => u.id) : [])));
   const [q, setQ] = useState('');
   const [onlyBuilding, setOnlyBuilding] = useState(building ?? '');
@@ -195,18 +205,45 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
 
   const step1Ok = chosen.length > 0;
   const step2Ok = ranges.every(rangeOk) && nights > 0;
-  const step3Ok = changesSomething && valueOk && (!pricing_ || channels.length > 0);
+  const weekendOk = mode !== 'set' || weekendSen == null || weekendSen > 0;
+  const step3Ok = changesSomething && valueOk && weekendOk && (!pricing_ || channels.length > 0);
   const total = chosen.length * nights;
   const saveLabel = pricing_ ? `Save and send ${count(total)} ${total === 1 ? 'price' : 'prices'}` : 'Save';
 
-  function save() {
+  function value(): RateUpdateValue {
     const lines = ranges.map(r => ({
       from: r.from, to: r.to,
-      ...(mode === 'set' ? { baseRate: priceSen ?? 0 } : mode === 'up' ? { adjustPct: num } : mode === 'down' ? { adjustPct: -num } : {}),
+      ...(mode === 'set' ? { baseRate: priceSen ?? 0, ...(weekendSen && (days.has(5) || days.has(6)) ? { weekendRate: weekendSen } : {}) } : mode === 'up' ? { adjustPct: num } : mode === 'down' ? { adjustPct: -num } : {}),
       ...(minStay !== '' ? { minStay: Number(minStay) } : {}),
       ...(stop !== 'same' ? { stopSell: stop === 'close' } : {}),
     }));
-    onSave({ unitIds: chosen.map(u => u.id), channels: pricing_ ? channels : [], weekdays: allWeek ? null : [...days], lines });
+    return { unitIds: chosen.map(u => u.id), channels: pricing_ ? channels : [], weekdays: allWeek ? null : [...days], lines };
+  }
+  /** Step 4: ask the server what each unit's prices are now and would become, without saving anything. */
+  async function check() {
+    setStepRaw(4);
+    setReview({ state: 'checking', progress: [0, chosen.length] });
+    try {
+      const result = await runBulk(value(), { dryRun: true, nights, batch, onProgress: (d, t) => setReview(r => (r ? { ...r, progress: [d, t] } : r)) });
+      setReview({ state: 'ready', result });
+    } catch (e) {
+      setReview({ state: 'failed', error: errorMessage(e, 'Could not work out the current prices. Try again in a moment.') });
+    }
+  }
+  async function save() {
+    const v = value();
+    const before = review?.result;
+    setReview({ state: 'saving', result: before, progress: [saved.size, v.unitIds.length] });
+    const done = new Set(saved);
+    try {
+      const r = await runBulk(v, { dryRun: false, nights, batch, skip: saved,
+        onProgress: (d) => setReview(x => (x ? { ...x, progress: [saved.size + d, v.unitIds.length] } : x)) });
+      onDone(v, r);
+    } catch (e) {
+      for (const id of (e as { done?: string[] }).done ?? []) done.add(id);
+      setSaved(done);
+      setReview({ state: 'failed', result: before, error: `${done.size ? `${plural(done.size, 'unit')} of ${count(v.unitIds.length)} saved. ` : 'Nothing saved. '}${errorMessage(e, 'Try again in a moment.')}` });
+    }
   }
 
   const unitsSummary = chosen.length === 0 ? 'None yet'
@@ -221,9 +258,9 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
   const siteSummary = linkedSites.map(ch => `${CH_LABEL[ch]}: ${plural(linkedCount(ch), 'unit')}`).join(' · ')
     + (linkedSites.length < 3 ? `${linkedSites.length ? '. ' : ''}Not connected, so not changed: ${(['airbnb', 'booking_com', 'agoda'] as const).filter(ch => !linkedSites.includes(ch)).map(ch => CH_LABEL[ch]).join(', ')}.` : '');
 
-  const stepChip = (n: 1 | 2 | 3, label: string, ok: boolean) => (
+  const stepChip = (n: 1 | 2 | 3 | 4, label: string, ok: boolean) => (
     <li key={n}>
-      <button type="button" onClick={() => setStep(n)} aria-current={step === n ? 'step' : undefined}
+      <button type="button" disabled={n === 4 && !(step1Ok && step2Ok && step3Ok)} onClick={() => (n === 4 ? (review ? setStepRaw(4) : void check()) : setStep(n))} aria-current={step === n ? 'step' : undefined}
         className={`h-8 px-3 rounded-full border-none cursor-pointer font-sans text-meta font-medium whitespace-nowrap ${step === n ? 'bg-black text-white' : ok ? 'bg-success-bg text-success' : 'bg-muted text-muted-ink'}`}>
         {n} {label}
       </button>
@@ -250,6 +287,7 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
             {stepChip(1, `Units${chosen.length ? ` · ${count(chosen.length)}` : ''}`, step1Ok)}
             {stepChip(2, `Dates${nights ? ` · ${plural(nights, 'night')}` : ''}`, step2Ok)}
             {stepChip(3, 'Prices', step3Ok)}
+            {stepChip(4, 'Check', review?.state === 'ready')}
           </ol>
         </div>
 
@@ -356,6 +394,10 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
                     <PercentInput label="Percentage" value={pct} onChange={setPct} min={0} max={pctMax} placeholder="e.g. 10"
                       error={pct != null && !valueOk ? `Enter 1 to ${pctMax}.` : undefined} />
                   ))}
+                  {mode === 'set' && (days.has(5) || days.has(6)) && (
+                    <MoneyInput label="Weekend price, Fri and Sat (optional)" valueSen={weekendSen} onChangeSen={setWeekendSen} placeholder="Same as the nightly price"
+                      help="Leave empty to charge the nightly price every night." error={!weekendOk ? 'Enter a price above RM 0, or leave it empty.' : undefined} />
+                  )}
                 </div>
 
                 <div className="flex-none border border-solid border-line rounded-card overflow-x-auto">
@@ -403,22 +445,88 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
                 </div>
               </>
             )}
+
+            {step === 4 && <ReviewPanel review={review} units={units} unitCount={chosen.length} nights={nights}
+              restrictions={[minStay !== '' ? `Minimum nights: ${minStay === '1' ? 'none' : `${minStay} nights`}` : '', stop === 'close' ? 'Blocked: nobody can book' : stop === 'open' ? 'Blocked: opened for booking' : ''].filter(Boolean)} />}
           </div>
         </div>
 
         <div className="px-4 sm:px-6 py-3 [border-top:1px_solid_var(--color-line)] bg-page flex flex-wrap items-center justify-between gap-3">
           <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{plural(chosen.length, 'unit')} × {plural(nights, 'night')} = {plural(total, 'price')}</span>
           <div className="flex gap-2 ml-auto">
-            {step > 1 && <Button size="md" variant="secondary" type="button" icon={<Icon name="ChevronLeft" size="sm" />} onClick={() => setStep(s => (s - 1) as 1 | 2)}>Back</Button>}
+            {step > 1 && <Button size="md" variant="secondary" type="button" disabled={busy} disabledReason="Working" icon={<Icon name="ChevronLeft" size="sm" />} onClick={() => setStep((step - 1) as 1 | 2 | 3)}>Back</Button>}
             <Button size="md" variant="secondary" type="button" onClick={onClose} disabled={busy} disabledReason="Saving">Cancel</Button>
             {step < 3
-              ? <Button size="md" variant="primary" type="button" disabled={step === 1 ? !step1Ok : !step2Ok} disabledReason={step === 1 ? 'Pick at least one unit' : 'Pick the dates and days'} onClick={() => setStep(s => (s + 1) as 2 | 3)}>Next</Button>
-              : <Button size="md" variant="primary" type="button" loading={busy} disabled={!step1Ok || !step2Ok || !step3Ok}
-                  disabledReason={!step1Ok ? 'Pick at least one unit' : !step2Ok ? 'Pick the dates and days' : !changesSomething ? 'Set a price, minimum nights or blocked nights' : !valueOk ? 'Enter a valid price' : 'Pick at least one channel'}
-                  onClick={save}>{saveLabel}</Button>}
+              ? <Button size="md" variant="primary" type="button" disabled={step === 1 ? !step1Ok : !step2Ok} disabledReason={step === 1 ? 'Pick at least one unit' : 'Pick the dates and days'} onClick={() => setStep((step + 1) as 2 | 3)}>Next</Button>
+              : step === 3
+                ? <Button size="md" variant="primary" type="button" disabled={!step1Ok || !step2Ok || !step3Ok}
+                    disabledReason={!step1Ok ? 'Pick at least one unit' : !step2Ok ? 'Pick the dates and days' : !changesSomething ? 'Set a price, minimum nights or blocked nights' : !valueOk || !weekendOk ? 'Enter a valid price' : 'Pick at least one channel'}
+                    onClick={() => void check()}>Check changes</Button>
+                : review?.state === 'failed' && !review.result
+                  ? <Button size="md" variant="primary" type="button" onClick={() => void check()}>Check again</Button>
+                  : <Button size="md" variant="primary" type="button" loading={busy} disabled={!review?.result} disabledReason="Working out the current prices"
+                      onClick={() => void save()}>{review?.state === 'failed' ? (saved.size ? 'Save the rest' : 'Try again') : saveLabel}</Button>}
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** What the save will do, from the server's own dry run: per unit and channel, the price now and after. */
+function ReviewPanel({ review, units, unitCount, nights, restrictions }: { review: Review | null; units: CalendarUnit[]; unitCount: number; nights: number; restrictions: string[] }) {
+  const SHOW = 200;
+  if (!review || review.state === 'checking') {
+    const [d, t] = review?.progress ?? [0, unitCount];
+    return <p className="m-0 text-copy text-muted-ink" role="status">Working out the current prices… {t > 1 ? `${count(d)} of ${plural(t, 'unit')}` : ''}</p>;
+  }
+  const r = review.result;
+  const name = (id: string) => units.find(u => u.id === id)?.unitNumber ?? id;
+  const rows = (r?.changes ?? []).slice().sort((a, b) => name(a.unitId).localeCompare(name(b.unitId)) || PRICE_CHANNELS.indexOf(a.channel as 'web') - PRICE_CHANNELS.indexOf(b.channel as 'web'));
+  const skipped = Object.entries(r?.skipped ?? {}).filter(([, n]) => n > 0);
+  return (
+    <div className="flex flex-col gap-3">
+      {review.state === 'failed' && <div role="alert" className="px-3 py-2.5 rounded-control bg-critical-bg text-danger text-copy">{review.error}</div>}
+      {review.state === 'saving' && review.progress && (
+        <p className="m-0 text-copy text-ink" role="status">Saving… {count(review.progress[0])} of {plural(review.progress[1], 'unit')} done. Keep this open until it finishes.</p>
+      )}
+      {r && (
+        <>
+          <p className="m-0 text-copy text-ink">
+            <span className="font-semibold">{plural(unitCount, 'unit')} × {plural(nights, 'night')}</span>
+            {r.written ? ` · ${plural(r.written, 'price')} to save` : ''}. Nothing is saved until you press Save. Linked channels are updated in the background afterwards.
+          </p>
+          {restrictions.length > 0 && <ul className="m-0 pl-5 text-copy text-ink">{restrictions.map(x => <li key={x}>{x}</li>)}</ul>}
+          {skipped.length > 0 && <p className="m-0 text-meta text-muted-ink">Not connected, left alone: {skipped.map(([c, n]) => `${CH_LABEL[c] ?? c} on ${plural(n, 'unit')}`).join(', ')}.</p>}
+          {rows.length > 0 && (
+            <div className="border border-solid border-line rounded-card overflow-x-auto">
+              <table className="w-full min-w-[480px] border-collapse text-copy [font-variant-numeric:tabular-nums]">
+                <thead>
+                  <tr className="bg-muted text-meta text-muted-ink text-left">
+                    <th className="px-3 py-2 font-semibold">Unit</th><th className="px-3 py-2 font-semibold">Channel</th>
+                    <th className="px-3 py-2 font-semibold text-right">Nights</th><th className="px-3 py-2 font-semibold text-right">Now</th><th className="px-3 py-2 font-semibold text-right">New</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.slice(0, SHOW).map(c => {
+                    const same = c.oldMin === c.newMin && c.oldMax === c.newMax;
+                    return (
+                      <tr key={`${c.unitId}:${c.channel}`} className="[border-top:1px_solid_var(--color-line-soft)]">
+                        <td className="px-3 py-2 whitespace-nowrap">{name(c.unitId)}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{CH_LABEL[c.channel] ?? c.channel}</td>
+                        <td className="px-3 py-2 text-right">{count(c.nights)}</td>
+                        <td className="px-3 py-2 text-right text-muted-ink whitespace-nowrap">{rmRange(c.oldMin, c.oldMax)}</td>
+                        <td className={`px-3 py-2 text-right whitespace-nowrap ${same ? 'text-muted-ink' : 'font-semibold text-ink'}`}>{same ? 'No change' : rmRange(c.newMin, c.newMax)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {rows.length > SHOW && <p className="m-0 px-3 py-2 text-meta text-muted-ink [border-top:1px_solid_var(--color-line-soft)]">And {plural(rows.length - SHOW, 'more row')}.</p>}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

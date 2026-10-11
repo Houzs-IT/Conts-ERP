@@ -14,7 +14,7 @@ import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { api, notifyFailure, errorMessage } from '../lib/api';
-import { todayMyt, date, dateRange, dateShort, dateTime, time, timeWithZone, monthLabel, weekdayDay, plural, rmShort, amount } from '../lib/format';
+import { todayMyt, date, dateRange, dateShort, dateTime, time, timeWithZone, monthLabel, weekdayDay, plural, count, rmShort, amount } from '../lib/format';
 import { CHANNEL, TONE } from '../lib/vocabulary';
 import type { BookingChannel, Tone } from '../lib/types';
 import { CalendarFilters } from '../components/calendar/CalendarFilters';
@@ -186,7 +186,8 @@ export default function CalendarPage() {
   const [priceModal, setPriceModal] = useState<null | { unit: Unit; channel: string; dayIso: string; current: number }>(null);
   const [blockWizard, setBlockWizard] = useState(false);
   const [blockPrefill, setBlockPrefill] = useState<{ unitId?: string; from?: string; to?: string; kind?: BlockKind }>({});
-  const [rateBusy, setRateBusy] = useState(false);
+  // Units ticked on the board for a price change across all of them.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   // Nights being picked on one unit (a to b, column indexes, either order), the popover for a finished pick, and on
   // phones the first tapped night while waiting for the last.
   const [picked, setPicked] = useState<{ unitId: string; a: number; b: number } | null>(null);
@@ -197,7 +198,7 @@ export default function CalendarPage() {
   const lastPointer = useRef<string>('mouse');
   // A booking-site bar that was refused a drag: the click that follows the attempt must not open its drawer.
   const refusedDrag = useRef(false);
-  const [rateUpdate, setRateUpdate] = useState<false | { unitIds?: string[]; from?: string; to?: string }>(false);
+  const [rateUpdate, setRateUpdate] = useState<false | { unitIds?: string[]; from?: string; to?: string; step?: 2 | 3 }>(false);
   const [openBlock, setOpenBlock] = useState<Block | null>(null);
   const [hover, setHover] = useState<{ b: Block; phase: StayPhase; unit: string; x: number; y: number } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -272,6 +273,11 @@ export default function CalendarPage() {
     return m;
   }, [units, blocks, holding, data?.from]); // eslint-disable-line react-hooks/exhaustive-deps
   const canSetRates = data?.canSetRates !== false;
+  // Ticking units for a price change is a desk task: on a phone, Update prices has its own unit list.
+  const selectable = canSetRates && !phone;
+  // A tick on a unit the board no longer shows (another building picked) would change a price nobody can see.
+  useEffect(() => { setSelected(s => (s.size && [...s].some(id => !units.some(u => u.id === id)) ? new Set([...s].filter(id => units.some(u => u.id === id))) : s)); }, [units]);
+  const toggleSelected = (ids: string[], on: boolean) => setSelected(s => { const n = new Set(s); for (const id of ids) { if (on) n.add(id); else n.delete(id); } return n; });
   const allFolded = groups.length > 1 && groups.every(g => folded[g.id]);
   // Booking-site toggles only for sites at least one shown unit is on; direct, block and owner stay always.
   const filterChannels = useMemo(() => {
@@ -486,12 +492,19 @@ export default function CalendarPage() {
 
         {/* Grid: scrolls inside the card both ways; the date header and unit column stay put. */}
         <div ref={gridRef} tabIndex={0} aria-label="Reservation calendar. Arrow keys scroll."
-          className="max-h-[calc(100dvh-230px)] md:max-h-[74vh] min-h-[320px] overflow-auto overscroll-contain rounded-none md:rounded-b-card [scrollbar-width:thin] outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)] [--unit-col:96px] md:[--unit-col:208px]">
+          className="max-h-[calc(100dvh-230px)] md:max-h-[74vh] min-h-[320px] overflow-auto overscroll-contain rounded-none md:rounded-b-card [scrollbar-width:thin] outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)] [--unit-col:104px] md:[--unit-col:256px]">
           <div style={{ minWidth: `calc(var(--unit-col) + ${span * COL}px)` }} aria-busy={loading}
             className={`transition-opacity duration-150 ${loading && data ? 'opacity-70' : ''}`}>
             <div className="sticky top-0 z-20 flex bg-muted [border-bottom:1px_solid_var(--color-line)]">
-              <div className={`${STICKY_COL} bg-muted! z-30 flex items-end px-2 md:px-3 pb-2.5 text-meta font-semibold text-muted-ink whitespace-nowrap`}>
-                {data ? plural(units.length, 'unit') : ''}
+              <div className={`${STICKY_COL} bg-muted! z-30 flex items-end ${selectable ? 'pl-0' : 'pl-2 md:pl-3'} pr-2 md:pr-3 pb-2.5 text-meta font-semibold text-muted-ink whitespace-nowrap`}>
+                {selectable && units.length > 0 && (
+                  <label className="grid flex-none w-8 place-items-center cursor-pointer" title="Select every unit shown, for a price change">
+                    <input type="checkbox" checked={selected.size > 0 && units.every(u => selected.has(u.id))} ref={el => { if (el) el.indeterminate = selected.size > 0 && !units.every(u => selected.has(u.id)); }}
+                      onChange={e => setSelected(e.target.checked ? new Set(units.map(u => u.id)) : new Set())} aria-label="Select every unit shown"
+                      className="w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
+                  </label>
+                )}
+                {data ? (selectable ? `${plural(units.length, 'unit')} · tick to change prices` : plural(units.length, 'unit')) : ''}
               </div>
               <div className="flex flex-col">
                 <div className="flex h-7">
@@ -558,6 +571,8 @@ export default function CalendarPage() {
                   <div key={g.id}>
                     <BuildingRowHeader name={g.name} units={g.units} folded={isFolded} showToggle={groups.length > 1}
                       onToggle={() => setFolded(f => ({ ...f, [g.id]: !isFolded }))}
+                      picked={selectable ? g.units.filter(u => selected.has(u.id)).length : null}
+                      onPick={on => toggleSelected(g.units.map(u => u.id), on)}
                       days={days} byUnit={byUnit} dayIso={dayIso} col={COL} showFree={showFree} />
                     {!isFolded && (
                       <div>
@@ -575,10 +590,16 @@ export default function CalendarPage() {
                       {/* Unit row with booking bars */}
                       <div className="flex">
                         {/* The whole cell toggles the unit's rates, so phones get a full-size touch target. */}
-                        <div className={`${STICKY_COL} z-10 flex`}>
+                        <div data-unit-col className={`${STICKY_COL} z-10 flex ${selected.has(u.id) ? 'bg-gold-tint!' : ''}`}>
+                          {selectable && (
+                            <label className="hidden md:grid flex-none w-8 place-items-center cursor-pointer" title={`Select ${u.unitNumber} for a price change`}>
+                              <input type="checkbox" checked={selected.has(u.id)} onChange={e => toggleSelected([u.id], e.target.checked)} aria-label={`Select ${u.unitNumber}`}
+                                className="w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
+                            </label>
+                          )}
                           <button type="button" aria-expanded={rowOpen} onClick={() => setUnitOpen(o => ({ ...o, [u.id]: !rowOpen }))}
                             title={`${u.unitNumber} · ${u.propertyName}${readiness ? ' · ' + readiness.label : ''} · ${rowOpen ? 'hide' : 'show'} rates`}
-                            className="flex-1 min-w-0 flex items-center gap-1 pl-2 md:pl-1.5 pr-2 md:pr-3 py-0 m-0 border-none bg-transparent hover:bg-muted/60 cursor-pointer text-left font-sans">
+                            className={`flex-1 min-w-0 flex items-center gap-1 pl-2 ${selectable ? 'md:pl-0' : 'md:pl-1.5'} pr-2 md:pr-3 py-0 m-0 border-none bg-transparent hover:bg-muted/60 cursor-pointer text-left font-sans`}>
                             <span className="hidden md:grid w-6 h-6 flex-none place-items-center text-muted-ink">
                               <Icon name={rowOpen ? 'ChevronDown' : 'ChevronRight'} size="sm" />
                             </span>
@@ -587,17 +608,15 @@ export default function CalendarPage() {
                                 {readiness && <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: readiness.dot }} title={readiness.label} aria-label={readiness.label} />}
                                 <span className="text-copy font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
                               </span>
-                              {/* The building is the group header above, so the lines under the number are its prices. */}
+                              {/* The building is the group header above, so the lines under the number are its prices: one per
+                                  line, so a four-figure weekend price never runs out of the column. */}
                               {(() => {
                                 const w = webRates(u.id);
                                 if (w.base <= 0) return <span className="text-caption text-faint whitespace-nowrap">No price set</span>;
                                 return (
                                   <>
-                                    <span className="hidden md:block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis [font-variant-numeric:tabular-nums]">
-                                      Nightly {rmShort(w.base)}{w.weekend !== w.base ? ` · Weekend ${rmShort(w.weekend)}` : ''}
-                                    </span>
-                                    <span className="md:hidden text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]">Nightly {rmShort(w.base)}</span>
-                                    {w.weekend !== w.base && <span className="md:hidden text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]">Wknd {rmShort(w.weekend)}</span>}
+                                    <span className="text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]"><span className="hidden md:inline">Nightly </span>{rmShort(w.base)}</span>
+                                    {w.weekend !== w.base && <span className="text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]"><span className="hidden md:inline">Weekend </span><span className="md:hidden">Wknd </span>{rmShort(w.weekend)}</span>}
                                   </>
                                 );
                               })()}
@@ -824,28 +843,38 @@ export default function CalendarPage() {
             .then(res => { setBlockWizard(false); toast({ tone: 'success', title: v.kind === 'owner_stay' ? 'Owner stay added.' : 'Nights blocked.', body: `${dateRange(v.from, v.to)}. ${channelNote(res?.effects?.channel, 'held')}`.trim() }); reload(); })
             .catch(e => toast({ tone: 'critical', title: 'Nights not blocked.', body: errorMessage(e, 'Try again in a moment.') }));
         }} />}
-      {rateUpdate && <RateUpdate units={rateSource?.units ?? allUnits} initial={rateUpdate} busy={rateBusy} onClose={() => { if (!rateBusy) setRateUpdate(false); }}
+      {selected.size > 0 && canSetRates && !rateUpdate && (
+        <div role="region" aria-label="Selected units" className="fixed left-3 right-3 md:left-1/2 md:right-auto md:-translate-x-1/2 bottom-3 z-[55] bg-black text-white rounded-card shadow-[var(--shadow-overlay)] pl-4 pr-2 py-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <span className="text-copy font-semibold whitespace-nowrap [font-variant-numeric:tabular-nums]">{plural(selected.size, 'unit')} selected</span>
+          {units.length > selected.size && (
+            <button type="button" onClick={() => setSelected(new Set(units.map(u => u.id)))} className="h-9 px-2 rounded-control border-none bg-transparent text-white/85 hover:text-white font-sans text-meta font-medium cursor-pointer whitespace-nowrap underline underline-offset-2">Select all {count(units.length)} shown</button>
+          )}
+          <button type="button" onClick={() => setSelected(new Set())} className="h-9 px-2 rounded-control border-none bg-transparent text-white/85 hover:text-white font-sans text-meta font-medium cursor-pointer">Clear</button>
+          <button type="button" onClick={() => {
+            const first = from < todayIso ? todayIso : from;
+            setRateUpdate({ unitIds: [...selected], from: first, to: to >= first ? to : addDaysIso(first, wantSpan - 1), step: 2 });
+          }} className="ml-auto h-9 px-3.5 rounded-control border-none bg-gold text-black font-sans text-copy font-semibold cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+            <Icon name="Tag" size="sm" />Change prices
+          </button>
+        </div>
+      )}
+      {rateUpdate && <RateUpdate units={rateSource?.units ?? allUnits} initial={rateUpdate} onClose={() => setRateUpdate(false)}
         loadingAll={property !== 'all' && !everyUnit.data} building={property !== 'all' ? property : undefined}
         preselect={!rateUpdate.unitIds && property !== 'all' && units.length <= 12 ? units.map(u => u.id) : undefined}
         pricing={{ baseRate: { ...(rateSource?.baseRate ?? {}), ...(data?.baseRate ?? {}) }, weekendRate: { ...(rateSource?.weekendRate ?? {}), ...(data?.weekendRate ?? {}) }, savedUplifts: { ...(rateSource?.savedUplifts ?? {}), ...(data?.savedUplifts ?? {}) }, upliftShares: data?.upliftShares ?? rateSource?.upliftShares }}
-        onSave={v => {
-          setRateBusy(true);
-          api.post<{ nights?: number; skipped?: Record<string, number>; syncFailed?: number }>('/rates/bulk', v)
-            .then(res => {
-              setRateUpdate(false);
-              const ranges = v.lines.length === 1 ? dateRange(v.lines[0].from, v.lines[0].to) : plural(v.lines.length, 'date range');
-              const skipped = Object.entries(res?.skipped ?? {}).map(([c, n]) => `${CHANNEL[c as BookingChannel]?.label ?? c} on ${plural(n, 'unit')}`);
-              toast({
-                tone: res?.syncFailed ? 'warning' : 'success', title: 'Saved.',
-                body: [`${plural(v.unitIds.length, 'unit')} · ${ranges}.`,
-                  skipped.length ? `Not connected, left alone: ${skipped.join(', ')}.` : '',
-                  res?.syncFailed ? `${plural(res.syncFailed, 'unit')} were not sent to the channels; see System health.` : ''].filter(Boolean).join(' '),
-              });
-              setRateEdits({});
-              reload();
-            })
-            .catch(notifyFailure)
-            .finally(() => setRateBusy(false));
+        onDone={(v, res) => {
+          setRateUpdate(false);
+          const ranges = v.lines.length === 1 ? dateRange(v.lines[0].from, v.lines[0].to) : plural(v.lines.length, 'date range');
+          const skipped = Object.entries(res.skipped).map(([c, n]) => `${CHANNEL[c as BookingChannel]?.label ?? c} on ${plural(n, 'unit')}`);
+          toast({
+            tone: res.syncFailed ? 'warning' : 'success', title: 'Saved.',
+            body: [`${plural(v.unitIds.length, 'unit')} · ${ranges}.`,
+              skipped.length ? `Not connected, left alone: ${skipped.join(', ')}.` : '',
+              res.syncFailed ? `${plural(res.syncFailed, 'unit')} were not sent to the channels; see System health.` : ''].filter(Boolean).join(' '),
+          });
+          setSelected(new Set());
+          setRateEdits({});
+          reload();
         }} />}
     </>
   );
@@ -854,20 +883,29 @@ export default function CalendarPage() {
 /** A building's row on the board: fold toggle on the left, and on each night the number of its units still free, in
  *  green, only where there is one. A full night stays blank: the eye goes to the free nights, which is the question
  *  (where can I still sell?), and a folded building still answers it. */
-function BuildingRowHeader({ name, units, folded, showToggle, onToggle, days, byUnit, dayIso, col, showFree }: {
+function BuildingRowHeader({ name, units, folded, showToggle, onToggle, picked, onPick, days, byUnit, dayIso, col, showFree }: {
   name: string; units: Unit[]; folded: boolean; showToggle: boolean; onToggle: () => void;
+  /** How many of its units are ticked; null: no ticking here. */
+  picked: number | null; onPick: (on: boolean) => void;
   days: Date[]; byUnit: Map<string, { cells: (Block | null)[] }>; dayIso: (i: number) => string; col: number; showFree: boolean;
 }) {
   const n = units.length;
   const freeOn = (i: number) => units.reduce((k, u) => k + (byUnit.get(u.id)?.cells[i] ? 0 : 1), 0);
   return (
     <div className="relative z-[1] flex bg-page/85 [border-bottom:1px_solid_var(--color-line)]">
-      <div className={`${STICKY_COL} bg-page! z-10 flex`}>
+      <div data-unit-col className={`${STICKY_COL} bg-page! z-10 flex`}>
+        {picked !== null && (
+          <label className="grid flex-none w-8 place-items-center cursor-pointer" title={`Select every unit in ${name}`}>
+            <input type="checkbox" checked={picked === n} ref={el => { if (el) el.indeterminate = picked > 0 && picked < n; }} onChange={() => onPick(picked !== n)}
+              aria-label={`Select every unit in ${name}`} className="w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
+          </label>
+        )}
         <button type="button" onClick={onToggle} disabled={!showToggle} aria-expanded={!folded}
           title={`${name} · ${plural(n, 'unit')}${showToggle ? (folded ? ' · show its units' : ' · fold it away') : ''}`}
-          className="flex-1 min-w-0 flex items-center gap-1 pl-1.5 pr-2 md:pr-3 h-8 m-0 border-none bg-transparent enabled:hover:bg-muted/60 enabled:cursor-pointer text-left font-sans text-ink">
+          className={`flex-1 min-w-0 flex items-center gap-1 ${picked !== null ? 'pl-0' : 'pl-1.5'} pr-2 md:pr-3 min-h-8 py-1 m-0 border-none bg-transparent enabled:hover:bg-muted/60 enabled:cursor-pointer text-left font-sans text-ink`}>
           {showToggle && <span className="w-5 h-5 flex-none grid place-items-center text-muted-ink"><Icon name={folded ? 'ChevronRight' : 'ChevronDown'} size="sm" /></span>}
-          <span className="min-w-0 flex-1 text-meta font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{name}</span>
+          {/* Two lines rather than an ellipsis: on a phone the column is about 100px and building names run longer. */}
+          <span className="min-w-0 flex-1 text-meta font-semibold leading-tight line-clamp-2 [overflow-wrap:anywhere]">{name}</span>
           <span className="flex-none text-caption font-medium text-muted-ink [font-variant-numeric:tabular-nums]">{n}</span>
         </button>
       </div>
@@ -875,7 +913,7 @@ function BuildingRowHeader({ name, units, folded, showToggle, onToggle, days, by
         const free = freeOn(i);
         return (
           <div key={i} style={{ width: col }} title={`${name} · ${date(dayIso(i))} · ${free ? `${free} of ${plural(n, 'unit')} free` : 'every unit booked'}`}
-            className="flex-none box-border h-8 pr-2 flex items-center justify-end text-caption whitespace-nowrap [font-variant-numeric:tabular-nums]">
+            className="flex-none box-border min-h-8 pr-2 flex items-center justify-end text-caption whitespace-nowrap [font-variant-numeric:tabular-nums]">
             {free > 0 && <span className="font-semibold" style={{ color: TONE.success.fg }}>{free}<span className="hidden md:inline font-medium"> free</span></span>}
           </div>
         );
@@ -888,7 +926,7 @@ function BuildingRowHeader({ name, units, folded, showToggle, onToggle, days, by
 function SubRow({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div className="flex [border-top:1px_solid_var(--color-line-soft)]">
-      <div className={`${STICKY_COL} z-10 pl-2 md:pl-[38px] pr-2 md:pr-3 h-10 md:h-8 flex items-center gap-1.5 md:gap-2 text-meta text-muted-ink min-w-0`}>{label}</div>
+      <div data-unit-col className={`${STICKY_COL} z-10 pl-2 md:pl-[46px] pr-2 md:pr-3 h-10 md:h-8 flex items-center gap-1.5 md:gap-2 text-meta text-muted-ink min-w-0`}>{label}</div>
       {children}
     </div>
   );
