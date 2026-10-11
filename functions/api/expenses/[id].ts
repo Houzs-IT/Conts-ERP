@@ -2,7 +2,7 @@ import { type Env, one, run, json, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isIsoDate } from '../../_lib/validate';
 import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked } from '../../_lib/expenses';
-import { approvalSettings, stage } from '../../_lib/approvals';
+import { approvalSettings, approvalsEnabled, stage } from '../../_lib/approvals';
 
 /** PATCH /api/expenses/:id { category?, description?, amount?, incurredOn?, reference?, chargeTo? }
  *  Refused once the statement covering the expense is final, and also if the new date would land in a final statement. */
@@ -27,8 +27,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b.incurredOn && await isPeriodLocked(env, cur.unit_id, b.incurredOn)) return fail('PERIOD_LOCKED', 'That month\'s owner statement is already final.', 409, { incurredOn: 'This period is locked.' });
 
   const { expenseThreshold } = await approvalSettings(env);
-  if (b.amount !== undefined && b.amount > expenseThreshold && b.amount > Number(cur.amount)) {
-    // Raising an expense above the threshold needs the same second person as adding one that size.
+  if (b.amount !== undefined && b.amount > expenseThreshold && b.amount > Number(cur.amount) && await approvalsEnabled(env)) {
+    // With approvals on, raising an expense above the threshold needs the same second person as adding one that size.
     const changes = { category: b.category ?? null, description: typeof b.description === 'string' ? b.description.slice(0, 300) : null, amount: b.amount,
       incurredOn: b.incurredOn ?? null, reference: typeof b.reference === 'string' ? b.reference : null, chargeTo: b.chargeTo ?? null };
     const staged = await stage(env, session, {

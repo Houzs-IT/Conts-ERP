@@ -20,12 +20,14 @@ interface Payload {
   counts: { pending: number; decided: number; approved: number; rejected: number; cancelled: number };
   pendingAmount: number;
   kinds: { value: string; label: string; count: number }[];
-  rules: { financeAdminLimit: number; expenseThreshold: number; managementCount: number; you: 'any' | 'below_limit' | 'none' };
+  rules: { enabled: boolean; financeAdminLimit: number; expenseThreshold: number; managementCount: number; you: 'any' | 'below_limit' | 'none' };
   data: Approval[];
 }
 const PAGE_SIZE = 50;
 
-/** Approvals: money leaving the company waits here for a second person (functions/_lib/approvals.ts). */
+/** Approvals: money leaving the company waits here for a second person (functions/_lib/approvals.ts). Switched off
+ *  by default (owner, 11 Oct 2026): the menu hides the page, and here a note says so while any request left from
+ *  before stays listed so it can be withdrawn. */
 export default function ApprovalsPage() {
   const url = useUrlState();
   const navigate = useNavigate();
@@ -39,7 +41,8 @@ export default function ApprovalsPage() {
   const rows = data?.data ?? [];
   const r = data?.rules;
 
-  const sub = data
+  const off = !!r && !r.enabled;
+  const sub = off ? 'Switched off: money actions happen at once' : data
     ? `${plural(data.counts.pending, 'request')} waiting · ${moneyString(data.pendingAmount, 'exact')} · ${r?.you === 'any' ? 'You approve any amount' : r?.you === 'below_limit' ? `You approve below ${moneyString(r.financeAdminLimit, 'exact')}` : 'You can ask, not approve'}`
     : 'Money requests waiting for a second person';
 
@@ -102,7 +105,16 @@ export default function ApprovalsPage() {
             options={(['approved', 'rejected', 'cancelled'] as ApprovalStatus[]).map(s => ({ value: s, label: `${statusLabel('approval', s)} · ${data?.counts[s as 'approved'] ?? 0}` }))} />
         )}
       </div>
-      {r && (
+      {off && (
+        <div role="status" className="shrink-0 rounded-card border border-solid border-line bg-card px-[14px] py-[11px] flex flex-col gap-[2px]">
+          <span className="text-copy font-semibold text-ink">Approvals are switched off</span>
+          <span className="text-meta text-muted-ink text-pretty">
+            Refunds, payout runs, owner credits and charges, expenses and debt write-offs happen at once, without a second person. Management can turn approvals back on in Settings.
+            {data!.counts.pending > 0 ? ` ${plural(data!.counts.pending, 'request')} left from before can only be withdrawn.` : ''}
+          </span>
+        </div>
+      )}
+      {r && !off && (
         <p className="m-0 shrink-0 text-meta text-muted-ink text-pretty">
           Refunds, payout runs, owner credits and charges, expenses above {moneyString(r.expenseThreshold, 'exact')} and debt write-offs wait here until someone other than the person who asked approves them.
           Finance admins approve amounts below {moneyString(r.financeAdminLimit, 'exact')}; management approves any amount.{r.managementCount === 1 ? ' With one management user, that user may approve their own request with a written reason.' : ''} Limits are in Settings.
@@ -113,7 +125,7 @@ export default function ApprovalsPage() {
         loading={loading} error={error} onRetry={reload} noun={['request', 'requests']} exportName="approvals"
         server={{ total: data?.total ?? rows.length, page: data?.page ?? page, pageSize: data?.pageSize ?? size, sizes: [25, 50, 100, 200], defaultPageSize: PAGE_SIZE, fetchAll }}
         viewParams={['view', 'kind', 'q', 'status', 'mine']} filtered={filtered} onClearFilters={() => url.set({ view: null, kind: null, q: null, status: null, mine: null, page: null })}
-        empty={{ title: 'Nothing waiting for approval', body: 'When someone asks for a refund, a payout run, an owner credit or charge, a large expense or a write-off, it waits here.', icon: 'ShieldCheck' }}
+        empty={off ? { title: 'Nothing waiting for approval', body: 'Approvals are switched off, so nothing waits here.', icon: 'ShieldCheck' } : { title: 'Nothing waiting for approval', body: 'When someone asks for a refund, a payout run, an owner credit or charge, a large expense or a write-off, it waits here.', icon: 'ShieldCheck' }}
         renderCard={a => (
           <span className="flex flex-col gap-[6px]">
             <span className="flex items-start justify-between gap-3">

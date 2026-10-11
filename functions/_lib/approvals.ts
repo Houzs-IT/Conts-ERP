@@ -1,6 +1,11 @@
 /** Maker-checker for money leaving the company (owner, 10 Oct 2026; migration 0096).
  *
- *  A guest refund, an owner payout run, an owner credit or charge, an expense above Settings > Approvals' threshold
+ *  Switched off unless Settings > Approvals turns it on (setting approvals.enabled): on 11 Oct 2026 the owner
+ *  decided money actions happen at once, without a second person. Off, `submit` carries the action out straight
+ *  away with the same executor an approval runs, so the records and audit rows are the same, attributed to the
+ *  person who did it, and no request is written. The code and table stay so it can be switched back on.
+ *
+ *  When on: a guest refund, an owner payout run, an owner credit or charge, an expense above Settings > Approvals' threshold
  *  and writing off a held owner debt are staged as a request instead of being carried out. A second person approves
  *  it, and approving runs the staged action and records the decision in one transaction, audited. Rejecting or
  *  cancelling changes nothing but the request.
@@ -9,7 +14,7 @@
  *  who asked, with one exception so a small team is not stuck: while there is exactly one active management user,
  *  that user may approve their own request with a written reason, and the approval is recorded and audited as
  *  self-approved. */
-import { type Env, all, one, run, audit, nowIso, transaction } from './db';
+import { type Env, all, one, run, audit, nowIso, transaction, json, fail } from './db';
 import type { Session } from './auth';
 import { insertPayment } from './bookingPayments';
 import { isPeriodLocked } from './expenses';
@@ -42,19 +47,33 @@ export async function approvalSettings(env: Env): Promise<ApprovalSettings> {
   return { expenseThreshold: pick('approvals.expenseThreshold', APPROVAL_DEFAULTS.expenseThreshold), financeAdminLimit: pick('approvals.financeAdminLimit', APPROVAL_DEFAULTS.financeAdminLimit) };
 }
 
+/** Whether money actions wait for a second person. Off when never saved. */
+export async function approvalsEnabled(env: Env): Promise<boolean> {
+  try {
+    const r = await one<{ value: string }>(env, `SELECT value FROM settings WHERE key = 'approvals.enabled'`);
+    return r?.value === 'true';
+  } catch {
+    return false;
+  }
+}
+
 /* ------------------------------------------------------------------ */
-/* Who may decide                                                      */
+/* Who may decide                                                     */
 /* ------------------------------------------------------------------ */
 
-export interface DecideContext { settings: ApprovalSettings; managementCount: number }
+export interface DecideContext { settings: ApprovalSettings; managementCount: number; enabled: boolean }
 
 export async function decideContext(env: Env): Promise<DecideContext> {
-  const [settings, m] = await Promise.all([
+  const [settings, m, enabled] = await Promise.all([
     approvalSettings(env),
     one<{ n: number }>(env, `SELECT COUNT(*)::int AS n FROM users WHERE role = 'management' AND is_active = 1`),
+    approvalsEnabled(env),
   ]);
-  return { settings, managementCount: Number(m?.n ?? 0) };
+  return { settings, managementCount: Number(m?.n ?? 0), enabled };
 }
+
+/** With approvals off, a request left from when they were on can only be withdrawn. */
+export const APPROVALS_OFF = 'Approvals are switched off, so this request can only be withdrawn. Do it again from its own screen; it happens at once now.';
 
 interface RequestLike { requested_by: string; amount: number; status: string }
 
@@ -62,6 +81,7 @@ interface RequestLike { requested_by: string; amount: number; status: string }
  *  the single-management self-approval, which needs a written note. */
 export function decisionRule(session: Pick<Session, 'userId' | 'role'>, r: RequestLike, ctx: DecideContext): { refusal: string | null; self: boolean } {
   if (r.status !== 'pending') return { refusal: 'This request has already been decided.', self: false };
+  if (!ctx.enabled) return { refusal: APPROVALS_OFF, self: false };
   const own = r.requested_by === session.userId;
   if (session.role === 'management') {
     if (!own) return { refusal: null, self: false };
@@ -130,7 +150,8 @@ export async function pendingFor(env: Env, session: Session, entity: string, ent
     all<any>(env, `${VIEW_SQL} WHERE a.status = 'pending' AND a.entity = ? ${entityId ? 'AND a.entity_id = ?' : ''} ORDER BY a.requested_at`, entity, ...(entityId ? [entityId] : [])),
     decideContext(env),
   ]);
-  return rows.map(r => toView(r, session, ctx));
+  // Off, nothing waits on a record; a request left from before is withdrawn on the Approvals page.
+  return ctx.enabled ? rows.map(r => toView(r, session, ctx)) : [];
 }
 
 /** How many pending requests this person may decide (the menu's Approvals count). */
@@ -167,6 +188,20 @@ export async function stage(env: Env, session: Session, x: StageInput): Promise<
   await notifyApprovers(env, { id, kind: x.kind, amount: x.amount, summary: x.summary, requestedBy: session.fullName });
   const ctx = await decideContext(env);
   return { pendingApproval: { id, kind: x.kind, amount: Math.abs(Math.round(x.amount)), summary: x.summary, selfApproval: decisionRule(session, { requested_by: session.userId, amount: x.amount, status: 'pending' }, ctx).self } };
+}
+
+/** The one entry point for a money action. With approvals on it is staged (202, plus the `staged` extra fields); off,
+ *  it is carried out now in one transaction by the executor an approval would run, and `done` builds the answer
+ *  from the executor's result. A refusal from the executor becomes the matching error answer. */
+export async function submit(env: Env, session: Session, x: StageInput, done: (result: any) => Response, staged: Record<string, unknown> = {}): Promise<Response> {
+  if (await approvalsEnabled(env)) return json({ ...(await stage(env, session, x)), ...staged }, 202);
+  try {
+    const result = await transaction(env, tx => EXECUTE[x.kind](tx, x.payload, { approvalId: undefined, approver: session, requestedBy: session.userId }));
+    return done(result);
+  } catch (e) {
+    if (e instanceof ApprovalRefused) return fail(e.code, e.message, e.status);
+    throw e;
+  }
 }
 
 /** Tells the people who may decide that a request is waiting (bell, functions/_lib/notify.ts). A notification must
@@ -208,6 +243,7 @@ export async function decide(env: Env, session: Session, id: string, decision: D
         return { ...cur, status: 'cancelled' };
       }
 
+      if (!ctx.enabled) throw new ApprovalRefused('APPROVALS_OFF', APPROVALS_OFF);
       const rule = decisionRule(session, cur, ctx);
       if (rule.refusal) throw new ApprovalRefused('FORBIDDEN', rule.refusal, 403);
       if (decision === 'reject') {
@@ -260,7 +296,8 @@ async function notifyRequester(env: Env, r: any, decision: Decision) {
 /* Carrying out an approved request                                    */
 /* ------------------------------------------------------------------ */
 
-interface ExecCtx { approvalId: string; approver: Session; requestedBy: string }
+/** approvalId is undefined when approvals are off and the action ran at once (`submit`). */
+interface ExecCtx { approvalId: string | undefined; approver: Session; requestedBy: string }
 type Executor = (tx: Env, p: any, c: ExecCtx) => Promise<Record<string, unknown>>;
 
 const actor = (c: ExecCtx) => ({ actorId: c.approver.userId, actorLabel: c.approver.fullName });

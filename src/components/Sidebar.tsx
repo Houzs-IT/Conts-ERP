@@ -40,7 +40,11 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [profileOpen, setProfileOpen] = useState(false);
   const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
-  const all = useMemo(() => navFor(user!.role, !!engine.data?.enabled, user!.access), [user, engine.data?.enabled]);
+  const counts = useNavCounts(path);
+  // Approvals are off unless Settings turns them on (owner, 11 Oct 2026); the page stays reachable by its address.
+  const approvalsOn = counts?.approvalsOn === true;
+  const all = useMemo(() => navFor(user!.role, !!engine.data?.enabled, user!.access)
+    .map(g => ({ ...g, items: g.items.filter(it => it.key !== 'approvals' || approvalsOn) })), [user, engine.data?.enabled, approvalsOn]);
   const hasSupply = all.some(g => g.workspace === 'supply');
 
   // Opening a supply chain address (a link, the back button) shows its workspace; otherwise the last choice stands.
@@ -66,7 +70,6 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   };
   useEffect(() => () => window.clearTimeout(scrollTimer.current), []);
 
-  const counts = useNavCounts(path);
   const countOf = (k?: BadgeKey) => (k && counts?.[k]) || 0;
 
   const badge = (on: boolean): CSSProperties => ({

@@ -1,4 +1,4 @@
-// Maker-checker approvals, numbered guest documents and owner statements from booking payments, end to end against a
+// Maker-checker approvals (switched off, the default, and on), numbered guest documents and owner statements from booking payments, end to end against a
 // running local app and its database (local only: never staging or production).
 //
 //   BIGDATA_PORT=55434 node scripts/api-checks/hostplatform-import.mjs ../_hostplatform-data --serve      (database)
@@ -72,13 +72,86 @@ const mgmt2 = as(await login('mgmt2.check@local.test'));
 await q(`UPDATE users SET is_active = 0 WHERE id = 'chk-mgmt2'`);
 await q(`DELETE FROM settings WHERE key IN ('approvals.expenseThreshold','approvals.financeAdminLimit')`); // defaults: RM 500 and RM 2,000
 
-console.log('\n== Approvals ==');
+const setApprovals = on => on
+  ? q(`INSERT INTO settings (key, value, updated_at) VALUES ('approvals.enabled', 'true', $1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, now)
+  : q(`DELETE FROM settings WHERE key = 'approvals.enabled'`);
+const requestCount = async () => Number((await q(`SELECT COUNT(*)::int n FROM approval_requests`))[0].n);
+const auditFor = (table, id, action, actor) => q(`SELECT after_state FROM audit_log WHERE entity_table = $1 AND entity_id = $2 AND action = $3 AND actor_id = $4 ORDER BY occurred_at DESC LIMIT 1`, table, id, action, actor);
+
+console.log('\n== Approvals switched off (the default) ==');
+await setApprovals(false);
+const today = now.slice(0, 10);
+const req0 = await requestCount();
+let r = await mgmt('GET', '/api/settings');
+check('Settings reports approvals off when never saved', r.json?.approvals?.enabled === false, JSON.stringify(r.json?.approvals));
+r = await mgmt('GET', '/api/nav/badges');
+check('the menu is told approvals are off, with no approvals count', r.json?.approvalsOn === false && r.json?.approvals === 0 && !r.json?.alerts?.some(a => a.key === 'approvals'), r.text.slice(0, 300));
+
+// A refund is recorded at once by the person who did it, without a reason, audited.
+const [offOta] = await q(`SELECT id FROM reservations WHERE channel = 'airbnb' AND state = 'checked_out' ORDER BY check_in DESC LIMIT 1 OFFSET 1`);
+const offPays = Number((await q(`SELECT COUNT(*)::int n FROM booking_payments WHERE reservation_id = $1`, offOta.id))[0].n);
+r = await fin('POST', `/api/reservations/${offOta.id}/payments`, { amount: 4200, receivedOn: today, kind: 'refund', method: 'Bank transfer' });
+const offRefund = (await q(`SELECT kind, amount, created_by FROM booking_payments WHERE id = $1`, r.json?.id ?? ''))[0];
+check('off: a refund is recorded at once (201) by the finance admin who entered it', r.status === 201 && offRefund?.kind === 'refund' && Number(offRefund.amount) === 4200 && offRefund.created_by === 'chk-finance'
+  && Number((await q(`SELECT COUNT(*)::int n FROM booking_payments WHERE reservation_id = $1`, offOta.id))[0].n) === offPays + 1, r.text);
+const refundAudit = await auditFor('reservations', offOta.id, 'reservation.payment', 'chk-finance');
+check('off: the refund is audited under that person, with no approval reference', refundAudit[0] && String(refundAudit[0].after_state).includes(r.json.id) && !String(refundAudit[0].after_state).includes('approvalId'), JSON.stringify(refundAudit));
+
+// An owner charge is open at once.
+const [offOwner] = await q(`SELECT o.id FROM owners o JOIN units u ON u.owner_id = o.id GROUP BY o.id ORDER BY o.id LIMIT 1`);
+r = await mgmt('POST', `/api/owners/${offOwner.id}/adjustments`, { kind: 'charge', amount: 11000, description: 'Check off: lost key', occurredOn: today });
+const offAdj = (await q(`SELECT amount, state, created_by FROM owner_adjustments WHERE id = $1`, r.json?.id ?? ''))[0];
+check('off: an owner charge is added at once (201), open, -RM 110.00', r.status === 201 && Number(offAdj?.amount) === -11000 && offAdj?.state === 'open' && offAdj?.created_by === 'dev-admin', r.text);
+check('off: the charge is audited under the person who added it', (await auditFor('owner_adjustments', r.json?.id, 'owner_adjustment.create', 'dev-admin')).length === 1);
+
+// An expense above the (unused) threshold is recorded at once, and so is raising one.
+const [offUnit] = await q(`SELECT u.id FROM units u WHERE NOT EXISTS (SELECT 1 FROM owner_statements s WHERE s.owner_id = u.owner_id AND s.state IN ('finalised','sent','paid') AND s.period_end >= $1) ORDER BY u.id LIMIT 1`, today);
+r = await fin('POST', '/api/expenses', { unitId: offUnit.id, category: 'maintenance', amount: 80000, incurredOn: today, description: 'Check off: water heater' });
+check('off: an RM 800 expense is recorded at once (201)', r.status === 201 && r.json?.id, r.text);
+const offExp = r.json?.id;
+check('off: the expense is audited under the finance admin', (await auditFor('expenses', offExp, 'expense.create', 'chk-finance')).length === 1);
+r = await fin('PATCH', `/api/expenses/${offExp}`, { amount: 95000 });
+check('off: raising it to RM 950 applies at once (200)', r.status === 200 && Number((await q(`SELECT amount FROM expenses WHERE id = $1`, offExp))[0].amount) === 95000, r.text);
+
+// A payout run moves the payouts at once.
+const offSnap = await q(`SELECT id, state, paid_at FROM payouts WHERE bank_last4 IS NOT NULL`);
+let offPend = await q(`SELECT id FROM payouts WHERE state = 'pending' AND bank_last4 IS NOT NULL ORDER BY id LIMIT 2`);
+if (offPend.length < 2) {
+  await q(`UPDATE payouts SET state = 'pending', paid_at = NULL WHERE id IN (SELECT id FROM payouts WHERE bank_last4 IS NOT NULL ORDER BY id LIMIT 2)`);
+  offPend = await q(`SELECT id FROM payouts WHERE state = 'pending' AND bank_last4 IS NOT NULL ORDER BY id LIMIT 2`);
+}
+const offIds = offPend.map(p => p.id);
+r = await fin('POST', '/api/payouts/run', { payoutIds: offIds });
+const offStates = (await q(`SELECT state FROM payouts WHERE id IN (SELECT jsonb_array_elements_text($1::text::jsonb))`, JSON.stringify(offIds))).map(x => x.state);
+check('off: a payout run starts at once (200): both payouts in processing', r.status === 200 && r.json?.started === 2 && /^RUN-/.test(r.json?.run ?? '') && offStates.every(s => s === 'processing'), r.text);
+const runAudit = await auditFor('payouts', offIds[0], 'payout.run', 'chk-finance');
+check('off: each move is audited under the finance admin with the run reference', runAudit[0] && String(runAudit[0].after_state).includes(r.json?.run), JSON.stringify(runAudit));
+r = await fin('POST', '/api/payouts/run', { payoutIds: offIds });
+check('off: running the same payouts again is refused (409)', r.status === 409, r.text);
+await q(`UPDATE payouts p SET state = x.state, paid_at = x.paid_at FROM jsonb_to_recordset($1::text::jsonb) AS x(id text, state text, paid_at text) WHERE p.id = x.id`,
+  JSON.stringify(offSnap.filter(p => offIds.includes(p.id))));
+
+// Writing off a held debt settles it at once (put back afterwards, so the on-mode check below has one to use).
+const [offHeld] = await q(`SELECT id, owner_id FROM owner_adjustments WHERE state = 'held' AND statement_id IS NULL ORDER BY id LIMIT 1`);
+if (offHeld) {
+  r = await fin('PATCH', `/api/owners/${offHeld.owner_id}/adjustments/${offHeld.id}`, { action: 'settle', note: 'Check off: waived' });
+  check('off: writing off a held debt settles it at once (200)', r.status === 200 && r.json?.state === 'settled' && (await q(`SELECT state FROM owner_adjustments WHERE id = $1`, offHeld.id))[0].state === 'settled', r.text);
+  check('off: the write-off is audited under the finance admin', (await auditFor('owner_adjustments', offHeld.id, 'owner_adjustment.settle', 'chk-finance')).length === 1);
+  await q(`UPDATE owner_adjustments SET state = 'held', settled_note = NULL WHERE id = $1`, offHeld.id);
+} else console.log('skip off write-off: no held debt in this database');
+
+check('off: no approval request was written by any of these', await requestCount() === req0, `${req0} -> ${await requestCount()}`);
+
+console.log('\n== Approvals switched on ==');
+await setApprovals(true);
+r = await mgmt('GET', '/api/nav/badges');
+check('on: the menu is told approvals are on', r.json?.approvalsOn === true, r.text.slice(0, 200));
 
 // 1. A refund is staged, not recorded.
 const [ota] = await q(`SELECT id, external_ref FROM reservations WHERE channel = 'airbnb' AND state = 'checked_out' ORDER BY check_in DESC LIMIT 1`);
 const payCount = async id => Number((await q(`SELECT COUNT(*)::int n FROM booking_payments WHERE reservation_id = $1`, id))[0].n);
 const before = await payCount(ota.id);
-let r = await fin('POST', `/api/reservations/${ota.id}/payments`, { amount: 5000, receivedOn: now.slice(0, 10), kind: 'refund', method: 'Bank transfer' });
+r = await fin('POST', `/api/reservations/${ota.id}/payments`, { amount: 5000, receivedOn: now.slice(0, 10), kind: 'refund', method: 'Bank transfer' });
 check('a refund without a reason is refused (422)', r.status === 422 && r.json?.error?.fields?.reason, r.text);
 r = await fin('POST', `/api/reservations/${ota.id}/payments`, { amount: 5000, receivedOn: now.slice(0, 10), kind: 'refund', method: 'Bank transfer', reason: 'Guest complained about the air-con; partial refund agreed' });
 const refundReq = r.json?.pendingApproval;
@@ -220,6 +293,22 @@ if (held) {
   r = await mgmt('POST', `/api/approvals/${wo.id}`, { decision: 'approve' });
   check('approved: the debt is settled', r.status === 200 && (await q(`SELECT state FROM owner_adjustments WHERE id = $1`, held.id))[0].state === 'settled', r.text);
 } else console.log('skip write-off: no held debt in this database');
+
+// 11. A request still waiting when approvals are switched off can only be withdrawn.
+r = await fin('POST', `/api/owners/${owner.id}/adjustments`, { kind: 'credit', amount: 2000, description: 'Check: left over', occurredOn: now.slice(0, 10) });
+const left = r.json?.pendingApproval;
+await setApprovals(false);
+r = await mgmt('POST', `/api/approvals/${left.id}`, { decision: 'approve' });
+check('switched off with a request waiting: approving it is refused (409 APPROVALS_OFF)', r.status === 409 && r.json?.error?.code === 'APPROVALS_OFF', r.text);
+r = await mgmt('GET', '/api/approvals?view=pending');
+const lv = r.json?.data?.find(a => a.id === left.id);
+check('...the Approvals page says approvals are off and lists it with Withdraw only', r.json?.rules?.enabled === false && lv && !lv.can.approve && !lv.can.reject && lv.can.cancel, JSON.stringify(lv?.can));
+r = await mgmt('GET', `/api/approvals?entity=owners&entityId=${encodeURIComponent(owner.id)}`);
+check('...no banner on the owner', r.status === 200 && r.json?.data?.length === 0, r.text.slice(0, 200));
+r = await mgmt('GET', '/api/nav/badges');
+check('...and no approvals count in the menu', r.json?.approvals === 0 && r.json?.approvalsOn === false, r.text.slice(0, 200));
+r = await fin('POST', `/api/approvals/${left.id}`, { decision: 'cancel' });
+check('...the person who asked withdraws it', r.status === 200 && r.json?.status === 'cancelled', r.text);
 
 console.log('\n== Guest documents ==');
 const [direct] = await q(`SELECT id FROM reservations WHERE channel = 'direct' AND gross_booking_value > 0 AND state NOT IN ('cancelled','no_show') ORDER BY id LIMIT 1`);

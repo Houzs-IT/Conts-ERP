@@ -17,7 +17,7 @@ import type { Tone } from '../../lib/types';
 import type { Owner } from './shared';
 import { Modal } from './shared';
 import ApprovalBanner from '../../components/ApprovalBanner';
-import { isStaged, stagedToast, type Approval, type Staged } from '../../lib/approvals';
+import { isStaged, stagedToast, useApprovalsOn, type Approval, type Staged } from '../../lib/approvals';
 import { refreshNavCounts } from '../../lib/navBadges';
 
 /** Money for or against the owner outside bookings and expenses (GET /api/owners/:id/adjustments): workbook
@@ -51,6 +51,7 @@ const addMonths = (ym: string, by: number) => {
 export function OwnerAdjustments({ owner }: { owner: Owner }) {
   const toast = useToast();
   const { data, loading, error, reload } = useApi<Payload>(`/owners/${encodeURIComponent(owner.id)}/adjustments`);
+  const approvalsOn = useApprovalsOn();
   const pending = useApi<{ data: Approval[] }>(`/approvals?entity=owners&entityId=${encodeURIComponent(owner.id)}`);
   const [filter, setFilter] = useState('all');
   const [modal, setModal] = useState<null | { kind: 'release' | 'settle'; a: Adjustment } | { kind: 'add' }>(null);
@@ -88,7 +89,7 @@ export function OwnerAdjustments({ owner }: { owner: Owner }) {
       }),
     });
     if (a.state !== 'settled') items.push({ key: 'settle', label: a.state === 'held' ? 'Write off or settle outside' : 'Mark settled outside', icon: 'CheckCircle2',
-      hint: a.state === 'held' ? 'Never deducted from a statement. Needs a second person to approve.' : 'Paid outside Property OS; it never reaches a statement.', disabledReason: onFinal, onSelect: () => setModal({ kind: 'settle', a }) });
+      hint: a.state === 'held' ? `Never deducted from a statement.${approvalsOn ? ' Needs a second person to approve.' : ''}` : 'Paid outside Property OS; it never reaches a statement.', disabledReason: onFinal, onSelect: () => setModal({ kind: 'settle', a }) });
     return items;
   }
 
@@ -168,10 +169,10 @@ export function OwnerAdjustments({ owner }: { owner: Owner }) {
 
       {modal?.kind === 'release' && <ReleaseModal a={modal.a} busy={busy} onClose={() => setModal(null)} onSubmit={month => change(modal.a, { action: 'release', month }, 'Released.', `Generate or regenerate the ${monthLabel(month)} statements to deduct it.`)} />}
       {modal?.kind === 'settle' && <SettleModal a={modal.a} busy={busy} onClose={() => setModal(null)} onSubmit={note => change(modal.a, { action: 'settle', note }, 'Marked settled outside.')} />}
-      {modal?.kind === 'add' && <AddModal owner={owner} busy={busy} onClose={() => setModal(null)} onSubmit={async body => {
+      {modal?.kind === 'add' && <AddModal owner={owner} busy={busy} approvalsOn={approvalsOn} onClose={() => setModal(null)} onSubmit={async body => {
         setBusy(true);
         try {
-          // Credits and charges change what the owner is paid: they wait for a second person's approval.
+          // With approvals on, credits and charges wait for a second person's approval.
           const r = await api.post<unknown>(`/owners/${encodeURIComponent(owner.id)}/adjustments`, body);
           if (isStaged(r)) toast(stagedToast(r));
           else toast({ tone: 'success', title: body.kind === 'credit' ? 'Credit added.' : 'Charge added.', body: 'The next statement generated for that month carries it.' });
@@ -212,7 +213,7 @@ function SettleModal({ a, busy, onClose, onSubmit }: { a: Adjustment; busy: bool
   );
 }
 
-function AddModal({ owner, busy, onClose, onSubmit }: { owner: Owner; busy: boolean; onClose: () => void; onSubmit: (b: { kind: 'credit' | 'charge'; amount: number; description: string; occurredOn: string; unitId: string | null }) => void }) {
+function AddModal({ owner, busy, approvalsOn, onClose, onSubmit }: { owner: Owner; busy: boolean; approvalsOn: boolean; onClose: () => void; onSubmit: (b: { kind: 'credit' | 'charge'; amount: number; description: string; occurredOn: string; unitId: string | null }) => void }) {
   const [kind, setKind] = useState<'credit' | 'charge'>('charge');
   const [sen, setSen] = useState<number | null>(null);
   const [description, setDescription] = useState('');
@@ -221,7 +222,7 @@ function AddModal({ owner, busy, onClose, onSubmit }: { owner: Owner; busy: bool
   const valid = sen != null && sen > 0 && description.trim() !== '' && /^\d{4}-\d{2}-\d{2}$/.test(occurredOn);
   return (
     <Modal title="Add credit or charge" sub={`For ${owner.displayName}. It goes on the next statement generated for a month ending on or after the date.`} onClose={onClose}
-      submitLabel={busy ? 'Adding...' : 'Add'} canSubmit={valid && !busy}
+      submitLabel={busy ? 'Adding...' : approvalsOn ? 'Send for approval' : `Add ${kind}`} canSubmit={valid && !busy}
       onSubmit={() => onSubmit({ kind, amount: sen ?? 0, description: description.trim(), occurredOn, unitId: unitId || null })}>
       <Select label="Kind" showLabel size="md" value={kind} onChange={v => setKind(v as 'credit' | 'charge')}
         options={[{ value: 'charge', label: 'Charge: deducted from the payout' }, { value: 'credit', label: 'Credit: added to the payout' }]} />

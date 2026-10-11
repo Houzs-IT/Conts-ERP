@@ -48,9 +48,11 @@ const SPEC: Record<string, Record<string, Field>> = {
     yearTerms: { def: '', kind: 'longtext' },
     miscChargeMonthly: { def: 10000, kind: 'number', min: 0, max: 10_000_000, integer: true },
   },
-  // Maker-checker (functions/_lib/approvals.ts), sen. An expense above expenseThreshold waits for approval; a finance
-  // admin may approve requests below financeAdminLimit, management any amount. Defaults match APPROVAL_DEFAULTS.
+  // Maker-checker (functions/_lib/approvals.ts), off unless enabled (owner, 11 Oct 2026). Limits in sen: with it on, an
+  // expense above expenseThreshold waits for approval; a finance admin may approve requests below financeAdminLimit,
+  // management any amount. Defaults match APPROVAL_DEFAULTS.
   approvals: {
+    enabled: { def: false, kind: 'bool' },
     expenseThreshold: { def: 50000, kind: 'number', min: 0, max: 100_000_000, integer: true },
     financeAdminLimit: { def: 200000, kind: 'number', min: 0, max: 100_000_000, integer: true },
   },

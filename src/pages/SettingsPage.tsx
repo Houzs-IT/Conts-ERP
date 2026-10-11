@@ -13,6 +13,7 @@ import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import { useSession } from '../lib/session';
 import { ROLE_LABEL } from '../lib/vocabulary';
+import { refreshNavCounts } from '../lib/navBadges';
 
 /* ------------------------------------------------------------------ *
  * Settings — organisation-wide defaults (routes.json → SYSTEM →
@@ -36,8 +37,8 @@ interface Settings {
   statements: { cycleDay: number; autoGenerate: boolean; payoutMethod: string };
   /** The Owner Income Report's wording; miscChargeMonthly is sen. Terms are one per line. */
   report: { paymentTerms: string; monthlyTerms: string; yearTerms: string; miscChargeMonthly: number };
-  /** Maker-checker limits, sen (functions/_lib/approvals.ts). */
-  approvals: { expenseThreshold: number; financeAdminLimit: number };
+  /** Maker-checker, off by default (owner, 11 Oct 2026); limits in sen (functions/_lib/approvals.ts). */
+  approvals: { enabled: boolean; expenseThreshold: number; financeAdminLimit: number };
   security: {
     staffInactivityTimeoutMins: number; ownerInactivityTimeoutMins: number;
     absoluteTimeoutHours: number; lockoutAttempts: number; lockoutMinutes: number;
@@ -60,7 +61,7 @@ const FALLBACK: Settings = {
   operations: { checkIn: '15:00', checkOut: '11:00', cleaningWindowHours: 4, linenSets: 2, photoRequiredToMarkReady: true },
   statements: { cycleDay: 1, autoGenerate: true, payoutMethod: 'bank_transfer' },
   report: { paymentTerms: '7th every month', monthlyTerms: '', yearTerms: '', miscChargeMonthly: 10000 },
-  approvals: { expenseThreshold: 50000, financeAdminLimit: 200000 },
+  approvals: { enabled: false, expenseThreshold: 50000, financeAdminLimit: 200000 },
   security: { staffInactivityTimeoutMins: 10080, ownerInactivityTimeoutMins: 480, absoluteTimeoutHours: 720, lockoutAttempts: 5, lockoutMinutes: 15, require2faRoles: '' },
 };
 
@@ -270,7 +271,7 @@ export default function SettingsPage() {
       if (!draft.operations.checkIn) e['operations.checkIn'] = 'Enter the standard check-in time.';
       if (!draft.operations.checkOut) e['operations.checkOut'] = 'Enter the standard check-out time.';
     }
-    if (k === 'approvals') {
+    if (k === 'approvals' && draft.approvals.enabled) {
       if (!inRange(draft.approvals.expenseThreshold, 0, 1e12)) e['approvals.expenseThreshold'] = 'Enter RM 0.00 or more.';
       if (!inRange(draft.approvals.financeAdminLimit, 0, 1e12)) e['approvals.financeAdminLimit'] = 'Enter RM 0.00 or more.';
     }
@@ -292,7 +293,9 @@ export default function SettingsPage() {
         : 'Automatic generation is off. Generate statements manually each period.',
     },
     report: { title: 'Owner report wording saved.', body: 'Reports opened from now on use it. The miscellaneous charge applies to statements generated from now on.' },
-    approvals: { title: 'Approval limits saved.', body: 'New requests and decisions use them from now on.' },
+    approvals: draft.approvals.enabled
+      ? { title: 'Approvals switched on.', body: 'Refunds, payout runs, owner credits and charges, write-offs and large expenses now wait for a second person.' }
+      : { title: 'Approvals switched off.', body: 'Money actions happen at once, without a second person.' },
     security: { title: 'Security settings saved.', body: 'Takes effect immediately, including for anyone already signed in.' },
   };
 
@@ -307,6 +310,7 @@ export default function SettingsPage() {
       await api.put('/settings', { [k]: value }); // audited server-side; see BUTTONS §14
       setSaved(s => ({ ...s, [k]: value }) as Partial<Settings>);
       toast({ tone: 'success', ...MESSAGES[k] });
+      if (k === 'approvals') void refreshNavCounts();
     } catch (e) {
       toast({ tone: 'critical', title: 'Settings were not saved.', body: errorMessage(e, 'Try again in a moment.') });
     }
@@ -513,11 +517,19 @@ export default function SettingsPage() {
           {/* --------------------------- Approvals -------------------------- */}
           <SectionCard
             title="Approvals"
-            description="Money leaving the company needs a second person: guest refunds, payout runs, owner credits and charges, debt write-offs, and expenses above the amount below. Nobody approves their own request, except the only management user, with a written reason."
+            description="Whether money going out waits for someone else to approve it. Off: refunds, payout runs, owner credits and charges, write-offs and expenses happen as soon as they are entered."
             readOnly={readOnly} dirty={dirty('approvals')} busy={busy === 'approvals'} saveLabel="Save approvals"
             onSave={() => save('approvals')} onDiscard={() => discard('approvals')}
           >
-            <Grid>
+            <ToggleField
+              label="Require a second person to approve money going out"
+              description={draft.approvals.enabled
+                ? 'Guest refunds, payout runs, owner credits and charges, debt write-offs and expenses above the amount below wait on the Approvals page. Nobody approves their own request, except the only management user, with a written reason.'
+                : 'Off. Each action is recorded at once under the name of the person who did it.'}
+              checked={draft.approvals.enabled}
+              onChange={v => patch('approvals', { enabled: v })}
+            />
+            {draft.approvals.enabled && <div className="[border-top:1px_solid_var(--color-line-soft)] pt-4"><Grid>
               <MoneyInput
                 label="Expenses need approval above (RM)"
                 valueSen={draft.approvals.expenseThreshold}
@@ -532,7 +544,7 @@ export default function SettingsPage() {
                 help="From this amount up, only management can approve. Management approves any amount."
                 onChangeSen={v => patch('approvals', { financeAdminLimit: held(v) }, 'approvals.financeAdminLimit')}
               />
-            </Grid>
+            </Grid></div>}
           </SectionCard>
 
           {/* --------------------------- Security --------------------------- */}

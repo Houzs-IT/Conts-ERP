@@ -20,7 +20,7 @@ import type { BookingChannel, ReservationState } from '../../lib/types';
 import { RecordHistory } from '../RecordHistory';
 import ApprovalBanner from '../ApprovalBanner';
 import { DocumentsSection, type GuestDocument } from './GuestDocuments';
-import { isStaged, stagedToast, type Approval } from '../../lib/approvals';
+import { isStaged, stagedToast, useApprovalsOn, type Approval } from '../../lib/approvals';
 
 /* ------------------------------------------------------------------ */
 /* Shapes (GET /api/reservations/:id)                                  */
@@ -368,16 +368,18 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [reason, setReason] = useState('');
   const refund = kind === 'refund';
-  const valid = sen != null && sen > 0 && !!receivedOn && (!refund || !!reason.trim());
+  const approvalsOn = useApprovalsOn();
+  const valid = sen != null && sen > 0 && !!receivedOn && (!refund || !approvalsOn || !!reason.trim());
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!valid || sen == null) return;
     setBusy(true); setErrors({});
     try {
-      const res = await api.post<unknown>(`/reservations/${d.id}/payments`, { amount: sen, receivedOn, kind, method, reference: reference || undefined, note: note || undefined, reason: refund ? reason.trim() : undefined });
-      // A refund is money leaving: it waits for a second person and nothing is recorded yet.
+      const res = await api.post<unknown>(`/reservations/${d.id}/payments`, { amount: sen, receivedOn, kind, method, reference: reference || undefined, note: note || undefined, reason: refund && reason.trim() ? reason.trim() : undefined });
+      // With approvals on, a refund waits for a second person and nothing is recorded yet.
       if (isStaged(res)) { toast(stagedToast(res)); onSaved(''); setBusy(false); return; }
+      if (refund) { onSaved(`Refund of ${rm(sen)} recorded.`); setBusy(false); return; }
       const left = Math.max(d.ledger.outstanding - sen, 0);
       onSaved(`Payment of ${rm(sen)} recorded. ${left > 0 ? `${rm(left)} still outstanding.` : 'Nothing is outstanding now.'}`);
     } catch (err) {
@@ -412,14 +414,14 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
           <Field label="Reference (optional)" value={reference} onChange={e => setReference(e.target.value)} placeholder="Bank or receipt reference" />
         </div>
         <Field label="Note (optional)" value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Deposit, balance on arrival" />
-        {refund && <>
+        {refund && approvalsOn && <>
           <Field label="Why the guest is refunded (required)" value={reason} onChange={e => setReason(e.target.value)} required maxLength={500}
             placeholder="e.g. Cancelled 10 days before arrival, full refund" error={errors.reason} />
           <p className="m-0 text-meta text-muted-ink text-pretty">A refund is money leaving the company. It is sent for approval and recorded only once it is approved.</p>
         </>}
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={refund ? 'Enter an amount, a date and the reason.' : 'Enter an amount and a date.'}>{busy ? 'Saving…' : refund ? 'Send for approval' : 'Record payment'}</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={refund && approvalsOn ? 'Enter an amount, a date and the reason.' : 'Enter an amount and a date.'}>{busy ? 'Saving…' : refund ? (approvalsOn ? 'Send for approval' : 'Record refund') : 'Record payment'}</Button>
         </div>
       </form>
     </CentreModal>

@@ -1,7 +1,7 @@
 import { type Env, one, json, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
-import { waitingCount } from '../../_lib/approvals';
+import { waitingCount, approvalsEnabled } from '../../_lib/approvals';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-MY')} ${n === 1 ? one : many}`;
 
@@ -32,7 +32,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            (SELECT count(*)::int FROM channex_outbox o WHERE o.status = 'failed' AND o.unit_id IN (SELECT unit_id FROM channex_channels)) AS failed`);
   const channels = { units: ch?.units ?? 0, lastSentAt: ch?.last_sent ?? null, failed: ch?.failed ?? 0 };
   const n = c!;
-  const approvals = await waitingCount(env, session);
+  const [approvals, approvalsOn] = await Promise.all([waitingCount(env, session), approvalsEnabled(env)]);
   const money = session.manage;
 
   type Alert = { key: string; title: string; body: string; target: string; tone: 'critical' | 'warning' | 'info'; count: number };
@@ -50,6 +50,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Today lists open maintenance alongside the day's tasks (operations/today.ts), so its count does too.
   return json({
     channels, today: n.today + n.maintenance, maintenance: n.maintenance, inbox: n.inbox,
-    statements: money ? n.statements : 0, approvals, alerts,
+    statements: money ? n.statements : 0, approvals, approvalsOn, alerts,
   });
 };
