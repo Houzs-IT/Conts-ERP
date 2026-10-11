@@ -51,7 +51,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const money = session.manage;
-  const month = mytToday().slice(0, 7);
+  // ?month=YYYY-MM: that month in full (the Financials tab steps back through months); default the month so far.
+  const asked0 = new URL(request.url).searchParams.get('month');
+  const thisMonth = mytToday().slice(0, 7);
+  const month = asked0 && /^\d{4}-(0[1-9]|1[0-2])$/.test(asked0) && asked0 <= thisMonth ? asked0 : thisMonth;
 
   // Independent reads, so they go out together: each one is its own connection (db.ts).
   // Occupancy, ADR and RevPAR as everywhere else (functions/_lib/revenue.ts): gross value and nights split by night
@@ -119,49 +122,92 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       'SELECT AVG(rating) AS avg, COUNT(*) AS n FROM reviews WHERE unit_id = ?', unitId),
 
     money ? Promise.all([statementSettings(q), loadInputs(q, `${month}-01`, monthEndEx, { unitId })])
-      .then(([settings, inputs]) => computeMonth(month, inputs, settings, 'dated').find(x => x.unitId === unitId) ?? null)
+      .then(([settings, inputs]) => {
+        const m = computeMonth(month, inputs, settings, 'dated').find(x => x.unitId === unitId) ?? null;
+        // What the unit traded, on a share basis with nothing to the owner: the stays and costs behind a fixed rent
+        // (guaranteed rent, master lease), for the company's side of the P&L.
+        const u = inputs.units[0];
+        const trading = m && u && (m.terms.model === 'grr' || m.terms.model === 'master_lease')
+          ? computeMonth(month, { ...inputs, units: [{ ...u, contract_id: 'trading', revenue_model: 'management', model: 'management', management_fee_pct: 100, minimum_guarantee: 0, contract_misc: 0, unit_misc: 0, history: undefined }] }, settings, 'dated')[0] ?? null
+          : null;
+        return m ? { m, trading, channelOf: new Map(inputs.stays.map(st => [st.id, st.channel])) } : null;
+      })
       : Promise.resolve(null),
     statementSettings(q),
     money ? unitExample(q, unitId, month) : Promise.resolve(null),
     // Costs on the unit paid by someone other than the owner: the unit's own profit and loss, never the statement.
-    money ? all<any>(env, `SELECT category, charge_to, SUM(amount) AS total FROM expenses
-      WHERE unit_id = ? AND charge_to <> 'owner' AND incurred_on >= ? AND incurred_on < ? GROUP BY 1, 2 ORDER BY 3 DESC`, unitId, `${month}-01`, monthEndEx) : Promise.resolve([]),
+    money ? all<any>(env, `SELECT e.category, e.charge_to, e.description, e.amount, e.incurred_on, t.kind AS task_kind FROM expenses e LEFT JOIN tasks t ON t.id = e.task_id
+      WHERE e.unit_id = ? AND e.charge_to <> 'owner' AND e.incurred_on >= ? AND e.incurred_on < ? ORDER BY e.incurred_on`, unitId, `${month}-01`, monthEndEx) : Promise.resolve([]),
   ]);
   const perf = metrics(perfRows, daysInMonth);
 
-  let pnl: { label: string; amount: number; type: string }[] | undefined;
-  const m = statement;
-  if (m) {
-    pnl = m.terms.basis === 'none'
-      ? [{ label: 'Master lease: no owner statement', amount: 0, type: 'gross' }]
-      : m.terms.basis === 'fixed_rent'
-      ? [{ label: TERMS.fixedRent, amount: m.fixedRent, type: 'gross' }]
-      : [
-        { label: m.terms.model === 'long_term' ? TERMS.monthlyRent : TERMS.hospitalityIncome, amount: m.gross, type: 'gross' },
-        ...m.deductionGroups.filter(g => g.amount).map(g => ({ label: g.label, amount: -g.amount, type: 'expense' })),
+  // The P&L the way the owner's Owner Income Report and an Airbnb earnings page read: every reservation (guest, dates,
+  // nights, channel), every cost under its report row, the operator's share, credits and charges, the payout.
+  // pnl is the owner's side per the contract; companyPnl the company's side (the trading behind a fixed rent, the costs
+  // the company, a tenant or a guest paid). Words from src/lib/statementTerms.ts.
+  type Item = { label: string; amount: number };
+  type PnlRow = { label: string; amount: number; type: string; items?: Item[] };
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const dm = (iso: string) => `${Number(iso.slice(8, 10))} ${MON[Number(iso.slice(5, 7)) - 1]}`;
+  const CHANNEL: Record<string, string> = { airbnb: 'Airbnb', booking_com: 'Booking.com', agoda: 'Agoda', direct: 'Direct', expedia: 'Expedia', walk_in: 'Walk-in' };
+  const stayItems = (lines: { type: string; description: string; amount: number; quantity: number | null; reservationId?: string }[], channelOf: Map<string, string>): Item[] =>
+    lines.filter(l => l.type === 'gross').map(l => {
+      const m2 = /^(.*?) · (\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})/.exec(l.description);
+      const ch = l.reservationId ? CHANNEL[channelOf.get(l.reservationId) ?? ''] ?? null : null;
+      const nights = l.quantity != null ? `${l.quantity} ${l.quantity === 1 ? 'night' : 'nights'}` : null;
+      return { label: m2 ? [m2[1], `${dm(m2[2])} – ${dm(m2[3])}`, nights, ch].filter(Boolean).join(' · ') : l.description, amount: l.amount };
+    });
+  const costItems = (lines: { type: string; category: string | null; description: string; amount: number; occurredOn: string }[], cat: string): Item[] =>
+    lines.filter(l => l.type === 'expense' && l.category === cat).map(l => ({ label: `${l.description} · ${dm(l.occurredOn)}`, amount: l.amount }));
+
+  let pnl: PnlRow[] | undefined;
+  const m = statement?.m ?? null;
+  if (m && statement) {
+    const adjustments = m.lines.filter(l => l.type === 'adjustment' && !['guarantee_top_up', 'fixed_rent'].includes(l.category ?? ''));
+    const adjRow: PnlRow[] = adjustments.length ? [{ label: TERMS.adjustments, amount: m.adjustmentsTotal, type: 'adjustment', items: adjustments.map(l => ({ label: `${l.description} · ${dm(l.occurredOn)}`, amount: l.amount })) }] : [];
+    if (m.terms.basis === 'none') {
+      pnl = [{ label: 'Master lease: no owner statement', amount: 0, type: 'gross' }, ...adjRow];
+    } else if (m.terms.basis === 'fixed_rent') {
+      pnl = [{ label: TERMS.fixedRent, amount: m.fixedRent, type: 'gross' }, ...adjRow];
+    } else {
+      const reservations = stayItems(m.lines, statement.channelOf);
+      pnl = [
+        { label: m.terms.model === 'long_term' ? TERMS.monthlyRent : TERMS.hospitalityIncome, amount: m.gross, type: 'gross',
+          items: m.terms.model === 'long_term' ? undefined : reservations.length ? reservations : [{ label: 'No reservations this month', amount: 0 }] },
+        ...m.deductionGroups.filter(g => g.amount).map(g => ({ label: g.label, amount: -g.amount, type: 'expense', items: g.category === 'misc' ? undefined : costItems(m.lines, g.category) })),
+        { label: TERMS.netIncome, amount: m.net, type: 'subtotal' },
         { label: toOperator(100 - (m.ownerPct ?? 0)), amount: -m.operatorShare, type: 'fee' },
         ...(m.topUp ? [{ label: TERMS.topUp, amount: m.topUp, type: 'adjustment' }] : []),
+        ...(adjRow.length ? [{ label: TERMS.payoutBeforeAdjustment, amount: m.payoutBeforeAdjustments, type: 'subtotal' }, ...adjRow] : []),
       ];
-    if (m.adjustmentsTotal) pnl.push({ label: TERMS.adjustments, amount: m.adjustmentsTotal, type: 'adjustment' });
+    }
     pnl.push({ label: TERMS.netPayout, amount: m.netPayout, type: 'net' });
   }
   // The company's side of the unit this month: what it keeps or pays under the contract, and the costs it (or a
   // tenant or guest) paid, which never reach the owner statement.
-  let companyPnl: { label: string; amount: number; type: string }[] | undefined;
-  if (m && example) {
-    const others = otherPaid.map(r => ({ label: `${CATEGORY_LABEL[r.category] ?? r.category} (paid by ${PAYER_LABEL[r.charge_to] ?? r.charge_to})`, amount: -Number(r.total), type: 'expense' }));
+  let companyPnl: PnlRow[] | undefined;
+  if (m && statement && example) {
+    const byPayer = new Map<string, Item[]>();
+    for (const r of otherPaid) {
+      const k = `${CATEGORY_LABEL[r.category] ?? r.category} (paid by ${PAYER_LABEL[r.charge_to] ?? r.charge_to})`;
+      byPayer.set(k, [...(byPayer.get(k) ?? []), { label: `${r.description || CATEGORY_LABEL[r.category] || r.category} · ${dm(r.incurred_on)}`, amount: -Number(r.amount) }]);
+    }
+    const others: PnlRow[] = [...byPayer.entries()].map(([label, items]) => ({ label, amount: items.reduce((n, i) => n + i.amount, 0), type: 'expense', items }));
     const othersTotal = others.reduce((n, l) => n + l.amount, 0);
-    if (example.company) {
+    const t = statement.trading;
+    if (example.company && t) {
+      const reservations = stayItems(t.lines, statement.channelOf);
       companyPnl = [
-        { label: 'Unit income (bookings)', amount: example.company.income, type: 'gross' },
-        { label: 'Costs on the unit (all payers)', amount: -example.company.costs, type: 'expense' },
-        { label: m.terms.model === 'master_lease' ? 'Lease rent paid to owner' : 'Guaranteed rent paid to owner', amount: -example.company.rentToOwner, type: 'fee' },
+        { label: TERMS.hospitalityIncome, amount: t.gross, type: 'gross', items: reservations.length ? reservations : [{ label: 'No reservations this month', amount: 0 }] },
+        ...t.deductionGroups.filter(g => g.amount && g.category !== 'misc').map(g => ({ label: `${g.label} (paid by owner)`, amount: -g.amount, type: 'expense', items: costItems(t.lines, g.category) })),
+        ...others,
+        { label: m.terms.model === 'master_lease' ? 'Lease rent paid to owner' : `${TERMS.fixedRent} paid to owner`, amount: -example.company.rentToOwner, type: 'fee' },
         { label: 'Company result', amount: example.company.result, type: 'net' },
       ];
     } else {
       companyPnl = [
-        { label: m.terms.model === 'long_term' ? 'Management fee' : 'Operator share (management and agent)', amount: m.operatorShare, type: 'gross' },
-        ...(m.topUp ? [{ label: 'Minimum guarantee top-up paid', amount: -m.topUp, type: 'fee' }] : []),
+        { label: m.terms.model === 'long_term' ? 'Management fee' : `${TERMS.toOperator} (management and agent)`, amount: m.operatorShare, type: 'gross' },
+        ...(m.topUp ? [{ label: `${TERMS.topUp} paid`, amount: -m.topUp, type: 'fee' }] : []),
         ...others,
         { label: 'Company result', amount: m.operatorShare - m.topUp + othersTotal, type: 'net' },
       ];

@@ -57,9 +57,9 @@ export interface UnitDetail {
     revpar: number; rating: number | null; reviewCount: number;
     revenue?: number; gross?: number;
   };
-  pnl?: { label: string; amount: number; type: string }[];
+  pnl?: { label: string; amount: number; type: string; items?: { label: string; amount: number }[] }[];
   /** The company's side of the unit this month (what it keeps or pays, costs others paid). Money roles only. */
-  companyPnl?: { label: string; amount: number; type: string }[];
+  companyPnl?: { label: string; amount: number; type: string; items?: { label: string; amount: number }[] }[];
   stays: { id: string; guestName: string | null; channel: BookingChannel; state: ReservationState; checkIn: string; checkOut: string; guestsCount: number; externalRef: string | null; grossBookingValue?: number }[];
   tasks: { id: string; title: string; kind: string; state: TaskState; dueAt: string | null; completedAt: string | null; assigneeName: string | null }[];
   maintenance: { id: string; title: string; detail: string | null; state: TaskState; vendorName: string | null; ownerApprovalRequired: boolean; blocksUnit: boolean; chargeTo: string; reportedAt: string; resolvedAt: string | null; quotedAmount?: number | null; finalAmount?: number | null }[];

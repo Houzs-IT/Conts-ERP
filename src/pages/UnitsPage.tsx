@@ -6,7 +6,6 @@ import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { EmptyState } from '../components/States';
 import { Select } from '../components/Select';
-import { MoneyText } from '../components/MoneyText';
 import { StatusBadge, StatusDot } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
@@ -35,6 +34,8 @@ import {
   type Unit, type Building, type PropertiesPayload, type UnitDetail, type RosterRow,
 } from './units/shared';
 import { statusLabel } from '../lib/status';
+import { PnlTable } from './units/PnlTable';
+import { MonthStepper, shiftMonth } from './finance/listKit';
 
 /** True at the width where the tree becomes a sticky pane (Tailwind xl). */
 function useWide() {
@@ -88,7 +89,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     const n = new URLSearchParams(p);
     if (t === 'overview') n.delete('tab'); else n.set('tab', t);
     // The Bookings tab's own filter and page do not carry over to another tab.
-    n.delete('when'); n.delete('page'); n.delete('size');
+    n.delete('when'); n.delete('page'); n.delete('size'); n.delete('month');
     return n;
   }, { replace: true });
 
@@ -104,7 +105,11 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   // An address with no unit (or one that no longer exists) opens the first unit in the tree.
   const openId = unitId && (!props.data || units.some(u => u.id === unitId)) ? unitId : (firstUnitId(buildings, units) ?? unitId);
   const form = units.find(u => u.id === openId) ?? null;
-  const detail = useApi<UnitDetail>(openId ? `/units/detail?unitId=${encodeURIComponent(openId)}` : null, DETAIL_FALLBACK);
+  // ?month= steps the Financials tab back through months (units/detail.ts works that month out in full).
+  const monthParam = params.get('month');
+  const pnlMonth = monthParam && /^\d{4}-(0[1-9]|1[0-2])$/.test(monthParam) && monthParam < todayMyt().slice(0, 7) ? monthParam : null;
+  const setPnlMonth = (m: string | null) => setParams(p => { const n = new URLSearchParams(p); if (m) n.set('month', m); else n.delete('month'); return n; }, { replace: true });
+  const detail = useApi<UnitDetail>(openId ? `/units/detail?unitId=${encodeURIComponent(openId)}${pnlMonth ? `&month=${pnlMonth}` : ''}` : null, DETAIL_FALLBACK);
   const d = detail.data;
 
   function select(id: string) {
@@ -270,7 +275,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
           {!d ? (
             <Card><div className="p-10 text-center text-muted-ink text-copy">{detail.error ?? 'Loading unit…'}</div></Card>
           ) : (
-            <UnitRecord d={d} form={form} buildings={buildings} building={building} unitLabel={unitLabel}
+            <UnitRecord pnlMonth={pnlMonth} setPnlMonth={setPnlMonth} d={d} form={form} buildings={buildings} building={building} unitLabel={unitLabel}
               tab={tab} setTab={setTab} canEdit={canEdit} dirty={dirty} saving={saving} onSave={() => void save()}
               onChange={p => form && patch(form.id, p)} reload={reloadAll} reloadDetail={detail.reload}
               readiness={readiness[d.unit.id] ?? d.unit.readiness}
@@ -284,13 +289,14 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
 }
 
 interface RecordProps {
+  pnlMonth: string | null; setPnlMonth: (m: string | null) => void;
   d: UnitDetail; form: Unit | null; buildings: Building[]; building: Building | undefined; unitLabel: string;
   tab: Tab; setTab: (t: Tab) => void; canEdit: boolean; dirty: boolean; saving: boolean; onSave: () => void;
   onChange: (p: Partial<Unit>) => void; reload: () => void; reloadDetail: () => void;
   readiness: UnitReadiness; setReadiness: (id: string, r: UnitReadiness | null) => void;
 }
 
-function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canEdit, dirty, saving, onSave, onChange, reload, reloadDetail, readiness, setReadiness }: RecordProps) {
+function UnitRecord({ pnlMonth, setPnlMonth, d, form, buildings, building, unitLabel, tab, setTab, canEdit, dirty, saving, onSave, onChange, reload, reloadDetail, readiness, setReadiness }: RecordProps) {
   const toast = useToast();
   const { user } = useSession();
   // Matches MASTER_ROLES on the server's channex-setup / channex-connect.
@@ -316,7 +322,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
     }
   }, [shown]);
   // The P and L and the stats are both the current calendar month to date (units/detail.ts).
-  const periodLabel = `${monthLabel(p.period)} to date`;
+  const periodLabel = pnlMonth ? monthLabel(p.period, { long: true }) : `${monthLabel(p.period)} to date`;
+  const thisMonth = todayMyt().slice(0, 7);
 
   function changeReadiness(next: UnitReadiness) {
     if (next === readiness) return;
@@ -441,15 +448,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           {d.pnl && (
             <Card>
               <div className="pt-[18px] px-5 pb-[14px]"><span className="text-heading font-semibold">{periodLabel} P&amp;L</span></div>
-              {d.pnl.map((l, i) => {
-                const net = l.type === 'net';
-                return (
-                  <div key={i} className={cx('flex items-center justify-between gap-5 py-3 px-5 [border-top:1px_solid_var(--color-line-soft)]', net && 'bg-page')}>
-                    <span className={cx('text-copy', net ? 'font-semibold text-ink' : 'font-normal text-muted-ink')}>{l.label}</span>
-                    <MoneyText sen={l.amount} mode="exact" className={cx('text-ink text-right', net ? 'text-heading font-semibold' : 'text-copy font-medium')} />
-                  </div>
-                );
-              })}
+              <div className="[border-top:1px_solid_var(--color-line-soft)]"><PnlTable rows={d.pnl} /></div>
             </Card>
           )}
         </div>
@@ -520,19 +519,11 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
               <span className="text-heading font-semibold">Gross to net</span>
-              <span className="text-meta text-muted-ink">{periodLabel}</span>
+              <MonthStepper label={periodLabel} onStep={by => { const m = shiftMonth(p.period, by); setPnlMonth(m >= thisMonth ? null : m); }} />
             </div>
-            {d.pnl.map((l, i) => {
-              const net = l.type === 'net';
-              return (
-                <div key={i} className={cx('flex items-center justify-between gap-5 [border-bottom:1px_solid_var(--color-line-soft)]', net ? 'py-[15px] px-5 bg-page' : 'py-3 px-5 bg-card')}>
-                  <span className={cx(net ? 'text-copy font-semibold text-ink' : 'text-copy font-normal text-muted-ink')}>{l.label}</span>
-                  <MoneyText sen={l.amount} mode="exact" className={cx('text-right', net ? 'text-heading font-semibold' : 'text-copy font-medium')} />
-                </div>
-              );
-            })}
+            <PnlTable rows={d.pnl} />
             <div className="py-[13px] px-5 text-meta text-muted-ink [text-wrap:pretty]">
-              The owner statement for the month so far, by the unit's revenue model: income split by night into the month, less the costs the owner pays. The month is not closed yet, so the figures still move.
+              {pnlMonth ? 'The owner statement for the month' : 'The owner statement for the month so far'}, by the unit's revenue model: every reservation split by night into the month, less the costs the owner pays, then the contract.{pnlMonth ? '' : ' The month is not closed yet, so the figures still move.'}
             </div>
           </Card>
           {d.companyPnl && (
@@ -541,15 +532,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
                 <span className="text-heading font-semibold">Company side</span>
                 <span className="text-meta text-muted-ink">What the company keeps or pays on this unit, {periodLabel}. Costs paid by the company, a tenant or a guest show here, never on the owner statement.</span>
               </div>
-              {d.companyPnl.map((l, i) => {
-                const net = l.type === 'net';
-                return (
-                  <div key={i} className={cx('flex items-center justify-between gap-5 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0', net ? 'py-[15px] px-5 bg-page' : 'py-3 px-5 bg-card')}>
-                    <span className={cx(net ? 'text-copy font-semibold text-ink' : 'text-copy font-normal text-muted-ink')}>{l.label}</span>
-                    <MoneyText sen={l.amount} mode="exact" className={cx('text-right', net ? 'text-heading font-semibold' : 'text-copy font-medium')} />
-                  </div>
-                );
-              })}
+              <PnlTable rows={d.companyPnl} />
             </Card>
           )}
         </>
