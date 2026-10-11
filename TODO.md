@@ -213,3 +213,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Done: phones read, format and validate for every country through libphonenumber (src/lib/phone.ts, shared by format.ts, PhoneInput and the server's checkPhone); PhoneInput has a searchable country picker (MY +60 by default). 3,417 of 3,417 local guest phones read in their country's grouping (scripts/api-checks/phone-shapes.mjs).
 - Open: "already on file" for a new guest matches the phone text exactly, so a typed +60 18-980 0069 does not match an imported 60189800069; compare digits (phoneDigits) if duplicates appear.
 - Open: 3 stored guest phones are the right length but outside any known range (2 x +60 2..., 1 x +49), so they show ungrouped.
+
+## Renovation project, simplified (feat/reno-simplify)
+- Done: 6-step flow (derived from SO / PO / site tasks / handover / paid, manual move + follow data, IN DEFECT / ON HOLD flag), people master, key log, design records, SO <-> project in either order, Notion task categories, in-house crew on site tasks, board columns per the owner, source/source_ref on importable rows. Migrations 0083-0086 not yet applied to staging/production.
+- Open: the old hardware gate (SO + instalment 1 + shop drawings + permit) still refuses "Start" on a hardware-stage task, in-house or not; ask the owner whether the simplified flow should drop that gate.
+- Open: the SO page "Project" card and the quotation "No project yet" choice were not seen in a browser (the local engine has no Supabase REST for the SCM routes); check them on the staging preview.
