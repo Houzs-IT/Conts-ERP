@@ -46,7 +46,12 @@ const cookieOf = u => {
   const body = Buffer.from(JSON.stringify({ userId: u.id, email: u.email, role: u.role, fullName: u.name, iat: Date.now(), exp: Date.now() + 36e5 })).toString('base64').replace(/=+$/, '');
   return `tc_session=${body}.${b64(createHmac('sha256', SECRET).update(body).digest())}`;
 };
+/** One call; the local dev server sometimes drops a connection under load ("Network connection lost"), which is retried once. */
 export async function call(u, method, path, body) {
+  const r = await callOnce(u, method, path, body);
+  return r.status >= 500 && /Network connection lost/.test(r.text) ? callOnce(u, method, path, body) : r;
+}
+async function callOnce(u, method, path, body) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 90_000);
   try {
@@ -100,7 +105,8 @@ export async function sampleIds(ownerB) {
     statements: await one(`SELECT id FROM owner_statements WHERE owner_id = $1 AND state IN ('finalised','sent','paid') ORDER BY period_start DESC LIMIT 1`, ownerB),
     reservations: await one('SELECT id FROM reservations WHERE unit_id = $1 ORDER BY check_in DESC LIMIT 1', unit),
     guests: await one('SELECT guest_id AS id FROM reservations WHERE unit_id = $1 AND guest_id IS NOT NULL LIMIT 1', unit),
-    tasks: await one('SELECT id FROM tasks ORDER BY id LIMIT 1'),
+    // A job nobody among the test accounts holds: the housekeeper must be refused it.
+    tasks: await one(`SELECT id FROM tasks WHERE COALESCE(assignee_id::text, '') NOT LIKE 'aaaaaaaa-0000-4000-8000-%' ORDER BY id LIMIT 1`),
     properties: await one('SELECT property_id AS id FROM units WHERE id = $1', unit),
     users: USERS.housekeeper.id,
   };
@@ -197,6 +203,14 @@ async function scenarios(ownerA, ownerB, ids) {
   }
   r = await call(H, 'GET', '/api/field/tasks');
   check('a housekeeper still loads the field app', r.status === 200, `${r.status}`);
+  const own = (await db(`SELECT id FROM tasks WHERE id <> $1 ORDER BY id DESC LIMIT 1`, ids.tasks))[0].id;
+  const was = (await db('SELECT assignee_id FROM tasks WHERE id = $1', own))[0].assignee_id;
+  await db('UPDATE tasks SET assignee_id = $1 WHERE id = $2', H.id, own);
+  r = await call(H, 'GET', `/api/housekeeping/tasks/${own}`);
+  check('a housekeeper opens a job assigned to them', r.status === 200, `${r.status} ${r.text.slice(0, 120)}`);
+  r = await call(H, 'GET', `/api/housekeeping/tasks/${ids.tasks}`);
+  check('a housekeeper cannot open a job assigned to someone else', r.status === 403, `${r.status}`);
+  await db('UPDATE tasks SET assignee_id = $1 WHERE id = $2', was, own);
 
   // A record's History panel follows the record's area, not System health (where the whole trail lives).
   r = await call(S, 'GET', `/api/audit?entityTable=guests&entityId=${ids.guests}`);

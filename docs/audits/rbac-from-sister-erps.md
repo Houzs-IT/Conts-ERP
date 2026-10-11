@@ -7,7 +7,7 @@ How Conts was checked: `scripts/api-checks/rbac-matrix.mjs` calls every handler 
 route-methods) as each of management, operations manager, operations staff, finance admin, housekeeper, technician, an owner
 portal account and nobody signed in, on the local import (139 units, 4,288 bookings, 3,441 guests), and compares the answers
 with the reviewed table `scripts/api-checks/rbac-matrix.expected.json`. Reads use owner B's real records, asked for as owner A.
-36 scenario checks follow (whose record, which fields, changes mid-session, a level chosen on the chart).
+40 scenario checks follow (whose record, which fields, changes mid-session, a level chosen on the chart).
 `scripts/checks/require-permission.mjs` (in `npm run check`) fails when a new handler has no permission check.
 
 Verdicts: **present** (found and fixed in this branch), **partly** (narrower than the sister bug, fixed or noted),
@@ -58,4 +58,4 @@ Counts: 36 classes; present 11 (all fixed here), partly 5 (3 fixed, 2 noted), by
 - `functions/api/_middleware.ts`: housekeepers and technicians may call only the routes the field app calls (`FIELD_ALLOWED`); the owner list gains the shared-file download.
 - `functions/_lib/access.ts`: for operations manager, operations staff and finance admin the level the chart shows (chosen or built-in) is enforced: No access refuses reads and writes, View refuses writes. `ROUTE_AREAS` lists the calls that belong to another screen's area, each with its reason.
 - `scripts/checks/require-permission.mjs` (in `npm run check`): every handler is in an area, checks a role or scope itself, or is allow-listed with a reason; plus catalogue and allow-list drift.
-- `scripts/api-checks/rbac-matrix.mjs`: the full matrix and 36 scenarios.
+- `scripts/api-checks/rbac-matrix.mjs`: the full matrix and 40 scenarios.
