@@ -100,6 +100,11 @@ export const RULES = [
   { concept: 'The operator\'s percentage', term: 'To Operator (Operator share)', source: 'Owner report', side: 'rental', bad: [
     { re: /\bmanagement share\b/, to: 'operator share' },
     { re: /\bcompany share\b/, to: 'operator share' },
+    { re: /\bmanagement fees?\b/, to: 'operator share', how: 'reword', note: 'owner money prints "N% To Operator"; a contract field is "Operator share"' },
+  ] },
+  { concept: 'Statement status', term: 'Draft / Final', source: 'Plain', side: 'rental', bad: [
+    { re: /\bprovisional\b/, to: 'draft' },
+    { re: /\bfinali[sz]ed\b/, to: 'final' },
   ] },
   { concept: 'Monthly owner document', term: 'Owner statement', source: 'Owner report terms', side: 'rental', bad: [
     { re: /\bowner reports?\b/, to: m => (/s$/i.test(m) ? 'owner statements' : 'owner statement') },
@@ -139,6 +144,28 @@ export const RULES = [
     { re: /\bsyncs?\b/, to: 'update', note: 'say what moves where: "Prices update on Airbnb"' },
     { re: /\bSLA\b/, to: 'time allowed' },
   ] },
+];
+
+/** The owner decided every term above on this date (PR #168). */
+const DECIDED = '2026-10-11';
+
+/** Single labels the word rules cannot catch, because the same word is right elsewhere ("Confirmed" on a sales
+ *  order): the status pills and menu entries that change. [old, new, term, where]. */
+const LABEL_ROWS = [
+  ['Confirmed', 'Upcoming', 'Reservation status', 'src/lib/status.ts (booking.confirmed, calendar.confirmed)'],
+  ['Checked in', 'Currently hosting', 'Reservation status', 'src/lib/status.ts (booking.checked_in)'],
+  ['Checked out', 'Past', 'Reservation status', 'src/lib/status.ts (booking.checked_out)'],
+  ['No show', 'No-show', 'Reservation status', 'src/lib/status.ts (booking.no_show)'],
+  ['Provisional', 'Draft', 'Draft / Final', 'src/lib/status.ts (statement.provisional)'],
+  ['Finalised', 'Final', 'Draft / Final', 'src/lib/status.ts (statement.finalised)'],
+  ['Bookings', 'Reservations', 'Reservation', 'src/lib/navigation.ts (bookings)'],
+  ['PROPERTIES', 'UNITS', 'Building', 'src/lib/navigation.ts (group label)'],
+  ['Inbox', 'Messages', 'Messages', 'src/lib/navigation.ts (inbox)'],
+  ['Payouts', 'Owner payouts', 'Net Payout to Owner', 'src/lib/navigation.ts (payouts)'],
+  ['Adjustments', 'Stock adjustments', 'Stock adjustment', 'src/lib/navigation.ts (adjustments, supply chain)'],
+  ['Products & Maintenance', 'Products', 'Products', 'src/lib/navigation.ts (procurement, supply chain)'],
+  ['Housekeeper', 'Cleaner', 'Cleaner', 'src/lib/vocabulary.ts (ROLE_LABEL.housekeeper); src/components/PermissionsChart.tsx'],
+  ['Block', 'Repair', 'Blocked nights', 'src/lib/vocabulary.ts (CHANNEL.maintenance_block label: the reason shown on a blocked night)'],
 ];
 
 /** Screens and API folders of the supply chain workspace: rental words do not apply there. */
@@ -395,7 +422,8 @@ if (isMain && arg === 'inventory') {
     map.set(key, e);
   }
   const rows = [...map.values()].sort((a, b) => [...a.terms][0].localeCompare([...b.terms][0]) || a.old.localeCompare(b.old));
-  fs.writeFileSync(out, ['old,new,term,how,files', ...rows.map(e => [e.old, e.new, [...e.terms].join(' + '), e.how, [...e.files].join(' ')].map(csvCell).join(','))].join('\n') + '\n');
+  rows.unshift(...LABEL_ROWS.map(([old, nu, term, file]) => ({ old, new: nu, terms: new Set([term]), how: 'swap', files: new Set([file]) })));
+  fs.writeFileSync(out, ['old,new,term,how,decided,files', ...rows.map(e => [e.old, e.new, [...e.terms].join(' + '), e.how, DECIDED, [...e.files].join(' ')].map(csvCell).join(','))].join('\n') + '\n');
   console.log(`${rows.length} distinct strings to change, ${rows.reduce((n, e) => n + e.files.size, 0)} places -> ${out}`);
 } else if (isMain && arg === 'counts') {
   const rows = inventory().filter(r => !SKIP_KIND.test(r.kind));

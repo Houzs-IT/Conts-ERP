@@ -1,8 +1,8 @@
 # Vocabulary (Property OS)
 
-**Status: proposal, 11 Oct 2026.** No screen has been changed yet. Once the owner has decided the items in
-section 1, phase 2 renames the words across `src/` and `functions/` using `docs/vocabulary/rename-map.csv`.
-`scripts/checks/vocabulary.mjs` then joins `npm run check`.
+**Status: decided by the owner on 11 Oct 2026 (PR #168).** No screen has been changed yet. Phase 2 renames the
+words across `src/` and `functions/` using `docs/vocabulary/rename-map.csv`, after the sweep PRs merge, and then
+adds `scripts/checks/vocabulary.mjs` to `npm run check`.
 
 The rule: **one idea, one word, the same on every screen, in every message, PDF and email.** We change only the
 words people read. Stored values (`checked_out`, `cancelled`, `booking_com`, table and column names) stay as they are.
@@ -20,37 +20,38 @@ Where the words come from:
 
 In the tables, **Source** says which of the three each word comes from.
 
-What we found today (`docs/vocabulary/inventory.csv`): **11,995 user-facing strings in 467 files**. **59 ideas** in
-the glossary. **21 ideas have two or more names** in use, **11 words mean two different things**, and **a dozen kinds of engineer
-words** (sync, webhook, audit log, field roles, SLA, ADR, RevPAR, MRP, 3PL, UOM) reach the screen. The draft check finds **920 banned words in 778 places** (**581 distinct strings**)
-(`docs/vocabulary/rename-map.csv`, 178 of them need rewording rather than a word swap).
+What we found (`docs/vocabulary/inventory.csv`): **11,995 user-facing strings in 467 files**. **59 ideas** in the
+glossary. **21 ideas have two or more names** in use, **11 words mean two different things**, and **a dozen kinds of
+engineer words** (sync, webhook, audit log, field roles, SLA, ADR, RevPAR, MRP, 3PL, UOM) reach the screen. With the
+owner's decisions, the check finds **989 words to change**. The rename map lists **636 strings in 853 places**: 14
+single labels in the status and menu files, plus 622 strings found in screens and messages. 195 of them need
+rewording, not just a word swap.
 
 ---
 
-## 1. Decisions for the owner
+## 1. The owner's decisions (11 Oct 2026)
 
-Each has a recommendation. **Bold rows need the owner's choice**; the others follow the direction he has already given.
+All 17 are decided. Rows 1 to 10 were the owner's choices; rows 11 to 17 follow the direction he had already given.
 
-| # | Today (mixed) | Proposed | Source | Places | Owner's choice? |
-|---|---|---|---|---|---|
-| 1 | **Booking / Bookings / stay** (the menu says "Bookings", the group "RESERVATIONS") | **Reservation** | Airbnb | 259 | **Yes.** Recommend Reservation (Airbnb, and already the group name). Option: keep Booking. |
-| 2 | **Confirmed / Checked in / Checked out** (status pill) | **Upcoming / Currently hosting / Past** | Airbnb | 7 labels | **Yes.** Recommend Airbnb's words. Option: keep the current three, which a cleaner may find plainer. |
-| 3 | **Cancelled** (British, 100+ places, also the supply chain) vs Airbnb's **Canceled** | **Cancelled** | Malaysian English | 118 | **Yes.** Recommend keeping "Cancelled" everywhere: one spelling in the whole system, the same as Booking.com and Agoda. Option: "Canceled" (Airbnb). |
-| 4 | **Unit / listing / room / apartment / property** | **Unit** for the apartment, **Listing** only for its ad on a channel | Owner report / Airbnb | 50 | **Yes.** Recommend Unit: the owner's report says UNIT, an owner owns one unit, and one unit has up to three listings (Airbnb, Booking.com, Agoda). Option: call the apartment "Listing" as Airbnb does. |
-| 5 | **Booking site / OTA / platform / site** | **Channel** | Plain | 69 | **Yes.** Recommend Channel: short, and the word every channel manager uses (Channex). Option: "Booking site" (plainer, but longer and close to "Booking.com"). |
-| 6 | **Owner statement / owner report / income report** | **Owner statement** on screens; the PDF keeps its title **Owner Income Report** | Owner report | 12 | **Yes.** Recommend Owner statement (the report's own terms say "statement"). Option: "Owner report" everywhere. |
-| 7 | **Provisional / Finalised** (statement status) | **Draft / Final** (then Sent, Paid) | Plain | 39 | **Yes.** Recommend Draft / Final: nobody outside accounting says "provisional". |
-| 8 | **Management fee / management share / commission** (the operator's cut) | **To Operator** on the statement ("15% To Operator"), **Operator share** as a field name | Owner report | 40 | **Yes.** Recommend the report's word. Option: "Management fee" (also in the report: "Net Income Before Deduct Management Fees"). |
-| 9 | **O2 / owner credits and charges / adjustment** | **Owner Adjustments**; "O2" only on the printed line "Payout Before O2 Adjustment" | Owner report | 21 | **Yes.** Nobody but the owner knows what O2 stands for. Recommend keeping it only on that one printed line. |
-| 10 | **Revenue / collected revenue / gross** (staff dashboards) | **Earnings** on staff screens; owners see the same money as **Gross Income** | Airbnb / Owner report | 53 | **Yes.** Recommend this pairing. Option: "Gross Income" on staff screens too, so there is one word for that money. |
-| 11 | Check-out / departure / arrival | **Check-in, Checkout** (noun); check in, check out (verb) | Airbnb | 86 | Follows direction |
-| 12 | Base price / nightly rate / web rate / weekend rate / minimum stay / stop sell / off sale | **Nightly price, Weekend price, Custom price, Minimum nights, Blocked** | Airbnb | 48 | Follows direction |
-| 13 | Gross booking value / booking value; site fee / commission; site payout | **Guest total; Service fee; Host payout** | Airbnb | 37 | Follows direction |
-| 14 | Housekeeping / turnover / clean / task; housekeeper | **Cleaning** (screen), **Cleaning job** (one job), **Cleaner** (person) | Plain | 68 | Follows the owner's 10 Oct "Cleaning everywhere" |
-| 15 | Inbox | **Messages** | Airbnb | 2 + help text | Follows direction |
-| 16 | ADR / RevPAR | **Avg nightly price / Earnings per available night** | Plain | 20 | Follows "no jargon" |
-| 17 | Net payout / net owner payout / owner payout | **Net Payout to Owner** (the month's figure); **Owner payout** (the bank transfer, Payouts screen) | Owner report | 22 | Follows the report |
-
+| # | Before (mixed) | Decided | Source | Places |
+|---|---|---|---|---|
+| 1 | Booking / Bookings / stay (the menu said "Bookings", the group "RESERVATIONS") | **Reservation**. The menu item becomes "Reservations". | Airbnb | 259 |
+| 2 | Confirmed / Checked in / Checked out (status pill) | **Upcoming / Currently hosting / Past**. **Arriving soon** and **Checking out** are the date-based filters (section 2). | Airbnb | 7 labels |
+| 3 | Cancelled vs Airbnb's "Canceled" | **Cancelled**, the British spelling the whole system already uses (Booking.com and Agoda spell it this way too) | Malaysian English | 118 |
+| 4 | Unit / listing / room / apartment / property | **Unit** for the apartment; **Listing** only for a channel's listing ("Airbnb listing") | Owner report / Airbnb | 50 |
+| 5 | Booking site / OTA / platform / site | **Channel** (Airbnb, Booking.com, Agoda, Direct) | Plain | 69 |
+| 6 | Owner statement / owner report / income report | **Owner statement** on screens; the PDF keeps its title **Owner Income Report** | Owner report | 12 |
+| 7 | Provisional / Finalised (statement status) | **Draft / Final** (then Sent, Paid) | Plain | 39 |
+| 8 | Management fee / management share / commission (the operator's cut) | **"N% To Operator"** on owner money (the report's wording); **Operator share** as a field name on staff screens | Owner report | 40 |
+| 9 | O2 / owner credits and charges / adjustment | **Owner Adjustments**; "O2" appears only on the printed line **Payout Before O2 Adjustment** | Owner report | 21 |
+| 10 | Revenue / collected revenue / gross (staff dashboards) | **Earnings** on staff screens; **Gross Income** on owner money (same money, two audiences) | Airbnb / Owner report | 53 |
+| 11 | Check-out / departure / arrival | **Check-in, Checkout** (nouns); check in, check out (verbs) | Airbnb | 86 |
+| 12 | Base price / nightly rate / web rate / weekend rate / minimum stay / stop sell / off sale | **Nightly price, Weekend price, Custom price, Minimum nights, Blocked** | Airbnb | 48 |
+| 13 | Gross booking value / booking value; site fee / commission; site payout | **Guest total; Service fee; Host payout** | Airbnb | 37 |
+| 14 | Housekeeping / turnover / clean / task; housekeeper | **Cleaning** (screen), **Cleaning job** (one job), **Cleaner** (person and role) | Plain | 68 |
+| 15 | Inbox | **Messages** | Airbnb | 2 + help text |
+| 16 | ADR / RevPAR | **Avg nightly price / Earnings per available night** | Plain | 20 |
+| 17 | Net payout / net owner payout / owner payout | **Net Payout to Owner** (the month's figure); **Owner payout** (the bank transfer; the screen becomes "Owner payouts") | Owner report | 22 |
 ---
 
 ## 2. Rental side (Airbnb's words)
@@ -84,9 +85,9 @@ Each has a recommendation. **Bold rows need the owner's choice**; the others fol
 | Guest's rating and comment | **Review** | feedback, rating (for the whole thing) | | Airbnb |
 | Messages sent by themselves | **Automations** | workflow, trigger (on screen) | Airbnb calls its version "Scheduled messages"; ours also create jobs, so keep Automations. | Conts |
 
-**Reservation status (decision 2).** Stored values stay; only the pill changes.
+**Reservation status (decision 2, decided 11 Oct 2026).** Stored values stay; only the pill changes.
 
-| Stored | Today | Proposed |
+| Stored | Before | Decided |
 |---|---|---|
 | `inquiry` | Inquiry | Inquiry |
 | `pending` | Pending | Pending |
@@ -96,10 +97,11 @@ Each has a recommendation. **Bold rows need the owner's choice**; the others fol
 | `cancelled` | Cancelled | Cancelled (decision 3) |
 | `no_show` | No show | No-show |
 
-**Today and Reservations filters** (worked out from the dates, like Airbnb's Today tab): **Arriving soon** (check-in
-today or tomorrow), **Checking out** (checkout today), **Currently hosting**, **Upcoming**, **Past**, **Cancelled**,
-**Pending**. These four headings come from the Airbnb app as hosts describe it; Airbnb's Help Centre names only
-"Today" and "Upcoming" (section 9).
+**Today and Reservations filters** (decided 11 Oct 2026; worked out from the dates, like Airbnb's Today tab):
+**Arriving soon** (check-in today or tomorrow), **Checking out** (checkout today), **Currently hosting**, **Upcoming**,
+**Past**, **Cancelled**, **Pending**. A pill shows the stored status; "Arriving soon" and "Checking out" are only
+filters and Today headings, never a pill. These headings come from the Airbnb app as hosts describe it; Airbnb's Help
+Centre names only "Today" and "Upcoming" (section 9).
 
 ## 3. Owner money (the owner's Owner Income Report, word for word)
 
@@ -211,8 +213,11 @@ one place they live.
   SQL, CSS classes, keys and stored values, and the files the renovation session owns (`reno*`, `renovation*`).
   A few code strings still slip in; they are harmless in a list.
 - `docs/vocabulary/rename-map.csv`: old string, suggested new string, the term, `how` (`swap` = a straight word
-  swap; `reword` = the sentence needs rewriting, not just a swap), and every file:line. Made by `--rename-map`.
-  The suggestions are mechanical: phase 2 reads each one in its screen before applying it.
+  swap; `reword` = the sentence needs rewriting, not just a swap), `decided` (2026-10-11 for every row), and every
+  file:line. Made by `--rename-map`. The first 14 rows are single labels in the central files (`src/lib/status.ts`,
+  `src/lib/navigation.ts`, `src/lib/vocabulary.ts`), which the word rules cannot catch because the same word is right
+  elsewhere ("Confirmed" on a sales order). The suggestions are mechanical: phase 2 reads each one in its screen
+  before applying it.
 - `scripts/checks/vocabulary.mjs`: the check. It self-tests on planted bad and good samples, like the other checks,
   then lists every banned word in a user-facing string. Not in `npm run check` yet. `--counts` prints how often
   each banned word is used.
@@ -222,10 +227,10 @@ column headers (`RESERVATION_COLUMNS` and the like, which the import matches exa
 "Hotel ID" and "room" on its linking screen; the owner report's printed lines; document numbers; URLs and file names.
 Supply chain and renovation screens keep their own words (section 5 lists the few clashes).
 
-Phase 2 order: the owner's choices (section 1) → `src/lib/status.ts` labels → `src/lib/navigation.ts` → the
-rename map, screen by screen (owner portal and statements last, to stay in step with the units-owners sweep) →
+Phase 2 order (starts when the lead says so, after the sweep PRs merge): `src/lib/status.ts` labels →
+`src/lib/navigation.ts` and `src/lib/vocabulary.ts` (role and channel labels) → the rename map, screen by screen (owner portal and statements last, to stay in step with the units-owners sweep) →
 update the old `copy.md` at the repo root, which still lists "Gross booking value", "Housekeeping" and "Net owner
-payout" → turn the check on.
+payout" → add the check to `npm run check` (`scripts/checks/run.mjs`).
 
 ## 9. Sources
 
