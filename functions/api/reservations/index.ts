@@ -1,6 +1,6 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { findClash, clashResponseBody, upsertGuest, nextBookingRef, holdOnChannels } from '../../_lib/reservations';
+import { findClash, clashResponseBody, upsertGuest, nextBookingRef, holdOnChannels, withUnitLock } from '../../_lib/reservations';
 import { VIEWS, TODOS, fromSql, columnsSql, parseListQuery, viewWhere, todoWhere, toRow } from '../../_lib/bookingList';
 import { moneySchema, moneySql } from '../../_lib/bookingMoney';
 import { checkSen, checkInt, checkDate, checkPhone, invalid, type Fields } from '../../_lib/validate';
@@ -74,21 +74,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!(await one(env, 'SELECT 1 AS x FROM units WHERE id = ?', b.unitId))) return fail('NOT_FOUND', 'That unit does not exist.', 404);
   for (const k of ['checkInTime', 'checkOutTime'] as const) if (b[k] != null && !TIME.test(String(b[k]))) return fail('VALIDATION', 'Times are HH:MM.', 422, { [k]: 'Use HH:MM, e.g. 15:00.' });
 
-  const clash = await findClash(env, b.unitId, b.checkIn, b.checkOut, null);
-  if (clash) return json(clashResponseBody(clash), 409);
-
-  const guestId = b.guest?.fullName ? await upsertGuest(env, b.guest) : (b.guestId ?? null);
   const id = crypto.randomUUID(), now = nowIso();
   const siteRef = typeof b.externalRef === 'string' && b.externalRef.trim() ? b.externalRef.trim().slice(0, 60) : null;
-  const ref = OTA.includes(channel) && siteRef ? siteRef : await nextBookingRef(env, id);
   const staffNotes = typeof b.notes === 'string' && b.notes.trim() ? b.notes.trim().slice(0, 2000) : null;
-  await run(env, `
-    INSERT INTO reservations (id, unit_id, guest_id, channel, external_ref, state, check_in, check_out, check_in_time, check_out_time, guests_count, gross_booking_value, currency, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, 'MYR', ?, ?)`,
-    id, b.unitId, channel === 'owner_stay' && !b.guest?.fullName ? null : guestId, channel, ref, b.checkIn, b.checkOut,
-    b.checkInTime ?? '15:00', b.checkOutTime ?? '11:00',
-    b.guestsCount ?? 1, channel === 'owner_stay' ? 0 : Math.max(0, Math.round(Number(b.grossBookingValue) || 0)), now, now);
-  if (staffNotes) await run(env, 'UPDATE reservations SET staff_notes = ? WHERE id = ?', staffNotes, id).catch(() => {});
+  const saved = await withUnitLock(env, b.unitId, async tx => {
+    const clash = await findClash(tx, b.unitId, b.checkIn, b.checkOut, null);
+    if (clash) return { clash, ref: '' };
+    const guestId = b.guest?.fullName ? await upsertGuest(tx, b.guest) : (b.guestId ?? null);
+    const ref = OTA.includes(channel) && siteRef ? siteRef : await nextBookingRef(tx, id);
+    await run(tx, `
+      INSERT INTO reservations (id, unit_id, guest_id, channel, external_ref, state, check_in, check_out, check_in_time, check_out_time, guests_count, gross_booking_value, currency, created_at, updated_at, staff_notes)
+      VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?)`,
+      id, b.unitId, channel === 'owner_stay' && !b.guest?.fullName ? null : guestId, channel, ref, b.checkIn, b.checkOut,
+      b.checkInTime ?? '15:00', b.checkOutTime ?? '11:00',
+      b.guestsCount ?? 1, channel === 'owner_stay' ? 0 : Math.max(0, Math.round(Number(b.grossBookingValue) || 0)), now, now, staffNotes);
+    return { clash: null, ref };
+  });
+  if (saved.clash) return json(clashResponseBody(saved.clash), 409);
+  const ref = saved.ref;
 
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.create', entityTable: 'reservations', entityId: id, after: { unitId: b.unitId, checkIn: b.checkIn, checkOut: b.checkOut, channel, externalRef: ref } });
   const sync = await holdOnChannels(env, b.unitId, b.checkIn, b.checkOut, false, id);

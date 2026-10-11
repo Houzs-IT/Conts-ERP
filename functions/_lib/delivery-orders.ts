@@ -1,5 +1,5 @@
 /** Delivery Orders, ported from 2990's SCM. Delivers a sales order. Money integer sen. */
-import { type Env, all, one, run, nowIso } from './db';
+import { type Env, all, one, run, nowIso, mytToday } from './db';
 
 export const DO_STATUSES = ['LOADED', 'DISPATCHED', 'IN_TRANSIT', 'SIGNED', 'DELIVERED', 'INVOICED', 'CANCELLED'] as const;
 export type DoStatus = typeof DO_STATUSES[number];
@@ -32,7 +32,7 @@ export function toDoLinePayload(r: DoLineRow) {
 }
 
 export async function nextDoNumber(env: Env): Promise<string> {
-  const year = nowIso().slice(0, 4);
+  const year = mytToday().slice(0, 4);
   const row = await one<{ mx: string | null }>(env, 'SELECT MAX(do_number) AS mx FROM delivery_orders WHERE do_number LIKE ?', `DO-${year}-%`);
   const last = row?.mx ? Number(row.mx.split('-')[2]) : 0;
   return `DO-${year}-${String((Number.isFinite(last) ? last : 0) + 1).padStart(4, '0')}`;

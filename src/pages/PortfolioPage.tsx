@@ -38,7 +38,8 @@ function periods() {
   const last = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
   const q = Math.ceil(m / 3);
   return [
-    { key: t.slice(0, 7), label: 'This month', caption: `${monthLabel(t.slice(0, 7))} to date` },
+    // The month figures count every night booked in the whole month (functions/api/portfolio/performance.ts), not just the days so far.
+    { key: t.slice(0, 7), label: 'This month', caption: `${monthLabel(t.slice(0, 7))}, whole month as booked` },
     { key: last, label: 'Last month', caption: monthLabel(last) },
     { key: `${y}-q${q}`, label: 'Quarter to date', caption: `Q${q} ${y} to date` },
   ];
@@ -99,7 +100,7 @@ export default function PortfolioPage() {
   const withException = rows.some(r => !!r.exception);
 
   const columns = useMemo<Column<PortfolioRow>[]>(() => [
-    { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, exportValue: r => r.unitNumber,
+    { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, exportValue: r => `${r.propertyName} ${r.unitNumber}`,
       hideable: false, width: 180, sub: r => r.propertyName,
       render: r => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block" title={r.unitNumber}>{r.unitNumber}</span> },
     { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150 },
@@ -130,7 +131,7 @@ export default function PortfolioPage() {
     <>
       <PageHeader
         title="Portfolio performance"
-        sub={`${plural(data?.units ?? rows.length, 'listed unit')} · ${plural(data?.buildings ?? buildings.length, 'building')} · ${caption}`}
+        sub={data ? `${plural(data.units ?? rows.length, 'listed unit')} · ${plural(data.buildings ?? buildings.length, 'building')} · ${caption}` : caption}
         actions={
           <div role="group" aria-label="Period" className="flex items-center gap-2 max-w-full overflow-x-auto [scrollbar-width:none]">
             {PERIODS.map((p, i) => (
@@ -141,10 +142,11 @@ export default function PortfolioPage() {
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-[10px] sm:gap-[14px]">
+        {/* Until the figures arrive the tiles show a dash, not a zero that then jumps. */}
         {tiles.map(t => (
           <div key={t.label} className="bg-card border border-solid border-line rounded-card p-[14px] sm:p-[18px] flex flex-col gap-2 min-w-0">
             <div className="text-meta text-muted-ink">{t.label}</div>
-            <div className="text-title sm:text-headline leading-[1.15] font-semibold tracking-[-0.01em] [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">{t.value}</div>
+            <div className="text-title sm:text-headline leading-[1.15] font-semibold tracking-[-0.01em] [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">{data ? t.value : '—'}</div>
           </div>
         ))}
       </div>

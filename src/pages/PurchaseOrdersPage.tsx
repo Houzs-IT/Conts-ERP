@@ -11,7 +11,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm } from '../lib/format';
+import { rm, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { statusLabel } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
@@ -90,13 +90,13 @@ export default function PurchaseOrdersPage() {
 
   function openNew() {
     setIsNew(true);
-    setDrawer({ id: '', poNumber: '', supplierId: suppliers[0]?.id ?? '', supplierCode: '', supplierName: '', status: 'SUBMITTED', poDate: new Date().toISOString().slice(0, 10), expectedAt: '', warehouseId: warehouses[0]?.id ?? '', currency: 'MYR', subtotalSen: 0, taxSen: 0, totalSen: 0, notes: '', lines: [] });
+    setDrawer({ id: '', poNumber: '', supplierId: suppliers[0]?.id ?? '', supplierCode: '', supplierName: '', status: 'SUBMITTED', poDate: todayMyt(), expectedAt: '', warehouseId: warehouses[0]?.id ?? '', currency: 'MYR', subtotalSen: 0, taxSen: 0, totalSen: 0, notes: '', lines: [] });
   }
   function openExisting(p: Po) { setIsNew(false); setDrawer({ ...p, lines: p.lines ?? [] }); }
 
   function saveNew(po: Po, lines: Line[]) {
     const supplier = suppliers.find(s => s.id === po.supplierId);
-    const local: Po = { ...po, id: `po-new-${crypto.randomUUID().slice(0, 8)}`, poNumber: `PO-${new Date().getFullYear()}-NEW`, supplierCode: supplier?.code ?? '', supplierName: supplier?.name ?? '', lines };
+    const local: Po = { ...po, id: `po-new-${crypto.randomUUID().slice(0, 8)}`, poNumber: `PO-${todayMyt().slice(0, 4)}-NEW`, supplierCode: supplier?.code ?? '', supplierName: supplier?.name ?? '', lines };
     setAdded(a => [local, ...a]);
     api.post('/purchase-orders', body(po, lines)).catch(notifyFailure);
     toast({ tone: 'success', title: 'Purchase order raised.', body: `${local.poNumber} · ${local.supplierName}` });

@@ -55,7 +55,7 @@ type Filter = 'all' | PayoutState;
 /** Bank never shows more than the tail; the raw number needs an audited reveal on the owner profile. */
 const destination = (p: Payout) => p.bankLast4 ? `${bankName(p.bankName) ?? 'Bank'} ${masked(p.bankLast4)}` : (bankName(p.bankName) ?? 'No bank account');
 const valueDate = (p: Payout) =>
-  p.state === 'paid' && p.paidAt ? fmtDate(p.paidAt)
+  p.state === 'paid' ? (p.paidAt ? fmtDate(p.paidAt) : 'Date not recorded')
     : p.state === 'processing' ? 'Transfer in progress'
     : p.state === 'failed' ? 'On hold'
     : 'Not in a run yet';
@@ -72,6 +72,8 @@ export default function PayoutsPage() {
   const query = new URLSearchParams({ pageSize: String(size), ...(filter !== 'all' ? { state: filter } : {}), ...(period ? { period } : {}), ...(q ? { q } : {}), ...(page > 1 ? { page: String(page) } : {}) });
   const { data, loading, error, reload } = useApi<Payload>(`/payouts?${query}`, FALLBACK);
   const runs = useApi<{ data: Approval[] }>('/approvals?entity=payouts');
+  // The header and the run button speak for every payout, not for the search or month being looked at.
+  const overall = useApi<Payload>('/payouts?pageSize=1');
   const toast = useToast();
 
   const [confirm, setConfirm] = useState<{ payout: Payout; kind: 'retry' | 'paid' } | null>(null);
@@ -98,7 +100,7 @@ export default function PayoutsPage() {
   const allCount = GROUP_ORDER.reduce((n, st) => n + counts[st], 0);
 
   const failed = allRows.filter(r => r.state === 'failed');
-  const due = data?.outstanding ?? allRows.filter(r => r.state !== 'paid').reduce((s, r) => s + r.amount, 0);
+  const sum = overall.data?.counts && overall.data.outstanding !== undefined ? { counts: overall.data.counts, due: overall.data.outstanding } : null;
 
   // The server already answers in attention order (failed, pending, processing, paid); the sample data does not.
   const visible = useMemo(() => {
@@ -115,7 +117,7 @@ export default function PayoutsPage() {
     try {
       await api.patch('/payouts', { id: p.id, state: next });
       setConfirm(null);
-      reload(); void refreshNavCounts();
+      reload(); overall.reload(); void refreshNavCounts();
       toast(kind === 'retry'
         ? { tone: 'success', title: 'Payout back to processing.', body: `${titleCase(p.ownerName)}: make the transfer at the bank, then mark it paid.` }
         : { tone: 'success', title: 'Recorded as paid.', body: `${titleCase(p.ownerName)}: ${moneyString(p.amount, 'exact')} recorded as transferred.` });
@@ -133,7 +135,7 @@ export default function PayoutsPage() {
     setBusy(false);
     bulkPaid.clear();
     setBulkPaid(null);
-    reload(); void refreshNavCounts();
+    reload(); overall.reload(); void refreshNavCounts();
     toast({
       tone: left.length ? 'warning' : 'success',
       title: ok ? `${plural(ok, 'payout')} recorded as paid.` : 'No payout was updated.',
@@ -206,12 +208,12 @@ export default function PayoutsPage() {
     <>
       <PageHeader
         title="Payouts"
-        sub={`${moneyString(due, 'exact')} not yet paid · ${plural(counts.pending, 'payout')} waiting for a run · ${counts.failed} failed`}
+        sub={sum ? `${moneyString(sum.due, 'exact')} not yet paid · ${plural(sum.counts.pending, 'payout')} waiting for a run · ${sum.counts.failed} failed` : ' '}
         primary={<Button size="sm" variant="primary" icon={<Icon name="PlayCircle" size="sm" />} onClick={() => setRunOpen(true)}
-          disabled={counts.pending === 0} disabledReason="No payouts are waiting. Payouts appear here when statements are sent.">Start payout run</Button>}
+          disabled={!sum || sum.counts.pending === 0} disabledReason="No payouts are waiting. Payouts appear here when statements are sent.">Start payout run</Button>}
       />
 
-      <ApprovalBanner items={runs.data?.data ?? []} onChanged={() => { runs.reload(); reload(); void refreshNavCounts(); }} />
+      <ApprovalBanner items={runs.data?.data ?? []} onChanged={() => { runs.reload(); reload(); overall.reload(); void refreshNavCounts(); }} />
 
       {/* Failed payouts are surfaced first, with the reason and the fix. */}
       {(filter === 'all' || filter === 'failed') && failed.map(p => (
@@ -275,7 +277,7 @@ export default function PayoutsPage() {
       <ConfirmDialog spec={spec} busy={busy} onClose={() => { if (!busy) { setConfirm(null); setBulkPaid(null); } }} />
       <HistoryDrawer onClose={() => setHistoryOf(null)}
         target={historyOf && { entity: 'payouts', id: historyOf.id, title: `Payout to ${titleCase(historyOf.ownerName)}`, sub: `${moneyString(historyOf.amount, 'exact')}${historyOf.period ? ` · ${monthLabel(historyOf.period)} statement` : ''}` }} />
-      {runOpen && <RunDialog onClose={() => setRunOpen(false)} onDone={() => { setRunOpen(false); reload(); runs.reload(); void refreshNavCounts(); }} />}
+      {runOpen && <RunDialog onClose={() => setRunOpen(false)} onDone={() => { setRunOpen(false); reload(); overall.reload(); runs.reload(); void refreshNavCounts(); }} />}
     </>
   );
 }

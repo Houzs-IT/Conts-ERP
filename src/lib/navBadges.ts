@@ -32,12 +32,18 @@ function load(force = false) {
 }
 
 let timer: number | undefined;
+const onVisible = () => { if (document.visibilityState === 'visible') void load(); };
 export function useNavCounts(path?: string): NavCounts | null {
   const [s, setS] = useState<NavCounts | null>(state);
   useEffect(() => {
     listeners.add(setS);
-    if (listeners.size === 1) timer = window.setInterval(() => { void load(true); }, 60_000);
-    return () => { listeners.delete(setS); if (listeners.size === 0) window.clearInterval(timer); };
+    // A tab left open in the background does not ask (each ask is one request and eight queries, every
+    // minute, all day); it catches up as soon as it is looked at again.
+    if (listeners.size === 1) {
+      timer = window.setInterval(() => { if (document.visibilityState === 'visible') void load(true); }, 60_000);
+      document.addEventListener('visibilitychange', onVisible);
+    }
+    return () => { listeners.delete(setS); if (listeners.size === 0) { window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); } };
   }, []);
   useEffect(() => { void load(); }, [path]);
   return s;

@@ -1,5 +1,6 @@
 import { type ComponentType, type CSSProperties } from 'react';
-import * as Lucide from 'lucide-react';
+// Only the icons the source names (scripts/build/usedIcons.mjs), not the whole library.
+import icons from 'virtual:used-icons';
 import { iconSize, iconStroke } from '../theme';
 
 type Size = keyof typeof iconSize;
@@ -9,8 +10,8 @@ type Size = keyof typeof iconSize;
 export default function Icon({
   name, size = 'base', color = 'currentColor', style,
 }: { name: string; size?: Size; color?: string; style?: CSSProperties }) {
-  const C = (Lucide as unknown as Record<string, ComponentType<any>>)[name];
-  if (!C) return null;
+  const C = (icons as Record<string, ComponentType<any>>)[name];
+  if (!C) { if (import.meta.env.DEV) console.warn(`Icon "${name}" is not a lucide icon named anywhere in src`); return null; }
   return <C size={iconSize[size]} strokeWidth={iconStroke} color={color} style={{ flex: 'none', ...style }} />;
 }
 

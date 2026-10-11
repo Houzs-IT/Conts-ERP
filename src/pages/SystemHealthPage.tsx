@@ -98,7 +98,13 @@ function Breakdown({ title, items }: { title: string; items: { label: string; co
 function AuditDiff({ before, after }: { before: Detail; after: Detail }) {
   if (!before && !after) return <div className="py-2 text-meta text-muted-ink">No before/after detail was recorded for this entry.</div>;
   const keys = Array.from(new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])).sort();
-  const show = (v: unknown) => (v === undefined ? '—' : v === null ? 'empty' : typeof v === 'object' ? JSON.stringify(v) : String(v));
+  // Codes such as operations_staff or builtIn read as words; a timestamp reads as a date. Free text is shown as typed.
+  const show = (v: unknown) => (v === undefined ? '—' : v === null ? 'empty' : typeof v === 'boolean' ? (v ? 'Yes' : 'No')
+    : typeof v === 'object' ? JSON.stringify(v)
+    : typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) ? dateTime(v)
+    : typeof v === 'string' && /^[a-z]+(_[a-z]+)+$/.test(v) ? v.replace(/_/g, ' ')
+    : String(v));
+  const label = (k: string) => { const w = k.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[._]/g, ' ').toLowerCase(); return w.charAt(0).toUpperCase() + w.slice(1); };
   return (
     <div className="my-1 border border-solid border-line rounded-card overflow-hidden bg-card">
       {keys.map((k, i) => {
@@ -106,7 +112,7 @@ function AuditDiff({ before, after }: { before: Detail; after: Detail }) {
         const changed = before && after && show(b) !== show(a);
         return (
           <div key={k} className={cx('grid grid-cols-[minmax(110px,160px)_1fr] gap-3 py-2 px-3', i < keys.length - 1 && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
-            <span className="text-meta font-medium text-muted-ink">{words(k)}</span>
+            <span className="text-meta font-medium text-muted-ink">{label(k)}</span>
             <span className="text-meta font-mono break-all">
               {before && after ? (changed ? <>{show(b)} <span className="text-muted-ink">→</span> {show(a)}</> : show(a)) : show(a ?? b)}
             </span>
@@ -129,7 +135,7 @@ export default function SystemHealthPage() {
   const feed = useApi<AuditFeed>(`/system/health/audit-feed?range=${range}${sensitiveOnly ? '&sensitive=1' : ''}&limit=${limit}`);
   const navigate = useNavigate();
   const reloadLive = live.reload, reloadFeed = feed.reload;
-  useEffect(() => { const t = setInterval(reloadLive, REFRESH_MS); return () => clearInterval(t); }, [reloadLive]);
+  useEffect(() => { const t = setInterval(() => { if (document.visibilityState === 'visible') reloadLive(); }, REFRESH_MS); return () => clearInterval(t); }, [reloadLive]);
 
   const d = live.data;
   const banner = useMemo<{ tone: BannerTone; label: string; detail: string }>(() => {
@@ -249,7 +255,7 @@ export default function SystemHealthPage() {
           <div className="px-[22px] max-md:px-4 py-3 bg-page [border-bottom:1px_solid_var(--color-line-soft)]">
             <div className="flex items-center justify-between gap-3">
               <span className="text-meta text-muted-ink">
-                <span className="font-semibold text-ink">{open.actor_label} · {words(open.action)}</span> · {dateTime(open.created_at)} · record {String(open.entity_id).length > 12 ? String(open.entity_id).slice(0, 6).toUpperCase() : open.entity_id}
+                <span className="font-semibold text-ink">{open.actor_label} · {words(open.action)}</span> · {dateTime(open.created_at)} · record {/^[0-9a-f-]{20,}$/i.test(String(open.entity_id)) ? String(open.entity_id).slice(0, 6).toUpperCase() : String(open.entity_id).replace(/_/g, ' ').replace(/:/g, ' · ')}
               </span>
               <Button size="sm" variant="tertiary" icon={<Icon name="X" size="sm" />} onClick={() => setOpenRow(null)}>Close</Button>
             </div>

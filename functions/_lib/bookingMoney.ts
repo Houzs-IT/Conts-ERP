@@ -20,12 +20,18 @@ const TOLERANCE = 2; // sen: the exports round each part on its own
 
 /** Whether migration 0052's payout columns and 0091's booking_payments exist. Checked so the list keeps working
  *  on a database that has not had them applied yet. */
+let moneySchemaSeen: { payoutCols: boolean; payments: boolean } | null = null;
 export async function moneySchema(env: Env): Promise<{ payoutCols: boolean; payments: boolean }> {
+  // Once both are there they stay there: remembered for the life of the worker, so the booking list and every
+  // booking stop paying a catalogue query (and a connection) on each request. A missing one is asked again.
+  if (moneySchemaSeen) return moneySchemaSeen;
   const r = await one<{ cols: number; payments: number }>(env, `
     SELECT (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'reservations' AND table_schema = ANY(current_schemas(false))
               AND column_name IN ('payout_date', 'payout_amount', 'payment_processing_fee')) AS cols,
            (SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'booking_payments' AND table_schema = ANY(current_schemas(false))) AS payments`);
-  return { payoutCols: Number(r?.cols ?? 0) === 3, payments: Number(r?.payments ?? 0) === 1 };
+  const found = { payoutCols: Number(r?.cols ?? 0) === 3, payments: Number(r?.payments ?? 0) === 1 };
+  if (found.payoutCols && found.payments) moneySchemaSeen = found;
+  return found;
 }
 
 /** The join and the three expressions the list filters and sums on. `bp` is one row per booking. */

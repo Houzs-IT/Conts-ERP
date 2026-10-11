@@ -1,5 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { levelsFor } from '../../_lib/access';
 
 const MAX_BYTES = 8 * 1024 * 1024;
 
@@ -19,6 +20,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const unitId = form?.get('unitId') ? String(form.get('unitId')) : null;
   const ownerId = form?.get('ownerId') ? String(form.get('ownerId')) : null;
 
+  // A unit's files come from the Units screen (Properties) or an expense receipt (Owners, Finance); an owner's
+  // papers from Owners or Finance. Housekeepers, technicians and owners never reach this (session middleware).
+  if (session.role !== 'management') {
+    const lv = await levelsFor(env, session.role);
+    const can = (...areas: string[]) => areas.some(a => lv[a] === 'edit' || lv[a] === 'full');
+    if (!(unitId ? can('properties', 'owners', 'finance') : ownerId ? can('owners', 'finance') : false)) {
+      return fail('FORBIDDEN', 'Your role cannot add files here.', 403);
+    }
+  }
   if (unitId && !(await one(env, 'SELECT 1 AS x FROM units WHERE id = ?', unitId))) return fail('NOT_FOUND', 'That unit does not exist.', 404);
   if (ownerId && !(await one(env, 'SELECT 1 AS x FROM owners WHERE id = ?', ownerId))) return fail('NOT_FOUND', 'That owner does not exist.', 404);
 

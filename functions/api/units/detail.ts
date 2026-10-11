@@ -1,4 +1,4 @@
-import { type Env, all, one, json, fail } from '../../_lib/db';
+import { type Env, all, one, json, fail, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { stampMyt } from '../../_lib/ops';
 import { stayMonths, metrics, monthEndExclusive, daysInMonth as daysInMonthOf } from '../../_lib/revenue';
@@ -49,13 +49,20 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const money = session.manage;
-  const month = new Date().toISOString().slice(0, 7);
+  const month = mytToday().slice(0, 7);
 
   // Independent reads, so they go out together: each one is its own connection (db.ts).
   // Occupancy, ADR and RevPAR as everywhere else (functions/_lib/revenue.ts): gross value and nights split by night
   // into the month. The money chain is the month so far worked out the way the owner statement will be.
   const monthEndEx = monthEndExclusive(month), daysInMonth = daysInMonthOf(month);
-  const q: Query = (sql, ...args) => all(env, sql, ...args);
+  // The money chain, the worked example and the settings all read the same settings and month inputs: asked once
+  // per request (27 queries became 20), since a Worker holds at most six connections at a time.
+  const asked = new Map<string, Promise<any[]>>();
+  const q: Query = (sql, ...args) => {
+    const key = JSON.stringify([sql, args]);
+    if (!asked.has(key)) asked.set(key, all(env, sql, ...args));
+    return asked.get(key)! as Promise<any>;
+  };
   const [channels, stays, tasks, maintenance, inventory, access, documents, activity, perfRows, rating, statement, settings, example, otherPaid] = await Promise.all([
     all<{ channel: string }>(env,
       'SELECT channel FROM unit_channels WHERE unit_id = ? AND is_active = 1', unitId),

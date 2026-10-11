@@ -65,6 +65,29 @@ export function enqueueRestrictions(env: Env, unitId: string, dateFrom: string, 
   });
 }
 
+/** Many enqueueRestrictions for one unit in two queries: its mapping, then one insert. A year of weekend prices is
+ *  about 100 ranges per channel, and enqueueing them one by one took two queries each (6,300 queries and two
+ *  minutes for 10 units on the Pricing screen's bulk update). Same rows as calling enqueueRestrictions per item. */
+export function enqueueRestrictionsMany(env: Env, unitId: string, items: { dateFrom: string; dateTo: string; r: { rateSen?: number; minStay?: number; stopSell?: boolean }; channel?: SalesChannel }[]): Promise<void> {
+  return guarded(env, unitId, 'channex.enqueue_failed', async () => {
+    const wanted = items.filter(x => x.dateTo >= x.dateFrom && (x.r.rateSen !== undefined || x.r.minStay !== undefined || x.r.stopSell !== undefined));
+    if (!wanted.length) return;
+    const m = await channexMappingFor(env, unitId);
+    if (!m) return;
+    const now = nowIso();
+    const rows = wanted.flatMap(({ dateFrom, dateTo, r, channel = 'web' }) =>
+      (r.rateSen !== undefined ? [m.ratePlans[channel]].filter((x): x is string => !!x) : Object.values(m.ratePlans)).map(planId => ({
+        id: crypto.randomUUID(), rate_plan_id: planId, date_from: dateFrom, date_to: dateTo,
+        rate: r.rateSen === undefined || r.rateSen <= 0 ? null : Math.round(r.rateSen) / 100, min_stay: r.minStay ?? null, stop_sell: r.stopSell ?? null,
+      })));
+    if (!rows.length) return;
+    await run(env, `INSERT INTO channex_outbox (id, kind, unit_id, property_id, rate_plan_id, date_from, date_to, rate, min_stay, stop_sell, next_attempt_at, created_at)
+      SELECT x.id, 'restrictions', ?, ?, x.rate_plan_id, x.date_from, x.date_to, x.rate, x.min_stay, x.stop_sell, ?, ?
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, rate_plan_id text, date_from text, date_to text, rate numeric, min_stay int, stop_sell boolean)`,
+      unitId, m.propertyId, now, now, JSON.stringify(rows));
+  });
+}
+
 interface OutboxRow {
   id: string; kind: 'availability' | 'restrictions'; unit_id: string; property_id: string; room_type_id: string | null; rate_plan_id: string | null;
   date_from: string; date_to: string; availability: number | null; rate: string | number | null; min_stay: number | null; stop_sell: boolean | null; attempts: number;

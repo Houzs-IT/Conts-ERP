@@ -1,10 +1,10 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isPoStatus, normalizeLines, computeTotals, toPoHeaderPayload, checkPricedBody, type PoHeaderRow } from '../../_lib/purchase-orders';
 import { invalid, type Fields } from '../../_lib/validate';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
-const today = () => nowIso().slice(0, 10);
+const today = () => mytToday();
 
 const LIST_SQL = `
   SELECT po.id, po.po_number, po.supplier_id, po.status, po.po_date, po.expected_at, po.warehouse_id, po.currency,
@@ -59,16 +59,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const totals = computeTotals(lines, intOrNull(b.taxSen) ?? 0);
   const id = genId('po');
-  const poNumber = await nextPoNumber(env);
+  let poNumber = '';
   const now = nowIso();
   const poDate = strOrNull(b.poDate) ?? today();
 
-  await run(env, `
-    INSERT INTO purchase_orders (id, po_number, supplier_id, status, po_date, expected_at, warehouse_id, currency,
-      subtotal_sen, tax_sen, total_sen, notes, submitted_at, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, 'SUBMITTED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    id, poNumber, supplierId, poDate, strOrNull(b.expectedAt), strOrNull(b.warehouseId), strOrNull(b.currency) ?? 'MYR',
-    totals.subtotalSen, totals.taxSen, totals.totalSen, strOrNull(b.notes), now, session.userId, now, now);
+  // The number is the highest so far plus one, so two made at once can pick the same one: the second header insert
+  // then hits the unique number before anything is written, and simply takes the next number (isNumberClash).
+  for (let attempt = 1; ; attempt++) {
+    poNumber = await nextPoNumber(env);
+    try {
+      await run(env, `
+        INSERT INTO purchase_orders (id, po_number, supplier_id, status, po_date, expected_at, warehouse_id, currency,
+          subtotal_sen, tax_sen, total_sen, notes, submitted_at, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, 'SUBMITTED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, poNumber, supplierId, poDate, strOrNull(b.expectedAt), strOrNull(b.warehouseId), strOrNull(b.currency) ?? 'MYR',
+        totals.subtotalSen, totals.taxSen, totals.totalSen, strOrNull(b.notes), now, session.userId, now, now);
+      break;
+    } catch (e) { if (attempt >= 5 || !isNumberClash(e)) throw e; }
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];

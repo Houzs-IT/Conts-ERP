@@ -9,7 +9,7 @@ import FieldShell from './components/FieldShell';
 import UpdateNotice from './components/UpdateNotice';
 import OwnerShell from './components/OwnerShell';
 import LoginPage from './pages/LoginPage';
-import { HOME, areaOfPath } from './lib/navigation';
+import { HOME, screenClosed } from './lib/navigation';
 
 /** react-router (ERP convention) with route-level code splitting — every page is
  *  lazy-loaded so the initial bundle stays small. HashRouter (see main.tsx) keeps
@@ -112,8 +112,7 @@ function AppLayout() {
   const viaEngine = !!enginePath && !!engine.data?.enabled;
   // A screen whose area is closed to this role (Users and roles > Permissions) is not shown even by its address.
   const { user } = useSession();
-  const area = areaOfPath(location.pathname);
-  const closed = !!area && user?.access?.[area] === 'none';
+  const closed = screenClosed(location.pathname, user?.access);
   return (
     <AppShell path={location.pathname} navigate={(p: string) => navigate(p)} flush={viaEngine}>
       {closed ? <NoAccess />
