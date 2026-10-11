@@ -88,7 +88,7 @@ app.get("/board-rows", requirePageAccess("projects.list"), failClosed(async (c) 
 
 // ── People master ────────────────────────────────────────────────────────
 
-const PERSON_COLS = `id::int AS id, name, roles, active, user_id::int AS user_id, phone, notes, source, source_ref, created_at, updated_at`;
+const PERSON_COLS = `id::int AS id, name, to_json(roles) AS roles, active, user_id::int AS user_id, phone, notes, source, source_ref, created_at, updated_at`;
 
 app.get("/people", requirePageAccess("projects.list"), async (c) => {
   const role = c.req.query("role") ?? "";

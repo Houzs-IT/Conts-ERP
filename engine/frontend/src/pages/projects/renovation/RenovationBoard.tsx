@@ -112,8 +112,8 @@ export function RenovationBoard({ canCreate }: { canCreate: boolean }) {
                     <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{r.moneyHidden ? "Hidden" : r.soDocNo ? money(r.contractSen) : "-"}</td>
                     <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{received(r)}</td>
                     <td className="px-3 py-2"><StatusCell r={r} /></td>
-                    <td className="px-3 py-2"><Pill tone={supplyTone(r.furnitureArrival)}>{supplyLabel(r.furnitureArrival)}</Pill></td>
-                    <td className="px-3 py-2"><Pill tone={supplyTone(r.renoItemArrival)}>{supplyLabel(r.renoItemArrival)}</Pill></td>
+                    <td className="px-3 py-2">{r.soDocNo ? <Pill tone={supplyTone(r.furnitureArrival)}>{supplyLabel(r.furnitureArrival)}</Pill> : "-"}</td>
+                    <td className="px-3 py-2">{r.soDocNo ? <Pill tone={supplyTone(r.renoItemArrival)}>{supplyLabel(r.renoItemArrival)}</Pill> : "-"}</td>
                     <td className="px-3 py-2 whitespace-nowrap">{r.keyHolder?.name ?? "-"}</td>
                     <td className="px-3 py-2">{r.vo ? (r.vo.has ? `Yes (${r.vo.count})` : "No") : "-"}</td>
                     <td className="px-3 py-2 whitespace-nowrap">{r.handoverDate ? shortDate(r.handoverDate) : r.plannedHandoverDate ? <span className="text-ink-secondary">plan {shortDate(r.plannedHandoverDate)}</span> : "-"}</td>
@@ -144,8 +144,8 @@ export function RenovationBoard({ canCreate }: { canCreate: boolean }) {
                     <div><dt className="text-ink-secondary">Handover</dt><dd className="text-ink">{r.handoverDate ? shortDate(r.handoverDate) : "-"}</dd></div>
                   </dl>
                   <div className="mt-2 flex flex-wrap gap-1">
-                    <Pill tone={supplyTone(r.furnitureArrival)}>Furniture: {supplyLabel(r.furnitureArrival)}</Pill>
-                    <Pill tone={supplyTone(r.renoItemArrival)}>Reno: {supplyLabel(r.renoItemArrival)}</Pill>
+                    {r.soDocNo && <Pill tone={supplyTone(r.furnitureArrival)}>Furniture: {supplyLabel(r.furnitureArrival)}</Pill>}
+                    {r.soDocNo && <Pill tone={supplyTone(r.renoItemArrival)}>Reno: {supplyLabel(r.renoItemArrival)}</Pill>}
                     {r.vo?.has && <Pill tone="info">VO {r.vo.count}</Pill>}
                   </div>
                 </button>
