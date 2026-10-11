@@ -11,6 +11,8 @@ import { useToast } from '../../components/Toast';
 import { color } from '../../theme';
 import { api, notifyFailure, downloadFile } from '../../lib/api';
 import { titleCase } from '../../lib/format';
+import { PhoneText } from '../../components/PhoneText';
+import { addressLines, type OwnerAddress } from '../owners/shared';
 import { MODEL } from '../../lib/revenueModel';
 import {
   STATES, cap,
@@ -40,7 +42,7 @@ export function SaveBar({ title, sub, dirty, saving, canEdit, onSave, extra }: {
   );
 }
 
-export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onOpenContract }: { u: Unit; owner: { id: string; name: string }; buildings: Building[]; money: boolean; canEdit: boolean; onChange: Change; onOpenContract?: () => void }) {
+export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onOpenContract }: { u: Unit; owner: { id: string; name: string; email?: string | null; phone?: string | null; address?: OwnerAddress | null }; buildings: Building[]; money: boolean; canEdit: boolean; onChange: Change; onOpenContract?: () => void }) {
   const building = buildings.find(b => b.id === u.buildingId);
   return (
     <fieldset disabled={!canEdit} className="p-5 m-0 border-0 min-w-0">
@@ -77,9 +79,16 @@ export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onO
       <SectionHead>Owner</SectionHead>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-[6px]">
         <a href={`#/owners/${encodeURIComponent(owner.id)}`} className="text-copy font-semibold text-ink! no-underline [overflow-wrap:anywhere]">{titleCase(owner.name)}</a>
-        <a href={`#/owners/${encodeURIComponent(owner.id)}`} className="text-meta font-semibold text-gold-ink no-underline">Open owner</a>
+        <a href={`#/owners/${encodeURIComponent(owner.id)}`} className="text-meta font-semibold text-gold-ink no-underline">Edit on the owner's page</a>
       </div>
-      <p className="mt-0 mb-[22px] text-meta text-muted-ink">Owner payout details (bank, account and holder) belong to the owner and are edited on the owner's page, for every unit they own. To give this unit to another owner, use Link unit on that owner's page.</p>
+      {(owner.phone || owner.email || owner.address) && (
+        <div className="flex flex-col gap-1 mb-[6px] text-copy text-ink">
+          {owner.phone && <PhoneText value={owner.phone} />}
+          {owner.email && <a href={`mailto:${owner.email}`} className="text-ink underline underline-offset-2 [overflow-wrap:anywhere]">{owner.email}</a>}
+          {owner.address && <span className="whitespace-pre-line text-muted-ink">{addressLines(owner.address).join('\n')}</span>}
+        </div>
+      )}
+      <p className="mt-0 mb-[22px] text-meta text-muted-ink">The owner's contact and payout details belong to the owner and are edited on the owner's page, for every unit they own. To give this unit to another owner, use Link unit on that owner's page.</p>
 
       <SectionHead>Income model</SectionHead>
       <div className="flex flex-wrap items-center gap-3 mb-[6px]">

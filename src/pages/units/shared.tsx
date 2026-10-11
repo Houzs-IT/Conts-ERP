@@ -3,6 +3,7 @@ import { cx } from '../../lib/design-tokens';
 import { Select as UiSelect } from '../../components/Select';
 import type { UnitReadiness, TaskState, BookingChannel, ReservationState } from '../../lib/types';
 import type { RevenueModel } from '../../lib/revenueModel';
+import type { OwnerAddress } from '../owners/shared';
 
 export const BANKS = ['MBBE', 'PBBB', 'CIBB', 'RHBB', 'HLBB', 'AMBB', 'BIMB', 'UOVB', 'OCBC'];
 export const STATES = ['Kuala Lumpur', 'Selangor', 'Penang', 'Johor', 'Melaka', 'Perak', 'Negeri Sembilan'];
@@ -49,7 +50,8 @@ export interface UnitDetail {
     readiness: UnitReadiness; bedrooms: number; bathrooms: number; maxGuests: number;
     sizeSqft: number | null; isListed: boolean; fittedOutAt: string | null;
     channels: BookingChannel[];
-    owner: { id: string; name: string; email: string | null };
+    /** phone and address only for the roles that manage owners; address needs migration 0110. */
+    owner: { id: string; name: string; email: string | null; phone?: string | null; address?: OwnerAddress | null };
     contract: { id?: string | null; managementFeePct: number; startsOn: string; renewsOn: string | null } | null;
     revenueModel?: RevenueModel; revenueModelLabel?: string; termsLabel?: string;
     baseRate?: number;

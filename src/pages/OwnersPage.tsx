@@ -13,7 +13,7 @@ import { MoneyText } from '../components/MoneyText';
 import { Select } from '../components/Select';
 import {
   type Owner, type Payload,
-  FALLBACK, netOf, grossOf, guaranteedOf, managedNetOf, managedGrossOf, terms,
+  FALLBACK, netOf, grossOf, guaranteedOf, managedNetOf, managedGrossOf, terms, addressLines,
   Roll, AddOwnerModal,
 } from './owners/shared';
 import { FilterBar } from '../components/FilterBar';
@@ -46,6 +46,17 @@ function ownerTerms(o: Owner): string {
   return all.every(t => t === all[0]) ? `All ${all.length}: ${all[0]}` : `${new Set(all).size} different terms`;
 }
 const unitsText = (o: Owner) => o.units.length === 0 ? 'No units yet' : o.units.length === 1 ? o.units[0].unitLabel : `${o.units.length} units`;
+const addressText = (o: Owner) => addressLines(o.address).join(', ');
+/** What the search box matches: name, legal name, email, phone (digits only, so "012 345" finds "+60 12-345..."),
+ *  address and unit names. */
+const digits = (v: string) => v.replace(/\D/g, '');
+function matches(o: Owner, q: string) {
+  const qd = digits(q);
+  // A Malaysian number typed with its leading 0 is stored as +60...: compare without the 0 / 60.
+  const local = (d: string) => d.replace(/^(?:60|0)/, '');
+  return [o.displayName, o.legalName, o.email, addressText(o), ...o.units.map(u => u.unitLabel)].some(s => (s ?? '').toLowerCase().includes(q))
+    || (qd.length >= 3 && !!o.phone && local(digits(o.phone)).includes(local(qd)));
+}
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
 
 export default function OwnersPage() {
@@ -74,7 +85,7 @@ export default function OwnersPage() {
 
   // Name order until someone sorts by a column.
   const rows = useMemo(() => all.filter(o =>
-    (!q || o.displayName.toLowerCase().includes(q) || (o.email ?? '').toLowerCase().includes(q) || o.units.some(u => u.unitLabel.toLowerCase().includes(q))) &&
+    (!q || matches(o, q)) &&
     (!building || o.units.some(u => u.buildingId === building)) &&
     (!model || (model === 'none' ? o.units.length === 0 : o.units.some(u => modelOf(u) === model))))
     .sort((a, b) => a.displayName.localeCompare(b.displayName)), [all, q, building, model]);
@@ -118,7 +129,8 @@ export default function OwnersPage() {
         </span>
       ) },
     { key: 'email', label: 'Email', value: o => o.email || null, hidden: true, filter: false, width: 200 },
-    { key: 'phone', label: 'Phone', type: 'phone', value: o => o.phone, hidden: true, filter: false, width: 140 },
+    { key: 'phone', label: 'Phone', type: 'phone', value: o => o.phone, filter: false, width: 150 },
+    { key: 'address', label: 'Mailing address', value: o => addressText(o) || null, hidden: true, filter: false, width: 260 },
     { key: 'units', label: 'Units', type: 'number', align: 'left', value: o => o.units.length, width: 140, filter: false,
       render: o => <span className="text-copy text-muted-ink truncate block" title={o.units.map(u => u.unitLabel).join(', ')}>{unitsText(o)}</span> },
     { key: 'unitList', label: 'Unit list', value: o => o.units.map(u => u.unitLabel).join(', ') || null, hidden: true, filter: false, width: 220 },
@@ -187,7 +199,7 @@ export default function OwnersPage() {
           </div>
         }
         toolbar={<>
-          <SearchBox className="flex-1 min-w-[200px]" label="Search owners" placeholder="Search owner, email or unit" value={url.get('q')} onChange={v => url.set({ q: v || null, page: null })} />
+          <SearchBox className="flex-1 min-w-[200px]" label="Search owners" placeholder="Search owner, phone, email, address or unit" value={url.get('q')} onChange={v => url.set({ q: v || null, page: null })} />
           {filters && (
             <Select className="flex-[0_1_200px] max-md:flex-[1_1_160px]" label="Building" value={building} onChange={v => url.set({ building: v || null, page: null })}
               options={[{ value: '', label: 'All buildings' }, ...[...filters.buildings].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: b.name }))]} />
