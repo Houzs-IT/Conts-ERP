@@ -81,16 +81,20 @@ try {
   const tagged = rows.filter(r => /\(owner workbook/i.test(r.description ?? '') || /^owner workbook$/i.test(r.reference ?? '')).length;
   console.log(`database: ${target}`);
   console.log(`statement lines: ${rows.length}; carrying the import's tag: ${tagged}; to reword: ${changes.length}`);
-  for (const c of changes.slice(0, 12)) console.log(`  "${c.before}"  ->  "${c.description}"`);
-  if (!APPLY) { console.log('\nDry run: nothing was changed. Add --apply to write it.'); process.exit(0); }
-  await sql.begin(async tx => {
-    for (let i = 0; i < changes.length; i += 500) {
-      const part = changes.slice(i, i + 500).map(({ id, description, reference }) => ({ id, description, reference }));
-      await tx.unsafe(`
-        UPDATE statement_lines l SET description = x.description, reference = x.reference
-        FROM jsonb_to_recordset($1::jsonb) AS x(id text, description text, reference text) WHERE l.id = x.id`, [JSON.stringify(part)]);
-    }
-  });
-  const after = await sql`SELECT COUNT(*)::int AS n FROM statement_lines WHERE description ILIKE '%(owner workbook%' OR reference ILIKE 'owner workbook'`;
-  console.log(`\nApplied: ${changes.length} lines reworded. Lines still carrying the import's tag: ${after[0].n}.`);
+  const byResult = new Map();
+  for (const c of changes) { const k = c.description === c.before ? '(source tag only)' : c.description; const g = byResult.get(k) ?? { n: 0, example: c.before }; g.n++; byResult.set(k, g); }
+  for (const [after, g] of [...byResult.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 20)) console.log(`  ${String(g.n).padStart(5)} x "${g.example}"  ->  "${after}"`);
+  if (!APPLY) console.log('\nDry run: nothing was changed. Add --apply to write it.');
+  else {
+    await sql.begin(async tx => {
+      for (let i = 0; i < changes.length; i += 500) {
+        const part = changes.slice(i, i + 500).map(({ id, description, reference }) => ({ id, description, reference }));
+        await tx.unsafe(`
+          UPDATE statement_lines l SET description = x.description, reference = x.reference
+          FROM jsonb_to_recordset($1::text::jsonb) AS x(id text, description text, reference text) WHERE l.id = x.id`, [JSON.stringify(part)]);
+      }
+    });
+    const after = await sql`SELECT COUNT(*)::int AS n FROM statement_lines WHERE description ILIKE '%(owner workbook%' OR reference ILIKE 'owner workbook'`;
+    console.log(`\nApplied: ${changes.length} lines reworded. Lines still carrying the import's tag: ${after[0].n}.`);
+  }
 } finally { await sql.end(); }
