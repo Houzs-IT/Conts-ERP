@@ -92,6 +92,15 @@ const DEFAULT_ASC: Record<View, boolean> = { upcoming: true, inhouse: true, past
 /** An ILIKE pattern that matches the text literally, wildcards included. */
 export const like = (s: string) => `%${s.replace(/[\\%_]/g, m => '\\' + m)}%`;
 
+/** A typed phone number, however it is written (012-429 1909, +60 12-429 1909, 60124291909), as the digits after
+ *  the Malaysian country code or trunk 0; null when the text is not a phone number. Stored phones are compared the same way. */
+export function phoneCore(s: string): string | null {
+  if (!/^[\d\s+()\-.]+$/.test(s)) return null;
+  const d = s.replace(/\D/g, '');
+  return d.length >= 6 ? d.replace(/^(60|0)/, '') : null;
+}
+const PHONE_CORE = `regexp_replace(regexp_replace(COALESCE(g.phone, ''), '[^0-9]', '', 'g'), '^(60|0)', '')`;
+
 export interface ListQuery {
   view: View; todo: Todo | null; today: string;
   /** Searches and dropdown filters, without the tab or the to-do card. */
@@ -130,9 +139,21 @@ export function parseListQuery(url: URL): ListQuery {
     searches[k] = v;
     const p = like(v);
     switch (k) {
-      case 'q': conds.push(`(r.external_ref ILIKE ? OR g.full_name ILIKE ? OR g.phone ILIKE ? OR u.unit_number ILIKE ? OR p.name ILIKE ?)`); args.push(p, p, p, p, p); break;
+      case 'q': {
+        // A phone number is matched on its digits; other text word by word, so "Skyline D25" finds unit D25 in Skyline.
+        const core = phoneCore(v);
+        if (core) { conds.push(`(r.external_ref ILIKE ? OR ${PHONE_CORE} LIKE ?)`); args.push(p, like(core)); break; }
+        for (const w of v.split(/\s+/).filter(Boolean).slice(0, 6)) {
+          const wp = like(w);
+          conds.push(`(r.external_ref ILIKE ? OR g.full_name ILIKE ? OR g.phone ILIKE ? OR u.unit_number ILIKE ? OR p.name ILIKE ?)`); args.push(wp, wp, wp, wp, wp);
+        }
+        break;
+      }
       case 'ref': conds.push('r.external_ref ILIKE ?'); args.push(p); break;
-      case 'guest': conds.push('(g.full_name ILIKE ? OR g.phone ILIKE ?)'); args.push(p, p); break;
+      case 'guest': {
+        const core = phoneCore(v);
+        conds.push(`(g.full_name ILIKE ? OR g.phone ILIKE ?${core ? ` OR ${PHONE_CORE} LIKE ?` : ''})`); args.push(p, p, ...(core ? [like(core)] : [])); break;
+      }
       case 'unit': conds.push('(u.unit_number ILIKE ? OR p.name ILIKE ?)'); args.push(p, p); break;
       case 'channel': conds.push(`(${CHANNEL_LABEL}) ILIKE ?`); args.push(p); break;
       case 'status': conds.push(`(${STATE_LABEL}) ILIKE ?`); args.push(p); break;

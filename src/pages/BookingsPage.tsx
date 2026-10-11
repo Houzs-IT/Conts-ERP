@@ -19,7 +19,7 @@ import { useSession } from '../lib/session';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
 import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../lib/api';
-import { rm, dateRange, nights as fmtNights, guests as fmtGuests, todayMyt, plural, count as countLabel } from '../lib/format';
+import { rm, date, dateRange, nights as fmtNights, guests as fmtGuests, todayMyt, plural, count as countLabel } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { BookingChannel, ReservationState } from '../lib/types';
 import { statusOptions } from '../lib/status';
@@ -525,7 +525,7 @@ function DateFilter({ from, to, onChange }: { from: string; to: string; onChange
   ];
   const [f, setF] = useState(from), [t, setT] = useState(to);
   useEffect(() => { setF(from); setT(to); }, [from, to]);
-  const label = from || to ? (from && to ? (from === to ? dateRange(from, shift(from, 1)).split(' –')[0] : dateRange(from, to)) : from ? `From ${from}` : `Until ${to}`) : 'Any dates';
+  const label = from || to ? (from && to ? (from === to ? dateRange(from, shift(from, 1)).split(' –')[0] : dateRange(from, to)) : from ? `From ${date(from)}` : `Until ${date(to)}`) : 'Any dates';
   return (
     <Popover active={!!(from || to)} width={280} label={label}>
       {close => (
