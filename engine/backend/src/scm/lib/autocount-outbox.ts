@@ -41,6 +41,7 @@
 // Record, and `composeCreateSo` is handed `header as never`. All three are keyed
 // on shared/so-processing-date.ts for exactly that reason.
 // ----------------------------------------------------------------------------
+import { isAutoCountSyncDisabled } from '../../services/autocount';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Env } from '../env';
 import { getSupabaseService } from '../../db/supabase';
@@ -1948,6 +1949,11 @@ export async function drainAutoCountOutbox(
   fetchImpl: typeof fetch = fetch,
 ): Promise<DrainSummary> {
   const zero = { processed: 0, sent: 0, failed: 0, retried: 0, waiting: 0 };
+  /* Conts (owner decision C7, 11 Oct 2026): no AutoCount integration. The
+     kill switch that already stops every PULL (AUTOCOUNT_SYNC_DISABLED, set in
+     both Conts wrangler files) now stops the PUSH too, ahead of the host config
+     and the database flag, so nothing is sent whatever those say. */
+  if (isAutoCountSyncDisabled(env)) return { skipped: 'autocount_disabled', ...zero };
   if (!acServiceConfig(env)) return { skipped: 'ac_service_not_configured', ...zero };
 
   const sb = getSupabaseService(env);

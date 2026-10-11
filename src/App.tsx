@@ -9,7 +9,7 @@ import FieldShell from './components/FieldShell';
 import UpdateNotice from './components/UpdateNotice';
 import OwnerShell from './components/OwnerShell';
 import LoginPage from './pages/LoginPage';
-import { HOME, screenClosed } from './lib/navigation';
+import { HOME, screenClosed, switchedOff } from './lib/navigation';
 import { BootScreen, PageShown, PageSkeleton } from './components/Loading';
 
 /** react-router (ERP convention) with route-level code splitting — every page is
@@ -115,6 +115,7 @@ function AppLayout() {
   // A screen whose area is closed to this role (Users and roles > Permissions) is not shown even by its address.
   const { user } = useSession();
   const closed = screenClosed(location.pathname, user?.access);
+  if (switchedOff(location.pathname)) return <Navigate to={user ? HOME[user.role] : '/'} replace />;
   return (
     <AppShell path={location.pathname} navigate={(p: string) => navigate(p)} flush={viaEngine}>
       {closed ? <NoAccess />
