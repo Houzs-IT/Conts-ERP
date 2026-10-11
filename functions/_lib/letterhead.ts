@@ -11,10 +11,12 @@ export interface Company { legalName: string; companyNumber: string; address: st
 
 /** Same defaults as Settings > Company (functions/api/settings/index.ts), so a database where nobody saved the
  *  screen prints what the screen shows. */
-const DEFAULTS = {
-  legalName: 'The Conts Sdn Bhd', companyNumber: '202301027399 (1521322-V)',
-  address: 'C-41-06, Jaya One, Jalan Universiti, 46200 Petaling Jaya', phone: '+60 17-465 8868', email: 'support@theconts.com',
+export const COMPANY_DEFAULTS = {
+  legalName: 'The Conts Sdn. Bhd.', companyNumber: '202301027399 (1521322-V)',
+  address: 'E-28-02 & E-28-03, Menara Suezcap 2, KL Gateway,\nNo. 2, Jalan Kerinchi, Gerbang Kerinchi Lestari,\n59200 Kuala Lumpur, W.P. Kuala Lumpur.',
+  phone: '+60 11-6133 3289', email: 't.conts725@gmail.com',
 };
+const DEFAULTS = COMPANY_DEFAULTS;
 export const LOGO_PATH = '/brand/the-conts-logo.png';
 
 export function companyFrom(m: Map<string, string>): Company {
@@ -53,7 +55,7 @@ const CSS = `
   .lh-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding-bottom: 6px; border-bottom: 1.5px solid #000; }
   .lh-company { font-size: 17pt; font-weight: 700; text-transform: uppercase; letter-spacing: .01em; margin-bottom: 2px; }
   .lh-small { font-size: 9pt; margin-bottom: 2px; }
-  .lh-addr { font-size: 9.5pt; font-weight: 700; max-width: 112mm; text-transform: uppercase; }
+  .lh-addr { font-size: 9.5pt; font-weight: 700; max-width: 112mm; text-transform: uppercase; white-space: pre-line; }
   .lh-contact { font-size: 9.5pt; }
   .lh-logo { width: 30mm; height: auto; margin-top: 1mm; }
   .lh-title { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin: 14px 0 4px; }
