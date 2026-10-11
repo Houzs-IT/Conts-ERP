@@ -5,13 +5,13 @@ import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { Drawer } from '../components/Dialog';
+import { Segmented } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
 import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { cx } from '../lib/design-tokens';
 
 /** Product Models — model master, ported from 2990's SCM (logic) and drawn in Conts.
  *  A model groups SKUs of one design. The deep variant/allowed-options editor is a
@@ -115,10 +115,7 @@ export default function ProductModelsPage() {
         onRowClick={canWrite ? m => setDrawer({ draft: { ...m }, isNew: false }) : undefined}
         noun={['model', 'models']} exportName="product-models"
         toolbar={<>
-          <div className="flex gap-2 flex-wrap">
-            <Chip label="All" active={cat === 'all'} onClick={() => setCat('all')} />
-            {CATEGORIES.map(c => <Chip key={c} label={CAT_LABEL[c]} active={cat === c} onClick={() => setCat(c)} />)}
-          </div>
+          <Segmented label="Category" options={[{ key: 'all' as const, label: 'All' }, ...CATEGORIES.map(c => ({ key: c, label: CAT_LABEL[c] }))]} value={cat} onChange={setCat} />
           <div className="relative">
             <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
             <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search models..." aria-label="Search models"
@@ -136,15 +133,6 @@ export default function ProductModelsPage() {
 
 /* ---------- primitives ---------- */
 
-function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick} aria-pressed={active}
-      className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid',
-        active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>
-      {label}
-    </button>
-  );
-}
 
 /* ---------- New / Edit drawer ---------- */
 

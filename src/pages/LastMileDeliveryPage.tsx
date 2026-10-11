@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { Segmented } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
@@ -8,7 +9,6 @@ import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { date } from '../lib/format';
-import { cx } from '../lib/design-tokens';
 import { SLOT_LABEL, schedFallback, type Sched, type SchedPayload, type SchedStatus } from '../lib/schedule';
 
 /** Last Mile Delivery — dispatch scheduled deliveries and mark them delivered. A focused view
@@ -57,7 +57,7 @@ export default function LastMileDeliveryPage() {
         id="scm.last-mile-delivery" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
         loading={loading} error={error} onRetry={reload} pageSize={0}
         noun={['delivery', 'deliveries']} exportName="last-mile-delivery"
-        toolbar={<div className="flex gap-2 flex-wrap">{FILTERS.map(f => <button key={f} onClick={() => setFilter(f)} aria-pressed={filter === f} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', filter === f ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{FILTER_LABEL[f]}</button>)}</div>}
+        toolbar={<Segmented label="Status" options={FILTERS.map(f => ({ key: f, label: FILTER_LABEL[f] }))} value={filter} onChange={setFilter} />}
         empty={{ title: 'Nothing here.', body: 'Scheduled deliveries appear here to dispatch and confirm.' }} />
     </>
   );

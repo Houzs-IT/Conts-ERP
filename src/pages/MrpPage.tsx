@@ -50,7 +50,7 @@ export default function MrpPage() {
         noun={['item', 'items']} exportName="mrp"
         toolbar={<>
           <button onClick={() => setShortfallOnly(v => !v)} aria-pressed={shortfallOnly}
-            className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', shortfallOnly ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>Shortfall only</button>
+            className={cx('h-9 flex items-center px-3.5 py-0 rounded-control cursor-pointer font-sans text-copy border border-solid transition-colors duration-[var(--motion-fast)]', shortfallOnly ? 'border-black bg-black text-white font-medium' : 'border-line bg-card text-muted-ink hover:text-ink')}>Shortfall only</button>
           <div className="relative">
             <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
             <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item..." aria-label="Search requirements"

@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Drawer } from '../components/Dialog';
 import { DateField } from '../components/inputs';
+import { StatRow, StatTile } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
@@ -50,23 +51,26 @@ export default function LoadingListPage() {
   return (
     <>
       <PageHeader title="Loading list" sub={data ? `${all.length} ${all.length === 1 ? 'delivery order' : 'delivery orders'} ready to load` : '\u00a0'} />
+      <StatRow cols={4}>
+        <StatTile label="Units to load" value={data ? String(shownUnits) : undefined} />
+      </StatRow>
       <DataTable<Row>
         id="scm.loading-list" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
         loading={loading} error={error} onRetry={reload} pageSize={0}
         onRowClick={r => setDrawer(r)}
         noun={['delivery order', 'delivery orders']} exportName="loading-list"
-        toolbar={<div className="flex items-center gap-2.5 flex-wrap">
-          <label className="text-[12px] font-medium text-muted-ink">Warehouse</label>
-          <select value={whFilter} onChange={e => setWhFilter(e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
-            <option value="all">All warehouses</option>
-            {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}
-          </select>
-          <label className="text-[12px] font-medium text-muted-ink ml-2">Date</label>
-          <DateField aria-label="Date" value={dateFilter} onChange={setDateFilter} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" />
-        </div>}
-        above={<div className="flex items-baseline justify-end gap-2.5 px-4 py-2">
-          <span className="text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink">Units to load</span>
-          <span className="text-[22px] font-semibold tabular-nums">{shownUnits}</span>
+        toolbar={<div className="flex items-center gap-x-4 gap-y-2.5 flex-wrap">
+          <div className="flex items-center gap-2.5">
+            <label className="text-[12px] font-medium text-muted-ink">Warehouse</label>
+            <select value={whFilter} onChange={e => setWhFilter(e.target.value)} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
+              <option value="all">All warehouses</option>
+              {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <label className="text-[12px] font-medium text-muted-ink">Date</label>
+            <DateField aria-label="Date" value={dateFilter} onChange={setDateFilter} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" />
+          </div>
         </div>}
         filtered={whFilter !== 'all' || !!dateFilter} onClearFilters={() => { setWhFilter('all'); setDateFilter(''); }}
         empty={{ title: 'Nothing to load.', body: 'Delivery orders show here once they are packed (status Loaded) and waiting to dispatch.' }} />
