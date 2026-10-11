@@ -87,13 +87,15 @@ export async function cleaningNotice(env: Env, id: string, event: 'assigned' | '
   }
 }
 
-interface Issue { id: string; title: string; unit: string; urgency: string | null; vendor_name: string | null; reported_by: string | null }
+interface Issue { id: string; title: string; unit: string; urgency: string | null; vendor_name: string | null; reported_by: string | null; quoted_amount: number | null; owner_user: string | null }
 
 async function issue(env: Env, id: string): Promise<Issue | null> {
   try {
     return await one<Issue>(env, `
-      SELECT m.id, m.title, m.urgency, m.vendor_name, m.reported_by, trim(coalesce(p.name, '') || ' ' || u.unit_number) AS unit
-      FROM maintenance_issues m JOIN units u ON u.id = m.unit_id LEFT JOIN properties p ON p.id = u.property_id WHERE m.id = ?`, id);
+      SELECT m.id, m.title, m.urgency, m.vendor_name, m.reported_by, m.quoted_amount, o.user_id AS owner_user,
+             trim(coalesce(p.name, '') || ' ' || u.unit_number) AS unit
+      FROM maintenance_issues m JOIN units u ON u.id = m.unit_id LEFT JOIN properties p ON p.id = u.property_id
+      LEFT JOIN owners o ON o.id = u.owner_id WHERE m.id = ?`, id);
   } catch { return null; }
 }
 
@@ -124,9 +126,14 @@ export async function repairNotice(env: Env, id: string, event: RepairEvent, by:
     case 'overdue':
       await notifyUsers(env, { roles: ['ops_managers'], userIds: tech }, { ...base, kind: 'maintenance.overdue', title: `Maintenance job overdue: ${m.unit}`, body: `${m.title} is still open.`, dedupeKey: `repair-overdue-${id}`, except: null });
       break;
-    case 'approval_requested':
+    case 'approval_requested': {
       await notifyUsers(env, 'managers', { ...base, kind: 'approval.requested', title: `Owner approval requested: ${m.unit}`, body: `${m.title}${detail ? `. ${detail}` : ''}.` });
+      // The owner decides on their portal; the notice (and an email copy where mail is set up) takes them there.
+      const quote = m.quoted_amount != null ? `RM ${(Number(m.quoted_amount) / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null;
+      if (m.owner_user) await notifyUsers(env, [m.owner_user], { ...base, link: '/', except: null, email: true, kind: 'maintenance.owner_approval',
+        title: `Repair quote to approve: ${m.unit}`, body: `${m.title}${quote ? `. Quote ${quote}` : ''}. Open your owner portal to approve it.` });
       break;
+    }
     case 'approval_decided':
       await notifyUsers(env, { roles: ['ops'], userIds: tech }, { ...base, kind: 'approval.decided', title: `Maintenance job ${detail ?? 'decided'}: ${m.unit}`, body: m.title });
       break;
