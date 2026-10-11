@@ -187,3 +187,33 @@ body:has([aria-modal="true"]:not([data-side-drawer])) .app-main { overflow: hidd
 /* Only on the dialog itself: Chrome also stops a wheel at any overflow: hidden box marked contain (every rounded card),
    so the old "[aria-modal] *" rule left a drawer or dialog unscrollable whenever the pointer sat over a card in it. */
 [aria-modal="true"] { overscroll-behavior: contain; }
+
+/* ---- Button interaction (Button.tsx sets .ui-btn) ----
+   An inline style cannot express :hover, so before this every button sat still under the pointer. The overlay
+   tints whatever background a caller set, so no variant or custom style is overridden. */
+.ui-btn::after {
+  content: ''; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; z-index: -1;
+  background: currentColor; opacity: 0; transition: opacity var(--motion-fast) var(--ease-out);
+}
+.ui-btn > * { position: relative; }
+.ui-btn:not(:disabled):hover::after { opacity: 0.07; }
+.ui-btn:not(:disabled):active::after { opacity: 0.13; }
+.ui-btn:not(:disabled):active { transform: translateY(0.5px); }
+.ui-btn[data-variant='primary']:not(:disabled):hover::after,
+.ui-btn[data-variant='danger']:not(:disabled):hover::after { opacity: 0.12; }
+.ui-btn[data-variant='primary'] { box-shadow: 0 1px 2px rgba(21,21,21,0.18), inset 0 1px 0 rgba(255,255,255,0.08); }
+.ui-btn[data-variant='secondary']:not(:disabled):hover { border-color: var(--color-border-strong) !important; }
+.ui-btn[data-variant='brand']:not(:disabled):hover { box-shadow: 0 0 0 3px rgba(200,164,106,0.16); }
+.ui-btn:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .ui-btn:active { transform: none; } }
+
+/* ---- Sign-in motion (LoginPage.tsx) ----
+   A slow drift on the photograph, the gold rule drawing in, the headline rising once. Nothing loops but the photo,
+   and that loop is too slow to read as decoration. All of it stops under reduced motion. */
+@keyframes login-drift { from { transform: scale(1.04); } to { transform: scale(1.12) translate(-1.5%, -1%); } }
+@keyframes login-draw  { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes login-rise  { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.login-photo { animation: login-drift 32s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate; will-change: transform; }
+.login-rule  { animation: login-draw 900ms var(--ease-out) 150ms both; }
+.login-rise  { animation: login-rise 700ms var(--ease-out) 260ms both; }
+@media (prefers-reduced-motion: reduce) { .login-photo, .login-rule, .login-rise { animation: none; } }

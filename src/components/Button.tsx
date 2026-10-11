@@ -19,7 +19,9 @@ const base: CSSProperties = {
   // Longhands only: the variants and the disabled state set borderColor, and React warns when a
   // `border` shorthand and a borderColor longhand change between renders.
   borderRadius: 'var(--radius-control)', borderWidth: 1, borderStyle: 'solid', borderColor: 'transparent',
-  cursor: 'pointer', transition: 'background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out)',
+  cursor: 'pointer', transition: 'background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out)',
+  // Hover, press and focus come from .ui-btn in src/styles/tokens.css: an inline style cannot express :hover.
+  position: 'relative', isolation: 'isolate',
 };
 
 const sizes: Record<Size, CSSProperties> = {
@@ -46,6 +48,8 @@ export function Button({
   return (
     <button
       {...rest}
+      className={['ui-btn', rest.className].filter(Boolean).join(' ')}
+      data-variant={variant}
       disabled={isDisabled}
       aria-busy={busy || undefined}
       title={disabled ? disabledReason : rest.title}
