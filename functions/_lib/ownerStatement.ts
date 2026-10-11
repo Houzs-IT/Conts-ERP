@@ -30,22 +30,14 @@
  *  and the statement adds up to the sen. */
 import { prorate, nightsInWindow, daysInMonth, monthEndExclusive } from './revenue';
 import { modelOf, type RevenueModel } from './revenueModel';
+import { DEDUCTION_TERMS, TERMS, toOperator } from '../../src/lib/statementTerms';
 
 export type Query = <T = any>(sql: string, ...args: unknown[]) => Promise<T[]>;
 
 /** Half away from zero, as the workbook (Google Sheets ROUND) shows money; immune to 2444.9255 being 2444.92549999. */
 export const roundSen = (x: number) => Math.sign(x) * Math.round(Number(Math.abs(x).toFixed(6)));
 
-export const DEDUCTIONS = [
-  ['cleaning_basic', 'Basic Cleaning Fee', 'sessions'],
-  ['cleaning_deep', 'Deep Cleaning Fee', 'sessions'],
-  ['electricity', 'Electricity Usage', 'months'],
-  ['water', 'Water Usage', 'months'],
-  ['internet', 'Wi-Fi Subscription Fee', 'months'],
-  ['sewerage', 'IndahWater Usage', 'tasks'],
-  ['additional', 'Additional Deduction', 'tasks'],
-  ['misc', 'Miscellaneous Charges', 'services'],
-] as const;
+export const DEDUCTIONS = DEDUCTION_TERMS;
 export type DeductionCategory = typeof DEDUCTIONS[number][0];
 
 export interface UnitRow {
@@ -272,20 +264,19 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   }
 
   // Lines, in the order the report shows them. A fixed-rent owner's statement carries the rent, not the unit's trading.
-  const label = `${unit.property_name} ${unit.unit_number}`;
   if (terms.model === 'long_term') {
     if (gross) lines.push({ type: 'gross', category: 'long_term_rent', unitId: unit.id, quantity: tenancyDays, amount: gross, occurredOn: start,
-      description: `${label} · monthly rent${terms.tenantName ? ` from ${terms.tenantName}` : ''}${tenancyDays !== days ? ` (${tenancyDays} of ${days} days)` : ''}` });
+      description: `${TERMS.monthlyRent}${terms.tenantName ? ` · ${terms.tenantName}` : ''}` });
     for (const c of myCosts) lines.push({
       type: 'expense', category: classifyCost(c), unitId: unit.id, expenseId: c.id, quantity: 1, amount: -Number(c.amount), occurredOn: c.incurred_on,
       description: c.description || c.category, reference: c.reference,
     });
     if (operatorShare) lines.push({ type: 'management_fee', category: 'operator_share', unitId: unit.id, quantity: null, amount: -operatorShare, occurredOn: end,
-      description: `Management fee ${fmtPct(100 - (terms.ownerPct ?? 100))} of the rent` });
+      description: toOperator(100 - (terms.ownerPct ?? 100)) });
   } else if (terms.basis === 'share') {
     mine.forEach((x, i) => lines.push({
       type: 'gross', category: 'hospitality', unitId: unit.id, reservationId: x.s.id, quantity: x.n, amount: floors[i], occurredOn: x.s.check_in > start ? ymd(x.s.check_in) : start,
-      description: `${label} · ${x.s.guest_name || 'Guest'} · ${ymd(x.s.check_in)} to ${ymd(x.s.check_out)}${x.n !== nightsInWindow(ymd(x.s.check_in), ymd(x.s.check_out), ymd(x.s.check_in), ymd(x.s.check_out)) ? ` (${x.n} ${x.n === 1 ? 'night' : 'nights'} in ${month})` : ''}`,
+      description: `${x.s.guest_name || 'Guest'} · ${ymd(x.s.check_in)} to ${ymd(x.s.check_out)}${x.n !== nightsInWindow(ymd(x.s.check_in), ymd(x.s.check_out), ymd(x.s.check_in), ymd(x.s.check_out)) ? ` (${x.n} ${x.n === 1 ? 'night' : 'nights'} in ${month})` : ''}`,
       reference: x.s.external_ref,
     }));
     for (const c of myCosts) lines.push({
@@ -293,13 +284,13 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
       description: c.description || c.category, reference: c.reference,
     });
     if (misc) lines.push({ type: 'expense', category: 'misc', unitId: unit.id, quantity: occupancy, amount: -misc, occurredOn: end,
-      description: `Miscellaneous charges (RM ${(miscMonthly / 100).toFixed(2)} x ${(occupancy * 100).toFixed(2)}% occupancy)` });
+      description: 'Miscellaneous Charges' });
     if (operatorShare) lines.push({ type: 'management_fee', category: 'operator_share', unitId: unit.id, quantity: null, amount: -operatorShare, occurredOn: end,
-      description: `${fmtPct(100 - (terms.ownerPct ?? 0))} to operator` });
+      description: toOperator(100 - (terms.ownerPct ?? 0)) });
     if (topUp) lines.push({ type: 'adjustment', category: 'guarantee_top_up', unitId: unit.id, quantity: null, amount: topUp, occurredOn: end,
-      description: `Minimum guarantee top-up (guaranteed RM ${(guarantee / 100).toFixed(2)})` });
+      description: TERMS.topUp });
   } else if (fixedRent) {
-    lines.push({ type: 'adjustment', category: 'fixed_rent', unitId: unit.id, quantity: null, amount: fixedRent, occurredOn: end, description: `${label}: fixed monthly rent` });
+    lines.push({ type: 'adjustment', category: 'fixed_rent', unitId: unit.id, quantity: null, amount: fixedRent, occurredOn: end, description: TERMS.fixedRent });
   }
   const mineAdj = adjustments.filter(a => a.unit_id === unit.id);
   for (const a of mineAdj) lines.push({

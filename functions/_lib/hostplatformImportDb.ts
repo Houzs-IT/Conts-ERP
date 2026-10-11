@@ -12,6 +12,7 @@ import {
   type PayoutMonthIn, type KnownUnit, type KnownProperty, type RowError,
   PLACEHOLDER_OWNER, RESERVATION_MONEY_COLUMNS, CHANNEL_LABEL, placeholderGuestName, guestId as guestIdFor, type Channel, normaliseLocation, canonicalState, canonicalCity, slug, hash, unitKey, workbookMatcher, matchWorkbookUnitHow, buildingForPrefix, splitWorkbookId, workbookOwnerId, listingOwnerId, stayState,
 } from './hostplatformImport';
+import { TERMS, deductionTerm } from '../../src/lib/statementTerms';
 
 /** The three helpers of db.ts, bound to an environment. Lets the test script run the same SQL on PGlite. */
 export interface Db {
@@ -698,6 +699,8 @@ export async function importPayoutHistory(db: Db, months: PayoutMonthIn[], now: 
   const match = workbookMatcher(snap.units);
   const placeholder = snap.owners.find(o => o.name.toLowerCase() === PLACEHOLDER_OWNER.toLowerCase())?.id;
   const label = new Map(snap.units.map(u => [u.id, `${u.propertyName} ${u.unitNumber}`]));
+  // A guaranteed-rent unit's top-up is to its fixed rent, any other unit's to its minimum guarantee.
+  const grr = new Set((await db.all<{ id: string }>(`SELECT u.id FROM units u JOIN owner_contracts c ON c.id = u.contract_id WHERE COALESCE(c.revenue_model, c.model) = 'grr'`)).map(r => r.id));
 
   type Group = { ownerId: string; month: string; lines: { unitId: string; m: PayoutMonthIn }[] };
   const groups = new Map<string, Group>(), usedUnitMonth = new Set<string>();
@@ -727,23 +730,23 @@ export async function importPayoutHistory(db: Db, months: PayoutMonthIn[], now: 
     if (clash) { res.skippedRows.push({ row: g.month, reason: `An owner already has a ${g.month} statement made in Property OS; the workbook payout for that month was left out.` }); continue; }
     let gross = 0, fee = 0, costs = 0, adjust = 0, net = 0, order = 0;
     const line = (unitId: string, type: string, category: string | null, description: string, amount: number) => {
-      lines.push({ id: `${id}-${order}`, statement_id: id, unit_id: unitId, line_type: type, category, description, occurred_on: end, amount, reference: 'Owner workbook', sort_order: order });
+      lines.push({ id: `${id}-${order}`, statement_id: id, unit_id: unitId, line_type: type, category, description, occurred_on: end, amount, reference: null, sort_order: order });
       order++;
     };
+    // Descriptions are the owner's report words (statementTerms.ts); the unit is the line's unit_id, never in the text.
     for (const { unitId, m } of g.lines.sort((a, b) => (label.get(a.unitId) ?? '').localeCompare(label.get(b.unitId) ?? ''))) {
-      const name = label.get(unitId) ?? m.workbookId;
       net += m.amount;
       const b = m.breakdown;
-      if (!b) { adjust += m.amount; line(unitId, 'adjustment', 'workbook_payout', `${name}: owner payout for ${g.month} (owner workbook, no breakdown)`, m.amount); continue; }
+      if (!b) { adjust += m.amount; line(unitId, 'adjustment', 'workbook_payout', TERMS.payout, m.amount); continue; }
       gross += b.revenue;
-      line(unitId, 'gross', null, `${name}: total revenue for ${g.month} (owner workbook)`, b.revenue);
-      const deductions: [string, string, number][] = [['cleaning', 'Cleaning', b.cleaning], ['utilities', 'Utilities', b.utilities], ['other', 'Additional deductions', b.additional], ['other', 'Miscellaneous charges', b.misc]];
-      for (const [cat, what, amt] of deductions) if (amt) { costs += amt; line(unitId, 'expense', cat, `${name}: ${what} (owner workbook)`, -amt); }
+      line(unitId, 'gross', null, TERMS.hospitalityIncome, b.revenue);
+      const deductions: [string, string, number][] = [['cleaning', deductionTerm('cleaning'), b.cleaning], ['utilities', deductionTerm('utilities'), b.utilities], ['other', deductionTerm('additional'), b.additional], ['other', deductionTerm('misc'), b.misc]];
+      for (const [cat, what, amt] of deductions) if (amt) { costs += amt; line(unitId, 'expense', cat, what, -amt); }
       // What is left between the unit's profit and what the owner was paid: the company's (and agent's) share,
       // or, on a guaranteed rent, what the company added to reach it.
       const rest = m.amount - (b.revenue - b.cleaning - b.utilities - b.additional - b.misc);
-      if (rest < 0) { fee += -rest; line(unitId, 'management_fee', null, `${name}: company and agent share (owner workbook)`, rest); }
-      if (rest > 0) { adjust += rest; line(unitId, 'adjustment', 'workbook_payout', `${name}: guaranteed rent top-up (owner workbook)`, rest); }
+      if (rest < 0) { fee += -rest; line(unitId, 'management_fee', null, TERMS.toOperator, rest); }
+      if (rest > 0) { adjust += rest; line(unitId, 'adjustment', 'workbook_payout', grr.has(unitId) ? TERMS.fixedRentTopUp : TERMS.topUp, rest); }
     }
     statements.push({ id, owner_id: g.ownerId, period_start: start, period_end: end, state: 'paid', gross_booking_value: gross, management_fee: fee, expenses_total: costs,
       adjustments_total: adjust, net_payout: net, currency: 'MYR', generated_at: now, created_at: now, source: 'owner_workbook' });
@@ -765,7 +768,7 @@ export async function importPayoutHistory(db: Db, months: PayoutMonthIn[], now: 
   add(res, 'statement_lines', await upsert(db, 'statement_lines',
     [['id', 'text'], ['statement_id', 'text'], ['unit_id', 'text'], ['line_type', 'text'], ['category', 'text'], ['description', 'text'], ['occurred_on', 'text'], ['amount', 'int'], ['reference', 'text'], ['sort_order', 'int']],
     lines, `DO UPDATE SET unit_id = EXCLUDED.unit_id, line_type = EXCLUDED.line_type, category = EXCLUDED.category, description = EXCLUDED.description,
-      occurred_on = EXCLUDED.occurred_on, amount = EXCLUDED.amount, sort_order = EXCLUDED.sort_order`));
+      occurred_on = EXCLUDED.occurred_on, amount = EXCLUDED.amount, reference = EXCLUDED.reference, sort_order = EXCLUDED.sort_order`));
   add(res, 'payouts', await upsert(db, 'payouts',
     [['id', 'text'], ['statement_id', 'text'], ['owner_id', 'text'], ['amount', 'int'], ['currency', 'text'], ['state', 'text'], ['method', 'text'], ['bank_last4', 'text'], ['created_at', 'text'], ['source', 'text']],
     payouts, `DO UPDATE SET amount = EXCLUDED.amount, bank_last4 = COALESCE(EXCLUDED.bank_last4, payouts.bank_last4)`));

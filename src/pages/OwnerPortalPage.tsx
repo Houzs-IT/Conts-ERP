@@ -14,6 +14,7 @@ import { EmptyState } from '../components/States';
 import { MoneyText, moneyString } from '../components/MoneyText';
 import Icon from '../components/Icon';
 import { useToast } from '../components/Toast';
+import { TERMS } from '../lib/statementTerms';
 
 /**
  * Owner portal `/owner`. The owner sees ONLY their own data — every endpoint
@@ -30,8 +31,7 @@ type ChargeTo = 'owner' | 'warranty' | 'the_conts';
 interface GrossToNetLine {
   label: string;
   amount: number; // integer sen; negative for fees/expenses
-  type: 'gross' | 'fee' | 'expense' | 'net';
-  reference?: string;
+  type: 'gross' | 'expense' | 'subtotal' | 'fee' | 'adjustment' | 'net';
 }
 interface Summary {
   period: string; // YYYY-MM
@@ -59,7 +59,7 @@ interface OwnerDoc {
   id: string; type: 'statement' | 'contract' | 'invoice' | 'report';
   refId?: string; title: string; meta: string; issuedAt: string;
 }
-interface DetailLine { label: string; amount: number; type: 'gross' | 'fee' | 'expense' | 'adjustment'; reference?: string }
+interface DetailLine { label: string; amount: number; type: 'gross' | 'fee' | 'expense' | 'adjustment'; items?: { label: string; amount: number; reference?: string }[] }
 interface DetailUnit { id: string; label: string; gross: number; fee: number; expenses: number; adjustments: number; net: number; lines: DetailLine[] }
 interface StatementDetail {
   id: string; period: string; isFinal: boolean; unitsLabel: string;
@@ -68,18 +68,19 @@ interface StatementDetail {
 }
 
 /** No placeholder money is ever presented as the owner's — these figures tie out:
- *  9,260.00 − 2,315.00 − 385.00 − 78.00 = 6,482.00. */
+ *  9,260.00 − 385.00 − 78.00 = 8,797.00; less 25% (2,199.25) = 6,597.75. */
 const SUMMARY: Summary = {
   period: '2026-08', isFinal: true, statementId: 's1',
   unitsLabel: 'Vista Jaya One #A-12-03',
   units: [{ id: 'u1', label: 'Vista Jaya One #A-12-03' }],
-  payout: { amount: 648200, state: 'paid', paidAt: '2026-09-03', scheduledFor: null, bankName: 'Maybank', bankLast4: '4417' },
+  payout: { amount: 659775, state: 'paid', paidAt: '2026-09-03', scheduledFor: null, bankName: 'Maybank', bankLast4: '4417' },
   grossToNet: [
-    { label: 'Gross booking value', amount: 926000, type: 'gross' },
-    { label: 'Management fee · 25%', amount: -231500, type: 'fee' },
-    { label: 'Housekeeping · 11 turnovers', amount: -38500, type: 'expense' },
-    { label: 'Maintenance · aircon service', amount: -7800, type: 'expense', reference: 'INV-2026-0912' },
-    { label: 'Net payout', amount: 648200, type: 'net' },
+    { label: TERMS.grossIncome, amount: 926000, type: 'gross' },
+    { label: 'Basic Cleaning Fee', amount: -38500, type: 'expense' },
+    { label: 'Additional Deduction', amount: -7800, type: 'expense' },
+    { label: TERMS.netIncome, amount: 879700, type: 'subtotal' },
+    { label: `25% ${TERMS.toOperator}`, amount: -219925, type: 'fee' },
+    { label: TERMS.netPayout, amount: 659775, type: 'net' },
   ],
   stats: { occupancy: 94.1, adr: 28400, bookings: 11, rating: 4.92, reviews: 38 },
 };
@@ -94,7 +95,7 @@ const TREND: Trend = {
     { period: '2026-05', netPayout: 601200 },
     { period: '2026-06', netPayout: 588900 },
     { period: '2026-07', netPayout: 634500 },
-    { period: '2026-08', netPayout: 648200 },
+    { period: '2026-08', netPayout: 659775 },
   ],
 };
 
@@ -117,20 +118,20 @@ const DOCS: { data: OwnerDoc[] } = {
 };
 
 /** Layered detail for the drill-down. Kept consistent with SUMMARY (one unit, same
- *  gross-to-net): 9,260.00 − 2,315.00 − 385.00 − 78.00 = 6,482.00. A multi-unit owner
+ *  gross-to-net): 9,260.00 − 385.00 − 78.00 = 8,797.00, less 25% = 6,597.75. A multi-unit owner
  *  simply returns more entries in `units`, each with its own gross-to-net lines. */
 const BREAKDOWN: StatementDetail = {
   id: 's1', period: '2026-08', isFinal: true, unitsLabel: 'Vista Jaya One #A-12-03',
-  grossBookingValue: 926000, managementFee: 231500, expensesTotal: 46300, adjustmentsTotal: 0, netPayout: 648200,
+  grossBookingValue: 926000, managementFee: 219925, expensesTotal: 46300, adjustmentsTotal: 0, netPayout: 659775,
   units: [
     {
       id: 'u1', label: 'Vista Jaya One #A-12-03',
-      gross: 926000, fee: 231500, expenses: 46300, adjustments: 0, net: 648200,
+      gross: 926000, fee: 219925, expenses: 46300, adjustments: 0, net: 659775,
       lines: [
-        { label: 'Gross booking value', amount: 926000, type: 'gross' },
-        { label: 'Management fee · 25%', amount: -231500, type: 'fee' },
-        { label: 'Housekeeping · 11 turnovers', amount: -38500, type: 'expense' },
-        { label: 'Maintenance · aircon service', amount: -7800, type: 'expense', reference: 'INV-2026-0912' },
+        { label: TERMS.hospitalityIncome, amount: 926000, type: 'gross' },
+        { label: 'Basic Cleaning Fee', amount: -38500, type: 'expense' },
+        { label: 'Additional Deduction', amount: -7800, type: 'expense', items: [{ label: 'Aircon service', amount: -7800, reference: 'INV-2026-0912' }] },
+        { label: `25% ${TERMS.toOperator}`, amount: -219925, type: 'fee' },
       ],
     },
   ],
@@ -220,7 +221,7 @@ export default function OwnerPortalPage() {
       {/* Statement summary — the gross → fees → expenses → net chain */}
       <section className="bg-black text-white rounded-card p-5 flex justify-between gap-6 flex-wrap">
         <div className="flex flex-col gap-2 min-w-[220px]">
-          <span className="text-meta text-[var(--color-text-on-dark-muted)]">Net payout · {monthLabel(st.period)}</span>
+          <span className="text-meta text-[var(--color-text-on-dark-muted)]">{TERMS.netPayout} · {monthLabel(st.period)}</span>
           <MoneyText sen={st.payout.amount} mode="exact" className="text-headline leading-[1.1] font-semibold tracking-[-0.01em] text-gold" />
           <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge entity="payout" value={st.payout.state} size="sm" />
@@ -234,18 +235,17 @@ export default function OwnerPortalPage() {
         <div className="flex flex-col gap-3 min-w-[min(260px,100%)] flex-1">
           <span className="text-caption font-semibold text-[var(--color-text-on-dark-muted)] uppercase tracking-[0.06em]">Gross to net</span>
           {st.grossToNet.map(l => {
-            const strong = l.type === 'net';
+            const strong = l.type === 'net', sub = l.type === 'subtotal';
             return (
-              <div key={l.label} className="flex justify-between gap-3.5 pb-2 [border-bottom:1px_solid_var(--color-charcoal)]">
-                <span className={cx('text-copy', strong ? 'text-white font-semibold' : 'text-[var(--color-text-on-dark)] font-normal')}>
+              <div key={`${l.type}-${l.label}`} className="flex justify-between gap-3.5 pb-2 [border-bottom:1px_solid_var(--color-charcoal)]">
+                <span className={cx('text-copy min-w-0 [overflow-wrap:anywhere]', strong ? 'text-white font-semibold' : sub ? 'text-white font-medium' : 'text-[var(--color-text-on-dark)] font-normal', l.type === 'expense' && 'pl-3')}>
                   {l.label}
-                  {l.reference && <span className="text-[var(--color-text-on-dark-muted)]"> · {l.reference}</span>}
                 </span>
-                <MoneyText sen={l.amount} mode="exact" className={cx('text-copy', strong ? 'font-semibold text-gold' : 'font-medium text-white')} />
+                <MoneyText sen={l.amount} mode="exact" className={cx('text-copy whitespace-nowrap', strong ? 'font-semibold text-gold' : 'font-medium text-white')} />
               </div>
             );
           })}
-          <span className="text-meta text-[var(--color-text-on-dark-muted)] text-pretty">Gross booking value is the total before documented fees and expenses.</span>
+          <span className="text-meta text-[var(--color-text-on-dark-muted)] text-pretty">{TERMS.grossIncome} is what your stays earned in the month. The breakdown below shows every line.</span>
           <Button variant="brand" size="md" className="self-start mt-1" style={{ color: 'var(--color-gold)' }}
             icon={<Icon name="Download" size="sm" />} onClick={() => downloadStatement(st.statementId)}>
             Download statement
@@ -359,7 +359,6 @@ function StatementBreakdown({ statementId }: { statementId: string }) {
 
       {data.units.map(u => {
         const open = multi ? openUnit === u.id : true;
-        const shortLabel = u.label.split(' ').pop() ?? u.label;
         return (
           <div key={u.id} className="[border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
             {multi && (
@@ -381,16 +380,25 @@ function StatementBreakdown({ statementId }: { statementId: string }) {
                 {!multi && <div className="text-copy font-medium mb-2.5">{u.label}</div>}
                 <div className="flex flex-col">
                   {u.lines.map((l, i) => (
-                    <div key={i} className="flex items-center justify-between gap-3 py-2 [border-bottom:1px_solid_var(--color-line-soft)]">
-                      <span className="text-copy text-muted-ink text-pretty">
-                        {l.label}
-                        {l.reference && <span className="text-faint"> · {l.reference}</span>}
-                      </span>
-                      <MoneyText sen={l.amount} mode="exact" className={cx('text-copy', l.type === 'gross' ? 'text-ink font-medium' : 'text-muted-ink')} />
+                    <div key={i} className="py-2 [border-bottom:1px_solid_var(--color-line-soft)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className={cx('text-copy text-pretty min-w-0', l.type === 'gross' ? 'text-ink font-medium' : 'text-muted-ink')}>{l.label}</span>
+                        <MoneyText sen={l.amount} mode="exact" className={cx('text-copy whitespace-nowrap', l.type === 'gross' ? 'text-ink font-medium' : 'text-muted-ink')} />
+                      </div>
+                      {l.items && (
+                        <div className="flex flex-col gap-0.5 mt-1 pl-3">
+                          {l.items.map((it, j) => (
+                            <div key={j} className="flex items-baseline justify-between gap-3 text-meta text-faint">
+                              <span className="min-w-0 [overflow-wrap:anywhere]">{it.label}{it.reference && ` · ${it.reference}`}</span>
+                              {l.items!.length > 1 && <MoneyText sen={it.amount} mode="exact" tone="muted" className="text-meta whitespace-nowrap" />}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
                   <div className="flex items-center justify-between gap-3 pt-3">
-                    <span className="text-copy font-semibold">Net payout · {shortLabel}</span>
+                    <span className="text-copy font-semibold">{TERMS.netPayout}</span>
                     <MoneyText sen={u.net} mode="exact" strong className="text-copy text-gold-ink" />
                   </div>
                 </div>
