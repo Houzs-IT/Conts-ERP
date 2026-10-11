@@ -394,7 +394,7 @@ export default function CalendarPage() {
     <>
       <PageHeader
         title="Calendar"
-        sub={`${plural(totalUnits, 'unit')} · ${plural(buildingCount, 'building')}`}
+        sub={data ? `${plural(totalUnits, 'unit')} · ${plural(buildingCount, 'building')}` : 'Loading units…'}
         actions={phone ? (
           // Phones: icon-only 42px squares, each with its own label for screen readers.
           <div className="flex items-center gap-2">
@@ -458,7 +458,7 @@ export default function CalendarPage() {
           </div>
 
           <div className={`${filtersOpen ? 'block' : 'hidden'} md:block`}>
-            <CalendarFilters channels={filterChannels} properties={properties} property={property} setProperty={setProperty}
+            <CalendarFilters channels={filterChannels} properties={properties} counted={!!data} property={property} setProperty={setProperty}
               off={off} setOff={setOff} statusOff={statusOff} setStatusOff={setStatusOff} dirty={filtersDirty}
               onReset={() => { setOff({}); setStatusOff({}); setProperty('all'); }} />
             {(offCount > 0 || Object.values(statusOff).some(Boolean)) && (
@@ -473,7 +473,7 @@ export default function CalendarPage() {
             className={`transition-opacity duration-150 ${loading && data ? 'opacity-70' : ''}`}>
             <div className="sticky top-0 z-20 flex bg-muted [border-bottom:1px_solid_var(--color-line)]">
               <div className={`${STICKY_COL} bg-muted! z-30 flex items-end px-2 md:px-3 pb-2.5 text-meta font-semibold text-muted-ink whitespace-nowrap`}>
-                {plural(units.length, 'unit')}
+                {data ? plural(units.length, 'unit') : ''}
               </div>
               <div className="flex flex-col">
                 <div className="flex h-7">

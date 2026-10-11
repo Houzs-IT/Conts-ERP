@@ -33,7 +33,7 @@ interface Draft { name: string; employmentType: Employment; vendorName: string; 
 const emptyDraft = (employmentType: Employment): Draft => ({ name: '', employmentType, vendorName: '', phone: '', userId: '' });
 
 export default function CleanersPage() {
-  const { cleaners, loading, error, reload } = useCleaners(false);
+  const { cleaners, ready, loading, error, reload } = useCleaners(false);
   const { data: crewData } = useApi<{ data: HouseUser[] }>('/housekeeping/crew?scope=housekeeping', { data: [] });
   const toast = useToast();
 
@@ -97,7 +97,7 @@ export default function CleanersPage() {
     <>
       <PageHeader
         title="Cleaners"
-        sub={`${plural(roster.length, 'cleaner')} on the roster · ${activeCount} active · ${internal.length} internal, ${outsourced.length} outsourced`}
+        sub={ready ? `${plural(roster.length, 'cleaner')} on the roster · ${activeCount} active · ${internal.length} internal, ${outsourced.length} outsourced` : 'Loading the roster…'}
         actions={
           <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setModal({ mode: 'create', draft: emptyDraft('outsourced') })}>
             Add outsourced
@@ -168,7 +168,7 @@ function RosterSection({ kind, title, hint, emptyTitle, addLabel, onAdd, cleaner
         <div className="pt-5 pb-3 px-5 flex items-baseline justify-between gap-x-3 gap-y-1 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
           <span className="flex items-baseline gap-2 min-w-0">
             <span className="text-[16px] font-semibold tracking-[-0.01em]">{title}</span>
-            <span className="text-meta text-muted-ink tabular-nums">{cleaners?.length ?? 0}</span>
+            {cleaners && <span className="text-meta text-muted-ink tabular-nums">{cleaners.length}</span>}
           </span>
           <span className="text-meta text-muted-ink">{hint}</span>
         </div>

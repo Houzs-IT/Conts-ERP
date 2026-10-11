@@ -102,7 +102,7 @@ export default function ApprovalsPage() {
           options={(data?.kinds ?? []).map(k => ({ value: k.value, label: `${k.label} · ${k.count}` }))} />
         {view === 'decided' && (
           <FilterSelect className="flex-[1_1_160px]" label="Outcome" all="All outcomes" value={status} onChange={v => url.set({ status: v || null, page: null })}
-            options={(['approved', 'rejected', 'cancelled'] as ApprovalStatus[]).map(s => ({ value: s, label: `${statusLabel('approval', s)} · ${data?.counts[s as 'approved'] ?? 0}` }))} />
+            options={(['approved', 'rejected', 'cancelled'] as ApprovalStatus[]).map(s => ({ value: s, label: data ? `${statusLabel('approval', s)} · ${data.counts[s as 'approved'] ?? 0}` : statusLabel('approval', s) }))} />
         )}
       </div>
       {off && (

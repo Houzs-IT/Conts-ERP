@@ -219,6 +219,8 @@ export default function AnalyticsPage() {
   const weakest = ranked.filter(u => (u.nights ?? (u.revenue > 0 ? 1 : 0)) > 0).slice(-4).reverse();
 
   const loading = q.loading && !q.data;
+  const blank = d === EMPTY;
+  const money = (sen: number) => blank ? '—' : rm(sen, { cents: false });
 
   return (
     <>
@@ -236,8 +238,8 @@ export default function AnalyticsPage() {
             <div className="flex flex-col gap-2 min-w-0">
               <Eyebrow>{m.label}{d.summary ? ` · ${RANGE_SUB[range].toLowerCase()}` : ' this period'}</Eyebrow>
               <div className="flex items-baseline gap-3 flex-wrap">
-                <Figure value={m.full(headline)} className="text-[34px] sm:text-[44px] font-medium tracking-[-0.03em] leading-none" />
-                <span className={cx('text-copy font-semibold', delta.note && delta.value === 0 ? 'text-muted-ink font-normal' : TONE[delta.tone].text)}>{deltaText(delta)}</span>
+                <Figure value={blank ? '—' : m.full(headline)} className="text-[34px] sm:text-[44px] font-medium tracking-[-0.03em] leading-none" />
+                <span className={cx('text-copy font-semibold', delta.note && delta.value === 0 ? 'text-muted-ink font-normal' : TONE[delta.tone].text)}>{blank ? '' : deltaText(delta)}</span>
               </div>
               <span className="text-meta text-muted-ink [text-wrap:pretty]">
                 vs {range === 'ytd' ? 'the same period last year' : 'the prior window'}
@@ -267,10 +269,10 @@ export default function AnalyticsPage() {
 
           {/* The four totals are distinct definitions and are never merged. */}
           <TotalsRow items={[
-            { label: 'Gross booking value', value: rm(d.totals.grossBookingValue, { cents: false }) },
-            { label: 'Collected revenue', value: rm(d.totals.collectedRevenue, { cents: false }) },
-            { label: 'Management fees', value: rm(d.totals.managementFees, { cents: false }) },
-            { label: 'Net owner payout', value: rm(d.totals.netOwnerPayout, { cents: false }) },
+            { label: 'Gross booking value', value: money(d.totals.grossBookingValue) },
+            { label: 'Collected revenue', value: money(d.totals.collectedRevenue) },
+            { label: 'Management fees', value: money(d.totals.managementFees) },
+            { label: 'Net owner payout', value: money(d.totals.netOwnerPayout) },
           ]} />
           <span className="text-meta text-muted-ink -mt-2 [text-wrap:pretty]">
             Management fees and net owner payout come from owner statements generated for these months; a month with no statements adds nothing to them yet.
@@ -384,7 +386,7 @@ function UnitTable({ units, metric, loading, range }: { units: UnitRow[]; metric
       header={
         <div className="flex flex-col gap-[2px] pt-4 pb-1 px-[22px] max-md:px-4">
           <span className="text-heading font-semibold">All units</span>
-          <span className="text-meta text-muted-ink">{rows.length === units.length ? plural(units.length, 'listed unit') : `${rows.length} of ${plural(units.length, 'listed unit')}`}</span>
+          <span className="text-meta text-muted-ink">{loading ? '' : rows.length === units.length ? plural(units.length, 'listed unit') : `${rows.length} of ${plural(units.length, 'listed unit')}`}</span>
         </div>
       }
       toolbar={<>

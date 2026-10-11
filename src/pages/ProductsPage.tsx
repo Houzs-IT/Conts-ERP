@@ -266,7 +266,7 @@ export default function ProductsPage() {
             loading={loading} error={error} onRetry={reload} pageSize={0}
             onRowClick={!editPrices && canWrite ? p => setDrawer(draftFrom(p)) : undefined}
             noun={['product', 'products']} exportName="products"
-            header={<SectionTitle title={countLabel} />}
+            header={<SectionTitle title={data ? countLabel : 'Products'} />}
             toolbar={<>
               <Segmented label="Category" options={[{ key: 'all' as const, label: 'All' }, ...CATEGORIES.map(c => ({ key: c, label: CAT_LABEL[c] }))]} value={cat} onChange={setCat} />
               <div className="relative">

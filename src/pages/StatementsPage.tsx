@@ -226,7 +226,7 @@ export default function StatementsPage() {
     <>
       <PageHeader
         title="Owner statements"
-        sub={`${periodLabel(viewPeriod)} period · ${current?.count ?? 0} statements · ${notSent} not yet sent`}
+        sub={data ? `${periodLabel(viewPeriod)} period · ${current?.count ?? 0} statements · ${notSent} not yet sent` : `${periodLabel(viewPeriod)} period`}
         right={
           <div className="flex gap-[9px] flex-wrap items-center">
             <div className="flex items-center h-9 rounded-control border border-solid border-line bg-card">
