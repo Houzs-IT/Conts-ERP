@@ -107,7 +107,8 @@ export const PanelHeading = ({ children }: { children: ReactNode }) => (
  * through this one adapter, so switching over is a change here only.
  */
 export function StatusCell({ label, tone, outline }: { label: string; tone: AnyTone; outline?: boolean }) {
-  return <StatusBadge label={label} tone={tone} outline={outline} size="sm" dot />;
+  // The cell is a flex column that stretches its children; w-fit keeps the pill the width of its words.
+  return <StatusBadge label={label} tone={tone} outline={outline} size="sm" dot className="w-fit" />;
 }
 
 export function ChannelCell({ channel }: { channel: string }) {
