@@ -25,12 +25,12 @@ describe('companyDocPrefix', () => {
     // The exact reconstructed-context leak: get('companyCode') returns the
     // synthetic houzsUser object instead of a code string.
     const p = companyDocPrefix(ctx({ id: 42 }) as never);
-    expect(p).toBe('HC-');
+    expect(p).toBe('TC-');
     expect(p).not.toContain('[object Object]');
   });
 
   test('undefined (headless / single-company) mints under the base company', () => {
-    expect(companyDocPrefix(ctx(undefined) as never)).toBe('HC-');
+    expect(companyDocPrefix(ctx(undefined) as never)).toBe('TC-');
   });
 
   test('a broken context NEVER mints an unprefixed number', () => {
@@ -41,9 +41,9 @@ describe('companyDocPrefix', () => {
     }
   });
 
-  test('HOUZS mints "HC-", not its bare code', () => {
-    expect(companyDocPrefix(ctx('HOUZS') as never)).toBe('HC-');
-    expect(companyDocPrefix(ctx('houzs') as never)).toBe('HC-');
+  test('HOUZS mints the Conts prefix "TC-" (owner 11 Oct 2026), not its bare code or HC-', () => {
+    expect(companyDocPrefix(ctx('HOUZS') as never)).toBe('TC-');
+    expect(companyDocPrefix(ctx('houzs') as never)).toBe('TC-');
     expect(companyDocPrefix(ctx('HOUZS') as never)).not.toBe('HOUZS-');
   });
 
@@ -122,5 +122,18 @@ describe('detailMissResponse', () => {
     // must not be reported as another company.
     const r = await detailMissResponse(ctxMc(2, [1, 2]) as never, probe(2), 'supplier');
     expect(r.error).toBe('not_found');
+  });
+});
+
+describe('Conts document numbers (owner decision C1, 11 Oct 2026)', () => {
+  test('new documents mint TC-<KIND>-YYMM-NNN, starting a fresh series beside the old HC- numbers', async () => {
+    const { nextMonthlyDocNo } = await import('./doc-no');
+    const p = companyDocPrefix(ctx('HOUZS') as never);
+    // An HC- number already on file is in another series: it neither collides nor is renamed.
+    expect(nextMonthlyDocNo(`${p}SO-2610`, ['HC-SO-2610-007'])).toBe('TC-SO-2610-001');
+    expect(nextMonthlyDocNo(`${p}SO-2610`, ['TC-SO-2610-001', 'HC-SO-2610-007'])).toBe('TC-SO-2610-002');
+    for (const kind of ['SO', 'PO', 'GRN', 'DO', 'SI']) {
+      expect(nextMonthlyDocNo(`${p}${kind}-2610`, [])).toBe(`TC-${kind}-2610-001`);
+    }
   });
 });
