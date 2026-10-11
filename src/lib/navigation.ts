@@ -11,7 +11,8 @@ export interface NavItem {
   key: string; label: string; icon: string; path?: string; area?: string;
   badge?: BadgeKey; children?: NavChild[]; full?: boolean;
 }
-export interface NavGroup { label: string; workspace: Workspace; items: NavItem[] }
+/** `phone: false`: left off the menu at phone width; its screens still open by address. */
+export interface NavGroup { label: string; workspace: Workspace; items: NavItem[]; phone?: boolean }
 
 /**
  * Information architecture (UI audit section 3, 8 Oct): seven short rental groups, about 26 entries, each
@@ -34,6 +35,9 @@ export const NAV: NavGroup[] = [
     { key: 'bookings', label: 'Reservations', icon: 'book-open', path: '/reservations/bookings', area: 'reservations' },
     { key: 'guests', label: 'Guests', icon: 'users', path: '/reservations/guests', area: 'reservations' },
     { key: 'inbox', label: 'Messages', icon: 'inbox', path: '/communication/inbox', area: 'comms', badge: 'inbox' },
+    // Invoices and receipts issued to guests: guest invoicing, so it sits with reservations. Still money work, so
+    // its permission area stays Finance (who can open it does not change).
+    { key: 'guestDocuments', label: 'Guest documents', icon: 'file-text', path: '/finance/documents', area: 'finance' },
   ] },
   // Three screens (owner, 10 Oct): Inspections is gone and "All tasks" is the History tab of Cleaning and
   // Maintenance; the old addresses redirect (App.tsx). Housekeeping is called Cleaning everywhere.
@@ -45,16 +49,16 @@ export const NAV: NavGroup[] = [
   { label: 'UNITS', workspace: 'rental', items: [
     // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).
     { key: 'units', label: 'Units', icon: 'building-2', path: '/properties/units', area: 'properties' },
-    { key: 'ownerList', label: 'Owners', icon: 'user-round', path: '/owners', area: 'owners' },
+    // Owner statements and owner payouts live on the owner (owner, 11 Oct 2026): each owner's page, and the Owners
+    // list's Statements and Payouts tabs for a whole month. Their old addresses redirect (App.tsx).
+    { key: 'ownerList', label: 'Owners', icon: 'user-round', path: '/owners', area: 'owners', badge: 'statements' },
     { key: 'contracts', label: 'Contracts', icon: 'file-signature', path: '/owners/contracts', area: 'owners' },
     { key: 'inventory', label: 'Fit-out register', icon: 'sofa', path: '/properties/inventory', area: 'properties' },
   ] },
-  { label: 'MONEY', workspace: 'rental', items: [
-    { key: 'statements', label: 'Owner statements', icon: 'receipt', path: '/finance/statements', area: 'finance', badge: 'statements' },
-    { key: 'payouts', label: 'Owner payouts', icon: 'banknote', path: '/finance/payouts', area: 'finance' },
-    { key: 'expenses', label: 'Expenses', icon: 'wallet', path: '/finance/expenses', area: 'finance' },
+  // Finance's desk work. Not on the phone (owner, 11 Oct 2026: money is not needed on the phone).
+  { label: 'FINANCE', workspace: 'rental', phone: false, items: [
+    { key: 'payables', label: 'Accounts payable', icon: 'wallet', path: '/finance/payables', area: 'finance' },
     { key: 'approvals', label: 'Approvals', icon: 'stamp', path: '/finance/approvals', area: 'finance', badge: 'approvals' },
-    { key: 'guestDocuments', label: 'Guest documents', icon: 'file-text', path: '/finance/documents', area: 'finance' },
   ] },
   { label: 'GROWTH', workspace: 'rental', items: [
     { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'performance', full: true },
@@ -166,6 +170,12 @@ function denied(role: UserRole, access?: Record<string, AccessLevel>): string[] 
 const areaOfItem = (it: NavItem) => it.area ?? it.key;
 const areaOfChild = (it: NavItem, c: NavChild) => c.area ?? areaOfItem(it);
 
+/** Whether a permission area is open to this person, by the same rule the menu uses. */
+export function areaOpen(role: UserRole, area: string, access?: Record<string, AccessLevel>): boolean {
+  const deny = denied(role, access);
+  return !deny.includes('*') && !deny.includes(area);
+}
+
 /** The permission area a screen belongs to, or null for screens outside the chart. */
 export function areaOfPath(path: string): string | null {
   for (const g of NAV) for (const it of g.items) {
@@ -235,14 +245,14 @@ export function workspaceOf(path: string): Workspace | null {
 /** role → landing path. The server returns this as `home`; kept here for the client guard. */
 export const HOME: Record<UserRole, string> = {
   management: '/', operations_manager: '/', operations_staff: '/operations/today',
-  finance_admin: '/finance/statements', housekeeper: '/field/today',
+  finance_admin: '/owners?view=statements', housekeeper: '/field/today',
   technician: '/field/today', owner: '/owner',
 };
 
-/** Pages below a menu entry, for the third breadcrumb ("Money / Owner statements / Statement"). */
+/** Pages below a menu entry, for the third breadcrumb ("Units / Owners / Owner statement"). */
 const SUB_PAGES: [RegExp, string][] = [
-  [/^\/finance\/statements\/[^/]+$/, 'Statement'],
-  [/^\/owners\/(?!contracts$)[^/]+$/, 'Owner profile'],
+  [/^\/owners\/statements\/[^/]+$/, 'Owner statement'],
+  [/^\/owners\/(?!contracts$|statements$)[^/]+$/, 'Owner profile'],
   [/^\/properties\/units\/[^/]+$/, 'Unit'],
   [/^\/system\/integrations\/hostplatform$/, 'HostPlatform import'],
 ];

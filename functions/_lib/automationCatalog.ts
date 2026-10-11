@@ -351,7 +351,7 @@ export const CATALOG: CatalogRule[] = [
       "Email"
     ],
     "needs": "Destination: Owner payouts",
-    "preview": "Owner payout to {owner} ({amount}) failed: {reason}. Retry or update bank details in Owner payouts.",
+    "preview": "Owner payout to {owner} ({amount}) failed: {reason}. Retry or update bank details on the owner page.",
     "delivery": "transactional",
     "quietHours": "always",
     "isActive": true

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -20,6 +20,13 @@ import { FilterBar } from '../components/FilterBar';
 import { useUrlState, usePhone, SearchBox, MonthStepper, shiftMonth, useFinanceFilters } from './finance/listKit';
 import { MODELS, type RevenueModel } from '../lib/revenueModel';
 import { ModelChip } from './units/ContractTab';
+import { Segmented } from '../components/ops/OpsUi';
+import { RowsSkeleton } from '../components/Loading';
+import { useSession } from '../lib/session';
+import { areaOpen } from '../lib/navigation';
+
+const StatementsPage = lazy(() => import('./StatementsPage'));
+const PayoutsPage = lazy(() => import('./PayoutsPage'));
 
 /**
  * Owners list. Each row opens the full owner profile at `#/owners/:id`
@@ -31,6 +38,11 @@ import { ModelChip } from './units/ContractTab';
  *
  * About 120 owners: the whole list comes in one response (~60 KB) and is
  * searched and sorted here, which keeps sorting by net instant.
+ *
+ * Owner statements and owner payouts live on the owner (owner, 11 Oct 2026). One owner's month is on their profile;
+ * the whole month for every owner (generate, mark final, send, start the payout run, mark paid) is this page's
+ * Statements and Payouts tabs, for people with the Finance area. `#/finance/statements` and `#/finance/payouts`
+ * redirect here. On a phone the tabs show only when a link opened one.
  */
 
 type ModelFilter = '' | RevenueModel | 'none';
@@ -61,7 +73,35 @@ function matches(o: Owner, q: string) {
 }
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
 
+type View = 'owners' | 'statements' | 'payouts';
+/** Query keys each tab keeps in the address; switching tabs clears them so one tab's filters never leak into another. */
+const TAB_KEYS = ['q', 'building', 'model', 'month', 'sort', 'state', 'period', 'page', 'size'];
+
 export default function OwnersPage() {
+  const url = useUrlState();
+  const phone = usePhone();
+  const { user } = useSession();
+  const money = !!user && areaOpen(user.role, 'finance', user.access);
+  const asked = url.get('view');
+  const view: View = money && (asked === 'statements' || asked === 'payouts') ? asked : 'owners';
+  const pick = (v: View) => url.set({ view: v === 'owners' ? null : v, ...Object.fromEntries(TAB_KEYS.map(k => [k, null])) });
+  const tabs = money && (!phone || view !== 'owners') ? (
+    <Segmented<View> label="Owners, statements and payouts" value={view} onChange={pick} className="self-start"
+      options={[{ value: 'owners', label: 'Owners' }, { value: 'statements', label: 'Statements' }, { value: 'payouts', label: 'Payouts' }]} />
+  ) : null;
+  if (view === 'owners') return <OwnerList tabs={tabs} />;
+  return (
+    <>
+      <PageHeader title="Owners" sub={view === 'statements' ? 'Owner statements for every owner, a month at a time.' : 'Owner payouts for every owner.'} />
+      {tabs}
+      <Suspense fallback={<RowsSkeleton rows={8} cols={5} />}>
+        {view === 'statements' ? <StatementsPage embedded /> : <PayoutsPage embedded />}
+      </Suspense>
+    </>
+  );
+}
+
+function OwnerList({ tabs }: { tabs: ReactNode }) {
   const url = useUrlState();
   const phone = usePhone();
   const thisMonth = todayMyt().slice(0, 7);
@@ -168,6 +208,7 @@ export default function OwnersPage() {
     <>
       <PageHeader title="Owners" sub={data ? `${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')} under management` : 'Loading owners…'}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal(true)}>Add owner</Button>} />
+      {tabs}
 
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-5 pt-5 pb-4 px-5 sm:px-[22px]">

@@ -10,7 +10,8 @@ import { Logo } from './Logo';
 import { cx } from '../lib/design-tokens';
 import { count as countLabel } from '../lib/format';
 
-interface Props { path: string; navigate: (p: string) => void; open: boolean; onToggle: () => void }
+/** `phone`: the phone drawer, which leaves out the groups marked phone: false (navigation.ts). */
+interface Props { path: string; navigate: (p: string) => void; open: boolean; onToggle: () => void; phone?: boolean }
 
 /** The chosen workspace survives a reload. Storage can throw (private mode), so every access is guarded. */
 const WS_KEY = 'conts.shell.workspace';
@@ -34,7 +35,7 @@ function activeKey(groups: NavGroup[], path: string) {
   return best?.key ?? null;
 }
 
-export default function Sidebar({ path, navigate, open, onToggle }: Props) {
+export default function Sidebar({ path, navigate, open, onToggle, phone = false }: Props) {
   const { user, logout } = useSession();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
@@ -44,7 +45,8 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   // Approvals are off unless Settings turns them on (owner, 11 Oct 2026); the page stays reachable by its address.
   const approvalsOn = counts?.approvalsOn === true;
   const all = useMemo(() => navFor(user!.role, !!engine.data?.enabled, user!.access)
-    .map(g => ({ ...g, items: g.items.filter(it => it.key !== 'approvals' || approvalsOn) })), [user, engine.data?.enabled, approvalsOn]);
+    .filter(g => !phone || g.phone !== false)
+    .map(g => ({ ...g, items: g.items.filter(it => it.key !== 'approvals' || approvalsOn) })), [user, engine.data?.enabled, approvalsOn, phone]);
   const hasSupply = all.some(g => g.workspace === 'supply');
 
   // Opening a supply chain address (a link, the back button) shows its workspace; otherwise the last choice stands.

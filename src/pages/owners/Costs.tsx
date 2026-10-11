@@ -272,7 +272,7 @@ function PaidOnBehalfList({ items, adjustments, ownerId, showUnit, canChange, on
               {[ADJUSTMENT_KIND[a.kind] ?? a.kind, fmtDate(a.occurredOn), showUnit ? titleCase(a.unitLabel) : null, a.source === 'owner_workbook' ? 'from the owner workbook' : null].filter(Boolean).join(' · ')}
             </span>
             {a.placedOnFirstUnit && <span className="text-caption text-muted-ink">Recorded for the owner, not a unit: the statement puts it on this unit.</span>}
-            {a.statement && <a href={`#/finance/statements/${encodeURIComponent(a.statement.id)}`} className="text-meta text-ink underline underline-offset-2 self-start">On the {monthLabel(a.statement.period)} owner statement</a>}
+            {a.statement && <a href={`#/owners/statements/${encodeURIComponent(a.statement.id)}`} className="text-meta text-ink underline underline-offset-2 self-start">On the {monthLabel(a.statement.period)} owner statement</a>}
             {canChange && <span className="pt-0.5"><AdjustmentActions ownerId={ownerId} a={a} onChanged={onChanged} /></span>}
           </span>
           <span className="flex flex-col items-end gap-1 shrink-0">

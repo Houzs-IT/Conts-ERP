@@ -126,7 +126,7 @@ export async function overdueSweep(env: Env, o: RunOptions = {}): Promise<JobRep
     await notifyUsers(env, 'finance', {
       kind: 'statement.unsent', title: `${plural(stale.length, 'owner statement')} final but not sent`,
       body: `Marked final more than 3 days ago: ${stale.slice(0, 5).map(s => s.owner).join(', ')}${stale.length > 5 ? ` and ${stale.length - 5} more` : ''}.`,
-      link: '/finance/statements', entityTable: 'owner_statements', entityId: stale[0].id, dedupeKey: `unsent-${mytParts(new Date(now)).day}`,
+      link: '/owners?view=statements', entityTable: 'owner_statements', entityId: stale[0].id, dedupeKey: `unsent-${mytParts(new Date(now)).day}`,
     });
   }
   return { job: 'overdue-sweep', summary: `Marked ${plural(tasks.length, 'task')} Overdue; announced ${recentCleans.length} cleaning jobs, ${repairs.length} maintenance jobs, ${stale.length} unsent owner statements.`, items };

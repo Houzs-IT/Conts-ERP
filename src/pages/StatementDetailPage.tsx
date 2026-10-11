@@ -18,7 +18,7 @@ import { RecordHistory } from '../components/RecordHistory';
 import { StatRow, StatTile } from '../components/Metric';
 import { TERMS, DEDUCTION_TERMS, deductionTerm, lineTerm, lineDetail, isSourceReference } from '../lib/statementTerms';
 
-/** `#/finance/statements/:id` — one owner's statement on screen: each unit's month the way the Owner Income
+/** `#/owners/statements/:id` (the old `#/finance/statements/:id` redirects here) — one owner's statement on screen: each unit's month the way the Owner Income
  *  Report prints it (income, deductions, split, owner adjustments, payout), every line behind it with a link to
  *  its booking or expense, what to check before finalising, and the next step the statement's state allows. */
 
@@ -72,7 +72,7 @@ export default function StatementDetailPage() {
     return (
       <>
         <PageHeader title="Owner statement" sub={loading ? 'Loading...' : ''} />
-        {error ? <EmptyState title="This statement could not be opened." body={error} action={{ label: 'Back to statements', onClick: () => navigate('/finance/statements') }} />
+        {error ? <EmptyState title="This statement could not be opened." body={error} action={{ label: 'Back to statements', onClick: () => navigate('/owners?view=statements') }} />
           : <Card><TableSkeleton rows={8} cols={4} /></Card>}
       </>
     );
@@ -93,7 +93,7 @@ export default function StatementDetailPage() {
         right={
           <div className="flex gap-[9px] flex-wrap items-center">
             <StatusBadge entity="statement" value={s.state} />
-            <Button size="sm" variant="secondary" icon={<Icon name="ArrowLeft" size="sm" />} onClick={() => navigate('/finance/statements')}>Statements</Button>
+            <Button size="sm" variant="secondary" icon={<Icon name="ArrowLeft" size="sm" />} onClick={() => navigate(`/owners/${encodeURIComponent(s.owner.id)}?month=${s.period}`)}>Owner</Button>
             {s.units.length > 0 && (
               <Button size="sm" variant="secondary" icon={<Icon name="FileText" size="sm" />} onClick={() => { window.location.hash = reportHref().slice(1); }}>Owner Income Report</Button>
             )}
@@ -230,7 +230,7 @@ function LineList({ id, lines }: { id: string; lines: Line[] }) {
       render: l => (
         <span className="block truncate" title={lineText(l)}>
           {l.booking?.ref ? <a href={`#/reservations/bookings?q=${encodeURIComponent(l.booking.ref)}`} className="text-ink underline underline-offset-2">{lineText(l)}</a>
-            : l.expenseId ? <a href="#/finance/expenses" className="text-ink underline underline-offset-2">{lineText(l)}</a>
+            : l.expenseId ? <a href="#/finance/payables" className="text-ink underline underline-offset-2">{lineText(l)}</a>
             : lineText(l)}
           {refOf(l) && !l.booking && <span className="text-muted-ink"> · {refOf(l)}</span>}
         </span>

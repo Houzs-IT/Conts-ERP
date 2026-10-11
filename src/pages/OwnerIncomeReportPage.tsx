@@ -76,7 +76,7 @@ export default function OwnerIncomeReportPage() {
     <div className="oir-root">
       <style>{CSS}</style>
       <div className="oir-bar">
-        <button onClick={() => navigate(owner ? '/' : `/finance/statements/${encodeURIComponent(id)}`)}>{owner ? 'Back to your account' : 'Back to statement'}</button>
+        <button onClick={() => navigate(owner ? '/' : `/owners/statements/${encodeURIComponent(id)}`)}>{owner ? 'Back to your account' : 'Back to statement'}</button>
         {choices.length > 1 && (
           <label>
             <span className="oir-sr">Unit</span>

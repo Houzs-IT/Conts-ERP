@@ -54,7 +54,7 @@ const pick = role => users.find(u => u.role === role);
 const finance = pick('finance_admin'), owner = pick('owner'), field = pick('housekeeper') ?? pick('technician');
 
 r = await b('POST', '/api/auth/view-as', { userId: finance.id });
-check('switch to a finance admin: sent to their landing screen', r.status === 200 && r.json?.home === '/finance/statements', r.text);
+check('switch to a finance admin: sent to their landing screen', r.status === 200 && r.json?.home === '/owners?view=statements', r.text);
 let me = await whoAmI(b);
 check('now signed in as that finance admin, with their access levels', me?.id === finance.id && me.role === 'finance_admin' && me.access?.operations === 'none', JSON.stringify(me));
 r = await b('GET', '/api/auth/view-as');

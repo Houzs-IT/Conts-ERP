@@ -68,7 +68,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       { id: 'email', provider: 'email', ...messaging('email', !!e.MAIL_API_KEY) },
       { id: 'whatsapp', provider: 'whatsapp', ...messaging('whatsapp', !!(e.WHATSAPP_TOKEN && e.WHATSAPP_PHONE_ID)) },
       { id: 'bank', provider: 'bank', state: 'manual', lastSyncedAt: null, lastError: null, unitsLinked: 0, syncInterval: null, credentialMasked: null,
-        detail: 'Not connected to a bank. Owner payouts are transferred in the bank’s own system, then recorded on Owner payouts (Start payout run, then Mark paid).' },
+        detail: 'Not connected to a bank. Owner payouts are transferred in the bank’s own system, then recorded on Owners > Payouts (Start payout run, then Mark paid).' },
     ],
   });
 };
