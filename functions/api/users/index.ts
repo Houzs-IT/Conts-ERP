@@ -21,7 +21,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return json({
     generatedAt: nowIso(),
     data: rows.map(r => ({
-      id: r.id, fullName: r.full_name, email: r.email, phone: r.phone ?? '—', role: r.role, managerId: r.manager_id,
+      id: r.id, fullName: r.full_name, email: r.email, phone: r.phone ?? null, role: r.role, managerId: r.manager_id,
       isActive: !!r.is_active, mustChangePassword: !!r.must_change_password, isLocked: !!r.is_locked, twoStep: !!r.two_step, lastLoginAt: r.last_login_at,
       locale: r.locale, createdAt: r.created_at,
     })),
