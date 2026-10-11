@@ -1,7 +1,8 @@
 // Maintenance job templates and the technician's phone app (11 Oct 2026): who may change templates, the checks on
 // every field, a job opened from a template (checklist and parts copied, technician by ACCOUNT), archive instead of
 // delete once used, and the technician's own repairs on the phone (today / upcoming / overdue / history, start,
-// checklist, parts used with the store, proof required to mark done), with another technician refused.
+// checklist, items used with the store, proof required to mark done), with another technician refused; maintenance
+// items and Other lines, the cost posted once to the unit as an expense (edited, re-closed, cancelled), free times.
 // Needs one account per role in the database it runs against (ids from the environment, defaults are the local
 // test accounts): CHECK_USER_ID (management), OPS_MGR_ID, OPS_STAFF_ID, TECH_ID, TECH2_ID, CLEANER_ID.
 // Run: API_BASE=http://localhost:8809 SESSION_SECRET=<the server's> node scripts/api-checks/maintenance-templates.mjs
@@ -38,7 +39,7 @@ r = await tech('POST', '/api/maintenance/templates', { name: `Tech ${tag}`, cate
 check('technician create refused (403)', r.status === 403, r.text);
 
 // 2. A stocked catalog part to put on the template.
-r = await mg('POST', '/api/maintenance/skus', { code: `TPL-${tag}`, name: `Tap washer ${tag}`, category: 'plumbing', unitLabel: 'unit', defaultPrice: 500, trackStock: true, stockOnHand: 2 });
+r = await mg('POST', '/api/maintenance/skus', { code: `TPL-${tag}`, name: `Tap washer ${tag}`, kind: 'part', category: 'plumbing', unitLabel: 'unit', defaultPrice: 500, trackStock: true, stockOnHand: 2 });
 check('stocked part added', r.status === 201, r.text);
 r = await mg('GET', '/api/maintenance/skus');
 const sku = r.json?.data?.find(s => s.code === `TPL-${tag}`);
@@ -91,8 +92,8 @@ check('job opened from the template', r.status === 201 && r.json.state === 'assi
 r = await ops('GET', '/api/maintenance/issues');
 const job = r.json?.data?.find(i => i.id === jobId);
 check('job carries the template, the account and the checklist', job?.templateId === tplId && job.assigneeId === TECH.userId && job.assigneeKind === 'in_house' && job.assigneeName === TECH.fullName && job.checklist.total === 4, JSON.stringify(job));
-r = await ops('GET', `/api/maintenance/issues/${jobId}/parts`);
-check('planned parts copied', r.json?.data?.[0]?.plannedQty === 1 && r.json.data[0].usedQty === 0, r.text);
+r = await ops('GET', `/api/maintenance/issues/${jobId}/lines`);
+check('planned items copied, nothing used yet', r.json?.data?.[0]?.plannedQty === 1 && r.json.data[0].qty === 0 && r.json.data[0].unitPrice === 500, r.text);
 r = await ops('PATCH', `/api/maintenance/templates/${tplId}`, { ...good, steps: ['Only one step now'] });
 r = await ops('GET', `/api/maintenance/issues/${jobId}/checklist`);
 check('editing the template later leaves the job alone', r.json?.data?.length === 4, r.text.slice(0, 200));
@@ -122,7 +123,7 @@ check('technician sees the job (matched by account)', r.status === 200 && mine?.
 check('no money on the phone', !/quote|finalAmount|amount|chargeTo|threshold/i.test(JSON.stringify(r.json)), JSON.stringify(mine));
 r = await tech2('GET', '/api/field/maintenance');
 check('another technician does not see it', r.status === 200 && !r.json.rows.some(x => x.id === jobId), '');
-for (const [m, p, b] of [['GET', `/api/field/maintenance/${jobId}`], ['POST', `/api/maintenance/issues/${jobId}/start`, {}], ['POST', `/api/maintenance/issues/${jobId}/checklist`, { label: 'x' }], ['POST', `/api/maintenance/issues/${jobId}/parts`, { skuId: sku?.id, usedQty: 1 }], ['GET', `/api/audit?entityTable=maintenance_issues&entityId=${jobId}`]]) {
+for (const [m, p, b] of [['GET', `/api/field/maintenance/${jobId}`], ['POST', `/api/maintenance/issues/${jobId}/start`, {}], ['POST', `/api/maintenance/issues/${jobId}/checklist`, { label: 'x' }], ['POST', `/api/maintenance/issues/${jobId}/lines`, { skuId: sku?.id, qty: 1 }], ['GET', `/api/audit?entityTable=maintenance_issues&entityId=${jobId}`]]) {
   r = await tech2(m, p, b);
   check(`other technician refused: ${m} ${p.replace(jobId, ':id')} (403)`, r.status === 403, r.text);
 }
@@ -147,7 +148,7 @@ check('bucket: overdue once every window is over', r.json.rows.find(x => x.id ==
 
 // Work on the phone.
 r = await tech('GET', `/api/field/maintenance/${jobId}`);
-check('detail: checklist, parts, catalog, no prices', r.status === 200 && r.json.checklist.length === 4 && r.json.parts.length === 1 && r.json.catalog.some(c => c.id === sku?.id) && !/price|amount/i.test(r.text), r.text.slice(0, 300));
+check('detail: checklist, parts, catalog, no prices', r.status === 200 && r.json.checklist.length === 4 && r.json.lines.length === 1 && r.json.catalog.some(c => c.id === sku?.id) && !/price|amount/i.test(r.text), r.text.slice(0, 300));
 r = await tech('POST', `/api/maintenance/issues/${jobId}/start`, {});
 check('technician starts', r.status === 200, r.text);
 const first = (await tech('GET', `/api/maintenance/issues/${jobId}/checklist`)).json.data[0];
@@ -156,14 +157,14 @@ check('ticks a step', r.status === 200 && r.json.data[0].done && r.json.data[0].
 r = await tech('POST', `/api/maintenance/issues/${jobId}/checklist`, { label: 'Replaced the hose too' });
 check('adds a step', r.status === 201 && r.json.data.length === 5, r.text.slice(0, 200));
 for (const [label, q] of [['1.5', 1.5], ['-1', -1], ['"2"', '2'], ['1000', 1000]]) {
-  r = await tech('POST', `/api/maintenance/issues/${jobId}/parts`, { skuId: sku?.id, usedQty: q });
+  r = await tech('POST', `/api/maintenance/issues/${jobId}/lines`, { skuId: sku?.id, qty: q });
   check(`parts used ${label} refused (422)`, r.status === 422, r.text);
 }
-r = await tech('POST', `/api/maintenance/issues/${jobId}/parts`, { skuId: sku?.id, usedQty: 1 });
-check('records 1 part used', r.status === 200 && r.json.data[0].usedQty === 1 && r.json.data[0].stockOnHand === 1, r.text);
-r = await tech('POST', `/api/maintenance/issues/${jobId}/parts`, { skuId: sku?.id, usedQty: 3 });
+r = await tech('POST', `/api/maintenance/issues/${jobId}/lines`, { skuId: sku?.id, qty: 1 });
+check('records 1 part used', r.status === 200 && r.json.data[0].qty === 1 && r.json.data[0].stockOnHand === 1 && r.json.data[0].unitPrice === null && r.json.total === null, r.text);
+r = await tech('POST', `/api/maintenance/issues/${jobId}/lines`, { skuId: sku?.id, qty: 3 });
 check('more than the store holds refused (409)', r.status === 409 && r.json.error.code === 'OUT_OF_STOCK', r.text);
-r = await tech('POST', `/api/maintenance/issues/${jobId}/parts`, { skuId: sku?.id, usedQty: 0 });
+r = await tech('POST', `/api/maintenance/issues/${jobId}/lines`, { skuId: sku?.id, qty: 0 });
 check('back to 0 returns it to the store', r.status === 200 && r.json.data[0].stockOnHand === 2, r.text);
 r = await tech('POST', `/api/maintenance/issues/${jobId}/end`, { note: 'Washer replaced, no more drip.' });
 check('mark done without a photo or video refused (409 PROOF_REQUIRED)', r.status === 409 && r.json.error.code === 'PROOF_REQUIRED', r.text);
@@ -195,5 +196,72 @@ r = await ops('PATCH', `/api/maintenance/issues/${job2}`, { assigneeUserId: TECH
 r = await tech2('GET', '/api/field/maintenance');
 check('reassigned to the second technician by account', r.json.rows.some(x => x.id === job2), '');
 await ops('POST', `/api/maintenance/issues/${job2}/complete`, { finalAmount: 0, chargeTo: 'the_conts' });
+
+// 9. Maintenance items (codes the owner sets up), lines on a job, the cost posted once to the unit, cancel.
+r = await ops('POST', '/api/maintenance/skus', { code: 'mt ac', name: 'Bad code', category: 'aircon' });
+check('item code with a space refused (422)', r.status === 422 && !!r.json?.error?.fields?.code, r.text);
+r = await ops('POST', '/api/maintenance/skus', { code: `mt-ac-${tag}`, name: 'Aircon service', kind: 'service', category: 'aircon', unitLabel: 'visit', defaultPrice: 12000 });
+check('service item added (code upper-cased, per visit)', r.status === 201, r.text);
+r = await ops('POST', '/api/maintenance/skus', { code: `MT-X-${tag}`, name: 'x', kind: 'gadget' });
+check('unknown kind refused (422)', r.status === 422, r.text);
+r = await ops('GET', '/api/maintenance/skus');
+const svc = r.json?.data?.find(s => s.code === `MT-AC-${tag}`);
+check('item listed with kind and unit', svc?.kind === 'service' && svc.unitLabel === 'visit' && svc.defaultPrice === 12000, JSON.stringify(svc));
+
+r = await ops('POST', '/api/maintenance/issues', { title: 'No unit', chargeTo: 'owner' });
+check('a job without a unit is refused', r.status === 404 || r.status === 422, r.text);
+r = await ops('GET', `/api/maintenance/free-times?unitId=${unit.id}&days=14`);
+check('free times for the unit (no guest, 09:00-18:00)', r.status === 200 && Array.isArray(r.json.slots) && r.json.slots.every(s => s.endsAt > s.startsAt && /T(09|1[0-8]):/.test(s.startsAt)), r.text.slice(0, 300));
+console.log('   free slots in 14 days:', r.json?.slots?.length);
+r = await ops('GET', '/api/maintenance/free-times?unitId=nope');
+check('free times for an unknown unit (404)', r.status === 404, r.text);
+
+r = await ops('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Cost check ${tag}`, category: 'aircon', chargeTo: 'owner' });
+const job3 = r.json?.id;
+r = await ops('POST', `/api/maintenance/issues/${job3}/lines`, { skuId: svc?.id, qty: 2 });
+check('item line: 2 x RM 120.00', r.status === 200 && r.json.data[0].amount === 24000 && r.json.total === 24000, r.text);
+for (const [label, body] of [['price 1.5 sen', { description: 'Hose', qty: 1, unitPrice: 1.5 }], ['negative price', { description: 'Hose', qty: 1, unitPrice: -100 }], ['price as text', { description: 'Hose', qty: 1, unitPrice: '3500' }], ['no description', { description: ' ', qty: 1, unitPrice: 100 }], ['qty 0', { description: 'Hose', qty: 0, unitPrice: 100 }]]) {
+  r = await ops('POST', `/api/maintenance/issues/${job3}/lines`, body);
+  check(`Other line refused: ${label} (422)`, r.status === 422, r.text);
+}
+r = await ops('POST', `/api/maintenance/issues/${job3}/lines`, { description: 'Shower hose', qty: 1, unitPrice: 3550 });
+check('Other line added', r.status === 201 && r.json.total === 27550, r.text);
+const otherLine = r.json?.data?.find(l => l.kind === 'other');
+r = await staff('POST', `/api/maintenance/issues/${job3}/lines`, { lineId: otherLine?.id, unitPrice: 1 });
+check('operations staff cannot set a price (403)', r.status === 403, r.text);
+r = await staff('GET', `/api/maintenance/issues/${job3}/lines`);
+check('operations staff see quantities, no prices', r.status === 200 && r.json.total === null && r.json.data.every(l => l.unitPrice === null), r.text.slice(0, 200));
+r = await ops('POST', `/api/maintenance/issues/${job3}/complete`, { chargeTo: 'owner' });
+check('closed with no amount typed: the lines total is the cost', r.status === 200 && r.json.finalAmount === 27550 && !!r.json.expenseId, r.text);
+const exp1 = r.json?.expenseId;
+const expensesFor = async () => (await mg('GET', `/api/maintenance/issues`)).json.data.find(i => i.id === job3);
+let j3 = await expensesFor();
+check('charged to the unit once: RM 275.50, expense linked', j3.expenseId === exp1 && j3.expensed === 27550, JSON.stringify({ e: j3.expenseId, x: j3.expensed }));
+r = await ops('PATCH', `/api/maintenance/issues/${job3}`, { finalAmount: 18000 });
+check('cost edited later', r.status === 200 && r.json.expenseId === exp1, r.text);
+j3 = await expensesFor();
+check('the same expense moved to RM 180.00', j3.expenseId === exp1 && j3.expensed === 18000 && j3.finalAmount === 18000, JSON.stringify({ e: j3.expenseId, x: j3.expensed }));
+r = await ops('PATCH', `/api/maintenance/issues/${job3}`, { finalAmount: 12.5 });
+check('cost with a fraction of a sen refused (422)', r.status === 422, r.text);
+r = await ops('PATCH', `/api/maintenance/issues/${job3}`, { state: 'reopened' });
+r = await ops('POST', `/api/maintenance/issues/${job3}/complete`, { finalAmount: 20000 });
+j3 = await expensesFor();
+check('reopen and close again: still one expense, now RM 200.00', r.status === 200 && j3.expenseId === exp1 && j3.expensed === 20000, JSON.stringify({ e: j3.expenseId, x: j3.expensed }));
+r = await mg('GET', `/api/units/detail?unitId=${unit.id}`);
+const deductions = JSON.stringify(r.json ?? {});
+check('the unit\'s month shows it as an Additional deduction (owner pays)', r.status === 200 && /Additional/i.test(deductions), deductions.slice(0, 200));
+r = await mg('GET', `/api/audit?entityTable=maintenance_issues&entityId=${job3}`);
+check('posting, adjusting are on the job history', ['expense.maintenance_posted', 'expense.maintenance_adjusted'].every(a => r.json.data.some(x => x.action === a)), r.text.slice(0, 300));
+r = await staff('POST', `/api/maintenance/issues/${job3}/cancel`, { reason: 'x' });
+check('operations staff cannot cancel (403)', r.status === 403, r.text);
+r = await ops('POST', `/api/maintenance/issues/${job3}/cancel`, {});
+check('cancel needs a reason (422)', r.status === 422, r.text);
+r = await ops('POST', `/api/maintenance/issues/${job3}/cancel`, { reason: 'Reported twice' });
+check('cancelled', r.status === 200, r.text);
+j3 = await expensesFor();
+check('cancel takes the expense back', !!j3.cancelledAt && j3.expenseId === null && j3.expensed === 0 && j3.finalAmount === 0, JSON.stringify({ c: j3.cancelledAt, e: j3.expenseId, x: j3.expensed }));
+r = await ops('POST', `/api/maintenance/issues/${job3}/cancel`, { reason: 'again' });
+check('cancel twice is harmless', r.status === 200, r.text);
+
 
 done();
