@@ -111,7 +111,7 @@ renovation.post('/quotations', handle(PERM.quote, async (c, { tx }) => {
   const sections = b.sections !== undefined ? need(normaliseSections(b.sections)) : undefined;
   const instalments = b.instalments !== undefined ? need(normaliseInstalments(b.instalments)) : undefined;
   const out = await tx((db) => createQuotation(db, actorOf(c), {
-    projectId: intParam(b.projectId, 'projectId'), brandId: b.brandId ?? header.brandId ?? null, templateId: b.templateId ?? null, header, sections, instalments,
+    projectId: b.projectId == null || b.projectId === '' ? null : intParam(b.projectId, 'projectId'), brandId: b.brandId ?? header.brandId ?? null, templateId: b.templateId ?? null, header, sections, instalments,
   }));
   return c.json(out, 201);
 }));

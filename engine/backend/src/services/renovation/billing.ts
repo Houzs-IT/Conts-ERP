@@ -33,6 +33,9 @@ export interface BillingFacts {
   /** Why billing is not available ('table_missing', 'no_so'), for the screen. */
   unavailableReason?: string;
   contractSen: number | null;
+  /** everything received against the contract (phase 2 billing view), sen */
+  receivedTotalSen?: number;
+  voTotalSen?: number;
   instalments: InstalmentFact[];
 }
 

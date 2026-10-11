@@ -129,7 +129,7 @@ export async function convertQuotationToSo(
   if (q.version !== body.version) throw refuse(409, 'stale_version', 'Someone else saved this quotation first. Reload to see their changes.', { version: q.version });
   if (q.convertedSoDocNo) throw refuse(409, 'already_converted', `This quotation is already sales order ${q.convertedSoDocNo}.`, { docNo: q.convertedSoDocNo });
   if (q.status !== 'ACCEPTED' || q.acceptedRev === null) throw refuse(409, 'not_accepted', 'Mark the quotation accepted before converting it.');
-  const existing = await liveContractOfProject(db, q.projectId);
+  const existing = q.projectId != null ? await liveContractOfProject(db, q.projectId) : null;
   if (existing) throw refuse(409, 'project_has_contract', `This project already has sales order ${existing}.`, { docNo: existing });
 
   const [revRow] = await db.q<{ id: string }>(`select id from scm.reno_quotation_revisions where quotation_id = $1 and rev_no = $2`, [quotationId, q.acceptedRev]);
