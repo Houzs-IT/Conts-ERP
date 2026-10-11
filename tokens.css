@@ -518,6 +518,7 @@ select.field-input { appearance: none; cursor: pointer; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
     transition-duration: 0.01ms !important;
   }
   :root { --motion-fast: 0ms; --motion-standard: 0ms; --motion-slow: 0ms; }

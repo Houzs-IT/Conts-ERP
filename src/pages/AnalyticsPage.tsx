@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { color } from '../theme';
+import { BarTrend, Eyebrow, Figure, Segmented, TotalsRow } from '../components/Metric';
 import { TONE, CHANNEL_META, cx } from '../lib/design-tokens';
 import { Card, CardHeader } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -230,73 +230,48 @@ export default function AnalyticsPage() {
       {q.error && <StaleBanner message={`Showing the last figures we have. ${q.error}`} onRetry={q.reload} />}
 
       {/* Metric switch + trend chart --------------------------------------- */}
-      <Card style={{ padding: 20 }}>
-        <div className="flex flex-col gap-[18px]">
+      <Card style={{ padding: 0 }}>
+        <div className="flex flex-col gap-5 p-4 sm:p-6">
           <div className="flex items-start justify-between gap-[14px] flex-wrap">
-            <div className="flex flex-col gap-1.5 min-w-0">
+            <div className="flex flex-col gap-2 min-w-0">
+              <Eyebrow>{m.label}{d.summary ? ` · ${RANGE_SUB[range].toLowerCase()}` : ' this period'}</Eyebrow>
               <div className="flex items-baseline gap-3 flex-wrap">
-                <span className="text-headline font-semibold tracking-[-0.01em] leading-[1.05]">{m.full(headline)}</span>
+                <Figure value={m.full(headline)} className="text-[34px] sm:text-[44px] font-medium tracking-[-0.03em] leading-none" />
                 <span className={cx('text-copy font-semibold', delta.note && delta.value === 0 ? 'text-muted-ink font-normal' : TONE[delta.tone].text)}>{deltaText(delta)}</span>
               </div>
               <span className="text-meta text-muted-ink [text-wrap:pretty]">
-                {m.label}{d.summary ? `, ${RANGE_SUB[range].toLowerCase()}` : ' this period'} vs {range === 'ytd' ? 'the same period last year' : 'the prior window'}
+                vs {range === 'ytd' ? 'the same period last year' : 'the prior window'}
               </span>
             </div>
 
             {/* Range toggle — re-reads /api/analytics?range= */}
-            <div role="group" aria-label="Range" className="inline-flex border border-solid border-line rounded-control overflow-hidden flex-none">
-              {RANGES.map((r, i) => {
-                const on = r.key === range;
-                return (
-                  <button
-                    key={r.key}
-                    onClick={() => setRange(r.key)}
-                    aria-pressed={on}
-                    className={cx(
-                      'h-9 px-3 py-0 cursor-pointer font-sans text-copy border-none whitespace-nowrap',
-                      i === 0 ? '' : '[border-left:1px_solid_var(--color-line)]',
-                      on ? 'bg-black text-white' : 'bg-card text-muted-ink',
-                    )}
-                  >
-                    {r.label}
-                  </button>
-                );
-              })}
-            </div>
+            <Segmented label="Range" options={RANGES} value={range} onChange={setRange} />
           </div>
 
-          {/* Metric segmented control */}
-          <div role="group" aria-label="Metric" className="inline-flex self-start max-w-full overflow-x-auto border border-solid border-line rounded-control">
-            {METRIC_ORDER.map((k, i) => {
-              const on = k === metric;
-              return (
-                <button
-                  key={k}
-                  onClick={() => setMetric(k)}
-                  aria-pressed={on}
-                  className={cx(
-                    'h-9 px-[14px] py-0 cursor-pointer font-sans text-copy border-none whitespace-nowrap',
-                    i === 0 ? '' : '[border-left:1px_solid_var(--color-line)]',
-                    on ? 'bg-charcoal text-white' : 'bg-card text-muted-ink',
-                  )}
-                >
-                  {METRICS[k].label}
-                </button>
-              );
-            })}
-          </div>
+          <Segmented label="Metric" options={METRIC_ORDER.map(k => ({ key: k, label: METRICS[k].label }))} value={metric} onChange={setMetric} className="self-start" />
 
-          {loading ? <div className="skeleton h-[210px] rounded-control" /> : (
-            <TrendChart points={points} metric={metric} />
+          {loading ? <div className="skeleton h-[230px] rounded-control" /> : (
+            <BarTrend height={200} bars={points.map(p => {
+              const v = m.pick(p);
+              return {
+                key: p.period,
+                label: points.length > 6 ? MONTHS[Number(p.period.slice(5, 7)) - 1] : monthLabel(p.period),
+                sub: points.length > 6 && (p === points[0] || p.period.endsWith('-01')) ? p.period.slice(0, 4) : undefined,
+                value: v,
+                display: m.bar(v).replace('RM ', ''),
+                title: `${monthLabel(p.period)} · ${m.full(v)}${metric !== 'occupancy' ? ` · ${p.occupancy.toFixed(1)}% occupancy` : ''}`,
+                current: p.isCurrent,
+              };
+            })} />
           )}
 
           {/* The four totals are distinct definitions and are never merged. */}
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3 pt-[14px] [border-top:1px_solid_var(--color-line-soft)]">
-            <Total label="Gross booking value" value={rm(d.totals.grossBookingValue, { cents: false })} />
-            <Total label="Collected revenue" value={rm(d.totals.collectedRevenue, { cents: false })} />
-            <Total label="Management fees" value={rm(d.totals.managementFees, { cents: false })} />
-            <Total label="Net owner payout" value={rm(d.totals.netOwnerPayout, { cents: false })} />
-          </div>
+          <TotalsRow items={[
+            { label: 'Gross booking value', value: rm(d.totals.grossBookingValue, { cents: false }) },
+            { label: 'Collected revenue', value: rm(d.totals.collectedRevenue, { cents: false }) },
+            { label: 'Management fees', value: rm(d.totals.managementFees, { cents: false }) },
+            { label: 'Net owner payout', value: rm(d.totals.netOwnerPayout, { cents: false }) },
+          ]} />
           <span className="text-meta text-muted-ink -mt-2 [text-wrap:pretty]">
             Management fees and net owner payout come from owner statements generated for these months; a month with no statements adds nothing to them yet.
           </span>
@@ -313,13 +288,13 @@ export default function AnalyticsPage() {
               <EmptyState bare title="Not enough data for this period." body="Units appear here once they have booked nights in the window." />
             ) : g.rows.map((u, i) => (
               <div key={u.unitId} className="flex items-center gap-[14px] px-5 py-3 [border-top:1px_solid_var(--color-line-soft)]">
-                <span className="text-meta font-semibold text-faint w-4 flex-none">{i + 1}</span>
+                <span className={cx('w-6 h-6 rounded-full grid place-items-center text-caption font-semibold flex-none tabular-nums', g.key === 'best' && i === 0 ? 'bg-gold-tint text-gold-ink' : 'bg-muted text-muted-ink')}>{i + 1}</span>
                 <div className="flex flex-col gap-px min-w-0 flex-1">
                   <span className="text-copy font-medium">{u.unitNumber}</span>
                   <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.propertyName}</span>
                 </div>
                 <div className="flex flex-col items-end gap-px flex-none">
-                  <span className="text-copy font-semibold">{m.full(m.pick(u))}</span>
+                  <span className="text-copy font-semibold tabular-nums">{m.full(m.pick(u))}</span>
                   <span className="text-meta text-muted-ink">{u.occupancy.toFixed(1)}% occupancy</span>
                 </div>
               </div>
@@ -436,71 +411,5 @@ function UnitTable({ units, metric, loading, range }: { units: UnitRow[]; metric
         </span>
       )}
     />
-  );
-}
-
-function Total({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-[3px]">
-      <span className="text-caption text-muted-ink">{label}</span>
-      <span className="text-heading font-semibold tracking-[-0.01em]">{value}</span>
-    </div>
-  );
-}
-
-/** Dependency-free inline-SVG bar chart. Current period is gold; the rest
- *  charcoal. Value labels sit above each bar, month labels below, with faint
- *  gridlines for scale and a full tooltip on hover. A pixel-based viewBox with
- *  uniform scaling keeps text and corners crisp at any width. */
-function TrendChart({ points, metric }: { points: Point[]; metric: Metric }) {
-  const m = METRICS[metric];
-  const values = points.map(m.pick);
-  const max = Math.max(1, ...values);
-
-  const W = 1000;
-  const topPad = 26;                       // room for the value label
-  const chartH = 140;                      // bar band
-  const botPad = 34;                       // room for the month label
-  const H = topPad + chartH + botPad;
-  const baseline = topPad + chartH;
-  const slot = W / points.length;
-  const barW = Math.min(70, slot * 0.5);
-  const many = points.length > 6;
-  const gridAt = [0, 0.25, 0.5, 0.75, 1];
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" role="img"
-      aria-label={`${m.label} by month`} style={{ width: '100%', height: 210, display: 'block' }}>
-      {/* gridlines */}
-      {gridAt.map(g => {
-        const y = baseline - g * chartH;
-        return <line key={g} x1={0} x2={W} y1={y} y2={y} stroke={color.borderMuted} strokeWidth={1} />;
-      })}
-
-      {points.map((p, i) => {
-        const v = m.pick(p);
-        const h = Math.max(3, (v / max) * chartH);
-        const cx = slot * i + slot / 2;
-        const x = cx - barW / 2;
-        const y = baseline - h;
-        return (
-          <g key={p.period}>
-            <title>{`${monthLabel(p.period)} · ${m.full(v)}${metric !== 'occupancy' ? ` · ${p.occupancy.toFixed(1)}% occupancy` : ''}`}</title>
-            <rect x={x} y={y} width={barW} height={h} rx={5} ry={5}
-              fill={p.isCurrent ? color.gold : color.charcoal} />
-            {/* value label */}
-            <text x={cx} y={y - 8} textAnchor="middle"
-              style={{ fontSize: many ? 13 : 14, fontWeight: 500, fill: color.textMuted, fontFamily: 'var(--font-sans)' }}>
-              {m.bar(v)}
-            </text>
-            {/* month label */}
-            <text x={cx} y={baseline + 22} textAnchor="middle"
-              style={{ fontSize: many ? 13 : 14, fill: color.textMuted, fontFamily: 'var(--font-sans)' }}>
-              {many ? MONTHS[Number(p.period.slice(5, 7)) - 1] : monthLabel(p.period)}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
   );
 }

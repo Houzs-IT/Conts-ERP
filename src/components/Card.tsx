@@ -20,8 +20,8 @@ export function Card({ children, style }: { children: ReactNode; style?: CSSProp
 
 export function CardHeader({ title, right }: { title: string; right?: ReactNode }) {
   return (
-    <div style={{ padding: '18px 20px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-      <span style={{ fontSize: text.cardTitle, fontWeight: 600 }}>{title}</span>
+    <div style={{ padding: '20px 20px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+      <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-0.01em' }}>{title}</span>
       {right}
     </div>
   );
