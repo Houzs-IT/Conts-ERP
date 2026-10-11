@@ -138,7 +138,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
           <div className="login-in login-in-2 flex flex-col gap-[26px] max-w-[620px]">
             <div className="login-rule h-px w-[72px] bg-gold" />
             {/* Display type for the public hero only; the in-app scale stops at 26. */}
-            <h2 className="m-0 text-[56px] leading-[1.04] font-semibold tracking-[-0.025em] text-white text-pretty">{headline}</h2>
+            <h2 className="login-display m-0 text-[64px] leading-[1.02] text-white text-pretty">{headline}</h2>
           </div>
 
           <div className="login-in login-in-3 flex items-end justify-between gap-8 flex-wrap">
@@ -154,13 +154,14 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
           <div className="login-in login-in-1"><Logo variant="full" size="sm" onDark /></div>
           <div className="login-in login-in-2 flex flex-col gap-3">
             <div className="login-rule h-px w-12 bg-gold" />
-            <h2 className="m-0 text-[26px] sm:text-[32px] leading-[1.08] font-semibold tracking-[-0.02em] text-white text-pretty">{headline}</h2>
+            <h2 className="login-display m-0 text-[30px] sm:text-[38px] leading-[1.06] text-white text-pretty">{headline}</h2>
           </div>
         </div>
       </div>
 
       {/* Form side. Steady: a single opacity fade that never blocks input. */}
-      <div className="login-panel relative -mt-6 lg:mt-0 rounded-t-[20px] lg:rounded-none pt-8 px-5 pb-8 sm:pt-12 sm:px-14 sm:pb-10 flex flex-col justify-between gap-8 bg-white lg:overflow-y-auto">
+      <div className="login-panel relative -mt-6 lg:mt-0 rounded-t-[20px] lg:rounded-none pt-8 px-5 pb-8 sm:pt-12 sm:px-14 sm:pb-10 flex flex-col justify-between gap-8 lg:overflow-y-auto">
+        <img aria-hidden alt="" src="/brand/mark-gold.png" className="login-watermark" />
         <div className="flex items-center justify-end gap-2">
           <span className="flex items-center gap-2 text-caption text-faint">
             <Icon name="Lock" size="sm" />
@@ -171,7 +172,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
         <form onSubmit={submit} className="login-form login-in login-in-form w-full max-w-[344px] self-center flex flex-col gap-8">
           <div className="flex flex-col gap-2.5">
             <span className={`${labelCaps} text-gold-ink`}>{c.eyebrow}</span>
-            <h1 className="m-0 text-headline leading-[1.15] font-semibold tracking-[-0.01em]">{c.heading}</h1>
+            <h1 className="login-display m-0 text-[36px] leading-[1.1]">{c.heading}</h1>
             <div className="text-copy text-muted-ink text-pretty">{c.sub}</div>
           </div>
 

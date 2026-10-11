@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../Button';
 import Icon from '../Icon';
+import { MediaSourceSheet } from '../Attachments';
 import { cx } from '../../lib/design-tokens';
-import { api, errorMessage } from '../../lib/api';
+import { api, ApiFailure, errorMessage } from '../../lib/api';
+import { SearchSelect } from '../Select';
 import { time, weekdayDate, dateTimeShort } from '../../lib/format';
 import { useToast } from '../Toast';
 
@@ -178,60 +180,88 @@ export function Checklist({ taskId, items, readOnly, onChange }: { taskId: strin
 
 export const CATEGORY: Record<string, string> = { plumbing: 'Plumbing', electrical: 'Electrical', aircon: 'Aircon', furniture: 'Furniture', appliance: 'Appliance', other: 'Other' };
 
-export function ReportDamageModal({ unitId, unitLabel, taskId, onClose, onDone }: {
-  unitId: string; unitLabel: string; taskId?: string; onClose: () => void; onDone: (id: string) => void;
+/** The one maintenance job form (owner, Oct 2026). "Add maintenance job" on Maintenance and "Report damage" from a
+ *  clean are the same form and send the same fields; from a clean the unit is filled in and locked, and the job is
+ *  linked to the cleaning task. Who fixes it, the quote and who pays are decided afterwards in the job. */
+export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
+  /** Fixed unit (from a clean or a unit page). Leave out to pick one. */
+  unit?: { id: string; label: string };
+  /** Units to pick from when `unit` is not given. */
+  units?: { id: string; unitNumber: string; propertyName: string }[];
+  taskId?: string; onClose: () => void; onDone: (id: string) => void;
 }) {
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState('other');
-  const [urgency, setUrgency] = useState<'normal' | 'urgent'>('normal');
-  const [detail, setDetail] = useState('');
+  const [f, setF] = useState({ unitId: unit?.id ?? '', title: '', category: '', urgency: 'normal' as 'normal' | 'urgent', detail: '' });
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ unitId?: string; title?: string; category?: string; form?: string }>({});
   const picked = usePickedMedia();
   const toast = useToast();
+  const fromClean = !!taskId;
   async function submit() {
-    if (!title.trim()) { setError('Say what is broken.'); return; }
-    setBusy(true); setError(null);
+    const bad = { unitId: f.unitId ? undefined : 'Pick the unit.', title: f.title.trim() ? undefined : 'Say what is wrong.', category: f.category ? undefined : 'Pick the kind of problem.' };
+    if (bad.unitId || bad.title || bad.category) { setError(bad); return; }
+    setBusy(true); setError({});
     let id: string;
     try {
       const r = await api.post<{ id: string }>('/maintenance/issues', {
-        unitId, title: title.trim(), detail: detail.trim() || undefined, category, urgency,
-        reportSource: taskId ? 'cleaner' : 'staff', sourceTaskId: taskId, source: 'web',
+        unitId: f.unitId, title: f.title.trim(), detail: f.detail.trim() || undefined, category: f.category, urgency: f.urgency,
+        reportSource: fromClean ? 'cleaner' : 'staff', sourceTaskId: taskId, source: 'web',
       });
       id = r.id;
-    } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); setBusy(false); return; }
+    } catch (e) {
+      const fields = e instanceof ApiFailure ? e.fields ?? {} : {};
+      setError({ unitId: fields.unitId, title: fields.title, category: fields.category, form: fields.unitId || fields.title || fields.category ? undefined : errorMessage(e, 'Not saved. Try again.') });
+      setBusy(false); return;
+    }
+    // The job is saved; a photo that fails is named, not a reason to undo it.
     if (picked.files.length) {
       setSending(true);
       const failed = await picked.send(id);
-      if (failed.length) toast({ tone: 'warning', title: 'Damage reported, but some photos were not added.', body: `Not added: ${failed.join(', ')}. Add them on the Maintenance job.` });
+      if (failed.length) toast({ tone: 'warning', title: 'Job added, but some photos were not.', body: `Not added: ${failed.join(', ')}. Add them in the job's Before photos.` });
     }
     onDone(id);
   }
+  const label = fromClean ? 'Report damage' : 'Add maintenance job';
   return (
-    <OpsModal title="Report damage" sub={`${unitLabel}. Opens a Maintenance job on this unit.`} onClose={onClose} busy={busy}
-      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void submit()}>Report damage</Button></>}>
-      <FormRow label="What is broken" error={error}>
-        <input className={INPUT} value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Shower head leaking" maxLength={160} />
-      </FormRow>
+    <OpsModal title={label} sub={unit ? `${unit.label}. Opens a Maintenance job on this unit.` : 'Pick the unit and the problem. Assign the technician, the quote and who pays in the job afterwards.'}
+      onClose={onClose} busy={busy}
+      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void submit()}>{label}</Button></>}>
+      {!unit && (
+        <FormRow label="Unit" error={error.unitId}>
+          <SearchSelect label="Unit" value={f.unitId} onChange={v => { setF(x => ({ ...x, unitId: v })); setError(x => ({ ...x, unitId: undefined })); }}
+            options={(units ?? []).map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName }))} placeholder="Search units" size="md" />
+        </FormRow>
+      )}
       <div className="grid grid-cols-2 gap-3">
-        <FormRow label="Category">
-          <select className={INPUT} value={category} onChange={e => setCategory(e.target.value)}>
+        <FormRow label="Problem category" error={error.category}>
+          <select className={INPUT} value={f.category} onChange={e => { setF(x => ({ ...x, category: e.target.value })); setError(x => ({ ...x, category: undefined })); }}>
+            <option value="" disabled>Pick one</option>
             {Object.entries(CATEGORY).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </FormRow>
         <FormRow label="Urgency">
-          <select className={INPUT} value={urgency} onChange={e => setUrgency(e.target.value as 'normal' | 'urgent')}>
+          <select className={INPUT} value={f.urgency} onChange={e => setF(x => ({ ...x, urgency: e.target.value as 'normal' | 'urgent' }))}>
             <option value="normal">Normal</option><option value="urgent">Urgent (affects the next guest)</option>
           </select>
         </FormRow>
       </div>
+      <FormRow label="What is wrong" error={error.title}>
+        <input className={INPUT} value={f.title} onChange={e => { setF(x => ({ ...x, title: e.target.value })); setError(x => ({ ...x, title: undefined })); }} placeholder="e.g. Aircon not cooling, guest complained" maxLength={160} />
+      </FormRow>
       <FormRow label="Details (optional)">
-        <textarea className={TEXTAREA} value={detail} onChange={e => setDetail(e.target.value)} placeholder="Where it is, what you saw" maxLength={2000} />
+        <textarea className={TEXTAREA} value={f.detail} onChange={e => setF(x => ({ ...x, detail: e.target.value }))} placeholder="Where it is, what you saw" maxLength={2000} />
       </FormRow>
       <ProblemPhotos picked={picked} sending={sending} />
+      {error.form && <span className="text-meta text-danger" role="alert">{error.form}</span>}
     </OpsModal>
   );
+}
+
+/** Kept so existing callers (Cleaning, Field today) need no change: the same form with the unit fixed. */
+export function ReportDamageModal({ unitId, unitLabel, taskId, onClose, onDone }: {
+  unitId: string; unitLabel: string; taskId?: string; onClose: () => void; onDone: (id: string) => void;
+}) {
+  return <MaintenanceJobForm unit={{ id: unitId, label: unitLabel }} taskId={taskId} onClose={onClose} onDone={onDone} />;
 }
 
 /* ---------- photos of the problem, picked before the job exists and sent once it does ---------- */
@@ -274,6 +304,11 @@ export function usePickedMedia() {
  *  While sending, each tile shows waiting, uploading, added or not added. */
 export function ProblemPhotos({ picked, sending }: { picked: ReturnType<typeof usePickedMedia>; sending: boolean }) {
   const input = useRef<HTMLInputElement>(null);
+  const cam = useRef<HTMLInputElement>(null);
+  const vid = useRef<HTMLInputElement>(null);
+  const [source, setSource] = useState<null | 'choose' | 'again'>(null);
+  const [lastKind, setLastKind] = useState<'photo' | 'video'>('photo');
+  const isTouch = typeof window !== 'undefined' && 'matchMedia' in window && window.matchMedia('(pointer: coarse)').matches;
   const [skipped, setSkipped] = useState(0);
   const done = picked.files.filter(f => f.state === 'done').length;
   return (
@@ -296,7 +331,7 @@ export function ProblemPhotos({ picked, sending }: { picked: ReturnType<typeof u
           </div>
         ))}
         {!sending && (
-          <button type="button" onClick={() => input.current?.click()}
+          <button type="button" onClick={() => (isTouch ? setSource('choose') : input.current?.click())}
             className="aspect-square flex flex-col items-center justify-center gap-1 p-1.5 rounded-control border border-dashed border-line-strong bg-page text-muted-ink cursor-pointer text-center hover:border-gold hover:text-ink">
             <Icon name="ImagePlus" size="base" />
             <span className="text-meta font-medium leading-tight">Add photos</span>
@@ -305,6 +340,13 @@ export function ProblemPhotos({ picked, sending }: { picked: ReturnType<typeof u
       </div>
       <input ref={input} type="file" multiple accept="image/*,video/*" className="hidden" aria-label="Photos of the problem"
         onChange={e => { if (e.target.files?.length) setSkipped(picked.add(e.target.files)); e.target.value = ''; }} />
+      <input ref={cam} type="file" accept="image/*" capture="environment" className="hidden"
+        onChange={e => { if (e.target.files?.length) { setSkipped(picked.add(e.target.files)); setLastKind('photo'); setSource('again'); } e.target.value = ''; }} />
+      <input ref={vid} type="file" accept="video/*" capture="environment" className="hidden"
+        onChange={e => { if (e.target.files?.length) { setSkipped(picked.add(e.target.files)); setLastKind('video'); setSource('again'); } e.target.value = ''; }} />
+      {source && <MediaSourceSheet again={source === 'again'} lastKind={lastKind} count={picked.files.length}
+        onPhoto={() => { setSource(null); cam.current?.click(); }} onVideo={() => { setSource(null); vid.current?.click(); }}
+        onLibrary={() => { setSource(null); input.current?.click(); }} onClose={() => setSource(null)} />}
       {sending && picked.files.length > 0 && <span className="text-meta text-muted-ink" aria-live="polite">Uploading photos: {done} of {picked.files.length} added.</span>}
       {!sending && skipped > 0 && <span className="text-meta text-danger">{skipped === 1 ? '1 file was' : `${skipped} files were`} not a photo or video and was left out.</span>}
       {!sending && !picked.files.length && <span className="text-meta text-muted-ink">Saved as the job's Before photos. Photos and videos.</span>}

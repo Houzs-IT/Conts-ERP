@@ -20,8 +20,7 @@ import { cx } from '../lib/design-tokens';
 import { rm, plural, dateShort, date, monthLabel } from '../lib/format';
 import { runEach, skippedNote } from '../lib/bulk';
 import {
-  PillTabs, Segmented, OpsModal, ProblemPhotos, usePickedMedia, FormRow, INPUT, TEXTAREA, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem,
-} from '../components/ops/OpsUi';
+  PillTabs, Segmented, OpsModal, FormRow, INPUT, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem, MaintenanceJobForm } from '../components/ops/OpsUi';
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
@@ -668,59 +667,10 @@ function footer(onClose: () => void, busy: boolean, label: string, onSave: () =>
 }
 const errText = (e: unknown) => errorMessage(e, 'Not saved. Try again.');
 
-/** Like Cleaning's "Add cleaning job" and "Report damage": the unit and the problem only. Who fixes it, the quote and
- *  who pays are decided afterwards in the job's panel, once someone has looked at it. */
+/** Same form as "Report damage" from a clean (components/ops/OpsUi MaintenanceJobForm), with a unit picker. */
 function NewJobModal({ onClose, onDone }: { onClose: () => void; onDone: (id: string) => void }) {
   const units = useUnitRoster();
-  const [f, setF] = useState({ unitId: '', title: '', category: '', urgency: 'normal', detail: '' });
-  const [busy, setBusy] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<{ unitId?: string; title?: string; category?: string; form?: string }>({});
-  const picked = usePickedMedia();
-  const toast = useToast();
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(x => ({ ...x, [k]: e.target.value }));
-  async function save() {
-    const bad = { unitId: f.unitId ? undefined : 'Pick the unit.', title: f.title.trim() ? undefined : 'Say what is wrong.', category: f.category ? undefined : 'Pick the kind of problem.' };
-    if (bad.unitId || bad.title || bad.category) { setError(bad); return; }
-    setBusy(true); setError({});
-    let id: string;
-    try {
-      const r = await api.post<{ id: string }>('/maintenance/issues', {
-        unitId: f.unitId, title: f.title.trim(), detail: f.detail.trim() || undefined, category: f.category, urgency: f.urgency, reportSource: 'staff',
-      });
-      id = r.id;
-    } catch (e) {
-      const fields = e instanceof ApiFailure ? e.fields ?? {} : {};
-      setError({ unitId: fields.unitId, title: fields.title, category: fields.category, form: fields.unitId || fields.title || fields.category ? undefined : errText(e) }); setBusy(false);
-      return;
-    }
-    // The job is saved; a photo that fails is named, not a reason to undo it.
-    if (picked.files.length) {
-      setSending(true);
-      const failed = await picked.send(id);
-      if (failed.length) toast({ tone: 'warning', title: 'Job added, but some photos were not.', body: `Not added: ${failed.join(', ')}. Add them in the job's Before photos.` });
-    }
-    onDone(id);
-  }
-  return (
-    <OpsModal title="Add maintenance job" sub="Pick the unit and the problem. Assign the technician, the quote and who pays in the job afterwards." onClose={onClose} busy={busy}
-      footer={footer(onClose, busy, 'Add maintenance job', () => void save())}>
-      <FormRow label="Unit" error={error.unitId}><SearchSelect label="Unit" value={f.unitId} onChange={v => { setF(x => ({ ...x, unitId: v })); setError(x => ({ ...x, unitId: undefined })); }} options={units.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName }))} placeholder="Search units" size="md" /></FormRow>
-      <div className="grid grid-cols-2 gap-3">
-        <FormRow label="Problem category" error={error.category}>
-          <select className={INPUT} value={f.category} onChange={e => { set('category')(e); setError(x => ({ ...x, category: undefined })); }}>
-            <option value="" disabled>Pick one</option>
-            {Object.entries(CATEGORY).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-        </FormRow>
-        <FormRow label="Urgency"><select className={INPUT} value={f.urgency} onChange={set('urgency')}><option value="normal">Normal</option><option value="urgent">Urgent (affects the next guest)</option></select></FormRow>
-      </div>
-      <FormRow label="What is wrong" error={error.title}><input className={INPUT} value={f.title} onChange={e => { set('title')(e); setError(x => ({ ...x, title: undefined })); }} placeholder="e.g. Aircon not cooling, guest complained" maxLength={160} /></FormRow>
-      <FormRow label="Details (optional)"><textarea className={TEXTAREA} value={f.detail} onChange={set('detail')} placeholder="Where it is, what you saw" maxLength={2000} /></FormRow>
-      <ProblemPhotos picked={picked} sending={sending} />
-      {error.form && <span className="text-meta text-danger" role="alert">{error.form}</span>}
-    </OpsModal>
-  );
+  return <MaintenanceJobForm units={units} onClose={onClose} onDone={onDone} />;
 }
 
 function WindowModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => void; onDone: (overlaps: number) => void }) {

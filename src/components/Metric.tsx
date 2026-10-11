@@ -91,7 +91,67 @@ export interface SegmentOption<K extends string> {
 /** Pill-style segmented switch (range, metric, a list's main views). Never wraps: on a narrow screen the
  *  options scroll sideways inside the track. `value` may be a key that is not offered (a filter chosen
  *  elsewhere), and then no option is lit. */
-export function Segmented<K extends string>({ label, options, value, onChange, className }: {
+/** Phones only: past this many options the row becomes one picker button instead of a sideways scroll
+ *  (owner, Oct 2026: status tabs running off the screen on most list pages). Desktop is unchanged. */
+const PHONE_MAX_OPTIONS = 4;
+type SegmentedProps<K extends string> = { label: string; options: SegmentOption<K>[]; value: K | ''; onChange: (k: K) => void; className?: string; };
+
+export function Segmented<K extends string>(props: SegmentedProps<K>) {
+  const narrow = useNarrow();
+  if (narrow && props.options.length > PHONE_MAX_OPTIONS) return <SegmentedPicker {...props} />;
+  return <SegmentedRow {...props} />;
+}
+
+function useNarrow() {
+  const q = '(max-width: 767.98px)';
+  const read = () => typeof window !== 'undefined' && 'matchMedia' in window && window.matchMedia(q).matches;
+  const [on, setOn] = useState(read);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('matchMedia' in window)) return;
+    const mq = window.matchMedia(q); const f = () => setOn(mq.matches);
+    mq.addEventListener('change', f); return () => mq.removeEventListener('change', f);
+  }, []);
+  return on;
+}
+
+/** Full-width button with the chosen option and its count; opens a bottom sheet listing every option. */
+function SegmentedPicker<K extends string>({ label, options, value, onChange, className }: SegmentedProps<K>) {
+  const [open, setOpen] = useState(false);
+  const cur = options.find(o => o.key === value);
+  const flagged = options.some(o => o.tone && o.count && o.key !== value);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} aria-haspopup="listbox" aria-label={label}
+        className={cx('w-full min-w-0 h-11 flex items-center gap-2 px-3.5 rounded-control border border-solid border-line bg-card text-ink cursor-pointer text-left', className)}>
+        <span className="flex-1 min-w-0 text-copy font-medium truncate">{cur ? cur.label : 'All'}</span>
+        {cur?.count !== undefined && <span className="text-meta text-muted-ink tabular-nums flex-none">{count(cur.count)}</span>}
+        {flagged && <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-warning-line flex-none" />}
+        <span aria-hidden className="flex-none text-muted-ink text-meta">▾</span>
+      </button>
+      {open && (
+        <div role="dialog" aria-modal aria-label={label} className="fixed inset-0 z-[70] flex flex-col justify-end">
+          <div onClick={() => setOpen(false)} className="absolute inset-0 bg-[var(--color-surface-scrim)]" />
+          <div role="listbox" className="relative bg-card rounded-t-[20px] pt-2.5 pb-[calc(16px+env(safe-area-inset-bottom))] px-4 flex flex-col max-h-[80dvh] overflow-y-auto">
+            <span aria-hidden className="w-[38px] h-1 rounded-full bg-line self-center mb-3" />
+            {options.map(o => {
+              const on = o.key === value;
+              return (
+                <button key={o.key} type="button" role="option" aria-selected={on} onClick={() => { onChange(o.key); setOpen(false); }}
+                  className={cx('min-h-12 flex items-center gap-3 px-1 border-0 [border-bottom:1px_solid_var(--color-line-soft)] bg-transparent cursor-pointer text-left text-copy text-ink', on && 'font-semibold')}>
+                  <span className="flex-1">{o.label}</span>
+                  {o.count !== undefined && <span className={cx('text-meta tabular-nums', o.tone && o.count ? (o.tone === 'danger' ? 'text-danger' : 'text-warning') : 'text-muted-ink')}>{count(o.count)}</span>}
+                  <span aria-hidden className={cx('w-5 text-right', on ? 'text-gold-ink' : 'text-transparent')}>✓</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function SegmentedRow<K extends string>({ label, options, value, onChange, className }: {
   label: string; options: SegmentOption<K>[]; value: K | ''; onChange: (k: K) => void; className?: string;
 }) {
   const track = useRef<HTMLDivElement>(null);

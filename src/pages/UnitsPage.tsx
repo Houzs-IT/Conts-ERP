@@ -40,6 +40,15 @@ import { statusLabel } from '../lib/status';
 import { PnlTable } from './units/PnlTable';
 
 /** True at the width where the tree becomes a sticky pane (Tailwind xl). */
+/** True at 768px and up: the unit record uses tabs; below it the sections stack. */
+function useSmUp() {
+  const q = '(min-width: 768px)';
+  const read = () => typeof window !== 'undefined' && 'matchMedia' in window && window.matchMedia(q).matches;
+  const [v, setV] = useState(read);
+  useEffect(() => { if (typeof window === 'undefined' || !('matchMedia' in window)) return; const m = window.matchMedia(q); const f = () => setV(m.matches); m.addEventListener('change', f); return () => m.removeEventListener('change', f); }, []);
+  return v;
+}
+
 function useWide() {
   const q = '(min-width: 1280px)';
   const [on, setOn] = useState(() => typeof window !== 'undefined' && window.matchMedia(q).matches);
@@ -314,6 +323,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   const { user } = useSession();
   // Matches MASTER_ROLES on the server's channex-setup / channex-connect.
   const canManageChannels = !!user && MASTER_ROLES.includes(user.role);
+  const wideRecord = useSmUp();
   const tabsRef = useRef<HTMLDivElement>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -326,6 +336,10 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   // Financial sections are absent from the payload for roles without access, so that tab is not offered.
   const tabs = TABS.filter(([k]) => k !== 'financials' || money);
   const shown: Tab = tabs.some(([k]) => k === tab) ? tab : 'overview';
+  // Phones (owner, Oct 2026): the record is one page you scroll down, not eight tabs you scroll sideways.
+  // Each section keeps its own component and data; only the tab gate is lifted. Desktop is unchanged.
+  const stacked = !wideRecord;
+  const on = (k: Tab) => stacked || shown === k;
   // On a phone the strip scrolls sideways; keep the open tab in view (a link can land on the last one).
   useEffect(() => {
     const strip = tabsRef.current, el = strip?.querySelector<HTMLElement>(`[data-tab="${shown}"]`);
@@ -413,7 +427,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           ))}
         </div>
 
-        <div ref={tabsRef} role="tablist" aria-label="Unit record" className="flex flex-nowrap px-5 sm:px-6 [border-top:1px_solid_var(--color-line)] overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div ref={tabsRef} role="tablist" aria-label="Unit record" className="max-md:hidden flex flex-nowrap px-5 sm:px-6 [border-top:1px_solid_var(--color-line)] overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {tabs.map(([k, label, full]) => (
             <button key={k} role="tab" aria-selected={k === shown} onClick={() => setTab(k)} title={full !== label ? full : undefined} data-tab={k}
               className={cx('py-[13px] px-0.5 mr-4 last:mr-0 [border:none] bg-transparent cursor-pointer [font-family:inherit] whitespace-nowrap text-copy! flex-none',
@@ -424,7 +438,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
         </div>
       </Card>
 
-      {shown === 'overview' && (
+      {stacked && on('overview') && <h3 className="m-0 mt-2 text-heading font-semibold">Overview</h3>}
+      {on('overview') && (
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(300px,100%),1fr))] gap-5 [align-items:start]">
           <Card>
             <SectionTitle title="Current and next reservations"
@@ -451,14 +466,16 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
         </div>
       )}
 
-      {shown === 'details' && (form ? (
+      {stacked && on('details') && <h3 className="m-0 mt-2 text-heading font-semibold">Details and owner</h3>}
+      {on('details') && (form ? (
         <Card>
           <SaveBar title="Details & owner" sub="Listing name, building, owner and income model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave} />
           <DetailsForm u={form} owner={u.owner} buildings={buildings} money={money} canEdit={canEdit} onChange={onChange} onOpenContract={() => setTab('contract')} />
         </Card>
       ) : needsForm)}
 
-      {shown === 'contract' && (money
+      {stacked && on('contract') && <h3 className="m-0 mt-2 text-heading font-semibold">Contract and documents</h3>}
+      {on('contract') && (money
         ? <ContractTab key={u.id} unitId={u.id} canEdit={canEdit} onSaved={reload}
             footer={<DocumentsCard unitId={u.id} unitLabel={unitLabel} documents={d.documents ?? []} onUploaded={reloadDetail} />} />
         : <>
@@ -466,11 +483,14 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           <DocumentsCard unitId={u.id} unitLabel={unitLabel} documents={d.documents ?? []} onUploaded={reloadDetail} />
         </>)}
 
-      {shown === 'access' && <AccessTab key={u.id} unitId={u.id} unitLabel={unitLabel} />}
+      {stacked && on('access') && <h3 className="m-0 mt-2 text-heading font-semibold">Access and keys</h3>}
+      {on('access') && <AccessTab key={u.id} unitId={u.id} unitLabel={unitLabel} />}
 
-      {shown === 'reservations' && <BookingsTab key={u.id} unitId={u.id} />}
+      {stacked && on('reservations') && <h3 className="m-0 mt-2 text-heading font-semibold">Reservations</h3>}
+      {on('reservations') && <BookingsTab key={u.id} unitId={u.id} />}
 
-      {shown === 'operations' && (
+      {stacked && on('operations') && <h3 className="m-0 mt-2 text-heading font-semibold">Cleaning, maintenance and fit-out</h3>}
+      {on('operations') && (
         <>
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
@@ -502,7 +522,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           </Card>
         </>
       )}
-      {shown === 'financials' && d.pnl && (
+      {stacked && on('financials') && <h3 className="m-0 mt-2 text-heading font-semibold">Financials</h3>}
+      {on('financials') && d.pnl && (
         <>
           <UnitCostsCard unitId={u.id} ownerId={u.owner.id} unitLabel={unitLabel} canEdit={canEdit} cleaningPrice={form?.cleaningPrice} deepCleaningPrice={form?.deepCleaningPrice}
             legacyCosts={form?.expenses ?? []} onChanged={() => { reloadDetail(); reload(); }} />
@@ -528,13 +549,15 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
         </>
       )}
 
-      {shown === 'financials' && d.pnl && (
+      {stacked && on('financials') && <h3 className="m-0 mt-2 text-heading font-semibold">Financials</h3>}
+      {on('financials') && d.pnl && (
         <>
           {form && <div className="flex justify-end -mt-2"><Button size="sm" variant="tertiary" icon={<Icon name="Download" size="sm" />} onClick={expensesReport}>Expenses report</Button></div>}
         </>
       )}
 
-      {shown === 'activity' && (
+      {stacked && on('activity') && <h3 className="m-0 mt-2 text-heading font-semibold">History of changes</h3>}
+      {on('activity') && (
         <RecordHistory key={u.id} entity="units" id={u.id} refreshKey={d}
           also={u.contract?.id ? [['owner_contracts', u.contract.id]] : undefined} />
       )}

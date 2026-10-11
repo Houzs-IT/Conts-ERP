@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Button } from './Button';
 import Icon from './Icon';
 
@@ -9,14 +9,31 @@ import Icon from './Icon';
  *  - `kind="filtered"`: records exist but none match. Offer "Clear filters" as a quiet link.
  * `bare` drops the card frame for use inside a card that already has one.
  */
-export function EmptyState({ title, body, action, secondary, kind = 'empty', icon, bare }: {
+/** Whether this page's header already shows its primary action. The shell provides it; PageHeader turns it on.
+ *  An empty list then gives only the reason, and the same "New ×××" is not repeated under it (owner, Oct 2026).
+ *  `forceAction` keeps the button where the empty state is the only way in. */
+const PrimaryCtx = createContext<{ has: boolean; set: (v: boolean) => void }>({ has: false, set: () => {} });
+export function PagePrimaryScope({ path, children }: { path: string; children: ReactNode }) {
+  const [has, set] = useState(false);
+  useEffect(() => { set(false); }, [path]);
+  return <PrimaryCtx.Provider value={{ has, set }}>{children}</PrimaryCtx.Provider>;
+}
+export function useMarkPagePrimary(on: boolean) {
+  const { set } = useContext(PrimaryCtx);
+  useEffect(() => { set(on); return () => set(false); }, [on, set]);
+}
+
+export function EmptyState({ title, body, action, secondary, kind = 'empty', icon, bare, forceAction }: {
   title: string; body?: ReactNode;
   action?: { label: string; onClick: () => void };
   secondary?: { label: string; onClick: () => void };
   kind?: 'empty' | 'filtered';
   icon?: string;
   bare?: boolean;
+  forceAction?: boolean;
 }) {
+  const pagePrimary = useContext(PrimaryCtx).has;
+  if (kind !== 'filtered' && pagePrimary && !forceAction) action = undefined;
   const filtered = kind === 'filtered';
   return (
     <div style={{

@@ -142,11 +142,11 @@ export default function ReviewsPage() {
 
       {/* Summary header */}
       <Card>
-        <div className="grid grid-cols-3">
-          <div className="[border-right:1px_solid_var(--color-line-soft)]">
+        <div className="grid grid-cols-1 sm:grid-cols-3">
+          <div className="max-sm:[border-bottom:1px_solid_var(--color-line-soft)] sm:[border-right:1px_solid_var(--color-line-soft)]">
             <Stat label="Average rating" value={average != null ? fmtRating(average, true) : '—'} />
           </div>
-          <div className="[border-right:1px_solid_var(--color-line-soft)]">
+          <div className="max-sm:[border-bottom:1px_solid_var(--color-line-soft)] sm:[border-right:1px_solid_var(--color-line-soft)]">
             <Stat label="Reviews" value={data ? count(total) : '—'} />
           </div>
           <Stat label="Replied" value={data ? `${pctReplied}%` : '—'} />

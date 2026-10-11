@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { color, text } from '../theme';
 import Icon from './Icon';
+import { useMarkPagePrimary } from './States';
 
 /**
  * Title, a one-line subtitle (count and period, no developer notes), and the actions at the top right.
@@ -15,6 +16,7 @@ export default function PageHeader({ title, sub, right, actions, primary, back, 
   badge?: ReactNode;
 }) {
   const hasActions = !!(actions || primary || right);
+  useMarkPagePrimary(!!primary);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
       {back && (
