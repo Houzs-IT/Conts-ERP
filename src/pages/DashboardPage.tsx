@@ -354,7 +354,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-[minmax(0,1.35fr)_repeat(4,minmax(0,1fr))] gap-3 sm:gap-4">
         {kpi.loading && kpis.length === 0
           ? Array.from({ length: 5 }).map((_, i) => (
-              <StatTile key={i} label="\u00a0" value="" loading hero={i === 0} className={i === 0 ? 'col-span-2 md:col-span-4 xl:col-span-1' : undefined} />
+              <StatTile key={i} label={"\u00a0"} value="" loading hero={i === 0} className={i === 0 ? 'col-span-2 md:col-span-4 xl:col-span-1' : undefined} />
             ))
           : kpis.map((k, i) => (
               <StatTile key={k.key} label={KPI_LABEL[k.key] ?? humanize(k.key)} value={kpiValue(k)}
