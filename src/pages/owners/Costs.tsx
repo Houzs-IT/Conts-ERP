@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Card } from '../../components/Card';
+import { FileRow, FileDropRow } from '../../components/Attachments';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { Select } from '../../components/Select';
@@ -70,7 +71,6 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
   units: UnitChoice[]; defaultUnitId?: string; ownerId: string; canAdjust: boolean; month: string; onClose: () => void; onSaved: () => void;
 }) {
   const toast = useToast();
-  const fileRef = useRef<HTMLInputElement>(null);
   const today = todayMyt();
   const [unitId, setUnitId] = useState(defaultUnitId ?? units[0]?.id ?? '');
   const [category, setCategory] = useState('water');
@@ -139,12 +139,10 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
             value={description} onChange={e => setDescription(e.target.value)} error={fields.description} />
           {!fee && <div className="flex flex-col gap-1.5">
             <span className="text-meta font-medium text-muted-ink">Receipt (optional)</span>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button size="sm" variant="secondary" icon={<Icon name="Upload" size="sm" />} onClick={() => fileRef.current?.click()}>{receipt ? 'Change file' : 'Attach photo or PDF'}</Button>
-              {receipt && <span className="text-meta text-ink [overflow-wrap:anywhere]">{receipt.name}</span>}
-              {fields.receipt && <span className="text-meta text-critical">{fields.receipt}</span>}
-            </div>
-            <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={e => { setReceipt(e.currentTarget.files?.item(0) ?? null); e.currentTarget.value = ''; }} />
+            {receipt
+              ? <FileRow file={{ id: 'receipt', name: receipt.name, size: receipt.size, onRemove: () => setReceipt(null), removeLabel: 'Remove receipt' }} />
+              : <FileDropRow label="Add receipt" hint="Photo or PDF" accept="image/*,application/pdf" onPick={fl => setReceipt(fl.item(0))} />}
+            {fields.receipt && <span className="text-meta text-critical">{fields.receipt}</span>}
           </div>}
         </div>
         <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end flex-wrap gap-[9px] flex-none">

@@ -6,6 +6,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { HistoryDisclosure } from '../components/RecordHistory';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
+import { FileRow, FileDropRow } from '../components/Attachments';
 import { Field } from '../components/Field';
 import { MoneyInput, PercentInput, DateField } from '../components/inputs';
 import { DataTable, type Column } from '../components/DataTable';
@@ -312,24 +313,12 @@ function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, children
 
 /** Placeholder upload — records the chosen filename locally; the real upload lands with the backend. */
 function OfferLetterField({ value, onChange }: { value: string | null; onChange: (name: string | null) => void }) {
-  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="flex flex-col gap-[7px]">
-      <label className="text-meta font-medium text-muted-ink">Offer letter</label>
-      <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={e => onChange(e.target.files?.[0]?.name ?? null)} />
-      <div className="flex items-center gap-[10px]">
-        <Button size="sm" variant="secondary" type="button" icon={<Icon name="Upload" size="sm" />} onClick={() => inputRef.current?.click()}>
-          {value ? 'Replace file' : 'Upload offer letter'}
-        </Button>
-        <span className={cx('text-meta min-w-0 whitespace-nowrap overflow-hidden text-ellipsis', value ? 'text-ink' : 'text-faint')}>
-          {value ?? 'No file selected'}
-        </span>
-        {value && (
-          <button type="button" onClick={() => onChange(null)} aria-label="Remove offer letter" className="grid place-items-center bg-transparent border-none cursor-pointer text-muted-ink p-[2px]">
-            <Icon name="X" size="sm" />
-          </button>
-        )}
-      </div>
+      <span className="text-meta font-medium text-muted-ink">Offer letter</span>
+      {value
+        ? <FileRow file={{ id: 'offer-letter', name: value, onRemove: () => onChange(null), removeLabel: 'Remove offer letter' }} />
+        : <FileDropRow label="Add offer letter" hint="PDF, JPG or PNG" accept=".pdf,.jpg,.jpeg,.png" onPick={fl => onChange(fl[0]?.name ?? null)} />}
     </div>
   );
 }
