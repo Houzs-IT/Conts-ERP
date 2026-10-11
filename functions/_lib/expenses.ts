@@ -1,4 +1,4 @@
-import { type Env, one } from './db';
+import { type Env, one, all } from './db';
 
 export const EXPENSE_CATEGORIES = ['internet', 'electricity', 'water', 'sewerage', 'cleaning', 'housekeeping', 'maintenance', 'utilities', 'consumables', 'furniture', 'management_fee', 'channel_fee', 'other'];
 /** Who pays an expense ("Paid by" on screen). Only 'owner' reaches the owner statement; the rest stay in the unit's
@@ -26,6 +26,16 @@ export async function isPeriodLocked(env: Env, unitId: string, date: string): Pr
     SELECT 1 AS x FROM owner_statements s JOIN units u ON u.owner_id = s.owner_id
     WHERE u.id = ? AND s.state IN ('finalised','sent','paid') AND ? >= s.period_start AND ? <= s.period_end LIMIT 1`, unitId, date, date);
   return !!row;
+}
+
+/** isPeriodLocked for many units on one date, in one query: the unit ids whose statement for that date is final. */
+export async function lockedUnits(env: Env, unitIds: string[], date: string): Promise<Set<string>> {
+  if (!unitIds.length) return new Set();
+  const rows = await all<{ unit_id: string }>(env, `
+    SELECT DISTINCT u.id AS unit_id FROM owner_statements s JOIN units u ON u.owner_id = s.owner_id
+    WHERE u.id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND s.state IN ('finalised','sent','paid') AND ? >= s.period_start AND ? <= s.period_end`,
+    JSON.stringify([...new Set(unitIds)]), date, date);
+  return new Set(rows.map(r => r.unit_id));
 }
 
 const MONTH = /^\d{4}-\d{2}$/;

@@ -108,15 +108,15 @@ export default function StatementDetailPage() {
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
 
       <StatRow cols={5}>
-        <StatTile className="col-span-2 xl:col-span-1" label="Net payout to owner" value={rm(s.totals.netPayout)} hero />
-        <StatTile label="Hospitality income" value={rm(s.totals.grossIncome)} />
+        <StatTile className="col-span-2 xl:col-span-1" label="Net Payout to Owner" value={rm(s.totals.netPayout)} hero />
+        <StatTile label="Gross Income" value={rm(s.totals.grossIncome)} />
         <StatTile label="Expense deduction" value={signed(-s.totals.deductions)} />
-        <StatTile label="To operator" value={signed(-s.totals.operatorShare)} />
-        <StatTile label="Owner credits & charges" value={signed(s.totals.adjustments)} />
+        <StatTile label="To Operator" value={signed(-s.totals.operatorShare)} />
+        <StatTile label="Paid on behalf, after the split" value={signed(s.totals.adjustments)} />
       </StatRow>
       <div className="flex flex-wrap gap-x-[18px] gap-y-1 px-1 -mt-1 text-meta text-muted-ink">
         <span>Generated {date(s.generatedAt)}</span>
-        {s.finalisedAt && <span>Finalised {date(s.finalisedAt)}</span>}
+        {s.finalisedAt && <span>Final since {date(s.finalisedAt)}</span>}
         {s.sentAt && <span>Sent {date(s.sentAt)}</span>}
         {s.payout && <span>Payout {s.payout.state}{s.payout.paidAt ? ` ${date(s.payout.paidAt)}` : ''}{s.payout.failureReason ? ` · ${s.payout.failureReason}` : ''}</span>}
         {s.owner.bankLast4 && <span>{s.owner.bankName ?? 'Bank'} ending {s.owner.bankLast4}</span>}
@@ -151,17 +151,17 @@ export default function StatementDetailPage() {
             <div className="px-5 py-3 text-copy">
               {u.basis === 'share' ? (
                 <>
-                  <Row label={`Hospitality income · ${u.nights} of ${u.days} nights (${(u.nights / u.days * 100).toFixed(2)}%)`} value={rm(u.grossIncome)} />
+                  <Row label={`Gross Income · ${u.nights} of ${u.days} nights (${(u.nights / u.days * 100).toFixed(2)}%)`} value={rm(u.grossIncome)} />
                   {Object.entries(groupDeductions(s.lines, u.unitId)).map(([k, v]) => <Row key={k} label={`${DEDUCTION_LABEL[k] ?? k}${v.n > 1 ? ` · ${v.n}` : ''}`} value={signed(-v.amount)} muted />)}
                   <Row label="Net income" value={rm(u.netIncome)} line />
-                  <Row label={`${pct(100 - (u.ownerPct ?? 0))} to operator`} value={signed(-u.operatorShare)} muted />
+                  <Row label={`${pct(100 - (u.ownerPct ?? 0))} To Operator`} value={signed(-u.operatorShare)} muted />
                   {u.topUp > 0 && <Row label={`Minimum guarantee top-up (guaranteed ${rm(u.guarantee)})`} value={rm(u.topUp)} muted />}
                 </>
               ) : <Row label="Fixed monthly rent" value={rm(u.fixedRent)} />}
-              <Row label="Payout before owner credits &amp; charges" value={rm(u.payoutBeforeAdjustments)} line strong />
+              <Row label="Payout before paid on behalf (after the split)" value={rm(u.payoutBeforeAdjustments)} line strong />
               {s.lines.filter(l => l.unitId === u.unitId && l.type === 'adjustment' && !['guarantee_top_up', 'fixed_rent'].includes(l.category ?? '')).map(l =>
                 <Row key={l.id} label={l.description} value={signed(l.amount)} muted />)}
-              <Row label="Net payout to owner" value={rm(u.netPayout)} line strong />
+              <Row label="Net Payout to Owner" value={rm(u.netPayout)} line strong />
             </div>
             <LineList id={u.unitId} lines={s.lines.filter(l => l.unitId === u.unitId)} />
           </Card>

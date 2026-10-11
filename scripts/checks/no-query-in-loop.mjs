@@ -52,11 +52,6 @@ export const allow = {
   'functions/_lib/cronJobs.ts': 'Cron worker: retries due messages and runs each job; not on a request.',
   'functions/_lib/notify.ts': 'Email copies of one in-app notice, one per staff member it went to (a team, not a customer list); the notices themselves are one INSERT.',
   'functions/api/statements/send.ts': 'One email per owner (notify: its log row, the send, the result); every database write before it is batched. Open in TODO.md: a month of about 100 emails is more than the free plan 50 outside calls per request.',
-  // Known, open in TODO.md (performance audit, 11 Oct 2026): bounded by what one person selects, not yet batched.
-  'functions/api/reservations/mark-paid-out.ts': 'Open in TODO.md: three queries per selected booking; batch insertPayment.',
-  'functions/api/expenses/utilities.ts': 'Open in TODO.md: about six queries per bill; a full month of 329 accounts is ~2,000.',
-  'functions/api/payouts/index.ts': 'Open in TODO.md: payout run over selected statements, two writes each.',
-  'functions/_lib/approvals.ts': 'Open in TODO.md: bulk approve runs each request in turn (each is its own money action).',
 };
 
 const SUPPLY_CHAIN = /functions\/(api\/(consignment-notes|customers|delivery-orders|delivery-schedule|delivery-zones|driver-leave|drivers|fabrics|fleet-health|coverage-fleet|goods-receipts|loading-list|mrp|payment-vouchers|product-models|products|purchase-consignment|purchase-invoices|purchase-orders|purchase-returns|racks|rate-cards|sales-invoices|sales-orders|sales-returns|so-amendments|stock|stock-takes|stock-transfers|suppliers|threepl-companies|unbilled-deliveries|vehicles|warehouses|credit-notes|accounting|residence-rules)\/|_lib\/(consignment-notes|credit-notes|customers|delivery-|driver-leave|fabric|fleet-maintenance|goods-receipts|payment-vouchers|product|purchase-|racks|rate-card|residence-rules|sales-|scm-util|so-amendments|stock|suppliers|threepl|transport|warehouses)[^/]*$)/;

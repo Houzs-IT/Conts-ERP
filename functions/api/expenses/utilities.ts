@@ -1,6 +1,6 @@
-import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { type Env, all, run, json, fail, audit, nowIso, transaction } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { CHARGE_TO, isPeriodLocked } from '../../_lib/expenses';
+import { CHARGE_TO, lockedUnits } from '../../_lib/expenses';
 
 /** Monthly utility bills by account number: one row per unit utility account (unit_utility_accounts), with what is
  *  already recorded for the month, so a month's TNB, water, Wi-Fi and Indah Water bills go in from one screen.
@@ -67,23 +67,44 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     SELECT a.id, a.unit_id, a.kind, a.account_no, a.provider FROM unit_utility_accounts a
     WHERE a.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(wanted.map(r => r.accountId)));
   const byId = new Map(accounts.map(a => [a.id, a]));
+  const from = `${month}-01`, to = `${nextMonth(month)}-01`;
+  const picked = wanted.map(r => ({ r, a: byId.get(r.accountId) })).filter(x => x.a && KINDS.includes(x.a.kind));
+  const unitIds = [...new Set(picked.map(x => x.a.unit_id as string))];
+  // Read once what each row is checked against: final months, and bills recorded without an account number.
+  const [lockedSet, blankRows] = await Promise.all([
+    lockedUnits(env, unitIds, date),
+    unitIds.length ? all<{ unit_id: string; category: string }>(env, `
+      SELECT DISTINCT unit_id, category FROM expenses WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+        AND (reference IS NULL OR reference = '') AND incurred_on >= ? AND incurred_on < ?`, JSON.stringify(unitIds), from, to) : Promise.resolve([]),
+  ]);
+  const blank = new Set(blankRows.map(x => `${x.unit_id}|${x.category}`));
   const saved: string[] = [], locked: string[] = [], elsewhere: string[] = [], now = nowIso();
-  for (const r of wanted) {
-    const a = byId.get(r.accountId);
-    if (!a || !KINDS.includes(a.kind)) continue;
-    if (await isPeriodLocked(env, a.unit_id, date)) { locked.push(a.account_no); continue; }
-    const other = await all(env, `SELECT 1 AS x FROM expenses WHERE unit_id = ? AND category = ? AND (reference IS NULL OR reference = '') AND incurred_on >= ? AND incurred_on < ? LIMIT 1`,
-      a.unit_id, a.kind, `${month}-01`, `${nextMonth(month)}-01`);
-    if (other.length) { elsewhere.push(a.account_no); continue; }
-    await run(env, `DELETE FROM expenses WHERE unit_id = ? AND reference = ? AND category = ? AND incurred_on >= ? AND incurred_on < ?`,
-      a.unit_id, a.account_no, a.kind, `${month}-01`, `${nextMonth(month)}-01`);
+  // One bill per unit, kind and account number: a later row for the same account replaces an earlier one, as before.
+  const bills = new Map<string, { id: string; unit_id: string; kind: string; description: string; amount: number; account_no: string; charge_to: string }>();
+  for (const { r, a } of picked) {
+    if (lockedSet.has(a.unit_id)) { locked.push(a.account_no); continue; }
+    if (blank.has(`${a.unit_id}|${a.kind}`)) { elsewhere.push(a.account_no); continue; }
     const id = crypto.randomUUID();
-    await run(env, `
-      INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, reference, charge_to, created_by, created_at)
-      VALUES (?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?)`,
-      id, a.unit_id, a.kind, `${KIND_LABEL[a.kind]} ${monthName(month)}${a.provider ? ` (${a.provider})` : ''}`, r.amount, date, a.account_no, r.chargeTo ?? 'owner', session.userId, now);
+    bills.set(`${a.unit_id}|${a.kind}|${a.account_no}`, {
+      id, unit_id: a.unit_id, kind: a.kind, description: `${KIND_LABEL[a.kind]} ${monthName(month)}${a.provider ? ` (${a.provider})` : ''}`,
+      amount: r.amount, account_no: a.account_no, charge_to: r.chargeTo ?? 'owner',
+    });
+    if (a.account_no === '') blank.add(`${a.unit_id}|${a.kind}`); // an empty account number reads as recorded elsewhere next time
     saved.push(id);
   }
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.utilities', entityTable: 'expenses', entityId: month, after: { month, saved: saved.length, locked: locked.length, recordedElsewhere: elsewhere.length } });
+  const rowsOut = [...bills.values()];
+  await transaction(env, async tx => {
+    if (rowsOut.length) {
+      await run(tx, `DELETE FROM expenses e USING jsonb_to_recordset(?::text::jsonb) AS x(unit_id text, kind text, account_no text)
+        WHERE e.unit_id = x.unit_id AND e.reference = x.account_no AND e.category = x.kind AND e.incurred_on >= ? AND e.incurred_on < ?`,
+        JSON.stringify(rowsOut.map(b => ({ unit_id: b.unit_id, kind: b.kind, account_no: b.account_no }))), from, to);
+      await run(tx, `
+        INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, reference, charge_to, created_by, created_at)
+        SELECT x.id, x.unit_id, x.kind, x.description, x.amount, 'MYR', ?, x.account_no, x.charge_to, ?, ?
+        FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, kind text, description text, amount bigint, account_no text, charge_to text)`,
+        date, session.userId, now, JSON.stringify(rowsOut));
+    }
+    await audit(tx, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.utilities', entityTable: 'expenses', entityId: month, after: { month, saved: saved.length, locked: locked.length, recordedElsewhere: elsewhere.length } });
+  });
   return json({ saved: saved.length, locked, recordedElsewhere: elsewhere }, 201);
 };

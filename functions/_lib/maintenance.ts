@@ -1,4 +1,15 @@
 import { type Env, one } from './db';
+import { hasColumn } from './auth';
+import { technicianFor } from './notify';
+
+/** The staff account a typed technician name stands for (migration 0105, maintenance_issues.assignee_user_id): the one
+ *  active account with that name, or null for a contractor or a name two accounts share. Undefined when the column is
+ *  not on this database, so callers write nothing new. */
+export async function assigneeUserId(env: Env, name: string | null): Promise<string | null | undefined> {
+  if (!(await hasColumn(env, 'maintenance_issues', 'assignee_user_id').catch(() => false))) return undefined;
+  const ids = name ? await technicianFor(env, name) : [];
+  return ids.length === 1 ? ids[0] : null;
+}
 
 export const CATEGORIES = ['plumbing', 'electrical', 'aircon', 'furniture', 'appliance', 'other'] as const;
 export const URGENCIES = ['normal', 'urgent'] as const;

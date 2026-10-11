@@ -80,12 +80,19 @@ export default function OwnerIncomeReportPage() {
           </label>
         )}
         <span className="oir-grow" />
-        {r && r.state === 'provisional' && <span className="oir-flag">Provisional: figures can still change</span>}
+        {r && r.state === 'provisional' && <span className="oir-flag">Draft: figures can still change</span>}
         <button className="oir-primary" onClick={download} disabled={!r?.units.length}>Download PDF</button>
       </div>
 
       {!r ? <div className="oir-note">{loading ? 'Loading the report...' : error ?? 'This report could not be opened.'}</div>
-        : !r.units.length ? <div className="oir-note">This statement has no unit figures to report. Months paid from the owner workbook before Property OS only carry the payout.</div>
+        : !r.units.length ? (
+          <div className="oir-note">
+            {r.state === 'provisional'
+              ? <>This draft owner statement was made before unit figures were kept. Generate the month again (Owner statements, or Generate owner report on the owner's page) and the report fills in.</>
+              : <>This month was paid from the owner workbook before Property OS, so it carries the payout, not the unit figures an Owner Income Report needs.{' '}
+                <a href={`/api/statements/${encodeURIComponent(id)}/pdf?format=legacy`} target="_blank" rel="noreferrer">Open the owner statement as it was paid</a>.</>}
+          </div>
+        )
         : (
           <div className="oir-sheets" style={{ zoom: scale } as CSSProperties}>
             {combined && r.units.length > 1 && <div><OwnerMonthPage r={r} /><OwnerYearPage r={r} /></div>}
