@@ -363,6 +363,12 @@ export default function CalendarPage() {
 
   async function refresh() {
     if (syncing) return;
+    // With no booking site linked there is nothing to pull: refresh the board instead of asking Channex and failing.
+    if (integrations && !otaRows.some(r => r.state !== 'not_connected')) {
+      reload(); reloadIntegrations();
+      toast({ tone: 'info', title: 'Calendar refreshed.', body: 'No booking site is linked yet, so there is nothing to pull from Airbnb, Booking.com or Agoda.' });
+      return;
+    }
     setSyncing(true);
     try {
       const res = await api.post<{ bookings?: { processed: number } }>('/integrations/sync');

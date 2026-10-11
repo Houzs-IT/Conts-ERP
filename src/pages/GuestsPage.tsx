@@ -19,7 +19,7 @@ import { useApi } from '../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { deliveryToast } from '../lib/bookingStatus';
-import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, phone, todayMyt } from '../lib/format';
+import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, phone, todayMyt, greetName } from '../lib/format';
 import { Select, Menu } from '../components/Select';
 import { Chip as FilterChip } from './finance/listKit';
 import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } from '../lib/types';
@@ -716,7 +716,7 @@ function MessageModal({ g, onClose, onSend }: { g: Guest; onClose: () => void; o
         <div className="flex flex-col gap-[6px]">
           <label htmlFor="msg-body" className={labelClass}>Message</label>
           <textarea id="msg-body" required value={body} onChange={e => setBody(e.target.value)} rows={4}
-            placeholder={`Hi ${g.fullName.split(' ')[0]}, checking in on your stay…`} className={cx(fieldBase, 'p-[10px_12px] resize-y')} />
+            placeholder={`Hi ${greetName(g.fullName)}, checking in on your stay…`} className={cx(fieldBase, 'p-[10px_12px] resize-y')} />
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>

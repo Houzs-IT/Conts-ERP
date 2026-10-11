@@ -1,6 +1,6 @@
 import { type Env, all, one, json, fail, audit } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
-import { moneySchema, toPayment, MONEY_ROLES, OTA_CHANNELS } from '../../../_lib/bookingMoney';
+import { moneySchema, moneySql, toPayment, MONEY_ROLES, OTA_CHANNELS } from '../../../_lib/bookingMoney';
 import { validatePayment, insertPayment, clean } from '../../../_lib/bookingPayments';
 import { approvalsEnabled, submit } from '../../../_lib/approvals';
 
@@ -23,7 +23,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (!MONEY_ROLES.includes(session.role)) return fail('FORBIDDEN', 'Only management, finance and operations managers can record payments.', 403);
-  if (!(await moneySchema(env)).payments) return fail('NOT_READY', 'Payments are not set up on this database yet (migration 0091).', 503);
+  const schema = await moneySchema(env);
+  if (!schema.payments) return fail('NOT_READY', 'Payments are not set up on this database yet (migration 0091).', 503);
 
   const id = String(params.id);
   const r = await one<{ id: string; channel: string; state: string; external_ref: string | null }>(env, 'SELECT id, channel, state, external_ref FROM reservations WHERE id = ?', id);
@@ -35,6 +36,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (errs) return fail('VALIDATION', Object.values(errs)[0], 422, errs);
   const kind = b.kind ?? (OTA_CHANNELS.includes(r.channel) ? 'ota_payout' : 'guest_payment');
   if (kind === 'refund') {
+    // A refund gives back money we hold: more than was received would leave the booking below zero.
+    const m = moneySql(schema);
+    const got = await one<{ received: number }>(env, `SELECT ${m.received} AS received FROM reservations r ${m.join} WHERE r.id = ?`, id);
+    const held = Math.max(Number(got?.received ?? 0), 0);
+    if (Math.round(Number(b.amount)) > held) {
+      const msg = held > 0 ? `A refund can be at most what was received: RM ${(held / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}.` : 'Nothing has been received on this booking, so there is nothing to refund.';
+      return fail('VALIDATION', msg, 422, { amount: msg });
+    }
     // With approvals on, money going back to a guest waits for a second person (functions/_lib/approvals.ts), and the
     // reason goes to them. Off, the approval executor records the refund at once.
     const on = await approvalsEnabled(env);

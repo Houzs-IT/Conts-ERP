@@ -10,7 +10,7 @@ import { PhoneText } from '../PhoneText';
 import { useApi } from '../../lib/useApi';
 import { useToast } from '../Toast';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
-import { rm, date, dateRange, dateTime, time, nights as fmtNights, guests as fmtGuests } from '../../lib/format';
+import { rm, date, dateRange, dateTime, time, nights as fmtNights, guests as fmtGuests, greetName } from '../../lib/format';
 import { CHANNEL_META, cx } from '../../lib/design-tokens';
 import { channelNote, deliveryToast, type ChannelSync } from '../../lib/bookingStatus';
 import { statusLabel } from '../../lib/status';
@@ -274,7 +274,7 @@ export function MessageGuestModal({ r, onClose, onSent }: { r: { id: string; gue
         <div className="flex flex-col gap-[6px]">
           <label htmlFor="bk-msg" className="text-meta font-medium text-muted-ink">Message</label>
           <textarea id="bk-msg" required value={body} onChange={e => setBody(e.target.value)} rows={4}
-            placeholder={`Hi ${(r.guestName || 'there').split(' ')[0]}, checking in on your upcoming stay…`}
+            placeholder={`Hi ${greetName(r.guestName)}, checking in on your upcoming stay…`}
             className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
         </div>
         <div className="flex justify-end gap-[9px]">
@@ -300,7 +300,10 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
   const priceChanged = priced && totalSen != null && totalSen !== d.money.gross;
   const changed = checkIn !== d.checkIn || checkOut !== d.checkOut || priceChanged;
   const valid = !!checkIn && !!checkOut && n >= 1 && changed && (!priced || (totalSen != null && totalSen >= 0));
-  const perNight = d.nights > 0 && d.money.gross > 0 ? d.money.gross / d.nights : 0;
+  // Only the room scales with the nights; the cleaning fee and other one-off charges stay as they are.
+  const roomSen = d.ledger.guestLines.find(l => l.key === 'room')?.amount ?? d.money.gross;
+  const fixedSen = d.money.gross - roomSen;
+  const perNight = d.nights > 0 && roomSen > 0 ? roomSen / d.nights : 0;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -336,7 +339,7 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
           <MoneyInput label="Total for the stay (RM)" valueSen={totalSen} onChangeSen={setTotalSen} required
             error={totalSen == null ? 'Enter the total, or 0.00.' : fieldErrors.grossBookingValue}
             help={perNight > 0 && n >= 1 && n !== d.nights
-              ? `At the current ${rm(Math.round(perNight))} a night, ${fmtNights(n)} would be ${rm(Math.round(perNight * n))}. Change the total if the price changes.`
+              ? `At the current ${rm(Math.round(perNight))} a night${fixedSen > 0 ? ` plus ${rm(fixedSen)} in fees` : ''}, ${fmtNights(n)} would be ${rm(Math.round(perNight * n) + fixedSen)}. Change the total if the price changes.`
               : 'Stays the same unless you change it.'} />
         ) : !isBlock(d.channel) && (
           <p className="m-0 text-meta text-muted-ink">The price is set by {CHANNEL_META[d.channel].label}, so it stays as recorded. Change the booking on the site too.</p>
@@ -369,7 +372,8 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
   const [reason, setReason] = useState('');
   const refund = kind === 'refund';
   const approvalsOn = useApprovalsOn();
-  const valid = sen != null && sen > 0 && !!receivedOn && (!refund || !approvalsOn || !!reason.trim());
+  const tooMuch = refund && sen != null && sen > Math.max(d.ledger.received, 0);
+  const valid = sen != null && sen > 0 && !tooMuch && !!receivedOn && (!refund || !approvalsOn || !!reason.trim());
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -393,14 +397,19 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
         <div role="radiogroup" aria-label="What is this" className="grid grid-cols-3 gap-1 p-1 rounded-control bg-muted">
           {(['guest_payment', 'ota_payout', 'refund'] as const).map(k => (
-            <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
+            <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => {
+              // A refund starts from what was received, never from what is still owed.
+              if ((k === 'refund') !== refund) setSen(k === 'refund' ? (d.ledger.received > 0 ? d.ledger.received : null) : (d.ledger.outstanding > 0 ? d.ledger.outstanding : null));
+              setKind(k);
+            }}
               className={cx('h-9 rounded-[8px] border-none [font:inherit] text-meta cursor-pointer', kind === k ? 'bg-card font-semibold text-ink shadow-sm' : 'bg-transparent text-muted-ink')}>
               {k === 'guest_payment' ? 'From the guest' : k === 'ota_payout' ? 'Site payout' : 'Refund'}
             </button>
           ))}
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-          <MoneyInput label="Amount (RM)" valueSen={sen} onChangeSen={setSen} minSen={1} required error={errors.amount} />
+          <MoneyInput label="Amount (RM)" valueSen={sen} onChangeSen={setSen} minSen={1} required
+            error={tooMuch ? (d.ledger.received > 0 ? `At most ${rm(d.ledger.received)}, what was received.` : 'Nothing has been received to refund.') : errors.amount} />
           <DateField label={kind === 'refund' ? 'Refunded on' : 'Received on'} value={receivedOn} max={todayIso()} onChange={setReceivedOn} required error={errors.receivedOn} />
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
@@ -421,7 +430,7 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
         </>}
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={refund && approvalsOn ? 'Enter an amount, a date and the reason.' : 'Enter an amount and a date.'}>{busy ? 'Saving…' : refund ? (approvalsOn ? 'Send for approval' : 'Record refund') : 'Record payment'}</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={tooMuch ? 'A refund cannot be more than what was received.' : refund && approvalsOn ? 'Enter an amount, a date and the reason.' : 'Enter an amount and a date.'}>{busy ? 'Saving…' : refund ? (approvalsOn ? 'Send for approval' : 'Record refund') : 'Record payment'}</Button>
         </div>
       </form>
     </CentreModal>

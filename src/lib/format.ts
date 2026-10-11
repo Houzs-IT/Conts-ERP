@@ -137,6 +137,14 @@ export const count = (n: number) => n.toLocaleString('en-MY');
 export const plural = (n: number, one: string, many = `${one}s`) => `${count(n)} ${n === 1 ? one : many}`;
 
 /** "operations_staff" -> "Operations staff". For raw codes only, never for names. */
+/** The name to greet a guest by: the first word, skipping a title ("Ms Ang" -> "Ang"). */
+export const greetName = (fullName: string | null | undefined, fallback = 'there') => {
+  const words = (fullName ?? '').trim().split(/\s+/).filter(Boolean);
+  const title = /^(mr|mrs|ms|miss|mdm|madam|dr|prof|encik|en|puan|pn|cik|tuan|dato'?|datin|tan sri|sir)\.?$/i;
+  while (words.length > 1 && title.test(words[0])) words.shift();
+  return words[0] ?? fallback;
+};
+
 export const humanize = (code: string) => code.replace(/[_.]+/g, ' ').trim().toLowerCase().replace(/^./, c => c.toUpperCase());
 
 /** ALL-CAPS names from imports read in Title Case; company suffixes stay upper case. The stored value is unchanged. */
