@@ -177,7 +177,7 @@ function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveL
             disabled={!dirty}
             disabledReason="No changes to save."
           >
-            {busy ? 'Saving…' : saveLabel}
+            {saveLabel}
           </Button>
         </div>}
       </div>

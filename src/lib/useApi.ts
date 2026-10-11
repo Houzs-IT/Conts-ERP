@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react';
 import { api, ApiFailure, errorMessage, readCache, remember } from './api';
 
+/* How many reads are refreshing figures that are already on screen. The shell draws one thin gold line while it is
+   above zero, so stale-but-shown data visibly says it is being brought up to date. */
+let refreshing = 0;
+const listeners = new Set<() => void>();
+export const refreshingCount = () => refreshing;
+export function subscribeRefreshing(fn: () => void) { listeners.add(fn); return () => { listeners.delete(fn); }; }
+function holdRefreshing() {
+  refreshing++; listeners.forEach(l => l());
+  return () => { refreshing--; listeners.forEach(l => l()); };
+}
+
 export interface Query<T> {
   data: T | null;
   loading: boolean;
@@ -43,6 +54,9 @@ export function useApi<T>(path: string | null, fallback?: T): Query<T> {
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, [path, nonce]);
+
+  const stale = loading && data !== null;
+  useEffect(() => (stale ? holdRefreshing() : undefined), [stale]);
 
   return { data, loading, error, reload: () => setNonce(n => n + 1) };
 }

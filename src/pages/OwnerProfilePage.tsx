@@ -65,9 +65,10 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
     return (
       <div className="flex flex-col gap-5">
         <PageHeader title={loading ? 'Owner' : 'Owner not found'} back={{ label: 'All owners', onClick: () => navigate('/owners') }} />
-        <EmptyState icon="UserX" title={loading ? 'Loading owner…' : 'Owner not found'}
-          body={loading ? undefined : (error ?? 'This owner is no longer on file.')}
-          action={loading ? undefined : { label: 'Back to owners', onClick: () => navigate('/owners') }} />
+        {loading ? <ProfileSkeleton /> : (
+          <EmptyState icon="UserX" title="Owner not found" body={error ?? 'This owner is no longer on file.'}
+            action={{ label: 'Back to owners', onClick: () => navigate('/owners') }} />
+        )}
       </div>
     );
   }
@@ -351,6 +352,32 @@ function DefaultFeeModal({ current, owner, onClose, onSubmit }: { current: numbe
             </Button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/** The profile before it arrives: the month bar, then a unit card per column with its statement lines. */
+function ProfileSkeleton() {
+  return (
+    <div aria-hidden className="flex flex-col gap-5">
+      <Card>
+        <div className="flex items-center gap-3 py-3 px-4">
+          <div className="skeleton h-9 w-[150px] rounded-control!" />
+          <div className="skeleton h-[11px] w-[180px] max-sm:hidden" />
+          <span className="flex-1" />
+          <div className="skeleton h-9 w-[130px] rounded-control!" />
+        </div>
+      </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {[0, 1].map(i => (
+          <div key={i} className={cx('bg-card border border-solid border-line rounded-card p-4 flex flex-col gap-3', i > 0 && 'max-lg:hidden')}>
+            <div className="flex justify-between"><div className="skeleton h-[16px] w-[45%]" /><div className="skeleton h-[20px] w-[90px] rounded-pill!" /></div>
+            {[70, 52, 60, 44, 58].map((w, r) => (
+              <div key={r} className="flex justify-between gap-4"><div className="skeleton h-[11px]" style={{ width: `${w}%` }} /><div className="skeleton h-[11px] w-[64px]" /></div>
+            ))}
+          </div>
+        ))}
       </div>
     </div>
   );

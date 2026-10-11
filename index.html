@@ -9,51 +9,39 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+    <style>
+      /* Opening screen. Here rather than in the app's stylesheet so it draws before any CSS or script arrives. */
+      html { background: #FAF9F6; }
+      .boot-screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: #FAF9F6; font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif; color: #706D67; animation: boot-in 300ms ease-out both; }
+      .boot-mark { width: 52px; height: 52px; border-radius: 13px; background: #151515; display: grid; place-items: center; box-shadow: 0 10px 28px -14px rgba(21, 21, 21, 0.5); }
+      .boot-mark img { display: block; }
+      .boot-track { position: relative; width: 72px; height: 2px; border-radius: 2px; overflow: hidden; background: #EDEAE4; opacity: 0; animation: boot-in 300ms ease-out 400ms both; }
+      .boot-bar { position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: 2px; background: #C8A46A; animation: boot-travel 1.4s cubic-bezier(0.45, 0, 0.25, 1) infinite; }
+      /* React's copy takes over mid-animation: it must not fade in a second time. */
+      .boot-live, .boot-live .boot-track { animation: none; opacity: 1; }
+      .boot-file-note { display: none; max-width: 340px; margin: 0; padding: 0 24px; text-align: center; font-size: 13px; line-height: 1.55; }
+      .from-file .boot-file-note { display: block; }
+      .from-file .boot-track { display: none; }
+      @keyframes boot-travel { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+      @keyframes boot-in { from { opacity: 0; } to { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-screen, .boot-track { animation: none; opacity: 1; }
+        .boot-bar { animation: none; width: 100%; opacity: 0.6; }
+      }
+    </style>
   </head>
   <body>
-    <!-- React replaces everything inside #root on mount. The markup below only
-         appears when the bundle has not run — i.e. when this file is opened
-         directly instead of served by Vite. -->
+    <!-- The opening screen: the gold mark on the page colour while the app's code downloads and the session is
+         checked. BootScreen (src/components/Loading.tsx) renders this same markup, so nothing moves when React
+         takes over. Opened straight from disk the script never runs, so the note below says what to do instead. -->
     <div id="root">
-      <div style="min-height:100vh;display:grid;place-items:center;padding:24px;background:#FAF9F6;font-family:'IBM Plex Sans',ui-sans-serif,system-ui,-apple-system,sans-serif;color:#252525">
-        <div style="max-width:440px;display:flex;flex-direction:column;gap:20px">
-          <div style="display:flex;align-items:center;gap:14px">
-            <div style="width:44px;height:44px;flex:none;border-radius:8px;border:1px dashed #C7C1B6;display:grid;place-items:center;font-size:11px;color:#706D67">SVG</div>
-            <div style="display:flex;flex-direction:column;gap:4px">
-              <div style="font-size:14px;font-weight:600;letter-spacing:0.18em">THE CONTS</div>
-              <div style="font-size:11px;letter-spacing:0.26em;color:#706D67">PROPERTY MANAGEMENT</div>
-            </div>
-          </div>
-
-          <div style="height:1px;width:72px;background:#C8A46A"></div>
-
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <h1 style="margin:0;font-size:24px;line-height:1.2;font-weight:600;letter-spacing:-0.01em">This file needs a dev server</h1>
-            <p style="margin:0;font-size:14px;line-height:1.55;color:#706D67;text-wrap:pretty">
-              It is the Vite entry point, not a page. The browser cannot run
-              <code style="font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:13px;background:#F1F0ED;padding:1px 5px;border-radius:4px">/src/main.tsx</code>
-              on its own.
-            </p>
-          </div>
-
-          <div style="padding:16px 18px;border:1px solid #DEDAD3;border-radius:12px;background:#FFFFFF;display:flex;flex-direction:column;gap:10px">
-            <div style="font-size:11px;font-weight:600;letter-spacing:0.1em;color:#706D67">TO RUN THE APP</div>
-            <pre style="margin:0;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:13px;line-height:1.7;white-space:pre-wrap">npm install
-npm run setup
-npm run dev</pre>
-            <div style="font-size:12.5px;color:#706D67">Then open <strong style="font-weight:600;color:#252525">http://localhost:8788</strong></div>
-          </div>
-
-          <div style="padding-top:16px;border-top:1px solid #DEDAD3;display:flex;flex-direction:column;gap:6px">
-            <div style="font-size:12.5px;color:#706D67;text-wrap:pretty">
-              To review the design without running anything, open
-              <strong style="font-weight:600;color:#252525">The Conts Desktop.dc.html</strong>.
-            </div>
-            <div style="font-size:12.5px;color:#706D67">Setup and deploy steps are in <strong style="font-weight:600;color:#252525">README-react.md</strong>.</div>
-          </div>
-        </div>
+      <div class="boot-screen" role="status" aria-label="Opening The Conts">
+        <div class="boot-mark"><img src="/brand/mark-gold.png" alt="" width="31" height="36" /></div>
+        <div class="boot-track"><div class="boot-bar"></div></div>
+        <p class="boot-file-note">This file is the Vite entry point. Run <code>npm run dev</code> and open http://localhost:8788, or open <strong>The Conts Desktop.dc.html</strong> to review the design.</p>
       </div>
     </div>
+    <script>if (location.protocol === 'file:') document.documentElement.classList.add('from-file');</script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

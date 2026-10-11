@@ -103,11 +103,14 @@ export function statementsFallback(o: Owner): StatementsPayload {
   };
 }
 
-export function Roll({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+/** `value` undefined while the figures load: a block the figure's own height stands in for it. */
+export function Roll({ label, value, strong }: { label: string; value: string | undefined; strong?: boolean }) {
   return (
     <div className="flex flex-col gap-2 min-w-0">
       <Eyebrow>{label}</Eyebrow>
-      <Figure value={value} className={cx('leading-none font-medium text-ink', strong ? 'text-[24px] sm:text-[28px] tracking-[-0.025em]' : 'text-[18px] sm:text-[20px] tracking-[-0.015em]')} />
+      {value === undefined
+        ? <div className={cx('skeleton w-[min(120px,70%)]', strong ? 'h-[24px] sm:h-[28px]' : 'h-[18px] sm:h-[20px]')} />
+        : <Figure value={value} className={cx('leading-none font-medium text-ink', strong ? 'text-[24px] sm:text-[28px] tracking-[-0.025em]' : 'text-[18px] sm:text-[20px] tracking-[-0.015em]')} />}
     </div>
   );
 }

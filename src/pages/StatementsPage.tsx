@@ -413,7 +413,7 @@ function GenerateDialog({ initialPeriod, periods, lockedPeriods, onClose, onGene
         <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
           <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button size="sm" variant="primary" loading={busy} disabled={locked} disabledReason="This period has already been sent." onClick={confirm}>
-            {busy ? 'Generating…' : 'Generate'}
+            Generate
           </Button>
         </div>
       </div>
@@ -468,7 +468,7 @@ function AdjustDialog({ target, busy, onClose, onSubmit }: {
           <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
             <Button size="sm" variant="secondary" type="button" onClick={onClose} disabled={busy}>Cancel</Button>
             <Button size="sm" variant="primary" type="submit" loading={busy} disabled={!valid} disabledReason="Add a description and a non-zero amount.">
-              {busy ? 'Saving…' : 'Record adjustment'}
+              Record adjustment
             </Button>
           </div>
         </form>
