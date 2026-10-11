@@ -25,10 +25,11 @@ import { rm, plural, count } from '../lib/format';
 import type { Tone } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
 import {
-  KIND_LABEL, TimeLeft, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, MediaGrid, MediaDrop, uploadTo, Checklist, ReportDamageModal, dayLabel, hm, stamp, minutesLabel, mytDay, type CleanStatus, type ChecklistItem, type MediaItem,
+  KIND_LABEL, TimeLeft, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, MediaGrid, MediaDrop, uploadTo, Checklist, dayLabel, hm, stamp, minutesLabel, mytDay, type CleanStatus, type ChecklistItem, type MediaItem,
 } from '../components/ops/OpsUi';
 import { statusOf } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
+import { NewJobForm } from '../components/ops/NewJobForm';
 
 /* ---------- what the board endpoint answers (functions/api/housekeeping/board.ts) ---------- */
 
@@ -336,6 +337,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [damage, setDamage] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const money = ['management', 'finance_admin', 'operations_manager'].includes(useSession().user?.role ?? '');
   useEffect(() => { if (data) setChecklist(data.checklist); }, [data]);
 
   const refresh = useCallback(() => { reload(); onChanged(); }, [reload, onChanged]);
@@ -471,7 +473,8 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
       <HistoryDisclosure entity="tasks" id={row.id} refreshKey={data} />
 
       {damage && (
-        <ReportDamageModal unitId={row.unitId} unitLabel={unitLabel} taskId={row.id} onClose={() => setDamage(false)}
+        <NewJobForm title={`Report damage · ${unitLabel}`} money={money} threshold={30000} onClose={() => setDamage(false)}
+          prefill={{ unitId: row.unitId, sourceTaskId: row.id, reportSource: 'cleaner', detail: data?.instructions ? `From the clean. ${data.instructions}` : 'Found on the clean.', taskPhotos: data?.media ?? [] }}
           onDone={() => { setDamage(false); toast({ tone: 'success', title: 'Damage reported.', body: 'A Maintenance job is open on this unit.' }); refresh(); }} />
       )}
     </div>

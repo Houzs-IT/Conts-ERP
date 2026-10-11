@@ -5,35 +5,38 @@ import { Button } from '../components/Button';
 import { DataTable, type Column } from '../components/DataTable';
 import { Select } from '../components/Select';
 import { MoneyInput, NumberInput } from '../components/inputs';
-// ---- Maintenance SKU catalog: the master list of repair items with a preset selling price.
-// Shared by the catalog tab and the "pick a SKU" field in the create-job modal.
+// ---- Maintenance items: the list of services and parts, each with a code, a unit of measure and a preset price, that the
+// owner sets up in advance and staff pick on a job ("Other" covers anything not on it). Shared by the Maintenance items
+// tab, templates and the items on a job.
 
 export interface Sku {
-  id: string; code: string; name: string; category: SkuCategory; unitLabel: UnitLabel;
+  id: string; code: string; name: string; kind: SkuKind; category: SkuCategory; unitLabel: UnitLabel;
   defaultPrice: number | null; trackStock: boolean; stockOnHand: number; active: boolean; notes: string;
 }
 export interface SkuPayload { data: Sku[]; generatedAt: string }
 
 export type SkuCategory = 'plumbing' | 'electrical' | 'aircon' | 'furniture' | 'appliance' | 'cleaning' | 'general' | 'other';
-export type UnitLabel = 'job' | 'unit' | 'hour';
+export type UnitLabel = 'job' | 'unit' | 'hour' | 'visit' | 'set' | 'metre';
+export type SkuKind = 'service' | 'part';
+export const KIND_LABEL: Record<SkuKind, string> = { service: 'Service', part: 'Part' };
 
 export const CATEGORY_LABEL: Record<SkuCategory, string> = {
   plumbing: 'Plumbing', electrical: 'Electrical', aircon: 'Aircon', furniture: 'Furniture',
   appliance: 'Appliance', cleaning: 'Cleaning', general: 'General', other: 'Other',
 };
 export const CATEGORY_OPTIONS = Object.keys(CATEGORY_LABEL) as SkuCategory[];
-export const UNIT_LABEL_OPTIONS: UnitLabel[] = ['job', 'unit', 'hour'];
-const PER: Record<UnitLabel, string> = { job: 'per job', unit: 'per unit', hour: 'per hour' };
+export const UNIT_LABEL_OPTIONS: UnitLabel[] = ['job', 'unit', 'hour', 'visit', 'set', 'metre'];
+const PER: Record<UnitLabel, string> = { job: 'per job', unit: 'per unit', hour: 'per hour', visit: 'per visit', set: 'per set', metre: 'per metre' };
 
 export const SKU_FALLBACK: SkuPayload = {
   generatedAt: '',
   data: [
-    { id: 'SKU-LIGHT', code: 'ELE-BULB', name: 'Change a lightbulb', category: 'electrical', unitLabel: 'unit', defaultPrice: 1500, trackStock: true, stockOnHand: 48, active: true, notes: 'Standard LED, in-house stock.' },
-    { id: 'SKU-TAP', code: 'PLM-TAP', name: 'Replace kitchen tap', category: 'plumbing', unitLabel: 'job', defaultPrice: 12000, trackStock: true, stockOnHand: 6, active: true, notes: '' },
-    { id: 'SKU-ACSVC', code: 'AC-SVC', name: 'Aircon service (per unit)', category: 'aircon', unitLabel: 'unit', defaultPrice: 8000, trackStock: false, stockOnHand: 0, active: true, notes: 'Quarterly. Gas top-up billed separately.' },
-    { id: 'SKU-HEATER', code: 'PLM-HEATER', name: 'Water heater replacement', category: 'plumbing', unitLabel: 'job', defaultPrice: 64000, trackStock: true, stockOnHand: 2, active: true, notes: '' },
-    { id: 'SKU-BLIND', code: 'FUR-BLIND', name: 'Replace roller blind', category: 'furniture', unitLabel: 'unit', defaultPrice: 22000, trackStock: true, stockOnHand: 0, active: true, notes: '' },
-    { id: 'SKU-LABOUR', code: 'GEN-LABOUR', name: 'General handyman labour', category: 'general', unitLabel: 'hour', defaultPrice: 5000, trackStock: false, stockOnHand: 0, active: false, notes: 'Retired — use trade-specific SKUs.' },
+    { id: 'SKU-LIGHT', kind: 'service', code: 'ELE-BULB', name: 'Change a lightbulb', category: 'electrical', unitLabel: 'unit', defaultPrice: 1500, trackStock: true, stockOnHand: 48, active: true, notes: 'Standard LED, in-house stock.' },
+    { id: 'SKU-TAP', kind: 'service', code: 'PLM-TAP', name: 'Replace kitchen tap', category: 'plumbing', unitLabel: 'job', defaultPrice: 12000, trackStock: true, stockOnHand: 6, active: true, notes: '' },
+    { id: 'SKU-ACSVC', kind: 'service', code: 'AC-SVC', name: 'Aircon service (per unit)', category: 'aircon', unitLabel: 'unit', defaultPrice: 8000, trackStock: false, stockOnHand: 0, active: true, notes: 'Quarterly. Gas top-up billed separately.' },
+    { id: 'SKU-HEATER', kind: 'service', code: 'PLM-HEATER', name: 'Water heater replacement', category: 'plumbing', unitLabel: 'job', defaultPrice: 64000, trackStock: true, stockOnHand: 2, active: true, notes: '' },
+    { id: 'SKU-BLIND', kind: 'service', code: 'FUR-BLIND', name: 'Replace roller blind', category: 'furniture', unitLabel: 'unit', defaultPrice: 22000, trackStock: true, stockOnHand: 0, active: true, notes: '' },
+    { id: 'SKU-LABOUR', kind: 'service', code: 'GEN-LABOUR', name: 'General handyman labour', category: 'general', unitLabel: 'hour', defaultPrice: 5000, trackStock: false, stockOnHand: 0, active: false, notes: 'Retired — use trade-specific SKUs.' },
   ],
 };
 
@@ -52,7 +55,7 @@ export function durationLabel(startedAt?: string | null, endedAt?: string | null
 }
 
 export interface CatalogInput {
-  code: string; name: string; category: SkuCategory; unitLabel: UnitLabel; defaultPrice: number;
+  code: string; name: string; kind: SkuKind; category: SkuCategory; unitLabel: UnitLabel; defaultPrice: number;
   trackStock: boolean; stockOnHand: number; notes: string;
 }
 
@@ -81,6 +84,8 @@ export function CatalogPanel({
   const columns = useMemo<Column<Sku>[]>(() => [
     { key: 'code', label: 'Code', type: 'ref', value: s => s.code, width: 120 },
     { key: 'name', label: 'Item', value: s => s.name, hideable: false, width: 240, sub: s => s.notes || null, render: s => <span className="font-semibold">{s.name}</span> },
+    { key: 'kind', label: 'Kind', type: 'status', value: s => s.kind, status: s => ({ label: KIND_LABEL[s.kind] ?? 'Service', tone: 'neutral' }), width: 110 },
+    { key: 'uom', label: 'Unit of measure', value: s => s.unitLabel, width: 130, filter: { kind: 'select', options: UNIT_LABEL_OPTIONS.map(u => ({ value: u, label: u })) } },
     { key: 'category', label: 'Category', type: 'status', value: s => s.category, status: s => ({ label: CATEGORY_LABEL[s.category], tone: 'neutral' }), width: 120 },
     { key: 'price', label: 'Preset price', type: 'money', value: s => s.defaultPrice, sub: s => PER[s.unitLabel], width: 130 },
     { key: 'stock', label: 'In stock', type: 'number', value: s => (s.trackStock ? s.stockOnHand : null), width: 120,
@@ -98,7 +103,7 @@ export function CatalogPanel({
         pageSize={0} noun={['item', 'items']} exportName="maintenance-catalog"
         rowTone={s => (s.active ? null : 'muted')} onRowClick={canWrite ? s => setEditing(s) : undefined}
         filtered={!showInactive && skus.length > 0} onClearFilters={() => setShowInactive(true)}
-        toolbar={<span className="text-copy text-muted-ink">{activeN} active item{activeN === 1 ? '' : 's'} · a preset price seeds the quote when you raise a job.</span>}
+        toolbar={<span className="text-copy text-muted-ink">{activeN} active item{activeN === 1 ? '' : 's'} · staff pick these on a job (quantity x price); anything else goes on an Other line.</span>}
         actions={<>
           <label className="flex items-center gap-1.5 text-meta text-muted-ink cursor-pointer">
             <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
@@ -106,8 +111,8 @@ export function CatalogPanel({
           </label>
           {canWrite && <Button size="sm" variant="primary" onClick={() => setCreating(true)}>New item</Button>}
         </>}
-        empty={{ title: 'No catalog items yet', icon: 'Package',
-          body: canWrite ? 'Add a repair item with a preset price, so picking it on a job fills the quote.' : 'Items appear here once someone in operations adds them.',
+        empty={{ title: 'No maintenance items yet', icon: 'Package',
+          body: canWrite ? 'Add the services and parts you use, each with a code (e.g. MT-AC-SVC Aircon service), a unit and a price. Staff then pick them on a job.' : 'Items appear here once someone in operations adds them.',
           action: canWrite ? { label: 'New item', onClick: () => setCreating(true) } : undefined }}
       />
 
@@ -130,6 +135,7 @@ function SkuModal({ sku, onClose, onSave, onToggleActive }: {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [code, setCode] = useState(sku?.code ?? '');
   const [name, setName] = useState(sku?.name ?? '');
+  const [kind, setKind] = useState<SkuKind>(sku?.kind ?? 'service');
   const [category, setCategory] = useState<SkuCategory>(sku?.category ?? 'general');
   const [unitLabel, setUnitLabel] = useState<UnitLabel>(sku?.unitLabel ?? 'job');
   const [priceSen, setPriceSen] = useState<number | null>(sku?.defaultPrice ?? null);
@@ -144,15 +150,15 @@ function SkuModal({ sku, onClose, onSave, onToggleActive }: {
     if (!valid || priceSen == null || busy) return;
     setBusy(true); setSaveError(null);
     const err = await onSave({
-      code: code.trim(), name: name.trim(), category, unitLabel, defaultPrice: priceSen,
+      code: code.trim().toUpperCase(), name: name.trim(), kind, category, unitLabel, defaultPrice: priceSen,
       trackStock, stockOnHand: trackStock ? stockQty ?? 0 : 0, notes: notes.trim(),
     });
     setBusy(false); setSaveError(err);
   }
 
   return (
-    <Modal title={sku ? 'Edit catalog item' : 'New catalog item'}
-      sub="A repair item with a preset selling price. Picking it on a job fills the quote — still editable."
+    <Modal title={sku ? 'Edit maintenance item' : 'New maintenance item'}
+      sub="A service or part staff pick on a job. Its price is copied to the job, where it can still be changed."
       onClose={onClose} width={520}
       footer={<>
         {sku && onToggleActive && (
@@ -165,16 +171,18 @@ function SkuModal({ sku, onClose, onSave, onToggleActive }: {
         </Button>
       </>}>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
-        <LabeledField label="Code"><input value={code} onChange={e => setCode(e.target.value)} placeholder="ELE-BULB" disabled={!!sku}
+        <LabeledField label="Code"><input value={code} onChange={e => setCode(e.target.value)} placeholder="MT-AC-SVC" disabled={!!sku}
           className={cx(INPUT_CX, sku && 'opacity-60 cursor-not-allowed')} /></LabeledField>
         <LabeledField label="Preset price (RM)"><MoneyInput valueSen={priceSen} onChangeSen={setPriceSen} placeholder="15.00" aria-label="Preset price (RM)"
           className={INPUT_CX} /></LabeledField>
       </div>
-      <LabeledField label="Name"><input value={name} onChange={e => setName(e.target.value)} placeholder="Change a lightbulb" className={INPUT_CX} /></LabeledField>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
+      <LabeledField label="Name"><input value={name} onChange={e => setName(e.target.value)} placeholder="Aircon service" className={INPUT_CX} /></LabeledField>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-[14px]">
+        <Select size="md" showLabel label="Kind" value={kind} onChange={v => setKind(v as SkuKind)}
+          options={(Object.keys(KIND_LABEL) as SkuKind[]).map(k => ({ value: k, label: KIND_LABEL[k] }))} />
         <Select size="md" showLabel label="Category" value={category} onChange={v => setCategory(v as SkuCategory)}
           options={CATEGORY_OPTIONS.map(c => ({ value: c, label: CATEGORY_LABEL[c] }))} />
-        <Select size="md" showLabel label="Price is per" value={unitLabel} onChange={v => setUnitLabel(v as UnitLabel)}
+        <Select size="md" showLabel label="Unit of measure" value={unitLabel} onChange={v => setUnitLabel(v as UnitLabel)}
           options={UNIT_LABEL_OPTIONS.map(u => ({ value: u, label: PER[u] }))} />
       </div>
       <div className="flex flex-col gap-[10px] px-3 py-[11px] rounded-control bg-page border border-solid border-line">

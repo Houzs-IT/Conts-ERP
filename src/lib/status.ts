@@ -63,6 +63,7 @@ export const STATUS_VOCAB = {
     awaiting_owner: { label: 'Awaiting owner approval', tone: 'warning' },
     in_progress: { label: 'In progress', tone: 'info' },
     repair_finished: { label: 'Repair finished', tone: 'info' },
+    cancelled: { label: 'Cancelled', tone: 'neutral' },
     done: { label: 'Done', tone: 'success' },
   },
   /** One clean, in words the office and the cleaner both use. */

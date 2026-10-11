@@ -25,9 +25,9 @@ interface Repair {
   guestNow: { guestName: string; checkOut: string; checkOutTime: string } | null;
 }
 /* GET /api/field/maintenance/:id */
-interface Part { skuId: string; code: string; name: string; unitLabel: string; trackStock: boolean; stockOnHand: number | null; plannedQty: number; usedQty: number }
+interface Part { id: string; skuId: string | null; code: string | null; description: string; uom: string; trackStock: boolean; stockOnHand: number | null; plannedQty: number; qty: number }
 interface Detail {
-  instructions: string | null; reporter: string | null; checklist: ChecklistItem[]; media: MediaItem[]; parts: Part[];
+  instructions: string | null; reporter: string | null; checklist: ChecklistItem[]; media: MediaItem[]; lines: Part[];
   catalog: { id: string; code: string; name: string; unitLabel: string; trackStock: boolean; stockOnHand: number | null }[];
   access: { id: string; label: string; instruction: string }[];
 }
@@ -42,7 +42,7 @@ const windowLabel = (w: { startsAt: string; endsAt: string }) => {
 };
 
 /** The technician's phone: the repairs given to their account, overdue first, then today, then upcoming, each with
- *  when they may enter, who is in the unit, the checklist, photos and videos, the parts used and "Work done".
+ *  when they may enter, who is in the unit, the checklist, photos and videos, the items used and "Work done".
  *  History lists what they finished. One column, 44px targets. */
 export default function FieldRepairsPage() {
   const [view, setView] = useState<'todo' | 'history'>('todo');
@@ -92,7 +92,7 @@ function RepairCard({ r, open, onToggle, onChanged }: { r: Repair; open: boolean
   const [busy, setBusy] = useState<string | null>(null);
   const [adding, setAdding] = useState('');
   const items = ticks ?? detail.data?.checklist ?? null;
-  const partList = parts ?? detail.data?.parts ?? [];
+  const partList = parts ?? detail.data?.lines ?? [];
   const files = detail.data?.media.length ?? r.photoCount;
   const started = !!r.startedAt;
   const guestsInWindow = r.windows.find(w => r.nextWindow && w.startsAt === r.nextWindow.startsAt)?.guests ?? [];
@@ -103,9 +103,9 @@ function RepairCard({ r, open, onToggle, onChanged }: { r: Repair; open: boolean
     catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Check your signal and try again.') }); }
     finally { setBusy(null); }
   }
-  async function setUsed(skuId: string, qty: number) {
-    setBusy(`p-${skuId}`);
-    try { const res = await api.post<{ data: Part[] }>(`/maintenance/issues/${r.id}/parts`, { skuId, usedQty: qty }); setParts(res.data); }
+  async function setUsed(key: string, body: Record<string, unknown>) {
+    setBusy(`p-${key}`);
+    try { const res = await api.post<{ data: Part[] }>(`/maintenance/issues/${r.id}/lines`, body); setParts(res.data); }
     catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Check your signal and try again.') }); }
     finally { setBusy(null); }
   }
@@ -187,28 +187,28 @@ function RepairCard({ r, open, onToggle, onChanged }: { r: Repair; open: boolean
 
           {detail.data && (partList.length > 0 || (!finished && detail.data.catalog.length > 0)) && (
             <section className="flex flex-col gap-2">
-              <h3 className="m-0 text-copy font-semibold">Parts used</h3>
+              <h3 className="m-0 text-copy font-semibold">Items used</h3>
               {partList.map(p => (
-                <div key={p.skuId} className="flex items-center gap-2 text-copy">
+                <div key={p.id} className="flex items-center gap-2 text-copy">
                   <span className="flex-1 min-w-0">
-                    <span className="block truncate">{p.name}</span>
-                    <span className="block text-meta text-muted-ink">{p.plannedQty > 0 ? `Usually ${p.plannedQty}` : p.code}{p.stockOnHand != null ? ` · ${p.stockOnHand} in the store` : ''}</span>
+                    <span className="block truncate">{p.description}</span>
+                    <span className="block text-meta text-muted-ink">{p.plannedQty > 0 ? `Usually ${p.plannedQty}` : p.code ?? 'Other'}{p.stockOnHand != null ? ` · ${p.stockOnHand} in the store` : ''}</span>
                   </span>
-                  {finished ? <b className="tabular-nums">{p.usedQty}</b> : <>
-                    <button type="button" aria-label={`One less ${p.name}`} disabled={p.usedQty === 0 || busy === `p-${p.skuId}`} onClick={() => void setUsed(p.skuId, p.usedQty - 1)}
+                  {finished ? <b className="tabular-nums">{p.qty}</b> : <>
+                    <button type="button" aria-label={`One less ${p.description}`} disabled={p.qty === 0 || busy === `p-${p.id}`} onClick={() => void setUsed(p.id, { lineId: p.id, qty: p.qty - 1 })}
                       className="w-11 h-11 grid place-items-center rounded-control border border-solid border-line bg-card cursor-pointer disabled:opacity-40 disabled:cursor-default"><Icon name="Minus" size="sm" /></button>
-                    <b className="w-8 text-center tabular-nums" aria-live="polite">{p.usedQty}</b>
-                    <button type="button" aria-label={`One more ${p.name}`} disabled={busy === `p-${p.skuId}`} onClick={() => void setUsed(p.skuId, p.usedQty + 1)}
+                    <b className="w-8 text-center tabular-nums" aria-live="polite">{p.qty}</b>
+                    <button type="button" aria-label={`One more ${p.description}`} disabled={p.qty >= 999 || busy === `p-${p.id}`} onClick={() => void setUsed(p.id, { lineId: p.id, qty: p.qty + 1 })}
                       className="w-11 h-11 grid place-items-center rounded-control border border-solid border-line bg-card cursor-pointer disabled:opacity-40"><Icon name="Plus" size="sm" /></button>
                   </>}
                 </div>
               ))}
               {!finished && (
                 <div className="flex gap-2">
-                  <Select label="Add a part" size="md" className="flex-1 min-w-0" value={adding} onChange={setAdding} placeholder="Add a part from the catalog"
+                  <Select label="Add an item" size="md" className="flex-1 min-w-0" value={adding} onChange={setAdding} placeholder="Add a maintenance item"
                     options={detail.data.catalog.filter(c => !partList.some(p => p.skuId === c.id)).map(c => ({ value: c.id, label: c.name, hint: c.code }))} />
-                  <Button size="touch" variant="secondary" disabled={!adding} disabledReason="Pick a part first." loading={busy === `p-${adding}`}
-                    onClick={() => { const id = adding; setAdding(''); void setUsed(id, 1); }}>Add</Button>
+                  <Button size="touch" variant="secondary" disabled={!adding} disabledReason="Pick an item first." loading={busy === `p-${adding}`}
+                    onClick={() => { const id = adding; setAdding(''); void setUsed(id, { skuId: id, qty: 1 }); }}>Add</Button>
                 </div>
               )}
             </section>

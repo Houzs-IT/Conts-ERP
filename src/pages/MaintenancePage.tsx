@@ -4,7 +4,6 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { DateField, DateTimeField, MoneyInput } from '../components/inputs';
 import Icon from '../components/Icon';
-import { Select, SearchSelect, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { Skeleton } from '../components/States';
 import { DataTable, type Column } from '../components/DataTable';
@@ -20,11 +19,13 @@ import { cx } from '../lib/design-tokens';
 import { rm, plural, dateShort } from '../lib/format';
 import { runEach, skippedNote } from '../lib/bulk';
 import {
-  PillTabs, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, MediaGrid, MediaDrop, uploadTo, CATEGORY, stamp, hm, mytDay, Checklist, type MediaItem, type ChecklistItem,
+  PillTabs, OpsModal, FormRow, INPUT, CloseButton, MediaGrid, MediaDrop, uploadTo, CATEGORY, stamp, hm, mytDay, Checklist, type MediaItem, type ChecklistItem,
 } from '../components/ops/OpsUi';
-import { TemplatePicker, AssigneeFields, assigneeOf, assigneeBody, useTemplates, useTechnicians, type Assignee } from '../components/ops/RepairTemplates';
+import { AssigneeFields, assigneeBody, useTechnicians, type Assignee } from '../components/ops/RepairTemplates';
+import { NewJobForm } from '../components/ops/NewJobForm';
+import { JobLines } from './MaintenanceLines';
 import { TemplatesPanel } from './MaintenanceTemplates';
-import type { AnyTone } from '../lib/status';
+import { statusOptions, type AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
 import { HistoryDisclosure } from '../components/RecordHistory';
@@ -42,6 +43,7 @@ interface Issue {
   blocksUnit: boolean; ownerApprovalRequired: boolean; ownerApprovedAt: string | null; chargeTo: ChargeTo; reporter: string | null;
   startedAt: string | null; endedAt: string | null; photoCount: number; documentCount: number; windows: RepairWin[];
   quotedAmount: number | null; finalAmount: number | null; expensed: number | null; skuName: string | null;
+  expenseId: string | null; linesTotal: number | null; lineCount: number; cancelledAt: string | null;
 }
 interface Payload { threshold: number; data: Issue[] }
 interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploadedAt: string }
@@ -54,7 +56,16 @@ const MONEY_ROLES = ['management', 'finance_admin', 'operations_manager'];
 const FIELD_ROLES = ['housekeeper', 'technician'];
 
 const awaitingOwner = (i: Issue) => i.state !== 'resolved' && i.ownerApprovalRequired && !i.ownerApprovedAt && i.chargeTo === 'owner';
+type StatusKey = 'new' | 'assigned' | 'in_progress' | 'repair_finished' | 'awaiting_owner' | 'done' | 'cancelled';
+function statusKey(i: Issue): StatusKey {
+  if (i.cancelledAt) return 'cancelled';
+  if (i.state === 'resolved') return 'done';
+  if (awaitingOwner(i)) return 'awaiting_owner';
+  if (i.state === 'in_progress' || i.startedAt) return i.endedAt ? 'repair_finished' : 'in_progress';
+  return i.vendorName ? 'assigned' : 'new';
+}
 function statusOf(i: Issue): { label: string; tone: AnyTone } {
+  if (i.cancelledAt) return { label: 'Cancelled', tone: 'neutral' };
   if (i.state === 'resolved') return { label: i.finalAmount ? `Done · ${PAYER_SHORT[i.chargeTo]}` : 'Done', tone: 'success' };
   if (awaitingOwner(i)) return { label: 'Awaiting owner approval', tone: 'warning' };
   if (i.state === 'in_progress' || i.startedAt) return { label: i.endedAt ? 'Repair finished' : 'In progress', tone: 'info' };
@@ -68,9 +79,9 @@ export default function MaintenancePage() {
   const money = MONEY_ROLES.includes(user!.role);
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState<Tab>('open');
-  const [category, setCategory] = useState('');
-  const [building, setBuilding] = useState('');
   const [q, setQ] = useState('');
+  const roster = useUnitRoster();
+  const techs = useTechnicians(!FIELD_ROLES.includes(user!.role));
   const selected = params.get('id');
   const setSelected = (id: string | null) => setParams(p => { const n = new URLSearchParams(p); if (id) n.set('id', id); else n.delete('id'); return n; }, { replace: true });
   const [creating, setCreating] = useState(false);
@@ -97,13 +108,21 @@ export default function MaintenancePage() {
 
   const base = tab === 'open' ? open.filter(i => !awaitingOwner(i)) : tab === 'approval' ? approval : tab === 'done' ? recentDone : issues;
   const ql = q.trim().toLowerCase();
-  const rows = base.filter(i => (!category || i.category === category) && (!building || i.buildingId === building)
-    && (!ql || `${i.unitNumber} ${i.propertyName} ${i.title} ${i.vendorName ?? ''}`.toLowerCase().includes(ql)))
+  const rows = base.filter(i => !ql || `${i.unitNumber} ${i.propertyName} ${i.title} ${i.detail ?? ''} ${i.vendorName ?? ''} ${i.reporter ?? ''}`.toLowerCase().includes(ql))
     .sort((a, b) => tab === 'open' ? (a.urgency === b.urgency ? b.reportedAt.localeCompare(a.reportedAt) : a.urgency === 'urgent' ? -1 : 1) : b.reportedAt.localeCompare(a.reportedAt));
-  const buildingOptions: SelectOption[] = useMemo(() => {
-    const m = new Map(issues.map(i => [i.buildingId, i.propertyName]));
-    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label }));
-  }, [issues]);
+  // Every building and every person, not only those that already have a job (a new system has none yet).
+  const buildingOptions = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const u of roster) if (u.propertyId) m.set(u.propertyId, u.propertyName);
+    for (const i of issues) m.set(i.buildingId, i.propertyName);
+    const jobs = new Map<string, number>();
+    for (const i of base) jobs.set(i.buildingId, (jobs.get(i.buildingId) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'en', { numeric: true })).map(([value, label]) => ({ value, label: label + ' (' + (jobs.get(value) ?? 0) + ')' }));
+  }, [roster, issues, base]);
+  const assigneeOptions = useMemo(() => {
+    const names = new Set<string>([...(techs.data?.data ?? []).map(t => t.name), ...(techs.data?.contractors ?? []), ...issues.map(i => i.vendorName ?? '').filter(Boolean)]);
+    return [{ value: '', label: 'Unassigned' }, ...[...names].sort((a, b) => a.localeCompare(b)).map(n => ({ value: n, label: n }))];
+  }, [techs.data, issues]);
   const sel = issues.find(i => i.id === selected) ?? null;
   const historySpend = tab === 'history' ? rows.reduce((s, i) => s + (i.finalAmount ?? 0), 0) : 0;
 
@@ -129,7 +148,8 @@ export default function MaintenancePage() {
       {error && data && <StaleBanner message={`Showing the last jobs we have. ${error}`} onRetry={reload} />}
       <IssueTable tab={tab} rows={data ? rows : null} loading={loading} error={data ? null : error} onRetry={reload} selected={selected} onSelect={setSelected}
         money={money} canBulk={!FIELD_ROLES.includes(user!.role)} onChanged={reload}
-        filtered={!!(category || building || q)} onClearFilters={() => { setCategory(''); setBuilding(''); setQ(''); }}
+        filtered={!!q} onClearFilters={() => setQ('')} buildings={buildingOptions} assignees={assigneeOptions}
+        toolbar={<input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit, issue, person" aria-label="Search jobs" className={cx(INPUT, 'h-9 w-[220px] max-md:w-full')} />}
         above={tab === 'history' && rows.length > 0 && money ? (
           <div className="text-copy text-muted-ink py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">{rows.length} {rows.length === 1 ? 'job' : 'jobs'} · {rm(historySpend)} spent{q ? ` matching "${q}"` : ''}</div>
         ) : undefined}
@@ -146,7 +166,7 @@ export default function MaintenancePage() {
             Owner approval above {rm(data.threshold, { cents: false })}
           </Button>}
           <Button size="sm" variant={tab === 'templates' ? 'primary' : 'secondary'} icon={<Icon name="ClipboardList" size="sm" />} onClick={() => setTab(tab === 'templates' ? 'open' : 'templates')}>Templates</Button>
-          <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Parts catalog</Button>
+          <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Maintenance items</Button>
         </>}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>New job</Button>} />
 
@@ -163,11 +183,6 @@ export default function MaintenancePage() {
               { value: 'done', label: 'Done' },
               { value: 'history', label: 'History' },
             ]} />
-            <div className="flex gap-2 flex-wrap md:ml-auto">
-              {tab === 'history' && <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit or issue" aria-label="Search" className={cx(INPUT, 'h-9 w-[200px]')} />}
-              <Select label="Category" value={category} onChange={setCategory} options={Object.entries(CATEGORY).map(([value, label]) => ({ value, label }))} placeholder="All categories" className="w-[150px]" />
-              <Select label="Building" value={building} onChange={setBuilding} options={buildingOptions} placeholder="All buildings" className="w-[170px]" />
-            </div>
           </div>
           <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={440}
             empty={<div className="text-center text-copy text-muted-ink p-6 max-w-[260px]"><Icon name="MousePointerClick" size="lg" /><p className="mt-2">Pick a job to see its timeline, repair windows, photos and cost.</p></div>}
@@ -175,7 +190,7 @@ export default function MaintenancePage() {
         </>
       )}
 
-      {creating && <NewJobModal onClose={() => setCreating(false)} money={money} threshold={data?.threshold ?? 30000} onDone={id => { setCreating(false); reload(); setTab('open'); setSelected(id); }} />}
+      {creating && <NewJobForm onClose={() => setCreating(false)} money={money} threshold={data?.threshold ?? 30000} onDone={id => { setCreating(false); reload(); setTab('open'); setSelected(id); }} />}
       {threshold && data && <ThresholdModal value={data.threshold} onClose={() => setThreshold(false)} onSave={sen => void saveThreshold(sen)} />}
     </div>
   );
@@ -194,9 +209,10 @@ function moveSkip(i: Issue, move: Move): string | null {
 }
 const MOVE_DONE: Record<Move, string> = { start: 'started', end: 'marked repair finished', reopen: 'reopened' };
 
-function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, money, canBulk, onChanged, filtered, onClearFilters, empty, above }: {
+function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, money, canBulk, onChanged, filtered, onClearFilters, empty, above, toolbar, buildings, assignees }: {
   tab: Tab; rows: Issue[] | null; loading: boolean; error: string | null; onRetry: () => void; selected: string | null; onSelect: (id: string) => void;
-  money: boolean; canBulk: boolean; onChanged: () => void; filtered: boolean; onClearFilters: () => void;
+  money: boolean; canBulk: boolean; onChanged: () => void; filtered: boolean; onClearFilters: () => void; toolbar?: ReactNode;
+  buildings: { value: string; label: string }[]; assignees: { value: string; label: string }[];
   empty: { title: string; action?: { label: string; onClick: () => void } }; above?: ReactNode;
 }) {
   const toast = useToast();
@@ -223,29 +239,34 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
   const columns = useMemo<Column<Issue>[]>(() => [
     { key: 'unit', label: 'Unit', value: i => i.unitNumber, text: i => `${i.unitNumber} ${i.propertyName}`, sub: i => i.propertyName, hideable: false, width: 120,
       render: i => <b className="text-ink">{i.unitNumber}</b> },
+    { key: 'building', label: 'Building', value: i => i.buildingId, text: i => i.propertyName, width: 140, hidden: true,
+      filter: { kind: 'select', options: buildings } },
     { key: 'issue', label: 'Issue', value: i => i.title, width: 280,
       sub: i => <>From {SOURCE[i.source] ?? i.source}{i.reporter ? ` (${i.reporter})` : ''} · {stamp(i.reportedAt)}{i.windows.length > 0 && ` · window ${stamp(i.windows[0].startsAt)}`}{i.blocksUnit && ' · unit blocked'}</>,
       render: i => <span className="block whitespace-normal text-ink">{i.title}</span> },
-    { key: 'category', label: 'Category', value: i => i.category, text: i => CATEGORY[i.category] ?? i.category, width: 120, filter: false },
-    { key: 'urgency', label: 'Urgency', type: 'status', value: i => i.urgency,
+    { key: 'category', label: 'Category', value: i => i.category, text: i => CATEGORY[i.category] ?? i.category, width: 120,
+      filter: { kind: 'select', options: Object.entries(CATEGORY).map(([value, label]) => ({ value, label })) } },
+    { key: 'urgency', label: 'Urgency', type: 'status', value: i => i.urgency, filter: { kind: 'select', options: [{ value: 'urgent', label: 'Urgent' }, { value: 'normal', label: 'Normal' }] },
       status: i => (i.urgency === 'urgent' ? { label: 'Urgent', tone: 'critical' } : { label: 'Normal', tone: 'neutral' }), width: 110, phone: 'meta' },
-    { key: 'assignee', label: 'Assigned to', value: i => i.vendorName, text: i => (i.vendorName ? `${i.vendorName} ${i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}` : 'Unassigned'), width: 180,
+    { key: 'assignee', label: 'Assigned to', value: i => i.vendorName ?? '', filter: { kind: 'select', options: assignees }, text: i => (i.vendorName ? `${i.vendorName} ${i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}` : 'Unassigned'), width: 180,
       render: i => (i.vendorName
         ? <span className="block truncate">{i.vendorName}<span className="text-muted-ink"> {i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}</span></span>
         : <span className="text-danger">Unassigned</span>) },
     ...(money ? [{ key: 'cost', label: 'Cost', type: 'money' as const, value: (i: Issue) => i.finalAmount ?? i.quotedAmount, width: 120, title: 'The final cost, or the quote while the job is open.',
       render: (i: Issue) => { const c = i.finalAmount ?? i.quotedAmount; return c == null ? <span className="text-faint">—</span> : <span className="tabular-nums whitespace-nowrap">{rm(c, { cents: false })}{i.finalAmount == null && <span className="text-muted-ink text-meta"> quote</span>}</span>; } }] : []),
-    { key: 'status', label: 'Status', type: 'status', value: i => statusOf(i).label, status: i => { const s = statusOf(i); return { label: s.label, tone: s.tone === 'gold' ? 'neutral' : s.tone }; }, width: 170 },
+    { key: 'kind', label: 'In-house or contractor', value: i => (i.vendorName ? i.assigneeKind ?? 'contractor' : 'none'), text: i => (!i.vendorName ? 'Unassigned' : i.assigneeKind === 'in_house' ? 'In-house' : 'Contractor'), width: 150, hidden: true,
+      filter: { kind: 'select', options: [{ value: 'in_house', label: 'In-house' }, { value: 'contractor', label: 'Contractor' }, { value: 'none', label: 'Unassigned' }] } },
+    { key: 'status', label: 'Status', type: 'status', value: i => statusKey(i), filter: { kind: 'select', options: statusOptions('maintenance') }, status: i => { const s = statusOf(i); return { label: s.label, tone: s.tone === 'gold' ? 'neutral' : s.tone }; }, width: 170 },
     { key: 'reported', label: 'Reported', type: 'datetime', value: i => i.reportedAt, hidden: true, width: 150 },
     { key: 'resolved', label: 'Finished', type: 'datetime', value: i => i.resolvedAt, hidden: true, width: 150 },
-  ], [money]);
+  ], [money, buildings, assignees]);
 
   return (
     <>
       <DataTable<Issue>
         id="maintenance.jobs" columns={columns} rows={rows} rowKey={i => i.id} loading={loading} error={error} onRetry={onRetry}
         onRowClick={i => onSelect(i.id)} rowTone={i => (i.id === selected ? 'gold' : i.state === 'resolved' ? 'muted' : null)}
-        noun={['job', 'jobs']} exportName="maintenance-jobs" selectionKey={tab} above={above}
+        noun={['job', 'jobs']} exportName="maintenance-jobs" selectionKey={tab} above={above} toolbar={toolbar}
         filtered={filtered} onClearFilters={onClearFilters}
         empty={{ title: empty.title, icon: 'Wrench', action: empty.action }}
         selectable={canBulk}
@@ -310,17 +331,18 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
   const checklist = useApi<{ data: ChecklistItem[] }>(`/maintenance/issues/${i.id}/checklist`);
   const [ticks, setTicks] = useState<ChecklistItem[] | null>(null);
   const stepItems = ticks ?? checklist.data?.data ?? null;
-  const parts = useApi<{ data: { skuId: string; name: string; code: string; unitLabel: string; plannedQty: number; usedQty: number }[] }>(`/maintenance/issues/${i.id}/parts`);
   const [quoteSen, setQuoteSen] = useState<number | null>(i.quotedAmount);
   const [windowOpen, setWindowOpen] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
   const [exchange, setExchange] = useState(false);
+  const [costOpen, setCostOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const done = i.state === 'resolved';
   const media = (files.data?.data ?? []).filter(f => f.kind === 'photo' || f.kind === 'video');
   const docs = (files.data?.data ?? []).filter(f => f.kind !== 'photo' && f.kind !== 'video');
 
-  const refresh = useCallback(() => { files.reload(); parts.reload(); onChanged(); }, [files, parts, onChanged]);
+  const refresh = useCallback(() => { files.reload(); onChanged(); }, [files, onChanged]);
   async function act(key: string, fn: () => Promise<unknown>, ok: string, body?: string) {
     setBusy(key);
     try { await fn(); toast({ tone: 'success', title: ok, body }); refresh(); return true; }
@@ -395,17 +417,7 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
         </section>
       )}
 
-      {(parts.data?.data.length ?? 0) > 0 && (
-        <section className="flex flex-col gap-1">
-          <h3 className="m-0 text-copy font-semibold">Parts</h3>
-          {parts.data!.data.map(p => (
-            <div key={p.skuId} className="flex items-center gap-2 min-h-8">
-              <span className="flex-1 min-w-0 truncate">{p.name} <span className="text-muted-ink">{p.code}</span></span>
-              <span className="tabular-nums text-muted-ink whitespace-nowrap">{p.plannedQty > 0 && `planned ${p.plannedQty} · `}used <b className="text-ink">{p.usedQty}</b></span>
-            </div>
-          ))}
-        </section>
-      )}
+      <JobLines issueId={i.id} done={done} money={money} skus={skus} onChanged={onChanged} />
 
       {money && !done && (
         <section className="flex flex-col gap-2">
@@ -478,8 +490,14 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
 
       {done ? (
         <div className="flex flex-col gap-2">
-          {money && i.finalAmount != null && <p className="m-0">Final cost {rm(i.finalAmount)}, {PAYER[i.chargeTo].toLowerCase()}{i.expensed ? '. Recorded as an expense on the unit.' : '.'}</p>}
-          {money && <Button variant="secondary" loading={busy === 'reopen'} onClick={() => void act('reopen', () => api.patch(`/maintenance/issues/${i.id}`, { state: 'reopened' }), 'Job reopened.')}>Reopen</Button>}
+          {i.cancelledAt && <p className="m-0 text-muted-ink">Cancelled {stamp(i.cancelledAt)}. Nothing was charged.</p>}
+          {money && !i.cancelledAt && i.finalAmount != null && <p className="m-0">Final cost {rm(i.finalAmount)}, {PAYER[i.chargeTo].toLowerCase()}.</p>}
+          {money && !i.cancelledAt && <p className="m-0 text-copy">{i.expenseId ? <>Charged to unit: <b>{rm(i.expensed ?? 0)}</b> · expense #{i.expenseId.slice(0, 8)}</> : <span className="text-muted-ink">Nothing charged to the unit.</span>}</p>}
+          <div className="flex gap-2 flex-wrap">
+            {money && !i.cancelledAt && <Button variant="secondary" className="flex-1" onClick={() => setCostOpen(true)}>Change the cost</Button>}
+            {money && <Button variant="secondary" className="flex-1" loading={busy === 'reopen'} onClick={() => void act('reopen', () => api.patch(`/maintenance/issues/${i.id}`, { state: 'reopened' }), 'Job reopened.')}>Reopen</Button>}
+            {money && !i.cancelledAt && <Button variant="secondary" className="flex-1" onClick={() => setCancelOpen(true)}>Cancel job</Button>}
+          </div>
         </div>
       ) : (
         <div className="flex flex-col gap-2">
@@ -492,6 +510,7 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
               onClick={() => void act('start', () => api.post(`/maintenance/issues/${i.id}/start`, {}), 'Repair started.')}>Start repair</Button>}
             {money && <Button variant="primary" className="flex-1" disabled={awaitingOwner(i)} disabledReason="Waiting for the owner's approval." onClick={() => setCompleteOpen(true)}>Mark done</Button>}
           </div>
+          {money && <Button variant="secondary" onClick={() => setCancelOpen(true)}>Cancel job</Button>}
         </div>
       )}
 
@@ -500,6 +519,8 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
       {windowOpen && <WindowModal issue={i} onClose={() => setWindowOpen(false)} onDone={(n) => { setWindowOpen(false); toast({ tone: n ? 'warning' : 'success', title: 'Repair window added.', body: n ? `It overlaps ${n} ${n === 1 ? 'stay' : 'stays'}. Make sure the guest agreed.` : 'No guest is in the unit then.' }); refresh(); }} />}
       {blockOpen && <BlockModal issue={i} onClose={() => setBlockOpen(false)} onDone={() => { setBlockOpen(false); toast({ tone: 'success', title: 'Unit blocked.', body: 'The dates are off sale on the calendar until the repair is done.' }); refresh(); }} />}
       {completeOpen && <CompleteModal issue={i} onClose={() => setCompleteOpen(false)} onDone={() => { setCompleteOpen(false); toast({ tone: 'success', title: 'Job done.', body: 'The cost is on the unit as an expense.' }); refresh(); }} />}
+      {costOpen && <CompleteModal issue={i} edit onClose={() => setCostOpen(false)} onDone={() => { setCostOpen(false); toast({ tone: 'success', title: 'Cost changed.', body: 'The expense on the unit moved with it.' }); refresh(); }} />}
+      {cancelOpen && <CancelModal issue={i} onClose={() => setCancelOpen(false)} onDone={() => { setCancelOpen(false); toast({ tone: 'success', title: 'Job cancelled.', body: 'Anything it charged to the unit was taken back.' }); refresh(); }} />}
       {exchange && <ExchangeModal jobLabel={`${i.propertyName} ${i.unitNumber} · ${i.title}`} skus={skus.filter(s => s.active)} onClose={() => setExchange(false)}
         onExchange={(s, qty) => { setExchange(false); void act('exchange', () => api.post(`/maintenance/issues/${i.id}/exchange`, { skuId: s.id, qty }), 'Drawn from stock.', `${qty} x ${s.name}.`); }} />}
     </div>
@@ -512,78 +533,6 @@ function footer(onClose: () => void, busy: boolean, label: string, onSave: () =>
   return <><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={onSave}>{label}</Button></>;
 }
 const errText = (e: unknown) => errorMessage(e, 'Not saved. Try again.');
-
-function NewJobModal({ onClose, onDone, money, threshold }: { onClose: () => void; onDone: (id: string) => void; money: boolean; threshold: number }) {
-  const units = useUnitRoster();
-  const templates = useTemplates();
-  const techs = useTechnicians();
-  const [f, setF] = useState({ unitId: '', title: '', category: 'other', urgency: 'normal', reportSource: 'staff', detail: '', chargeTo: 'owner' });
-  const [who, setWho] = useState<Assignee>({ kind: '', technicianId: '', contractor: '' });
-  const [templateId, setTemplateId] = useState('');
-  const [blocksUnit, setBlocksUnit] = useState(false);
-  const [quoteSen, setQuoteSen] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ unitId?: string; title?: string; assignee?: string; form?: string }>({});
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(x => ({ ...x, [k]: e.target.value }));
-  const tpl = templates.data?.data.find(t => t.id === templateId) ?? null;
-  function pickTemplate(t: typeof tpl) {
-    setTemplateId(t?.id ?? '');
-    if (!t) return;
-    setF(x => ({ ...x, title: t.name, category: t.category, urgency: t.urgency }));
-    setWho(assigneeOf(t));
-    setBlocksUnit(t.blocksUnit);
-    if (money) setQuoteSen(t.estimatedCost);
-    setError({});
-  }
-  async function save() {
-    const who_ = assigneeBody(who);
-    const bad = { unitId: f.unitId ? undefined : 'Pick the unit.', title: f.title.trim() ? undefined : 'Say what is wrong.', assignee: who_.error ?? undefined };
-    if (bad.unitId || bad.title || bad.assignee) { setError(bad); return; }
-    setBusy(true); setError({});
-    try {
-      const r = await api.post<{ id: string }>('/maintenance/issues', {
-        unitId: f.unitId, title: f.title.trim(), detail: f.detail.trim() || undefined, category: f.category, urgency: f.urgency, reportSource: f.reportSource,
-        ...who_.body, templateId: templateId || undefined, blocksUnit,
-        quotedAmount: money && quoteSen != null ? quoteSen : undefined, chargeTo: f.chargeTo,
-      });
-      onDone(r.id);
-    } catch (e) {
-      const fields = e instanceof ApiFailure ? e.fields ?? {} : {};
-      const assignee = fields.assigneeUserId ?? fields.assigneeName;
-      setError({ unitId: fields.unitId, title: fields.title, assignee, form: fields.unitId || fields.title || assignee ? undefined : errText(e) }); setBusy(false);
-    }
-  }
-  return (
-    <OpsModal title="New job" sub="A repair on one unit." onClose={onClose} busy={busy} width={560} footer={footer(onClose, busy, 'Open job', () => void save())}>
-      <TemplatePicker templates={templates.data?.data ?? null} value={templateId} onPick={pickTemplate} />
-      {tpl && (
-        <div className="rounded-control bg-muted p-2.5 text-meta text-muted-ink flex flex-col gap-0.5">
-          <span>{tpl.steps.length ? `Checklist of ${plural(tpl.steps.length, 'step')}` : 'No checklist'}{tpl.parts.length ? ` · parts: ${tpl.parts.map(p => `${p.qty} x ${p.name}`).join(', ')}` : ''}</span>
-          {tpl.instructions && <span className="text-ink">{tpl.instructions}</span>}
-        </div>
-      )}
-      <FormRow label="Unit" error={error.unitId}><SearchSelect label="Unit" value={f.unitId} onChange={v => { setF(x => ({ ...x, unitId: v })); setError(x => ({ ...x, unitId: undefined })); }} options={units.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName }))} placeholder="Search units" size="md" /></FormRow>
-      <FormRow label="What is wrong" error={error.title}><input className={INPUT} value={f.title} onChange={e => { set('title')(e); setError(x => ({ ...x, title: undefined })); }} placeholder="e.g. Aircon not cooling, guest complained" maxLength={160} /></FormRow>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <FormRow label="Category"><select className={INPUT} value={f.category} onChange={set('category')}>{Object.entries(CATEGORY).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></FormRow>
-        <FormRow label="Urgency"><select className={INPUT} value={f.urgency} onChange={set('urgency')}><option value="normal">Normal</option><option value="urgent">Urgent</option></select></FormRow>
-        <FormRow label="Reported by"><select className={INPUT} value={f.reportSource} onChange={set('reportSource')}>{Object.entries(SOURCE).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></FormRow>
-      </div>
-      <FormRow label="Details (optional)"><textarea className={TEXTAREA} value={f.detail} onChange={set('detail')} maxLength={2000} /></FormRow>
-      <AssigneeFields label="Assign to (optional)" value={who} onChange={v => { setWho(v); setError(x => ({ ...x, assignee: undefined })); }} technicians={techs.data} error={error.assignee} />
-      <label className="flex items-center gap-2 text-copy min-h-8 cursor-pointer">
-        <input type="checkbox" className="w-4 h-4 accent-black" checked={blocksUnit} onChange={e => setBlocksUnit(e.target.checked)} />
-        Take the unit out of service until fixed
-      </label>
-      <div className="grid grid-cols-2 gap-3">
-        {money && <FormRow label="Quote, RM (optional)" hint={quoteSen != null && quoteSen > threshold && f.chargeTo === 'owner' ? 'Above the threshold: the owner approves first.' : undefined}>
-          <MoneyInput className={INPUT} valueSen={quoteSen} onChangeSen={setQuoteSen} aria-label="Quote in RM" /></FormRow>}
-        <FormRow label="Who pays"><select className={INPUT} value={f.chargeTo} onChange={set('chargeTo')}>{(['owner', 'the_conts', 'guest_deposit'] as ChargeTo[]).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}</select></FormRow>
-      </div>
-      {error.form && <span className="text-meta text-danger" role="alert">{error.form}</span>}
-    </OpsModal>
-  );
-}
 
 function WindowModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => void; onDone: (overlaps: number) => void }) {
   const day = mytDay(0);
@@ -630,8 +579,9 @@ function BlockModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => v
   );
 }
 
-function CompleteModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => void; onDone: () => void }) {
-  const [amountSen, setAmountSen] = useState<number | null>(issue.quotedAmount);
+/** Closes the job with its final cost, or (edit) changes the cost of a finished one. The cost starts at the job's items. */
+function CompleteModal({ issue, onClose, onDone, edit }: { issue: Issue; onClose: () => void; onDone: () => void; edit?: boolean }) {
+  const [amountSen, setAmountSen] = useState<number | null>(edit ? issue.finalAmount : issue.lineCount > 0 ? issue.linesTotal : issue.quotedAmount);
   const [payer, setPayer] = useState<ChargeTo>(issue.chargeTo);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -639,18 +589,40 @@ function CompleteModal({ issue, onClose, onDone }: { issue: Issue; onClose: () =
     const sen = amountSen ?? 0;
     if (sen < 0) { setError('Enter the final cost.'); return; }
     setBusy(true); setError(null);
-    try { await api.post(`/maintenance/issues/${issue.id}/complete`, { finalAmount: sen, chargeTo: payer }); onDone(); }
+    try {
+      if (edit) await api.patch(`/maintenance/issues/${issue.id}`, { finalAmount: sen, chargeTo: payer });
+      else await api.post(`/maintenance/issues/${issue.id}/complete`, { finalAmount: sen, chargeTo: payer });
+      onDone();
+    }
     catch (e) { setError(errText(e)); setBusy(false); }
   }
   return (
-    <OpsModal title="Mark job done" sub={`${issue.propertyName} ${issue.unitNumber} · ${issue.title}`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Mark done', () => void save())}>
-      <FormRow label="Final cost, RM" error={error} hint="Recorded as a maintenance expense on the unit. RM 0 records nothing.">
-        <MoneyInput className={INPUT} valueSen={amountSen} onChangeSen={setAmountSen} aria-label="Final cost in RM" />
+    <OpsModal title={edit ? 'Change the cost' : 'Mark job done'} sub={`${issue.propertyName} ${issue.unitNumber} · ${issue.title}`} onClose={onClose} busy={busy} footer={footer(onClose, busy, edit ? 'Save cost' : 'Mark done', () => void save())}>
+      <FormRow label="Final cost, RM" error={error} hint={`${issue.lineCount > 0 && issue.linesTotal != null ? `The items used add up to ${rm(issue.linesTotal)}. ` : ''}Posted once to the unit as a maintenance expense; changing it later moves that expense. RM 0 charges nothing.`}>
+        <MoneyInput className={INPUT} valueSen={amountSen} onChangeSen={setAmountSen} maxSen={100_000_000} aria-label="Final cost in RM" />
       </FormRow>
       <FormRow label="Who pays">
         <select className={INPUT} value={payer} onChange={e => setPayer(e.target.value as ChargeTo)}>{(['owner', 'the_conts', 'guest_deposit', 'warranty'] as ChargeTo[]).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}</select>
       </FormRow>
       {issue.blocksUnit && <span className="text-meta text-muted-ink">The unit goes back to ready, and the nights blocked for this repair go back on sale.</span>}
+    </OpsModal>
+  );
+}
+
+function CancelModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => void; onDone: () => void }) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function save() {
+    if (!reason.trim()) { setError('Say why the job is cancelled.'); return; }
+    setBusy(true); setError(null);
+    try { await api.post(`/maintenance/issues/${issue.id}/cancel`, { reason: reason.trim() }); onDone(); }
+    catch (e) { setError(errText(e)); setBusy(false); }
+  }
+  return (
+    <OpsModal title="Cancel job" sub={`${issue.propertyName} ${issue.unitNumber} · ${issue.title}`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Cancel job', () => void save())}>
+      <FormRow label="Why" error={error}><input className={INPUT} value={reason} onChange={e => setReason(e.target.value)} maxLength={300} placeholder="e.g. Reported twice, or the guest fixed it" autoFocus /></FormRow>
+      <span className="text-meta text-muted-ink">The job closes with no cost.{issue.expenseId ? ` The ${rm(issue.expensed ?? 0)} it charged to the unit is taken back.` : ''}{issue.blocksUnit ? ' The unit goes back on sale.' : ''}</span>
     </OpsModal>
   );
 }

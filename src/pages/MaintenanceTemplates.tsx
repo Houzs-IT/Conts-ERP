@@ -36,7 +36,7 @@ export function TemplatesPanel({ money, skus }: { money: boolean; skus: Sku[] })
     { key: 'who', label: 'Usually done by', value: t => WHO(t), width: 180 },
     { key: 'steps', label: 'Checklist', type: 'number', value: t => t.steps.length, text: t => plural(t.steps.length, 'step'), width: 100,
       render: t => <span className="whitespace-nowrap">{plural(t.steps.length, 'step')}</span> },
-    { key: 'parts', label: 'Parts', value: t => t.parts.map(p => `${p.qty} x ${p.name}`).join(', ') || null, width: 200, hidden: true,
+    { key: 'parts', label: 'Items', value: t => t.parts.map(p => `${p.qty} x ${p.name}`).join(', ') || null, width: 200, hidden: true,
       render: t => (t.parts.length ? <span className="block truncate">{t.parts.map(p => `${p.qty} x ${p.name}`).join(', ')}</span> : <span className="text-faint">None</span>) },
     ...(money ? [{ key: 'cost', label: 'Estimated cost', type: 'money' as const, value: (t: RepairTemplate) => t.estimatedCost, width: 130 }] : []),
     { key: 'block', label: 'Blocks unit', value: t => (t.blocksUnit ? 'Yes' : 'No'), width: 110, hidden: true },
@@ -51,7 +51,7 @@ export function TemplatesPanel({ money, skus }: { money: boolean; skus: Sku[] })
         pageSize={0} noun={['template', 'templates']} exportName="maintenance-templates"
         rowTone={t => (t.archived ? 'muted' : null)} onRowClick={t => setOpen(t)}
         filtered={!showArchived && all.length > live} onClearFilters={() => setShowArchived(true)}
-        toolbar={<span className="text-copy text-muted-ink">{plural(live, 'template')} · picking one on a new job fills its fields, checklist and parts.</span>}
+        toolbar={<span className="text-copy text-muted-ink">{plural(live, 'template')} · picking one on a new job fills its fields, checklist and items.</span>}
         actions={<>
           <label className="flex items-center gap-1.5 text-meta text-muted-ink cursor-pointer">
             <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
@@ -124,7 +124,7 @@ function TemplateModal({ template: t, canEdit, money, skus, onClose, onSaved }: 
     void run('save', () => (t ? api.patch(`/maintenance/templates/${t.id}`, body) : api.post('/maintenance/templates', body)), t ? 'Template saved.' : 'Template added.');
   }
 
-  const skuOptions = skus.filter(s => s.active || d.parts.some(p => p.skuId === s.id)).map(s => ({ value: s.id, label: `${s.name} (${s.code})` }));
+  const skuOptions = skus.filter(s => s.active || d.parts.some(p => p.skuId === s.id)).map(s => ({ value: s.id, label: `${s.code} · ${s.name}` }));
   const footer = (
     <div className="flex gap-2 flex-wrap w-full">
       {t && canEdit && !t.archived && <Button size="sm" variant="secondary" loading={busy === 'dup'}
@@ -188,17 +188,17 @@ function TemplateModal({ template: t, canEdit, money, skus, onClose, onSaved }: 
         </section>
 
         <section className="flex flex-col gap-1.5">
-          <span className="text-meta font-medium text-muted-ink">Parts usually needed</span>
-          {d.parts.length === 0 && <span className="text-copy text-muted-ink">{skus.length ? 'None.' : 'None. Parts come from the Parts catalog, which is empty.'}</span>}
+          <span className="text-meta font-medium text-muted-ink">Maintenance items usually needed</span>
+          {d.parts.length === 0 && <span className="text-copy text-muted-ink">{skus.length ? 'None.' : 'None. Items come from Maintenance items, which has none yet.'}</span>}
           {d.parts.map((p, i) => (
             <div key={i} className="grid grid-cols-[1fr_90px_32px] gap-2 items-center">
-              <Select label="Part" size="md" value={p.skuId} placeholder="Pick a part" options={skuOptions} className="w-full"
+              <Select label="Item" size="md" value={p.skuId} placeholder="Pick an item" options={skuOptions} className="w-full"
                 onChange={v => set('parts', d.parts.map((x, n) => (n === i ? { ...x, skuId: v } : x)))} />
               <NumberInput className={INPUT} value={p.qty} min={1} max={999} aria-label="Quantity" onChange={v => set('parts', d.parts.map((x, n) => (n === i ? { ...x, qty: v } : x)))} />
               {!readOnly && <button type="button" aria-label="Remove part" onClick={() => set('parts', d.parts.filter((_, n) => n !== i))} className="w-8 h-8 grid place-items-center text-muted-ink hover:text-danger cursor-pointer"><Icon name="X" size="sm" /></button>}
             </div>
           ))}
-          {!readOnly && skus.some(s => s.active) && <Button size="sm" variant="secondary" className="self-start" icon={<Icon name="Plus" size="sm" />} onClick={() => set('parts', [...d.parts, { skuId: '', qty: 1 }])}>Add a part</Button>}
+          {!readOnly && skus.some(s => s.active) && <Button size="sm" variant="secondary" className="self-start" icon={<Icon name="Plus" size="sm" />} onClick={() => set('parts', [...d.parts, { skuId: '', qty: 1 }])}>Add an item</Button>}
           {errors.parts && <span className="text-meta text-danger">{errors.parts}</span>}
         </section>
       </fieldset>
