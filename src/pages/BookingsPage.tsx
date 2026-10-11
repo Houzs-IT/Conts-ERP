@@ -36,20 +36,20 @@ interface Row {
 
 /** Five tabs, no overlap: every booking is in exactly one of the first four, and All is their sum. */
 const VIEWS = [
-  { key: 'upcoming', label: 'Upcoming', empty: 'No upcoming bookings.' },
-  { key: 'inhouse', label: 'In house', empty: 'Nobody is in house right now.' },
-  { key: 'past', label: 'Checked out', empty: 'No finished stays yet.' },
-  { key: 'cancelled', label: 'Cancelled', empty: 'No cancelled bookings.' },
-  { key: 'all', label: 'All', empty: 'No bookings yet.' },
+  { key: 'upcoming', label: 'Upcoming', empty: 'No upcoming reservations.' },
+  { key: 'inhouse', label: 'Currently hosting', empty: 'Nobody is staying right now.' },
+  { key: 'past', label: 'Past', empty: 'No past reservations yet.' },
+  { key: 'cancelled', label: 'Cancelled', empty: 'No cancelled reservations.' },
+  { key: 'all', label: 'All', empty: 'No reservations yet.' },
 ] as const;
 type ViewKey = typeof VIEWS[number]['key'];
 
 /** Things to do today. A card filters the list; it is not another tab. */
 const TODOS = [
-  { key: 'arriving', label: 'Arriving today', empty: 'Nobody arrives today.', money: false },
-  { key: 'departing', label: 'Departing today', empty: 'Nobody leaves today.', money: false },
-  { key: 'unpaid', label: 'Direct, not fully paid', empty: 'Every direct booking is paid.', money: true },
-  { key: 'payout', label: 'Booking-site payout pending', empty: 'Every finished booking-site stay is paid out.', money: true },
+  { key: 'arriving', label: 'Checking in today', empty: 'Nobody checks in today.', money: false },
+  { key: 'departing', label: 'Checking out today', empty: 'Nobody checks out today.', money: false },
+  { key: 'unpaid', label: 'Direct, not fully paid', empty: 'Every direct reservation is paid.', money: true },
+  { key: 'payout', label: 'Host payout pending', empty: 'Every past channel reservation is paid out.', money: true },
 ] as const;
 type TodoKey = typeof TODOS[number]['key'];
 
@@ -255,8 +255,8 @@ export default function BookingsPage() {
       tone: created && !failedSync ? 'success' : 'warning',
       title: created ? `Imported ${plural(created, 'reservation')}.` : 'Nothing imported.',
       body: [rejected ? `${plural(rejected, 'row')} ${rejected === 1 ? 'was' : 'were'} rejected and left out.` : 'Every row was accepted.',
-        queued ? `${plural(queued, 'stay')} closed on the booking sites.` : '',
-        failedSync ? `${plural(failedSync, 'stay')} could not be closed on the booking sites; check Integrations.` : ''].filter(Boolean).join(' '),
+        queued ? `Nights for ${plural(queued, 'reservation')} are waiting to send to the channels.` : '',
+        failedSync ? `Nights for ${plural(failedSync, 'reservation')} were not blocked on the channels. Check Integrations.` : ''].filter(Boolean).join(' '),
     });
     setImportRows(null);
     reload();
@@ -267,7 +267,7 @@ export default function BookingsPage() {
     setExporting(true);
     try {
       await downloadFile('/reservations/export', Object.fromEntries(API_PARAMS.filter(k => k !== 'page' && k !== 'size').map(k => [k, params.get(k)])));
-      toast({ tone: 'success', title: 'Export ready.', body: `${plural(total, 'booking')} with the money breakdown and payments. The first lines name the filters and totals.` });
+      toast({ tone: 'success', title: 'Export ready.', body: `${plural(total, 'reservation')} with the money breakdown and payments. The first lines name the filters and totals.` });
     } catch (e) { notifyFailure(e); }
     setExporting(false);
   }
@@ -301,22 +301,22 @@ export default function BookingsPage() {
     { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150, filter: false },
     { key: 'channel', label: 'Channel', type: 'channel', value: r => r.channel, sortKey: 'channel', hidden: true, width: 130,
       filter: { kind: 'select', param: 'ch', multi: false, options: CHANNEL_CHOICES.map(c => ({ value: c, label: CHANNEL_META[c].label })) } },
-    { key: 'stay', label: 'Check-in to check-out', type: 'date', value: r => r.checkIn, sortKey: 'stay', width: 160,
-      filter: { kind: 'date', params: ['from', 'to'], hint: 'Stays that touch these dates' },
+    { key: 'stay', label: 'Check-in to checkout', type: 'date', value: r => r.checkIn, sortKey: 'stay', width: 160,
+      filter: { kind: 'date', params: ['from', 'to'], hint: 'Reservations that touch these dates' },
       render: b => <span className="whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span>, sub: b => fmtNights(b.nights),
       exportKind: 'text', exportValue: r => `${r.checkIn} to ${r.checkOut}` },
     { key: 'checkIn', label: 'Check-in', type: 'date', value: r => r.checkIn, hidden: true, filter: false, sortKey: 'stay' },
-    { key: 'checkOut', label: 'Check-out', type: 'date', value: r => r.checkOut, hidden: true, filter: false },
+    { key: 'checkOut', label: 'Checkout', type: 'date', value: r => r.checkOut, hidden: true, filter: false },
     { key: 'nights', label: 'Nights', type: 'number', value: r => r.nights, hidden: true, sortKey: 'nights', filter: false, width: 80 },
     { key: 'guests', label: 'Guests', type: 'number', value: r => r.guestsCount, hidden: true, sortKey: 'guests', filter: false, width: 80 },
     { key: 'phone', label: 'Phone', type: 'phone', value: r => r.guestPhone, hidden: true, filter: false, width: 140 },
     { key: 'nationality', label: 'Nationality', value: r => nationalityOf(r), hidden: true, filter: false, width: 130 },
     { key: 'gross', label: 'Guest total', type: 'money', value: r => (r.grossBookingValue > 0 ? r.grossBookingValue : null), sortKey: 'gross', width: 120,
-      title: 'What the guest paid for the stay: room, fees and the taxes we collect. Tax a booking site keeps is not included.',
+      title: 'What the guest paid: accommodation, fees and the taxes we collect. Tax a channel keeps is not included.',
       filter: { kind: 'number', params: ['grossMin', 'grossMax'] },
       render: b => <span className="font-medium tabular-nums whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>,
       sub: b => (moneyTodo && b.outstanding > 0 ? <span className="text-warning tabular-nums">{rm(b.outstanding, { cents: false })} owed</span> : null) },
-    { key: 'fee', label: 'Commission', type: 'money', value: r => r.channelFee, hidden: true, sortKey: 'fee', filter: false },
+    { key: 'fee', label: 'Service fee', type: 'money', value: r => r.channelFee, hidden: true, sortKey: 'fee', filter: false },
     { key: 'expected', label: 'Expected to receive', type: 'money', value: r => r.expectedPayout, hidden: true, filter: false },
     { key: 'received', label: 'Received', type: 'money', value: r => r.received, hidden: true, filter: false },
     { key: 'outstanding', label: 'Outstanding', type: 'money', value: r => (['cancelled', 'no_show'].includes(r.state) ? 0 : r.outstanding), hidden: true, filter: false },
@@ -336,18 +336,18 @@ export default function BookingsPage() {
 
   const viewMeta = VIEWS.find(v => v.key === view)!;
   const todoMeta = todo ? TODOS.find(t => t.key === todo)! : null;
-  const sub = counts && todoMeta ? `${todoMeta.label}: ${plural(counts.all, 'booking')}${searching ? ' matching the filters' : ''}`
+  const sub = counts && todoMeta ? `${todoMeta.label}: ${plural(counts.all, 'reservation')}${searching ? ' matching the filters' : ''}`
   : counts
-    ? `${num(counts.upcoming)} upcoming · ${num(counts.inhouse)} in house · ${plural(counts.all, 'booking')} in total${searching ? ' matching the filters' : ''}`
-    : 'Loading bookings';
+    ? `${num(counts.upcoming)} upcoming · ${num(counts.inhouse)} currently hosting · ${plural(counts.all, 'reservation')} in total${searching ? ' matching the filters' : ''}`
+    : 'Loading reservations';
 
   return (
     <>
-      <PageHeader title="Bookings" sub={sub}
+      <PageHeader title="Reservations" sub={sub}
         actions={<>
           <Button size="sm" variant="secondary" icon={<Icon name="Upload" size="sm" />} onClick={pickImportFile}>Import</Button>
           <Button size="sm" variant="secondary" icon={<Icon name="FileText" size="sm" />} onClick={exportCsv} loading={exporting}
-            title="Every booking under these filters with the full money breakdown and each payment, as CSV."
+            title="Every reservation under these filters with the full money breakdown and each payment, as CSV."
             disabled={!data || total === 0} disabledReason="Nothing to export for this tab and these filters.">Money CSV</Button>
         </>}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => { setPrefill(null); setCreating(true); }}>Create reservation</Button>} />
@@ -373,7 +373,7 @@ export default function BookingsPage() {
         loading={loading} error={error} onRetry={reload} onRowClick={b => setOpenId(b.id)}
         server={{ total, page: data?.page ?? 1, pageSize: data?.pageSize ?? 50, sizes: [25, 50, 100, 200], defaultPageSize: 50, fetchAll }}
         viewParams={['view', 'todo', 'building', 'q']} filtered={searching || !!todo} onClearFilters={clearAll}
-        noun={['booking', 'bookings']} exportName="bookings" selectionKey={`${view}|${todo ?? ''}`}
+        noun={['reservation', 'reservations']} exportName="bookings" selectionKey={`${view}|${todo ?? ''}`}
         empty={{ title: todoMeta?.empty ?? viewMeta.empty, icon: 'CalendarDays' }}
         selectable={canMoney || canOps}
         bulkActions={(picked, clear) => <>
@@ -381,12 +381,12 @@ export default function BookingsPage() {
             <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setBulkAssign({ ids: picked.map(r => r.id), clear })}>Assign cleaner</Button>
           )}
           {canMoney && data?.paymentsReady && (
-            <Button size="sm" variant="primary" icon={<Icon name="CheckCircle2" size="sm" />} onClick={() => setBulkPayout({ rows: picked, clear })}>Mark payouts received</Button>
+            <Button size="sm" variant="primary" icon={<Icon name="CheckCircle2" size="sm" />} onClick={() => setBulkPayout({ rows: picked, clear })}>Mark host payouts received</Button>
           )}
         </>}
         header={
           <div className="flex items-center gap-2 flex-wrap py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
-            <Segmented<ViewKey> label="Booking views" value={todo ? '' : view} onChange={setView}
+            <Segmented<ViewKey> label="Reservation views" value={todo ? '' : view} onChange={setView}
               options={VIEWS.map(v => ({ key: v.key, label: v.label, count: counts?.[v.key] }))} />
             <div className="flex items-center gap-2 flex-wrap ml-auto max-md:ml-0 max-md:w-full">
               <ChannelFilter value={params.get('ch') ?? ''} onChange={v => setParam('ch', v)} />
@@ -401,7 +401,7 @@ export default function BookingsPage() {
           <label className="relative flex-[1_1_260px] min-w-[200px] max-w-[420px]">
             <span className="absolute left-[11px] top-1/2 -translate-y-1/2 text-muted-ink grid pointer-events-none"><Icon name="Search" size="sm" /></span>
             <input value={draft} onChange={e => setSearch(e.target.value)} placeholder="Guest, phone, reference, unit or building"
-              aria-label="Search bookings"
+              aria-label="Search reservations"
               className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink font-sans text-copy pl-[33px] pr-3 py-0 outline-none" />
           </label>
           {(searching || todo) && <Button variant="tertiary" size="sm" icon={<Icon name="X" size="sm" />} onClick={clearAll}>Clear filters</Button>}
@@ -409,13 +409,13 @@ export default function BookingsPage() {
         above={totals && (
           <dl className="m-0 flex items-center gap-x-5 gap-y-1 flex-wrap text-meta min-h-[20px] py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
             {todoMeta && <span className="font-semibold text-ink">{todoMeta.label}</span>}
-            <Total label="Bookings" value={num(totals.bookings)} />
+            <Total label="Reservations" value={num(totals.bookings)} />
             <Total label="Nights" value={num(totals.nights)} />
             <Total label="Guest total" value={rm(totals.gross, { cents: false })} />
-            <Total label="Commission" value={rm(totals.fees, { cents: false })} />
-            {todoMeta?.money && <Total label={todo === 'unpaid' ? 'Owed by guests' : 'Owed by booking sites'} value={rm(totals.outstanding, { cents: false })}
-              title={todo === 'unpaid' ? 'Guest total less what has been received, for these direct bookings.' : 'The payout expected less what has arrived, for these finished stays.'} />}
-            {todo === 'payout' && canMoney && <span className="text-muted-ink">Tick the stays the booking site has paid out, then mark them received.</span>}
+            <Total label="Service fee" value={rm(totals.fees, { cents: false })} />
+            {todoMeta?.money && <Total label={todo === 'unpaid' ? 'Owed by guests' : 'Owed by channels'} value={rm(totals.outstanding, { cents: false })}
+              title={todo === 'unpaid' ? 'Guest total less what has been received, for these direct reservations.' : 'The host payout expected less what has arrived, for these past reservations.'} />}
+            {todo === 'payout' && canMoney && <span className="text-muted-ink">Tick the reservations the channel has paid out, then mark them received.</span>}
           </dl>
         )}
         renderCard={b => (
@@ -526,7 +526,7 @@ function DateFilter({ from, to, onChange }: { from: string; to: string; onChange
     <Popover active={!!(from || to)} width={280} label={label}>
       {close => (
         <div className="p-2 flex flex-col gap-2">
-          <span className="text-caption text-muted-ink px-1">Stays that touch these dates</span>
+          <span className="text-caption text-muted-ink px-1">Reservations that touch these dates</span>
           <div className="grid grid-cols-2 gap-1">
             {presets.map(p => (
               <button key={p.label} type="button" onClick={() => { onChange(p.from, p.to); close(); }}
@@ -567,15 +567,15 @@ function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClo
       const r = await api.post<{ recorded: number; total: number; skipped: { ref: string | null; reason: string }[] }>('/reservations/mark-paid-out', { ids: rows.map(x => x.id), receivedOn, reference: reference || undefined });
       toast({
         tone: r.skipped.length ? 'warning' : 'success',
-        title: r.recorded ? `${plural(r.recorded, 'payout')} recorded, ${rm(r.total)}.` : 'No payout recorded.',
-        body: r.skipped.length ? `${plural(r.skipped.length, 'booking')} left alone: ${r.skipped.slice(0, 3).map(s => `${s.ref ?? 'one'} (${s.reason.replace(/\.$/, '').toLowerCase()})`).join(', ')}${r.skipped.length > 3 ? ' …' : ''}.` : 'They have left Booking-site payout pending.',
+        title: r.recorded ? `${plural(r.recorded, 'host payout')} recorded, ${rm(r.total)}.` : 'No host payout recorded.',
+        body: r.skipped.length ? `${plural(r.skipped.length, 'reservation')} left alone: ${r.skipped.slice(0, 3).map(s => `${s.ref ?? 'one'} (${s.reason.replace(/\.$/, '').toLowerCase()})`).join(', ')}${r.skipped.length > 3 ? ' …' : ''}.` : 'They have left Host payout pending.',
       });
       onDone();
-    } catch (err) { toast({ tone: 'critical', title: 'Payouts not recorded.', body: errorMessage(err, 'Try again in a moment.') }); }
+    } catch (err) { toast({ tone: 'critical', title: 'Host payouts not recorded.', body: errorMessage(err, 'Try again in a moment.') }); }
     setBusy(false);
   }
   return (
-    <CentreModal title="Mark payouts received" sub={`Records one payout per booking for what it still has outstanding: ${plural(rows.length, 'booking')}, ${rm(owed)} in all.${left ? ` ${plural(left, 'ticked booking')} ${left === 1 ? 'is' : 'are'} left out: not a booking-site stay, cancelled, or nothing owed.` : ''}`} onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal title="Mark host payouts received" sub={`Records one host payout per reservation for what it still has outstanding: ${plural(rows.length, 'reservation')}, ${rm(owed)} in all.${left ? ` ${plural(left, 'ticked reservation')} ${left === 1 ? 'is' : 'are'} left out: not from a channel, cancelled, or nothing owed.` : ''}`} onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
         <div className="max-h-[180px] overflow-y-auto border border-solid border-line rounded-control">
           {rows.map(r => (
@@ -591,7 +591,7 @@ function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClo
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!receivedOn || !rows.length} disabledReason={!rows.length ? 'None of the ticked bookings is waiting for a booking-site payout.' : 'Pick the date.'}>Mark received</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!receivedOn || !rows.length} disabledReason={!rows.length ? 'None of the ticked reservations is waiting for a host payout.' : 'Pick the date.'}>Mark received</Button>
         </div>
       </form>
     </CentreModal>
@@ -645,7 +645,7 @@ function buildImport(text: string, UNITS: RosterUnit[]): ParsedRow[] {
     if (!guest) return { line, label, error: 'Guest name is required.' };
     if (!['airbnb', 'booking_com', 'agoda', 'direct'].includes(channelRaw)) return { line, label, error: `Unknown channel "${channelRaw}". Use airbnb, booking_com, agoda or direct.` };
     if (!ISO_DATE.test(checkIn) || !ISO_DATE.test(checkOut)) return { line, label, error: 'Dates must be YYYY-MM-DD.' };
-    if (nightsBetween(checkIn, checkOut) < 1) return { line, label, error: 'Check-out must be after check-in.' };
+    if (nightsBetween(checkIn, checkOut) < 1) return { line, label, error: 'Checkout must be after check-in.' };
     const guestsCount = guestsRaw ? Number(guestsRaw) : 2;
     if (!Number.isFinite(guestsCount) || guestsCount < 0) return { line, label, error: 'Guests must be a number.' };
     const rateNum = rateRaw ? Number(rateRaw.replace(/[^0-9.]/g, '')) : 0;
@@ -712,10 +712,10 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
   }
 
   return (
-    <CentreModal title={owner ? 'Owner stay' : 'Create reservation'} sub="Checked against the unit's other bookings before it is saved, then closed on the booking sites the unit is sold on." onClose={() => { if (!busy) onClose(); }} maxWidth={520}>
+    <CentreModal title={owner ? 'Owner stay' : 'Create reservation'} sub="Checked against the unit's other reservations before it is saved, then blocked on the channels the unit is listed on." onClose={() => { if (!busy) onClose(); }} maxWidth={520}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto">
         <div role="radiogroup" aria-label="What is this" className="grid grid-cols-3 gap-1 p-1 rounded-control bg-muted">
-          {([['direct', 'Direct booking'], ['ota', 'Booking site'], ['owner_stay', 'Owner stay']] as const).map(([k, l]) => (
+          {([['direct', 'Direct'], ['ota', 'From a channel'], ['owner_stay', 'Owner stay']] as const).map(([k, l]) => (
             <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
               className={cx('h-9 rounded-[8px] border-none [font-family:inherit] text-meta cursor-pointer', kind === k ? 'bg-card font-semibold text-ink shadow-sm' : 'bg-transparent text-muted-ink')}>{l}</button>
           ))}
@@ -723,10 +723,10 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
         <UnitPicker units={UNITS} value={unitId} onChange={setUnitId} />
         {kind === 'ota' && (
           <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
-            <Select label="Booking site" showLabel size="md" value={site} onChange={v => setSite(v as BookingChannel)}
+            <Select label="Channel" showLabel size="md" value={site} onChange={v => setSite(v as BookingChannel)}
               options={(['airbnb', 'booking_com', 'agoda'] as const).map(c => ({ value: c, label: CHANNEL_META[c].label }))} />
-            <Field label="The site's reference" placeholder="e.g. HMF4323EHS" value={ref} onChange={e => setRef(e.target.value)}
-              help="Bookings normally arrive by themselves through Channex. Type one in only if it did not." />
+            <Field label="Channel reference" placeholder="e.g. HMF4323EHS" value={ref} onChange={e => setRef(e.target.value)}
+              help="Reservations normally arrive from the channel by themselves. Type one in only if it did not." />
           </div>
         )}
         <Field label={owner ? 'Who is staying (optional)' : 'Guest name'} placeholder={owner ? unitOwner ?? 'The owner' : 'Jane Tan'} value={guestName} onChange={e => setGuestName(e.target.value)} required={!owner} />
@@ -738,12 +738,12 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
         )}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <DateField label="Check-in" value={checkIn} min={todayMyt(-1)} onChange={setCheckIn} required error={fieldErrors.checkIn} />
-          <DateField label="Check-out" value={checkOut} min={checkIn || undefined} onChange={setCheckOut} required
-            error={checkIn && checkOut && nights < 1 ? 'Check-out must be after check-in.' : fieldErrors.checkOut} />
+          <DateField label="Checkout" value={checkOut} min={checkIn || undefined} onChange={setCheckOut} required
+            error={checkIn && checkOut && nights < 1 ? 'Checkout must be after check-in.' : fieldErrors.checkOut} />
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <TimeField label="Check-in from" value={inTime} onChange={setInTime} help="Earlier for an early check-in." error={fieldErrors.checkInTime} />
-          <TimeField label="Check-out by" value={outTime} onChange={setOutTime} help="Later for a late check-out." error={fieldErrors.checkOutTime} />
+          <TimeField label="Checkout by" value={outTime} onChange={setOutTime} help="Later for a late checkout." error={fieldErrors.checkOutTime} />
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <NumberInput label="Guests" min={1} max={16} value={guestsCount} onChange={setGuestsCount} required
@@ -772,7 +772,7 @@ function ImportPreviewModal({ rows, onClose, onConfirm }: { rows: ParsedRow[]; o
   const ok = rows.filter(r => r.row).length;
   const bad = rows.length - ok;
   return (
-    <CentreModal title="Import reservations" sub="Review the rows before importing. Rejected rows are left out. Each booking is closed on the booking sites its unit is sold on." onClose={onClose} maxWidth={620}>
+    <CentreModal title="Import reservations" sub="Review the rows before importing. Rejected rows are left out. Each reservation is blocked on the channels its unit is listed on." onClose={onClose} maxWidth={620}>
       <div className="px-[22px] pt-1 pb-3 flex items-center gap-2 flex-wrap flex-none">
         <span className="text-meta text-muted-ink">{plural(rows.length, 'row')} read</span>
         <StatusBadge tone="success" label={`${num(ok)} ready`} size="sm" />
@@ -785,7 +785,7 @@ function ImportPreviewModal({ rows, onClose, onConfirm }: { rows: ParsedRow[]; o
             <div className="flex flex-col gap-px min-w-0 flex-1">
               <span className="text-copy font-medium">{r.line ? `Line ${r.line} · ` : ''}{r.label}</span>
               {r.row
-                ? <span className="text-meta text-muted-ink">{CHANNEL_META[r.row.channel].label} · {dateRange(r.row.checkIn, r.row.checkOut)} · {r.row.grossBookingValue > 0 ? rm(r.row.grossBookingValue, { cents: false }) : 'no rate'}</span>
+                ? <span className="text-meta text-muted-ink">{CHANNEL_META[r.row.channel].label} · {dateRange(r.row.checkIn, r.row.checkOut)} · {r.row.grossBookingValue > 0 ? rm(r.row.grossBookingValue, { cents: false }) : 'no guest total'}</span>
                 : <span className="text-meta text-danger">{r.error}</span>}
             </div>
           </div>

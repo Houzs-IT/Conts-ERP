@@ -71,7 +71,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const pushed = await pushMessageIfLinked(env, thread.id, id, body);
     delivery = pushed.state === 'sent'
       ? { state: 'sent' }
-      : { state: 'not_linked', reason: pushed.reason ?? "This conversation isn't linked to the guest's platform, so they won't see this reply there." };
+      : { state: 'not_linked', reason: pushed.reason ?? "This guest's messages are not linked to the channel, so they will not see this reply there." };
   }
   // Kept on the message (migration 0104) so the Inbox still shows "Not delivered" after a reload. Never fails the
   // reply, which is already saved and sent.

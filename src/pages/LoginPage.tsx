@@ -70,7 +70,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
   // owner.theconts.com is the owners' door; the server refuses staff there too.
   const ownerDoor = window.location.hostname.split('.')[0] === 'owner';
   const c = ownerDoor && screen === 'signin'
-    ? { ...COPY.signin, eyebrow: 'OWNER PORTAL', sub: 'Use the email The Conts registered for your property.' }
+    ? { ...COPY.signin, eyebrow: 'OWNER PORTAL', sub: 'Use the email The Conts registered for your unit.' }
     : screen === 'code' && useBackup
       ? { ...COPY.code, heading: 'Enter a backup code', sub: 'Use one of the ten backup codes you saved when you set up two-step sign-in. Each works once.' }
       : COPY[screen];
@@ -132,7 +132,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
 
           <div className="flex items-end justify-between gap-8 flex-wrap">
             <span className="text-heading text-white text-pretty max-w-[420px]">
-              Short-term rental management for owners, units, bookings and payouts.
+              Short-term rental management for owners, units, reservations and owner payouts.
             </span>
             <span className={`${labelCaps} text-[var(--color-text-on-dark-muted)]`}>KUALA LUMPUR · PETALING JAYA</span>
           </div>

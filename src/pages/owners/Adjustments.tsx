@@ -23,7 +23,7 @@ export interface AdjustmentLike {
   statement: { id: string; period: string; state: string } | null;
 }
 
-export const ADJUSTMENT_KIND: Record<string, string> = { credit: 'Credit to owner', charge: 'Paid on behalf', opening_debt: 'Debt carried over' };
+export const ADJUSTMENT_KIND: Record<string, string> = { credit: 'Credit to owner', charge: 'Charge to owner', opening_debt: 'Debt carried over' };
 export const ADJUSTMENT_STATE: Record<string, { label: string; tone: 'warning' | 'info' | 'neutral' }> = {
   held: { label: 'Held', tone: 'warning' }, open: { label: 'Open', tone: 'info' }, settled: { label: 'Settled', tone: 'neutral' },
 };

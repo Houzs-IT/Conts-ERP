@@ -14,7 +14,7 @@ const MANAGE = ['management', 'operations_manager', 'operations_staff'];
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot see the roster.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot see the roster.', 403);
 
   const activeOnly = new URL(request.url).searchParams.get('active') === '1';
   const rows = await all<any>(env, `
@@ -56,7 +56,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   let userId: string | null = null;
   if (employment === 'internal' && typeof b?.userId === 'string' && b.userId.trim()) {
     const u = await one<{ id: string }>(env, "SELECT id FROM users WHERE id = ? AND role = 'housekeeper'", b.userId.trim());
-    if (!u) return fail('NOT_FOUND', 'That housekeeper account does not exist.', 404, { userId: 'Pick a housekeeper.' });
+    if (!u) return fail('NOT_FOUND', 'That cleaner account does not exist.', 404, { userId: 'Pick a cleaner.' });
     const taken = await one<{ id: string }>(env, 'SELECT id FROM cleaners WHERE user_id = ?', u.id);
     if (taken) return fail('CONFLICT', 'That login is already on the roster.', 409, { userId: 'Already linked to a cleaner.' });
     userId = u.id;

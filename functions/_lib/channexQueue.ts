@@ -31,7 +31,7 @@ async function guarded(env: Env, unitId: string, action: string, body: () => Pro
     if (!channexConfigured(env)) return;
     await body();
   } catch (e) {
-    await audit(env, { actorId: null, actorLabel: 'Channex sync', action, entityTable: 'units', entityId: unitId, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
+    await audit(env, { actorId: null, actorLabel: 'Channex', action, entityTable: 'units', entityId: unitId, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
   }
 }
 
@@ -181,7 +181,7 @@ export async function flushChannexQueue(env: Env, opts: { fullSync?: boolean } =
         await run(env, `UPDATE channex_outbox SET status = 'queued', attempts = attempts + 1, next_attempt_at = ?, last_status = ?, last_error = ? WHERE ${ID_IN}`, inMs(wait), status, error, idList(ids));
       } else {
         await run(env, `UPDATE channex_outbox SET status = 'failed', attempts = attempts + 1, last_status = ?, last_error = ? WHERE ${ID_IN}`, status, error, idList(ids));
-        await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.push_failed', entityTable: 'channex_outbox', entityId: ids[0], after: { kind, propertyId, status, rows: group.length, error } });
+        await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.push_failed', entityTable: 'channex_outbox', entityId: ids[0], after: { kind, propertyId, status, rows: group.length, error } });
       }
     }
   }

@@ -80,7 +80,7 @@ function problems(d: Draft): Record<string, string> {
 }
 
 const HISTORY_COLUMNS: Column<ContractView>[] = [
-  { key: 'model', label: 'Revenue model', value: h => MODEL[h.revenueModel].label, width: 170, render: h => <span><ModelChip model={h.revenueModel} /></span> },
+  { key: 'model', label: 'Income model', value: h => MODEL[h.revenueModel].label, width: 170, render: h => <span><ModelChip model={h.revenueModel} /></span> },
   { key: 'terms', label: 'Terms', value: h => h.termsLabel, width: 200 },
   { key: 'starts', label: 'From', type: 'date', value: h => h.startsOn, width: 116, render: h => <span className="whitespace-nowrap">{h.startsOn ? date(h.startsOn) : 'No start'}</span> },
   { key: 'ends', label: 'To', type: 'date', value: h => h.endsOn, width: 116, render: h => <span className="whitespace-nowrap">{h.endsOn ? date(h.endsOn) : 'Open'}</span> },
@@ -157,7 +157,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
           <div className="flex flex-col gap-1 min-w-0">
-            <span className="text-[16px] font-semibold tracking-[-0.01em]">Revenue model</span>
+            <span className="text-[16px] font-semibold tracking-[-0.01em]">Income model</span>
             <span className="text-meta text-muted-ink">
               {current.id ? <>In force {current.startsOn ? `from ${date(current.startsOn)}` : ''}{current.endsOn ? ` to ${date(current.endsOn)}` : ''} · {current.termsLabel}</> : <>No contract record yet: the unit's own split is used ({current.termsLabel}). Saving creates its contract.</>}
               {data!.history.length > 0 && <> · <a href="#contract-history" className="text-gold-ink">Contract history ({data!.history.length})</a></>}
@@ -177,7 +177,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
           {mode === 'new' && <div className="py-[10px] px-[14px] rounded-control bg-gold-tint text-copy">A new contract from its start date. The current one ends the day before and stays in this unit's history; statements before the new start keep using it.</div>}
           {current.sharedWith > 0 && mode === 'update' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">This contract record also covers {current.sharedWith} other {current.sharedWith === 1 ? 'unit' : 'units'} of the owner. Saving here gives this unit its own copy; the others are not changed.</div>}
 
-          <div role="radiogroup" aria-label="Revenue model" className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-5 gap-[10px]">
+          <div role="radiogroup" aria-label="Income model" className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-5 gap-[10px]">
             {MODELS.map(o => {
               const on = o.key === m;
               return (
@@ -213,7 +213,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
             {m === 'long_term' && <>
               <Field label="Tenant" placeholder="Tenant's name" value={d.tenantName} onChange={e => set({ tenantName: e.target.value })} error={shown.tenantName} />
               {money('monthlyRent', 'Monthly rent from tenant (RM)')}
-              {pct('ltFeePct', 'Management fee % of the rent')}
+              {pct('ltFeePct', 'Operator share % of the rent')}
             </>}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -267,32 +267,32 @@ export function StatementExample({ example: x, month, draft, busy }: { example: 
           {x.model === 'master_lease' ? <>
             <p className="m-0 mb-2 text-copy">No owner statement: the company rents the unit and keeps its profit or loss.</p>
             {x.company && <>
-              <Row label="Unit income (bookings)" sen={x.company.income} />
+              <Row label="Unit income (reservations)" sen={x.company.income} />
               <Row label="Costs on the unit (all payers)" sen={-x.company.costs} />
               <Row label="Lease rent paid to the owner" sen={-x.company.rentToOwner} />
               <Row label="Company result" sen={x.company.result} strong />
             </>}
           </> : x.model === 'grr' ? <>
             <Row label="Fixed rent to the owner" sen={x.rent} />
-            {x.adjustments !== 0 && <Row label="Owner credits & charges" sen={x.adjustments} />}
-            <Row label="Net payout to owner" sen={x.netPayout} strong />
+            {x.adjustments !== 0 && <Row label="Owner Adjustments" sen={x.adjustments} />}
+            <Row label="Net Payout to Owner" sen={x.netPayout} strong />
             {x.company && <p className="m-0 mt-2 text-meta text-muted-ink">The company's side: the unit earned {rm(x.company.income)} and cost {rm(x.company.costs)}; after the rent the company {x.company.result >= 0 ? 'keeps' : 'loses'} {rm(Math.abs(x.company.result))}.</p>}
           </> : x.model === 'long_term' ? <>
             <Row label="Monthly rent from the tenant" sen={x.income} />
             {x.costs.map(c => <Row key={c.label} label={c.label} sen={-c.amount} sub />)}
-            <Row label={`Management fee ${pctText(100 - (x.ownerPct ?? 100))}% of the rent`} sen={-x.operatorShare} />
-            {x.adjustments !== 0 && <Row label="Owner credits & charges" sen={x.adjustments} />}
-            <Row label="Net payout to owner" sen={x.netPayout} strong />
+            <Row label={`${pctText(100 - (x.ownerPct ?? 100))}% To Operator (of the rent)`} sen={-x.operatorShare} />
+            {x.adjustments !== 0 && <Row label="Owner Adjustments" sen={x.adjustments} />}
+            <Row label="Net Payout to Owner" sen={x.netPayout} strong />
           </> : <>
-            <Row label={`Income (${x.nights} ${x.nights === 1 ? 'night' : 'nights'}, ${Math.round(x.occupancy * 100)}% occupied)`} sen={x.income} />
+            <Row label={`Hospitality Income (${x.nights} ${x.nights === 1 ? 'night' : 'nights'}, ${Math.round(x.occupancy * 100)}% occupied)`} sen={x.income} />
             {x.costs.map(c => <Row key={c.label} label={c.label} sen={-c.amount} sub />)}
-            <Row label="Net income" sen={x.net} strong />
+            <Row label="Net Income" sen={x.net} strong />
             <Row label={`Owner ${pctText(x.ownerPct)}%`} sen={x.ownerShare} />
             <Row label={x.agentShare ? 'Management' : `Management ${pctText(100 - (x.ownerPct ?? 0))}%`} sen={x.managementShare} sub />
             {x.agentShare > 0 && <Row label="Agent" sen={x.agentShare} sub />}
             {x.guarantee > 0 && <Row label={x.topUp > 0 ? `Below the ${rm(x.guarantee)} minimum: company tops up` : `Above the ${rm(x.guarantee)} minimum: no top-up`} sen={x.topUp} />}
-            {x.adjustments !== 0 && <Row label="Owner credits & charges" sen={x.adjustments} />}
-            <Row label="Net payout to owner" sen={x.netPayout} strong />
+            {x.adjustments !== 0 && <Row label="Owner Adjustments" sen={x.adjustments} />}
+            <Row label="Net Payout to Owner" sen={x.netPayout} strong />
           </>}
           {x.otherPayers > 0 && <p className="m-0 mt-2 text-meta text-muted-ink">{rm(x.otherPayers)} of costs paid by the company, a tenant or a guest are not on the statement.</p>}
         </div>

@@ -27,8 +27,8 @@ interface Kpi { key: string; value: number | string; currency?: string; unit?: s
 interface KpiPayload { kpis: Kpi[]; period: string; generatedAt: string }
 
 const KPI_LABEL: Record<string, string> = {
-  accommodation_revenue: 'Revenue', occupancy: 'Occupancy', adr: 'ADR',
-  revpar: 'RevPAR', net_owner_payout: 'Owner payout',
+  accommodation_revenue: 'Earnings', occupancy: 'Occupancy', adr: 'Avg nightly price',
+  revpar: 'Earnings per available night', net_owner_payout: 'Net Payout to Owner',
 };
 
 const KPI_FALLBACK: KpiPayload = {
@@ -132,7 +132,7 @@ interface TodayRow { key: string; count: number; tone: Tone }
 interface TodayPayload { date: string; rows: TodayRow[]; generatedAt: string }
 
 const TODAY_LABEL: Record<string, string> = {
-  check_ins: 'Check-ins', check_outs: 'Check-outs', cleaning_pending: 'Cleaning pending',
+  check_ins: 'Check-ins', check_outs: 'Checkouts', cleaning_pending: 'Cleaning pending',
   maintenance_open: 'Maintenance open', escalations: 'Guest escalations',
 };
 
@@ -183,7 +183,7 @@ const EXCEPTION_FALLBACK: ExceptionPayload = {
     {
       id: 'x2', tone: 'warning',
       title: 'Unit blocked for maintenance',
-      detail: 'Sentral Suites #C-31-14 is off sale while plumbing is repaired. The owner has not been informed.',
+      detail: 'Sentral Suites #C-31-14 is blocked while plumbing is repaired. The owner has not been informed.',
       action: { label: 'Notify owner' },
       unitLabel: 'Sentral Suites #C-31-14',
       owner: { id: 'o2', name: 'Tan Boon Huat' },
@@ -193,7 +193,7 @@ const EXCEPTION_FALLBACK: ExceptionPayload = {
     {
       id: 'x3', tone: 'info',
       title: '2 statements ready to send',
-      detail: 'August owner statements are finalised and waiting to go out.',
+      detail: 'August owner statements are final and waiting to go out.',
       action: { label: 'Review and send' },
     },
     {
@@ -236,9 +236,9 @@ const TOP_COLUMNS: Column<PortfolioRow>[] = [
     hideable: false, width: 190, sub: u => u.propertyName,
     render: u => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block">{u.unitNumber}</span> },
   { key: 'occupancy', label: 'Occupancy', type: 'number', value: u => u.occupancy, width: 90, render: u => <span className={NUM}>{u.occupancy.toFixed(1)}%</span> },
-  { key: 'adr', label: 'ADR', type: 'money', value: u => u.adr, width: 90, render: u => <span className={NUM}>{rm(u.adr, { cents: false })}</span> },
-  { key: 'revpar', label: 'RevPAR', type: 'money', value: u => u.revpar, width: 90, render: u => <span className={NUM}>{rm(u.revpar, { cents: false })}</span> },
-  { key: 'revenue', label: 'Revenue', type: 'money', value: u => u.revenue, width: 100, render: u => <span className={`${NUM} font-medium`}>{rm(u.revenue, { cents: false })}</span> },
+  { key: 'adr', label: 'Avg nightly price', type: 'money', value: u => u.adr, width: 90, render: u => <span className={NUM}>{rm(u.adr, { cents: false })}</span> },
+  { key: 'revpar', label: 'Earnings per available night', type: 'money', value: u => u.revpar, width: 90, render: u => <span className={NUM}>{rm(u.revpar, { cents: false })}</span> },
+  { key: 'revenue', label: 'Earnings', type: 'money', value: u => u.revenue, width: 100, render: u => <span className={`${NUM} font-medium`}>{rm(u.revenue, { cents: false })}</span> },
   { key: 'exception', label: 'Exception', type: 'status', value: u => u.exception?.label ?? null, status: u => u.exception, width: 130, align: 'right',
     render: u => (u.exception ? <StatusBadge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-meta text-faint">None</span>) },
 ];
@@ -352,7 +352,7 @@ export default function DashboardPage() {
         sub={[period ? `${monthLabel(period)} to date` : '', lastUpdated ? `Last updated ${lastUpdated}` : ''].filter(Boolean).join(' · ')
           // Holds the subtitle's line while the figures load, so the page does not shift down when it arrives.
           || (kpi.loading ? <span aria-hidden className="skeleton inline-block align-middle h-[11px] w-[200px]" /> : undefined)}
-        actions={<Button variant="secondary" size="sm" onClick={() => go('#/properties/units')}>Add property</Button>}
+        actions={<Button variant="secondary" size="sm" onClick={() => go('#/properties/units')}>Add unit</Button>}
         primary={<Button variant="primary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => go('#/reservations/bookings?create=1')}>Create reservation</Button>}
       />
 
@@ -379,18 +379,18 @@ export default function DashboardPage() {
           <div className="flex flex-col gap-5 p-4 sm:p-6">
             <div className="flex items-start justify-between gap-[14px] flex-wrap">
               <div className="flex flex-col gap-1.5 min-w-0">
-                <Eyebrow>Revenue and occupancy</Eyebrow>
+                <Eyebrow>Earnings and occupancy</Eyebrow>
                 <div className="flex items-baseline gap-3 flex-wrap">
                   <Figure value={money(tp.totals.grossBookingValue)} className="text-[26px] sm:text-[30px] font-medium tracking-[-0.025em] leading-none" />
                   {tp.delta.period && tp.delta.against && (
                     <span className={cx('text-meta font-semibold whitespace-nowrap', TONE[tp.delta.tone].text)}
-                      title={`Revenue in ${monthLabel(tp.delta.period)} against ${monthLabel(tp.delta.against)}, the last two complete months`}>
+                      title={`Earnings in ${monthLabel(tp.delta.period)} against ${monthLabel(tp.delta.against)}, the last two complete months`}>
                       {ARROW[tp.delta.direction]} {tp.delta.value.toFixed(1)}%
                       <span className="font-normal text-muted-ink"> {shortMonth(tp.delta.period)} vs {shortMonth(tp.delta.against)}</span>
                     </span>
                   )}
                 </div>
-                <span className="text-meta text-muted-ink">Gross booking value for the range, stays split by night</span>
+                <span className="text-meta text-muted-ink">Guest totals for the range, reservations split by night</span>
               </div>
 
               {/* 3M / 12M / YTD — re-reads the chart from /dashboard/trend?range= */}
@@ -405,6 +405,7 @@ export default function DashboardPage() {
                 sub: i === 0 || s.period.endsWith('-01') ? s.period.slice(0, 4) : undefined,
                 value: s.revenue,
                 display: s.revenue > 0 ? rmCompact(s.revenue).replace('RM ', '') : '',
+                // vocab-ok: s.revenue is a field name, the visible text has no such word
                 title: `${monthLabel(s.period)} · ${rm(s.revenue, { cents: false })} · ${percent(s.occupancy)} occupancy`,
                 current: s.isCurrent,
                 lineDisplay: `${s.occupancy.toFixed(0)}%`,
@@ -412,10 +413,10 @@ export default function DashboardPage() {
 
             {/* The four totals are distinct definitions and are never merged. */}
             <TotalsRow items={[
-              { label: 'Gross booking value', value: money(tp.totals.grossBookingValue) },
-              { label: 'Collected revenue', value: money(tp.totals.collectedRevenue) },
-              { label: 'Management fees', value: money(tp.totals.managementFees) },
-              { label: 'Net owner payout', value: money(tp.totals.netOwnerPayout) },
+              { label: 'Guest total', value: money(tp.totals.grossBookingValue) },
+              { label: 'Earnings', value: money(tp.totals.collectedRevenue) },
+              { label: 'Operator share', value: money(tp.totals.managementFees) },
+              { label: 'Net Payout to Owner', value: money(tp.totals.netOwnerPayout) },
             ]} />
           </div>
         </Card>
@@ -476,7 +477,7 @@ export default function DashboardPage() {
           right={<LinkAction onClick={() => go('#/portfolio')}>{portfolio.data ? `All ${count(portfolio.data.units)} units →` : 'All units →'}</LinkAction>}
         />
         <div className="pt-0 px-5 pb-3 -mt-2 text-meta text-muted-ink min-h-[18px]">
-          {portfolio.data ? `The ${Math.min(TOP_UNITS, allRows.length)} highest by revenue of ${plural(portfolio.data.units, 'listed unit')} in ${plural(portfolio.data.buildings, 'building')}${period ? ` · ${monthLabel(period)} to date` : ''}` : ''}
+          {portfolio.data ? `The ${Math.min(TOP_UNITS, allRows.length)} highest by earnings of ${plural(portfolio.data.units, 'listed unit')} in ${plural(portfolio.data.buildings, 'building')}${period ? ` · ${monthLabel(period)} to date` : ''}` : ''}
         </div>
         <DataTable<PortfolioRow> id="dashboard.topunits" urlPrefix="top." bare noViews noToolbar pageSize={0} maxHeight="none"
           columns={TOP_COLUMNS} rows={portfolio.data ? rows : null} rowKey={u => u.unitId} noun={['unit', 'units']}
@@ -486,7 +487,7 @@ export default function DashboardPage() {
             <span className="flex items-center justify-between gap-3">
               <span className="flex flex-col gap-px min-w-0">
                 <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber} <span className="font-normal text-meta text-muted-ink">· {u.propertyName}</span></span>
-                <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{u.occupancy.toFixed(1)}% occupied · ADR {rm(u.adr, { cents: false })}</span>
+                <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{u.occupancy.toFixed(1)}% occupied · Avg nightly price {rm(u.adr, { cents: false })}</span>
               </span>
               <span className="flex-none text-copy font-semibold [font-variant-numeric:tabular-nums]">{rm(u.revenue, { cents: false })}</span>
             </span>
@@ -528,7 +529,7 @@ export default function DashboardPage() {
         onClose={() => setNotify(null)}
         spec={!notify || !notify.owner ? null : {
           title: `Send a blocked-unit notice to ${notify.owner.name}?`,
-          body: 'The owner receives the dates blocked, the reason, the revenue at risk and the expected return date. Nothing is charged and no work is approved by this notice.',
+          body: 'The owner receives the dates blocked, the reason, the earnings at risk and the expected return date. Nothing is charged and no work is approved by this notice.',
           meta: `${notify.unitLabel ?? ''}${notify.datesBlocked ? ` · ${notify.datesBlocked}` : ''}${notify.revenueAtRisk != null ? ` · ${rm(notify.revenueAtRisk)} at risk` : ''}${notify.expectedReturn ? ` · back ${notify.expectedReturn}` : ''}`,
           confirmLabel: 'Send notice',
           onConfirm: doNotify,

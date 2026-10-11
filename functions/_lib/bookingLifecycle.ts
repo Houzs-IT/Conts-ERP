@@ -15,8 +15,8 @@ export const STATES = ['inquiry', 'pending', 'confirmed', 'checked_in', 'checked
 export type State = typeof STATES[number];
 
 const LABEL: Record<State, string> = {
-  inquiry: 'Inquiry', pending: 'Pending', confirmed: 'Confirmed', checked_in: 'Checked in',
-  checked_out: 'Checked out', cancelled: 'Cancelled', no_show: 'No show',
+  inquiry: 'Inquiry', pending: 'Pending', confirmed: 'Upcoming', checked_in: 'Currently hosting',
+  checked_out: 'Past', cancelled: 'Cancelled', no_show: 'No-show',
 };
 const BLOCK_CHANNELS = ['maintenance_block', 'owner_stay'];
 
@@ -57,7 +57,7 @@ export function movesFor(from: State, c: MoveContext): Move[] {
   const ended = c.today >= c.checkOut;
   const sameDay = c.enteredOn === c.today;
   const mgmtOnly = 'Only management can do this.';
-  const cancel: Move = { to: 'cancelled', label: 'Cancel booking', hint: 'Releases the dates for sale again.', allowed: true, needsReason: true };
+  const cancel: Move = { to: 'cancelled', label: 'Cancel reservation', hint: 'Makes the dates available again.', allowed: true, needsReason: true };
   const confirm: Move = { to: 'confirmed', label: 'Confirm', hint: 'Holds the dates.', allowed: true };
 
   switch (from) {
@@ -70,7 +70,7 @@ export function movesFor(from: State, c: MoveContext): Move[] {
         {
           to: 'checked_in', label: 'Check in', hint: 'Guest has arrived. Unit is marked occupied.',
           allowed: started && !ended,
-          reason: !started ? `Check-in opens on ${dayLabel(c.checkIn)}.` : ended ? `The stay ended on ${dayLabel(c.checkOut)}.` : undefined,
+          reason: !started ? `Check-in opens on ${dayLabel(c.checkIn)}.` : ended ? `Checkout was on ${dayLabel(c.checkOut)}.` : undefined,
         },
         {
           to: 'no_show', label: 'Mark no-show', hint: 'Guest never arrived. Releases the remaining dates.',
@@ -80,22 +80,22 @@ export function movesFor(from: State, c: MoveContext): Move[] {
       ];
     case 'checked_in':
       return [
-        { to: 'checked_out', label: 'Check out', hint: 'Guest has left. Unit is marked dirty and a turnover clean is created.', allowed: true },
+        { to: 'checked_out', label: 'Check out', hint: 'Guest has left. Unit is marked dirty and a cleaning job is created.', allowed: true },
         {
-          to: 'confirmed', label: 'Undo check-in', hint: 'Back to Confirmed. Unit goes back to ready.',
+          to: 'confirmed', label: 'Undo check-in', hint: 'Back to Upcoming. Unit goes back to ready.',
           allowed: c.manage && sameDay, reason: !c.manage ? mgmtOnly : !sameDay ? 'Only on the day of the check-in.' : undefined,
         },
       ];
     case 'checked_out':
       return [{
-        to: 'checked_in', label: 'Undo check-out', hint: 'Back to Checked in. Removes the turnover clean if nobody has started it.',
-        allowed: c.manage && sameDay, reason: !c.manage ? mgmtOnly : !sameDay ? 'Only on the day of the check-out.' : undefined,
+        to: 'checked_in', label: 'Undo checkout', hint: 'Back to Currently hosting. Removes the cleaning job if nobody has started it.',
+        allowed: c.manage && sameDay, reason: !c.manage ? mgmtOnly : !sameDay ? 'Only on the day of the checkout.' : undefined,
       }];
     case 'cancelled':
     case 'no_show':
       return [{
-        to: 'confirmed', label: 'Reinstate booking', hint: 'Back to Confirmed. Holds the dates again if they are still free.',
-        allowed: c.manage && !ended, reason: !c.manage ? mgmtOnly : ended ? 'The stay dates have already passed.' : undefined,
+        to: 'confirmed', label: 'Reinstate reservation', hint: 'Back to Upcoming. Holds the dates again if they are still free.',
+        allowed: c.manage && !ended, reason: !c.manage ? mgmtOnly : ended ? 'The reservation dates have already passed.' : undefined,
       }];
   }
 }
@@ -161,7 +161,7 @@ export async function applyMove(env: Env, session: Session & { manage?: boolean 
       manage: !!session.manage, enteredOn: await enteredOn(env, id, cur.state),
     };
     const move = movesFor(cur.state, ctx).find(m => m.to === target);
-    if (!move) return refuse(409, 'ILLEGAL_TRANSITION', `A booking that is ${LABEL[cur.state]} cannot be moved to ${LABEL[target]}.`);
+    if (!move) return refuse(409, 'ILLEGAL_TRANSITION', `A reservation that is ${LABEL[cur.state]} cannot be moved to ${LABEL[target]}.`);
     if (!move.allowed) return refuse(409, 'ILLEGAL_TRANSITION', move.reason ?? 'That move is not allowed right now.');
   }
   const why = reason?.trim().slice(0, 300) || null;
@@ -179,7 +179,7 @@ export async function applyMove(env: Env, session: Session & { manage?: boolean 
       if (clash) return { status: 409, body: clashResponseBody(clash) } as Refusal;
     }
     const row = await one(tx, 'UPDATE reservations SET state = ?, updated_at = ? WHERE id = ? AND state = ? RETURNING id', target, now, id, cur.state);
-    return row ? null : refuse(409, 'CONFLICT', 'This booking changed while you were looking at it. Refresh and try again.');
+    return row ? null : refuse(409, 'CONFLICT', 'This reservation changed while you were looking at it. Refresh and try again.');
   };
   const refused = reinstate ? await withUnitLock(env, cur.unit_id, write) : await write(env);
   if (refused) return refused;
@@ -208,12 +208,14 @@ export async function applyMove(env: Env, session: Session & { manage?: boolean 
       }
     }
     if (cur.state === 'checked_out' && target === 'checked_in') {
+      // vocab-ok: stored task title, matched by the SQL above
       const r = await removeUntouchedTasks(env, session, id, 'Turnover after check-out');
       effects.tasksRemoved = r.removed; effects.tasksKept = r.kept;
       const u = await one(env, `UPDATE units SET readiness = 'occupied', updated_at = ? WHERE id = ? AND readiness = 'dirty' RETURNING id`, now, cur.unit_id);
       if (u) effects.readiness = 'occupied';
     }
     if (target === 'cancelled' || target === 'no_show') {
+      // vocab-ok: stored task title, matched by title in SQL
       const r = await removeUntouchedTasks(env, session, id, 'Prepare for arrival');
       effects.tasksRemoved = r.removed; effects.tasksKept = r.kept;
     }
@@ -248,6 +250,7 @@ async function removeUntouchedTasks(env: Env, session: Session, reservationId: s
     const photo = await one(env, 'SELECT 1 AS x FROM documents WHERE task_id = ? LIMIT 1', t.id);
     if (t.state !== 'open' || t.assignee_id || t.started_at || photo) { kept++; continue; }
     await run(env, 'DELETE FROM tasks WHERE id = ?', t.id);
+    // vocab-ok: reason stored in the audit trail, not a screen label
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'task.remove', entityTable: 'tasks', entityId: t.id, before: { reservationId, title, state: t.state }, after: { reason: 'booking status reverted' } });
     removed++;
   }

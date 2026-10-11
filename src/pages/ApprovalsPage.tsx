@@ -103,7 +103,7 @@ export default function ApprovalsPage() {
           onToggle: () => url.set({ mine: mine ? null : '1', page: null }), onClear: () => url.set({ mine: null, page: null }),
         }} />
       <div className="flex flex-wrap gap-2 shrink-0">
-        <SearchBox className="flex-[2_1_240px]" label="Search requests" placeholder="Search owner, booking, reason or person" value={q} onChange={v => url.set({ q: v || null, page: null })} />
+        <SearchBox className="flex-[2_1_240px]" label="Search requests" placeholder="Search owner, reservation, reason or person" value={q} onChange={v => url.set({ q: v || null, page: null })} />
         <FilterSelect className="flex-[1_1_200px]" label="Request type" all="All request types" value={kind} onChange={v => url.set({ kind: v || null, page: null })}
           options={(data?.kinds ?? []).map(k => ({ value: k.value, label: `${k.label} · ${k.count}` }))} />
         {view === 'decided' && (
@@ -115,14 +115,14 @@ export default function ApprovalsPage() {
         <div role="status" className="shrink-0 rounded-card border border-solid border-line bg-card px-[14px] py-[11px] flex flex-col gap-[2px]">
           <span className="text-copy font-semibold text-ink">Approvals are switched off</span>
           <span className="text-meta text-muted-ink text-pretty">
-            Refunds, payout runs, owner credits and charges, expenses and debt write-offs happen at once, without a second person. Management can turn approvals back on in Settings.
+            Refunds, owner payout runs, owner adjustments, expenses and debt write-offs happen at once, without a second person. Management can turn approvals back on in Settings.
             {data!.counts.pending > 0 ? ` ${plural(data!.counts.pending, 'request')} left from before can only be withdrawn.` : ''}
           </span>
         </div>
       )}
       {r && !off && (
         <p className="m-0 shrink-0 text-meta text-muted-ink text-pretty">
-          Refunds, payout runs, owner credits and charges, expenses above {moneyString(r.expenseThreshold, 'exact')} and debt write-offs wait here until someone other than the person who asked approves them.
+          Refunds, owner payout runs, owner adjustments, expenses above {moneyString(r.expenseThreshold, 'exact')} and debt write-offs wait here until someone other than the person who asked approves them.
           Finance admins approve amounts below {moneyString(r.financeAdminLimit, 'exact')}; management approves any amount.{r.managementCount === 1 ? ' With one management user, that user may approve their own request with a written reason.' : ''} Limits are in Settings.
         </p>
       )}
@@ -131,7 +131,7 @@ export default function ApprovalsPage() {
         loading={loading} error={error} onRetry={reload} noun={['request', 'requests']} exportName="approvals"
         server={{ total: data?.total ?? rows.length, page: data?.page ?? page, pageSize: data?.pageSize ?? size, sizes: [25, 50, 100, 200], defaultPageSize: PAGE_SIZE, fetchAll }}
         viewParams={['view', 'kind', 'q', 'status', 'mine']} filtered={filtered} onClearFilters={() => url.set({ view: null, kind: null, q: null, status: null, mine: null, page: null })}
-        empty={off ? { title: 'Nothing waiting for approval', body: 'Approvals are switched off, so nothing waits here.', icon: 'ShieldCheck' } : { title: 'Nothing waiting for approval', body: 'When someone asks for a refund, a payout run, an owner credit or charge, a large expense or a write-off, it waits here.', icon: 'ShieldCheck' }}
+        empty={off ? { title: 'Nothing waiting for approval', body: 'Approvals are switched off, so nothing waits here.', icon: 'ShieldCheck' } : { title: 'Nothing waiting for approval', body: 'When someone asks for a refund, an owner payout run, an owner adjustment, a large expense or a write-off, it waits here.', icon: 'ShieldCheck' }}
         renderCard={a => (
           <span className="flex flex-col gap-[6px]">
             <span className="flex items-start justify-between gap-3">

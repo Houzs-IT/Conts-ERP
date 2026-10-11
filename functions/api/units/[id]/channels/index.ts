@@ -30,6 +30,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const hotelId = String(b?.hotelId ?? '').trim();
   if (!/^\d{3,12}$/.test(hotelId)) return fail('VALIDATION', 'Enter the Hotel ID (numbers only).', 422, { hotelId: 'Numbers only.' });
   if (!b?.roomId || !b?.rateId) return fail('VALIDATION', 'Pick the room and rate that match this unit.', 422);
+  // vocab-ok: OTA_LABEL is a code name; the text shows the channel name
   if (await one(env, 'SELECT 1 AS x FROM channex_channels WHERE unit_id = ? AND ota = ?', unit.id, ota)) return fail('CONFLICT', `This unit is already connected to ${OTA_LABEL[ota]}.`, 409);
 
   // The channel is mapped to this OTA's own rate plan, so it carries this OTA's price.
@@ -43,16 +44,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
 
   const occupancy = Number.isInteger(b.occupancy) && b.occupancy > 0 ? b.occupancy : unit.maxGuests;
   const created = await channexCreateHotelChannel(env, {
+    // vocab-ok: OTA_LABEL is a code name; the text shows the channel name
     ota, groupId, propertyId: unit.propertyId, ratePlanId, hotelId, title: `${unit.title} · ${OTA_LABEL[ota]}`,
     roomCode: String(b.roomId), rateCode: String(b.rateId), occupancy, pricingType: String(b.pricingType || 'Standard'), readonly: !!b.readonly,
   });
   const channelId = created.body?.data?.id;
   if (!created.ok || !channelId) {
+    // vocab-ok: OTA_LABEL is a code name; the text shows the channel name
     if (JSON.stringify(created.body ?? {}).includes('already exists')) return fail('HOTEL_TAKEN', `${OTA_LABEL[ota]} Hotel ID ${hotelId} is already connected to another listing in Channex. Disconnect it there first.`, 409);
+    // vocab-ok: OTA_LABEL is a code name; the text shows the channel name
     return channexRefused(`connect ${OTA_LABEL[ota]}`, created.status, created.body);
   }
 
   const act = await channexActivateChannel(env, channelId);
+  // vocab-ok: OTA_LABEL is a code name; the text shows the channel name
   if (!act.ok) { await channexDeleteChannel(env, channelId); return channexRefused(`switch the ${OTA_LABEL[ota]} connection on`, act.status, act.body); }
   const load = await channexLoadFutureReservations(env, channelId);
 

@@ -27,7 +27,7 @@ const LEVEL_COLOR: Record<AccessLevel, string> = {
 /** The other four of the seven roles: their access is fixed, so they have no column. */
 const FIXED_ROLES = [
   { name: 'Management', note: 'full access to everything, always.' },
-  { name: 'Housekeeper', note: 'the field app only: their own cleaning jobs.' },
+  { name: 'Cleaner', note: 'the field app only: their own cleaning jobs.' },
   { name: 'Technician', note: 'the field app only: their own maintenance jobs.' },
   { name: 'Owner', note: 'the owner portal only: their own units, statements and documents.' },
 ];
@@ -92,7 +92,7 @@ export default function PermissionsChart() {
     <Card>
       <div className="py-[13px] px-5 [border-bottom:1px_solid_var(--color-line)] text-meta text-muted-ink leading-[1.5]">
         What each role can do in each part of the system. {data.canEdit ? 'Pick a level, then save.' : 'Only management can change this.'} Management
-        always has full access and is not listed, so nobody can be locked out. Housekeepers, technicians and owners use their own apps and are fixed.
+        always has full access and is not listed, so nobody can be locked out. Cleaners, technicians and owners use their own apps and are fixed.
       </div>
       <div className="flex gap-x-5 gap-y-1.5 flex-wrap py-[11px] px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
         {data.levels.map(l => (

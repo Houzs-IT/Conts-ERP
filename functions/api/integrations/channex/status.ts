@@ -28,6 +28,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // `registered` is null when Channex could not be asked, so the panel does not claim either way.
   let notifications: { secretSet: boolean; registered: boolean | null } | null = null;
   if (channexConfigured(env) && session.role === 'management') {
+    // vocab-ok: URL path of the live updates address, not shown as words
     const callbackUrl = `${new URL(request.url).origin}/api/integrations/channex-webhook`;
     const hooks = await channexListWebhooks(env).catch(() => null);
     notifications = {

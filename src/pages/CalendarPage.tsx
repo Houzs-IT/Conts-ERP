@@ -34,8 +34,9 @@ const RATES_AUTO_MAX = 8;
 // it in the same payload, so the first render already has the right rows. Only a payload without `channels`
 // (an older backend) falls back to all three. `mark` is the channel whose logo labels the row.
 const RATE_ROWS: { key: 'web' | BookingChannel; label: string; short: string; mark: BookingChannel }[] = [
-  { key: 'web', label: 'Web', short: 'Web', mark: 'direct' },
+  { key: 'web', label: 'Direct', short: 'Direct', mark: 'direct' },
   { key: 'airbnb', label: 'Airbnb', short: 'Airbnb', mark: 'airbnb' },
+  // vocab-ok: short form of the channel's own name, Booking.com, for a narrow row label
   { key: 'booking_com', label: 'Booking.com', short: 'Booking', mark: 'booking_com' },
   { key: 'agoda', label: 'Agoda', short: 'Agoda', mark: 'agoda' },
 ];
@@ -65,7 +66,7 @@ interface Payload {
 /** GET /api/integrations — the OTA rows are worked out from the real Channex connections. */
 interface IntegrationRow { provider: string; state: string; lastSyncedAt: string | null; unitsLinked: number }
 const SYNC_CHIP: Record<string, { label: string; tone: Tone }> = {
-  connected: { label: 'Synced', tone: 'success' },
+  connected: { label: 'Connected', tone: 'success' },
   degraded: { label: 'Errors', tone: 'warning' },
   not_connected: { label: 'Not linked', tone: 'neutral' },
   expired: { label: 'Expired', tone: 'critical' },
@@ -286,7 +287,7 @@ export default function CalendarPage() {
     const prev = rateEdits[key];
     setRateEdits(e => ({ ...e, [key]: Math.round(rmValue * 100) }));
     api.put('/rates', { unitId, channel, date: dayIso(i), rate: Math.round(rmValue * 100) })
-      .then(() => toast({ tone: 'success', title: 'Rate set.', body: 'Saved for that night and sent to the channel if the unit is linked.' }))
+      .then(() => toast({ tone: 'success', title: 'Price set.', body: 'Saved for that night and sent to the channel if the unit is linked.' }))
       .catch(err => { setRateEdits(e => { const n = { ...e }; if (prev == null) delete n[key]; else n[key] = prev; return n; }); notifyFailure(err); });
   }
 
@@ -325,21 +326,21 @@ export default function CalendarPage() {
       return;
     }
     setDialog({
-      title: 'Move this booking?',
-      body: "The move is checked against the unit's other bookings. If the unit is linked to Channex the new dates go to the booking sites. The guest is not messaged.",
+      title: 'Move this reservation?',
+      body: "The move is checked against the unit's other reservations. If the unit is linked to the channels, the new dates are sent to them. The guest is not messaged.",
       meta: `${b.guestName} · ${dateRange(b.checkIn, b.checkOut)} → ${dateRange(newCheckIn, newCheckOut)}`,
-      confirmLabel: 'Move booking', busyLabel: 'Moving…',
+      confirmLabel: 'Move reservation', busyLabel: 'Moving…',
       onConfirm: async () => {
         setBusy(true);
         setDateEdits(e => ({ ...e, [b.id]: { checkIn: newCheckIn, checkOut: newCheckOut } }));
         try {
           const res = await api.patch<{ effects?: { channel: ChannelSync } }>(`/reservations/${b.id}/dates`, { checkIn: newCheckIn, checkOut: newCheckOut, confirm: true });
-          toast({ tone: 'success', title: 'Booking moved.', body: `${b.guestName || 'The booking'} is now ${dateRange(newCheckIn, newCheckOut)}. ${channelNote(res?.effects?.channel, 'moved')}`.trim() });
+          toast({ tone: 'success', title: 'Reservation moved.', body: `${b.guestName || 'The reservation'} is now ${dateRange(newCheckIn, newCheckOut)}. ${channelNote(res?.effects?.channel, 'moved')}`.trim() });
           reload();
         } catch (e) {
           // Put the bar back where it was: the server kept the old dates.
           setDateEdits(x => { const n = { ...x }; delete n[b.id]; return n; });
-          toast({ tone: 'critical', title: 'Booking not moved.', body: errorMessage(e, 'Try again in a moment.') });
+          toast({ tone: 'critical', title: 'Reservation not moved.', body: errorMessage(e, 'Try again in a moment.') });
         }
         setBusy(false); setDialog(null);
       },
@@ -353,7 +354,7 @@ export default function CalendarPage() {
     const b = liveBlocks.find(x => x.id === d.id);
     if (!b) return;
     if (b.unitId !== unitId) {
-      toast({ tone: 'info', title: 'Same unit only.', body: 'Drag a booking within its own row. To move it to another unit, edit the booking.' });
+      toast({ tone: 'info', title: 'Same unit only.', body: 'Drag a reservation within its own row. To move it to another unit, edit the reservation.' });
       return;
     }
     const nights = dayIndex(b.checkOut) - dayIndex(b.checkIn);
@@ -366,17 +367,17 @@ export default function CalendarPage() {
     // With no booking site linked there is nothing to pull: refresh the board instead of asking Channex and failing.
     if (integrations && !otaRows.some(r => r.state !== 'not_connected')) {
       reload(); reloadIntegrations();
-      toast({ tone: 'info', title: 'Calendar refreshed.', body: 'No booking site is linked yet, so there is nothing to pull from Airbnb, Booking.com or Agoda.' });
+      toast({ tone: 'info', title: 'Calendar refreshed.', body: 'No channel is linked yet, so there is nothing to get from Airbnb, Booking.com or Agoda.' });
       return;
     }
     setSyncing(true);
     try {
       const res = await api.post<{ bookings?: { processed: number } }>('/integrations/sync');
       const n = res?.bookings?.processed ?? 0;
-      toast({ tone: 'success', title: 'Channels synced.', body: n ? `${plural(n, 'booking update')} pulled from Channex.` : 'Nothing new from Channex.' });
+      toast({ tone: 'success', title: 'Reservations updated.', body: n ? `${plural(n, 'reservation update')} received from the channels.` : 'Nothing new from the channels.' });
       reload(); reloadIntegrations();
     } catch (e) {
-      toast({ tone: 'critical', title: 'Channels were not synced.', body: errorMessage(e, 'Try again in a moment.') });
+      toast({ tone: 'critical', title: 'Reservations not updated.', body: errorMessage(e, 'Try again in a moment.') });
     } finally {
       setSyncing(false);
     }
@@ -398,15 +399,15 @@ export default function CalendarPage() {
         actions={phone ? (
           // Phones: icon-only 42px squares, each with its own label for screen readers.
           <div className="flex items-center gap-2">
-            {canSetRates && <button type="button" className={toolBtn} onClick={() => setRateUpdate({})} aria-label="Rate update" title="Rate update"><Icon name="Tag" size="sm" /></button>}
-            <button type="button" className={toolBtn} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }} aria-label="Block dates" title="Block dates"><Icon name="Ban" size="sm" /></button>
-            <button type="button" className={toolBtn} onClick={refresh} disabled={syncing} aria-label="Refresh" title="Pull new bookings from the channels">{refreshIcon}</button>
+            {canSetRates && <button type="button" className={toolBtn} onClick={() => setRateUpdate({})} aria-label="Update prices" title="Update prices"><Icon name="Tag" size="sm" /></button>}
+            <button type="button" className={toolBtn} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }} aria-label="Block nights" title="Block nights"><Icon name="Ban" size="sm" /></button>
+            <button type="button" className={toolBtn} onClick={refresh} disabled={syncing} aria-label="Refresh" title="Get new reservations from the channels">{refreshIcon}</button>
           </div>
         ) : (
           <>
-            {canSetRates && <Button size="sm" variant="secondary" icon={<Icon name="Tag" size="sm" />} onClick={() => setRateUpdate({})}>Rate update</Button>}
-            <Button size="sm" variant="secondary" icon={<Icon name="Ban" size="sm" />} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }} title="Block dates">Block dates</Button>
-            <Button size="sm" variant="secondary" icon={refreshIcon} onClick={refresh} disabled={syncing} disabledReason="Pulling new bookings from the channels" title="Pull new bookings from the channels">Refresh</Button>
+            {canSetRates && <Button size="sm" variant="secondary" icon={<Icon name="Tag" size="sm" />} onClick={() => setRateUpdate({})}>Update prices</Button>}
+            <Button size="sm" variant="secondary" icon={<Icon name="Ban" size="sm" />} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }} title="Block nights">Block nights</Button>
+            <Button size="sm" variant="secondary" icon={refreshIcon} onClick={refresh} disabled={syncing} disabledReason="Getting new reservations from the channels" title="Get new reservations from the channels">Refresh</Button>
           </>
         )}
       />
@@ -431,7 +432,7 @@ export default function CalendarPage() {
 
             <div className="ml-auto flex items-center gap-2">
               {lastSync && (
-                <span className="hidden sm:inline-flex items-center gap-1.5 text-meta text-muted-ink whitespace-nowrap" title={`Last update sent to Channex ${dateTime(lastSync)}`}>
+                <span className="hidden sm:inline-flex items-center gap-1.5 text-meta text-muted-ink whitespace-nowrap" title={`Last update sent to the channels ${dateTime(lastSync)}`}>
                   <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: TONE[syncTrouble ? 'warning' : 'success'].line }} />
                   {syncTrouble
                     ? <a href="#/system/integrations" className="no-underline" style={{ color: TONE.warning.fg }}>Channel errors · see Integrations</a>
@@ -451,8 +452,8 @@ export default function CalendarPage() {
                 </button>
               )}
               <button type="button" className={toolBtn} onClick={() => { setRatesPref(!expanded); setUnitOpen({}); }}
-                aria-label={expanded ? 'Hide rates' : 'Show rates'} title={expanded ? 'Hide the rate rows' : 'Show the availability and rate rows under every unit'}>
-                <Icon name={expanded ? 'ChevronsDownUp' : 'ChevronsUpDown'} size="sm" /><span className="hidden md:inline">{expanded ? 'Hide rates' : 'Show rates'}</span>
+                aria-label={expanded ? 'Hide prices' : 'Show prices'} title={expanded ? 'Hide the price rows' : 'Show the availability and price rows under every unit'}>
+                <Icon name={expanded ? 'ChevronsDownUp' : 'ChevronsUpDown'} size="sm" /><span className="hidden md:inline">{expanded ? 'Hide prices' : 'Show prices'}</span>
               </button>
             </div>
           </div>
@@ -462,7 +463,7 @@ export default function CalendarPage() {
               off={off} setOff={setOff} statusOff={statusOff} setStatusOff={setStatusOff} dirty={filtersDirty}
               onReset={() => { setOff({}); setStatusOff({}); setProperty('all'); }} />
             {(offCount > 0 || Object.values(statusOff).some(Boolean)) && (
-              <p className="m-0 mt-2 text-meta text-muted-ink">Filters only hide booking bars. Free and Full always count every booking.</p>
+              <p className="m-0 mt-2 text-meta text-muted-ink">Filters only hide reservation bars. Free and Full always count every reservation.</p>
             )}
           </div>
         </div>
@@ -520,7 +521,7 @@ export default function CalendarPage() {
               <div className="sticky left-0 w-[min(100%,calc(100vw-2rem))] md:w-[min(100%,720px)]">
                 {filtersDirty
                     ? <EmptyState bare kind="filtered" title="No units match these filters." action={{ label: 'Clear filters', onClick: () => { setOff({}); setStatusOff({}); setProperty('all'); } }} />
-                    : <EmptyState bare icon="CalendarDays" title="No units on the board yet." body="Units appear here once they are added under Properties." action={{ label: 'Open units', onClick: () => { window.location.hash = '#/properties/units'; } }} />}
+                    : <EmptyState bare icon="CalendarDays" title="No units on the board yet." body="Units appear here once they are added under Units." action={{ label: 'Open units', onClick: () => { window.location.hash = '#/properties/units'; } }} />}
               </div>
             )}
 
@@ -572,13 +573,13 @@ export default function CalendarPage() {
                               {/* The building is the group header above, so the lines under the number are its prices. */}
                               {(() => {
                                 const w = webRates(u.id);
-                                if (w.base <= 0) return <span className="text-caption text-faint whitespace-nowrap">No rate set</span>;
+                                if (w.base <= 0) return <span className="text-caption text-faint whitespace-nowrap">No price set</span>;
                                 return (
                                   <>
                                     <span className="hidden md:block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis [font-variant-numeric:tabular-nums]">
-                                      Web {rmShort(w.base)}{w.weekend !== w.base ? ` · Weekend ${rmShort(w.weekend)}` : ''}
+                                      Nightly {rmShort(w.base)}{w.weekend !== w.base ? ` · Weekend ${rmShort(w.weekend)}` : ''}
                                     </span>
-                                    <span className="md:hidden text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]">Web {rmShort(w.base)}</span>
+                                    <span className="md:hidden text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]">Nightly {rmShort(w.base)}</span>
                                     {w.weekend !== w.base && <span className="md:hidden text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]">Wknd {rmShort(w.weekend)}</span>}
                                   </>
                                 );
@@ -655,7 +656,7 @@ export default function CalendarPage() {
                             const left = s * COL + (clipL ? 0 : inset), width = (e - s) * COL - (clipL ? 0 : inset) - (clipR ? 0 : inset);
                             const r = (on: boolean) => (on ? 0 : 8);
                             const fullName = inquiry ? `Inquiry · not holding${b.guestName ? ` · ${b.guestName}` : ''}`
-                              : b.guestName || (b.channel === 'owner_stay' ? 'Owner stay' : b.channel === 'maintenance_block' ? (b.blockReason === 'other' ? 'Blocked' : 'Maintenance') : ch.label);
+                              : b.guestName || (b.channel === 'owner_stay' ? 'Owner stay' : b.channel === 'maintenance_block' ? (b.blockReason === 'other' ? 'Blocked' : 'Repair') : ch.label);
                             const firstName = fullName.split(' ')[0];
                             // A one-night bar is too narrow for logo and name side by side, so they stack.
                             const narrow = width < 100;
@@ -669,7 +670,7 @@ export default function CalendarPage() {
                                     ev.preventDefault();
                                     refusedDrag.current = true;
                                     window.setTimeout(() => { refusedDrag.current = false; }, 400);
-                                    if (ota) toast({ tone: 'info', title: `Change dates on ${ch.label}.`, body: `This booking came from ${ch.label}. Change its dates there; the new dates come back here on the next sync.` });
+                                    if (ota) toast({ tone: 'info', title: `Change dates on ${ch.label}.`, body: `This reservation came from ${ch.label}. Change its dates there; the new dates then show here.` });
                                     return;
                                   }
                                   ev.dataTransfer.effectAllowed = 'move';
@@ -718,14 +719,14 @@ export default function CalendarPage() {
                               const left = cells[i] ? 0 : 1;
                               const rs = data?.restrictions?.[`${u.id}:${dayIso(i)}`];
                               const minStay = rs && rs.minStay > 1 ? rs.minStay : 0;
-                              const restriction = rs?.stopSell ? 'Closed for sale' : minStay ? `Minimum ${minStay} nights` : 'No minimum stay, open for sale';
+                              const restriction = rs?.stopSell ? 'Blocked' : minStay ? `Minimum ${minStay} nights` : 'No minimum nights, available';
                               return (
                                 <button key={i} type="button" disabled={!canSetRates} onClick={() => setRateUpdate({ unitIds: [u.id], from: dayIso(i), to: dayIso(i) })}
                                   title={`${left ? '1 of 1 unit available' : 'Sold'} · ${restriction}${canSetRates ? ' · click to change' : ''}`}
                                   style={{ width: COL }}
                                   className={`flex-none box-border h-10 md:h-8 p-0 pl-1 border-none bg-transparent enabled:hover:bg-sunken/80 enabled:cursor-pointer disabled:cursor-default font-sans text-meta whitespace-nowrap flex items-center justify-end gap-0.5 [font-variant-numeric:tabular-nums] ${minStay && !rs?.stopSell ? 'pr-1.5' : 'pr-2'} ${left ? 'text-ink-2' : 'text-faint'}`}>
                                   {rs?.stopSell
-                                    ? <span className="px-1 rounded-[4px] text-caption font-semibold leading-[16px]" style={{ background: TONE.critical.bg, color: TONE.critical.fg }}>Closed</span>
+                                    ? <span className="px-1 rounded-[4px] text-caption font-semibold leading-[16px]" style={{ background: TONE.critical.bg, color: TONE.critical.fg }}>Blocked</span>
                                     : <>
                                         {minStay > 0 && <span className="mr-auto px-[3px] rounded-[4px] text-caption font-semibold leading-[16px] bg-muted text-ink">{minStay}n</span>}
                                         {left ? '1 left' : 'Sold'}
@@ -748,6 +749,7 @@ export default function CalendarPage() {
                                   {chip && (
                                     <span className="hidden md:inline-block text-caption font-semibold px-1.5 rounded-full leading-[17px] whitespace-nowrap"
                                       style={{ background: TONE[chip.tone].bg, color: TONE[chip.tone].fg }}
+                                      // vocab-ok: sync is the variable's name; the text says last update sent
                                       title={sync?.lastSyncedAt ? `Last update sent ${dateTime(sync.lastSyncedAt)}` : undefined}>{chip.label}</span>
                                   )}
                                   <span className="hidden md:inline ml-auto text-caption font-medium text-faint">RM</span>
@@ -760,7 +762,7 @@ export default function CalendarPage() {
                                   const none = !custom && (price <= 0 || unlinked);
                                   return (
                                     <button key={i} type="button" disabled={!canSetRates} onClick={() => setPriceModal({ unit: u, channel: r.key, dayIso: dayIso(i), current: price })}
-                                      title={`${r.label} · ${date(dayIso(i))} · ${none ? (unlinked ? `not linked to ${r.label}, so no price is sent` : 'no rate set') : rmShort(price)}${custom ? ' · set by hand' : ''}${canSetRates ? ' · click to set' : ''}`}
+                                      title={`${r.label} · ${date(dayIso(i))} · ${none ? (unlinked ? `not linked to ${r.label}, so no price is sent` : 'no price set') : rmShort(price)}${custom ? ' · set by hand' : ''}${canSetRates ? ' · click to set' : ''}`}
                                       style={{ width: COL }}
                                       className={`flex-none box-border h-10 md:h-8 p-0 pr-2 border-none bg-transparent enabled:hover:bg-sunken/80 enabled:cursor-pointer disabled:cursor-default font-sans text-meta text-right [font-variant-numeric:tabular-nums] ${none ? 'text-faint' : custom ? 'font-semibold text-ink' : 'text-ink-2'}`}>
                                       {none ? '—' : amount(price, { cents: false })}
@@ -823,8 +825,8 @@ export default function CalendarPage() {
           const clash = conflictFor(v.unitId, v.from, v.to);
           if (clash) { toast({ tone: 'critical', title: 'Dates unavailable.', body: `${clash.guestName || CHANNEL[clash.channel].label} already holds ${dateRange(clash.checkIn, clash.checkOut)} on this unit.` }); return; }
           api.post<{ effects?: { channel: ChannelSync } }>('/blocks', { unitId: v.unitId, from: v.from, to: v.to, kind: v.kind, reason: v.reason })
-            .then(res => { setBlockWizard(false); toast({ tone: 'success', title: v.kind === 'owner_stay' ? 'Owner stay added.' : 'Dates blocked.', body: `${dateRange(v.from, v.to)}. ${channelNote(res?.effects?.channel, 'held')}`.trim() }); reload(); })
-            .catch(e => toast({ tone: 'critical', title: 'Dates not blocked.', body: errorMessage(e, 'Try again in a moment.') }));
+            .then(res => { setBlockWizard(false); toast({ tone: 'success', title: v.kind === 'owner_stay' ? 'Owner stay added.' : 'Nights blocked.', body: `${dateRange(v.from, v.to)}. ${channelNote(res?.effects?.channel, 'held')}`.trim() }); reload(); })
+            .catch(e => toast({ tone: 'critical', title: 'Nights not blocked.', body: errorMessage(e, 'Try again in a moment.') }));
         }} />}
       {rateUpdate && <RateUpdate units={rateSource?.units ?? allUnits} initial={rateUpdate} busy={rateBusy} onClose={() => { if (!rateBusy) setRateUpdate(false); }}
         loadingAll={property !== 'all' && !everyUnit.data} building={property !== 'all' ? property : undefined}
@@ -841,7 +843,7 @@ export default function CalendarPage() {
                 tone: res?.syncFailed ? 'warning' : 'success', title: 'Saved.',
                 body: [`${plural(v.unitIds.length, 'unit')} · ${ranges}.`,
                   skipped.length ? `Not connected, left alone: ${skipped.join(', ')}.` : '',
-                  res?.syncFailed ? `${plural(res.syncFailed, 'unit')} could not be queued for the booking sites; see System health.` : ''].filter(Boolean).join(' '),
+                  res?.syncFailed ? `${plural(res.syncFailed, 'unit')} were not sent to the channels; see System health.` : ''].filter(Boolean).join(' '),
               });
               setRateEdits({});
               reload();

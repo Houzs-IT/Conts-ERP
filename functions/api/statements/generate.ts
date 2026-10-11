@@ -133,7 +133,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (count) {
     await notifyUsers(env, 'finance', {
       kind: 'statement.generated', title: `Owner statements for ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(period.slice(5, 7)) - 1]} ${period.slice(0, 4)} generated`,
-      body: `${count} provisional ${count === 1 ? 'statement is' : 'statements are'} ready to check${skipped ? `; ${skipped} already final were left as they are` : ''}.`,
+      body: `${count} draft ${count === 1 ? 'statement is' : 'statements are'} ready to check${skipped ? `; ${skipped} already final were left as they are` : ''}.`,
       link: '/finance/statements', entityTable: 'owner_statements', entityId: period, except: session.userId,
     });
   }

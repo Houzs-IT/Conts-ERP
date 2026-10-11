@@ -85,7 +85,7 @@ export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitL
     }
     setRevealed(r => ({ ...r, [c.id]: clear }));
     setLocalReveal(m => ({ ...m, [c.id]: { by: user?.fullName ?? 'You', at: todayMyt() } }));
-    toast({ tone: 'neutral', title: 'Access code revealed.', body: 'This was recorded in the audit log.' });
+    toast({ tone: 'neutral', title: 'Access code revealed.', body: 'This was recorded in History.' });
   }
   const remask = (c: Credential) => setRevealed(r => { const n = { ...r }; delete n[c.id]; return n; });
   async function copy(c: Credential) {
@@ -105,7 +105,7 @@ export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitL
       else await api.post('/access-credentials', { ...body, unitId });
       if (existing) remask(existing);
       setEditing(null);
-      toast({ tone: 'success', title: existing ? 'Access updated.' : 'Access added.', body: `${String(body.label ?? existing?.label ?? '')} on ${unitLabel}. The change is in the audit log; the code is not.` });
+      toast({ tone: 'success', title: existing ? 'Access updated.' : 'Access added.', body: `${String(body.label ?? existing?.label ?? '')} on ${unitLabel}. The change is in History; the code is not.` });
       reload();
     } catch (e) { notifyFailure(e); }
   }
@@ -135,7 +135,7 @@ export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitL
         <span className="flex flex-col gap-[3px] min-w-0">
           <span className="font-medium">{KIND_LABEL[r.kind] ?? r.kind}</span>
           <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={r.label}>{r.label}</span>
-          {r.rotatesAfterStay && <span><StatusBadge tone="info" label="Rotates after each stay" size="sm" /></span>}
+          {r.rotatesAfterStay && <span><StatusBadge tone="info" label="Changes after each reservation" size="sm" /></span>}
         </span>
       ) },
     { key: 'label', label: 'Name', value: r => r.label, hidden: true, width: 160 },
@@ -168,7 +168,7 @@ export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitL
       } },
     { key: 'instruction', label: 'Instruction', value: r => r.instruction, width: 260,
       render: r => <span className="block text-meta text-muted-ink whitespace-normal text-pretty">{r.instruction}</span> },
-    { key: 'rotates', label: 'Rotates after each stay', value: r => (r.rotatesAfterStay ? 'Yes' : 'No'), hidden: true, width: 120 },
+    { key: 'rotates', label: 'Changes after each reservation', value: r => (r.rotatesAfterStay ? 'Yes' : 'No'), hidden: true, width: 120 },
     { key: 'updated', label: 'Changed', type: 'date', value: r => r.updatedAt || null, hidden: true, width: 116 },
     { key: 'lastShown', label: 'Last shown to', value: r => lastShown(r)?.by ?? null, hidden: true, width: 150 },
     ...(canEdit ? [{ key: 'actions', label: '', noExport: true, sortable: false, filter: false, width: 90, align: 'right',
@@ -226,7 +226,7 @@ function CredentialModal({ initial, unitLabel, onClose, onSubmit }: { initial: C
   }
 
   return (
-    <CentreModal title={initial ? `Edit ${initial.label}` : 'Add access'} sub={`${unitLabel}. Codes are shown masked, and a code is never written to the audit log.`} onClose={onClose}
+    <CentreModal title={initial ? `Edit ${initial.label}` : 'Add access'} sub={`${unitLabel}. Codes are shown masked, and a code is never written to History.`} onClose={onClose}
       footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason="Fill the name and the instruction" onClick={() => void submit()}>{initial ? 'Save' : 'Add access'}</Button></>}>
       <Labeled label="Type" hint="DROPDOWN"><Select label="Type" value={kind} onChange={setKind} options={KINDS} /></Labeled>
       <Field label="Name" placeholder="e.g. Main door" value={label} onChange={e => setLabel(e.target.value)} />
@@ -245,7 +245,7 @@ function CredentialModal({ initial, unitLabel, onClose, onSubmit }: { initial: C
       </div>
       <label className="flex items-center gap-2 text-copy">
         <input type="checkbox" checked={rotates} onChange={e => setRotates(e.target.checked)} />
-        The code changes after each stay
+        The code changes after each reservation
       </label>
     </CentreModal>
   );

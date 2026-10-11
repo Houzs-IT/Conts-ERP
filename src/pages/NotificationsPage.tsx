@@ -59,7 +59,7 @@ export default function NotificationsPage() {
         {error && <div className="py-4 px-5 text-copy text-danger" role="alert">{error}</div>}
         {data && !error && data.data.length === 0 && (
           <div className="py-8 px-5 text-copy text-muted-ink text-center">
-            {show === 'unread' ? 'Nothing unread.' : 'No notifications yet. New bookings, cancellations, cleans and repairs that concern you appear here.'}
+            {show === 'unread' ? 'Nothing unread.' : 'No notifications yet. New reservations, cancellations, cleaning jobs and maintenance jobs that concern you appear here.'}
           </div>
         )}
         {data && data.data.length > 0 && (

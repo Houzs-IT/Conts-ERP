@@ -10,7 +10,7 @@ const area = (city: string, postcode: string | null) => (postcode ? `${city}, ${
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage && session.role !== 'operations_staff') return fail('FORBIDDEN', 'Property records are visible to operations and finance roles.', 403);
+  if (!session.manage && session.role !== 'operations_staff') return fail('FORBIDDEN', 'Unit records are visible to operations and finance roles.', 403);
   // Owner identity and bank numbers are shown only to roles that manage them.
   const banking = session.manage;
 

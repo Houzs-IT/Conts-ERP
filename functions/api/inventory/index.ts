@@ -54,7 +54,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const unit = await resolveUnit(env, b.unitId ?? b.unitNumber, b.propertyName);
   if (unit === 'ambiguous') return fail('VALIDATION', 'More than one unit has that number. Say which building.', 422);
-  if (!unit) return fail('NOT_FOUND', 'That unit is not in the system. Add it under Properties first.', 404, { unitNumber: 'Add this unit under Properties first.' });
+  if (!unit) return fail('NOT_FOUND', 'That unit is not in the system. Add it under Units first.', 404, { unitNumber: 'Add this unit under Units first.' });
 
   const id = crypto.randomUUID();
   await run(env, `

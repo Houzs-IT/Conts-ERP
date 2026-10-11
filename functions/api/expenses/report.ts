@@ -45,7 +45,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     [q('Generated'), q(`${generated} MYT`)],
     [q('Rows'), q(rows.length)],
     [''],
-    ['Expense', 'Unit', 'Property', 'Category', 'Date', 'Reference', 'Description', 'Amount (RM)', 'Charge to'].map(q),
+    ['Expense', 'Unit', 'Building', 'Category', 'Date', 'Reference', 'Description', 'Amount (RM)', 'Charge to'].map(q),
     ...rows.map(r => [q(r.id), q(r.unit_number), q(r.property_name), q(label(r.category)), q(r.incurred_on), q(r.reference), q(r.description), q((Number(r.amount) / 100).toFixed(2)), q(CHARGE[r.charge_to] ?? label(r.charge_to))]),
     ['', '', '', '', '', '', q('Total'), q((total / 100).toFixed(2)), ''],
   ].map(l => l.join(','));

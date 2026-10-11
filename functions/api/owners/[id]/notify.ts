@@ -17,15 +17,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const b = await request.json<any>().catch(() => ({}));
   const lines = [
     `Dear ${owner.display_name},`, '',
-    `${b.unitLabel ?? 'Your unit'} is off sale${b.reason ? ` for ${String(b.reason).toLowerCase()}` : ''}.`,
+    `${b.unitLabel ?? 'Your unit'} is blocked${b.reason ? ` for ${String(b.reason).toLowerCase()}` : ''}.`,
     b.datesBlocked ? `Dates held: ${b.datesBlocked}.` : '',
-    b.expectedReturn ? `Expected back on sale: ${b.expectedReturn}.` : '',
-    Number.isInteger(b.revenueAtRisk) && b.revenueAtRisk > 0 ? `Estimated bookings affected: RM ${(b.revenueAtRisk / 100).toLocaleString('en-MY')}.` : '',
+    b.expectedReturn ? `Expected to be available again: ${b.expectedReturn}.` : '',
+    Number.isInteger(b.revenueAtRisk) && b.revenueAtRisk > 0 ? `Estimated earnings affected: RM ${(b.revenueAtRisk / 100).toLocaleString('en-MY')}.` : '',
     '', 'We will update you as soon as it is back.',
   ].filter((l, i, a) => l !== '' || a[i - 1] !== '');
 
   const res = await notify(env, {
-    template: 'owner.unit_blocked', recipient: owner.email, channel: 'email', subject: 'Your unit is off sale', body: lines.join('\n'),
+    template: 'owner.unit_blocked', recipient: owner.email, channel: 'email', subject: 'Your unit is blocked', body: lines.join('\n'),
     entityTable: 'owners', entityId: id, urgent: false,
   });
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'owner.notify', entityTable: 'owners', entityId: id, after: { unit: b.unitLabel ?? null, delivery: res.state } });

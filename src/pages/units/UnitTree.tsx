@@ -110,7 +110,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
       <div className="py-[10px] px-3 [border-bottom:1px_solid_var(--color-line)] flex flex-col gap-2 flex-none">
         <div className="relative flex items-center">
           <span className="absolute left-[10px] text-muted-ink flex pointer-events-none"><Icon name="Search" size="sm" /></span>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search code, listing, owner, building" aria-label="Search units"
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search code, listing name, owner, building" aria-label="Search units"
             className="field-input h-[36px]! w-full pl-[32px]! pr-[32px]! text-copy!" />
           {q && (
             <button type="button" onClick={() => setQ('')} aria-label="Clear search"
@@ -192,7 +192,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                                   <span className="overflow-hidden text-ellipsis">{su.unitCode || 'New sub-unit'}</span>
                                   <span className="text-caption font-bold tracking-[0.06em] text-gold-ink flex-none">SUB</span>
                                 </span>
-                                <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{su.listingName || 'Room / floor'}</span>
+                                <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{su.listingName || 'Sub-unit'}</span>
                               </span>
                               <span className="text-caption font-bold text-muted-ink flex-none">{su.split === 'Not set' ? '' : su.split.split(' ')[0]}</span>
                             </button>

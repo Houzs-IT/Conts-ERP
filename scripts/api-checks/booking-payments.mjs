@@ -135,7 +135,7 @@ check('the / search matches every word: "Skyline D25" finds Skyline units D25-..
     const d = (await call('GET', `/api/reservations/${blk.id}`)).json;
     const labels = d.timeline.map(t => t.label);
     check('a block timeline: Block created (with who), Block starts, Block ends; no check-in words', labels.includes('Block created') && labels.includes('Block starts') && labels.includes('Block ends')
-      && !labels.some(l => /Check-in|Check-out|Booking/.test(l)) && d.timeline.find(t => t.label === 'Block created').actor, JSON.stringify(d.timeline));
+      && !labels.some(l => /Check-in|Checkout|Reservation/.test(l)) && d.timeline.find(t => t.label === 'Block created').actor, JSON.stringify(d.timeline));
     r = await call('GET', `/api/audit?entityTable=reservations&entityId=${blk.id}`);
     check('the block History has the person who made it', r.json.data.some(a => a.action === 'reservation.block' && a.actorKind === 'person'), r.text.slice(0, 200));
     await call('POST', `/api/reservations/${blk.id}/cancel`, { reason: 'api check clean-up' });
@@ -206,5 +206,5 @@ if (r.json.data[0]) {
 /* ---------- CSV ---------- */
 r = await fetch(BASE + '/api/reservations/export?view=all&ch=airbnb', { headers: { cookie } });
 const csv = (await r.text()).replace(/^﻿/, '').split('\r\n');
-check('CSV carries nationality, the money breakdown and payments', ['Nationality', 'Guest total (RM)', 'Commission (RM)', 'Received (RM)', 'Outstanding (RM)', 'Payments'].every(h => csv[3].includes(`"${h}"`)), csv[3]);
+check('CSV carries nationality, the money breakdown and payments', ['Nationality', 'Guest total (RM)', 'Service fee (RM)', 'Received (RM)', 'Outstanding (RM)', 'Payments'].every(h => csv[3].includes(`"${h}"`)), csv[3]);
 done();

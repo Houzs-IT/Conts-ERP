@@ -71,7 +71,7 @@ const FALLBACK: Payload = {
     { id: 'i1', provider: 'airbnb', state: 'connected', lastSyncedAt: '2026-09-16T14:06:00Z', lastError: null, unitsLinked: 24, syncInterval: 'Every 15 minutes', credentialMasked: masked('a91c') },
     { id: 'i2', provider: 'booking_com', state: 'connected', lastSyncedAt: '2026-09-16T13:58:00Z', lastError: null, unitsLinked: 24, syncInterval: 'Every 15 minutes', credentialMasked: masked('7d20') },
     { id: 'i3', provider: 'agoda', state: 'expired', lastSyncedAt: '2026-09-09T12:00:00Z', lastError: 'Access token expired', unitsLinked: 18, syncInterval: 'Every 30 minutes', credentialMasked: masked('4f8e') },
-    { id: 'i4', provider: 'whatsapp', state: 'connected', lastSyncedAt: '2026-09-16T14:05:00Z', lastError: null, unitsLinked: 24, syncInterval: 'Real time · webhook', credentialMasked: masked('bc63') },
+    { id: 'i4', provider: 'whatsapp', state: 'connected', lastSyncedAt: '2026-09-16T14:05:00Z', lastError: null, unitsLinked: 24, syncInterval: 'Live updates', credentialMasked: masked('bc63') },
     { id: 'i5', provider: 'maybank', state: 'degraded', lastSyncedAt: '2026-09-15T22:00:00Z', lastError: 'Payout confirmations delayed', unitsLinked: 24, syncInterval: 'Every 6 hours', credentialMasked: masked('0a17') },
     { id: 'i6', provider: 'utilities', state: 'manual', lastSyncedAt: '2026-09-01T09:00:00Z', lastError: null, unitsLinked: 24, syncInterval: null, credentialMasked: null },
   ],
@@ -82,15 +82,15 @@ function noteFor(row: Row): string {
   if (row.detail) return row.detail;
   const label = PROVIDER_LABEL[row.provider] ?? row.provider;
   switch (row.state) {
-    case 'not_connected': return row.viaChannex ? `No unit is connected to ${label} yet. Connect one from the unit's Channels card (Properties, then Units).` : `${label} is not connected.`;
+    case 'not_connected': return row.viaChannex ? `No unit is connected to ${label} yet. Connect one from the unit's Channels card (open the unit from Units).` : `${label} is not connected.`;
     case 'connected': return row.viaChannex
-      ? 'Connected through Channex. Prices and open dates are sent as they change, and bookings arrive automatically.'
+      ? 'Connected through Channex. Prices and open dates are sent as they change, and reservations arrive automatically.'
       : row.provider === 'email' || row.provider === 'whatsapp' ? `Set up. Messages go out as they are sent${row.lastSyncedAt ? `; the last one at ${timeWithZone(row.lastSyncedAt)}` : ''}.`
-      : row.lastSyncedAt ? `Synced with ${label} · ${timeWithZone(row.lastSyncedAt)}` : `Synced with ${label}.`;
-    case 'expired':   return `${label} connection expired. Reconnect to resume syncing.`;
-    case 'degraded':  return row.viaChannex ? `Some updates to ${label} were refused.` : `${label} is syncing slowly. Some bookings may be delayed.`;
-    case 'failed':    return row.lastSyncedAt ? `${label} sync failed at ${timeWithZone(row.lastSyncedAt)}.` : `${label} sync failed.`;
-    case 'manual':    return 'Readings are entered by hand each month. No automatic sync.';
+      : row.lastSyncedAt ? `Up to date with ${label} · ${timeWithZone(row.lastSyncedAt)}` : `Up to date with ${label}.`;
+    case 'expired':   return `${label} connection expired. Reconnect so updates go through again.`;
+    case 'degraded':  return row.viaChannex ? `Some updates to ${label} were refused.` : `${label} is slow to respond. Some reservations may arrive late.`;
+    case 'failed':    return row.lastSyncedAt ? `Not sent to ${label} at ${timeWithZone(row.lastSyncedAt)}. Try again, or reconnect.` : `Not sent to ${label}. Try again, or reconnect.`;
+    case 'manual':    return 'Readings are entered by hand each month. Nothing comes in automatically.';
   }
 }
 
@@ -99,7 +99,7 @@ function syncedLine(row: Row): string {
   if (row.provider === 'email' || row.provider === 'whatsapp') return row.state === 'not_connected' ? 'Key not set' : row.lastSyncedAt ? `Last sent ${date(row.lastSyncedAt)}` : 'Nothing sent yet';
   if (row.state === 'not_connected') return 'Through Channex';
   if (row.viaChannex) return row.lastSyncedAt ? `Last update sent ${date(row.lastSyncedAt)} · ${timeWithZone(row.lastSyncedAt)}` : 'No updates sent yet';
-  return row.lastSyncedAt ? `Last synced ${date(row.lastSyncedAt)} · ${timeWithZone(row.lastSyncedAt)}` : 'Never synced';
+  return row.lastSyncedAt ? `Last sent ${date(row.lastSyncedAt)} · ${timeWithZone(row.lastSyncedAt)}` : 'Nothing sent yet';
 }
 
 /** Which recovery actions a state offers. Never tease one that cannot work (13.1). */
@@ -142,9 +142,9 @@ export default function IntegrationsPage() {
     try {
       await api.post(`/integrations/${row.provider}/sync`, {});
       setEdits(e => ({ ...e, [row.id]: { ...e[row.id], lastSyncedAt: new Date().toISOString() } }));
-      toast({ tone: 'success', title: `${label} sync started.`, body: 'Pulling new and changed reservations. Any expired channels are skipped and named.' });
+      toast({ tone: 'success', title: `Checking ${label} for new reservations.`, body: 'Pulling new and changed reservations. Any expired channels are skipped and named.' });
     } catch (e) {
-      toast({ tone: 'critical', title: `${label} did not sync.`, body: errorMessage(e, 'Try again in a moment.') });
+      toast({ tone: 'critical', title: `${label} was not checked.`, body: errorMessage(e, 'Try again in a moment.') });
     } finally {
       setSyncing(s => ({ ...s, [row.id]: false }));
     }
@@ -218,7 +218,7 @@ export default function IntegrationsPage() {
                   )}
                   {act.retry && (
                     <Button size="sm" variant="secondary" loading={!!syncing[row.id]} icon={<Icon name="RefreshCw" size="sm" />} onClick={() => retrySync(row)}>
-                      {syncing[row.id] ? 'Syncing…' : row.viaChannex ? 'Check for bookings' : 'Retry sync'}
+                      {syncing[row.id] ? 'Checking…' : row.viaChannex ? 'Check for reservations' : 'Try again'}
                     </Button>
                   )}
                   {row.viaChannex
@@ -242,10 +242,10 @@ export default function IntegrationsPage() {
         onClose={() => setReconnectId(null)}
         spec={!reconnectRow ? null : {
           title: `Reconnect ${PROVIDER_LABEL[reconnectRow.provider] ?? reconnectRow.provider}?`,
-          body: 'This starts a fresh authorisation and issues a new API key. Syncing resumes from the last successful pull, so no bookings are missed.',
+          body: 'This starts a fresh authorisation and issues a new API key. Updates resume from the last successful check, so no reservations are missed.',
           meta: reconnectRow.lastSyncedAt
-            ? `Last successful pull ${date(reconnectRow.lastSyncedAt)} · ${timeWithZone(reconnectRow.lastSyncedAt)}`
-            : 'This channel has no earlier successful pull.',
+            ? `Last successful check ${date(reconnectRow.lastSyncedAt)} · ${timeWithZone(reconnectRow.lastSyncedAt)}`
+            : 'This channel has no earlier successful check.',
           confirmLabel: 'Reconnect',
           busyLabel: 'Reconnecting…',
           onConfirm: () => reconnect(reconnectRow),
@@ -312,8 +312,8 @@ function ManagePanel({
           <PanelValue>{plural(row.unitsLinked, 'unit')}</PanelValue>
         </Section>
 
-        <Section label="Sync interval">
-          <PanelValue>{row.syncInterval ?? 'No automatic sync — entered manually'}</PanelValue>
+        <Section label="How often">
+          <PanelValue>{row.syncInterval ?? 'Entered by hand, nothing automatic'}</PanelValue>
         </Section>
 
         <Section label="Credentials">
@@ -336,7 +336,7 @@ function ManagePanel({
         )}
         {act.retry && (
           <Button size="sm" variant="secondary" loading={syncing} icon={<Icon name="RefreshCw" size="sm" />} onClick={onRetry}>
-            {syncing ? 'Syncing…' : 'Retry sync'}
+            {syncing ? 'Checking…' : 'Try again'}
           </Button>
         )}
         <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>

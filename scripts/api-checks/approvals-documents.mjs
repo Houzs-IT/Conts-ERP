@@ -379,7 +379,7 @@ check('the booking drawer carries its documents', r.json?.documents?.length >= 3
 console.log('\n== Statement letterhead ==');
 const [legacy] = await q(`SELECT s.id FROM owner_statements s WHERE NOT EXISTS (SELECT 1 FROM statement_units su WHERE su.statement_id = s.id) LIMIT 1`);
 r = await mgmt('GET', `/api/statements/${legacy.id}/pdf`);
-check('the owner statement print view uses the same letterhead and footer', r.status === 200 && /lh-head/.test(r.text) && /lh-foot/.test(r.text) && r.text.includes('/brand/the-conts-logo.png') && /Net payout/.test(r.text), r.text.slice(0, 300));
+check('the owner statement print view uses the same letterhead and footer', r.status === 200 && /lh-head/.test(r.text) && /lh-foot/.test(r.text) && r.text.includes('/brand/the-conts-logo.png') && /Net Payout to Owner/i.test(r.text), r.text.slice(0, 300));
 
 console.log('\n== Statements from booking payments ==');
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');

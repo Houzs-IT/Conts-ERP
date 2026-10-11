@@ -5,13 +5,16 @@ import { UNIT_SQL } from './ownerStatement';
 import { LOCKED_SQL } from './expenses';
 
 /** A month's costs on a unit, or on every unit of an owner, grouped the way the owner reads them (owner, 11 Oct 2026):
- *    Cleaning        every clean charged to the unit (category cleaning / housekeeping)
- *    Maintenance     repairs (category maintenance, or raised from a maintenance job)
- *    Paid on behalf  bills The Conts pays for the owner: water, electricity, Wi-Fi, Indah Water, and anything else
+ *    Cleaning fees       every clean charged to the unit (category cleaning / housekeeping)
+ *    Maintenance repair  repairs (category maintenance, or raised from a maintenance job), before the operator's share
+ *    Utilities           water, electricity, Wi-Fi, Indah Water
+ *    Maintenance fee     the condo management's monthly fee (below), after the operator's share
+ *    Other fees          anything else, shown only when not zero
+ *  The groups are for reading only: the statement's maths and the stored categories do not change.
  *  Only what the owner pays (charge_to 'owner') is deducted, before the operator's share, exactly as the statement
  *  deducts it (ownerStatement.ts reads the same rows); what the company, a tenant or a guest paid is shown apart.
  *  Owner credits and charges (owner_adjustments, the workbook's O2 lines such as "MAINTENANCE FEE SEPT 26") are listed
- *  with the paid-on-behalf bills but stay where the statement puts them: after the split.
+ *  with the bills but stay where the statement puts them: after the split.
  *  Maintenance fee (condo): the building's monthly fee comes off AFTER the operator's share, as on the owner's report.
  *  Added from the unit or owner page it is an owner charge (BillModal posts it to /api/owners/:id/adjustments). One
  *  saved before that as an 'other' expense ("Building maintenance fee ...") is deducted before the split; it is left
@@ -20,22 +23,24 @@ import { LOCKED_SQL } from './expenses';
 /** The statement's deduction rows (ownerStatement.ts DEDUCTIONS, printed on the Owner Income Report as the workbook
  *  names them) in the words the screens use. */
 export const DEDUCTION_WORDS: Record<string, string> = {
-  cleaning_basic: 'Cleaning', cleaning_deep: 'Deep cleaning', electricity: 'Electricity (paid on behalf)', water: 'Water (paid on behalf)',
-  internet: 'Wi-Fi (paid on behalf)', sewerage: 'IndahWater (paid on behalf)', additional: 'Maintenance job and other paid on behalf',
-  misc: 'Miscellaneous charges',
+  cleaning_basic: 'Cleaning fees', cleaning_deep: 'Cleaning fees (deep clean)', electricity: 'Utilities: electricity', water: 'Utilities: water',
+  internet: 'Utilities: Wi-Fi', sewerage: 'Utilities: IndahWater', additional: 'Maintenance repair and other fees',
+  misc: 'Other fees',
 };
 
-export type CostGroup = 'cleaning' | 'maintenance' | 'paid_on_behalf';
+/** The owner's names for the groups (11 Oct 2026). */
+export type CostGroup = 'cleaning' | 'maintenance' | 'utilities' | 'maintenance_fee' | 'other';
 export const KINDS: { key: string; label: string; group: CostGroup }[] = [
-  { key: 'cleaning', label: 'Cleaning', group: 'cleaning' },
-  { key: 'maintenance', label: 'Maintenance', group: 'maintenance' },
-  { key: 'water', label: 'Water', group: 'paid_on_behalf' },
-  { key: 'electricity', label: 'Electricity', group: 'paid_on_behalf' },
-  { key: 'internet', label: 'Wi-Fi', group: 'paid_on_behalf' },
-  { key: 'sewerage', label: 'IndahWater', group: 'paid_on_behalf' },
-  { key: 'building_fee', label: 'Maintenance fee (condo)', group: 'paid_on_behalf' },
-  { key: 'other', label: 'Other fees', group: 'paid_on_behalf' },
+  { key: 'cleaning', label: 'Cleaning fees', group: 'cleaning' },
+  { key: 'maintenance', label: 'Maintenance repair', group: 'maintenance' },
+  { key: 'water', label: 'Water', group: 'utilities' },
+  { key: 'electricity', label: 'Electricity', group: 'utilities' },
+  { key: 'internet', label: 'Wi-Fi', group: 'utilities' },
+  { key: 'sewerage', label: 'IndahWater', group: 'utilities' },
+  { key: 'building_fee', label: 'Maintenance fee (condo)', group: 'maintenance_fee' },
+  { key: 'other', label: 'Other fees', group: 'other' },
 ];
+const TOTAL_OF = { cleaning: 'cleaning', maintenance: 'maintenance', utilities: 'utilities', maintenance_fee: 'maintenanceFee', other: 'other' } as const;
 const KIND = new Map(KINDS.map(k => [k.key, k]));
 
 /** A maintenance fee saved as an expense before it became an owner charge: category 'other' with a description
@@ -55,8 +60,9 @@ export function kindOf(e: { category: string; description: string | null; mainte
   return 'other';
 }
 
-interface Totals { cleaning: number; maintenance: number; paidOnBehalf: number; deducted: number; notCharged: number; credits: number; charges: number }
-const zero = (): Totals => ({ cleaning: 0, maintenance: 0, paidOnBehalf: 0, deducted: 0, notCharged: 0, credits: 0, charges: 0 });
+/** maintenanceFee: the month's condo fee, after the split as an owner charge plus any still saved as an expense. */
+interface Totals { cleaning: number; maintenance: number; utilities: number; maintenanceFee: number; other: number; deducted: number; notCharged: number; credits: number; charges: number }
+const zero = (): Totals => ({ cleaning: 0, maintenance: 0, utilities: 0, maintenanceFee: 0, other: 0, deducted: 0, notCharged: 0, credits: 0, charges: 0 });
 
 export interface CostItem {
   id: string; unitId: string; unitLabel: string; kind: string; kindLabel: string; group: CostGroup; category: string; description: string;
@@ -130,7 +136,7 @@ export async function unitCosts(env: Env, month: string, scope: { unitId?: strin
     const k = b.kinds.get(it.kind) ?? { owner: 0, others: 0 };
     if (it.chargeTo === 'owner') {
       k.owner += it.amount; b.totals.deducted += it.amount;
-      if (it.group === 'cleaning') b.totals.cleaning += it.amount; else if (it.group === 'maintenance') b.totals.maintenance += it.amount; else b.totals.paidOnBehalf += it.amount;
+      b.totals[TOTAL_OF[it.group]] += it.amount;
     } else { k.others += it.amount; b.totals.notCharged += it.amount; }
     b.kinds.set(it.kind, k);
   };
@@ -141,7 +147,10 @@ export async function unitCosts(env: Env, month: string, scope: { unitId?: strin
   for (const a of adj) {
     if (!a.inMonth || a.state === 'held') continue;
     for (const b of [bucket(a.unitId), all_]) { if (a.amount < 0) b.totals.charges += -a.amount; else b.totals.credits += a.amount; }
-    if (a.amount < 0 && MAINTENANCE_FEE_CHARGE.test(a.description)) for (const key of [a.unitId, '']) feeAfter.set(key, (feeAfter.get(key) ?? 0) - a.amount);
+    if (a.amount < 0 && MAINTENANCE_FEE_CHARGE.test(a.description)) {
+      for (const key of [a.unitId, '']) feeAfter.set(key, (feeAfter.get(key) ?? 0) - a.amount);
+      for (const b of [bucket(a.unitId), all_]) b.totals.maintenanceFee += -a.amount;
+    }
   }
   // afterSplit: the maintenance-fee charges (building_fee only); amount stays what is deducted before the split.
   const shape = (b: typeof all_, key: string) => ({

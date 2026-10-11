@@ -9,7 +9,7 @@ export interface OwnerRow { id: string; display_name: string; bank_name: string 
 export async function ownerFor(env: Env, session: Session, url: URL): Promise<OwnerRow | Response> {
   if (session.role === 'owner') {
     const o = await one<OwnerRow>(env, 'SELECT id, display_name, bank_name, bank_account_last4 FROM owners WHERE user_id = ?', session.userId);
-    return o ?? fail('NOT_LINKED', 'Your account is not linked to a property yet. Contact The Conts.', 404);
+    return o ?? fail('NOT_LINKED', 'Your account is not linked to a unit yet. Contact The Conts.', 404);
   }
   const asOwner = url.searchParams.get('ownerId');
   if (canSeeFinance(session.role) && asOwner) {

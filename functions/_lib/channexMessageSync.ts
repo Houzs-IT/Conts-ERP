@@ -21,11 +21,11 @@ export async function pushMessageIfLinked(env: Env, threadId: string, localMessa
       await run(env, 'UPDATE messages SET channex_message_id = ? WHERE id = ?', res.body.data.id, localMessageId);
       return { state: 'sent' };
     }
-    await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.message_push_failed', entityTable: 'messages', entityId: localMessageId, after: { status: res.status } });
+    await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.message_push_failed', entityTable: 'messages', entityId: localMessageId, after: { status: res.status } });
     return { state: 'not_linked', reason: `Channex refused the message (status ${res.status}).` };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.message_push_failed', entityTable: 'messages', entityId: localMessageId, after: { error: message } }).catch(() => {});
+    await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.message_push_failed', entityTable: 'messages', entityId: localMessageId, after: { error: message } }).catch(() => {});
     return { state: 'not_linked', reason: message };
   }
 }
@@ -37,9 +37,9 @@ export async function pushReviewReplyIfLinked(env: Env, reviewId: string, reply:
     const review = await one<{ channex_review_id: string | null }>(env, 'SELECT channex_review_id FROM reviews WHERE id = ?', reviewId);
     if (!review?.channex_review_id) return;
     const res = await channexReplyToReview(env, review.channex_review_id, reply);
-    if (!res.ok) await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.review_reply_push_failed', entityTable: 'reviews', entityId: reviewId, after: { status: res.status } });
+    if (!res.ok) await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.review_reply_push_failed', entityTable: 'reviews', entityId: reviewId, after: { status: res.status } });
   } catch (e) {
-    await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.review_reply_push_failed', entityTable: 'reviews', entityId: reviewId, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
+    await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.review_reply_push_failed', entityTable: 'reviews', entityId: reviewId, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
   }
 }
 
@@ -150,16 +150,16 @@ async function pullReviews(env: Env): Promise<number> {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id, reservation.unit_id, reservation.id, channel, rating, a.content ?? null,
       a.reply ?? null, a.is_replied && a.reply ? (a.updated_at ?? nowIso()) : null, a.inserted_at ?? nowIso(), review.id);
-    await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.review_created', entityTable: 'reviews', entityId: id, after: { channexReviewId: review.id, unitId: reservation.unit_id, rating } });
+    await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.review_created', entityTable: 'reviews', entityId: id, after: { channexReviewId: review.id, unitId: reservation.unit_id, rating } });
     imported++;
   }
   return imported;
 }
 
 async function auditSkip(env: Env, kind: 'message_thread' | 'review', channexId: string, reason: string, details: unknown) {
-  await audit(env, { actorId: null, actorLabel: 'Channex sync', action: `channex.${kind}_skipped`, entityTable: kind === 'review' ? 'reviews' : 'message_threads', entityId: channexId, after: { reason, details } }).catch(() => {});
+  await audit(env, { actorId: null, actorLabel: 'Channex', action: `channex.${kind}_skipped`, entityTable: kind === 'review' ? 'reviews' : 'message_threads', entityId: channexId, after: { reason, details } }).catch(() => {});
 }
 
 async function auditFail(env: Env, action: string, e: unknown) {
-  await audit(env, { actorId: null, actorLabel: 'Channex sync', action, entityTable: 'message_threads', entityId: 'sync', after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
+  await audit(env, { actorId: null, actorLabel: 'Channex', action, entityTable: 'message_threads', entityId: 'sync', after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
 }

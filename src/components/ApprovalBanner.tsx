@@ -88,7 +88,7 @@ export function DecisionDialog({ a, decision, onClose, onDone }: { a: Approval; 
   const body: ReactNode = decision === 'approve'
     ? (a.can.selfApproval
       ? 'You asked for this yourself. Because you are the only management user, you may approve it, but you must write why; it is recorded as self-approved.'
-      : 'Approving carries it out now, in one step with this approval, and both are kept in the audit log.')
+      : 'Approving carries it out now, in one step with this approval, and both are kept in History.')
     : decision === 'reject' ? 'Nothing is paid or changed. Say why, so the person who asked knows what to fix.'
     : 'Nothing is paid or changed. You can ask again later.';
 

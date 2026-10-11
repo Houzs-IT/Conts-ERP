@@ -5,18 +5,18 @@ import { fromSql, columnsSql, parseListQuery, viewWhere, todoWhere, toRow } from
 import { moneySchema } from '../../_lib/bookingMoney';
 
 const VIEW_LABEL: Record<string, string> = {
-  upcoming: 'Upcoming', inhouse: 'In house', past: 'Checked out', cancelled: 'Cancelled', all: 'All bookings',
+  upcoming: 'Upcoming', inhouse: 'Currently hosting', past: 'Past', cancelled: 'Cancelled', all: 'All reservations',
 };
 const TODO_LABEL: Record<string, string> = {
-  arriving: 'arriving today', departing: 'departing today', unpaid: 'direct, not fully paid', payout: 'booking-site payout pending',
+  arriving: 'checking in today', departing: 'checking out today', unpaid: 'direct, not fully paid', payout: 'host payout pending',
 };
 const CHANNEL: Record<string, string> = {
   airbnb: 'Airbnb', booking_com: 'Booking.com', agoda: 'Agoda', direct: 'Direct', owner_stay: 'Owner stay', maintenance_block: 'Maintenance block',
 };
 const STATE: Record<string, string> = {
-  inquiry: 'Inquiry', pending: 'Pending', confirmed: 'Confirmed', checked_in: 'Checked in', checked_out: 'Checked out', cancelled: 'Cancelled', no_show: 'No show',
+  inquiry: 'Inquiry', pending: 'Pending', confirmed: 'Upcoming', checked_in: 'Currently hosting', checked_out: 'Past', cancelled: 'Cancelled', no_show: 'No-show',
 };
-const KIND: Record<string, string> = { guest_payment: 'guest payment', ota_payout: 'payout', refund: 'refund' };
+const KIND: Record<string, string> = { guest_payment: 'guest payment', ota_payout: 'host payout', refund: 'refund' };
 const MAX_ROWS = 50000;
 
 /** GET /api/reservations/export — the same tab, card, filters and searches as the list, every matching row, as CSV:
@@ -24,7 +24,7 @@ const MAX_ROWS = 50000;
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Bookings are not available to field roles.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Reservations are not available to cleaners and technicians.', 403);
 
   const q = parseListQuery(new URL(request.url));
   const schema = await moneySchema(env);
@@ -52,18 +52,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const rows = raw.map(r => ({ r, x: toRow(r) }));
   const filters = [VIEW_LABEL[q.view] ?? q.view, ...(q.todo ? [TODO_LABEL[q.todo]] : []),
     ...(q.filters.channel ? [`channel ${CHANNEL[q.filters.channel]}`] : []), ...(q.filters.property ? ['one building'] : []),
-    ...(q.filters.from || q.filters.to ? [`stays touching ${q.filters.from ?? 'any date'} to ${q.filters.to ?? 'any date'}`] : []),
+    ...(q.filters.from || q.filters.to ? [`reservations touching ${q.filters.from ?? 'any date'} to ${q.filters.to ?? 'any date'}`] : []),
     ...(q.filters.grossMin !== null || q.filters.grossMax !== null ? [`guest total ${q.filters.grossMin !== null ? `from RM ${money(q.filters.grossMin)}` : ''}${q.filters.grossMax !== null ? ` up to RM ${money(q.filters.grossMax)}` : ''}`.trim()] : []),
     ...Object.entries(q.searches).map(([k, v]) => `${k === 'q' ? 'search' : k} contains "${v}"`)];
   if (q.sortLabel) filters.push(`sorted by ${q.sortLabel}`);
   const sum = (f: (x: ReturnType<typeof toRow>) => number) => rows.reduce((n, { x }) => n + f(x), 0);
 
-  const head = ['Reference', 'Guest', 'Guests', 'Contact', 'Nationality', 'Unit', 'Building', 'Channel', 'Check-in', 'Check-out', 'Nights', 'Status',
-    'Room as recorded (RM)', 'Cleaning fee (RM)', 'Other fees (RM)', 'SST (RM)', 'Tourism tax (RM)', 'Guest total (RM)', 'Tax kept by the site (RM)',
-    'Commission (RM)', 'Payment processing (RM)', 'Expected to receive (RM)', 'Received (RM)', 'Outstanding (RM)', 'Payments'];
+  const head = ['Reference', 'Guest', 'Guests', 'Contact', 'Nationality', 'Unit', 'Building', 'Channel', 'Check-in', 'Checkout', 'Nights', 'Status',
+    'Accommodation as recorded (RM)', 'Cleaning fee (RM)', 'Other fees (RM)', 'SST (RM)', 'Tourism tax (RM)', 'Guest total (RM)', 'Tax kept by the channel (RM)',
+    'Service fee (RM)', 'Payment processing (RM)', 'Expected to receive (RM)', 'Received (RM)', 'Outstanding (RM)', 'Payments'];
   const lines = [
     `# Filters applied: ${filters.join(', ')}`,
-    `# Scope: ${rows.length} bookings, ${sum(x => x.nights)} nights, guest total RM ${money(sum(x => x.grossBookingValue))}, commission RM ${money(sum(x => x.channelFee))}, received RM ${money(sum(x => x.received))}, outstanding RM ${money(sum(x => ['cancelled', 'no_show'].includes(x.state) ? 0 : x.outstanding))} · generated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC · Asia/Kuala_Lumpur dates`,
+    `# Scope: ${rows.length} reservations, ${sum(x => x.nights)} nights, guest total RM ${money(sum(x => x.grossBookingValue))}, service fee RM ${money(sum(x => x.channelFee))}, received RM ${money(sum(x => x.received))}, outstanding RM ${money(sum(x => ['cancelled', 'no_show'].includes(x.state) ? 0 : x.outstanding))} · generated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC · Asia/Kuala_Lumpur dates`,
     '',
     head.map(esc).join(','),
     ...rows.map(({ r, x }) => [
@@ -78,6 +78,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return new Response('﻿' + lines.join('\r\n'), {
     headers: {
       'content-type': 'text/csv; charset=utf-8',
+      // vocab-ok: download file name, kept stable for people who sort their files
       'content-disposition': `attachment; filename="bookings-${q.todo ?? q.view}-${q.today}.csv"`,
       'cache-control': 'no-store',
     },

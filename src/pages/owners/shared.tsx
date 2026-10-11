@@ -128,8 +128,8 @@ export function Section({ title, action, children }: { title: string; action?: R
 
 /** Deduction lines of a statement, in the order the report prints them, in the owner's words. */
 const DEDUCTION_LABEL: Record<string, string> = {
-  cleaning_basic: 'Cleaning', cleaning_deep: 'Deep cleaning', electricity: 'Electricity (paid on behalf)', water: 'Water (paid on behalf)',
-  internet: 'Wi-Fi (paid on behalf)', sewerage: 'IndahWater (paid on behalf)', additional: 'Maintenance job and other paid on behalf', misc: 'Miscellaneous charges',
+  cleaning_basic: 'Cleaning fees', cleaning_deep: 'Cleaning fees (deep clean)', electricity: 'Utilities: electricity', water: 'Utilities: water',
+  internet: 'Utilities: Wi-Fi', sewerage: 'Utilities: IndahWater', additional: 'Maintenance repair and other fees', misc: 'Other fees',
 };
 interface StatementDetail {
   id: string; period: string; state: StatementState; source: string;
@@ -289,9 +289,9 @@ export function LinkUnitModal({ owner, units, onClose, onSubmit }: { owner: stri
       <SearchSelect showLabel label="Unit" allLabel="Choose a unit" placeholder="Search unit or building" value={unitId} onChange={v => setUnitId(v)}
         options={choices.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName, hint: u.ownerName ? `now ${titleCase(u.ownerName)}` : undefined }))} />
       <Select showLabel size="md" label="Payout model" value={model} onChange={v => setModel(v as FeeModel)}
-        options={[{ value: 'management', label: 'Management fee (% of revenue)' }, { value: 'grr', label: 'GRR — guaranteed monthly rent' }]} />
+        options={[{ value: 'management', label: 'Operator share (% of income)' }, { value: 'grr', label: 'GRR — guaranteed monthly rent' }]} />
       {model === 'management'
-        ? <PercentInput label="Management fee %" value={feePct} onChange={setFeePct} help="Overrides the owner default for this unit. The Conts keeps this share; the owner receives the rest." />
+        ? <PercentInput label="Operator share %" value={feePct} onChange={setFeePct} help="Overrides the owner default for this unit. The Conts keeps this share; the owner receives the rest." />
         : <MoneyInput label="Guaranteed rent (RM / month)" placeholder="e.g. 3,500.00" valueSen={grrSen} onChangeSen={setGrrSen} help="The owner is paid this fixed amount regardless of occupancy." />}
     </Modal>
   );
@@ -305,7 +305,7 @@ export function ContractModal({ owner, onClose, onSubmit }: { owner: string; onC
   return (
     <Modal title="Management agreement" sub={`Record the contract terms for ${titleCase(owner)}.`} onClose={onClose} submitLabel="Save contract" canSubmit={canSubmit}
       onSubmit={() => onSubmit({ feePct: feePct ?? 0, startedOn, renewsOn: renewsOn || null })}>
-      <PercentInput label="Management fee %" value={feePct} onChange={setFeePct} help="Set 0 for a GRR-only arrangement." />
+      <PercentInput label="Operator share %" value={feePct} onChange={setFeePct} help="Set 0 for a GRR-only arrangement." />
       <div className="grid grid-cols-2 gap-3">
         <DateField label="Start date" value={startedOn} onChange={setStartedOn} />
         <DateField label="Renews on" value={renewsOn} onChange={setRenewsOn} min={startedOn || undefined} />

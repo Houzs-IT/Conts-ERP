@@ -54,18 +54,21 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
   }
 
   async function disconnect(c: Connection) {
-    const ok = await ask({ title: `Disconnect ${OTA_LABEL[c.ota]} from this unit?`, body: `Prices and availability stop syncing to ${OTA_LABEL[c.ota]} for this unit. Bookings already received stay in Conts. You can connect it again later.`, confirmLabel: `Disconnect ${OTA_LABEL[c.ota]}`, danger: true });
+    // vocab-ok: c.ota is a code field holding the channel key, not a word on screen
+    const ok = await ask({ title: `Disconnect ${OTA_LABEL[c.ota]} from this unit?`, body: `Prices and open dates stop being sent to ${OTA_LABEL[c.ota]} for this unit. Reservations already received stay in Conts. You can connect it again later.`, confirmLabel: `Disconnect ${OTA_LABEL[c.ota]}`, danger: true });
     if (ok === null) return;
     try {
       await api.del(`/units/${unitId}/channels/${c.id}`);
-      toast({ tone: 'success', title: `${OTA_LABEL[c.ota]} disconnected.`, body: 'Prices and availability no longer sync to it for this unit.' });
+      // vocab-ok: c.ota is a code field holding the channel key, not a word on screen
+      toast({ tone: 'success', title: `${OTA_LABEL[c.ota]} disconnected.`, body: 'Prices and open dates are no longer sent to it for this unit.' });
       conns.reload();
     } catch (e) { notifyFailure(e); }
   }
 
   const done = (ota: Ota) => {
     setConnecting(null);
-    toast({ tone: 'success', title: `${OTA_LABEL[ota]} connected.`, body: 'Prices and open dates now sync to it, and its existing bookings are being brought in.' });
+    // vocab-ok: ota is a code variable holding the channel key, not a word on screen
+    toast({ tone: 'success', title: `${OTA_LABEL[ota]} connected.`, body: 'Prices and open dates are now sent to it, and its existing reservations are being brought in.' });
     conns.reload();
   };
 
@@ -80,7 +83,7 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
         {linked ? (
           <>
             {connected.length === 0
-              ? <span>In Channex, but not connected to any booking site yet.</span>
+              ? <span>In Channex, but not connected to any channel yet.</span>
               : connected.map(c => (
                 <div key={c.id} className="flex items-center justify-between gap-3 py-2 [border-top:1px_solid_var(--color-line-soft)]">
                   <span className="flex flex-col gap-0.5">
@@ -100,7 +103,7 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
           </>
         ) : confirming ? (
           <>
-            <span className="text-ink">This creates the unit as a listing in Channex (billed as a vacation rental), sends its open dates and prices, and then lets you connect booking sites.</span>
+            <span className="text-ink">This creates the unit as a listing in Channex (billed as a vacation rental), sends its open dates and prices, and then lets you connect channels.</span>
             <div className="flex gap-2.5">
               <Button size="sm" variant="primary" loading={busy} onClick={() => void setUp()}>Set up now</Button>
               <Button size="sm" variant="secondary" disabled={busy} onClick={() => setConfirming(false)}>Cancel</Button>
@@ -108,7 +111,7 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
           </>
         ) : (
           <>
-            <span>Not linked to Channex, so Airbnb, Booking.com and Agoda do not sync for this unit.</span>
+            <span>Not linked to Channex, so nothing is sent to or received from Airbnb, Booking.com and Agoda for this unit.</span>
             {canManage && <div><Button size="sm" variant="secondary" onClick={() => setConfirming(true)}>Set up in Channex</Button></div>}
           </>
         )}
@@ -159,12 +162,13 @@ function HotelConnect({ unitId, ota, onDone, onCancel }: { unitId: string; ota: 
 
   return (
     <div className="flex flex-col gap-4">
-      <span className="text-[13px] text-muted-ink">In the {label} extranet, choose Channex as your channel manager first. Then enter the property's {label} Hotel ID here.</span>
+      <span className="text-[13px] text-muted-ink">In the {label} extranet, choose Channex as your channel manager first. Then enter its {label} Hotel ID here.</span>
       <div className="flex items-end gap-2.5">
         <div className="grow"><Field label={`${label} Hotel ID`} inputMode="numeric" value={hotelId} onChange={e => setHotelId(e.target.value.replace(/\D/g, ''))} placeholder="e.g. 5868189" /></div>
-        <Button size="sm" variant="secondary" loading={busy && !rooms} disabled={hotelId.length < 3} disabledReason="Enter the Hotel ID" onClick={() => void lookup()}>Find rooms</Button>
+        <Button /* vocab-ok: Booking.com and Agoda call what a unit is sold as a room on this linking screen */ size="sm" variant="secondary" loading={busy && !rooms} disabled={hotelId.length < 3} disabledReason="Enter the Hotel ID" onClick={() => void lookup()}>Find rooms</Button>
       </div>
       {rooms && (rooms.length === 0
+        // vocab-ok: Booking.com and Agoda call what a unit is sold as a room on this linking screen
         ? <span className="text-[13px]">{label} returned no rooms for this Hotel ID.</span>
         : (
           <div className="flex flex-col gap-2">
@@ -185,7 +189,7 @@ function HotelConnect({ unitId, ota, onDone, onCancel }: { unitId: string; ota: 
         ))}
       <div className="flex justify-end gap-2.5">
         <Button size="sm" variant="secondary" onClick={onCancel} disabled={busy}>Cancel</Button>
-        <Button size="sm" variant="primary" disabled={!pick} disabledReason="Find the rooms and pick one" loading={busy && !!rooms} onClick={() => void connect()}>Connect {label}</Button>
+        <Button /* vocab-ok: Booking.com and Agoda call what a unit is sold as a room on this linking screen */ size="sm" variant="primary" disabled={!pick} disabledReason="Find the rooms and pick one" loading={busy && !!rooms} onClick={() => void connect()}>Connect {label}</Button>
       </div>
     </div>
   );

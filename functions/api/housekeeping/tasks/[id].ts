@@ -14,7 +14,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     SELECT t.id, t.kind, t.state, t.unit_id, t.assignee_id, t.instructions, t.started_at, t.completed_at, t.guest_left_at,
            COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at, u.unit_number, p.name AS property_name
     FROM tasks t JOIN units u ON u.id = t.unit_id JOIN properties p ON p.id = u.property_id WHERE t.id = ?`, id);
-  if (!t) return fail('NOT_FOUND', 'That clean no longer exists. Refresh the list.', 404);
+  if (!t) return fail('NOT_FOUND', 'That cleaning job no longer exists. Refresh the list.', 404);
   const field = isFieldRole(session.role);
   if (field && t.assignee_id !== session.userId) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
 
@@ -53,7 +53,7 @@ const CLEAN_KINDS = ['turnover', 'deep_clean', 'light_clean'];
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot change cleaning tasks.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot change cleaning jobs.', 403);
 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);
@@ -62,7 +62,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const t = await one<{ day: string; scheduled_for: string | null; due_at: string | null; state: string; title: string; instructions: string | null; kind: string }>(env, `
     SELECT to_char((COALESCE(scheduled_for, due_at, created_at))::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS day, scheduled_for, due_at, state, title, instructions, kind
     FROM tasks WHERE id = ?`, id);
-  if (!t) return fail('NOT_FOUND', 'That task no longer exists. Refresh the list.', 404);
+  if (!t) return fail('NOT_FOUND', 'That cleaning job no longer exists. Refresh the list.', 404);
 
   // Collect the column changes so a reschedule and an edit can land in one write.
   const sets: string[] = [];
@@ -72,7 +72,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   const wantsReschedule = b?.scheduledFor != null || b?.dueAt != null;
   if (wantsReschedule) {
-    if (t.state === 'resolved') return fail('CONFLICT', 'A finished task cannot be rescheduled.', 409);
+    if (t.state === 'resolved') return fail('CONFLICT', 'A finished cleaning job cannot be moved.', 409);
     if (!ok(b?.scheduledFor) || !ok(b?.dueAt)) return fail('VALIDATION', 'Enter times as HH:MM.', 422);
     if (b.dueAt <= b.scheduledFor) return fail('VALIDATION', 'The end must be after the start.', 422, { dueAt: 'Pick a later end time.' });
     const at = (hm: string) => `${t.day}T${hm}:00+08:00`;
@@ -84,7 +84,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   if (typeof b?.title === 'string') {
     const title = b.title.trim();
-    if (!title) return fail('VALIDATION', 'The title cannot be empty.', 422, { title: 'Give the task a title.' });
+    if (!title) return fail('VALIDATION', 'The title cannot be empty.', 422, { title: 'Give the cleaning job a title.' });
     sets.push('title = ?'); args.push(title.slice(0, 120));
     before.title = t.title; after.title = title.slice(0, 120);
   }
@@ -94,7 +94,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     before.instructions = t.instructions; after.instructions = instructions;
   }
   if (typeof b?.kind === 'string') {
-    if (!CLEAN_KINDS.includes(b.kind)) return fail('VALIDATION', 'Pick a cleaning kind.', 422, { kind: 'Turnover, deep or light clean.' });
+    if (!CLEAN_KINDS.includes(b.kind)) return fail('VALIDATION', 'Pick a cleaning kind.', 422, { kind: 'Standard, deep or light clean.' });
     sets.push('kind = ?'); args.push(b.kind);
     before.kind = t.kind; after.kind = b.kind;
   }

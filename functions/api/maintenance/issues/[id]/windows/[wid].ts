@@ -5,7 +5,7 @@ import { requireSession, isFieldRole } from '../../../../../_lib/auth';
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot change repair windows.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot change repair windows.', 403);
   const w = await one<{ id: string; starts_at: string; ends_at: string }>(env, 'SELECT id, starts_at, ends_at FROM maintenance_windows WHERE id = ? AND issue_id = ?', String(params.wid), String(params.id));
   if (!w) return fail('NOT_FOUND', 'That window was already removed.', 404);
   await run(env, 'DELETE FROM maintenance_windows WHERE id = ?', w.id);

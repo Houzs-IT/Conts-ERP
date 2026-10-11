@@ -35,7 +35,7 @@ import { PhoneText } from '../components/PhoneText';
  * each deduction, To Operator, what comes off after the split, Net Payout to Owner), worked out by the statement
  * engine (GET /api/owners?id=&month=), the month's totals, and the Owner Income Report by owner (all units combined)
  * or by unit, generated here when the month has no owner statement yet. Below: expenses by unit (Cleaning,
- * Maintenance, each bill paid on behalf), payout details (edited here; they are the owner's, not a unit's) and the
+ * Maintenance repair, Utilities, Maintenance fee (condo), Other fees), payout details (edited here; they are the owner's, not a unit's) and the
  * statement history, each statement's make-up opening in place.
  */
 
@@ -96,14 +96,14 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       const r = await api.post<{ count: number; skipped: number; statements?: { ownerId: string; id: string }[] }>('/statements/generate', { period: month, ownerIds: [o.id] });
       const made = r.statements?.find(x => x.ownerId === o.id);
       if (!made) {
-        toast({ tone: 'info', title: `Nothing to report for ${monthLabel(month)}.`, body: r.skipped ? 'This owner statement is already final; open it from the statement history.' : 'No bookings, costs or charges on this owner\'s units that month.' });
+        toast({ tone: 'info', title: `Nothing to report for ${monthLabel(month)}.`, body: r.skipped ? 'This owner statement is already final; open it from the statement history.' : 'No reservations, costs or charges on this owner\'s units that month.' });
         return;
       }
       toast({ tone: 'success', title: `Owner statement for ${monthLabel(month)} generated as a draft.`, body: 'Opening the Owner Income Report. Review it on Owner statements before sending.' });
       window.location.hash = `#/finance/statements/${encodeURIComponent(made.id)}/report${view === 'owner' ? '?view=owner' : ''}`;
     } catch (e) {
       const locked = e instanceof ApiFailure && e.status === 409;
-      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'That month is already sent.' : 'The owner report was not generated.', body: errorMessage(e, 'Try again in a moment.') });
+      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'That month is already sent.' : 'The owner statement was not generated.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setBusy(false); }
   }
 
@@ -138,7 +138,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
     if (!o) return;
     setDialog({
       title: `Invite ${titleCase(o.displayName)} to the owner portal?`,
-      body: 'Creates an owner account with a temporary password. They can view their statements, revenue and property health, and approve quotes.',
+      body: 'Creates an owner account with a temporary password. They can view their statements, income and building health, and approve quotes.',
       meta: o.email, confirmLabel: 'Send invite',
       onConfirm: async () => {
         setBusy(true);
@@ -203,7 +203,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
             options={[{ key: 'owner', label: 'By owner' }, { key: 'unit', label: 'By unit' }]} />
           <Button size="sm" variant="primary" icon={<Icon name="FileText" size="sm" />} loading={busy && reportAction === 'generate'} disabled={o.units.length === 0}
             disabledReason="Link a unit to this owner first." onClick={() => void ownerReport()}>
-            {reportAction === 'generate' ? 'Generate owner report' : reportAction === 'legacy' ? 'Owner statement PDF' : 'Owner report PDF'}
+            {reportAction === 'generate' ? 'Generate owner statement' : reportAction === 'legacy' ? 'Owner statement PDF' : 'Owner statement PDF'}
           </Button>
         </div>
         <div className="px-4 pb-3 -mt-1 text-meta text-muted-ink">
@@ -220,7 +220,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
           <StatTile label="Gross Income" value={figures.length ? rm(sum('income')) : undefined} />
           <StatTile label="Deductions" value={figures.length ? rm(sum('costs')) : undefined} hint="Before the split" />
           <StatTile label="To Operator" value={figures.length ? rm(sum('operatorShare')) : undefined} />
-          <StatTile label="Paid on behalf, after the split" value={figures.length ? rm(-sum('adjustments')) : undefined} />
+          <StatTile label="Owner Adjustments" hint="After the split" value={figures.length ? rm(-sum('adjustments')) : undefined} />
         </StatRow>
       )}
 
@@ -245,7 +245,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
           <Card>
             <div className="p-5 flex flex-col gap-5">
               <Section title="Units" action={<Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal('link')}>Link unit</Button>}>
-                <div className="text-copy text-muted-ink">Each unit has its own contract and revenue model, set on the unit's Contract tab.</div>
+                <div className="text-copy text-muted-ink">Each unit has its own contract and payout model, set on the unit's Contract tab.</div>
               </Section>
               <Section title="Owner-level default fee" action={<Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setModal('defaultFee')}>{o.defaultManagementFeePct != null ? 'Change' : 'Set'}</Button>}>
                 <div className="text-copy text-muted-ink leading-[1.6]">
@@ -290,7 +290,7 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
       <MoneyText sen={sen} mode="exact" tone={muted ? 'muted' : undefined} className={cx('text-copy text-right whitespace-nowrap', sign && sen > 0 ? 'before:content-["+_"]' : '')} />
     </div>
   );
-  const after = (sen: number) => sen !== 0 && <Row label={sen < 0 ? 'Paid on behalf, after the split' : 'Credit to owner, after the split'} sen={sen} sign />;
+  const after = (sen: number) => sen !== 0 && <Row label={sen < 0 ? 'Owner Adjustments (charges), after the split' : 'Owner Adjustments (credits), after the split'} sen={sen} sign />;
   const operatorPct = u.feePct;
   return (
     <section className="bg-card border border-solid border-line rounded-card p-4 flex flex-col gap-2 min-w-0">
@@ -310,7 +310,7 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
         {f.costLines.length === 0
           ? <Row label="Deductions" sen={0} muted />
           : f.costLines.map(c => <Row key={c.label} label={c.label} sen={-c.amount} indent />)}
-        <Row label={model === 'long_term' ? `Management fee ${operatorPct ?? 0}%` : `${operatorPct != null ? `${Number(operatorPct.toFixed(2))}% ` : ''}To Operator`} sen={-f.operatorShare} />
+        <Row label={model === 'long_term' ? `${operatorPct ?? 0}% To Operator` : `${operatorPct != null ? `${Number(operatorPct.toFixed(2))}% ` : ''}To Operator`} sen={-f.operatorShare} />
         {f.guarantee > 0 && (f.topUp > 0
           ? <Row label={`Below the ${rm(f.guarantee)} minimum: top-up`} sen={f.topUp} sign />
           : <div className="text-meta text-muted-ink">Above the {rm(f.guarantee)} minimum</div>)}
@@ -338,11 +338,11 @@ function DefaultFeeModal({ current, owner, onClose, onSubmit }: { current: numbe
       <div className="relative w-full max-w-[440px] bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
         <form onSubmit={e => { e.preventDefault(); if (valid && !busy) { setBusy(true); onSubmit(parsed); } }}>
           <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[5px]">
-            <h2 className="m-0 text-title font-semibold">Owner default management fee</h2>
+            <h2 className="m-0 text-title font-semibold">Owner default operator share</h2>
             <p className="m-0 text-copy text-muted-ink">Recorded for {titleCase(owner)} for reference. Leave blank to clear it.</p>
           </div>
           <div className="py-4 px-[22px]">
-            <PercentInput label="Default management fee %" value={parsed} placeholder="e.g. 22"
+            <PercentInput label="Default operator share %" value={parsed} placeholder="e.g. 22"
               onChange={setParsed} help="A unit's own contract always decides its statement." />
           </div>
           <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">

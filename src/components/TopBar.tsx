@@ -31,7 +31,7 @@ const SEARCH_FALLBACK: SearchResult[] = [
 ];
 
 const KIND: Record<SearchKind, { icon: string; heading: string }> = {
-  reservation: { icon: 'CalendarDays', heading: 'Bookings' },
+  reservation: { icon: 'CalendarDays', heading: 'Reservations' },
   unit: { icon: 'Building2', heading: 'Units' },
   guest: { icon: 'User', heading: 'Guests' },
   owner: { icon: 'UserRound', heading: 'Owners' },
@@ -127,21 +127,21 @@ export default function TopBar({
             ? { width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', padding: 0, border: `1px solid ${color.border}`, borderRadius: radius.control, background: color.card, color: color.ink, cursor: 'pointer' }
             : { display: 'flex', alignItems: 'center', gap: 8, height: shell.controlSm, padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: radius.control, background: color.card, color: color.textMuted, flex: '0 1 260px', minWidth: 44, overflow: 'hidden', cursor: 'text', font: 'inherit', textAlign: 'left' }}>
           <Icon name="Search" size={compact ? 'nav' : 'sm'} />
-          {!compact && <span style={{ fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Search booking ref, guest, unit</span>}
+          {!compact && <span style={{ fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Search reservation ref, guest, unit</span>}
           {!compact && <span style={{ marginLeft: 'auto', fontSize: text.micro, color: color.faint, flex: 'none' }}>/</span>}
         </button>
 
         {/* Shown only when units are really connected to a booking site; never a fixed figure. */}
         {channelSync && channelSync.units > 0 && (
-          <a href="#/system/integrations" title={channelSync.failed ? 'Channel sync needs attention' : 'Channels connected · open Integrations'}
-            aria-label={compact ? (channelSync.failed ? 'Channel sync needs attention' : 'Channels connected') : undefined}
+          <a href="#/system/integrations" title={channelSync.failed ? 'Channel updates need attention' : 'Channels connected · open Integrations'}
+            aria-label={compact ? (channelSync.failed ? 'Channel updates need attention' : 'Channels connected') : undefined}
             style={compact
               ? { width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', boxSizing: 'border-box', border: `1px solid ${color.border}`, borderRadius: radius.control }
               : { display: 'flex', alignItems: 'center', gap: 7, height: shell.controlSm, flex: 'none', padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: radius.control, fontSize: text.small, whiteSpace: 'nowrap', color: color.textMuted, textDecoration: 'none' }}>
             <span className={channelSync.failed ? undefined : 'animate-live'} style={{ width: compact ? 8 : 6, height: compact ? 8 : 6, borderRadius: radius.pill, background: channelSync.failed ? 'var(--color-warning-line)' : 'var(--color-success-line)' }} />
             {!compact && <span>{channelSync.failed
-              ? 'Channel sync needs attention'
-              : channelSync.lastSentAt ? `Channels synced ${relative(channelSync.lastSentAt)}` : 'Channels connected'}</span>}
+              ? 'Channel updates need attention'
+              : channelSync.lastSentAt ? `Sent to channels ${relative(channelSync.lastSentAt)}` : 'Channels connected'}</span>}
           </a>
         )}
 
@@ -165,14 +165,14 @@ export default function TopBar({
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: `1px solid ${color.borderMuted}` }}>
               <Icon name="Search" size="nav" color={color.textMuted} />
               <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)} onKeyDown={onSearchKeyDown}
-                placeholder="Booking reference, guest, phone, unit or owner" aria-label="Search"
+                placeholder="Reservation reference, guest, phone, unit or owner" aria-label="Search"
                 style={{ font: 'inherit', flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', fontSize: 15, color: color.ink }} />
               <button type="button" onClick={closeSearch} style={{ font: 'inherit', fontSize: text.micro, color: color.textMuted, flex: 'none', border: `1px solid ${color.border}`, borderRadius: 4, background: 'none', padding: '2px 6px', cursor: 'pointer' }}>Esc</button>
             </div>
             <div style={{ maxHeight: 420, overflowY: 'auto', padding: 6 }}>
               {results.length === 0 ? (
                 <div style={{ padding: '20px 12px', fontSize: text.small, color: color.textMuted }}>
-                  {searching || query.trim() !== debounced ? 'Searching...' : debounced ? `No matches for "${debounced}". Try the booking reference from Airbnb or Booking.com, a guest name or a phone number.` : 'Type to search.'}
+                  {searching || query.trim() !== debounced ? 'Searching...' : debounced ? `No matches for "${debounced}". Try the reservation reference from Airbnb or Booking.com, a guest name or a phone number.` : 'Type to search.'}
                 </div>
               ) : results.map((r, i) => (
                 <Fragment key={`${r.kind}-${r.id}`}>

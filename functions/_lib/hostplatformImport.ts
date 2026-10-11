@@ -57,6 +57,7 @@ export const WORKBOOK_COLUMNS: Record<string, string[]> = {
   'INDAH WATER': ['Unit编号', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'],
   '杂费扣款': ['日期', '类型', 'Unit编号', '项目描述', '金额(RM)', '备注'],
   'OWNER PAYOUT': ['UNIT', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'],
+  // vocab-ok: exact column header in the owner workbook, matched by the import
   '整体报告': ['LONG TERM', 'TOTAL REVENUE', 'ALL CLEANING TOTAL', 'UTILITIES', 'ADDITIONAL DEDUCTION', 'MISCELLANEOUS CHARGES', 'TOTAL DEDUCTION', 'GP', 'OWNER PAYOUT'],
 };
 /** The year the workbook's JAN..DEC utility columns belong to. */
@@ -267,7 +268,7 @@ export function mapListing(rows: Row[]): ListingPlan {
     const row = rowNo(r, i), key = str(r['Key']).toLowerCase(), building = buildingName(r['Property Name']);
     const { code, bedrooms, bathrooms } = parseUnitName(r['Unit Name']);
     if (!/^[0-9a-f]{6,40}$/.test(key)) return errors.push({ row, reason: 'No HostPlatform key on this row.' });
-    if (!building) return errors.push({ row, reason: 'No property name.' });
+    if (!building) return errors.push({ row, reason: 'No building name.' });
     if (!code) return errors.push({ row, reason: 'No unit name.' });
     const k = unitKey(building, code);
     if (seen.has(k)) return errors.push({ row, reason: `${building} ${code} appears twice in the file; the first one was kept.` });
@@ -298,7 +299,7 @@ export function mapListing(rows: Row[]): ListingPlan {
   });
   const notes: string[] = [];
   const differentWeekend = rows.filter(r => num(r['Weekend Price']) !== null && num(r['Weekend Price']) !== num(r['Weekday Price'])).length;
-  if (differentWeekend) notes.push(`${differentWeekend} units have a different weekend price on HostPlatform. Property OS has no weekend rate yet; only the weekday price was imported.`);
+  if (differentWeekend) notes.push(`${differentWeekend} units have a different weekend price on HostPlatform. Property OS has no weekend price yet; only the weekday price was imported.`);
   return { properties: [...properties.values()], owners: [...owners], units, unitExpenses, errors, notes };
 }
 
@@ -354,13 +355,13 @@ export function mapReservations(rows: Row[], today: string): ReservationPlan {
     const code = conf.split(' ')[0] ?? '';
     const ota = /\(([^)]+)\)/.exec(conf)?.[1]?.trim() || null;
     if (!/^[A-Za-z0-9_-]{3,40}$/.test(code)) return errors.push({ row, reason: 'No HostPlatform confirmation code.' });
-    if (codes.has(code)) return errors.push({ row, reason: `Booking ${code} appears twice; the first one was kept.` });
+    if (codes.has(code)) return errors.push({ row, reason: `Reservation ${code} appears twice; the first one was kept.` });
     const building = buildingName(r['Property Name']);
     const unitNumber = parseUnitName(r['Unit Name'] || r['Room Type']).code;
     const checkIn = toDate(r['Check In Date']), checkOut = toDate(r['Check Out Date']);
-    if (!building || !unitNumber) return errors.push({ row, reason: 'No property or unit name.' });
-    if (!checkIn || !checkOut) return errors.push({ row, reason: 'Check-in and check-out must be dates.' });
-    if (checkOut <= checkIn) return errors.push({ row, reason: 'Check-out is not after check-in.' });
+    if (!building || !unitNumber) return errors.push({ row, reason: 'No building or unit name.' });
+    if (!checkIn || !checkOut) return errors.push({ row, reason: 'Check-in and checkout must be dates.' });
+    if (checkOut <= checkIn) return errors.push({ row, reason: 'Checkout is not after check-in.' });
     codes.add(code);
     const channel = channelFor(r['Booking Type'], r['Booking Source'], r['Remarks']);
     const cancelled = /cancel/i.test(str(r['Booking Status']));
@@ -686,10 +687,10 @@ export function mapAirbnbEarnings(rows: Row[]): { earnings: AirbnbEarningIn[]; e
   rows.forEach((r, i) => {
     const row = rowNo(r, i), code = str(r['确认码']).toUpperCase(), workbookId = str(r['Unit编号']).toUpperCase();
     const site = /^HM[A-Z0-9]{6,}$/.test(code) ? 'airbnb' : /^\d{8,12}$/.test(code) ? 'booking_com' : null;
-    if (!site) return skipped.push({ row, reason: code === 'OWNER' ? 'Owner stay line, not a booking.' : 'Not an Airbnb or Booking.com confirmation code.' });
+    if (!site) return skipped.push({ row, reason: code === 'OWNER' ? 'Owner stay line, not a reservation.' : 'Not an Airbnb or Booking.com confirmation code.' });
     if (!workbookId) return errors.push({ row, reason: `${code}: no unit id.` });
     const checkIn = toDate(r['入住日期']), checkOut = toDate(r['退房日期']);
-    if (!checkIn || !checkOut || checkOut <= checkIn) return errors.push({ row, reason: `${code}: dates are missing or check-out is not after check-in.` });
+    if (!checkIn || !checkOut || checkOut <= checkIn) return errors.push({ row, reason: `${code}: dates are missing or checkout is not after check-in.` });
     const amountRaw = sen(r['金额(Amount)']), fee = sen(r['服务费(Service fee)']), grossRaw = sen(r['总收入(Gross earnings)']);
     const gross = grossRaw ?? (amountRaw !== null ? amountRaw + (fee ?? 0) : null);
     const amount = amountRaw === null ? null : Math.max(0, amountRaw);
@@ -868,10 +869,11 @@ export function mapPayoutHistory(rows: Row[], report: Row[], today: string): { m
     for (const x of rep) {
       if (byUnit.get(x.id)?.amounts.get(reportMonth) !== x.payout) continue;
       const v = (c: string) => sen(x.r[c]) ?? 0;
+      // vocab-ok: exact column header in the owner workbook, matched by the import
       breakdown.set(x.id, { revenue: v('TOTAL REVENUE'), cleaning: v('ALL CLEANING TOTAL'), utilities: v('UTILITIES'), additional: v('ADDITIONAL DEDUCTION'), misc: v('MISCELLANEOUS CHARGES'), payout: x.payout! });
     }
     const monthWords = /^\d{4}-\d{2}$/.test(String(reportMonth)) ? `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(String(reportMonth).slice(5, 7)) - 1]} ${String(reportMonth).slice(0, 4)}` : reportMonth;
-    notes.push(`整体报告 is the ${monthWords} report: ${breakdown.size} units get its revenue and deductions on their ${monthWords} statement; every other month shows the payout only.`);
+    notes.push(`整体报告 is the ${monthWords} report: ${breakdown.size} units get its Gross Income and deductions on their ${monthWords} statement; every other month shows the owner payout only.`);
   } else if (rep.length) notes.push('整体报告 could not be tied to a month of OWNER PAYOUT, so no statement shows its breakdown.');
 
   const months: PayoutMonthIn[] = [];

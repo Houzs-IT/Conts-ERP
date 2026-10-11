@@ -10,7 +10,7 @@ import { repairNotice, when } from '../../../../_lib/notices';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot plan repair windows.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot plan repair windows.', 403);
 
   const id = String(params.id);
   const issue = await one<{ id: string; unit_id: string; state: string }>(env, 'SELECT id, unit_id, state FROM maintenance_issues WHERE id = ?', id);

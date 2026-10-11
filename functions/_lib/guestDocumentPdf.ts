@@ -38,9 +38,9 @@ export function renderDocument(s: Snapshot, voided: { at: string; reason: string
   const right: [string, string][] = [
     [receipt ? 'Receipt no' : 'Invoice no', s.docNo],
     ['Date', longDate(s.issuedAt)],
-    ['Booking', [s.booking.ref, s.booking.channelLabel].filter(Boolean).join(' · ')],
+    ['Reservation', [s.booking.ref, s.booking.channelLabel].filter(Boolean).join(' · ')],
     ['Unit', s.booking.unit],
-    ['Stay', stay],
+    ['Dates', stay],
   ];
   const dl = (rows: [string, string][]) => `<dl>${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`;
 
@@ -54,8 +54,8 @@ export function renderDocument(s: Snapshot, voided: { at: string; reason: string
   const paidBy = receipt && s.payment
     ? `<p class="lh-note"><strong>${esc(amountInWords(s.total))}</strong><br />
         Received on ${esc(longDate(s.payment.receivedOn))}${s.payment.method ? ` by ${esc(s.payment.method)}` : ''}${s.payment.reference ? `, reference ${esc(s.payment.reference)}` : ''}.
-        ${s.balance > 0 ? `Balance still due on this booking: ${ringgit(s.balance)}.` : 'Nothing further is due on this booking.'}</p>`
-    : `<p class="lh-note">${s.balance <= 0 ? 'This booking is paid in full. Thank you.' : s.booking.checkIn > s.issuedAt.slice(0, 10) ? `Please pay the balance of ${ringgit(s.balance)} before check-in.` : `Please pay the balance of ${ringgit(s.balance)}.`}</p>`;
+        ${s.balance > 0 ? `Balance still due on this reservation: ${ringgit(s.balance)}.` : 'Nothing further is due on this reservation.'}</p>`
+    : `<p class="lh-note">${s.balance <= 0 ? 'This reservation is paid in full. Thank you.' : s.booking.checkIn > s.issuedAt.slice(0, 10) ? `The balance of ${ringgit(s.balance)} is due before check-in.` : `The balance of ${ringgit(s.balance)} is due.`}</p>`;
 
   const body = `
 <div class="lh-title"><h1>${title}</h1><span class="lh-docno">${esc(s.docNo)}</span></div>

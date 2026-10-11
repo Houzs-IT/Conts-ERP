@@ -9,7 +9,7 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot change reservations.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot change reservations.', 403);
 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);
@@ -23,7 +23,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     const v = String(b[k]);
     if (!TIME.test(v)) return fail('VALIDATION', 'Times are HH:MM.', 422, { [k]: 'Use HH:MM, e.g. 15:00.' });
     if (v === cur[col]) continue;
-    if (['checked_out', 'cancelled', 'no_show'].includes(cur.state)) return fail('CONFLICT', 'The times of a finished, cancelled or no-show booking cannot change.', 409);
+    if (['checked_out', 'cancelled', 'no_show'].includes(cur.state)) return fail('CONFLICT', 'The times of a past, cancelled or no-show reservation cannot change.', 409);
     set.push(`${col} = ?`); args.push(v); before[k] = cur[col]; after[k] = v;
   }
   if (b.staffNotes !== undefined) {

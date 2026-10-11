@@ -263,13 +263,13 @@ export default function SettingsPage() {
     }
     if (k === 'locale') {
       const fee = draft.locale.managementFeePct as number | null;
-      if (fee == null || fee < 0 || fee > 100) e['locale.managementFeePct'] = 'Enter a fee from 0 to 100%.';
+      if (fee == null || fee < 0 || fee > 100) e['locale.managementFeePct'] = 'Enter a share from 0 to 100%.';
     }
     if (k === 'operations') {
       if (!inRange(draft.operations.cleaningWindowHours, 1, 24)) e['operations.cleaningWindowHours'] = 'Enter whole hours from 1 to 24.';
       if (!inRange(draft.operations.linenSets, 1, 10)) e['operations.linenSets'] = 'Enter a whole number from 1 to 10.';
       if (!draft.operations.checkIn) e['operations.checkIn'] = 'Enter the standard check-in time.';
-      if (!draft.operations.checkOut) e['operations.checkOut'] = 'Enter the standard check-out time.';
+      if (!draft.operations.checkOut) e['operations.checkOut'] = 'Enter the standard checkout time.';
     }
     if (k === 'approvals' && draft.approvals.enabled) {
       if (!inRange(draft.approvals.expenseThreshold, 0, 1e12)) e['approvals.expenseThreshold'] = 'Enter RM 0.00 or more.';
@@ -285,16 +285,16 @@ export default function SettingsPage() {
   const MESSAGES: Record<SectionKey, { title: string; body?: string }> = {
     company: { title: 'Company details saved.', body: 'They appear on the letterhead of statements, invoices and receipts.' },
     locale: { title: 'Locale and money settings saved.', body: 'New documents use the updated timezone, currency and date format.' },
-    operations: { title: 'Operations defaults saved.', body: 'New reservations and cleaning tasks use these times.' },
+    operations: { title: 'Operations defaults saved.', body: 'New reservations and cleaning jobs use these times.' },
     statements: {
-      title: 'Statements and payouts saved.',
+      title: 'Owner statements and payouts saved.',
       body: draft.statements.autoGenerate
-        ? `Statements generate automatically on day ${draft.statements.cycleDay} of each month.`
-        : 'Automatic generation is off. Generate statements manually each period.',
+        ? `Owner statements are made automatically on day ${draft.statements.cycleDay} of each month.`
+        : 'Automatic statements are off. Make owner statements by hand each period.',
     },
-    report: { title: 'Owner report wording saved.', body: 'Reports opened from now on use it. The miscellaneous charge applies to statements generated from now on.' },
+    report: { title: 'Owner statement wording saved.', body: 'Statements opened from now on use it. The miscellaneous charge applies to statements generated from now on.' },
     approvals: draft.approvals.enabled
-      ? { title: 'Approvals switched on.', body: 'Refunds, payout runs, owner credits and charges, write-offs and large expenses now wait for a second person.' }
+      ? { title: 'Approvals switched on.', body: 'Refunds, owner payouts, owner adjustments, write-offs and large expenses now wait for a second person.' }
       : { title: 'Approvals switched off.', body: 'Money actions happen at once, without a second person.' },
     security: { title: 'Security settings saved.', body: 'Takes effect immediately, including for anyone already signed in.' },
   };
@@ -388,10 +388,10 @@ export default function SettingsPage() {
               <SelectField label="Currency" value={draft.locale.currency} onChange={v => patch('locale', { currency: v })} options={CURRENCIES} />
               <SelectField label="Date format" value={draft.locale.dateFormat} onChange={v => patch('locale', { dateFormat: v })} options={DATE_FORMATS} />
               <PercentInput
-                label="Default management fee"
+                label="Default operator share"
                 value={draft.locale.managementFeePct}
                 error={errors['locale.managementFeePct']}
-                help="Applied to new management agreements unless the owner's contract overrides it."
+                help="Applied to new contracts unless the owner's contract sets its own."
                 onChange={v => patch('locale', { managementFeePct: held(v) }, 'locale.managementFeePct')}
               />
             </Grid>
@@ -400,8 +400,8 @@ export default function SettingsPage() {
           {/* --------------------- Operations defaults --------------------- */}
           <SectionCard
             title="Operations defaults"
-            description="Standard turnover timings."
-            notUsed="Saved, but not read yet: new bookings use 15:00 and 11:00, and whether a photo is needed is set on each task. Housekeeping rules are on the Housekeeping screen."
+            description="Standard times for check-in, checkout and cleaning."
+            notUsed="Saved, but not read yet: new reservations use 15:00 and 11:00, and whether a photo is needed is set on each cleaning job. Cleaning rules are on the Cleaning screen."
             readOnly={readOnly} dirty={dirty('operations')} busy={busy === 'operations'} saveLabel="Save operations"
             onSave={() => save('operations')} onDiscard={() => discard('operations')}
           >
@@ -414,7 +414,7 @@ export default function SettingsPage() {
                 onChange={v => patch('operations', { checkIn: v }, 'operations.checkIn')}
               />
               <TimeField
-                label="Standard check-out"
+                label="Standard checkout"
                 required
                 value={draft.operations.checkOut}
                 error={errors['operations.checkOut']}
@@ -427,7 +427,7 @@ export default function SettingsPage() {
                 suffix="h"
                 value={draft.operations.cleaningWindowHours}
                 error={errors['operations.cleaningWindowHours']}
-                help="Hours a turnover needs before the next check-in. The SLA counts down to it."
+                help="Hours a cleaning job needs before the next check-in. Its time allowed counts down to it."
                 onChange={v => patch('operations', { cleaningWindowHours: held(v) }, 'operations.cleaningWindowHours')}
               />
               <NumberInput
@@ -436,14 +436,14 @@ export default function SettingsPage() {
                 max={10}
                 value={draft.operations.linenSets}
                 error={errors['operations.linenSets']}
-                help="Sets held per unit so a turnover always has fresh linen ready."
+                help="Sets held per unit so every cleaning job has fresh linen ready."
                 onChange={v => patch('operations', { linenSets: held(v) }, 'operations.linenSets')}
               />
             </Grid>
             <div className="[border-top:1px_solid_var(--color-line-soft)] pt-4">
               <ToggleField
                 label="Require a photo to mark a unit ready"
-                description="A cleaning task cannot be completed without at least one photo. Enforced in the field app."
+                description="A cleaning job cannot be completed without at least one photo. Enforced in the field app."
                 checked={draft.operations.photoRequiredToMarkReady}
                 onChange={v => patch('operations', { photoRequiredToMarkReady: v })}
               />
@@ -452,9 +452,9 @@ export default function SettingsPage() {
 
           {/* -------------------- Statements and payouts -------------------- */}
           <SectionCard
-            title="Statements and payouts"
+            title="Owner statements and payouts"
             description="When owner statements are cut and how owners are paid."
-            notUsed="Saved, but not read yet: statements are generated by hand from Owner statements, and payouts are recorded on Payouts."
+            notUsed="Saved, but not read yet: statements are made by hand from Owner statements, and owner payouts are recorded on Owner payouts."
             readOnly={readOnly} dirty={dirty('statements')} busy={busy === 'statements'} saveLabel="Save statements"
             onSave={() => save('statements')} onDiscard={() => discard('statements')}
           >
@@ -466,12 +466,12 @@ export default function SettingsPage() {
                 onChange={v => patch('statements', { cycleDay: Number(v) })}
                 options={Array.from({ length: 28 }, (_, i) => i + 1).map(day => ({ value: String(day), label: `Day ${day}` }))}
               />
-              <SelectField label="Payout method" value={draft.statements.payoutMethod} onChange={v => patch('statements', { payoutMethod: v })} options={PAYOUT_METHODS} />
+              <SelectField label="Owner payout method" value={draft.statements.payoutMethod} onChange={v => patch('statements', { payoutMethod: v })} options={PAYOUT_METHODS} />
             </Grid>
             <div className="[border-top:1px_solid_var(--color-line-soft)] pt-4">
               <ToggleField
                 label="Generate statements automatically"
-                description="On the cycle day, statements are generated as provisional for review. Turn off to generate them by hand each period."
+                description="On the cycle day, owner statements are made as drafts for review. Turn off to make them by hand each period."
                 checked={draft.statements.autoGenerate}
                 onChange={v => patch('statements', { autoGenerate: v })}
               />
@@ -480,9 +480,9 @@ export default function SettingsPage() {
 
           {/* ------------------------- Owner report ------------------------- */}
           <SectionCard
-            title="Owner report"
+            title="Owner statement wording"
             description="Wording on the Owner Income Report, and the monthly miscellaneous charge for contracts that carry it."
-            readOnly={readOnly} dirty={dirty('report')} busy={busy === 'report'} saveLabel="Save owner report"
+            readOnly={readOnly} dirty={dirty('report')} busy={busy === 'report'} saveLabel="Save wording"
             onSave={() => save('report')} onDiscard={() => discard('report')}
           >
             <Grid>
@@ -502,7 +502,7 @@ export default function SettingsPage() {
               />
             </Grid>
             <TextArea
-              label="Monthly report terms"
+              label="Monthly statement terms"
               value={draft.report.monthlyTerms}
               help="One term per line. Printed, numbered, under the monthly page."
               onChange={v => patch('report', { monthlyTerms: v })}
@@ -518,14 +518,14 @@ export default function SettingsPage() {
           {/* --------------------------- Approvals -------------------------- */}
           <SectionCard
             title="Approvals"
-            description="Whether money going out waits for someone else to approve it. Off: refunds, payout runs, owner credits and charges, write-offs and expenses happen as soon as they are entered."
+            description="Whether money going out waits for someone else to approve it. Off: refunds, owner payouts, owner adjustments, write-offs and expenses happen as soon as they are entered."
             readOnly={readOnly} dirty={dirty('approvals')} busy={busy === 'approvals'} saveLabel="Save approvals"
             onSave={() => save('approvals')} onDiscard={() => discard('approvals')}
           >
             <ToggleField
               label="Require a second person to approve money going out"
               description={draft.approvals.enabled
-                ? 'Guest refunds, payout runs, owner credits and charges, debt write-offs and expenses above the amount below wait on the Approvals page. Nobody approves their own request, except the only management user, with a written reason.'
+                ? 'Guest refunds, owner payouts, owner adjustments, debt write-offs and expenses above the amount below wait on the Approvals page. Nobody approves their own request, except the only management user, with a written reason.'
                 : 'Off. Each action is recorded at once under the name of the person who did it.'}
               checked={draft.approvals.enabled}
               onChange={v => patch('approvals', { enabled: v })}

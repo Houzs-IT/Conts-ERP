@@ -48,11 +48,11 @@ export const DETAIL_FALLBACK: UnitDetail = {
   },
   performance: { period: '2026-09', occupancy: 94.1, occupiedNights: 28, adr: 28400, revpar: 26700, rating: 4.92, reviewCount: 11, revenue: 812000, gross: 926000 },
   pnl: [
-    { label: 'Gross booking value', amount: 926000, type: 'gross' },
-    { label: 'Management fee · 25%', amount: -231500, type: 'fee' },
-    { label: 'Housekeeping', amount: -38500, type: 'expense' },
+    { label: 'Gross Income', amount: 926000, type: 'gross' },
+    { label: '25% To Operator', amount: -231500, type: 'fee' },
+    { label: 'Basic Cleaning Fee', amount: -38500, type: 'expense' },
     { label: 'Maintenance', amount: -7800, type: 'expense' },
-    { label: 'Net payout', amount: 648200, type: 'net' },
+    { label: 'Net Payout to Owner', amount: 648200, type: 'net' },
   ],
   stays: [
     { id: 's1', guestName: 'Nadia Abdullah', channel: 'airbnb', state: 'checked_in', checkIn: '2026-09-13', checkOut: '2026-09-16', guestsCount: 2, externalRef: 'ABNB-7741QK', grossBookingValue: 85200 },
@@ -60,8 +60,8 @@ export const DETAIL_FALLBACK: UnitDetail = {
     { id: 's3', guestName: 'Priya Sundaram', channel: 'booking_com', state: 'pending', checkIn: '2026-09-24', checkOut: '2026-10-01', guestsCount: 2, externalRef: 'BDC-5512087', grossBookingValue: 198800 },
   ],
   tasks: [
-    { id: 't1', title: 'Full turnover, 2BR', kind: 'turnover', state: 'in_progress', dueAt: '2026-09-16T14:30', completedAt: null, assigneeName: 'Nurul Huda' },
-    { id: 't2', title: 'Owner report photos', kind: 'other', state: 'resolved', dueAt: '2026-09-15T16:30', completedAt: '2026-09-15T16:12', assigneeName: 'Chan Wei Wen' },
+    { id: 't1', title: 'Full cleaning, 2BR', kind: 'turnover', state: 'in_progress', dueAt: '2026-09-16T14:30', completedAt: null, assigneeName: 'Nurul Huda' },
+    { id: 't2', title: 'Owner statement photos', kind: 'other', state: 'resolved', dueAt: '2026-09-15T16:30', completedAt: '2026-09-15T16:12', assigneeName: 'Chan Wei Wen' },
   ],
   maintenance: [
     { id: 'MNT-0912', title: 'Curtain replacement quoted', detail: 'Blackout curtains, 3 windows.', state: 'waiting', vendorName: 'Kiara Interiors', ownerApprovalRequired: true, blocksUnit: false, chargeTo: 'owner', reportedAt: '2026-09-12', resolvedAt: null, quotedAmount: 89000 },

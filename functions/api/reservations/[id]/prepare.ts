@@ -6,7 +6,7 @@ import { requireSession, isFieldRole } from '../../../_lib/auth';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot prepare arrivals.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot prepare check-ins.', 403);
 
   const id = String(params.id);
   const r = await one<any>(env, 'SELECT id, unit_id, check_in, check_in_time FROM reservations WHERE id = ?', id);

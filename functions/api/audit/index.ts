@@ -77,9 +77,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     mayRead = async t => { const area = ENTITY_AREA[t]; return area ? levels[area] !== 'none' : AUDIT_ROLES.includes(session.role); };
   }
   if (!main) {
-    if (!AUDIT_ROLES.includes(session.role)) return fail('FORBIDDEN', 'The audit trail is available to management and finance roles.', 403);
+    if (!AUDIT_ROLES.includes(session.role)) return fail('FORBIDDEN', 'The full history is available to management and finance roles.', 403);
   } else if (!(await mayRead(main[0], main[1]))) {
-    return fail('FORBIDDEN', isFieldRole(session.role) ? 'You can see the history of your own cleans and repairs only.' : 'Your role cannot see the history of this record.', 403);
+    return fail('FORBIDDEN', isFieldRole(session.role) ? 'You can see the history of your own cleaning and maintenance jobs only.' : 'Your role cannot see the history of this record.', 403);
   }
   const entities: [string, string][] = main ? [main] : [];
   for (const e of extra) if (main && await mayRead(e[0], e[1])) entities.push(e);

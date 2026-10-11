@@ -281,7 +281,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
       description: c.description || c.category, reference: c.reference,
     });
     if (operatorShare) lines.push({ type: 'management_fee', category: 'operator_share', unitId: unit.id, quantity: null, amount: -operatorShare, occurredOn: end,
-      description: `Management fee ${fmtPct(100 - (terms.ownerPct ?? 100))} of the rent` });
+      description: `${fmtPct(100 - (terms.ownerPct ?? 100))} To Operator (of the rent)` });
   } else if (terms.basis === 'share') {
     mine.forEach((x, i) => lines.push({
       type: 'gross', category: 'hospitality', unitId: unit.id, reservationId: x.s.id, quantity: x.n, amount: floors[i], occurredOn: x.s.check_in > start ? ymd(x.s.check_in) : start,
@@ -295,7 +295,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
     if (misc) lines.push({ type: 'expense', category: 'misc', unitId: unit.id, quantity: occupancy, amount: -misc, occurredOn: end,
       description: `Miscellaneous charges (RM ${(miscMonthly / 100).toFixed(2)} x ${(occupancy * 100).toFixed(2)}% occupancy)` });
     if (operatorShare) lines.push({ type: 'management_fee', category: 'operator_share', unitId: unit.id, quantity: null, amount: -operatorShare, occurredOn: end,
-      description: `${fmtPct(100 - (terms.ownerPct ?? 0))} to operator` });
+      description: `${fmtPct(100 - (terms.ownerPct ?? 0))} To Operator` });
     if (topUp) lines.push({ type: 'adjustment', category: 'guarantee_top_up', unitId: unit.id, quantity: null, amount: topUp, occurredOn: end,
       description: `Minimum guarantee top-up (guaranteed RM ${(guarantee / 100).toFixed(2)})` });
   } else if (fixedRent) {
@@ -309,7 +309,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   const adjustmentsTotal = mineAdj.reduce((n, a) => n + Number(a.amount), 0);
   const warnings: string[] = [];
   const unpaid = mine.filter(x => !(x.paid > 0));
-  if (unpaid.length) warnings.push(`${unpaid.length} ${unpaid.length === 1 ? 'stay has' : 'stays have'} no payout recorded (${unpaid.reduce((n, x) => n + x.n, 0)} nights counted at RM 0): ${unpaid.map(x => `${x.s.check_in} to ${x.s.check_out}`).join(', ')}.`);
+  if (unpaid.length) warnings.push(`${unpaid.length} ${unpaid.length === 1 ? 'reservation has' : 'reservations have'} no host payout recorded (${unpaid.reduce((n, x) => n + x.n, 0)} nights counted at RM 0): ${unpaid.map(x => `${x.s.check_in} to ${x.s.check_out}`).join(', ')}.`);
   if (terms.model === 'long_term' && !gross) warnings.push('Long-term let with no rent this month: check the tenancy dates on the contract.');
   if (terms.source === 'default') warnings.push(`No contract or split on this unit: the default ${fmtPct(100 - (terms.ownerPct ?? 0))} operator share was used.`);
 

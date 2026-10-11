@@ -14,7 +14,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const rows = await all<{ id: string; state: string }>(env, `SELECT id, state FROM owner_statements WHERE id IN (${b.statementIds.map(() => '?').join(',')})`, ...b.statementIds);
   const ok = rows.filter(r => r.state === 'provisional');
-  const failed = b.statementIds.filter(id => !ok.some(r => r.id === id)).map(id => ({ id, reason: rows.find(r => r.id === id) ? 'Only a provisional statement can be finalised.' : 'That statement no longer exists.' }));
+  const failed = b.statementIds.filter(id => !ok.some(r => r.id === id)).map(id => ({ id, reason: rows.find(r => r.id === id) ? 'Only a draft statement can be marked final.' : 'That statement no longer exists.' }));
 
   const now = nowIso();
   // Two writes for the whole selection, not two per statement: a month is about 100 owners.

@@ -168,10 +168,10 @@ const METRICS: Record<Metric, {
   full: (v: number) => string;   // headline / row value
   bar: (v: number) => string;    // compact label above a bar
 }> = {
-  revenue:   { label: 'Revenue',   pick: p => p.revenue,   full: v => rm(v, { cents: false }), bar: compactMoney },
+  revenue:   { label: 'Earnings',   pick: p => p.revenue,   full: v => rm(v, { cents: false }), bar: compactMoney },
   occupancy: { label: 'Occupancy', pick: p => p.occupancy, full: v => `${v.toFixed(1)}%`,      bar: v => `${v.toFixed(0)}%` },
-  adr:       { label: 'ADR',       pick: p => p.adr,       full: v => rm(v, { cents: false }), bar: compactMoney },
-  revpar:    { label: 'RevPAR',    pick: p => p.revpar,    full: v => rm(v, { cents: false }), bar: compactMoney },
+  adr:       { label: 'Avg nightly price',       pick: p => p.adr,       full: v => rm(v, { cents: false }), bar: compactMoney },
+  revpar:    { label: 'Earnings per available night',    pick: p => p.revpar,    full: v => rm(v, { cents: false }), bar: compactMoney },
 };
 
 const METRIC_ORDER: Metric[] = ['revenue', 'occupancy', 'adr', 'revpar'];
@@ -226,7 +226,7 @@ export default function AnalyticsPage() {
     <>
       <PageHeader
         title="Performance"
-        sub={`${RANGE_SUB[range]} · gross booking value, each stay split by night into the months it covers`}
+        sub={`${RANGE_SUB[range]} · guest totals, each reservation split by night into the months it covers`}
       />
 
       {q.error && <StaleBanner message={`Showing the last figures we have. ${q.error}`} onRetry={q.reload} />}
@@ -269,13 +269,13 @@ export default function AnalyticsPage() {
 
           {/* The four totals are distinct definitions and are never merged. */}
           <TotalsRow items={[
-            { label: 'Gross booking value', value: money(d.totals.grossBookingValue) },
-            { label: 'Collected revenue', value: money(d.totals.collectedRevenue) },
-            { label: 'Management fees', value: money(d.totals.managementFees) },
-            { label: 'Net owner payout', value: money(d.totals.netOwnerPayout) },
+            { label: 'Guest total', value: money(d.totals.grossBookingValue) },
+            { label: 'Earnings', value: money(d.totals.collectedRevenue) },
+            { label: 'Operator share', value: money(d.totals.managementFees) },
+            { label: 'Net Payout to Owner', value: money(d.totals.netOwnerPayout) },
           ]} />
           <span className="text-meta text-muted-ink -mt-2 [text-wrap:pretty]">
-            Management fees and net owner payout come from owner statements generated for these months; a month with no statements adds nothing to them yet.
+            Operator share and Net Payout to Owner come from the owner statements for these months. A month with no statements adds nothing yet.
           </span>
         </div>
       </Card>
@@ -309,7 +309,7 @@ export default function AnalyticsPage() {
 
       {/* Channel mix ------------------------------------------------------- */}
       <Card>
-        <CardHeader title="Where revenue came from" right={<span className="text-meta text-muted-ink">share of gross booking value</span>} />
+        <CardHeader title="Where earnings came from" right={<span className="text-meta text-muted-ink">share of guest total</span>} />
         <div className="flex flex-col gap-0">
           {loading ? <TableSkeleton rows={4} cols={2} /> : (d.channelMix ?? []).map(c => (
             <div key={c.channel} className="flex items-center gap-[14px] px-5 py-[13px] [border-top:1px_solid_var(--color-line-soft)]">
@@ -368,11 +368,11 @@ function UnitTable({ units, metric, loading, range }: { units: UnitRow[]; metric
       hideable: false, width: 180, sub: u => u.propertyName,
       render: u => <span className="font-medium truncate block" title={u.unitNumber}>{u.unitNumber}</span> },
     { key: 'building', label: 'Building', value: u => u.propertyName, hidden: true, width: 150 },
-    { key: 'revenue', label: 'Revenue', type: 'money', value: u => u.revenue, width: 120, render: u => <span className={NUM}>{rm(u.revenue, { cents: false })}</span> },
+    { key: 'revenue', label: 'Earnings', type: 'money', value: u => u.revenue, width: 120, render: u => <span className={NUM}>{rm(u.revenue, { cents: false })}</span> },
     { key: 'nights', label: 'Booked nights', type: 'number', value: u => u.nights ?? null, hidden: true, width: 100 },
     { key: 'occupancy', label: 'Occupancy', type: 'number', value: u => u.occupancy, width: 100, render: u => <span className={NUM}>{u.occupancy.toFixed(1)}%</span> },
-    { key: 'adr', label: 'ADR', type: 'money', value: u => u.adr, width: 100, render: u => <span className={NUM}>{rm(u.adr, { cents: false })}</span> },
-    { key: 'revpar', label: 'RevPAR', type: 'money', value: u => u.revpar, width: 100, render: u => <span className={NUM}>{rm(u.revpar, { cents: false })}</span> },
+    { key: 'adr', label: 'Avg nightly price', type: 'money', value: u => u.adr, width: 100, render: u => <span className={NUM}>{rm(u.adr, { cents: false })}</span> },
+    { key: 'revpar', label: 'Earnings per available night', type: 'money', value: u => u.revpar, width: 100, render: u => <span className={NUM}>{rm(u.revpar, { cents: false })}</span> },
     { key: 'rating', label: 'Rating', type: 'number', value: u => u.rating, width: 80,
       render: u => <span className="tabular-nums text-muted-ink">{u.rating === null ? '—' : u.rating.toFixed(2)}</span> },
   ], []);
@@ -395,9 +395,9 @@ function UnitTable({ units, metric, loading, range }: { units: UnitRow[]; metric
       </>}
       above={rows.length > 0 && (
         <div className="flex items-center gap-x-5 gap-y-1 flex-wrap text-meta py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
-          <span className="font-semibold text-ink" title="Listed units only; the revenue figure at the top also counts units no longer listed.">Total · {plural(rows.length, 'listed unit')}</span>
-          <span><span className="text-muted-ink">Revenue </span><span className="font-semibold tabular-nums">{rm(revenue, { cents: false })}</span></span>
-          <span title="Revenue divided by booked nights"><span className="text-muted-ink">ADR </span><span className="font-semibold tabular-nums">{nights ? rm(Math.round(revenue / nights), { cents: false }) : '—'}</span></span>
+          <span className="font-semibold text-ink" title="Listed units only; the earnings figure at the top also counts units no longer listed.">Total · {plural(rows.length, 'listed unit')}</span>
+          <span><span className="text-muted-ink">Earnings </span><span className="font-semibold tabular-nums">{rm(revenue, { cents: false })}</span></span>
+          <span title="Earnings divided by booked nights"><span className="text-muted-ink">Avg nightly price </span><span className="font-semibold tabular-nums">{nights ? rm(Math.round(revenue / nights), { cents: false }) : '—'}</span></span>
         </div>
       )}
       renderCard={u => (

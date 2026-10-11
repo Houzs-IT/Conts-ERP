@@ -49,7 +49,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const byUnit = groupBy(await stayMonths(env, dateFrom, dateToExclusive, { listedOnly: true }), r => r.unit_id);
 
   const exception = (r: any) =>
-    r.readiness === 'maintenance' || r.readiness === 'blocked' ? { label: 'Off sale', tone: 'warning' }
+    r.readiness === 'maintenance' || r.readiness === 'blocked' ? { label: 'Blocked', tone: 'warning' }
     : r.readiness === 'dirty' ? { label: 'Needs cleaning', tone: 'warning' }
     : Number(r.open_issues) > 0 ? { label: `${r.open_issues} open issue${Number(r.open_issues) === 1 ? '' : 's'}`, tone: 'info' }
     : null;

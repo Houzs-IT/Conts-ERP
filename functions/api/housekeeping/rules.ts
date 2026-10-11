@@ -16,7 +16,7 @@ const DEFAULTS: Record<string, string> = {
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot see the rules.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot see the rules.', 403);
 
   const rows = await all<{ key: string; value: string }>(env, "SELECT key, value FROM settings WHERE key LIKE 'housekeeping.%'");
   const map = new Map(rows.map(r => [r.key, r.value]));

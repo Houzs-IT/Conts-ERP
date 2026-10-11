@@ -50,8 +50,8 @@ export function SelectionPopover({ sel, phone, canSetRates, onBook, onBlock, onP
 
   const free = sel.nights - sel.taken;
   const summary = sel.taken === 0
-    ? `${sel.nights === 1 ? 'Open' : `All ${sel.nights} nights open`}${sel.priceNow > 0 ? ` · now ${rmShort(sel.priceNow)} / night` : ''}`
-    : `${free} of ${plural(sel.nights, 'night')} open · ${sel.takenBy || 'a booking'} holds ${plural(sel.taken, 'night')}`;
+    ? `${sel.nights === 1 ? 'Available' : `All ${sel.nights} nights available`}${sel.priceNow > 0 ? ` · now ${rmShort(sel.priceNow)} / night` : ''}`
+    : `${free} of ${plural(sel.nights, 'night')} available · ${sel.takenBy || 'a reservation'} holds ${plural(sel.taken, 'night')}`;
   const blocked = sel.taken > 0;
   const big = 'flex-1 min-w-0 min-h-16 px-2 py-2 rounded-[10px] flex flex-col items-center justify-center gap-0.5 cursor-pointer font-sans text-copy border border-solid disabled:cursor-default disabled:opacity-45';
 
@@ -75,7 +75,7 @@ export function SelectionPopover({ sel, phone, canSetRates, onBook, onBlock, onP
           <b>Book</b><span className="text-caption text-muted-ink">Direct / owner stay</span>
         </button>
         <button type="button" onClick={onBlock} disabled={blocked} title={blocked ? 'Some of these nights are taken' : undefined} className={`${big} bg-card border-line text-ink hover:bg-muted`}>
-          <b>Block</b><span className="text-caption text-muted-ink">Maintenance / other</span>
+          <b>Block</b><span className="text-caption text-muted-ink">Repair / other</span>
         </button>
         {canSetRates && (
           <button type="button" onClick={onPrice} className={`${big} bg-black border-black text-white hover:opacity-90`}>

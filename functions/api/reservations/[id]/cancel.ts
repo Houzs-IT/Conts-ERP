@@ -7,7 +7,7 @@ import { applyMove, isRefusal } from '../../../_lib/bookingLifecycle';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot cancel reservations.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot cancel reservations.', 403);
 
   const b = await request.json<any>().catch(() => ({}));
   const r = await applyMove(env, session, String(params.id), 'cancelled', typeof b?.reason === 'string' ? b.reason : null);

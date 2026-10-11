@@ -4,8 +4,8 @@ import { ownerFor, VISIBLE } from '../../_lib/ownerScope';
 import { daysIn, todayMyt } from '../../_lib/ops';
 
 const CATEGORY_LABEL: Record<string, string> = {
-  housekeeping: 'Housekeeping', cleaning: 'Cleaning', maintenance: 'Maintenance', utilities: 'Utilities', internet: 'Internet', electricity: 'Electricity',
-  water: 'Water', consumables: 'Consumables', furniture: 'Furniture', channel_fee: 'Channel fees', management_fee: 'Management fee', other: 'Other',
+  housekeeping: 'Cleaning', cleaning: 'Cleaning', maintenance: 'Maintenance', utilities: 'Utilities', internet: 'Internet', electricity: 'Electricity',
+  water: 'Water', consumables: 'Consumables', furniture: 'Furniture', channel_fee: 'Service fee', management_fee: 'To Operator', other: 'Other',
 };
 
 /** GET /api/owner/summary?period=YYYY-MM — the gross-to-net for one finalised statement (the latest by default), payout and month stats. */
@@ -36,27 +36,27 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       // One fee line per unit: the owner sees their total, so a second unit's share is never dropped.
       const fees = lines.filter(l => l.line_type === 'management_fee');
       const fee = fees.length ? {
-        label: fees.length === 1 ? String(fees[0].description).replace(/ (\d+(\.\d+)?)%$/, ' · $1%') : `To operator · ${fees.length} units`,
+        label: fees.length === 1 ? String(fees[0].description).replace(/ (\d+(\.\d+)?)%$/, ' · $1%') : `To Operator · ${fees.length} units`,
         amount: -Math.abs(fees.reduce((n, l) => n + Number(l.amount), 0)),
       } : null;
       const costs = lines.filter(l => l.line_type === 'expense');
       const byCategory = new Map<string, any[]>();
       for (const c of costs) byCategory.set(c.category ?? 'other', [...(byCategory.get(c.category ?? 'other') ?? []), c]);
       grossToNet = [
-        { label: 'Gross booking value', amount: Number(st.gross_booking_value), type: 'gross' },
+        { label: 'Gross Income', amount: Number(st.gross_booking_value), type: 'gross' },
         ...(fee ? [{ ...fee, type: 'fee' }] : []),
         ...[...byCategory.entries()].map(([cat, list]) => list.length === 1
           ? { label: `${CATEGORY_LABEL[cat] ?? 'Other'} · ${list[0].description}`, amount: -Math.abs(Number(list[0].amount)), type: 'expense', ...(list[0].reference ? { reference: list[0].reference } : {}) }
           : { label: `${CATEGORY_LABEL[cat] ?? 'Other'} · ${list.length} items`, amount: -list.reduce((n, l) => n + Math.abs(Number(l.amount)), 0), type: 'expense' }),
-        ...(Number(st.adjustments_total) ? [{ label: 'Adjustments', amount: Number(st.adjustments_total), type: 'expense' }] : []),
-        { label: 'Net payout', amount: Number(st.net_payout), type: 'net' },
+        ...(Number(st.adjustments_total) ? [{ label: 'Owner Adjustments', amount: Number(st.adjustments_total), type: 'expense' }] : []),
+        { label: 'Net Payout to Owner', amount: Number(st.net_payout), type: 'net' },
       ];
     } else {
       grossToNet = [
-        { label: 'Gross booking value', amount: Number(st.gross_booking_value), type: 'gross' },
-        { label: 'Management fee', amount: -Math.abs(Number(st.management_fee)), type: 'fee' },
-        ...(Number(st.expenses_total) ? [{ label: 'Expenses', amount: -Math.abs(Number(st.expenses_total)), type: 'expense' }] : []),
-        { label: 'Net payout', amount: Number(st.net_payout), type: 'net' },
+        { label: 'Gross Income', amount: Number(st.gross_booking_value), type: 'gross' },
+        { label: 'To Operator', amount: -Math.abs(Number(st.management_fee)), type: 'fee' },
+        ...(Number(st.expenses_total) ? [{ label: 'Total Deduction', amount: -Math.abs(Number(st.expenses_total)), type: 'expense' }] : []),
+        { label: 'Net Payout to Owner', amount: Number(st.net_payout), type: 'net' },
       ];
     }
   }

@@ -50,7 +50,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 /** POST /api/auth/view-as { userId } -> signs this browser in as that account. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const w = await who(request, env);
-  if (!w) return fail('NOT_FOUND', 'That endpoint does not exist.', 404);
+  if (!w) return fail('NOT_FOUND', 'That address does not exist.', 404);
   const body = await request.json().catch(() => null) as { userId?: string } | null;
   const user = body?.userId ? await one<{ id: string; full_name: string; email: string; role: string }>(
     env, 'SELECT id, full_name, email, role FROM users WHERE id = ? AND is_active = 1', body.userId) : null;

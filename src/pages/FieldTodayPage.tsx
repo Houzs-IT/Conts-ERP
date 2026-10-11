@@ -90,7 +90,7 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
         </div>
         <div className="grid grid-cols-2 gap-2 text-copy">
           <div className="rounded-control bg-muted px-2.5 py-2"><span className="block text-meta text-muted-ink">Leaving</span>{j.previous ? <><b>{j.previous.checkOutTime}</b> {j.previous.guestName}</> : <span className="text-muted-ink">No departing guest</span>}</div>
-          <div className="rounded-control bg-gold-tint px-2.5 py-2"><span className="block text-meta text-muted-ink">Arriving</span>{j.next ? <><b>{j.next.checkInTime}</b> {j.next.guestName}</> : <span className="text-muted-ink">No arrival</span>}</div>
+          <div className="rounded-control bg-gold-tint px-2.5 py-2"><span className="block text-meta text-muted-ink">Arriving</span>{j.next ? <><b>{j.next.checkInTime}</b> {j.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}</div>
         </div>
         {j.next && !j.done && <div className="text-copy">Time left <TimeLeft at={j.next.checkInAt} now={now} /></div>}
       </button>
@@ -133,7 +133,7 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
         </div>
       )}
       {damage && <ReportDamageModal unitId={j.unitId} unitLabel={`${j.unit.propertyName} ${j.unit.unitNumber}`} taskId={j.id} onClose={() => setDamage(false)}
-        onDone={() => { setDamage(false); toast({ tone: 'success', title: 'Damage reported.', body: 'The office has it as a repair job.' }); }} />}
+        onDone={() => { setDamage(false); toast({ tone: 'success', title: 'Damage reported.', body: 'The office has it as a maintenance job.' }); }} />}
     </article>
   );
 }

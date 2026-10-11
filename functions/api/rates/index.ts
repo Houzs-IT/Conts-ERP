@@ -31,22 +31,24 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     audit(env, { actorId: session.userId, actorLabel: session.fullName, action, entityTable: 'units', entityId: unit.id, before, after });
 
   if (b.baseRate !== undefined) {
-    if (!whole(b.baseRate) || b.baseRate <= 0) return fail('VALIDATION', 'Enter a nightly rate above RM 0.00.', 422, { baseRate: 'Enter a rate above RM 0.00.' });
+    if (!whole(b.baseRate) || b.baseRate <= 0) return fail('VALIDATION', 'Enter a nightly price above RM 0.00.', 422, { baseRate: 'Enter a price above RM 0.00.' });
     await run(env, 'UPDATE units SET base_rate = ?, updated_at = ? WHERE id = ?', b.baseRate, now, unit.id);
     await done('pricing.base_rate', { baseRate: Number(unit.base_rate) }, { baseRate: b.baseRate });
     // Every night without its own price is sold at the base price, so a linked unit's whole price range is
     // queued again. Queue trouble is audited and never fails the save.
     try { await queueFullSync(env, [unit.id], { pricesOnly: true }); }
-    catch (e) { await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.enqueue_failed', entityTable: 'units', entityId: unit.id, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {}); }
+    // vocab-ok: stored History actor name, the same one every Channex writer records
+    catch (e) { await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.enqueue_failed', entityTable: 'units', entityId: unit.id, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {}); }
     return json({ ok: true });
   }
   if (b.weekendRate !== undefined) {
-    if (b.weekendRate !== null && (!whole(b.weekendRate) || b.weekendRate <= 0)) return fail('VALIDATION', 'Enter a weekend rate above RM 0.00, or clear it to use the base rate.', 422, { weekendRate: 'Enter a rate above RM 0.00.' });
+    if (b.weekendRate !== null && (!whole(b.weekendRate) || b.weekendRate <= 0)) return fail('VALIDATION', 'Enter a weekend price above RM 0.00, or clear it to use the nightly price.', 422, { weekendRate: 'Enter a price above RM 0.00.' });
     await run(env, 'UPDATE units SET weekend_rate = ?, updated_at = ? WHERE id = ?', b.weekendRate, now, unit.id);
     await done('pricing.weekend_rate', { weekendRate: unit.weekend_rate == null ? null : Number(unit.weekend_rate) }, { weekendRate: b.weekendRate });
     // Every Friday and Saturday without its own price moves, on every channel.
     try { await queueFullSync(env, [unit.id], { pricesOnly: true }); }
-    catch (e) { await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.enqueue_failed', entityTable: 'units', entityId: unit.id, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {}); }
+    // vocab-ok: stored History actor name, the same one every Channex writer records
+    catch (e) { await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.enqueue_failed', entityTable: 'units', entityId: unit.id, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {}); }
     return json({ ok: true });
   }
   if (b.costFloor !== undefined) {
@@ -64,7 +66,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     await done('pricing.uplift', null, { channel: b.channel, uplift: b.uplift });
     // The uplift changes that channel's standard price on every night without its own price.
     try { await queueFullSync(env, [unit.id], { pricesOnly: true }); }
-    catch (e) { await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.enqueue_failed', entityTable: 'units', entityId: unit.id, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {}); }
+    // vocab-ok: stored History actor name, the same one every Channex writer records
+    catch (e) { await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.enqueue_failed', entityTable: 'units', entityId: unit.id, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {}); }
     return json({ ok: true });
   }
 
@@ -73,7 +76,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const fields: Fields = {};
   checkDate(fields, 'date', b.date, { label: 'Night', required: true });
   const bad = invalid(fields); if (bad) return bad;
-  if (!whole(b.rate)) return fail('VALIDATION', 'The rate must be a whole number of sen.', 422, { rate: 'Enter a valid rate.' });
+  if (!whole(b.rate)) return fail('VALIDATION', 'The price must be a whole number of sen.', 422, { rate: 'Enter a valid price.' });
   await run(env, `
     INSERT INTO channel_rates (unit_id, channel, rate_date, rate, updated_at) VALUES (?, ?, ?, ?, ?)
     ON CONFLICT (unit_id, channel, rate_date) DO UPDATE SET rate = excluded.rate, updated_at = excluded.updated_at`,
@@ -85,7 +88,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   try { await syncRateIfLinked(env, unit.id, b.date, b.rate, b.date, channel as SalesChannel); }
   catch (e) {
     sync = 'failed';
-    await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.enqueue_failed', entityTable: 'units', entityId: unit.id, after: { channel, date: b.date, error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
+    // vocab-ok: stored History actor name, the same one every Channex writer records
+    await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.enqueue_failed', entityTable: 'units', entityId: unit.id, after: { channel, date: b.date, error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
   }
   return json({ ok: true, sync });
 };

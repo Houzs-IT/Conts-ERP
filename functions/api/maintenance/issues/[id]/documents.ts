@@ -6,7 +6,7 @@ import { requireSession, isFieldRole } from '../../../../_lib/auth';
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot open maintenance files here.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot open maintenance files here.', 403);
   const id = String(params.id);
   if (!(await one(env, 'SELECT 1 AS x FROM maintenance_issues WHERE id = ?', id))) return fail('NOT_FOUND', 'That job no longer exists.', 404);
   const rows = await all<any>(env, `

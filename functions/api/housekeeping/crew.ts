@@ -6,7 +6,7 @@ import { crew } from '../../_lib/ops';
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot see the crew list.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot see the cleaner list.', 403);
 
   const scope = new URL(request.url).searchParams.get('scope') === 'all' ? 'all' : 'housekeeping';
   return json({ data: await crew(env, scope).then(rows => rows.map(r => ({ id: r.id, name: r.name, busy: Number(r.busy) }))) });

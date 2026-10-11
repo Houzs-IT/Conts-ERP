@@ -207,14 +207,14 @@ export default function PricingPage() {
 
   function setBase(unitId: string, baseRate: number) {
     setUnitEdits(e => ({ ...e, [unitId]: { ...e[unitId], baseRate } }));
-    toast({ tone: 'success', title: 'Base web rate updated.', body: 'Push to send the new rate to each connected channel.' });
+    toast({ tone: 'success', title: 'Nightly price updated.', body: 'Use Send prices to send it to each connected channel.' });
     void api.put('/rates', { unitId, baseRate }).catch(notifyFailure);
   }
   function setWeekend(unitId: string, sen: number) {
     // RM 0 clears it: weekend nights then sell at the base rate.
     const weekendRate = sen > 0 ? sen : null;
     setUnitEdits(e => ({ ...e, [unitId]: { ...e[unitId], weekendRate } }));
-    toast({ tone: 'success', title: weekendRate ? 'Weekend rate updated.' : 'Weekend rate cleared.', body: weekendRate ? 'Friday and Saturday nights without their own price use it on every channel.' : 'Friday and Saturday nights now sell at the base rate.' });
+    toast({ tone: 'success', title: weekendRate ? 'Weekend price updated.' : 'Weekend price cleared.', body: weekendRate ? 'Friday and Saturday nights without their own price use it on every channel.' : 'Friday and Saturday nights now use the nightly price.' });
     void api.put('/rates', { unitId, weekendRate }).catch(notifyFailure);
   }
   function setFloor(unitId: string, costFloor: number) {
@@ -224,7 +224,7 @@ export default function PricingPage() {
   }
   function setUplift(unitId: string, ch: OtaChannel, upliftSen: number) {
     setUpliftEdits(e => ({ ...e, [`${unitId}:${ch}`]: upliftSen }));
-    toast({ tone: 'success', title: `${CH[ch].label} uplift updated.`, body: 'Push to apply it over your chosen dates.' });
+    toast({ tone: 'success', title: `${CH[ch].label} uplift updated.`, body: 'Use Send prices to apply it to your chosen dates.' });
     void api.put('/rates', { unitId, channel: ch, uplift: upliftSen }).catch(notifyFailure);
   }
 
@@ -235,10 +235,10 @@ export default function PricingPage() {
     const names = channels.map(c => CH[c].label).join(', ');
     const range = dateRange(from, to);
     setDialog({
-      title: 'Push rates',
-      body: `This sends the current rates to ${names} for every open night in the range. Confirmed bookings keep the rate they were sold at.`,
+      title: 'Send prices',
+      body: `This sends the current prices to ${names} for every available night in the range. Reservations already made keep the price they were booked at.`,
       meta: `${selected.propertyName} ${selected.unitNumber} · ${range} · ${channels.length} ${channels.length === 1 ? 'channel' : 'channels'}`,
-      confirmLabel: 'Push rates', busyLabel: 'Pushing…',
+      confirmLabel: 'Send prices', busyLabel: 'Sending…',
       onConfirm: async () => {
         setBusy(true);
         try {
@@ -247,9 +247,9 @@ export default function PricingPage() {
             baseRate: selected.baseRate,
             uplifts: Object.fromEntries(selected.rates.map(r => [r.channel, r.upliftSen])),
           });
-          toast({ tone: 'success', title: 'Rates saved.', body: `${names} prices saved for ${range}. Units connected to a booking site are updated there automatically.` });
+          toast({ tone: 'success', title: 'Prices saved.', body: `${names} prices saved for ${range}. Units connected to a channel are updated there automatically.` });
         } catch (e) {
-          toast({ tone: 'critical', title: 'Rates were not saved.', body: errorMessage(e, 'Try again in a moment.') });
+          toast({ tone: 'critical', title: 'Prices not saved.', body: errorMessage(e, 'Try again in a moment.') });
         }
         setBusy(false); setDialog(null);
       },
@@ -283,7 +283,7 @@ export default function PricingPage() {
     { key: 'youKeep', label: 'You keep', type: 'money', value: r => r.youKeep, width: 110,
       render: r => <span className={cx('tabular-nums', r.belowFloor ? TONE.critical.text : 'text-ink')}>{rm(r.youKeep, { cents: false })}</span>,
       sub: r => (r.belowFloor ? <span className={cx('text-caption', TONE.critical.text)}>Below floor</span> : null) },
-    { key: 'sync', label: 'Sync', type: 'status', value: r => r.sync, status: r => ({ label: r.syncLabel, tone: r.syncTone }), width: 130,
+    { key: 'sync', label: 'Status', type: 'status', value: r => r.sync, status: r => ({ label: r.syncLabel, tone: r.syncTone }), width: 130,
       render: r => <StatusBadge tone={r.syncTone} label={r.syncLabel} size="sm" /> },
   ];
 
@@ -291,21 +291,21 @@ export default function PricingPage() {
     <>
       <PageHeader
         title="Pricing"
-        sub={data ? `${plural(rows.length, 'unit')}${noRate ? ` · ${noRate} with no base rate` : ''} · Friday and Saturday nights use each unit's weekend rate` : "Friday and Saturday nights use each unit's weekend rate"}
+        sub={data ? `${plural(rows.length, 'unit')}${noRate ? ` · ${noRate} with no nightly price` : ''} · Friday and Saturday nights use each unit's weekend price` : "Friday and Saturday nights use each unit's weekend price"}
       />
 
-      {error && <StaleBanner message={`Showing the last rates we have. ${error}`} onRetry={reload} />}
+      {error && <StaleBanner message={`Showing the last prices we have. ${error}`} onRetry={reload} />}
 
       {loading && units.length === 0 ? (
         <Card><TableSkeleton rows={5} cols={4} /></Card>
       ) : rows.length === 0 ? (
-        <EmptyState title="No units to price yet." body="Add a unit to set its rates." />
+        <EmptyState title="No units to price yet." body="Add a unit to set its prices." />
       ) : (
         <div className="flex gap-4 items-start flex-wrap">
           {/* Unit selector. On a phone it is a searchable picker above the editor, not 139 cards to scroll past. */}
           {phone ? (
             <SearchSelect label="Unit" showLabel className="w-full" placeholder="Search unit or building" value={selected?.unitId ?? ''} onChange={v => v && setSelectedId(v)}
-              options={rows.map(u => ({ value: u.unitId, label: u.unitNumber, group: u.propertyName, hint: u.baseRate > 0 ? rm(u.baseRate, { cents: false }) : 'No base rate' }))} />
+              options={rows.map(u => ({ value: u.unitId, label: u.unitNumber, group: u.propertyName, hint: u.baseRate > 0 ? rm(u.baseRate, { cents: false }) : 'No nightly price' }))} />
           ) : (
           <Card style={{ flex: '0 1 280px', minWidth: 240, maxWidth: 320 }}>
             <div className="py-3 px-3 [border-bottom:1px_solid_var(--color-line)] flex flex-col gap-2">
@@ -320,7 +320,7 @@ export default function PricingPage() {
               const failed = u.rates.filter(r => r.sync === 'failed').length;
               const queued = u.rates.filter(r => r.sync === 'queued').length;
               const linked = u.rates.filter(r => r.sync !== 'not_connected').length;
-              const syncNote = failed ? `${failed} to fix` : queued ? `${queued} queued` : linked ? 'All synced' : 'Not connected';
+              const syncNote = failed ? `${failed} to fix` : queued ? `${queued} waiting to send` : linked ? 'All sent' : 'Not connected';
               return (
                 <button
                   key={u.unitId} onClick={() => setSelectedId(u.unitId)}
@@ -331,7 +331,7 @@ export default function PricingPage() {
                   )}
                 >
                   <span className="text-copy font-semibold">{u.unitNumber}</span>
-                  <span className="text-meta text-muted-ink">{u.propertyName} · {u.baseRate > 0 ? rm(u.baseRate, { cents: false }) : <span className={TONE.critical.text}>No base rate</span>}</span>
+                  <span className="text-meta text-muted-ink">{u.propertyName} · {u.baseRate > 0 ? rm(u.baseRate, { cents: false }) : <span className={TONE.critical.text}>No nightly price</span>}</span>
                   <span className={cx('text-caption', failed ? TONE.critical.text : 'text-faint')}>{syncNote}</span>
                 </button>
               );
@@ -346,7 +346,7 @@ export default function PricingPage() {
               <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line)] flex items-baseline justify-between gap-4 flex-wrap">
                 <div className="flex flex-col gap-0.5 min-w-0">
                   <span className="text-heading font-semibold">{selected.propertyName} {selected.unitNumber}</span>
-                  <span className="text-meta text-muted-ink">Tap a rate to change it. It is saved straight away; Push rates sends prices for chosen dates to the channels.</span>
+                  <span className="text-meta text-muted-ink">Tap a price to change it. It saves straight away; Send prices sends the chosen dates to the channels.</span>
                 </div>
               </div>
 
@@ -354,23 +354,23 @@ export default function PricingPage() {
               <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-px bg-line [border-bottom:1px_solid_var(--color-line)]">
                 <div className="bg-card py-[14px] px-5 flex flex-col gap-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-meta text-muted-ink">Base web rate</span>
+                    <span className="text-meta text-muted-ink">Nightly price</span>
                     <Tag label="SELL" kind="external" />
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-caption text-faint">Direct · per night</span>
-                    <EditableMoney sen={selected.baseRate} ariaLabel="base web rate" minSen={1} tone={selected.baseRate <= 0 ? 'warn' : undefined} onCommit={s => setBase(selected.unitId, s)} />
+                    <EditableMoney sen={selected.baseRate} ariaLabel="nightly price" minSen={1} tone={selected.baseRate <= 0 ? 'warn' : undefined} onCommit={s => setBase(selected.unitId, s)} />
                   </div>
-                  {selected.baseRate <= 0 && <span className={cx('text-meta font-medium', TONE.critical.text)}>No base rate. Channels would be sent RM 0; set one before pushing.</span>}
+                  {selected.baseRate <= 0 && <span className={cx('text-meta font-medium', TONE.critical.text)}>No nightly price. Channels would be sent RM 0; set one before sending.</span>}
                 </div>
                 <div className="bg-card py-[14px] px-5 flex flex-col gap-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-meta text-muted-ink">Weekend web rate</span>
+                    <span className="text-meta text-muted-ink">Weekend price</span>
                     <Tag label="SELL" kind="external" />
                   </div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-caption text-faint">{selected.weekendRate ? 'Fri and Sat nights' : 'Not set · uses the base rate'}</span>
-                    <EditableMoney sen={selected.weekendRate ?? selected.baseRate} ariaLabel="weekend web rate" onCommit={s => setWeekend(selected.unitId, s)} />
+                    <span className="text-caption text-faint">{selected.weekendRate ? 'Fri and Sat nights' : 'Not set · uses the nightly price'}</span>
+                    <EditableMoney sen={selected.weekendRate ?? selected.baseRate} ariaLabel="weekend price" onCommit={s => setWeekend(selected.unitId, s)} />
                   </div>
                 </div>
                 <div className="bg-card py-[14px] px-5 flex flex-col gap-1.5">
@@ -412,12 +412,12 @@ export default function PricingPage() {
 
               <div className="py-[10px] px-5 [border-bottom:1px_solid_var(--color-line)] flex gap-4 flex-wrap text-caption text-muted-ink">
                 <span className="inline-flex items-center gap-1.5"><Tag label="SELL" kind="external" /> what the guest pays on the channel</span>
-                <span className="inline-flex items-center gap-1.5"><Tag label="INTERNAL" kind="internal" /> what you keep after the platform fee</span>
+                <span className="inline-flex items-center gap-1.5"><Tag label="INTERNAL" kind="internal" /> what you keep after the service fee</span>
               </div>
 
               {/* Push rates */}
               <div className="py-4 px-5 flex flex-col gap-[14px] bg-page">
-                <span className="text-meta font-semibold">Push rates</span>
+                <span className="text-meta font-semibold">Send prices</span>
                 <div className="flex gap-2 flex-wrap">
                   {PUSHABLE.map(c => {
                     const on = !!pushSel[c];
@@ -455,7 +455,7 @@ export default function PricingPage() {
                       disabled={PUSHABLE.every(c => !pushSel[c]) || !from || !to || to < from}
                       disabledReason="Pick at least one channel and a valid date range first."
                     >
-                      Push rates
+                      Send prices
                     </Button>
                   </div>
                 </div>

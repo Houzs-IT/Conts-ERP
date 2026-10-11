@@ -24,6 +24,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   }
 
   const fields: Record<string, string> = {};
+  // vocab-ok: Channex calls it a property; unit channel setup screen
   if (!b?.channexPropertyId?.trim()) fields.channexPropertyId = 'Enter the Channex property id.';
   if (!b?.channexRoomTypeId?.trim()) fields.channexRoomTypeId = 'Enter the Channex room type id.';
   if (!b?.channexRatePlanId?.trim()) fields.channexRatePlanId = 'Enter the Channex rate plan id.';

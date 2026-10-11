@@ -66,12 +66,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const hasRate = l.baseRate !== undefined && l.baseRate !== null, hasPct = l.adjustPct !== undefined && l.adjustPct !== null;
     const hasMinStay = l.minStay !== undefined, hasStopSell = typeof l.stopSell === 'boolean';
     if (!l.from || !l.to || l.to < l.from) return fail('VALIDATION', `Pick a valid date range${at}.`, 422);
-    if (!hasRate && !hasPct && !hasMinStay && !hasStopSell) return fail('VALIDATION', `Set a price, a minimum stay or stop sell${at}.`, 422);
+    if (!hasRate && !hasPct && !hasMinStay && !hasStopSell) return fail('VALIDATION', `Set a price, minimum nights or blocked nights${at}.`, 422);
     if (hasRate && hasPct) return fail('VALIDATION', `Set a price or a percentage, not both${at}.`, 422);
     if ((hasRate || hasPct) && !channels.length) return fail('VALIDATION', 'Pick at least one channel for the price.', 422);
-    if (hasRate && (!Number.isInteger(l.baseRate) || l.baseRate! <= 0)) return fail('VALIDATION', `The rate must be a whole number of sen above zero${at}.`, 422, { baseRate: 'Enter a valid rate.' });
+    if (hasRate && (!Number.isInteger(l.baseRate) || l.baseRate! <= 0)) return fail('VALIDATION', `The price must be a whole number of sen above zero${at}.`, 422, { baseRate: 'Enter a valid price.' });
     if (hasPct && !(typeof l.adjustPct === 'number' && Number.isFinite(l.adjustPct) && l.adjustPct >= -90 && l.adjustPct <= 300)) return fail('VALIDATION', `The change must be between -90% and +300%${at}.`, 422, { adjustPct: 'Enter -90 to 300.' });
-    if (hasMinStay && l.minStay !== null && !(Number.isInteger(l.minStay) && l.minStay! >= 1 && l.minStay! <= 60)) return fail('VALIDATION', `Minimum stay must be 1 to 60 nights${at}.`, 422, { minStay: 'Enter 1 to 60 nights.' });
+    if (hasMinStay && l.minStay !== null && !(Number.isInteger(l.minStay) && l.minStay! >= 1 && l.minStay! <= 60)) return fail('VALIDATION', `Minimum nights must be 1 to 60${at}.`, 422, { minStay: 'Enter 1 to 60 nights.' });
   }
 
   // Each range's nights, keeping only the chosen days of the week.
@@ -172,7 +172,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await enqueueRestrictionsMany(env, u.id, queued);
     } catch (e) {
       syncFailed.push(u.id);
-      await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.enqueue_failed', entityTable: 'units', entityId: u.id, after: { source: 'rates.bulk', error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
+      // vocab-ok: stored History actor name, the same one every Channex writer records
+      await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.enqueue_failed', entityTable: 'units', entityId: u.id, after: { source: 'rates.bulk', error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
     }
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'rate.bulk', entityTable: 'units', entityId: 'bulk', after: { units: unitIds.length, channels, weekdays: weekdays ? [...weekdays] : null, standard, skipped, lines } });

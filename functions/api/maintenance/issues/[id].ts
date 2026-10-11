@@ -12,7 +12,7 @@ import { repairNotice } from '../../../_lib/notices';
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot change maintenance jobs.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot change maintenance jobs.', 403);
 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);

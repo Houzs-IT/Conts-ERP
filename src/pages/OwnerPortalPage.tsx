@@ -76,11 +76,11 @@ const SUMMARY: Summary = {
   units: [{ id: 'u1', label: 'Vista Jaya One #A-12-03' }],
   payout: { amount: 648200, state: 'paid', paidAt: '2026-09-03', scheduledFor: null, bankName: 'Maybank', bankLast4: '4417' },
   grossToNet: [
-    { label: 'Gross booking value', amount: 926000, type: 'gross' },
-    { label: 'Management fee · 25%', amount: -231500, type: 'fee' },
-    { label: 'Housekeeping · 11 turnovers', amount: -38500, type: 'expense' },
+    { label: 'Gross Income', amount: 926000, type: 'gross' },
+    { label: '25% To Operator', amount: -231500, type: 'fee' },
+    { label: 'Cleaning · 11 cleaning jobs', amount: -38500, type: 'expense' },
     { label: 'Maintenance · aircon service', amount: -7800, type: 'expense', reference: 'INV-2026-0912' },
-    { label: 'Net payout', amount: 648200, type: 'net' },
+    { label: 'Net Payout to Owner', amount: 648200, type: 'net' },
   ],
   stats: { occupancy: 94.1, adr: 28400, bookings: 11, rating: 4.92, reviews: 38 },
 };
@@ -110,8 +110,8 @@ const HEALTH: { issues: HealthIssue[] } = {
 
 const DOCS: { data: OwnerDoc[] } = {
   data: [
-    { id: 'd1', type: 'statement', refId: 's1', title: 'Statement — August 2026', meta: 'Finalised 1 Sep 2026 · PDF', issuedAt: '2026-09-01' },
-    { id: 'd2', type: 'contract', title: 'Management agreement', meta: 'Signed 12 Jan 2026 · 25% fee', issuedAt: '2026-01-12' },
+    { id: 'd1', type: 'statement', refId: 's1', title: 'Statement — August 2026', meta: 'Final 1 Sep 2026 · PDF', issuedAt: '2026-09-01' },
+    { id: 'd2', type: 'contract', title: 'Contract', meta: 'Signed 12 Jan 2026 · 25% To Operator', issuedAt: '2026-01-12' },
     { id: 'd3', type: 'invoice', title: 'CoolTech Services — INV-2026-0912', meta: 'Aircon service · RM 78.00', issuedAt: '2026-09-12' },
     { id: 'd4', type: 'report', title: 'Annual earnings report 2025', meta: 'PDF', issuedAt: '2026-01-05' },
   ],
@@ -128,9 +128,9 @@ const BREAKDOWN: StatementDetail = {
       id: 'u1', label: 'Vista Jaya One #A-12-03',
       gross: 926000, fee: 231500, expenses: 46300, adjustments: 0, net: 648200,
       lines: [
-        { label: 'Gross booking value', amount: 926000, type: 'gross' },
-        { label: 'Management fee · 25%', amount: -231500, type: 'fee' },
-        { label: 'Housekeeping · 11 turnovers', amount: -38500, type: 'expense' },
+        { label: 'Gross Income', amount: 926000, type: 'gross' },
+        { label: '25% To Operator', amount: -231500, type: 'fee' },
+        { label: 'Cleaning · 11 cleaning jobs', amount: -38500, type: 'expense' },
         { label: 'Maintenance · aircon service', amount: -7800, type: 'expense', reference: 'INV-2026-0912' },
       ],
     },
@@ -199,15 +199,15 @@ export default function OwnerPortalPage() {
 
   const statsCards = [
     { label: 'Occupancy', value: percent(st.stats.occupancy), note: monthLabel(st.period) },
-    { label: 'Average nightly rate', value: st.stats.adr ? moneyString(st.stats.adr, 'whole') : '—', note: monthLabel(st.period) },
-    { label: 'Bookings', value: count(st.stats.bookings), note: monthLabel(st.period) },
+    { label: 'Avg nightly price', value: st.stats.adr ? moneyString(st.stats.adr, 'whole') : '—', note: monthLabel(st.period) },
+    { label: 'Reservations', value: count(st.stats.bookings), note: monthLabel(st.period) },
     { label: 'Guest rating', value: st.stats.rating != null ? rating(st.stats.rating) : '—', note: `${plural(st.stats.reviews, 'review')}, last 12 months` },
   ];
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title="Your property"
+        title="Your units"
         sub={st.units.length
           ? st.units.map((u, i) => (
               <span key={u.id}>
@@ -222,7 +222,7 @@ export default function OwnerPortalPage() {
       <section className="relative bg-black text-white rounded-card p-5 sm:p-6 flex justify-between gap-6 flex-wrap overflow-hidden">
         <span aria-hidden className="absolute left-5 sm:left-6 top-0 h-[2px] w-8 bg-gold" />
         <div className="flex flex-col gap-2.5 min-w-[220px]">
-          <Eyebrow className="text-gold!">Net payout · {monthLabel(st.period)}</Eyebrow>
+          <Eyebrow className="text-gold!">Net Payout to Owner · {monthLabel(st.period)}</Eyebrow>
           <MoneyText sen={st.payout.amount} mode="exact" className="text-[32px] sm:text-[40px] leading-none font-medium tracking-[-0.025em] text-white" />
           <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge entity="payout" value={st.payout.state} size="sm" />
@@ -247,7 +247,7 @@ export default function OwnerPortalPage() {
               </div>
             );
           })}
-          <span className="text-meta text-[var(--color-text-on-dark-muted)] text-pretty">Gross booking value is the total before documented fees and expenses.</span>
+          <span className="text-meta text-[var(--color-text-on-dark-muted)] text-pretty">Gross Income is the total before the operator's share and deductions.</span>
           <Button variant="brand" size="md" className="self-start mt-1" style={{ color: 'var(--color-gold)' }}
             icon={<Icon name="Download" size="sm" />} onClick={() => downloadStatement(st.statementId)}>
             Download statement
@@ -268,7 +268,7 @@ export default function OwnerPortalPage() {
         <section className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-1">
           <span className="text-[16px] font-semibold tracking-[-0.01em]">Earnings over time</span>
           <span className="text-meta text-muted-ink">
-            Net payout, RM · {trend.data ? `last ${trend.data.months} months · ` : ''}{trend.data?.unitLabel ?? st.unitsLabel}
+            Net Payout to Owner, RM · {trend.data ? `last ${trend.data.months} months · ` : ''}{trend.data?.unitLabel ?? st.unitsLabel}
           </span>
           {points.length ? <TrendChart points={points} /> : !trend.data ? null : (
             <EmptyState bare icon="ChartLine" title="No earnings yet" body="Earnings appear after your first statement." />
@@ -277,8 +277,8 @@ export default function OwnerPortalPage() {
 
         {/* Property health */}
         <section className="bg-card border border-solid border-line rounded-card overflow-hidden flex flex-col">
-          <div className="px-5 py-[18px] text-[16px] font-semibold tracking-[-0.01em] [border-bottom:1px_solid_var(--color-line-soft)]">Property health</div>
-          {health.data && rows.length === 0 && <EmptyState bare icon="Wrench" title="No maintenance on your property" body="Repairs and quotes that need your approval appear here." />}
+          <div className="px-5 py-[18px] text-[16px] font-semibold tracking-[-0.01em] [border-bottom:1px_solid_var(--color-line-soft)]">Unit health</div>
+          {health.data && rows.length === 0 && <EmptyState bare icon="Wrench" title="No maintenance on your units" body="Repairs and quotes that need your approval appear here." />}
           {rows.map(i => {
             const v = TASK[i.state];
             const waiting = i.state === 'waiting' && i.quotedAmount != null;
@@ -386,7 +386,7 @@ function StatementBreakdown({ statementId }: { statementId: string }) {
                     </div>
                   ))}
                   <div className="flex items-center justify-between gap-3 pt-3">
-                    <span className="text-copy font-semibold">Net payout · {shortLabel}</span>
+                    <span className="text-copy font-semibold">Net Payout to Owner · {shortLabel}</span>
                     <MoneyText sen={u.net} mode="exact" strong className="text-copy text-gold-ink" />
                   </div>
                 </div>
@@ -447,7 +447,7 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
 
   return (
     <div ref={box} className="mt-1.5 min-w-0">
-    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="block max-w-full" role="img" aria-label={`Net payout by month: ${desc}`}>
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="block max-w-full" role="img" aria-label={`Net Payout to Owner by month: ${desc}`}>
       <defs>
         <linearGradient id="owner-trend-fill" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color.gold} stopOpacity="0.24" />

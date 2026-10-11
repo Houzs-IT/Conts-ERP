@@ -27,7 +27,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     WHERE u.property_id = ? AND t.kind IN ${CLEAN_KINDS_SQL} AND t.state != 'resolved'
       AND ${MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)')} = ?
       ${b.onlyUnassigned ? 'AND t.cleaner_id IS NULL AND t.assignee_id IS NULL' : ''}`, b.buildingId, b.date);
-  if (!tasks.length) return fail('NOTHING_TO_ASSIGN', 'There is no unfinished clean in that building on that day.', 409);
+  if (!tasks.length) return fail('NOTHING_TO_ASSIGN', 'There is no unfinished cleaning job in that building on that day.', 409);
 
   let assigned = 0;
   for (const t of tasks) {
@@ -35,7 +35,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (res.ok) assigned++;
   }
   if (assigned && cleaner.user_id) {
-    await notifyUsers(env, [cleaner.user_id], { kind: 'cleaning.assigned', title: `${assigned} ${assigned === 1 ? 'clean' : 'cleans'} assigned to you`, body: `For ${day(b.date)}. Open My jobs to see the units and times.`, link: '/operations/cleaning', entityTable: 'properties', entityId: b.buildingId, dedupeKey: `building-${b.buildingId}-${b.date}-${cleaner.id}`, except: session.userId });
+    await notifyUsers(env, [cleaner.user_id], { kind: 'cleaning.assigned', title: `${assigned} ${assigned === 1 ? 'cleaning job' : 'cleaning jobs'} assigned to you`, body: `For ${day(b.date)}. Open My jobs to see the units and times.`, link: '/operations/cleaning', entityTable: 'properties', entityId: b.buildingId, dedupeKey: `building-${b.buildingId}-${b.date}-${cleaner.id}`, except: session.userId });
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.assign_building', entityTable: 'properties', entityId: b.buildingId, after: { date: b.date, cleanerId: cleaner.id, assigned } });
   return json({ ok: true, assigned, assigneeName: cleaner.full_name });

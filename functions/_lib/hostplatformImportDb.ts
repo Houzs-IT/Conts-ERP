@@ -514,6 +514,7 @@ async function hasColumn(db: Db, table: string, column: string): Promise<boolean
 /* One-off: split the collapsed "Airbnb guest" records                 */
 /* ------------------------------------------------------------------ */
 
+// vocab-ok: SQL pattern matching guest names already stored by older imports
 const COLLAPSED_SQL = `'^(Airbnb|Booking\\.com|Agoda|Direct|OTA) guest$'`;
 
 /** Before 10 Oct 2026 a booking with no guest name was given the guest "Airbnb guest" (or "Booking.com guest" ...),
@@ -547,7 +548,7 @@ export async function splitCollapsedGuests(db: Db, now: string): Promise<ImportR
     AND NOT EXISTS (SELECT 1 FROM reservations r WHERE r.guest_id = g.id) AND NOT EXISTS (SELECT 1 FROM message_threads t WHERE t.guest_id = g.id)
     RETURNING g.id`);
   res.stats = { bookingsGivenTheirOwnGuest: moves.length, placeholderGuestsRemoved: removed.length };
-  if (!moves.length && !removed.length) res.notes.push('Nothing to split: no booking is under a nameless placeholder guest.');
+  if (!moves.length && !removed.length) res.notes.push('Nothing to split: no reservation is under a nameless placeholder guest.');
   return finish(res, 'guests');
 }
 
@@ -736,7 +737,7 @@ export async function importPayoutHistory(db: Db, months: PayoutMonthIn[], now: 
       const b = m.breakdown;
       if (!b) { adjust += m.amount; line(unitId, 'adjustment', 'workbook_payout', `${name}: owner payout for ${g.month} (owner workbook, no breakdown)`, m.amount); continue; }
       gross += b.revenue;
-      line(unitId, 'gross', null, `${name}: total revenue for ${g.month} (owner workbook)`, b.revenue);
+      line(unitId, 'gross', null, `${name}: Gross Income for ${g.month} (owner workbook)`, b.revenue);
       const deductions: [string, string, number][] = [['cleaning', 'Cleaning', b.cleaning], ['utilities', 'Utilities', b.utilities], ['other', 'Additional deductions', b.additional], ['other', 'Miscellaneous charges', b.misc]];
       for (const [cat, what, amt] of deductions) if (amt) { costs += amt; line(unitId, 'expense', cat, `${name}: ${what} (owner workbook)`, -amt); }
       // What is left between the unit's profit and what the owner was paid: the company's (and agent's) share,

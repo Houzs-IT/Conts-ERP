@@ -61,14 +61,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const body = `
 <div class="lh-title"><h1>Owner statement</h1><span class="lh-docno">${esc(period)}</span></div>
 <div class="lh-sub">${esc(s.display_name)} &middot; issued ${esc(longDate(s.generated_at))}</div>
-${provisional ? '<div class="lh-flag">Provisional figures. This statement is not final and may change before it is issued.</div>' : ''}
+${provisional ? '<div class="lh-flag">Draft figures. This statement is not final and may change before it is issued.</div>' : ''}
 <table class="lh-table">
   <thead><tr><th style="width:52%">Description</th><th style="width:18%">Unit</th><th style="width:14%">Date</th><th class="num" style="width:16%">Amount</th></tr></thead>
   <tbody>
     ${lines.length === 0 ? `
-      <tr><td>Gross booking value</td><td>—</td><td>${esc(longDate(s.period_end))}</td><td class="num">${ringgit(s.gross_booking_value)}</td></tr>
-      <tr><td>Management fee</td><td>—</td><td>${esc(longDate(s.period_end))}</td><td class="num">− ${ringgit(s.management_fee)}</td></tr>
-      <tr><td>Expenses</td><td>—</td><td>${esc(longDate(s.period_end))}</td><td class="num">− ${ringgit(s.expenses_total)}</td></tr>`
+      <tr><td>Gross Income</td><td>—</td><td>${esc(longDate(s.period_end))}</td><td class="num">${ringgit(s.gross_booking_value)}</td></tr>
+      <tr><td>To Operator</td><td>—</td><td>${esc(longDate(s.period_end))}</td><td class="num">− ${ringgit(s.management_fee)}</td></tr>
+      <tr><td>Total Deduction</td><td>—</td><td>${esc(longDate(s.period_end))}</td><td class="num">− ${ringgit(s.expenses_total)}</td></tr>`
     : lines.map((l: any) => `
       <tr>
         <td>${esc(l.description)}${l.reference ? `<div class="ref">${esc(l.reference)}</div>` : ''}</td>
@@ -76,12 +76,12 @@ ${provisional ? '<div class="lh-flag">Provisional figures. This statement is not
         <td>${esc(longDate(l.occurred_on))}</td>
         <td class="num">${signed(l.amount)}</td>
       </tr>`).join('')}
-    <tr class="lh-total"><td colspan="3">Net payout</td><td class="num">${ringgit(s.net_payout)}</td></tr>
+    <tr class="lh-total"><td colspan="3">Net Payout to Owner</td><td class="num">${ringgit(s.net_payout)}</td></tr>
   </tbody>
 </table>
 <p class="lh-note">${s.state === 'paid' && s.bank_account_last4
     ? `Transferred to ${esc(s.bank_name ?? 'your account')} ····${esc(s.bank_account_last4)}.`
-    : 'Payment is made to the bank account on your management agreement.'}
+    : 'Payment is made to the bank account on your contract.'}
   Every deduction above carries a category, a date and a reference.</p>`;
 
   return printPage({

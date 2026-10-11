@@ -32,17 +32,17 @@ function CentreModal({ title, sub, onClose, onSave, saveLabel, canSave, disabled
 
 export function SetPriceModal({ m, onClose, onSave }: { m: { unit: CalendarUnit; channel: string; dayIso: string; current: number }; onClose: () => void; onSave: (rm: number) => void }) {
   const [sen, setSen] = useState<number | null>(m.current > 0 ? m.current : null);
-  const label = m.channel === 'web' ? 'Web rate' : CHANNEL[m.channel as BookingChannel].label;
+  const label = m.channel === 'web' ? 'Direct price' : CHANNEL[m.channel as BookingChannel].label;
   return (
     <CentreModal title="Set price" sub={`${m.unit.unitNumber} · ${label} · ${date(m.dayIso)}`} onClose={onClose} saveLabel="Set price" canSave={sen != null && sen >= 0} disabledReason="Enter the price first" onSave={() => { if (sen != null) onSave(sen / 100); }}>
-      <MoneyInput label="Price (RM / night)" valueSen={sen} onChangeSen={setSen} required help="Pushed to the connected channel for this night. Confirmed bookings keep their original rate." />
+      <MoneyInput label="Price (RM / night)" valueSen={sen} onChangeSen={setSen} required help="Sent to the connected channel for this night. Reservations already made keep their original price." />
     </CentreModal>
   );
 }
 
 export type BlockKind = 'maintenance' | 'owner_stay' | 'other';
 const BLOCK_KINDS: { key: BlockKind; label: string; help: string }[] = [
-  { key: 'maintenance', label: 'Maintenance', help: 'Repairs or works. Shown as a block.' },
+  { key: 'maintenance', label: 'Repair', help: 'Repairs or works. Shown as blocked.' },
   { key: 'owner_stay', label: 'Owner stay', help: 'The owner is staying. Shown as an owner stay.' },
   { key: 'other', label: 'Other', help: 'Any other reason. Add a note.' },
 ];
@@ -57,13 +57,13 @@ export function BlockWizard({ units, initial, onClose, onSave }: {
   const [reason, setReason] = useState('');
   const valid = !!unit && fromD !== '' && toD !== '' && toD > fromD && (kind !== 'other' || reason.trim() !== '');
   return (
-    <CentreModal title="Block dates" sub="Hold nights so no channel can sell them." onClose={onClose} saveLabel="Block dates" canSave={valid}
+    <CentreModal title="Block nights" sub="Nobody can book these nights on any channel." onClose={onClose} saveLabel="Block nights" canSave={valid}
       disabledReason={kind === 'other' && !reason.trim() ? 'Add a note saying why' : 'Pick the unit and dates first'}
       onSave={() => onSave({ unitId: unit, from: fromD, to: toD, kind, reason: reason.trim() })}>
       <UnitPicker units={units} value={unit} onChange={setUnit} />
       <div className="grid grid-cols-2 gap-3">
         <DateField label="From" value={fromD} onChange={setFromD} />
-        <DateField label="To (check-out day)" value={toD} min={fromD || undefined} onChange={setToD} />
+        <DateField label="To (checkout day)" value={toD} min={fromD || undefined} onChange={setToD} />
       </div>
       <fieldset className="m-0 p-0 border-none flex flex-col gap-[7px]">
         <legend className="p-0 mb-[7px] text-meta font-medium text-muted-ink">Reason</legend>
@@ -78,7 +78,7 @@ export function BlockWizard({ units, initial, onClose, onSave }: {
         <span className="text-meta text-muted-ink">{BLOCK_KINDS.find(k => k.key === kind)!.help}</span>
       </fieldset>
       <Field label={kind === 'other' ? 'Note' : 'Note (optional)'} placeholder={kind === 'owner_stay' ? 'e.g. Owner and family' : 'e.g. Plumbing works'} value={reason} onChange={e => setReason(e.target.value)}
-        help="Shown on the hold. A unit linked to Channex has the nights closed on the booking sites." />
+        help="Shown on the blocked nights. A unit linked to the channels has these nights blocked there too." />
     </CentreModal>
   );
 }
@@ -88,7 +88,7 @@ export function BlockWizard({ units, initial, onClose, onSave }: {
 /* ------------------------------------------------------------------ */
 
 const PRICE_CHANNELS: ('web' | 'airbnb' | 'booking_com' | 'agoda')[] = ['web', 'airbnb', 'booking_com', 'agoda'];
-const CH_LABEL: Record<string, string> = { web: 'Web / Direct', airbnb: 'Airbnb', booking_com: 'Booking.com', agoda: 'Agoda' };
+const CH_LABEL: Record<string, string> = { web: 'Direct', airbnb: 'Airbnb', booking_com: 'Booking.com', agoda: 'Agoda' };
 /** Monday first, as the operators read a week. Values are JavaScript weekdays (0 = Sunday). */
 const WEEK: { d: number; label: string }[] = [
   { d: 1, label: 'Mon' }, { d: 2, label: 'Tue' }, { d: 3, label: 'Wed' }, { d: 4, label: 'Thu' },
@@ -197,7 +197,7 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
   const step2Ok = ranges.every(rangeOk) && nights > 0;
   const step3Ok = changesSomething && valueOk && (!pricing_ || channels.length > 0);
   const total = chosen.length * nights;
-  const saveLabel = pricing_ ? `Save and push ${count(total)} ${total === 1 ? 'price' : 'prices'}` : 'Save';
+  const saveLabel = pricing_ ? `Save and send ${count(total)} ${total === 1 ? 'price' : 'prices'}` : 'Save';
 
   function save() {
     const lines = ranges.map(r => ({
@@ -238,13 +238,13 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
   );
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Rate update" className="fixed inset-0 z-[60] grid place-items-center p-0 sm:p-6 bg-[var(--color-surface-scrim)]">
+    <div role="dialog" aria-modal="true" aria-label="Update prices" className="fixed inset-0 z-[60] grid place-items-center p-0 sm:p-6 bg-[var(--color-surface-scrim)]">
       <div onClick={() => { if (!busy) onClose(); }} className="absolute inset-0" />
       <div className="relative w-full h-full sm:h-auto sm:max-h-[min(860px,92vh)] max-w-[980px] flex flex-col bg-card sm:rounded-card shadow-[var(--shadow-overlay)] overflow-hidden">
         <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 flex flex-wrap items-start justify-between gap-3 [border-bottom:1px_solid_var(--color-line)]">
           <div className="min-w-0">
-            <h2 className="m-0 text-title font-semibold">Rate update</h2>
-            <p className="m-0 mt-1 text-meta text-muted-ink">Only the booking sites each unit is connected to are changed.</p>
+            <h2 className="m-0 text-title font-semibold">Update prices</h2>
+            <p className="m-0 mt-1 text-meta text-muted-ink">Only the channels each unit is connected to are changed.</p>
           </div>
           <ol className="m-0 p-0 list-none flex gap-1.5 flex-wrap">
             {stepChip(1, `Units${chosen.length ? ` · ${count(chosen.length)}` : ''}`, step1Ok)}
@@ -299,7 +299,7 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
                             <input type="checkbox" checked={sel.has(u.id)} onChange={e => toggle([u.id], e.target.checked)} className="w-4 h-4 accent-[var(--color-brand-black)] cursor-pointer" />
                             <span className="flex-1 min-w-0 text-copy text-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
                             <span className="flex-none flex items-center gap-1">{(u.linked ?? []).map(c => <ChannelMark key={c} ch={c} size={14} />)}</span>
-                            <span className="flex-none w-[72px] text-right text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{pricing.baseRate[u.id] ? rmShort(pricing.baseRate[u.id]) : 'No rate'}</span>
+                            <span className="flex-none w-[72px] text-right text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{pricing.baseRate[u.id] ? rmShort(pricing.baseRate[u.id]) : 'No price'}</span>
                           </label>
                         ))}
                       </div>
@@ -347,7 +347,7 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
             {step === 3 && (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Select label="Base price (Web / Direct)" showLabel size="md" value={mode} onChange={v => setMode(v as PriceMode)}
+                  <Select label="Nightly price (Direct)" showLabel size="md" value={mode} onChange={v => setMode(v as PriceMode)}
                     options={[{ value: 'set', label: 'Set to this price' }, { value: 'up', label: 'Raise the current price by %' }, { value: 'down', label: 'Lower the current price by %' }, { value: 'keep', label: 'Keep the prices' }]} />
                   {pricing_ && (mode === 'set' ? (
                     <MoneyInput label="Price (RM / night)" valueSen={priceSen} onChangeSen={setPriceSen} placeholder="e.g. 420.00"
@@ -379,7 +379,7 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
                             <ChannelMark ch={ch === 'web' ? 'direct' : ch} size={18} muted={disabled} />
                             <span className="min-w-0 flex flex-col">
                               <span className="text-copy whitespace-nowrap">{CH_LABEL[ch]}</span>
-                              {ch !== 'web' && <span className="text-caption text-muted-ink">{disabled ? 'Not connected' : n < chosen.length ? `${n} of ${chosen.length} units connected` : `${COMMISSION[ch]}% commission`}</span>}
+                              {/* vocab-ok: COMMISSION is the constant's name; the text reads service fee */ ch !== 'web' && <span className="text-caption text-muted-ink">{disabled ? 'Not connected' : n < chosen.length ? `${n} of ${chosen.length} units connected` : `${COMMISSION[ch]}% service fee`}</span>}
                             </span>
                           </label>
                           {disabled ? <><span className="text-copy">Not connected</span><span className="text-copy">—</span><span className="text-copy">—</span></> : <>
@@ -393,13 +393,13 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
                   </div>
                 </div>
                 <p className="m-0 -mt-2 text-meta text-muted-ink">
-                  {pricing_ ? 'Shown for a weekday night. Each booking site keeps its own markup on top of the base price; sites a unit is not connected to are never written.' : 'Current weekday prices. Nothing is priced; only the minimum stay or stop sell below changes.'}
+                  {pricing_ ? 'Shown for a weekday night. Each channel adds its own markup on top of the nightly price; channels a unit is not connected to are never changed.' : 'Current weekday prices. No price changes; only the minimum nights or blocked nights below change.'}
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Select label="Minimum stay" showLabel size="md" value={minStay} onChange={setMinStay} options={MIN_STAY_OPTIONS} />
-                  <Select label="Stop sell" showLabel size="md" value={stop} onChange={v => setStop(v as typeof stop)}
-                    options={[{ value: 'same', label: 'Keep as is' }, { value: 'close', label: 'Stop sell (cannot be booked)' }, { value: 'open', label: 'Open for sale' }]} />
+                  <Select label="Minimum nights" showLabel size="md" value={minStay} onChange={setMinStay} options={MIN_STAY_OPTIONS} />
+                  <Select label="Blocked" showLabel size="md" value={stop} onChange={v => setStop(v as typeof stop)}
+                    options={[{ value: 'same', label: 'Keep as is' }, { value: 'close', label: 'Block nights (cannot be booked)' }, { value: 'open', label: 'Available' }]} />
                 </div>
               </>
             )}
@@ -414,7 +414,7 @@ export function RateUpdate({ units, pricing, initial, busy, onClose, onSave, bui
             {step < 3
               ? <Button size="md" variant="primary" type="button" disabled={step === 1 ? !step1Ok : !step2Ok} disabledReason={step === 1 ? 'Pick at least one unit' : 'Pick the dates and days'} onClick={() => setStep(s => (s + 1) as 2 | 3)}>Next</Button>
               : <Button size="md" variant="primary" type="button" loading={busy} disabled={!step1Ok || !step2Ok || !step3Ok}
-                  disabledReason={!step1Ok ? 'Pick at least one unit' : !step2Ok ? 'Pick the dates and days' : !changesSomething ? 'Set a price, minimum stay or stop sell' : !valueOk ? 'Enter a valid price' : 'Pick at least one channel'}
+                  disabledReason={!step1Ok ? 'Pick at least one unit' : !step2Ok ? 'Pick the dates and days' : !changesSomething ? 'Set a price, minimum nights or blocked nights' : !valueOk ? 'Enter a valid price' : 'Pick at least one channel'}
                   onClick={save}>{saveLabel}</Button>}
           </div>
         </div>

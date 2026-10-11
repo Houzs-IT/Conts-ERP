@@ -140,7 +140,7 @@ export default function OwnersPage() {
           ))}
         </span>
       ) : <span className="text-copy text-muted-ink truncate block" title={ownerTerms(o)}>{ownerTerms(o)}</span> },
-    { key: 'gross', label: `Booking revenue, ${monthCol}`, type: 'money', value: o => grossOf(o), width: 150, filter: false,
+    { key: 'gross', label: `Gross Income, ${monthCol}`, type: 'money', value: o => grossOf(o), width: 150, filter: false,
       render: o => <MoneyText sen={grossOf(o)} mode="exact" tone="muted" className="text-copy" /> },
     { key: 'net', label: `Owner payout, ${monthCol}`, type: 'money', value: o => netOf(o), width: 150, filter: false,
       render: o => <MoneyText sen={netOf(o)} mode="exact" tone="auto" className="text-copy font-medium" /> },
@@ -161,12 +161,12 @@ export default function OwnersPage() {
             <Roll label={`Owner payouts, ${monthText} (estimate)`} value={data ? rmShort(portfolioNet) : undefined} strong />
             <Roll label="from managed units" value={data ? rmShort(portfolioManagedNet) : undefined} />
             <Roll label="guaranteed rent (GRR units)" value={data ? rmShort(portfolioGuaranteed) : undefined} />
-            <Roll label={`Booking revenue, managed units`} value={data ? rmShort(portfolioManagedGross) : undefined} />
+            <Roll label={`Gross Income, managed units`} value={data ? rmShort(portfolioManagedGross) : undefined} />
           </div>
           <MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} />
         </div>
         <div className="px-5 sm:px-[22px] pt-4 pb-4 [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink text-pretty">
-          Each unit is worked out the way its owner statement is, by its revenue model: income split by night into the month, less the costs the owner pays, then the share, minimum or fixed rent, and anything paid on the owner's behalf after the split. Guaranteed rent is counted on its own, not as a share of revenue. Until the month's statement is final, these are estimates.
+          Each unit is worked out the way its owner statement is, by its payout model: income split by night into the month, less the costs the owner pays, then the share, minimum or fixed rent, and Owner Adjustments. Guaranteed rent is counted on its own, not as a share of earnings. Until the month's statement is final, these are estimates.
         </div>
       </Card>
 
@@ -202,7 +202,7 @@ export default function OwnersPage() {
         footer={rows.length > 0 && (
           <div className="flex items-center gap-x-5 gap-y-1 flex-wrap py-3 px-[22px] max-md:px-4 bg-page [border-top:1px_solid_var(--color-line)] text-copy font-semibold">
             <span>{filtered ? `${rows.length} of ${plural(all.length, 'owner')}` : plural(rows.length, 'owner')}</span>
-            <span className="ml-auto max-md:ml-0 inline-flex items-baseline gap-1.5"><span className="text-meta text-muted-ink font-normal">Booking revenue</span><MoneyText sen={shownGross} mode="exact" /></span>
+            <span className="ml-auto max-md:ml-0 inline-flex items-baseline gap-1.5"><span className="text-meta text-muted-ink font-normal">Gross Income</span><MoneyText sen={shownGross} mode="exact" /></span>
             <span className="inline-flex items-baseline gap-1.5"><span className="text-meta text-muted-ink font-normal">Owner payout</span><MoneyText sen={shownNet} mode="exact" /></span>
           </div>
         )}

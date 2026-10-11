@@ -10,7 +10,7 @@ import { checkDate, checkInt, checkSen, type Fields } from '../../_lib/validate'
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Field roles cannot import reservations.', 403);
+  if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot import reservations.', 403);
 
   const b = await request.json<any>().catch(() => null);
   if (!Array.isArray(b?.rows) || b.rows.length === 0 || b.rows.length > 100) return fail('VALIDATION', 'Send between 1 and 100 rows.', 422);
@@ -29,12 +29,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     // A row that is not a real date or amount would be stored as text and break every report that reads its dates.
     const fields: Fields = {};
     checkDate(fields, 'checkIn', r.checkIn, { label: 'Check-in', required: true });
-    checkDate(fields, 'checkOut', r.checkOut, { label: 'Check-out', required: true });
+    checkDate(fields, 'checkOut', r.checkOut, { label: 'Checkout', required: true });
     checkInt(fields, 'guestsCount', r.guestsCount, { label: 'Guests', min: 0, max: 50 });
     checkSen(fields, 'grossBookingValue', r.grossBookingValue, { label: 'Rate' });
     const why = Object.values(fields)[0];
     if (why) { failed.push({ row: i + 1, reason: why }); continue; }
-    if (r.checkOut <= r.checkIn) { failed.push({ row: i + 1, reason: 'Check-out must be after check-in.' }); continue; }
+    if (r.checkOut <= r.checkIn) { failed.push({ row: i + 1, reason: 'Checkout must be after check-in.' }); continue; }
     if (!['airbnb', 'booking_com', 'agoda', 'direct'].includes(r.channel)) { failed.push({ row: i + 1, reason: 'Unknown channel.' }); continue; }
     const id = crypto.randomUUID(), now = nowIso();
     const siteRef = typeof r.externalRef === 'string' && r.externalRef.trim() ? r.externalRef.trim().slice(0, 60) : null;

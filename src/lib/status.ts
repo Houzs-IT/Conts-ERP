@@ -23,11 +23,11 @@ const ACTIVE_INACTIVE: Vocab = {
 const BOOKING = {
   inquiry: { label: 'Inquiry', tone: 'neutral' },
   pending: { label: 'Pending', tone: 'warning' },
-  confirmed: { label: 'Confirmed', tone: 'info' },
-  checked_in: { label: 'Checked in', tone: 'success' },
-  checked_out: { label: 'Checked out', tone: 'neutral' },
+  confirmed: { label: 'Upcoming', tone: 'info' },
+  checked_in: { label: 'Currently hosting', tone: 'success' },
+  checked_out: { label: 'Past', tone: 'neutral' },
   cancelled: { label: 'Cancelled', tone: 'danger', outline: true },
-  no_show: { label: 'No show', tone: 'warning', outline: true },
+  no_show: { label: 'No-show', tone: 'warning', outline: true },
 } satisfies Vocab;
 
 export const STATUS_VOCAB = {
@@ -117,9 +117,9 @@ export const STATUS_VOCAB = {
     not_connected: { label: 'Not connected', tone: 'neutral' },
   },
   sync: {
-    queued: { label: 'Queued', tone: 'warning' },
-    synced: { label: 'Synced', tone: 'success' },
-    failed: { label: 'Failed to sync', tone: 'danger' },
+    queued: { label: 'Waiting to send', tone: 'warning' },
+    synced: { label: 'Sent', tone: 'success' },
+    failed: { label: 'Not sent', tone: 'danger' },
     not_connected: { label: 'Not connected', tone: 'neutral' },
   },
   automation: {
@@ -153,13 +153,13 @@ export const STATUS_VOCAB = {
     electricity: { label: 'Electricity', tone: 'warning' },
     water: { label: 'Water', tone: 'info' },
     cleaning: { label: 'Cleaning', tone: 'info' },
-    housekeeping: { label: 'Housekeeping', tone: 'info' },
+    housekeeping: { label: 'Laundry', tone: 'info' },
     maintenance: { label: 'Maintenance', tone: 'warning' },
     utilities: { label: 'Utilities', tone: 'neutral' },
     consumables: { label: 'Consumables', tone: 'neutral' },
     furniture: { label: 'Furniture', tone: 'info' },
-    management_fee: { label: 'Management fee', tone: 'neutral' },
-    channel_fee: { label: 'Channel fee', tone: 'neutral' },
+    management_fee: { label: 'Operator share', tone: 'neutral' },
+    channel_fee: { label: 'Service fee', tone: 'neutral' },
     other: { label: 'Other', tone: 'neutral' },
   },
 

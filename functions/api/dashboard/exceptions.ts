@@ -49,7 +49,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     out.push({
       id: `block-${b.id}`, tone: 'warning',
       title: 'Unit blocked for maintenance',
-      detail: `${label} is off sale while ${String(b.title).toLowerCase()} is dealt with. Tell the owner.`,
+      detail: `${label} is blocked while ${String(b.title).toLowerCase()} is dealt with. Tell the owner.`,
       action: { label: 'Notify owner' },
       unitId: b.unit_id, unitLabel: label, owner: { id: b.owner_id, name: b.owner_name },
       reason: b.title,
@@ -66,7 +66,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     out.push({
       id: 'statements-ready', tone: 'info',
       title: `${n} statement${n === 1 ? '' : 's'} ready to send`,
-      detail: 'Owner statements are finalised and waiting to go out.',
+      detail: 'Owner statements are final and waiting to go out.',
       action: { label: 'Review and send' },
     });
   }
@@ -86,8 +86,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const label = `${e.property_name} ${e.unit_number}`;
     out.push({
       id: `empty-${e.id}`, tone: 'warning',
-      title: 'No bookings in the next two weeks',
-      detail: `${label} is listed but has nothing booked. Check the rate.`,
+      title: 'No reservations in the next two weeks',
+      detail: `${label} is listed but has nothing booked. Check the nightly price.`,
       action: { label: 'Open pricing' }, unitId: e.id, unitLabel: label,
     });
   }

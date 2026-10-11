@@ -17,7 +17,7 @@ export function doorFor(request: Request): Door {
 /** null when the role may use this door, otherwise the user-safe refusal. */
 export function doorRefusal(door: Door, role: string): string | null {
   if (door === 'owner' && role !== 'owner') {
-    return 'This sign-in is for property owners. Staff sign in at erp.theconts.com.';
+    return 'This sign-in is for unit owners. Staff sign in at erp.theconts.com.';
   }
   if (door === 'ops' && role === 'owner') {
     return 'Owners sign in at owner.theconts.com.';

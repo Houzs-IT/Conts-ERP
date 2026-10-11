@@ -23,23 +23,23 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   let task = typeof b?.taskId === 'string' && b.taskId
     ? await one<any>(env, `SELECT t.id, t.unit_id, t.state, t.kind, t.reservation_id, t.assignee_id, t.guest_left_at, ${day} AS day FROM tasks t WHERE t.id = ?`, b.taskId)
     : null;
-  if (b?.taskId && !task) return fail('NOT_FOUND', 'That clean no longer exists. Refresh the list.', 404);
+  if (b?.taskId && !task) return fail('NOT_FOUND', 'That cleaning job no longer exists. Refresh the list.', 404);
 
   let reservation: { id: string; unit_id: string; state: string; check_out: string; check_out_time: string | null } | null = null;
   if (typeof b?.reservationId === 'string' && b.reservationId) {
     reservation = await one<any>(env, `SELECT r.id, r.unit_id, r.state, r.check_out, r.check_out_time FROM reservations r WHERE r.id = ? AND ${LIVE_STAY_SQL('r')}`, b.reservationId);
-    if (!reservation) return fail('NOT_FOUND', 'That booking does not exist or was cancelled.', 404);
+    if (!reservation) return fail('NOT_FOUND', 'That reservation does not exist or was cancelled.', 404);
   }
-  if (!task && !reservation) return fail('VALIDATION', 'Say which clean or booking.', 422);
+  if (!task && !reservation) return fail('VALIDATION', 'Say which cleaning job or reservation.', 422);
   // Nobody can have left a stay that ends on a later day: that would check the booking out early and dirty the unit.
   const leaves = reservation?.check_out ?? task?.day;
   if (b?.undo !== true && leaves && leaves > mytToday()) {
-    return fail('NOT_YET', `This guest checks out on ${Number(leaves.slice(8, 10))} ${MONTHS[Number(leaves.slice(5, 7)) - 1]}. Mark them out on the day, or change the booking's dates if they left early.`, 409);
+    return fail('NOT_YET', `This guest checks out on ${Number(leaves.slice(8, 10))} ${MONTHS[Number(leaves.slice(5, 7)) - 1]}. Mark them out on the day, or change the reservation's dates if they left early.`, 409);
   }
   if (field && (!task || task.assignee_id !== session.userId)) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
 
   if (b?.undo === true) {
-    if (!task) return fail('VALIDATION', 'Say which clean.', 422);
+    if (!task) return fail('VALIDATION', 'Say which cleaning job.', 422);
     if (field) return fail('FORBIDDEN', 'Ask the office to undo this.', 403);
     await run(env, 'UPDATE tasks SET guest_left_at = NULL, updated_at = ? WHERE id = ?', now, task.id);
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'task.guest_left_undo', entityTable: 'tasks', entityId: task.id, before: { guestLeftAt: task.guest_left_at } });
@@ -68,7 +68,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       created = true;
     }
   }
-  if (task.state === 'resolved') return fail('CONFLICT', 'That clean is already finished.', 409);
+  if (task.state === 'resolved') return fail('CONFLICT', 'That cleaning job is already finished.', 409);
 
   const leftAt = task.guest_left_at ?? now;
   await run(env, 'UPDATE tasks SET guest_left_at = ?, updated_at = ? WHERE id = ?', leftAt, now, task.id);

@@ -159,7 +159,7 @@ function Bell({ navigate, size, alerts, dark = false }: { navigate: (p: string) 
               {list === null && !loadError && <div style={{ padding: '18px 16px', fontSize: text.small, color: color.textMuted }}>Loading...</div>}
               {loadError && <div style={{ padding: '18px 16px', fontSize: text.small, color: color.textMuted }}>Your notifications could not load. Try again in a moment.</div>}
               {list?.map(n => <NoticeRow key={n.id} n={n} onOpen={openNotice} />)}
-              {list && list.length === 0 && <div style={{ padding: '18px 16px', fontSize: text.small, color: color.textMuted }}>No notifications yet. New bookings, cleans and repairs that concern you appear here.</div>}
+              {list && list.length === 0 && <div style={{ padding: '18px 16px', fontSize: text.small, color: color.textMuted }}>No notifications yet. New reservations, cleaning jobs and maintenance jobs that concern you appear here.</div>}
             </div>
             {!dark && <button type="button" onClick={() => go('/notifications')}
               style={{ font: 'inherit', fontSize: text.small, fontWeight: 600, color: color.goldInk, background: color.card, border: 'none', borderTop: `1px solid ${color.borderMuted}`, padding: '11px 16px', cursor: 'pointer', textAlign: 'center' }}>

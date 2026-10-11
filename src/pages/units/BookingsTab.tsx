@@ -14,10 +14,10 @@ import { type UnitDetail } from './shared';
 
 type When = 'upcoming' | 'past' | 'cancelled' | 'all';
 const WHENS: { key: When; label: string; empty: string }[] = [
-  { key: 'upcoming', label: 'Upcoming', empty: 'No upcoming bookings for this unit.' },
-  { key: 'past', label: 'Past', empty: 'No past bookings for this unit.' },
-  { key: 'cancelled', label: 'Cancelled', empty: 'No cancelled bookings for this unit.' },
-  { key: 'all', label: 'All', empty: 'No bookings for this unit yet.' },
+  { key: 'upcoming', label: 'Upcoming', empty: 'No upcoming reservations for this unit.' },
+  { key: 'past', label: 'Past', empty: 'No past reservations for this unit.' },
+  { key: 'cancelled', label: 'Cancelled', empty: 'No cancelled reservations for this unit.' },
+  { key: 'all', label: 'All', empty: 'No reservations for this unit yet.' },
 ];
 const isWhen = (s: string | null): s is When => WHENS.some(w => w.key === s);
 const PAGE_SIZE = 20;
@@ -59,11 +59,11 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
 
   const money = d?.rows.some(r => r.grossBookingValue !== undefined) ?? false;
   const summary = d && d.total > 0
-    ? `${count(d.total)} ${d.total === 1 ? 'booking' : 'bookings'}${d.totalGross != null ? ` · ${rm(d.totalGross, { cents: false })} gross` : ''}`
+    ? `${count(d.total)} ${d.total === 1 ? 'reservation' : 'reservations'}${d.totalGross != null ? ` · ${rm(d.totalGross, { cents: false })} guest total` : ''}`
     : null;
 
   const columns = useMemo<Column<Stay>[]>(() => [
-    { key: 'reference', label: 'Booking', type: 'ref', value: s => s.externalRef, width: 150, hideable: false,
+    { key: 'reference', label: 'Reservation', type: 'ref', value: s => s.externalRef, width: 150, hideable: false,
       render: s => (
         <span className="flex items-center gap-[9px] min-w-0">
           <span title={CH[s.channel].label} className="flex flex-none"><ChannelMark ch={s.channel} size={20} /></span>
@@ -78,7 +78,7 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
       render: s => <span className="whitespace-nowrap">{dateRange(s.checkIn, s.checkOut)}</span>,
       exportKind: 'text', exportValue: s => `${s.checkIn} to ${s.checkOut}` },
     { key: 'nights', label: 'Nights', type: 'number', value: s => nightsOf(s), width: 70 },
-    ...(money ? [{ key: 'gross', label: 'Gross', type: 'money', value: s => (s.grossBookingValue != null && s.grossBookingValue > 0 ? s.grossBookingValue : null), width: 110,
+    ...(money ? [{ key: 'gross', label: 'Guest total', type: 'money', value: s => (s.grossBookingValue != null && s.grossBookingValue > 0 ? s.grossBookingValue : null), width: 110,
       render: s => <span className="font-medium tabular-nums whitespace-nowrap">{s.grossBookingValue != null && s.grossBookingValue > 0 ? rm(s.grossBookingValue, { cents: false }) : '—'}</span> }] as Column<Stay>[] : []),
     { key: 'status', label: 'Status', type: 'status', value: s => s.state, entity: 'booking', width: 130,
       render: s => <StatusBadge entity="booking" value={s.state} /> },
@@ -89,15 +89,15 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
       id="unit.bookings" columns={columns} rows={d ? d.rows : null} rowKey={s => s.id}
       loading={q.loading} error={q.error} onRetry={q.reload}
       server={{ total: d?.total ?? 0, page: d?.page ?? page, pageSize: d?.pageSize ?? size, sizes: SIZES, defaultPageSize: PAGE_SIZE, fetchAll }}
-      noViews viewParams={['when']} selectionKey={when} noun={['booking', 'bookings']} exportName={`unit-bookings-${when}`}
+      noViews viewParams={['when']} selectionKey={when} noun={['reservation', 'reservations']} exportName={`unit-bookings-${when}`}
       empty={{ title: WHENS.find(w => w.key === when)!.empty, icon: 'CalendarDays' }}
       header={
         <div className="py-4 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
           <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-[16px] font-semibold tracking-[-0.01em]">Bookings</span>
+            <span className="text-[16px] font-semibold tracking-[-0.01em]">Reservations</span>
             <span className="text-meta text-muted-ink min-h-[18px]">{summary ?? (d ? '' : 'Loading…')}</span>
           </div>
-          <Segmented label="Which bookings" value={when} onChange={setWhen} className="w-full sm:w-auto flex-none [&>button]:flex-1 sm:[&>button]:flex-none"
+          <Segmented label="Which reservations" value={when} onChange={setWhen} className="w-full sm:w-auto flex-none [&>button]:flex-1 sm:[&>button]:flex-none"
             options={WHENS.map(w => {
               const n = d?.counts[w.key];
               return { key: w.key, label: <>{w.label}{n != null && <span className={cx('ml-1.5 tabular-nums', w.key === when ? 'text-muted-ink' : 'text-faint')}>{n}</span>}</> };
