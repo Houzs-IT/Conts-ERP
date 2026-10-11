@@ -35,7 +35,7 @@ export function HeaderForm({ header, onChange, disabled, brands, brandId, onBran
       {!hideCustomer && <Field label="Building"><input className={inputCls} disabled={disabled} value={header.building} onChange={set('building')} placeholder="AVA" /></Field>}
       {!hideCustomer && <Field label="Unit"><input className={inputCls} disabled={disabled} value={header.unitNo} onChange={set('unitNo')} placeholder="B31-09" /></Field>}
       {!hideCustomer && <Field label="Prepared by"><input className={inputCls} disabled={disabled} value={header.preparedBy} onChange={set('preparedBy')} /></Field>}
-      {!hideCustomer && <Field label="Date"><input type="date" className={inputCls} disabled={disabled} value={header.docDate ?? ''} onChange={set('docDate')} /></Field>}
+      {!hideCustomer && <Field label="Date"><input type="date" className={inputCls} disabled={disabled} value={header.docDate ?? '' /* eslint-disable-line @typescript-eslint/no-unnecessary-condition -- doc_date from the server may be null on a fresh draft */} onChange={set('docDate')} /></Field>}
       {!hideCustomer && <Field label="Last amended"><input type="date" className={inputCls} disabled={disabled} value={header.lastAmended ?? ''} onChange={(e) => onChange({ lastAmended: e.target.value || null })} /></Field>}
       {onBrand && (
         <Field label="Letterhead">
@@ -98,7 +98,7 @@ export function InstalmentEditor({ rows, onChange, disabled, terms, totalSen }: 
   const apply = (id: string) => {
     const t = customer.find((x) => x.id === id);
     if (!t) return;
-    onChange(t.lines.map((l) => ({ seq: l.seq, label: l.label, pctBp: l.pctBp, description: l.description, stageCode: l.stageCode, trigger: (l.trigger as Instalment['trigger']) ?? 'stage_start' })));
+    onChange(t.lines.map((l) => ({ seq: l.seq, label: l.label, pctBp: l.pctBp, description: l.description, stageCode: l.stageCode, trigger: (l.trigger as Instalment['trigger'] | null) ?? 'stage_start' })));
   };
   let cum = 0;
   return (

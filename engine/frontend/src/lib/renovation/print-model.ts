@@ -111,7 +111,7 @@ export function buildRows(doc: Pick<PrintDoc, 'sections' | 'format'>): PrintRow[
   const showMoney = fmt.pageTotal !== 'none';
   const rows: PrintRow[] = [];
   for (const s of doc.sections) {
-    const lump = s.lumpSumSen !== null && s.lumpSumSen !== undefined;
+    const lump = s.lumpSumSen != null;
     const lumpAmount = lump ? s.lumpSumSen! : 0;
     rows.push({
       type: 'band', text: s.heading, color: s.bandColor,

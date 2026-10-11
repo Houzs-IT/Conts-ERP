@@ -23,6 +23,27 @@ import { includeGlobsFor } from "../scripts/coverage-areas.mjs";
 //
 // No setupFiles: the schema snapshot exists to give a test a database, and by
 // construction nothing in this project has one.
+// Conts: whole files skipped because they need Houzs-only data, docs or CI that
+// were never copied (engine/backend/scripts/data was removed by design; no
+// AutoCount and no engine CI in Conts). One line each: the missing input.
+const HOUZS_ONLY = [
+  "tests/acChainLineGrain.test.mjs", // AutoCount snapshot scripts/data/ac-reconcile-truth.json.gz
+  "tests/acMasterMatcher.test.mjs", // AutoCount mappings scripts/data/autocount-so-writeback-mappings.json
+  "tests/acPoLineRepair.test.mjs", // AutoCount snapshot scripts/data/ac-outstanding-po.json.gz
+  "tests/autocountSyncReasonsCatalogue.test.ts", // Houzs doc docs/autocount-sync-reasons.md
+  "tests/doTopupTargets.test.mjs", // AutoCount snapshot scripts/data/ac-reconcile-truth.json.gz
+  "tests/itemCodeClass.test.mjs", // AutoCount mapping scripts/data/autocount-erp-mapping-1561.csv
+  "tests/truncatedCodeMergePlan.test.mjs", // AutoCount mapping scripts/data/autocount-erp-mapping-1561.csv
+  "tests/parseBedframeHydraulic.test.ts", // Houzs phrase map scripts/data/special-order-phrase-map.json
+  "tests/parseSofaGrammar.test.ts", // Houzs phrase map scripts/data/special-order-phrase-map.json
+  "tests/sofaDecodeBaseline.test.ts", // Houzs account book scripts/data/ac-fidelity-so-lines.json.gz
+  "tests/pbbAdviceFixture.test.mjs", // Houzs bank statement fixture demo-statements/PBB-IBG-advice-Jun.pdf
+  "tests/companyDivergenceGate.test.ts", // Houzs gate allowlist scripts/data/company-divergence-allowlist.json + ci.yml
+  "tests/dateFormatGate.test.ts", // Houzs gate allowlist scripts/data/date-format-allowlist.json + ci.yml
+  "tests/duplicatedDecisionGate.test.ts", // Houzs gate allowlist scripts/data/duplicated-decision-allowlist.json + ci.yml
+  "tests/emptyStateClaimGate.test.ts", // Houzs gate allowlist scripts/data/empty-state-claim-allowlist.json + ci.yml
+];
+
 export default defineConfig(async () => {
   const testProjects = await classifyTests(__dirname);
 
@@ -36,6 +57,7 @@ export default defineConfig(async () => {
       globals: true,
       environment: "node",
       include: testProjects.light,
+      exclude: [...HOUZS_ONLY, "**/node_modules/**"],
       // ISTANBUL even though this project runs on plain node and v8 would be
       // cheaper here. The two backend projects' reports are MERGED, and a merge
       // is only meaningful when both sides describe the same statements — v8 and

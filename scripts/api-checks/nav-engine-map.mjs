@@ -33,5 +33,9 @@ check('every supply chain menu entry opens an engine screen', unmapped.length ==
 check('Project list and Schedule open the engine views that switch to renovation by themselves',
   M.ENGINE_PATH['/projects/list'] === '/projects?view=list' && M.ENGINE_PATH['/projects/calendar'] === '/projects?view=calendar');
 
+check('Project monitor is on the menu and opens the engine monitor view',
+  paths(M.navFor('management', true)).includes('/projects/monitor') && M.ENGINE_PATH['/projects/monitor'] === '/projects?view=monitor', M.ENGINE_PATH['/projects/monitor']);
+check('Project monitor is hidden where the engine is not set up', !paths(M.navFor('management', false)).includes('/projects/monitor'));
+
 console.log(fails ? `\n${fails} failed` : '\nall passed');
 process.exit(fails ? 1 : 0);

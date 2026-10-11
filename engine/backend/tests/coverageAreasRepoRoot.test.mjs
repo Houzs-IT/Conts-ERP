@@ -40,7 +40,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { AREAS, REPO_ROOT, listAreaFiles } from "../../scripts/coverage-areas.mjs";
 
 test("REPO_ROOT is the repository — the files that define it are under it", () => {
-  for (const marker of ["package.json", "scripts/coverage-areas.mjs", "coverage-baseline.json"]) {
+  // Conts: no coverage-baseline.json marker - Houzs's coverage ratchet
+  // (scripts/coverage-ratchet.mjs) and its baseline were not copied into engine/.
+  for (const marker of ["package.json", "scripts/coverage-areas.mjs"]) {
     assert.ok(
       fs.existsSync(path.join(REPO_ROOT, marker)),
       `REPO_ROOT=${REPO_ROOT} does not contain ${marker}. A ratchet that cannot find its own ` +

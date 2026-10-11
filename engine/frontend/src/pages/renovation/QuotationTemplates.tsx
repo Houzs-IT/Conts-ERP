@@ -7,6 +7,7 @@ import { Plus, Save } from 'lucide-react';
 import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
 import { useAuth } from '../../auth/AuthContext';
+import { useDialog } from '../../hooks/useDialog';
 import {
   instalmentsForSave, refusalOf, renoSend, sectionsForSave, useBrands, useRenoMutation, useTemplate, useTemplates, useTerms,
   type DocSection, type Instalment,
@@ -20,6 +21,7 @@ export function QuotationTemplates() {
   const list = useTemplates();
   const navigate = useNavigate();
   const { can } = useAuth();
+  const dialog = useDialog();
   const [error, setError] = useState<string | null>(null);
   const create = useRenoMutation((name: string) => renoSend<{ id: string }>('/templates', 'POST', { name }));
   const rows = list.data?.templates ?? [];
@@ -27,7 +29,7 @@ export function QuotationTemplates() {
     <div className="space-y-4">
       <PageHeader back="/scm/renovation/quotations" eyebrow="Renovation" title="Package templates" description="Ready-made quotations a new quotation can start from."
         actions={can('scm.renovation.quote') ? <Button icon={<Plus size={15} />} onClick={async () => {
-          const name = window.prompt('Template name (e.g. Skyline Embassy Type A Classic)');
+          const name = await dialog.prompt('Template name (e.g. Skyline Embassy Type A Classic)');
           if (!name) return;
           setError(null);
           try { const r = await create.mutateAsync(name); navigate(`/scm/renovation/templates/${r.id}`); } catch (e) { setError(refusalOf(e).message); }
