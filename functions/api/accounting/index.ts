@@ -1,4 +1,4 @@
-import { type Env, all, json, nowIso } from '../../_lib/db';
+import { type Env, all, json, nowIso, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 
 /** GET /api/accounting — AP (what we owe suppliers, from purchase invoices) and AR (what
@@ -11,7 +11,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   if (!session.manage) return json({ generatedAt: nowIso(), payables: [], receivables: [], apTotalSen: 0, arTotalSen: 0, restricted: true });
 
-  const today = nowIso().slice(0, 10);
+  const today = mytToday();
   const payables = await all<{ code: string; name: string; outstanding: number; invoices: number; overdue: number }>(env, `
     WITH inv AS (
       SELECT supplier_id, SUM(total_sen - paid_sen) AS owed,

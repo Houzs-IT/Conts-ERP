@@ -12,7 +12,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure, ApiFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
@@ -126,7 +126,7 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
   const [purchaseInvoiceId, setPurchaseInvoiceId] = useState('');
   const [salesInvoiceId, setSalesInvoiceId] = useState('');
   const [partyName, setPartyName] = useState('');
-  const [noteDate, setNoteDate] = useState(new Date().toISOString().slice(0, 10));
+  const [noteDate, setNoteDate] = useState(todayMyt());
   const [sourceDocNo, setSourceDocNo] = useState('');
   const [reason, setReason] = useState('');
   const [lines, setLines] = useState<{ description: string; amountSen: number | null }[]>([{ description: '', amountSen: null }]);

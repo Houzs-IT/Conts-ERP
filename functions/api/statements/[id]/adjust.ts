@@ -1,4 +1,4 @@
-import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
+import { type Env, one, run, json, fail, audit, mytToday } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { checkSen, invalid, type Fields } from '../../../_lib/validate';
 
@@ -34,12 +34,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     return fail('STATEMENT_LOCKED', 'This statement has already been sent and cannot be edited, only superseded by a new period.', 409);
   }
 
-  const now = nowIso();
   const nextOrder = await one<{ n: number }>(env, 'SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM statement_lines WHERE statement_id = ?', id);
   await run(env, `
     INSERT INTO statement_lines (id, statement_id, unit_id, reservation_id, expense_id, line_type, category, description, occurred_on, amount, reference, sort_order)
     VALUES (?, ?, NULL, NULL, NULL, 'adjustment', 'adjustment', ?, ?, ?, NULL, ?)`,
-    crypto.randomUUID(), id, label, now.slice(0, 10), amount, Number(nextOrder?.n ?? 999));
+    crypto.randomUUID(), id, label, mytToday(), amount, Number(nextOrder?.n ?? 999));
 
   // Recompute adjustments_total from the lines so it can never drift from what is shown.
   const sum = await one<{ total: number }>(env, "SELECT COALESCE(SUM(amount), 0) AS total FROM statement_lines WHERE statement_id = ? AND line_type = 'adjustment'", id);

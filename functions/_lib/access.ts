@@ -15,8 +15,8 @@ export interface Area {
   api: string[];
   /** Management-only today: any access to it carries the management-only actions inside it. */
   managed?: boolean;
-  /** Reads are refused too when the level is none. Elsewhere only writes are, because other screens
-   *  read across areas (the calendar reads units, a task reads its property). */
+  /** Kept for the Permissions chart's wording. Reads are refused at "No access" in every area now; the few
+   *  reads other screens share across areas are listed in SHARED_READS instead. */
   strictRead?: boolean;
   /** Built-in level where it differs from the role's usual one. */
   defaults?: Partial<Record<string, Level>>;
@@ -28,7 +28,7 @@ export const AREAS: Area[] = [
   { key: 'dashboard', label: 'Dashboard', group: 'Workspace', api: ['dashboard'] },
   { key: 'portfolio', label: 'Portfolio', group: 'Workspace', api: ['portfolio'], managed: true, strictRead: true, defaults: OPS_NONE },
   { key: 'reservations', label: 'Reservations', group: 'Operations', api: ['reservations', 'guests', 'blocks', 'guest-documents'] },
-  { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks', 'inspections'], defaults: { finance_admin: 'none' } },
+  { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'], defaults: { finance_admin: 'none' } },
   { key: 'properties', label: 'Properties', group: 'Operations', api: ['properties', 'units', 'inventory', 'access-credentials', 'residence-rules'] },
   { key: 'serviceCases', label: 'Service cases', group: 'Operations', api: [] },
   { key: 'projects', label: 'Projects', group: 'Operations', api: [], defaults: { operations_staff: 'view' } },
@@ -38,7 +38,8 @@ export const AREAS: Area[] = [
   { key: 'scProcurement', label: 'Procurement', group: 'Supply chain', api: ['products', 'product-models', 'categories', 'fabrics', 'suppliers', 'mrp', 'purchase-orders', 'goods-receipts', 'purchase-returns'] },
   { key: 'scTransportPlan', label: 'Transportation', group: 'Supply chain', api: ['delivery-schedule', 'delivery-zones', 'driver-leave', 'drivers', 'fleet-health', 'coverage-fleet', 'vehicles', 'threepl-companies', 'rate-cards'] },
   { key: 'scWarehouse', label: 'Warehouse', group: 'Supply chain', api: ['loading-list', 'warehouses', 'racks', 'stock', 'stock-takes', 'stock-transfers'] },
-  { key: 'finance', label: 'Finance', group: 'Finance', api: ['finance', 'expenses', 'statements', 'payouts', 'approvals'], managed: true, strictRead: true, defaults: OPS_NONE },
+  // 'owner': the owner portal's endpoints, which finance and management also open as an owner (?ownerId=).
+  { key: 'finance', label: 'Finance', group: 'Finance', api: ['finance', 'expenses', 'statements', 'payouts', 'approvals', 'owner'], managed: true, strictRead: true, defaults: OPS_NONE },
   { key: 'owners', label: 'Owners', group: 'Finance', api: ['owners', 'contracts'], defaults: OPS_NONE },
   { key: 'performance', label: 'Performance', group: 'Growth', api: ['analytics', 'pricing', 'rates', 'reviews'] },
   { key: 'comms', label: 'Communication', group: 'Growth', api: ['messages', 'automations'], defaults: { finance_admin: 'none' } },
@@ -55,7 +56,34 @@ const BY_API = new Map(AREAS.flatMap(a => a.api.map(s => [s, a] as const)));
 /** What the role gets in an area when management has not chosen: full for the three management-side
  *  roles, day-to-day editing for operations staff, less where `defaults` says so. */
 export function builtIn(role: string, area: Area): Level {
+  if (role === 'management') return 'full';
+  // Housekeepers, technicians and owners have their own apps and no desk areas: the session middleware lets
+  // them reach only the routes their apps call (FIELD_ALLOWED, OWNER_ALLOWED in functions/api/_middleware.ts).
+  if (!EDITABLE_ROLES.includes(role)) return 'none';
   return area.defaults?.[role] ?? (MASTER.includes(role) ? 'full' : 'edit');
+}
+
+/**
+ * Endpoints that belong to a different area than their first path segment says, because a screen of that other
+ * area is the one that calls them. Matched before the segment. area null: a read every desk role needs whatever
+ * its levels (a picker's reference list); the handler's own checks still apply.
+ */
+export const ROUTE_AREAS: { method: string; path: RegExp; area: string | null; why: string }[] = [
+  { method: 'GET', path: /^\/api\/units$/, area: null, why: 'The unit list feeds every unit picker (calendar, cleaning, maintenance, bookings, expenses).' },
+  { method: 'GET', path: /^\/api\/housekeeping\/(cleaners|crew)$/, area: null, why: 'Names of the cleaning crew for the assign pickers on the dashboard and in bookings.' },
+  { method: 'GET', path: /^\/api\/integrations$/, area: 'reservations', why: 'The calendar shows which booking sites each unit is connected to.' },
+  { method: 'POST', path: /^\/api\/integrations\/sync$/, area: 'reservations', why: 'The calendar\'s Sync now button.' },
+  { method: 'POST', path: /^\/api\/owners\/[^/]+\/notify$/, area: 'dashboard', why: 'The dashboard\'s exception action that tells an owner about a problem with their unit.' },
+  { method: 'POST', path: /^\/api\/messages$/, area: 'reservations', why: 'Messaging a guest from a booking or a guest record; the Inbox itself stays under Communication.' },
+  { method: 'POST', path: /^\/api\/maintenance\/issues\/[^/]+\/approve$/, area: 'finance', why: 'Recording an owner\'s approval of a repair quote is a money decision.' },
+  { method: 'GET', path: /^\/api\/audit$/, area: null, why: 'The History panel on every record: the handler applies the area of the record asked for; the whole trail stays management and finance only.' },
+  { method: 'GET', path: /^\/api\/(warehouses|suppliers|drivers|vehicles|threepl-companies)$/, area: null, why: 'Supply chain reference lists that every supply chain screen picks from.' },
+];
+
+function routeArea(method: string, path: string): Area | null {
+  const o = ROUTE_AREAS.find(r => (r.method === method || (method === 'HEAD' && r.method === 'GET')) && r.path.test(path));
+  if (o) return o.area ? BY_KEY.get(o.area) ?? null : null;
+  return areaForPath(path);
 }
 
 type Chosen = Map<string, Level>; // `${role}:${area}`
@@ -82,15 +110,17 @@ export function areaForPath(path: string): Area | null {
   return seg ? BY_API.get(seg) ?? null : null;
 }
 
-export interface Access { area: Area | null; level: Level; chosen: boolean }
 
-/** The role's level for the area a request belongs to. `chosen` is true only where management set it:
- *  the built-in level is for display, and the checks that existed before this table still decide. */
-export async function accessFor(env: Env, role: string, path: string): Promise<Access> {
-  const area = areaForPath(path);
-  if (!area) return { area: null, level: 'full', chosen: false };
+export interface Access { area: Area | null; level: Level; chosen: boolean; role: string }
+
+/** The role's level for the area a request belongs to: the level management chose, or the built-in one.
+ *  `chosen` is true only where management set it; handlers with their own role lists follow a chosen level
+ *  (mayWork / maySee / mayRun) and otherwise keep their lists. */
+export async function accessFor(env: Env, role: string, path: string, method = 'GET'): Promise<Access> {
+  const area = routeArea(method, path);
+  if (!area) return { area: null, level: 'full', chosen: false, role };
   const picked = EDITABLE_ROLES.includes(role) ? (await chosen(env)).get(`${role}:${area.key}`) : undefined;
-  return { area, level: picked ?? builtIn(role, area), chosen: picked !== undefined };
+  return { area, level: picked ?? builtIn(role, area), chosen: picked !== undefined, role };
 }
 
 /** Whether the management-only actions in the request's area are open to this role. */
@@ -99,11 +129,13 @@ export function canManage(role: string, a: Access): boolean {
   return a.level === 'full' || (!!a.area.managed && a.level !== 'none');
 }
 
-/** A refusal for the request, or null. Only levels management chose are enforced here. */
+/** A refusal for the request, or null. For the three roles on the Permissions chart the level it shows is the
+ *  level enforced, chosen or built in: No access refuses reads and writes, View refuses writes. Management is
+ *  always full; field and owner accounts are limited to their apps' routes by the session middleware. */
 export function refusalFor(a: Access, method: string): string | null {
-  if (!a.chosen || !a.area) return null;
+  if (!a.area || !EDITABLE_ROLES.includes(a.role)) return null;
   const read = method === 'GET' || method === 'HEAD';
-  if (read) return a.level === 'none' && a.area.strictRead ? `Your role does not have access to ${a.area.label}.` : null;
+  if (read) return a.level === 'none' ? `Your role does not have access to ${a.area.label}.` : null;
   return RANK[a.level] < RANK.edit ? `Your role can ${a.level === 'view' ? 'view but not change' : 'not use'} ${a.area.label}.` : null;
 }
 

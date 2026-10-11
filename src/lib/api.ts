@@ -25,7 +25,7 @@ const CODE_MESSAGE: Record<string, string> = {
   RATE_LIMITED: 'Too many tries in a short time. Wait a minute and try again.',
   NOT_CONFIGURED: 'This is not set up on this system yet. Ask IT to connect it.',
   NOT_LINKED: 'This unit is not linked to the channel manager yet.',
-  INTERNAL: 'Something went wrong on our side and nothing was saved. Try again; if it keeps happening, tell IT.',
+  INTERNAL: 'Something went wrong on our side. Refresh the page to see whether it was saved before trying again; if it keeps happening, tell IT.',
   NETWORK: 'Could not reach the server. Check your internet connection and try again.',
 };
 

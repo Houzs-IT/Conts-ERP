@@ -1,3 +1,4 @@
+import { todayMyt } from '../lib/format';
 import { useMemo, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import { DataTable, type Column } from '../components/DataTable';
@@ -14,7 +15,7 @@ const FALLBACK = schedFallback([
   { id: 's1', soDocNo: 'SO-2026-0004', customerName: 'Arcoris Owner', address: 'Mont Kiara', plannedDate: '2026-09-25', driverId: 'd1', driverName: 'Ahmad Zaki', vehicleId: 'v1', vehicleCode: 'LRY-01', sequenceNo: 1, status: 'SCHEDULED' },
   { id: 's2', soDocNo: 'SO-2026-0001', customerName: 'Vista Jaya Residences', address: 'Cyberjaya', plannedDate: '2026-09-25', status: 'UNPLANNED' },
 ]);
-const firstDate = (rows: Sched[]) => rows.map(r => r.plannedDate).filter(Boolean).sort()[0] ?? new Date().toISOString().slice(0, 10);
+const firstDate = (rows: Sched[]) => rows.map(r => r.plannedDate).filter(Boolean).sort()[0] ?? todayMyt();
 
 export default function DeliveryPlanningPage() {
   const { data, loading, error, reload } = useApi<SchedPayload>('/delivery-schedule', FALLBACK);

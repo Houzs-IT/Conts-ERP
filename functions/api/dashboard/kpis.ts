@@ -1,4 +1,4 @@
-import { type Env, all, one, json, fail } from '../../_lib/db';
+import { type Env, all, one, json, fail, mytToday } from '../../_lib/db';
 import { stayMonths, metrics, monthEndExclusive, daysInMonth } from '../../_lib/revenue';
 import { requireSession } from '../../_lib/auth';
 
@@ -7,7 +7,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
 
   const url = new URL(request.url);
-  const period = url.searchParams.get('period') ?? new Date().toISOString().slice(0, 7);
+  const period = url.searchParams.get('period') ?? mytToday().slice(0, 7);
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return fail('VALIDATION', 'Period must look like 2026-08.', 422);
 
   // functions/_lib/revenue.ts: gross value and nights split by night into the month. Occupancy, ADR and RevPAR

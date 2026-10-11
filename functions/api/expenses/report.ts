@@ -1,5 +1,6 @@
 import { type Env, all, one, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { csvCell } from '../../_lib/csv';
 import { readExpenseFilter, expenseWhere, IS_PARENT_SQL } from '../../_lib/expenses';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -8,7 +9,7 @@ const dayName = (d: string | null) => d && /^\d{4}-\d{2}-\d{2}/.test(d) ? `${Num
 // A code such as management_fee reads as "Management fee"; the generated time reads like the rest of the app, not 11/10/2026.
 const label = (code: string | null) => code ? code.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()) : '';
 const CHARGE: Record<string, string> = { owner: 'Owner', guest_deposit: 'Guest deposit', the_conts: 'The Conts', warranty: 'Warranty' };
-const q = (v: string | number | null) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+const q = (v: string | number | null) => csvCell(v);
 
 /** GET /api/expenses/report?month=YYYY-MM&category=&building=&unit=&owner=&q= (also the older unitId= / period=) — a CSV download. Filters applied and generation time are printed at the top. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {

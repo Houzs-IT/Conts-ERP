@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { resolveUnit } from '../../_lib/ops';
@@ -117,7 +117,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id, unit.id, session.userId, state, b.title.trim().slice(0, 160), b.detail ? String(b.detail).slice(0, 2000) : null, skuId,
     quoted, approval ? 1 : 0,
-    b.blocksUnit ? 1 : 0, b.blocksUnit ? (b.blockedFrom ?? now.slice(0, 10)) : null, b.blockedTo ?? null,
+    b.blocksUnit ? 1 : 0, b.blocksUnit ? (b.blockedFrom ?? mytToday()) : null, b.blockedTo ?? null,
     chargeTo, category, urgency, source, sourceTaskId, vendor, vendor ? (b.assigneeKind ?? 'contractor') : null,
     now, now, now);
 
