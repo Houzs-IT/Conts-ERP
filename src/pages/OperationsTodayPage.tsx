@@ -150,7 +150,8 @@ function Line({ channel, time, unit, guest, right, sub, subTone }: { channel: st
       <span className="w-[46px] flex-none font-semibold [font-variant-numeric:tabular-nums]">{time}</span>
       {CHANNELS.includes(channel) && <ChannelMark ch={channel as BookingChannel} size={20} />}
       <span className="flex-1 min-w-0">
-        <b className="block truncate">{unit}</b>
+        {/* The unit wraps rather than cuts: on a phone the cut-off part is the unit number. */}
+        <b className="block [overflow-wrap:anywhere]">{unit}</b>
         <span className="block truncate text-muted-ink">{guest}</span>
         {sub && <span className={cx('block text-meta', subTone === 'critical' ? 'text-danger' : 'text-warning')}>{sub}</span>}
       </span>

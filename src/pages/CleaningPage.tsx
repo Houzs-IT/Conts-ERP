@@ -66,6 +66,7 @@ interface Detail {
 type Tab = 'board' | 'history';
 type DayPick = 'today' | 'tomorrow' | 'pick';
 
+const KIND_NAME: Record<string, string> = { turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
 const COST_SOURCE: Record<string, string> = { unit: 'unit rate', history: 'last charged on this unit', default: 'standard rate' };
 
 export default function CleaningPage() {
@@ -340,10 +341,13 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
   const refresh = useCallback(() => { reload(); onChanged(); }, [reload, onChanged]);
   async function act(key: string, fn: () => Promise<unknown>, ok: string, body?: string) {
     setBusy(key);
-    try { await fn(); toast({ tone: 'success', title: ok, body }); refresh(); }
-    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); }
+    try { await fn(); toast({ tone: 'success', title: ok, body }); refresh(); return true; }
+    catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); return false; }
     finally { setBusy(null); }
   }
+  // What was just picked shows at once; the board can take a while to come back on a busy day.
+  const [picked, setPicked] = useState<{ cleaner?: string; kind?: string }>({});
+  useEffect(() => { setPicked({}); }, [row.cleanerId, row.kind]);
   async function reveal(id: string) {
     try { const r = await api.get<{ secret: string }>(`/access-credentials/${id}?reveal=true`); setRevealed(x => ({ ...x, [id]: r.secret || '(no code set)' })); }
     catch (e) { toast({ tone: 'critical', title: 'Code not shown.', body: errorMessage(e, 'Try again.') }); }
@@ -360,9 +364,9 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="text-meta text-muted-ink">{row.propertyName}</div>
-          <div className="text-title font-semibold">{row.unitNumber} · {kindName}</div>
+          <div className="text-title font-semibold">{row.unitNumber} · {KIND_NAME[picked.kind ?? row.kind] ?? kindName}</div>
           <div className="text-muted-ink mt-1">
-            {row.assigneeName ? `Cleaner ${row.assigneeName}` : 'No cleaner yet'}
+            {(() => { const name = (picked.cleaner && cleaners.find(c => c.id === picked.cleaner)?.name) || row.assigneeName; return name ? `Cleaner ${name}` : 'No cleaner yet'; })()}
             {row.startedAt && ` · started ${hm(row.startedAt)}`}
             {used != null && ` · ${done ? 'took' : 'used'} ${minutesLabel(used)}`}
           </div>
@@ -428,13 +432,13 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
       {!done && (
         <section className="grid grid-cols-2 gap-2.5">
           <FormRow label="Cleaner">
-            <select className={INPUT} value={row.cleanerId ?? ''} onChange={e => e.target.value && void act('assign', () => api.post(`/housekeeping/tasks/${row.id}/assign`, { cleanerId: e.target.value, force: true }), 'Cleaner assigned.')}>
+            <select className={INPUT} value={picked.cleaner ?? row.cleanerId ?? ''} disabled={busy === 'assign'} onChange={e => { const v = e.target.value; if (!v) return; setPicked(p => ({ ...p, cleaner: v })); void act('assign', () => api.post(`/housekeeping/tasks/${row.id}/assign`, { cleanerId: v, force: true }), 'Cleaner assigned.').then(ok => { if (!ok) setPicked(p => ({ ...p, cleaner: undefined })); }); }}>
               <option value="">{row.assigneeName && !row.cleanerId ? row.assigneeName : 'Pick a cleaner'}</option>
               {cleaners.map(c => <option key={c.id} value={c.id}>{c.name}{c.employmentType === 'outsourced' ? ' (outsourced)' : ''}</option>)}
             </select>
           </FormRow>
           <FormRow label="Type">
-            <select className={INPUT} value={row.kind} onChange={e => void act('kind', () => api.patch(`/housekeeping/tasks/${row.id}`, { kind: e.target.value, title: e.target.value === 'deep_clean' ? 'Deep clean' : row.title }), 'Clean type changed.')}>
+            <select className={INPUT} value={picked.kind ?? row.kind} disabled={busy === 'kind'} onChange={e => { const v = e.target.value; setPicked(p => ({ ...p, kind: v })); void act('kind', () => api.patch(`/housekeeping/tasks/${row.id}`, { kind: v, title: v === 'deep_clean' ? 'Deep clean' : row.title }), 'Clean type changed.').then(ok => { if (!ok) setPicked(p => ({ ...p, kind: undefined })); }); }}>
               <option value="turnover">Standard</option><option value="deep_clean">Deep</option><option value="light_clean">Light</option>
             </select>
           </FormRow>
