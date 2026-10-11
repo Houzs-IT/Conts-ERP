@@ -31,6 +31,7 @@ const MV_FALLBACK: { data: Movement[] } = { data: [
 ] };
 const WH_FALLBACK = { data: [{ id: 'w1', code: 'WH-MAIN', name: 'Main Warehouse' }, { id: 'w2', code: 'WH-KL', name: 'KL Transit Hub' }] };
 
+const REF_LABEL: Record<string, string> = { GRN: 'Goods receipt', DO: 'Delivery order', ADJ: 'Adjustment', TRF: 'Transfer', STK: 'Stock take', PRET: 'Purchase return', SRET: 'Delivery return' };
 const MV_LABEL: Record<string, string> = { RECEIPT: 'Receipt', ISSUE: 'Issue', ADJUSTMENT: 'Adjustment', TRANSFER_IN: 'Transfer in', TRANSFER_OUT: 'Transfer out', RETURN: 'Return', STOCK_TAKE: 'Stock take' };
 
 export default function StockPage() {
@@ -64,8 +65,8 @@ export default function StockPage() {
     { key: 'date', label: 'Date', type: 'date', value: m => m.movedAt },
     { key: 'item', label: 'Item code', type: 'ref', value: m => m.itemCode, hideable: false },
     { key: 'warehouse', label: 'Warehouse', value: m => m.warehouseName, filter: { kind: 'select' } },
-    { key: 'type', label: 'Type', value: m => m.movementType, text: m => MV_LABEL[m.movementType] ?? m.movementType, filter: { kind: 'select' } },
-    { key: 'ref', label: 'Ref', value: m => m.refType, width: 90 },
+    { key: 'type', label: 'Type', value: m => MV_LABEL[m.movementType] ?? m.movementType, filter: { kind: 'select' } },
+    { key: 'ref', label: 'Source', value: m => REF_LABEL[m.refType] ?? m.refType, width: 140 },
     { key: 'qty', label: 'Qty', type: 'number', value: m => m.qtyDelta, width: 90,
       render: m => <span className={cx('tabular-nums font-semibold', m.qtyDelta < 0 ? 'text-danger' : 'text-success')}>{m.qtyDelta > 0 ? `+${m.qtyDelta}` : m.qtyDelta}</span> },
     { key: 'note', label: 'Note', value: m => m.note, width: 200 },

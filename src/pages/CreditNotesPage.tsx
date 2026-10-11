@@ -65,7 +65,7 @@ export default function CreditNotesPage() {
 
   const columns = useMemo<Column<Note>[]>(() => [
     { key: 'noteNumber', label: 'Note', type: 'ref', value: n => n.noteNumber, hideable: false },
-    { key: 'kind', label: 'Type', value: n => n.kind, text: n => KIND_LABEL[n.kind], filter: { kind: 'select' } },
+    { key: 'kind', label: 'Type', value: n => KIND_LABEL[n.kind] ?? n.kind, filter: { kind: 'select' } },
     { key: 'party', label: 'Customer / supplier', value: n => n.partyName },
     { key: 'against', label: 'Against', value: n => against(n) || null },
     { key: 'noteDate', label: 'Date', type: 'date', value: n => n.noteDate || null },

@@ -69,7 +69,7 @@ export default function PaymentVouchersPage() {
     { key: 'voucherNumber', label: 'Voucher', type: 'ref', value: p => p.voucherNumber, hideable: false },
     { key: 'supplier', label: 'Supplier', value: p => p.supplierName, sub: p => p.supplierCode, text: p => `${p.supplierName} ${p.supplierCode}` },
     { key: 'paymentDate', label: 'Date', type: 'date', value: p => p.paymentDate || null },
-    { key: 'method', label: 'Method', value: p => p.method, text: p => METHOD_LABEL[p.method] ?? p.method, filter: { kind: 'select' } },
+    { key: 'method', label: 'Method', value: p => METHOD_LABEL[p.method] ?? p.method, filter: { kind: 'select' } },
     { key: 'reference', label: 'Reference', value: p => p.reference || null },
     { key: 'status', label: 'Status', type: 'status', value: p => p.status, status: p => p.status === 'POSTED' ? { label: 'Posted', tone: 'success' } : { label: 'Cancelled', tone: 'neutral' } },
     { key: 'amount', label: 'Amount', type: 'money', value: p => p.amountSen, render: p => p.status === 'CANCELLED' ? <span className="tabular-nums text-muted-ink line-through">{rm(p.amountSen)}</span> : <span className="tabular-nums">{rm(p.amountSen)}</span> },

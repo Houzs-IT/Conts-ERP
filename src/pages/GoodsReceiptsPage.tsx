@@ -27,7 +27,7 @@ interface GrnLine { itemCode: string; description: string; uom: string; qtyRecei
 interface Grn { id: string; grnNumber: string; poNumber: string; purchaseOrderId: string; supplierName: string; supplierCode: string; receivedAt: string; deliveryNoteRef: string; status: Status; notes: string; totalSen: number; lines?: GrnLine[] }
 interface Payload { data: Grn[]; generatedAt: string }
 interface PoLine { id: string; itemCode: string; description: string; uom: string; qty: number; receivedQty: number; unitPriceSen: number }
-interface OpenPo { id: string; poNumber: string; supplierName: string; status: string; lines?: PoLine[] }
+interface OpenPo { id: string; poNumber: string; supplierName: string; status: string; warehouseId?: string; lines?: PoLine[] }
 
 const FALLBACK: Payload = {
   generatedAt: '',
@@ -149,6 +149,7 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
   async function pick(id: string) {
     setPoId(id);
     const p = openPos.find(x => x.id === id);
+    if (p?.warehouseId) setWarehouseId(p.warehouseId);
     let poLines = p?.lines;
     if (!poLines) { try { const r = await api.get<{ data: { lines: PoLine[] } }>(`/purchase-orders/${id}`); poLines = r.data.lines; } catch { poLines = []; } }
     setLines((poLines ?? []).filter(l => l.qty - l.receivedQty > 0).map(l => {
