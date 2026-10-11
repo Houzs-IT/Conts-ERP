@@ -24,9 +24,9 @@ import { fetchAllPages } from '../lib/export';
 import { cx } from '../lib/design-tokens';
 import { rm, plural, count } from '../lib/format';
 import type { Tone } from '../lib/types';
-import { HistoryDisclosure } from '../components/RecordHistory';
+import { RecordHistory } from '../components/RecordHistory';
 import {
-  KIND_LABEL, TimeLeft, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, uploadTo, Checklist, ReportDamageModal, dayLabel, hm, stamp, minutesLabel, mytDay, type CleanStatus, type ChecklistItem, type MediaItem,
+  KIND_LABEL, TimeLeft, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, uploadTo, ReportDamageModal, dayLabel, hm, stamp, minutesLabel, mytDay, type CleanStatus, type MediaItem,
 } from '../components/ops/OpsUi';
 import { statusOf } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
@@ -57,7 +57,8 @@ interface Board { date: string; today: string; rows: Row[]; departures: Departur
 interface Detail {
   id: string; kind: string; state: string; unitId: string; unitNumber: string; propertyName: string; instructions: string | null;
   startedAt: string | null; completedAt: string | null; guestLeftAt: string | null;
-  checklist: ChecklistItem[]; media: MediaItem[];
+  completedBy: string | null; createdAt: string | null; reservationId: string | null;
+  media: MediaItem[];
   access: { id: string; kind: string; label: string; instruction: string; masked: string; hasCode: boolean }[]; mayReveal: boolean;
   cost: { amount: number; source: 'unit' | 'history' | 'default'; charged: boolean } | null;
   damage: { id: string; title: string; state: string; reportedAt: string }[];
@@ -105,6 +106,13 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const { data, loading, error, reload: reloadData } = useApi<Board>(`/housekeeping/board?date=${date}`);
   // The side menu's counts (open jobs, today's work) follow what was just done here.
   const reload = () => { reloadData(); void refreshNavCounts(); };
+  // A cleaner finishing on the phone shows here without anyone pressing refresh.
+  useEffect(() => {
+    const tick = () => { if (document.visibilityState === 'visible') reloadData(); };
+    const t = window.setInterval(tick, 30_000);
+    document.addEventListener('visibilitychange', tick);
+    return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', tick); };
+  }, [date]); // eslint-disable-line react-hooks/exhaustive-deps
   const { cleaners } = useCleaners(true);
   const rows = data?.rows ?? [];
   const departures = data?.departures ?? [];
@@ -218,7 +226,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
       </div>
 
       <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)}
-        empty={<div className="text-center text-copy text-muted-ink p-6 max-w-[260px]"><Icon name="MousePointerClick" size="lg" /><p className="mt-2">Pick a unit to see its door code, checklist and proof photos.</p></div>}
+        empty={<div className="text-center text-copy text-muted-ink p-6 max-w-[260px]"><Icon name="MousePointerClick" size="lg" /><p className="mt-2">Pick a unit to see its cleaner, door code and proof photos.</p></div>}
         detail={sel ? <CleanDetail key={sel.id} row={sel} now={now} onClose={() => setSelected(null)} onChanged={reload} onGuestLeft={() => void guestLeft({ taskId: sel.id }, sel.unitNumber)} /> : null} />
 
       {creating && <NewCleanModal date={date} onClose={() => setCreating(false)} onDone={() => { setCreating(false); reload(); }} />}
@@ -262,8 +270,8 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
       </div>
       {group.rows.map(r => <CleanRow key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} />)}
       {group.departures.map(d => (
-        <div key={d.reservationId} className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy flex flex-col gap-1.5', COLS)}>
-          <div className="flex items-center gap-2"><b>{d.unitNumber}</b><span className="@2xl:hidden"><StatusBadge tone="critical">No cleaning job planned</StatusBadge></span></div>
+        <div key={d.reservationId} className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy flex flex-wrap items-baseline gap-x-4 gap-y-1', COLS)}>
+          <div className="basis-full @2xl:basis-auto flex items-center gap-2"><b>{d.unitNumber}</b><span className="@2xl:hidden"><StatusBadge tone="critical">No cleaning job planned</StatusBadge></span></div>
           <div><b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b> · {d.guestName}{d.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late checkout</StatusBadge>}{d.state === 'checked_out' && <StatusBadge tone="gold" className="ml-1">Out</StatusBadge>}</div>
           <div>{d.next ? <><b className="[font-variant-numeric:tabular-nums]">{d.next.checkInTime}</b> · {d.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}</div>
           <div><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={d.next?.checkInAt} now={now} /></div>
@@ -297,12 +305,12 @@ function CleanRow({ r, now, active, busy, onSelect, onGuestLeft }: { r: Row; now
   const canMarkLeft = r.previous && !r.guestOut && r.status !== 'done' && r.status !== 'cleaning' && r.day <= mytDay(0);
   return (
     <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); } }}
-      className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer flex flex-col gap-1.5 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
+      className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer flex flex-wrap items-baseline gap-x-4 gap-y-1 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
         active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'hover:bg-page', r.status === 'done' && 'text-muted-ink')}>
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="basis-full @2xl:basis-auto flex items-center gap-2 flex-wrap">
         <b className="text-ink">{r.unitNumber}</b>
         {r.carriedOver && <StatusBadge tone="warning" className="whitespace-normal">From {dayLabel(r.day)}</StatusBadge>}
-        <span className="@2xl:hidden ml-auto"><StatusBadge tone={st.tone}>{st.label}</StatusBadge></span>
+        <span className="@2xl:hidden ml-auto"><StatusBadge tone={st.tone}>{r.status === 'done' && r.completedAt ? `Done ${hm(r.completedAt)}` : st.label}</StatusBadge></span>
       </div>
       <div className="min-w-0">
         <span className="@2xl:hidden text-muted-ink">Out </span>
@@ -315,11 +323,12 @@ function CleanRow({ r, now, active, busy, onSelect, onGuestLeft }: { r: Row; now
         {r.next ? <><b className="[font-variant-numeric:tabular-nums]">{r.next.checkInTime}</b> · {r.next.guestName}</> : <span className="text-muted-ink">No check-in</span>}
         {r.next?.earlyCheckIn && <StatusBadge tone="warning" className="ml-1">Early check-in</StatusBadge>}
       </div>
-      <div><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={r.next?.checkInAt} now={now} done={r.status === 'done'} /></div>
+      <div className={cx(!r.next && 'hidden @2xl:block')}><span className="@2xl:hidden text-muted-ink">Time left </span><TimeLeft at={r.next?.checkInAt} now={now} done={r.status === 'done'} /></div>
       <div><span className="@2xl:hidden text-muted-ink">Type </span>{KIND_LABEL[r.kind] ?? r.kind}</div>
       <div className={cx('truncate', !r.assigneeName && 'text-danger')}><span className="@2xl:hidden text-muted-ink">Cleaner </span>{r.assigneeName ?? 'Unassigned'}</div>
       <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="hidden @2xl:inline"><StatusBadge tone={st.tone} className="whitespace-normal">{r.status === 'done' && files ? `Done · ${files} ${files === 1 ? 'file' : 'files'}` : st.label}</StatusBadge></span>
+        <span className="hidden @2xl:inline"><StatusBadge tone={st.tone} className="whitespace-nowrap">{r.status === 'done' ? `Done${r.completedAt ? ` ${hm(r.completedAt)}` : ''}` : st.label}</StatusBadge></span>
+        {r.status === 'done' && files > 0 && <span className="hidden @2xl:inline text-meta text-muted-ink whitespace-nowrap">{files} {files === 1 ? 'photo' : 'photos'}</span>}
         {canMarkLeft && (
           <Button size="sm" variant="secondary" loading={busy} onClick={e => { e.stopPropagation(); onGuestLeft(); }}>Guest left</Button>
         )}
@@ -334,11 +343,9 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
   const toast = useToast();
   const { data, reload, error } = useApi<Detail>(`/housekeeping/tasks/${row.id}`);
   const { cleaners } = useCleaners(true);
-  const [checklist, setChecklist] = useState<ChecklistItem[] | null>(null);
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [damage, setDamage] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  useEffect(() => { if (data) setChecklist(data.checklist); }, [data]);
 
   const refresh = useCallback(() => { reload(); onChanged(); }, [reload, onChanged]);
   async function act(key: string, fn: () => Promise<unknown>, ok: string, body?: string) {
@@ -356,26 +363,53 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
   }
 
   const done = row.state === 'resolved';
+  const st = statusOf('cleaning', row.status);
   const files = data?.media.length ?? row.photoCount + row.videoCount;
   const used = row.startedAt ? (Date.parse(row.completedAt ?? new Date(now).toISOString()) - Date.parse(row.startedAt)) / 60000 : null;
   const unitLabel = `${row.propertyName} ${row.unitNumber}`;
-  const kindName = row.kind === 'deep_clean' ? 'Deep clean' : row.kind === 'light_clean' ? 'Light clean' : 'Standard clean';
+  const kind = picked.kind ?? row.kind;
+  const kindName = KIND_NAME[kind] ?? 'Standard clean';
+  const cleanerName = (picked.cleaner && cleaners.find(c => c.id === picked.cleaner)?.name) || row.assigneeName;
+  const origin = data?.createdAt ? {
+    at: data.createdAt,
+    label: row.previous ? `Cleaning job created for ${row.previous.guestName}'s checkout` : 'Cleaning job created',
+  } : undefined;
 
   return (
     <div className="flex flex-col gap-4 p-5 text-copy">
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="text-meta text-muted-ink">{row.propertyName}</div>
-          <div className="text-title font-semibold">{row.unitNumber} · {KIND_NAME[picked.kind ?? row.kind] ?? kindName}</div>
-          <div className="text-muted-ink mt-1">
-            {(() => { const name = (picked.cleaner && cleaners.find(c => c.id === picked.cleaner)?.name) || row.assigneeName; return name ? `Cleaner ${name}` : 'No cleaner yet'; })()}
-            {row.startedAt && ` · started ${hm(row.startedAt)}`}
-            {used != null && ` · ${done ? 'took' : 'used'} ${minutesLabel(used)}`}
+          <div className="text-title font-semibold">{row.unitNumber} · {kindName}</div>
+          <div className="mt-1 flex items-center gap-2 flex-wrap">
+            <StatusBadge tone={st.tone}>{done && row.completedAt ? `Done ${hm(row.completedAt)}` : st.label}</StatusBadge>
+            {row.startedAt && <span className="text-meta text-muted-ink">Started {hm(row.startedAt)}{used != null ? ` · ${done ? 'took' : 'so far'} ${minutesLabel(used)}` : ''}</span>}
           </div>
         </div>
         <CloseButton onClick={onClose} />
       </div>
       {error && <StaleBanner message={error} onRetry={reload} />}
+
+      {done ? (
+        <div className="rounded-control border border-solid border-line p-3 grid grid-cols-2 gap-x-3 gap-y-1">
+          <span className="text-meta text-muted-ink">Cleaner</span><span className="text-meta text-muted-ink">Type</span>
+          <b>{cleanerName ?? 'Not recorded'}</b><b>{kindName}</b>
+        </div>
+      ) : (
+        <section className="grid grid-cols-2 gap-2.5">
+          <FormRow label="Cleaner">
+            <select className={cx(INPUT, !cleanerName && 'border-danger')} value={picked.cleaner ?? row.cleanerId ?? ''} disabled={busy === 'assign'} onChange={e => { const v = e.target.value; if (!v) return; setPicked(p => ({ ...p, cleaner: v })); void act('assign', () => api.post(`/housekeeping/tasks/${row.id}/assign`, { cleanerId: v, force: true }), 'Cleaner assigned.').then(ok => { if (!ok) setPicked(p => ({ ...p, cleaner: undefined })); }); }}>
+              <option value="">{row.assigneeName && !row.cleanerId ? row.assigneeName : 'Pick a cleaner'}</option>
+              {cleaners.map(c => <option key={c.id} value={c.id}>{c.name}{c.employmentType === 'outsourced' ? ' (outsourced)' : ''}</option>)}
+            </select>
+          </FormRow>
+          <FormRow label="Type">
+            <select className={INPUT} value={kind} disabled={busy === 'kind'} onChange={e => { const v = e.target.value; setPicked(p => ({ ...p, kind: v })); void act('kind', () => api.patch(`/housekeeping/tasks/${row.id}`, { kind: v, title: v === 'deep_clean' ? 'Deep clean' : row.title }), 'Cleaning type changed.').then(ok => { if (!ok) setPicked(p => ({ ...p, kind: undefined })); }); }}>
+              <option value="turnover">Standard</option><option value="deep_clean">Deep</option><option value="light_clean">Light</option>
+            </select>
+          </FormRow>
+        </section>
+      )}
 
       <div className="grid grid-cols-2 gap-2.5">
         <div className="rounded-control bg-muted p-2.5 flex flex-col gap-0.5">
@@ -396,58 +430,13 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
       </div>
 
       <section className="flex flex-col gap-2">
-        <h3 className="m-0 text-copy font-semibold">Door access</h3>
-        {!data ? <Skeleton height={36} /> : data.access.length === 0 ? <span className="text-muted-ink">No access details on this unit. Add them on the unit's Access tab.</span>
-          : data.access.map(a => (
-            <div key={a.id} className="rounded-control bg-muted p-2.5 flex flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <span className="flex-1 font-medium">{a.label}</span>
-                {a.hasCode && (revealed[a.id]
-                  ? <span className="font-mono text-heading">{revealed[a.id]}</span>
-                  : <>{a.masked && <span className="font-mono text-muted-ink">{a.masked}</span>}
-                    {data.mayReveal && <button type="button" onClick={() => void reveal(a.id)} className="text-gold-ink font-medium cursor-pointer underline-offset-2 hover:underline">Show</button>}</>)}
-              </div>
-              <span className="text-meta text-muted-ink">{a.instruction}</span>
-            </div>
-          ))}
-        {data && !data.mayReveal && data.access.some(a => a.hasCode) && <span className="text-meta text-muted-ink">Codes are shown to operations managers and management only.</span>}
-      </section>
-
-      <section className="flex flex-col gap-1">
-        <h3 className="m-0 text-copy font-semibold">Checklist {checklist && <span className="text-muted-ink font-normal">{checklist.filter(c => c.done).length} of {checklist.length}</span>}</h3>
-        {checklist ? <Checklist taskId={row.id} items={checklist} readOnly={done} onChange={setChecklist} /> : <Skeleton height={120} />}
-      </section>
-
-      <section className="flex flex-col gap-2">
         <AttachmentLabel title="Proof of work" count={files} hint={!done && files === 0 ? 'At least 1 photo or video to complete' : undefined} />
-        {data ? <MediaGallery items={data.media} upload={done ? undefined : uploadTo(`/tasks/${row.id}/photos`)} onDone={refresh} addLabel="Add photo" emptyText="No photos were added." />
+        {data ? <MediaGallery items={data.media} upload={done ? undefined : uploadTo(`/tasks/${row.id}/photos`)} onDone={refresh} addLabel="Add photos or videos" emptyText="No photos were added." />
           : <Skeleton height={84} />}
+        {done && row.completedAt && (
+          <span className="text-meta text-muted-ink">Marked complete {stamp(row.completedAt)}{data?.completedBy ? ` by ${data.completedBy}` : ''}.</span>
+        )}
       </section>
-
-      {data && data.damage.length > 0 && (
-        <section className="flex flex-col gap-1">
-          <h3 className="m-0 text-copy font-semibold">Damage reported</h3>
-          {data.damage.map(d => <a key={d.id} href={`#/operations/maintenance?id=${d.id}`} className="text-gold-ink">{d.title} · {stamp(d.reportedAt)}</a>)}
-        </section>
-      )}
-
-      {!done && (
-        <section className="grid grid-cols-2 gap-2.5">
-          <FormRow label="Cleaner">
-            <select className={INPUT} value={picked.cleaner ?? row.cleanerId ?? ''} disabled={busy === 'assign'} onChange={e => { const v = e.target.value; if (!v) return; setPicked(p => ({ ...p, cleaner: v })); void act('assign', () => api.post(`/housekeeping/tasks/${row.id}/assign`, { cleanerId: v, force: true }), 'Cleaner assigned.').then(ok => { if (!ok) setPicked(p => ({ ...p, cleaner: undefined })); }); }}>
-              <option value="">{row.assigneeName && !row.cleanerId ? row.assigneeName : 'Pick a cleaner'}</option>
-              {cleaners.map(c => <option key={c.id} value={c.id}>{c.name}{c.employmentType === 'outsourced' ? ' (outsourced)' : ''}</option>)}
-            </select>
-          </FormRow>
-          <FormRow label="Type">
-            <select className={INPUT} value={picked.kind ?? row.kind} disabled={busy === 'kind'} onChange={e => { const v = e.target.value; setPicked(p => ({ ...p, kind: v })); void act('kind', () => api.patch(`/housekeeping/tasks/${row.id}`, { kind: v, title: v === 'deep_clean' ? 'Deep clean' : row.title }), 'Cleaning type changed.').then(ok => { if (!ok) setPicked(p => ({ ...p, kind: undefined })); }); }}>
-              <option value="turnover">Standard</option><option value="deep_clean">Deep</option><option value="light_clean">Light</option>
-            </select>
-          </FormRow>
-        </section>
-      )}
-
-      <Button variant="secondary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage (opens a Maintenance job)</Button>
 
       {!done && (
         <div className="flex gap-2">
@@ -465,12 +454,41 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
       )}
       {data?.cost && (
         <p className="m-0 text-meta text-muted-ink">
-          {data.cost.charged ? `Charged to the unit: ${kindName} ${rm(data.cost.amount)}.` : `Cost charged to unit on completion: ${kindName} ${rm(data.cost.amount)} (${COST_SOURCE[data.cost.source]}).`}
+          {data.cost.charged ? `Charged to the unit: ${kindName} ${rm(data.cost.amount)}.` : `Charged to the unit when complete: ${kindName} ${rm(data.cost.amount)} (${COST_SOURCE[data.cost.source]}).`}
         </p>
       )}
-      {done && row.completedAt && <p className="m-0 text-meta text-muted-ink">Completed {stamp(row.completedAt)}.</p>}
 
-      <HistoryDisclosure entity="tasks" id={row.id} refreshKey={data} />
+      <section className="flex flex-col gap-2">
+        <h3 className="m-0 text-copy font-semibold">Door access</h3>
+        {!data ? <Skeleton height={36} /> : data.access.length === 0 ? <span className="text-muted-ink">No access details on this unit. Add them on the unit's Access tab.</span>
+          : data.access.map(a => (
+            <div key={a.id} className="rounded-control bg-muted p-2.5 flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <span className="flex-1 font-medium">{a.label}</span>
+                {a.hasCode && (revealed[a.id]
+                  ? <span className="font-mono text-heading">{revealed[a.id]}</span>
+                  : <>{a.masked && <span className="font-mono text-muted-ink">{a.masked}</span>}
+                    {data.mayReveal && <button type="button" onClick={() => void reveal(a.id)} className="text-gold-ink font-medium cursor-pointer underline-offset-2 hover:underline">Show</button>}</>)}
+              </div>
+              <span className="text-meta text-muted-ink">{a.instruction}</span>
+            </div>
+          ))}
+        {data && !data.mayReveal && data.access.some(a => a.hasCode) && <span className="text-meta text-muted-ink">Codes are shown to operations managers and management only.</span>}
+      </section>
+
+      {data && data.damage.length > 0 && (
+        <section className="flex flex-col gap-1">
+          <h3 className="m-0 text-copy font-semibold">Damage reported</h3>
+          {data.damage.map(d => <a key={d.id} href={`#/operations/maintenance?id=${d.id}`} className="text-gold-ink">{d.title} · {stamp(d.reportedAt)}</a>)}
+        </section>
+      )}
+      <Button variant="secondary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>
+
+      <section className="rounded-card border border-solid border-line overflow-hidden">
+        <div className="py-2.5 px-4 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center gap-2 text-copy font-semibold"><Icon name="History" size="sm" />History</div>
+        <RecordHistory entity="tasks" id={row.id} also={data?.reservationId ? [['reservations', data.reservationId]] : undefined} alsoActions={['reservation.status']}
+          bare pageSize={10} refreshKey={data} origin={origin} />
+      </section>
 
       {damage && (
         <ReportDamageModal unitId={row.unitId} unitLabel={unitLabel} taskId={row.id} onClose={() => setDamage(false)}

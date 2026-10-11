@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, errorMessage } from '../lib/api';
-import { rm, date, dateTime, time, humanize, titleCase, monthLabel, count, plural } from '../lib/format';
+import { rm, date, dateTime, humanize, titleCase, monthLabel, count, plural } from '../lib/format';
 import { ROLE_LABEL, CHANNEL } from '../lib/vocabulary';
-import { cx } from '../lib/design-tokens';
 import { Skeleton } from './States';
 import Icon from './Icon';
 import { Drawer } from './Dialog';
@@ -80,7 +79,7 @@ const FIELD: Record<string, [string, Kind?]> = {
   split: ['Split'], splitValue: ['Split value'], guaranteePeriod: ['Guarantee period'], bedrooms: ['Bedrooms'], address: ['Address'],
   ownerBankOrId: ['Owner bank or ID details'], monthlyCosts: ['Monthly costs'], tasksRemoved: ['Unstarted jobs removed'], run: ['Owner payout run'], failureReason: ['Why it failed'],
   quantity: ['Quantity'], stockOnHand: ['Left in stock'],
-  employment: ['Employment', 'state'], via: ['Through', 'state'], label: ['Item'], ownerApprovalRequired: ['Needs owner approval', 'bool'], released: ['Released', 'state'],
+  employment: ['In-house or outsourced', 'state'], via: ['Through', 'state'], label: ['Item'], ownerApprovalRequired: ['Needs owner approval', 'bool'], released: ['Released', 'state'],
   blockFrom: ['From', 'date'], blockTo: ['Until', 'date'], copiedFrom: ['Copied from', 'name'], otaName: ['Channel'],
   type: ['Document', 'state'], docNo: ['Document number'], voided: ['Voided', 'bool'],
   countryCode: ['Nationality'], idType: ['ID type'], idNumber: ['ID number'], dateOfBirth: ['Date of birth'], language: ['Language'],
@@ -102,7 +101,12 @@ const STATE_OF: Record<string, StatusEntity> = {
 const ASSIGNEE_KIND: Record<string, string> = { in_house: 'In-house', contractor: 'Contractor' };
 
 /** A stored code in the words the rest of the app uses for it; null when the field has no list of its own. */
+/** A cleaning job's kind in the words the Cleaning board uses. */
+const CLEAN_KIND: Record<string, string> = { turnover: 'Standard clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
+
 function known(k: string, v: string, table: string): string | null {
+  if (table === 'tasks' && k === 'kind' && CLEAN_KIND[v]) return CLEAN_KIND[v];
+  if (table === 'tasks' && (k === 'state' || k === 'status') && v === 'resolved') return 'Done';
   if (k === 'chargeTo') return PAYER_LABEL[v] ?? null;
   if (k === 'category') return (table === 'expenses' ? CATEGORY_LABEL[v] : REPAIR_CATEGORY[v] ?? CATEGORY_LABEL[v]) ?? null;
   if (k === 'assigneeKind') return ASSIGNEE_KIND[v] ?? null;
@@ -160,7 +164,9 @@ export function historyLines(e: Pick<HistoryEntry, 'before' | 'after'> & { entit
       out.push({ key: k, label: labelOf(k), from: show(k, b[k], names, table), to: 'removed' });
     }
   }
-  return out;
+  // An assignment records both the roster cleaner and the account behind it; one name is enough on screen.
+  const cleaner = out.find(l => l.key === 'cleanerId');
+  return cleaner ? out.filter(l => !((l.key === 'assigneeId' || l.key === 'assignee') && l.to === cleaner.to)) : out;
 }
 
 export function actionPhrase(action: string) {
@@ -172,118 +178,98 @@ export function actionPhrase(action: string) {
 const SOURCE: Record<string, string> = { field_app: 'Field app', owner_portal: 'Owner portal', import: 'Import', system: 'Automatic', cron: 'Automatic' };
 const tagOf = (e: HistoryEntry) => e.actorKind === 'import' ? 'Import' : e.actorKind === 'system' ? 'Automatic' : SOURCE[e.source ?? ''] ?? null;
 
-/** One person's burst of saves on one record, oldest first: several quick edits read as one entry, not a stack of cards. */
+/** One entry per saved change, newest first: the Houzs ERP layout (one line per action, changes folded underneath). */
 interface Run { key: number; entries: HistoryEntry[] }
-const RUN_WINDOW_MS = 2 * 60_000;
-const sameHand = (a: HistoryEntry, b: HistoryEntry) =>
-  a.actorKind === b.actorKind && (a.actorId ?? a.actorLabel) === (b.actorId ?? b.actorLabel)
-  && a.entityTable === b.entityTable && a.entityId === b.entityId && tagOf(a) === tagOf(b);
-
-/** Rows arrive newest first; each run is keyed by its newest row so it keeps its identity as older pages load. */
 export function groupRuns(rows: HistoryEntry[]): Run[] {
-  const out: Run[] = [];
-  for (const e of rows) {
-    const run = out[out.length - 1];
-    const oldest = run?.entries[0];
-    if (run && oldest && sameHand(oldest, e) && Date.parse(oldest.occurredAt) - Date.parse(e.occurredAt) <= RUN_WINDOW_MS) run.entries.unshift(e);
-    else out.push({ key: e.id, entries: [e] });
-  }
-  return out;
+  return rows.map(e => ({ key: e.id, entries: [e] }));
 }
 
-const joinPhrases = (p: string[]) => p.length <= 1 ? p.join('') : `${p.slice(0, -1).join(', ')} and ${p[p.length - 1]}`;
-const ROWS_SHOWN = 5;
+/** "5 min ago", "3 h ago", "2 days ago"; past two weeks the date says enough on its own. */
+function ago(iso: string, now = Date.now()) {
+  const m = Math.round((now - Date.parse(iso)) / 60_000);
+  if (!Number.isFinite(m)) return '';
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  return d < 14 ? `${d} ${d === 1 ? 'day' : 'days'} ago` : '';
+}
 
-function Dot({ kind, label }: { kind: HistoryEntry['actorKind']; label: string }) {
+/** The same person always gets the same colour, so a long history can be scanned by who did what. */
+function hue(s: string) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h) % 360; }
+
+function Avatar({ kind, label }: { kind: HistoryEntry['actorKind']; label: string }) {
   if (kind === 'person') {
-    const initials = label.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase() || '?';
-    return <span aria-hidden className="relative z-[1] w-6 h-6 flex-none rounded-full bg-muted text-ink grid place-items-center text-caption leading-none font-semibold [box-shadow:0_0_0_3px_var(--color-card)]">{initials}</span>;
+    const parts = label.trim().split(/\s+/).filter(Boolean);
+    const initials = (parts.length > 1 ? (parts[0][0] ?? '') + (parts[parts.length - 1][0] ?? '') : (parts[0] ?? '?').slice(0, 2)).toUpperCase();
+    return <span aria-hidden className="w-7 h-7 flex-none rounded-full grid place-items-center text-caption leading-none font-bold text-white" style={{ background: `hsl(${hue(label)} 45% 52%)` }}>{initials}</span>;
   }
   return (
-    <span aria-hidden className="relative z-[1] w-6 h-6 flex-none rounded-full border border-dashed border-line bg-card text-muted-ink grid place-items-center [box-shadow:0_0_0_3px_var(--color-card)]">
+    <span aria-hidden className="w-7 h-7 flex-none rounded-full border border-dashed border-line bg-page text-muted-ink grid place-items-center">
       <Icon name={kind === 'import' ? 'FileInput' : 'Cog'} size="sm" />
     </span>
   );
 }
 
-/** A row of the timeline: the dot on the rail, then the sentence and its muted meta line underneath. */
-function Rail({ dot, last, children }: { dot: ReactNode; last: boolean; children: ReactNode }) {
+function Changes({ lines }: { lines: Line[] }) {
   return (
-    <li className="relative flex gap-3 px-5 min-w-0">
-      <div className="flex flex-col items-center flex-none pt-[1px]">
-        {dot}
-        {!last && <span aria-hidden className="w-px flex-1 bg-line-soft" />}
+    <div className="mt-1.5 rounded-control border border-solid border-line-soft bg-page px-2.5 py-2 flex flex-col gap-1">
+      {lines.map((l, i) => (
+        <div key={`${l.key}-${i}`} className="grid grid-cols-[minmax(84px,max-content)_1fr] gap-x-3 items-baseline [font-variant-numeric:tabular-nums]">
+          <span className="text-caption font-semibold uppercase tracking-[0.04em] text-muted-ink">{l.label}</span>
+          <span className="text-meta text-ink min-w-0 [overflow-wrap:anywhere]">
+            {l.from !== undefined && l.from !== 'none' && <><span className="text-muted-ink line-through">{l.from}</span><span aria-label="changed to" className="text-faint px-1">→</span></>}
+            <span className="font-medium">{l.to}</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const capital = (s: string) => s.replace(/^./, c => c.toUpperCase());
+
+export function HistoryRun({ run, names }: { run: Run; names: Record<string, string>; last?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const e = run.entries[0];
+  const lines = historyLines(e, names);
+  const tag = tagOf(e);
+  const who = e.actorKind === 'person' ? e.actorLabel : e.actorLabel || 'System';
+  const role = e.actorKind === 'person' && e.actorRole ? ROLE_LABEL[e.actorRole] ?? humanize(e.actorRole) : null;
+  const rel = ago(e.occurredAt);
+  return (
+    <li className="grid grid-cols-[28px_1fr] gap-x-2.5 px-4 py-3 [&+&]:[border-top:1px_solid_var(--color-line-soft)]">
+      <Avatar kind={e.actorKind} label={e.actorLabel} />
+      <div className="min-w-0 flex flex-col">
+        <span className="text-copy text-ink leading-snug [overflow-wrap:anywhere]">
+          <strong className="font-semibold">{who}</strong>
+          {role && <span className="text-meta text-muted-ink"> · {role}</span>}
+        </span>
+        <span className="text-copy font-semibold text-ink leading-snug">{capital(actionPhrase(e.action))}</span>
+        <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">
+          <time dateTime={e.occurredAt}>{dateTime(e.occurredAt)}</time>{rel && ` · ${rel}`}{tag && ` · via ${tag}`}
+        </span>
+        {lines.length > 0 && (
+          <>
+            <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open}
+              className="self-start mt-1 p-0 border-0 bg-transparent flex items-center gap-1 text-caption font-semibold uppercase tracking-[0.06em] text-gold-ink cursor-pointer hover:underline">
+              <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size="sm" />Changes ({lines.length})
+            </button>
+            {open && <Changes lines={lines} />}
+          </>
+        )}
       </div>
-      <div className={cx('flex flex-col min-w-0 flex-1', last ? 'pb-1' : 'pb-4')}>{children}</div>
     </li>
   );
 }
-
-function Changes({ lines }: { lines: Line[] }) {
-  return (
-    <dl className="m-0 grid grid-cols-[minmax(72px,max-content)_1fr] gap-x-3 gap-y-[2px] text-meta">
-      {lines.map((l, i) => (
-        <div key={`${l.key}-${i}`} className="contents">
-          <dt className="text-muted-ink">{l.label}</dt>
-          <dd className="m-0 text-ink min-w-0 [overflow-wrap:anywhere]">
-            {l.from !== undefined && <><span className="text-muted-ink">{l.from}</span><span aria-label="changed to" className="text-faint px-1">→</span></>}
-            <span>{l.to}</span>
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-export function HistoryRun({ run, names, last = false }: { run: Run; names: Record<string, string>; last?: boolean }) {
-  const [all, setAll] = useState(false);
-  const head = run.entries[run.entries.length - 1];
-  const first = run.entries[0];
-  const phrases = run.entries.map(e => actionPhrase(e.action)).filter((p, i, arr) => i === 0 || p !== arr[i - 1]);
-  const mixed = new Set(phrases).size > 1;
-  const blocks = run.entries.map(e => ({ e, phrase: actionPhrase(e.action), lines: historyLines(e, names) })).filter(b => b.lines.length > 0);
-  const hidden = blocks.reduce((n, b) => n + Math.max(0, b.lines.length - ROWS_SHOWN), 0);
-  const shown = all ? blocks : blocks.map(b => ({ ...b, lines: b.lines.slice(0, ROWS_SHOWN) }));
-  const tag = tagOf(head);
-  const role = head.actorKind === 'person' && head.actorRole ? ROLE_LABEL[head.actorRole] ?? humanize(head.actorRole) : null;
-  const span = first.occurredAt !== head.occurredAt ? `${dateTime(first.occurredAt)} to ${time(head.occurredAt)}` : dateTime(head.occurredAt);
-  return (
-    <Rail last={last} dot={<Dot kind={head.actorKind} label={head.actorLabel} />}>
-      <span className="text-copy text-ink [overflow-wrap:anywhere]">
-        <strong className="font-semibold">{head.actorKind === 'person' ? head.actorLabel : head.actorLabel || 'System'}</strong>{' '}
-        <span className={cx(head.actorKind !== 'person' && 'text-muted-ink')}>{joinPhrases(phrases)}</span>
-      </span>
-      <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">
-        {[role, tag].filter(Boolean).map(x => <span key={x}>{x} · </span>)}
-        <time dateTime={head.occurredAt} title={span}>{dateTime(head.occurredAt)}</time>
-      </span>
-      {shown.length > 0 && (
-        <div className="mt-[6px] flex flex-col gap-[6px]">
-          {shown.map((b, i) => (
-            <div key={b.e.id} className="flex flex-col gap-[2px]">
-              {mixed && b.phrase !== shown[i - 1]?.phrase && <span className="text-caption font-medium text-muted-ink">{b.phrase.replace(/^./, c => c.toUpperCase())}</span>}
-              <Changes lines={b.lines} />
-            </div>
-          ))}
-          {hidden > 0 && (
-            <button type="button" onClick={() => setAll(v => !v)}
-              className="self-start p-0 border-0 bg-transparent text-meta font-medium text-accent cursor-pointer hover:underline">
-              {all ? 'Show less' : `Show ${count(hidden)} more`}
-            </button>
-          )}
-        </div>
-      )}
-    </Rail>
-  );
-}
-
 /**
  * Drop into any detail view. `entity` is the table, `id` the record; `also` adds more records to the same history
  * (a unit's contract, say). `refreshKey` reloads it after a save. `origin` adds the record's first appearance when
  * no create entry exists (records brought in by an import before every change was recorded).
  */
-export function RecordHistory({ entity, id, also, title = 'History', bare = false, pageSize = 20, refreshKey, origin }: {
-  entity: string; id: string; also?: [string, string][]; title?: string; bare?: boolean; pageSize?: number; refreshKey?: unknown;
+export function RecordHistory({ entity, id, also, alsoActions, title = 'History', bare = false, pageSize = 20, refreshKey, origin }: {
+  entity: string; id: string; also?: [string, string][]; alsoActions?: string[]; title?: string; bare?: boolean; pageSize?: number; refreshKey?: unknown;
   origin?: { at: string; label: string };
 }) {
   const [rows, setRows] = useState<HistoryEntry[]>([]);
@@ -293,12 +279,13 @@ export function RecordHistory({ entity, id, also, title = 'History', bare = fals
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const alsoParam = (also ?? []).map(([t, i]) => `${t}:${i}`).join(',');
+  const actionsParam = (alsoActions ?? []).join(',');
 
-  useEffect(() => { setPage(1); }, [entity, id, alsoParam, refreshKey]);
+  useEffect(() => { setPage(1); }, [entity, id, alsoParam, actionsParam, refreshKey]);
   useEffect(() => {
     let live = true;
     setLoading(true);
-    api.get<Payload>('/audit', { entityTable: entity, entityId: id, also: alsoParam || undefined, page, pageSize })
+    api.get<Payload>('/audit', { entityTable: entity, entityId: id, also: alsoParam || undefined, alsoActions: actionsParam || undefined, page, pageSize })
       .then(r => {
         if (!live) return;
         setRows(prev => page === 1 ? r.data : [...prev, ...r.data.filter(x => !prev.some(p => p.id === x.id))]);
@@ -308,12 +295,14 @@ export function RecordHistory({ entity, id, also, title = 'History', bare = fals
       .catch(e => { if (live) setError(errorMessage(e, 'The history could not load. Check your connection and try again.')); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [entity, id, alsoParam, page, pageSize, refreshKey]);
+  }, [entity, id, alsoParam, actionsParam, page, pageSize, refreshKey]);
 
   const first = loading && page === 1 && rows.length === 0;
   const done = rows.length >= total;
   const runs = useMemo(() => groupRuns(rows), [rows]);
-  const showOrigin = !!origin && done && !error && !first;
+  // The origin line stands in for a create entry, so it is left out when the record's own creation was recorded.
+  const created = rows.some(r => r.entityTable === entity && r.entityId === id && /\.(create|plan)$/.test(r.action));
+  const showOrigin = !!origin && done && !error && !first && !created;
   const body = (
     <>
       {!bare && (
@@ -326,13 +315,16 @@ export function RecordHistory({ entity, id, also, title = 'History', bare = fals
       {error && <div className="py-4 px-5 text-copy text-danger" role="alert">{error}</div>}
       {!first && !error && rows.length === 0 && !origin && <div className="py-4 px-5 text-copy text-muted-ink">No changes recorded yet. Every edit from now on shows here, with who made it.</div>}
       {(runs.length > 0 || showOrigin) && (
-        <ul className="list-none m-0 py-3 px-0">
-          {runs.map((r, i) => <HistoryRun key={r.key} run={r} names={names} last={i === runs.length - 1 && !showOrigin} />)}
+        <ul className="list-none m-0 py-1 px-0">
+          {runs.map(r => <HistoryRun key={r.key} run={r} names={names} />)}
           {showOrigin && origin && (
-            <Rail last dot={<Dot kind="import" label="" />}>
-              <span className="text-copy text-muted-ink">{origin.label}</span>
-              <time dateTime={origin.at} title={dateTime(origin.at)} className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{dateTime(origin.at)}</time>
-            </Rail>
+            <li className="grid grid-cols-[28px_1fr] gap-x-2.5 px-4 py-3 [&+&]:[border-top:1px_solid_var(--color-line-soft)]">
+              <Avatar kind="system" label="" />
+              <div className="min-w-0 flex flex-col">
+                <span className="text-copy font-semibold text-ink leading-snug">{origin.label}</span>
+                <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]"><time dateTime={origin.at}>{dateTime(origin.at)}</time>{ago(origin.at) && ` · ${ago(origin.at)}`}</span>
+              </div>
+            </li>
           )}
         </ul>
       )}
