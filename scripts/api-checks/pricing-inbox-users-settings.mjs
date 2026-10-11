@@ -56,13 +56,14 @@ r = await call('PUT', '/api/users/org-chart', { managers: [{ id: uid, managerId:
 r = await call('PUT', '/api/users/org-chart', { managers: [{ id: uid, managerId: mgr.id }, { id: mgr.id, managerId: uid }] }); check('org chart loop refused 422', r.status === 422, r.text);
 r = await call('GET', '/api/users'); check('org chart persisted', r.json.data.find(u => u.id === uid).managerId === mgr.id, '');
 // settings
-r = await call('GET', '/api/settings'); check('settings by section with defaults', r.status === 200 && r.json.company.legalName && typeof r.json.operations.photoRequiredToMarkReady === 'boolean' && typeof r.json.locale.managementFeePct === 'number' && r.json.security.lockoutAttempts, r.text.slice(0, 300));
+r = await call('GET', '/api/settings'); check('settings by section with defaults', r.status === 200 && r.json.company.legalName && r.json.operations.checkIn && r.json.statements === undefined && typeof r.json.locale.managementFeePct === 'number' && r.json.security.lockoutAttempts, r.text.slice(0, 300));
 r = await call('PUT', '/api/settings', { company: { legalName: 'The Conts Sdn Bhd (test)', supportEmail: 'help@theconts.com' } }); check('save company', r.status === 200, r.text);
 r = await call('PUT', '/api/settings', { company: { supportEmail: 'not-an-email' } }); check('bad email 422', r.status === 422 && r.json.error.fields['company.supportEmail'], r.text);
 r = await call('PUT', '/api/settings', { locale: { managementFeePct: 150 } }); check('fee over 100 422', r.status === 422, r.text);
 r = await call('PUT', '/api/settings', { operations: { checkIn: '25:00' } }); check('bad time 422', r.status === 422, r.text);
 r = await call('PUT', '/api/settings', { nonsense: { a: 1 } }); check('unknown section 422', r.status === 422, r.text);
-r = await call('PUT', '/api/settings', { operations: { checkIn: '14:00', photoRequiredToMarkReady: false } }); check('save operations', r.status === 200, r.text);
-r = await call('GET', '/api/settings'); check('settings persisted', r.json.company.legalName === 'The Conts Sdn Bhd (test)' && r.json.operations.checkIn === '14:00' && r.json.operations.photoRequiredToMarkReady === false, JSON.stringify(r.json.operations));
+r = await call('PUT', '/api/settings', { operations: { linenSets: 3 } }); check('removed setting refused 422', r.status === 422, r.text);
+r = await call('PUT', '/api/settings', { operations: { checkIn: '14:00' } }); check('save operations', r.status === 200, r.text);
+r = await call('GET', '/api/settings'); check('settings persisted', r.json.company.legalName === 'The Conts Sdn Bhd (test)' && r.json.operations.checkIn === '14:00', JSON.stringify(r.json.operations));
 r = await call('PUT', '/api/settings', { company: { legalName: 'x' } }, 'operations_manager'); check('ops manager cannot change settings 403', r.status === 403, r.text);
 done();

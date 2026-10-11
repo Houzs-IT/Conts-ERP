@@ -159,7 +159,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 ## UI audit follow-ups: shell, system and growth pages (fix/system-growth)
 - Automations: 9 of 30 rules are sent by code today; the other 21 (every guest message) need a sender in the cron worker (theconts-cron, not deployed) plus email/WhatsApp keys. The page says so; the on/off switch is stored only. Owner decision: build the sender.
 - Imported owner ids embed the IC number (e.g. wb-owner-940413-13-6097, functions/_lib/hostplatformImport*), so it shows in URLs and the audit log. Data agent to switch to opaque ids.
-- Settings: operations defaults and statement settings are saved but not read anywhere (marked "Not used yet"), nor the locale's language/timezone/currency; wire or remove. Company details and Owner report are used by the report; the default fee by statements.
 - Pricing: channel commission (15/15/18%) and the 22% weekend uplift are fixed in code; owner to decide whether they become settings.
 
 ## Booking lifecycle (fix/booking-lifecycle)

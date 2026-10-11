@@ -31,7 +31,7 @@ async function refuses(name, method, path, body, field) {
 // Settings: whole numbers, ranges and the phone.
 await refuses('settings lockout minutes 12.5', 'PUT', '/api/settings', { security: { lockoutMinutes: 12.5 } }, 'security.lockoutMinutes');
 await refuses('settings lockout minutes 0', 'PUT', '/api/settings', { security: { lockoutMinutes: 0 } }, 'security.lockoutMinutes');
-await refuses('settings cleaning window empty', 'PUT', '/api/settings', { operations: { cleaningWindowHours: null } }, 'operations.cleaningWindowHours');
+await refuses('settings check-in empty', 'PUT', '/api/settings', { operations: { checkIn: '' } }, 'operations.checkIn');
 await refuses('settings misc charge in ringgit (12.3)', 'PUT', '/api/settings', { report: { miscChargeMonthly: 12.3 } }, 'report.miscChargeMonthly');
 await refuses('settings fee 150%', 'PUT', '/api/settings', { locale: { managementFeePct: 150 } }, 'locale.managementFeePct');
 await refuses('settings support phone letters', 'PUT', '/api/settings', { company: { supportPhone: 'call me' } }, 'company.supportPhone');
