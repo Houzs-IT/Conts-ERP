@@ -1,5 +1,5 @@
 import { type Env, all, one, run, nowIso } from './db';
-import { hasColumn } from './auth';
+import { hasColumn, timingSafeEqualStr } from './auth';
 
 /**
  * Two-step sign-in: a six-digit code from an authenticator app (TOTP, RFC 6238: HMAC-SHA1, 30-second steps),
@@ -165,7 +165,7 @@ export async function signChallenge(env: Env, userId: string) {
 export async function readChallenge(env: Env, token: unknown): Promise<string | null> {
   if (typeof token !== 'string' || !token.includes('.')) return null;
   const [body, sig] = token.split('.');
-  if (await mac(env.SESSION_SECRET, body) !== sig) return null;
+  if (!timingSafeEqualStr(await mac(env.SESSION_SECRET, body), sig ?? '')) return null;
   try {
     const p = JSON.parse(atob(body));
     return typeof p.uid === 'string' && p.exp > Date.now() ? p.uid : null;
@@ -177,6 +177,32 @@ export async function readChallenge(env: Env, token: unknown): Promise<string | 
 export type LoginResult = 'success' | 'wrong_password' | 'locked' | '2fa_failed' | 'inactive';
 export type LoginMethod = 'password' | 'totp' | 'backup_code' | 'reset_link';
 
+const clientIp = (request: Request) =>
+  request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+
+/** Failed sign-ins from one address in the last 15 minutes after which it is refused for a while. The per-account lock
+ *  stops guessing at one person's password; this stops one machine trying a few passwords on every account. Set well
+ *  above what an office of people mistyping on one shared connection reaches. */
+export const ADDRESS_FAILURE_LIMIT = 20;
+const ADDRESS_WINDOW_MS = 15 * 60_000;
+
+/** A refusal message when this address has failed too often lately, else null. Read from the sign-in record, so it needs
+ *  no store of its own; a database without migration 0098, or a read error, never stops anyone signing in. */
+export async function addressRefusal(env: Env, request: Request): Promise<string | null> {
+  const ip = clientIp(request);
+  if (!ip) return null;
+  try {
+    if (!(await twoFactorTables(env))) return null;
+    const row = await one<{ n: number }>(env, `
+      SELECT count(*) AS n FROM login_events
+      WHERE at > ? AND ip = ? AND result IN ('wrong_password', '2fa_failed', 'locked')`,
+      new Date(Date.now() - ADDRESS_WINDOW_MS).toISOString(), ip);
+    return Number(row?.n ?? 0) >= ADDRESS_FAILURE_LIMIT
+      ? 'Too many failed sign-ins from this connection. Wait 15 minutes and try again, or ask management to reset your password.'
+      : null;
+  } catch { return null; }
+}
+
 /** Never blocks or fails the sign-in it records: a database without migration 0098, or any write error,
  *  just means this one attempt is not in the list. */
 export async function logLogin(env: Env, request: Request, e: { userId: string | null; email: string; result: LoginResult; method: LoginMethod }) {
@@ -185,7 +211,7 @@ export async function logLogin(env: Env, request: Request, e: { userId: string |
     await run(env,
       'INSERT INTO login_events (id, user_id, email, at, ip, user_agent, result, method) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       crypto.randomUUID(), e.userId, e.email.slice(0, 200), nowIso(),
-      request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      clientIp(request),
       (request.headers.get('user-agent') ?? '').slice(0, 300) || null, e.result, e.method);
   } catch { /* see above */ }
 }
