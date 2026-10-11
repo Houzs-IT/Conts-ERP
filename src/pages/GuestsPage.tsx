@@ -1,3 +1,4 @@
+import { readDevice } from '../lib/deviceClass';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { channel } from '../theme';
@@ -191,7 +192,7 @@ export default function GuestsPage() {
   function reloadAll() { list.reload(); detail.reload(); }
   function select(id: string) {
     updateParams(p => p.set('g', id));
-    if (window.matchMedia('(max-width: 767.98px)').matches) document.querySelector('main')?.scrollTo({ top: 0 });
+    if (readDevice().cls === 'phone') document.querySelector('main')?.scrollTo({ top: 0 });
   }
   function setFilter(key: Filter) { updateParams(p => { if (key === 'all') p.delete('filter'); else p.set('filter', key); p.delete('page'); p.delete('g'); }); }
   function setSort(key: string) {

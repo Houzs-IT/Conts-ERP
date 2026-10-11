@@ -1,0 +1,72 @@
+/* Device layouts. Pairs with src/lib/deviceClass.ts — the hook picks the shell,
+ * these rules keep each shell honest at the edges. Load after tokens.css. */
+
+/* ---- Every touch shell: notch, home indicator, rounded corners ---- */
+.tc-shell {
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+.tc-bottom-bar {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 8px);
+}
+/* index.html must carry: <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"> */
+
+/* ---- Phone: 320 floor. Galaxy Fold cover is 344px, iPhone SE 375 ---- */
+@media (max-width: 599px) {
+  .tc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tc-hide-phone { display: none !important; }
+}
+@media (max-width: 359px) {
+  /* Fold cover: drop to one KPI per row and tighten page padding */
+  .tc-kpis { grid-template-columns: minmax(0, 1fr); }
+  .tc-page { padding-left: 12px; padding-right: 12px; }
+}
+
+/* ---- Phone landscape: short and wide — keep the tab bar, shrink the header ---- */
+@media (max-height: 480px) and (orientation: landscape) and (pointer: coarse) {
+  .tc-page-header { padding-top: 8px; padding-bottom: 8px; }
+  .tc-page-header h1 { font-size: 20px; }
+}
+
+/* ---- Tablet / Fold inner: rail + list/detail, never the phone UI stretched ---- */
+.tc-split {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  min-height: 0;
+}
+.tc-split > * { min-width: 0; }
+@media (max-width: 839px) {
+  /* iPad mini portrait, Fold inner portrait: detail opens as a full-height sheet */
+  .tc-split { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---- Dual-screen: one pane per segment, nothing in the hinge ---- */
+@media (horizontal-viewport-segments: 2) {
+  .tc-split {
+    grid-template-columns:
+      env(viewport-segment-width 0 0)
+      calc(env(viewport-segment-left 1 0) - env(viewport-segment-right 0 0))
+      env(viewport-segment-width 1 0);
+  }
+  .tc-split > :first-child { grid-column: 1; }
+  .tc-split > :last-child  { grid-column: 3; }
+  .tc-hinge-safe { display: none; } /* anything that must not straddle the fold */
+}
+@media (vertical-viewport-segments: 2) {
+  /* Fold "laptop" posture: top half reads, bottom half acts */
+  .tc-split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows:
+      env(viewport-segment-height 0 0)
+      calc(env(viewport-segment-top 0 1) - env(viewport-segment-bottom 0 0))
+      env(viewport-segment-height 0 1);
+  }
+  .tc-split > :first-child { grid-row: 1; }
+  .tc-split > :last-child  { grid-row: 3; }
+}
+
+/* ---- Touch targets everywhere a finger is the pointer ---- */
+@media (pointer: coarse) {
+  .tc-tap { min-height: 44px; min-width: 44px; }
+}

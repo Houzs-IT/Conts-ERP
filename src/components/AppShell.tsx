@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useScrollMemory } from '../lib/useScrollMemory';
+import { useDevice } from '../lib/deviceClass';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import Icon from './Icon';
@@ -11,11 +12,13 @@ import { color, radius, motion } from '../theme';
  *  Storage can throw (private mode, blocked cookies), so every access is guarded. */
 const NAV_COLLAPSED_KEY = 'conts.shell.navCollapsed';
 
-function readNavOpen(): boolean {
+/** Tablets start on the 68px rail so content gets the width; an explicit choice always wins. */
+function readNavOpen(defaultOpen: boolean): boolean {
   try {
-    return localStorage.getItem(NAV_COLLAPSED_KEY) !== '1';
+    const v = localStorage.getItem(NAV_COLLAPSED_KEY);
+    return v === null ? defaultOpen : v !== '1';
   } catch {
-    return true;
+    return defaultOpen;
   }
 }
 
@@ -56,10 +59,12 @@ export default function AppShell({
 }: { path: string; navigate: (p: string) => void; children: ReactNode; action?: { label: string; onClick: () => void };
   /** The content fills the area edge to edge and scrolls itself (the supply chain engine's frame). */
   flush?: boolean }) {
-  const [navOpen, setNavOpen] = useState(readNavOpen);
+  // One device decision (src/lib/deviceClass.ts) replaces the 768px media query:
+  // phone → drawer, tablet → rail by default, dual → shell on the first screen, desktop unchanged.
+  const device = useDevice();
+  const isNarrow = device.cls === 'phone';
+  const [navOpen, setNavOpen] = useState(() => readNavOpen(device.cls !== 'tablet'));
   const toggleNav = () => setNavOpen(v => { const next = !v; persistNavOpen(next); return next; });
-
-  const isNarrow = useMediaQuery('(max-width: 767.98px)');
   const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -86,7 +91,7 @@ export default function AppShell({
   const drawerNavigate = (p: string) => { navigate(p); setDrawerOpen(false); };
 
   return (
-    <div data-print-root style={{ flex: 1, minWidth: 0, height: '100dvh', display: 'flex', overflow: 'hidden' }}>
+    <div data-print-root data-device={device.cls} data-fold={device.fold} style={{ flex: 1, minWidth: 0, height: '100dvh', display: 'flex', overflow: 'hidden' }}>
       {isNarrow ? (
         <>
           {/* Scrim behind the open drawer. */}

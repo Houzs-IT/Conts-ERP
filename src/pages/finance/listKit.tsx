@@ -1,3 +1,4 @@
+import { useDevice } from '../../lib/deviceClass';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Icon from '../../components/Icon';
 import { useSearchParams } from 'react-router-dom';
@@ -37,8 +38,8 @@ export function useMedia(query: string) {
   }, [query]);
   return on;
 }
-/** Same breakpoint as AppShell's narrow layout. */
-export const usePhone = () => useMedia('(max-width: 767.98px)');
+/** Same decision as AppShell's phone layout (src/lib/deviceClass.ts). */
+export const usePhone = () => useDevice().cls === 'phone';
 
 /** Card body wrapper whose header row can stick to the page while it scrolls. `overflow: clip` keeps the
  *  rounded corners without becoming a scroll container (which would stop the header sticking). */

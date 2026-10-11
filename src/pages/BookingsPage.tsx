@@ -1,3 +1,4 @@
+import { readDevice } from '../lib/deviceClass';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
@@ -177,7 +178,7 @@ export default function BookingsPage() {
   const rows = data?.data ?? [];
   const onPage = openId ? rows.find(r => r.id === openId) ?? null : null;
   useEffect(() => {
-    if (window.matchMedia('(max-width: 767.98px)').matches) document.querySelector('main')?.scrollTo({ top: 0 });
+    if (readDevice().cls === 'phone') document.querySelector('main')?.scrollTo({ top: 0 });
   }, [data?.page, data?.view, data?.todo]);
   const total = data?.total ?? 0;
   const counts = data?.counts;
