@@ -80,7 +80,7 @@ export function SectionTitle({ title, count, right }: { title: string; count?: n
 
 /** Pill-style segmented switch (range, metric). */
 export function Segmented<K extends string>({ label, options, value, onChange, className }: {
-  label: string; options: { key: K; label: string }[]; value: K; onChange: (k: K) => void; className?: string;
+  label: string; options: { key: K; label: ReactNode }[]; value: K; onChange: (k: K) => void; className?: string;
 }) {
   return (
     <div role="group" aria-label={label}

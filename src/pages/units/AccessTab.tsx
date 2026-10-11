@@ -154,7 +154,7 @@ export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitL
               </span>
             ) : (
               <button type="button" onClick={() => reveal(r)} aria-label={`Reveal the code for ${r.label}`}
-                className="inline-flex items-center gap-[7px] h-[32px] px-[11px] py-0 rounded-control border border-solid border-line bg-card cursor-pointer [font:inherit] max-w-full self-start">
+                className="inline-flex items-center gap-[7px] h-[32px] px-[11px] py-0 rounded-control border border-solid border-line bg-card cursor-pointer [font-family:inherit] text-copy max-w-full self-start">
                 <Icon name="Eye" size="sm" color={color.textMuted} />
                 <span className="font-mono">{r.secret}</span>
                 <span className="text-muted-ink font-medium">Reveal</span>
@@ -185,7 +185,7 @@ export default function AccessTab({ unitId, unitLabel }: { unitId: string; unitL
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
           <div className="flex flex-col gap-1 min-w-0">
-            <span className="text-heading font-semibold">Access and keys</span>
+            <span className="text-[16px] font-semibold tracking-[-0.01em]">Access and keys</span>
             <span className="text-meta text-muted-ink">Codes are masked. Revealing one is recorded in the audit trail.</span>
           </div>
           {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setEditing('new')}>Add access</Button>}

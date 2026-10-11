@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { StatusBadge } from '../../components/StatusBadge';
 import ChannelMark from '../../components/ChannelMark';
 import { DataTable, type Column } from '../../components/DataTable';
+import { Segmented } from '../../components/Metric';
 import { channel as CH } from '../../theme';
 import { cx } from '../../lib/design-tokens';
 import { useApi } from '../../lib/useApi';
@@ -93,22 +94,14 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
       header={
         <div className="py-4 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
           <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-heading font-semibold">Bookings</span>
+            <span className="text-[16px] font-semibold tracking-[-0.01em]">Bookings</span>
             <span className="text-meta text-muted-ink min-h-[18px]">{summary ?? (d ? '' : 'Loading…')}</span>
           </div>
-          <div role="group" aria-label="Which bookings" className="flex w-full sm:w-auto sm:inline-flex overflow-x-auto [scrollbar-width:none] border border-solid border-line rounded-control flex-none">
-            {WHENS.map((w, i) => {
-              const on = w.key === when;
+          <Segmented label="Which bookings" value={when} onChange={setWhen} className="w-full sm:w-auto flex-none [&>button]:flex-1 sm:[&>button]:flex-none"
+            options={WHENS.map(w => {
               const n = d?.counts[w.key];
-              return (
-                <button key={w.key} type="button" aria-pressed={on} onClick={() => setWhen(w.key)}
-                  className={cx('h-9 sm:h-8 px-2 sm:px-3 cursor-pointer [font:inherit] text-meta! whitespace-nowrap [border-top:0] [border-right:0] [border-bottom:0] flex-1 sm:flex-none',
-                    i === 0 ? '[border-left:0]' : '[border-left:1px_solid_var(--color-line)]', on ? 'bg-black text-white' : 'bg-card text-muted-ink')}>
-                  {w.label}{n != null && <span className={cx('ml-1.5 [font-variant-numeric:tabular-nums]', on ? 'text-white/70' : 'text-faint')}>{n}</span>}
-                </button>
-              );
-            })}
-          </div>
+              return { key: w.key, label: <>{w.label}{n != null && <span className={cx('ml-1.5 tabular-nums', w.key === when ? 'text-muted-ink' : 'text-faint')}>{n}</span>}</> };
+            })} />
         </div>
       }
       renderCard={s => (

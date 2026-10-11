@@ -11,6 +11,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Button } from '../components/Button';
 import PageHeader from '../components/PageHeader';
 import { EmptyState } from '../components/States';
+import { Eyebrow, StatRow, StatTile } from '../components/Metric';
 import { MoneyText, moneyString } from '../components/MoneyText';
 import Icon from '../components/Icon';
 import { useToast } from '../components/Toast';
@@ -218,10 +219,11 @@ export default function OwnerPortalPage() {
       />
 
       {/* Statement summary — the gross → fees → expenses → net chain */}
-      <section className="bg-black text-white rounded-card p-5 flex justify-between gap-6 flex-wrap">
-        <div className="flex flex-col gap-2 min-w-[220px]">
-          <span className="text-meta text-[var(--color-text-on-dark-muted)]">Net payout · {monthLabel(st.period)}</span>
-          <MoneyText sen={st.payout.amount} mode="exact" className="text-headline leading-[1.1] font-semibold tracking-[-0.01em] text-gold" />
+      <section className="relative bg-black text-white rounded-card p-5 sm:p-6 flex justify-between gap-6 flex-wrap overflow-hidden">
+        <span aria-hidden className="absolute left-5 sm:left-6 top-0 h-[2px] w-8 bg-gold" />
+        <div className="flex flex-col gap-2.5 min-w-[220px]">
+          <Eyebrow className="text-gold!">Net payout · {monthLabel(st.period)}</Eyebrow>
+          <MoneyText sen={st.payout.amount} mode="exact" className="text-[32px] sm:text-[40px] leading-none font-medium tracking-[-0.025em] text-white" />
           <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge entity="payout" value={st.payout.state} size="sm" />
             {payoutLine && <span className="text-meta text-[var(--color-text-on-dark)]">{payoutLine}</span>}
@@ -232,7 +234,7 @@ export default function OwnerPortalPage() {
         </div>
 
         <div className="flex flex-col gap-3 min-w-[min(260px,100%)] flex-1">
-          <span className="text-caption font-semibold text-[var(--color-text-on-dark-muted)] uppercase tracking-[0.06em]">Gross to net</span>
+          <Eyebrow className="text-[var(--color-text-on-dark-muted)]!">Gross to net</Eyebrow>
           {st.grossToNet.map(l => {
             const strong = l.type === 'net';
             return (
@@ -257,20 +259,14 @@ export default function OwnerPortalPage() {
       {st.statementId && <StatementBreakdown statementId={st.statementId} />}
 
       {/* Performance stats */}
-      <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
-        {statsCards.map(s => (
-          <div key={s.label} className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-1">
-            <span className="text-meta text-muted-ink">{s.label}</span>
-            <span className="text-headline font-semibold tabular-nums">{s.value}</span>
-            <span className="text-meta text-muted-ink">{s.note}</span>
-          </div>
-        ))}
-      </div>
+      <StatRow cols={4}>
+        {statsCards.map(s => <StatTile key={s.label} label={s.label} value={s.value} hint={s.note} />)}
+      </StatRow>
 
       <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))]">
         {/* Earnings trend — inline SVG */}
-        <section className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-1.5">
-          <span className="text-heading font-semibold">Earnings over time</span>
+        <section className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-1">
+          <span className="text-[16px] font-semibold tracking-[-0.01em]">Earnings over time</span>
           <span className="text-meta text-muted-ink">
             Net payout, RM · last {trend.data?.months ?? points.length} months · {trend.data?.unitLabel ?? st.unitsLabel}
           </span>
@@ -281,7 +277,7 @@ export default function OwnerPortalPage() {
 
         {/* Property health */}
         <section className="bg-card border border-solid border-line rounded-card overflow-hidden flex flex-col">
-          <div className="px-5 py-[18px] text-heading font-semibold [border-bottom:1px_solid_var(--color-line-soft)]">Property health</div>
+          <div className="px-5 py-[18px] text-[16px] font-semibold tracking-[-0.01em] [border-bottom:1px_solid_var(--color-line-soft)]">Property health</div>
           {rows.length === 0 && <EmptyState bare icon="Wrench" title="No maintenance on your property" body="Repairs and quotes that need your approval appear here." />}
           {rows.map(i => {
             const v = TASK[i.state];
@@ -306,7 +302,7 @@ export default function OwnerPortalPage() {
 
       {/* Documents */}
       <section className="bg-card border border-solid border-line rounded-card overflow-hidden">
-        <div className="px-5 py-[18px] text-heading font-semibold [border-bottom:1px_solid_var(--color-line-soft)]">Documents</div>
+        <div className="px-5 py-[18px] text-[16px] font-semibold tracking-[-0.01em] [border-bottom:1px_solid_var(--color-line-soft)]">Documents</div>
         {documents.length === 0 && <EmptyState bare icon="FileText" title="No documents yet" body="Your statements and contract will appear here." />}
         {documents.map(d => (
           <div key={d.id} className="px-5 py-3 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center gap-3.5">
@@ -351,7 +347,7 @@ function StatementBreakdown({ statementId }: { statementId: string }) {
   return (
     <section className="bg-card border border-solid border-line rounded-card overflow-hidden">
       <div className="px-5 py-[18px] flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
-        <span className="text-heading font-semibold">Statement breakdown</span>
+        <span className="text-[16px] font-semibold tracking-[-0.01em]">Statement breakdown</span>
         <span className="text-meta text-muted-ink">
           {monthLabel(data.period)} · {multi ? `${plural(data.units.length, 'unit')} · tap a unit to open` : data.unitsLabel}
         </span>

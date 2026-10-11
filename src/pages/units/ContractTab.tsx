@@ -157,7 +157,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
           <div className="flex flex-col gap-1 min-w-0">
-            <span className="text-heading font-semibold">Revenue model</span>
+            <span className="text-[16px] font-semibold tracking-[-0.01em]">Revenue model</span>
             <span className="text-meta text-muted-ink">
               {current.id ? <>In force {current.startsOn ? `from ${date(current.startsOn)}` : ''}{current.endsOn ? ` to ${date(current.endsOn)}` : ''} · {current.termsLabel}</> : <>No contract record yet: the unit's own split is used ({current.termsLabel}). Saving creates its contract.</>}
               {data!.history.length > 0 && <> · <a href="#contract-history" className="text-gold-ink">Contract history ({data!.history.length})</a></>}
@@ -236,7 +236,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
       {data!.history.length > 0 && (
         <Card>
           <div id="contract-history" className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
-            <span className="text-heading font-semibold">Contract history</span>
+            <span className="text-[16px] font-semibold tracking-[-0.01em]">Contract history</span>
             <span className="text-meta text-muted-ink">Earlier contracts of this unit. A month before the current contract started is worked out on the one in force then.</span>
           </div>
           <DataTable<ContractView> id="unit.contracts" urlPrefix="ct." bare noViews noToolbar pageSize={0} maxHeight="none"
@@ -259,7 +259,7 @@ export function StatementExample({ example: x, month, draft, busy }: { example: 
   return (
     <Card>
       <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-wrap items-baseline justify-between gap-2">
-        <span className="text-heading font-semibold">How the {monthLabel(month)} statement works</span>
+        <span className="text-[16px] font-semibold tracking-[-0.01em]">How the {monthLabel(month)} statement works</span>
         <span className="text-meta text-muted-ink">{busy ? 'Working it out…' : draft ? 'On the terms in the form (not saved)' : `This unit's real ${monthLabel(month)} figures`}</span>
       </div>
       {!x ? <div className="py-4 px-5 text-copy text-muted-ink">No figures for {monthLabel(month)}.</div> : (
