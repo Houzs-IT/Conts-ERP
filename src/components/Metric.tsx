@@ -1,5 +1,6 @@
-import { type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { TONE, cx } from '../lib/design-tokens';
+import { count } from '../lib/format';
 import type { Tone } from '../lib/types';
 
 /* Shared figure pieces for Dashboard, Portfolio and Performance, so the three read as one set. */
@@ -78,22 +79,63 @@ export function SectionTitle({ title, count, right }: { title: string; count?: n
   );
 }
 
-/** Pill-style segmented switch (range, metric). */
+/** One choice in a Segmented switch. `count` shows as a quiet number beside the label; `tone` marks a count
+ *  that needs attention with a small dot instead of colouring the whole option. */
+export interface SegmentOption<K extends string> { key: K; label: ReactNode; count?: number; tone?: 'danger' | 'warning' }
+
+/** Pill-style segmented switch (range, metric, a list's main views). Never wraps: on a narrow screen the
+ *  options scroll sideways inside the track. `value` may be a key that is not offered (a filter chosen
+ *  elsewhere), and then no option is lit. */
 export function Segmented<K extends string>({ label, options, value, onChange, className }: {
-  label: string; options: { key: K; label: ReactNode }[]; value: K; onChange: (k: K) => void; className?: string;
+  label: string; options: SegmentOption<K>[]; value: K | ''; onChange: (k: K) => void; className?: string;
 }) {
+  const track = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  useEffect(() => {
+    const el = track.current;
+    if (!el) return;
+    const read = () => setEdges(e => {
+      const left = el.scrollLeft > 1, right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      return e.left === left && e.right === right ? e : { left, right };
+    });
+    read();
+    el.addEventListener('scroll', read, { passive: true });
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(read) : null;
+    ro?.observe(el);
+    return () => { el.removeEventListener('scroll', read); ro?.disconnect(); };
+  }, [options.length]);
+  // The chosen option is never left scrolled out of sight. scrollIntoView would also move the page, so only the track moves.
+  useEffect(() => {
+    const el = track.current, on = el?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (!el || !on) return;
+    if (on.offsetLeft < el.scrollLeft) el.scrollLeft = on.offsetLeft - 3;
+    else if (on.offsetLeft + on.offsetWidth > el.scrollLeft + el.clientWidth) el.scrollLeft = on.offsetLeft + on.offsetWidth - el.clientWidth + 3;
+  }, [value]);
+  // A soft fade on the side that has more options, so a clipped row reads as "scroll for more", not as cut off.
+  const fade = edges.left || edges.right
+    ? `linear-gradient(to right, ${edges.left ? 'transparent, black 28px' : 'black'}, ${edges.right ? 'black calc(100% - 28px), transparent' : 'black'})`
+    : undefined;
   return (
-    <div role="group" aria-label={label}
-      className={cx('inline-flex items-center p-[3px] gap-[2px] rounded-control bg-muted max-w-full overflow-x-auto [scrollbar-width:none]', className)}>
+    <div ref={track} role="group" aria-label={label} style={fade ? { maskImage: fade, WebkitMaskImage: fade } : undefined}
+      className={cx('relative inline-flex items-center p-[3px] gap-[2px] rounded-control bg-muted max-w-full min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', className)}>
       {options.map(o => {
         const on = o.key === value;
+        const empty = o.count === 0 && !on;
+        const flagged = !!o.tone && !!o.count;
         return (
           <button key={o.key} type="button" onClick={() => onChange(o.key)} aria-pressed={on}
             className={cx(
-              'h-8 px-3 rounded-[6px] cursor-pointer text-copy whitespace-nowrap transition-colors duration-[var(--motion-fast)]',
-              on ? 'bg-card text-ink font-medium shadow-[var(--shadow-card)]' : 'text-muted-ink hover:text-ink',
+              'flex-none inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] cursor-pointer text-copy whitespace-nowrap transition-colors duration-[var(--motion-fast)] outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]',
+              on ? 'bg-card text-ink font-medium shadow-[var(--shadow-card)]' : empty ? 'text-faint hover:text-muted-ink' : 'text-muted-ink hover:text-ink',
             )}>
             {o.label}
+            {o.count !== undefined && (
+              <span className={cx('inline-flex items-center gap-1 text-meta font-normal tabular-nums',
+                flagged ? (o.tone === 'danger' ? 'text-danger' : 'text-warning') : empty ? 'text-faint' : 'text-muted-ink')}>
+                {flagged && <span aria-hidden className={cx('w-1.5 h-1.5 rounded-full', o.tone === 'danger' ? 'bg-danger-line' : 'bg-warning-line')} />}
+                {count(o.count)}
+              </span>
+            )}
           </button>
         );
       })}

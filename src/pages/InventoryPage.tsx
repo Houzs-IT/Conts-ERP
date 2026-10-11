@@ -4,7 +4,7 @@ import { StatRow, StatTile } from '../components/Metric';
 import { SearchSelect, Select } from '../components/Select';
 import { StatusDot } from '../components/StatusBadge';
 import { DataTable, type Column } from '../components/DataTable';
-import { Chip } from './finance/listKit';
+import { FilterBar } from '../components/FilterBar';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { Field } from '../components/Field';
@@ -173,9 +173,12 @@ export default function InventoryPage() {
         <SearchSelect label="Unit" className="w-[260px] max-w-full" allLabel="All units" placeholder="Search unit or building"
           value={unitFilter === 'all' ? '' : unitFilter} onChange={v => setUnitFilter(v || 'all')}
           options={units.map(u => ({ value: `${u.propertyName}|${u.unitNumber}`, label: u.unitNumber, group: u.propertyName }))} />
-        <Chip on={condFilter === 'all'} onClick={() => setCondFilter('all')} count={data ? all.length : undefined}>All</Chip>
-        <Chip on={condFilter === 'attention'} onClick={() => setCondFilter('attention')} count={data ? attention : undefined}>Needs attention</Chip>
-        {CONDITIONS.map(c => <Chip key={c} on={condFilter === c} onClick={() => setCondFilter(c)} count={data ? all.filter(i => i.condition === c).length : undefined}>{COND_LABEL[c]}</Chip>)}
+        <FilterBar<CondFilter> label="Item condition" value={condFilter} onChange={setCondFilter}
+          views={[
+            { key: 'all', label: 'All', count: data ? all.length : undefined },
+            { key: 'attention', label: 'Needs attention', count: data ? attention : undefined },
+            ...CONDITIONS.map(c => ({ key: c as CondFilter, label: COND_LABEL[c], count: data ? all.filter(i => i.condition === c).length : undefined })),
+          ]} />
         {filtersOn && <Button size="sm" variant="tertiary" onClick={clearFilters}>Clear filters</Button>}
       </div>
 

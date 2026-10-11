@@ -15,7 +15,8 @@ import { api, errorMessage } from '../lib/api';
 import { rm, date, todayMyt, titleCase, plural } from '../lib/format';
 import { Select } from '../components/Select';
 import { TONE, cx } from '../lib/design-tokens';
-import { useUrlState, usePhone, SearchBox, Chip } from './finance/listKit';
+import { useUrlState, usePhone, SearchBox } from './finance/listKit';
+import { FilterBar } from '../components/FilterBar';
 import { statusOf } from '../lib/status';
 
 type FeeModel = 'management' | 'grr';
@@ -238,10 +239,9 @@ export default function ContractsPage() {
         noun={['contract', 'contracts']} exportName="contracts"
         empty={{ title: 'No contracts yet.', body: 'Add the first management agreement: owner, unit and how the owner is paid.', icon: 'FileSignature', action: { label: 'Add contract', onClick: () => setModal({ mode: 'add' }) } }}
         header={
-          <div className={cx('flex gap-2 py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]', phone ? 'overflow-x-auto' : 'flex-wrap')}>
-            {FILTERS.map(f => (
-              <Chip key={f.key} on={filter === f.key} onClick={() => url.set({ state: f.key === 'all' ? null : f.key, page: null })} count={data ? counts[f.key] : undefined}>{f.label}</Chip>
-            ))}
+          <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
+            <FilterBar<FilterKey> label="Contract state" value={filter} onChange={k => url.set({ state: k === 'all' ? null : k, page: null })}
+              views={FILTERS.map(f => ({ ...f, count: data ? counts[f.key] : undefined }))} />
           </div>
         }
         toolbar={<>
