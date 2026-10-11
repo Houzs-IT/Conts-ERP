@@ -51,6 +51,8 @@ export interface MonitorRow extends BoardRowV2 {
   scheduledTasks: number;
   overdueTasks: number;
   openTasks: number;
+  /** the red flag's own text, e.g. "Works started before: ..." */
+  worksBeforeGateText: string | null;
   crewIds: number[];
   openQuotation: { id: string; quoteNo: string; count: number } | null;
   openVo: { id: string; voNo: string; count: number } | null;
@@ -119,6 +121,7 @@ app.get("/monitor", requirePageAccess("projects.list"), async (c) => {
       const d = designBy.get(p.id);
       const quote = quoteBy.get(String(p.id)) ?? null;
       const vo = f.so ? (voBy.get(f.so.doc_no) ?? null) : null;
+      const gateFlag = v.redFlags.find((x) => x.code === "gate_blocked_works") ?? null;
       const live = v.tasks.filter((t) => t.status !== "skipped");
       const mf: MonitorFacts = {
         step: v.flow.current,
@@ -139,6 +142,7 @@ app.get("/monitor", requirePageAccess("projects.list"), async (c) => {
         renoItem: board.renoItemArrival,
         handedOver: !!f.handover || !!p.handed_over_at,
         plannedHandoverDate: p.planned_handover_date,
+        worksBeforeGate: !!gateFlag,
       };
       rows.push({
         ...board,
@@ -148,6 +152,7 @@ app.get("/monitor", requirePageAccess("projects.list"), async (c) => {
         has3d: mf.has3d,
         scheduledTasks: mf.scheduledTasks,
         overdueTasks: mf.overdueTasks,
+        worksBeforeGateText: gateFlag?.text ?? null,
         openTasks: live.filter((t) => t.status !== "done").length,
         crewIds,
         openQuotation: quote ? { id: quote.id, quoteNo: quote.no, count: Number(quote.n) } : null,

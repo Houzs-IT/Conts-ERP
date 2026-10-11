@@ -12,7 +12,8 @@
      Admin       money received but furniture or reno items not all arrived
      Boss        IN DEFECT; overdue (tasks, or planned handover passed); closed
    Red flags: IN DEFECT, overdue tasks, no SO N days after the project was
-   created, handed over but not fully paid.
+   created, handed over but not fully paid, works started before the hardware
+   gate items (a warning only: the gate blocks nothing, owner decision).
 
    Money-based rules read nothing when money is hidden from the viewer (the
    route passes null amounts), so a queue never reveals what the board hides. */
@@ -40,7 +41,7 @@ export type QueueKey =
   | "boss_overdue"
   | "boss_closed";
 
-export type FlagKey = "in_defect" | "task_overdue" | "no_so_after_days" | "handed_over_unpaid";
+export type FlagKey = "in_defect" | "task_overdue" | "no_so_after_days" | "handed_over_unpaid" | "works_before_gate";
 
 export interface QueueDef { key: QueueKey; role: MonitorRole; label: string; hint: string }
 
@@ -84,6 +85,7 @@ export const FLAG_LABEL: Readonly<Record<FlagKey, string>> = {
   task_overdue: "Overdue site tasks",
   no_so_after_days: `No SO after ${NO_SO_FLAG_DAYS} days`,
   handed_over_unpaid: "Handed over, not fully paid",
+  works_before_gate: "Works started before gate items",
 };
 
 export interface MonitorFacts {
@@ -111,6 +113,8 @@ export interface MonitorFacts {
   renoItem: SupplyCondition | null;
   handedOver: boolean;
   plannedHandoverDate: string | null;
+  /** the project's red flag gate_blocked_works is raised (works started before the gate items) */
+  worksBeforeGate: boolean;
 }
 
 const notArrived = (c: SupplyCondition | null) => c === "pending_purchased" || c === "pending_arrived";
@@ -156,6 +160,7 @@ export function monitorFlags(f: MonitorFacts, today: string): FlagKey[] {
   if (f.overdueTasks > 0) out.push("task_overdue");
   if (!f.hasSo && f.step !== "closed" && f.createdAt && daysBetween(f.createdAt, today) > NO_SO_FLAG_DAYS) out.push("no_so_after_days");
   if (f.handedOver && f.contractSen != null && f.contractSen > 0 && f.receivedSen != null && !isFullyPaid(f.contractSen, f.receivedSen)) out.push("handed_over_unpaid");
+  if (f.worksBeforeGate) out.push("works_before_gate");
   return out;
 }
 

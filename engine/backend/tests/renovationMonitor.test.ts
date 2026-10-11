@@ -30,6 +30,7 @@ const calm: MonitorFacts = {
   renoItem: "all_arrived",
   handedOver: false,
   plannedHandoverDate: null,
+  worksBeforeGate: false,
 };
 
 const q = (over: Partial<MonitorFacts>) => monitorQueues({ ...calm, ...over }, TODAY);
@@ -150,6 +151,13 @@ describe("red flags", () => {
     expect(fl({ handedOver: true, step: "handover" })).toContain("handed_over_unpaid");
     expect(fl({ handedOver: true, step: "closed", receivedSen: 100_000_00 })).not.toContain("handed_over_unpaid");
     expect(fl({ handedOver: true, step: "handover", contractSen: null, receivedSen: null })).not.toContain("handed_over_unpaid");
+  });
+});
+
+describe("works started before the hardware gate items: a red flag, never a queue that blocks", () => {
+  test("flag raised, queues unchanged", () => {
+    expect(monitorFlags({ ...calm, worksBeforeGate: true }, TODAY)).toEqual(["works_before_gate"]);
+    expect(monitorQueues({ ...calm, worksBeforeGate: true }, TODAY)).toEqual(["sales_ongoing"]);
   });
 });
 
