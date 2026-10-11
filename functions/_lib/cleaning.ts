@@ -43,13 +43,17 @@ export async function checklistOf(env: Env, taskId: string, kind: string): Promi
 const setting = async (env: Env, key: string) => (await one<{ value: string }>(env, 'SELECT value FROM settings WHERE key = ?', key))?.value;
 
 /** What one clean of this kind costs on this unit, in sen, and where the figure came from.
- *  Standard: the unit's own cleaning price (unit costs), else the last clean of the same kind charged on the unit,
- *  else the organisation default. Deep: the last deep clean charged on the unit, else the default. */
+ *  Standard: the unit's own standard cleaning price (units.cleaning_price, migration 0101; a unit the workbook import
+ *  brought in after that still carries it as its 'cleaning' monthly cost), else the last clean of the same kind
+ *  charged on the unit, else the organisation default. A price cleared on the unit is stored as 0, so it does not fall
+ *  back to the old monthly cost. Deep: the last deep clean charged on the unit, else the default. */
 export async function cleanPrice(env: Env, unitId: string, kind: string): Promise<{ amount: number; source: 'unit' | 'history' | 'default' }> {
   const deep = kind === 'deep_clean';
   if (!deep) {
-    const unit = await one<{ amount: number }>(env, `SELECT amount FROM unit_expenses WHERE unit_id = ? AND category = 'cleaning' AND amount > 0 ORDER BY sort_order LIMIT 1`, unitId);
-    if (unit) return { amount: Number(unit.amount), source: 'unit' };
+    const unit = await one<{ amount: number | null }>(env, `
+      SELECT COALESCE(u.cleaning_price, (SELECT e.amount FROM unit_expenses e WHERE e.unit_id = u.id AND e.category = 'cleaning' AND e.amount > 0 ORDER BY e.sort_order LIMIT 1)) AS amount
+      FROM units u WHERE u.id = ?`, unitId);
+    if (unit?.amount != null && Number(unit.amount) > 0) return { amount: Number(unit.amount), source: 'unit' };
   }
   const last = await one<{ amount: number }>(env, `
     SELECT e.amount FROM expenses e JOIN tasks t ON t.id = e.task_id

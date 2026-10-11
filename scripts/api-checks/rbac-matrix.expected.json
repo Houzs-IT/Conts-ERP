@@ -59,6 +59,7 @@
  "GET /api/documents/[id]/download": "AAAAAAAU",
  "GET /api/driver-leave": "AAAAFFFU",
  "GET /api/drivers": "AAAAFFFU",
+ "GET /api/expenses/breakdown": "AAFAFFFU",
  "GET /api/expenses/report": "AAFAFFFU",
  "GET /api/expenses/utilities": "AAFAFFFU",
  "GET /api/fabrics": "AAAAFFFU",

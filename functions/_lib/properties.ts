@@ -13,6 +13,8 @@ export interface UnitInput {
   ownerName?: string; ic?: string; bankName?: string; bankAccount?: string; accountHolder?: string;
   pkg?: string; term?: string; split?: string; splitValue?: number | null; guaranteePeriod?: string;
   bedrooms?: number;
+  /** The standard clean's price on this unit (sen); null clears it (stored as 0, see cleanPrice). */
+  cleaningPrice?: number | null;
   expenses?: { id?: string; category: string; amount: number; note?: string }[];
   contract?: { feePct: number; startedOn: string; renewsOn: string };
 }
@@ -35,6 +37,7 @@ export function invalidUnit(b: UnitInput): { field: string; message: string } | 
   if (b.splitValue != null && (!Number.isInteger(b.splitValue) || b.splitValue < 0)) return { field: 'splitValue', message: 'Enter a whole number.' };
   if (b.guaranteePeriod !== undefined && !GUARANTEE_PERIODS.includes(b.guaranteePeriod)) return { field: 'guaranteePeriod', message: 'Pick month or year.' };
   if (b.bedrooms !== undefined && (!Number.isInteger(b.bedrooms) || b.bedrooms < 0 || b.bedrooms > 20)) return { field: 'bedrooms', message: 'Bedrooms must be a whole number from 0 to 20.' };
+  if (b.cleaningPrice != null && (!Number.isInteger(b.cleaningPrice) || b.cleaningPrice < 0 || b.cleaningPrice > 10_000_000)) return { field: 'cleaningPrice', message: 'Enter the cleaning price in ringgit, RM 0.00 or more.' };
   if (b.contract) {
     if (!(b.contract.feePct >= 0 && b.contract.feePct <= 100)) return { field: 'feePct', message: 'The fee must be between 0 and 100.' };
     if (!b.contract.startedOn) return { field: 'startedOn', message: 'Enter the start date.' };
