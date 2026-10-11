@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -8,6 +8,7 @@ import { useApi } from '../lib/useApi';
 import { count, dateTime, relative } from '../lib/format';
 import { DataTable, type Column } from '../components/DataTable';
 import { cx } from '../lib/design-tokens';
+import { StatRow, StatTile, Segmented } from '../components/Metric';
 
 // System Health, laid out like the Hookka /admin/health page so the two can be moved between systems:
 // a status banner, a grid of stat cards fed by one live payload, then the audit feed with its range and
@@ -35,25 +36,14 @@ const REFRESH_MS = 60_000;
 const fmtMs = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${ms} ms`);
 const words = (s: string) => s.replace(/[._]/g, ' ');
 
-type CardTone = 'neutral' | 'accent' | 'warning' | 'error';
-const BAR: Record<CardTone, string> = { neutral: 'var(--color-line)', accent: 'var(--color-gold)', warning: 'var(--color-warning-line)', error: 'var(--color-critical-line)' };
-const INK: Record<CardTone, string> = { neutral: 'var(--color-ink)', accent: 'var(--color-gold-ink)', warning: 'var(--color-warning-fg)', error: 'var(--color-critical-fg)' };
-const CHECK_TONE: Record<Status, CardTone> = { ok: 'neutral', warning: 'warning', critical: 'error', off: 'neutral' };
-const CHECK_ICON: Record<string, string> = { email: 'Mail', channex: 'Plug', bookings: 'Bell', queue: 'RefreshCw', jobs: 'Timer', problems: 'Bug' };
+type CardTone = 'neutral' | 'warning' | 'critical';
+const INK: Record<CardTone, string> = { neutral: 'var(--color-ink)', warning: 'var(--color-warning-fg)', critical: 'var(--color-critical-fg)' };
+const CHECK_TONE: Record<Status, CardTone> = { ok: 'neutral', warning: 'warning', critical: 'critical', off: 'neutral' };
+const toneOf = (t: CardTone) => (t === 'neutral' ? undefined : t);
 
-function StatCard({ icon, label, value, sub, tone = 'neutral', title, onClick }: { icon: ReactNode; label: string; value: string | number; sub?: string; tone?: CardTone; title?: string; onClick?: () => void }) {
-  return (
-    <div title={title} onClick={onClick} className={cx('relative overflow-hidden rounded-card border border-solid border-line bg-card px-4 py-3', onClick && 'cursor-pointer hover:border-line-strong')}>
-      <span aria-hidden className="absolute left-0 top-0 h-full w-[3px]" style={{ background: BAR[tone] }} />
-      <div className="flex items-center gap-1.5 text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">
-        <span style={{ color: tone === 'neutral' ? undefined : INK[tone] }} className="flex">{icon}</span><span>{label}</span>
-      </div>
-      <div className="mt-1.5 text-headline font-bold leading-none tracking-[-0.01em] [font-variant-numeric:tabular-nums]" style={{ color: INK[tone] }}>
-        {typeof value === 'number' ? count(value) : value}
-      </div>
-      {sub && <div className="mt-1 text-caption text-muted-ink">{sub}</div>}
-    </div>
-  );
+/** A StatTile with the check's long explanation as its tooltip. `contents` keeps the tile itself as the grid item. */
+function Tile({ title, ...p }: Parameters<typeof StatTile>[0] & { title?: string }) {
+  return <div title={title} className="contents"><StatTile {...p} /></div>;
 }
 
 type BannerTone = 'green' | 'amber' | 'red' | 'loading';
@@ -124,7 +114,7 @@ function AuditDiff({ before, after }: { before: Detail; after: Detail }) {
 }
 
 const panel = 'rounded-card border border-solid border-line bg-card p-5';
-const panelTitle = 'text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink';
+const panelTitle = 'text-[16px] font-semibold tracking-[-0.01em] text-ink';
 
 export default function SystemHealthPage() {
   const [range, setRange] = useState<Range>('7d');
@@ -167,20 +157,20 @@ export default function SystemHealthPage() {
 
       {d && (
         <>
-          <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(190px,1fr))]">
-            <StatCard icon={<Icon name="Database" size="sm" />} label="DB latency" value={fmtMs(d.db.latency_ms)} sub={d.db.ok ? 'Live request-path ping' : 'Ping failed'}
-              tone={!d.db.ok || d.db.latency_ms >= VERY_SLOW_MS ? 'error' : d.db.latency_ms >= SLOW_MS ? 'warning' : 'accent'} />
-            <StatCard icon={<Icon name="HardDrive" size="sm" />} label="File storage" value={d.r2.bound ? fmtMs(d.r2.latency_ms) : '—'} sub={d.r2.bound ? (d.r2.ok ? 'Reachable' : 'Unreachable') : 'Not connected'}
-              tone={d.r2.bound && !d.r2.ok ? 'error' : 'neutral'} />
-            <StatCard icon={<Icon name="Users" size="sm" />} label="Active users" value={d.counts.users_active}
-              sub={`${count(d.counts.users_invited)} invited · ${count(d.counts.users_disabled)} disabled${d.counts.users_locked ? ` · ${count(d.counts.users_locked)} locked` : ''}`}
-              tone={d.counts.users_locked ? 'warning' : 'neutral'} onClick={() => navigate('/system/users')} />
-            <StatCard icon={<Icon name="ClipboardCheck" size="sm" />} label="Audit events 24h" value={d.counts.audit_24h} sub={`${count(d.counts.audit_7d)} in 7d · ${count(d.counts.sensitive_24h)} sensitive today`} />
+          <StatRow cols={5}>
+            <Tile label="DB latency" value={fmtMs(d.db.latency_ms)} hint={d.db.ok ? 'Live request-path ping' : 'Ping failed'}
+              tone={!d.db.ok || d.db.latency_ms >= VERY_SLOW_MS ? 'critical' : d.db.latency_ms >= SLOW_MS ? 'warning' : undefined} />
+            <Tile label="File storage" value={d.r2.bound ? fmtMs(d.r2.latency_ms) : '—'} hint={d.r2.bound ? (d.r2.ok ? 'Reachable' : 'Unreachable') : 'Not connected'}
+              tone={d.r2.bound && !d.r2.ok ? 'critical' : undefined} />
+            <Tile label="Active users" value={count(d.counts.users_active)}
+              hint={`${count(d.counts.users_invited)} invited · ${count(d.counts.users_disabled)} disabled${d.counts.users_locked ? ` · ${count(d.counts.users_locked)} locked` : ''}`}
+              hintTone={d.counts.users_locked ? 'warning' : undefined} onClick={() => navigate('/system/users')} />
+            <Tile label="Audit events 24h" value={count(d.counts.audit_24h)} hint={`${count(d.counts.audit_7d)} in 7d · ${count(d.counts.sensitive_24h)} sensitive today`} />
             {d.checks.map(c => (
-              <StatCard key={c.key} icon={<Icon name={CHECK_ICON[c.key] ?? 'Activity'} size="sm" />} label={c.label} value={c.value} sub={c.summary}
-                tone={CHECK_TONE[c.status]} title={c.detail} onClick={c.link ? () => navigate(c.link!.path) : undefined} />
+              <Tile key={c.key} label={c.label} value={c.value} hint={c.summary}
+                tone={toneOf(CHECK_TONE[c.status])} title={c.detail} onClick={c.link ? () => navigate(c.link!.path) : undefined} />
             ))}
-          </div>
+          </StatRow>
 
           {attention.length > 0 && (
             <div className={panel}>
@@ -198,8 +188,8 @@ export default function SystemHealthPage() {
           )}
 
           <div className={panel}>
-            <div className={cx(panelTitle, 'mb-2 flex items-center gap-2')}><Icon name="Gauge" size="sm" color="var(--color-gold-ink)" /> Database / connection</div>
-            <div className="text-headline font-bold leading-none tracking-[-0.01em]">
+            <div className={cx(panelTitle, 'mb-3')}>Database / connection</div>
+            <div className="text-headline font-medium leading-none tracking-[-0.025em] tabular-nums">
               {fmtMs(d.db.latency_ms)}
               <span className="ml-2 text-meta font-normal text-muted-ink">this check{d.counts.last_event_at ? ` · last change ${relative(d.counts.last_event_at)}` : ''}</span>
             </div>
@@ -212,7 +202,7 @@ export default function SystemHealthPage() {
           <DataTable<Problem> id="health.problems" urlPrefix="prob." noViews pageSize={0} maxHeight="none"
             columns={PROBLEM_COLUMNS} rows={d.problems} rowKey={p => `${p.at}|${p.what}|${p.where ?? ''}`} noun={['problem', 'problems']}
             exportName="problems-7d"
-            header={<div className={cx(panelTitle, 'flex items-center gap-2 pt-4 px-[22px] max-md:px-4 pb-1')}><Icon name="Bug" size="sm" /> Problems in the last 7 days</div>}
+            header={<div className={cx(panelTitle, 'pt-5 px-[22px] max-md:px-4 pb-1')}>Problems in the last 7 days</div>}
             empty={{ title: 'Nothing has failed.', body: 'Failed messages, syncs and jobs from the last 7 days show here.', icon: 'CircleCheck' }} />
         </>
       )}
@@ -224,23 +214,17 @@ export default function SystemHealthPage() {
         filtered={sensitiveOnly} onClearFilters={() => { setSensitiveOnly(false); setLimit(100); }}
         empty={{ title: `No events in the last ${range}.`, icon: 'ClipboardCheck' }}
         header={
-          <div className="pt-4 px-[22px] max-md:px-4 pb-3 flex flex-col gap-4">
+          <div className="pt-5 px-[22px] max-md:px-4 pb-3 flex flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className={panelTitle}>Audit feed: recent changes</div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button type="button" onClick={() => { setSensitiveOnly(v => !v); setLimit(100); }} title="Only accounts and passwords, settings, payouts, deletions and failures"
-                  className={cx('inline-flex h-7 items-center gap-1.5 rounded-control border border-solid px-2.5 text-caption font-semibold cursor-pointer [font-family:inherit]',
+                  className={cx('inline-flex h-9 items-center gap-1.5 rounded-control border border-solid px-3 text-copy font-medium cursor-pointer [font-family:inherit]',
                     sensitiveOnly ? 'border-warning-line bg-warning-bg text-warning' : 'border-line bg-card text-muted-ink')}>
                   <Icon name="ShieldAlert" size="sm" /> Sensitive only
                 </button>
-                <div className="inline-flex rounded-control border border-solid border-line bg-card p-0.5">
-                  {RANGES.map(r => (
-                    <button key={r} type="button" onClick={() => { setRange(r); setLimit(100); }}
-                      className={cx('h-6 rounded-[4px] border-none px-2 text-caption font-semibold cursor-pointer [font-family:inherit]', range === r ? 'bg-ink text-white' : 'bg-transparent text-muted-ink')}>
-                      {r}
-                    </button>
-                  ))}
-                </div>
+                <Segmented<Range> label="Range" value={range} onChange={r => { setRange(r); setLimit(100); }}
+                  options={RANGES.map(r => ({ key: r, label: r }))} />
               </div>
             </div>
             {(feed.data?.summary.byAction.length ?? 0) > 0 && (

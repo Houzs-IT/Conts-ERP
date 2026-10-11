@@ -69,7 +69,7 @@ export default function GuestDocumentsPage() {
         <span className="flex items-center gap-2 min-w-0">
           {d.channel && <ChannelMark ch={d.channel as BookingChannel} size={18} />}
           <button type="button" onClick={e => { e.stopPropagation(); navigate(`/reservations/bookings?open=${encodeURIComponent(d.reservationId)}`); }}
-            className="p-0 border-none bg-transparent [font:inherit] text-copy text-ink underline cursor-pointer text-left truncate">{d.bookingRef ?? 'Booking'}</button>
+            className="p-0 border-none bg-transparent [font-family:inherit] text-copy text-ink underline cursor-pointer text-left truncate">{d.bookingRef ?? 'Booking'}</button>
         </span>
       ) },
     { key: 'unit', label: 'Unit', value: d => d.unit, hidden: true, width: 140 },
@@ -104,7 +104,7 @@ export default function GuestDocumentsPage() {
         server={{ total: data?.total ?? rows.length, page: data?.page ?? page, pageSize: data?.pageSize ?? size, sizes: [25, 50, 100, 200], defaultPageSize: PAGE_SIZE, fetchAll }}
         viewParams={['tab', 'month', 'q']} filtered={tab !== 'all' || !!q || !!month} onClearFilters={() => url.set({ tab: null, month: null, q: null, page: null })}
         empty={{ title: 'No guest documents yet', body: "Issue an invoice or an official receipt from a booking's money section. Each gets the next INV- or OR- number.", icon: 'FileText', action: { label: 'Open bookings', onClick: () => navigate('/reservations/bookings') } }}
-        footer={<div className="px-[22px] py-[11px] [border-top:1px_solid_var(--color-line)] bg-page text-meta text-muted-ink">A voided number is never issued again. View opens the document ready to print or save as PDF.</div>}
+        footer={<div className="px-[22px] max-md:px-4 py-3 [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink">A voided number is never issued again. View opens the document ready to print or save as PDF.</div>}
         renderCard={d => (
           <span className="flex flex-col gap-[5px]">
             <span className="flex items-center justify-between gap-3">{no(d)}<MoneyText sen={d.amount} mode="exact" strong className="text-copy" /></span>

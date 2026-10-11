@@ -19,6 +19,7 @@ import { MoneyInput, DateField } from '../components/inputs';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
+import { Eyebrow, Figure, Segmented } from '../components/Metric';
 import {
   useUrlState, usePhone, ListCard, SearchBox, Chip, shiftMonth,
   useFinanceFilters, type FinanceFilters,
@@ -279,15 +280,8 @@ export default function ExpensesPage() {
         <SearchSelect className="flex-[1_1_160px]" label="Owner" allLabel="All owners" placeholder="Search owners" value={owner} onChange={v => setFilter({ owner: v || null, unit: null })} options={ownerOptions} />
 
         {/* View toggle — grouped drill-down (default) or the flat list. */}
-        <div className="flex flex-[1_0_auto] sm:flex-none h-9 rounded-control border border-solid border-line overflow-hidden" role="group" aria-label="Expenses view">
-          {(['grouped', 'list'] as const).map(v => (
-            <button key={v} onClick={() => setFilter({ view: v === 'grouped' ? null : v })} aria-pressed={view === v}
-              className={cx('flex-1 h-full px-[13px] py-0 cursor-pointer whitespace-nowrap font-sans text-copy border-none',
-                view === v ? 'bg-black text-white' : 'bg-card text-muted-ink')}>
-              {v === 'grouped' ? 'Grouped' : 'List'}
-            </button>
-          ))}
-        </div>
+        <Segmented<'grouped' | 'list'> label="Expenses view" value={view} onChange={v => setFilter({ view: v === 'grouped' ? null : v })}
+          options={[{ key: 'grouped', label: 'Grouped' }, { key: 'list', label: 'List' }]} />
 
         {/* Month — stepper plus a menu of the months that have expenses. */}
         <div className="flex flex-[1_0_150px] sm:flex-none sm:w-[168px] items-center h-9 rounded-control border border-solid border-line bg-card min-w-0">
@@ -316,7 +310,7 @@ export default function ExpensesPage() {
           renderCard={r => <ExpenseCard e={r} />}
           footer={data && total > 0 ? <>
             <TotalBar count={total} amount={totalAmount} />
-            {total > (data.pageSize || size) && <div className="px-[22px] pb-3 bg-page text-meta text-muted-ink max-md:px-4">Totals cover everything the filters match, not just this page.</div>}
+            {total > (data.pageSize || size) && <div className="px-[22px] pb-3 text-meta text-muted-ink max-md:px-4">Totals cover everything the filters match, not just this page.</div>}
           </> : null}
         />
       ) : (
@@ -370,9 +364,9 @@ export default function ExpensesPage() {
 
 function TotalBar({ count, amount }: { count: number; amount: number }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-[12px] px-[22px] bg-page text-copy font-semibold">
-      <span>Total · {plural(count, 'expense')}</span>
-      <MoneyText sen={amount} mode="exact" />
+    <div className="flex items-center justify-between gap-3 py-3.5 px-[22px] max-md:px-4 [border-top:1px_solid_var(--color-line)]">
+      <Eyebrow>Total · {plural(count, 'expense')}</Eyebrow>
+      <Figure value={moneyString(amount, 'exact')} className="text-[18px] font-semibold tracking-[-0.015em] text-ink" />
     </div>
   );
 }
@@ -490,7 +484,7 @@ function TreeRow({ depth, kind, label, sub, amount, tone, count, expanded, onTog
       aria-expanded={expandable ? expanded : undefined}
       className={cx(
         'flex items-center gap-[10px] min-h-[46px] py-[8px] pr-[18px] [border-bottom:1px_solid_var(--color-line-soft)]',
-        isTotal ? 'bg-muted font-semibold' : isCategory ? 'font-medium' : '',
+        isTotal ? 'min-h-[60px] font-semibold [border-bottom-color:var(--color-line)]' : isCategory ? 'font-medium' : '',
         isCategory && expanded ? 'bg-page' : '',
         expandable ? 'cursor-pointer' : '',
       )}
@@ -504,7 +498,7 @@ function TreeRow({ depth, kind, label, sub, amount, tone, count, expanded, onTog
       {tone && !isTotal && <span className={cx('w-[7px] h-[7px] rounded-full shrink-0', TONE[tone].dot)} aria-hidden />}
 
       <div className="flex flex-col gap-px min-w-0 flex-1">
-        <span className="truncate text-copy" title={label}>
+        <span className={cx('truncate', isTotal ? 'text-[16px] tracking-[-0.01em]' : 'text-copy')} title={label}>
           {label}
           {count != null && count > 0 && kind !== 'expense' && <span className="ml-[6px] text-caption font-normal text-muted-ink">· {plural(count, 'item')}</span>}
           {count != null && count > 0 && kind === 'expense' && <span className="ml-[6px] text-caption font-normal text-muted-ink">· {plural(count, 'line')}</span>}
@@ -512,7 +506,7 @@ function TreeRow({ depth, kind, label, sub, amount, tone, count, expanded, onTog
         {sub && <span className="text-meta text-muted-ink truncate" title={sub}>{sub}{locked ? ' · statement final' : ''}</span>}
       </div>
 
-      <MoneyText sen={amount} mode="exact" className="shrink-0 text-right text-copy" />
+      <MoneyText sen={amount} mode="exact" className={cx('shrink-0 text-right', isTotal ? 'text-[16px] font-semibold' : 'text-copy')} />
 
       {onEdit ? (
         <Button size="sm" variant="secondary" onClick={e => { e.stopPropagation(); onEdit(); }}
