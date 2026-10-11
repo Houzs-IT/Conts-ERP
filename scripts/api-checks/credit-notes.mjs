@@ -49,6 +49,11 @@ check('posted CN lowers receivable to RM 420', await ar(CUST) === 42000, await a
 r = await call('POST', '/api/credit-notes', { kind: 'DN', salesOrderId: SO, lines: [{ description: 'Undercharged delivery', amountSen: 2000 }] }); const DN = r.json?.id;
 await call('PATCH', `/api/credit-notes/${DN}`, { status: 'POSTED' });
 check('posted DN raises receivable to RM 440', await ar(CUST) === 44000, await ar(CUST));
+// A credit note may exceed what the invoice still owes (owner, 11 Oct 2026): RM 600 against RM 440 owing.
+r = await call('POST', '/api/credit-notes', { kind: 'CN', salesInvoiceId: SI, lines: [{ description: 'Full refund plus goodwill', amountSen: 60000 }] });
+check('a CN larger than the invoice balance is accepted', r.status === 201, r.text);
+await call('PATCH', `/api/credit-notes/${r.json?.id}`, { status: 'POSTED' });
+check('posted, it leaves the customer in credit (-RM 160)', await ar(CUST) === -16000, await ar(CUST));
 
 // --- a typed customer with no invoice goes into credit ---
 const LONE = `Lone Customer ${tag}`;
