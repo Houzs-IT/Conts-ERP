@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card } from './Card';
 import { Button } from './Button';
 import { StatusBadge } from './StatusBadge';
@@ -11,22 +11,27 @@ import { useSession } from '../lib/session';
 import { cx } from '../lib/design-tokens';
 
 interface Call { kind: string; calledAt: string; status: number; taskId: string | null; rows: number; fullSync: boolean; unit: string | null }
-interface Status { notifications?: { secretSet: boolean; registered: boolean | null } | null; configured: boolean; restricted?: boolean; linkedUnits: number; queued: number; failed: number; oldestQueuedAt: string | null; recentCalls: Call[] }
+interface Status { notifications?: { secretSet: boolean; registered: boolean | null } | null; configured: boolean; restricted?: boolean; linkedUnits: number; queued: number; failed: number; oldestQueuedAt: string | null; recentCalls: Call[]; callsTotal?: number }
 
 /** Channex sync health: units linked, updates waiting or failed, the last calls with Channex's task
  *  ids, and a full sync (500 days, two calls) for going live or recovering after an outage. */
-export default function ChannexSyncPanel() {
-  const { data, reload } = useApi<Status>('/integrations/channex/status');
+export type ChannexState = 'connected' | 'not_connected' | 'attention';
+
+export default function ChannexSyncPanel({ onState }: { onState?: (state: ChannexState | null) => void } = {}) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const { data, reload } = useApi<Status>(`/integrations/channex/status?page=${page}&pageSize=${pageSize}`);
   const toast = useToast();
   const { user } = useSession();
   const canRun = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
   const [busy, setBusy] = useState(false);
   const [hookBusy, setHookBusy] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const state: ChannexState | null = !data || data.restricted ? null : !data.configured ? 'not_connected' : data.failed ? 'attention' : 'connected';
+  useEffect(() => { onState?.(state); }, [state, onState]);
   if (!data || data.restricted) return null;
   const n = data.notifications;
-  const shown = data.recentCalls.slice((page - 1) * pageSize, page * pageSize);
+  const shown = data.recentCalls;
+  const callsTotal = data.callsTotal ?? data.recentCalls.length;
 
   async function fullSync() {
     setBusy(true);
@@ -99,7 +104,7 @@ export default function ChannexSyncPanel() {
           </table>
         </div>
       )}
-      {data.recentCalls.length > 0 && (
+      {callsTotal > 0 && (
         <div className="flex items-center justify-between gap-3 flex-wrap pl-[22px] [border-top:1px_solid_var(--color-line-soft)]">
           <div className="flex items-center gap-1" role="group" aria-label="Rows per page">
             {[10, 50, 100].map(s => (
@@ -107,7 +112,7 @@ export default function ChannexSyncPanel() {
                 onClick={() => { setPageSize(s); setPage(1); }}>{s}</Button>
             ))}
           </div>
-          <PageControls page={page} pageSize={pageSize} total={data.recentCalls.length} onPage={setPage} noun="sends" />
+          <PageControls page={page} pageSize={pageSize} total={callsTotal} onPage={setPage} noun="sends" />
         </div>
       )}
     </Card>

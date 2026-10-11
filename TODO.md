@@ -51,8 +51,6 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Owner decision: Workers Paid on the Conts ERP account. On the free plan, Send statements makes one email call per owner (~100 a month) against 50 outside calls per request; calls past 50 fail and are not retried while the cron is off. Until then send 40 at a time.
 - A bulk price update for all 139 units over a year builds 152,205 rate rows in one request (12.6 s locally); UNTESTED against the free plan's CPU limit on Cloudflare.
 - Not yet batched (allow-listed in scripts/checks/no-query-in-loop.mjs): reservations/mark-paid-out (3 queries per booking), expenses/utilities (~6 per bill), payouts/index (payout run), approvals bulk approve.
-- Reviews list and Channex call log stop at 500 rows without paging; add paging before 500 reviews.
-- GETs are not retried on 502/503/504 (a cold Hyperdrive pool after a quiet spell); a single retry for GETs in src/lib/api.ts.
 - Confirm the Hyperdrive origin is Supabase's session pooler (port 5432), not the transaction pooler.
 - libphonenumber (149 KB) is in the entry script because src/lib/format.ts formats phones; lazy-load it if the entry budget (scripts/checks/entry-bundle.mjs, 180 KB gzipped) gets tight.
 
@@ -219,11 +217,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 ## Form inputs (feat/s6-inputs)
 - Done: every money, number, percent, phone, date and time field uses src/components/inputs (no raw type="number"/date/time left; `npm run check` enforces it). Endpoints behind them refuse bad values with a field-level 422 (functions/_lib/validate.ts; scripts/api-checks/input-validation.mjs).
 - Open: native date/time pickers are kept on purpose (phone calendars work well); a typed-text date field is not built.
-- Open: lockout attempts accepts 3-20 on the server but the Settings screen offers 3-10; left to the security stream to align.
 
 ## Phones for every country (fix/fix-phone-intl)
 - Done: phones read, format and validate for every country through libphonenumber (src/lib/phone.ts, shared by format.ts, PhoneInput and the server's checkPhone); PhoneInput has a searchable country picker (MY +60 by default). 3,417 of 3,417 local guest phones read in their country's grouping (scripts/api-checks/phone-shapes.mjs).
-- Open: "already on file" for a new guest matches the phone text exactly, so a typed +60 18-980 0069 does not match an imported 60189800069; compare digits (phoneDigits) if duplicates appear.
 - Open: 3 stored guest phones are the right length but outside any known range (2 x +60 2..., 1 x +49), so they show ungrouped.
 
 ## Renovation project, simplified (feat/reno-simplify)
@@ -236,7 +232,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Open: the 15-minute email/WhatsApp retry does not claim its rows, so a double-fired cron could resend one message; add a 'sending' state (migration) before the cron worker is deployed.
 - Open: built-in supply chain create screens add a placeholder row before the save answers and keep it if the save fails; only matters if the engine is switched off.
 - Open: field edits are last-write-wins (no version column); status and dates are already protected.
-- Note: booking-lifecycle.mjs signs an operations_staff cookie for the dev user, but the middleware now reads the live role from users, so its three non-management checks fail on any database where that user is management; give the check a real non-management user.
 
 ## Supply chain click sweep (fix/sweep-supply-chain, 11 Oct)
 - Done: built-in supply chain screens wait for the server before saying "saved" and re-read the list (src/lib/persist.ts); document drawers load their lines from the record; tested by scripts/api-checks/supply-chain-sweep.mjs.
@@ -254,9 +249,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner to decide: should finance admins see Users and roles? The list refuses them (functions/api/users), so their built-in access is now none; management can still raise it, and then the page shows "could not load".
 - Imported paid payouts have no paid date (the workbook has none), so Payouts shows "Date not recorded" for 531 of 536.
 - Performance "Management fees" over 12 months only counts Aug 2026: the workbook's 整体报告 breakdown exists for that month alone.
-- The sign-in footer phone (+60 17-465 8868) is fixed in LoginPage.tsx; Settings > Support phone is not read there before sign-in.
-- Integrations header counts "2 not connected" from the provider cards only; the Channex panel above it is not counted.
-- A new password equal to the current one is accepted on My account.
 
 ## Reservations click sweep (fix/sweep-reservations, 11 Oct 2026)
 - Inbox: the messages table keeps no delivery state, so after a reload a reply WhatsApp refused looks sent (marked only until the page reloads). Needs a migration (a delivery column) — no number was reserved for this sweep.

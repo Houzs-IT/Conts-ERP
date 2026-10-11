@@ -3,9 +3,9 @@
 // It creates its own bookings, so run it against a throwaway database only:
 //   API_BASE=http://127.0.0.1:8801 API_EMAIL=dev@local.test API_PASSWORD=LocalTest1 [SESSION_SECRET=<.dev.vars value>] \
 //     node scripts/api-checks/booking-lifecycle.mjs
-// With SESSION_SECRET it also signs a non-management session (same user, operations_staff role) to check the
-// management-only moves are refused to other roles.
-import { createHmac } from 'node:crypto';
+// It also signs a session for the seeded operations_staff user (harness USERS; SESSION_SECRET as in harness.mjs) to
+// check the management-only moves are refused to other roles, and skips those checks when that user is not here.
+import { cookieFor } from './harness.mjs';
 
 const BASE = process.env.API_BASE ?? 'http://127.0.0.1:8801';
 let fails = 0;
@@ -13,15 +13,15 @@ const check = (name, ok, extra = '') => { if (!ok) fails++; console.log(`${ok ? 
 
 const login = await fetch(BASE + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: process.env.API_EMAIL ?? 'dev@local.test', password: process.env.API_PASSWORD ?? 'LocalTest1' }) });
 const cookie = login.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
-const me = (await login.json()).user ?? {};
 check('signed in', login.ok && cookie.includes('='), login.status);
 
-function staffCookie() {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret || !me.id) return null;
-  const b64 = b => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const body = Buffer.from(JSON.stringify({ userId: me.id, email: me.email, role: 'operations_staff', fullName: me.fullName ?? 'Staff', iat: Date.now(), exp: Date.now() + 36e5 })).toString('base64').replace(/=+$/, '');
-  return `tc_session=${body}.${b64(createHmac('sha256', secret).update(body).digest())}`;
+/** The middleware reads the live role from users, so the non-management checks need a real user who is not
+ *  management; null when the seeded one is missing or the server does not take the harness secret. */
+async function staffCookie() {
+  const c = cookieFor('operations_staff');
+  const r = await fetch(BASE + '/api/auth/session', { headers: { cookie: c } });
+  const role = r.ok ? (await r.json()).user?.role : null;
+  return role === 'operations_staff' ? c : null;
 }
 async function call(method, path, body, as = cookie) {
   const r = await fetch(BASE + path, { method, headers: { cookie: as, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -76,11 +76,11 @@ r = await move(future.id, 'checked_out');
 check('illegal: cancelled -> checked out -> 409', r.status === 409, r.text);
 r = await call('PATCH', `/api/reservations/${future.id}/dates`, { checkIn: MYT(201), checkOut: MYT(204), confirm: true });
 check('dates of a cancelled booking cannot change -> 409', r.status === 409, r.text);
-const staff = staffCookie();
+const staff = await staffCookie();
 if (staff) {
   r = await move(future.id, 'confirmed', undefined, staff);
   check('reinstate refused to a non-management role', r.status === 409 && /Only management/.test(r.json?.error?.message ?? ''), r.text);
-} else console.log('skip non-management checks (no SESSION_SECRET)');
+} else console.log('skip non-management checks (the seeded operations_staff user is not signed in on this server)');
 r = await move(future.id, 'confirmed');
 check('management reinstates a cancelled booking (clash checked)', r.status === 200 && r.json.state === 'confirmed', r.text);
 
