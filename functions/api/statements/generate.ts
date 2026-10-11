@@ -6,21 +6,28 @@ import { monthEndExclusive } from '../../_lib/revenue';
 import { auditMany } from '../../_lib/history';
 import { notifyUsers } from '../../_lib/notify';
 
-/** POST /api/statements/generate { period: "2026-09" }
+/** POST /api/statements/generate { period: "2026-09", ownerIds?: string[] }
  *  One provisional statement per owner, built by the owner workbook's rules (functions/_lib/ownerStatement.ts):
  *  income split by night into the month, cleaning / bills / additional deductions / miscellaneous charges, the
  *  contract split (share, management fee, Package D minimum, fixed rent), then open owner adjustments (O2).
  *  Every line is kept and points at its booking, expense or adjustment; statement_units keeps each unit's figures.
  *  Only provisional statements are rebuilt: a finalised one is left exactly as it is. A period already sent is refused.
+ *  With ownerIds (the owner page's "Generate owner report"), only those owners' statements are built or rebuilt, and
+ *  only one of theirs already sent refuses it; every other owner's statement is left untouched.
  *  The whole month is read in four queries and written in a handful, so all owners take well under two seconds. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (!session.manage) return fail('FORBIDDEN', 'You can view statements but cannot generate them. Ask a Finance Admin for access.', 403);
 
-  const b = await request.json<{ period: string }>().catch(() => null);
+  const b = await request.json<{ period: string; ownerIds?: unknown }>().catch(() => null);
   const period = b?.period ?? '';
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return fail('VALIDATION', 'Period must look like 2026-08.', 422);
+  if (b?.ownerIds !== undefined && (!Array.isArray(b.ownerIds) || b.ownerIds.length > 500 || b.ownerIds.some(x => typeof x !== 'string'))) {
+    return fail('VALIDATION', 'Owners must be a list of owner ids.', 422);
+  }
+  // An empty list (the statements screen sends one) means every owner.
+  const ownerIds = Array.isArray(b?.ownerIds) && b.ownerIds.length ? b.ownerIds as string[] : null;
 
   const start = `${period}-01`, endEx = monthEndExclusive(period);
   const end = new Date(Date.parse(`${endEx}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
@@ -30,11 +37,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const built = await transaction(env, async tx => {
     await one(tx, 'SELECT 1 AS x FROM (SELECT pg_advisory_xact_lock(hashtext(?::text))) l', `statements:${period}`);
     const existing = await all<{ id: string; owner_id: string; state: string }>(tx, 'SELECT id, owner_id, state FROM owner_statements WHERE period_start = ? AND period_end = ? FOR UPDATE', start, end);
-    if (existing.some(s => s.state === 'sent' || s.state === 'paid')) return { locked: true as const };
+    if (existing.some(s => (!ownerIds || ownerIds.includes(s.owner_id)) && (s.state === 'sent' || s.state === 'paid'))) return { locked: true as const };
     const existingOf = new Map(existing.map(s => [s.owner_id, s]));
 
     const q: Query = (sql, ...args) => all(tx, sql, ...args);
-    const [settings, inputs] = await Promise.all([statementSettings(q), loadInputs(q, start, endEx)]);
+    const [settings, inputs] = await Promise.all([statementSettings(q), loadInputs(q, start, endEx, ownerIds ? { ownerIds } : {})]);
     // A unit still waiting for its owner's name has nobody to send a statement to.
     const units = inputs.units.filter(u => u.owner_name.toLowerCase() !== PLACEHOLDER_OWNER.toLowerCase());
     const ids = new Map<string, string>();
@@ -114,7 +121,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     return { locked: false as const, statements, existingOf, skipped, months };
   });
-  if (built.locked) return fail('PERIOD_LOCKED', 'Statements for this period have already been sent and cannot be regenerated.', 409);
+  if (built.locked) return fail('PERIOD_LOCKED', ownerIds ? "This owner's statement for that month has already been sent and cannot be regenerated." : 'Statements for this period have already been sent and cannot be regenerated.', 409);
   const { statements, existingOf, skipped, months } = built;
   const count = statements.length;
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'statement.generate', entityTable: 'owner_statements', entityId: period, after: { period, count, skipped } });
@@ -131,7 +138,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       link: '/finance/statements', entityTable: 'owner_statements', entityId: period, except: session.userId,
     });
   }
-  return json({ period, count, skipped, warnings: months.reduce((n, m) => n + m.warnings.length, 0) }, 202);
+  return json({ period, count, skipped, warnings: months.reduce((n, m) => n + m.warnings.length, 0), statements: statements.map(s => ({ ownerId: s.owner_id, id: s.id })) }, 202);
 };
 
 /** Package D guarantee pool (水池), one row per unit and month. A month above the minimum adds its surplus to the
