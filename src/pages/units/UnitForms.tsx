@@ -9,11 +9,10 @@ import { Card } from '../../components/Card';
 import { useToast } from '../../components/Toast';
 import { color } from '../../theme';
 import { api, notifyFailure, downloadFile } from '../../lib/api';
-import { rm } from '../../lib/format';
-import { bankName } from '../../lib/vocabulary';
+import { titleCase } from '../../lib/format';
 import { MODEL } from '../../lib/revenueModel';
 import {
-  BANKS, STATES, cap,
+  STATES, cap,
   SectionHead, Grid3, Labeled, Select, ReadOnly, CentreModal,
   type Unit, type Building, type UnitDetail,
 } from './shared';
@@ -40,7 +39,7 @@ export function SaveBar({ title, sub, dirty, saving, canEdit, onSave, extra }: {
   );
 }
 
-export function DetailsForm({ u, buildings, money, canEdit, onChange, onOpenContract }: { u: Unit; buildings: Building[]; money: boolean; canEdit: boolean; onChange: Change; onOpenContract?: () => void }) {
+export function DetailsForm({ u, owner, buildings, money, canEdit, onChange, onOpenContract }: { u: Unit; owner: { id: string; name: string }; buildings: Building[]; money: boolean; canEdit: boolean; onChange: Change; onOpenContract?: () => void }) {
   const building = buildings.find(b => b.id === u.buildingId);
   return (
     <fieldset disabled={!canEdit} className="p-5 m-0 border-0 min-w-0">
@@ -75,14 +74,11 @@ export function DetailsForm({ u, buildings, money, canEdit, onChange, onOpenCont
       </Grid3>
 
       <SectionHead>Owner</SectionHead>
-      <Grid3>
-        <Labeled label="Owner name" hint="FREE TEXT"><Field label="" aria-label="Owner name" value={u.ownerName} onChange={e => onChange({ ownerName: e.target.value })} /></Labeled>
-        <Labeled label="IC or passport" hint="FREE TEXT" help="Accepts both formats"><Field label="" aria-label="IC or passport" value={u.ic} onChange={e => onChange({ ic: e.target.value })} /></Labeled>
-        <Labeled label="Bank name" hint="DROPDOWN"><Select label="Bank name" value={u.bankName} onChange={v => onChange({ bankName: v })} options={BANKS.map(b => ({ value: b, label: bankName(b) ?? b }))} /></Labeled>
-        <Labeled label="Bank account" hint="FREE TEXT"><Field label="" aria-label="Bank account" value={u.bankAccount} onChange={e => onChange({ bankAccount: e.target.value })} /></Labeled>
-        <Labeled label="Account holder" hint="FREE TEXT" span2><Field label="" aria-label="Account holder" value={u.accountHolder} onChange={e => onChange({ accountHolder: e.target.value })} /></Labeled>
-      </Grid3>
-      <p className="-mt-3 mb-[22px] text-meta text-muted-ink">Owner and bank details belong to the owner, so a change here applies to every unit they own.</p>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-[6px]">
+        <a href={`#/owners/${encodeURIComponent(owner.id)}`} className="text-copy font-semibold text-ink! no-underline [overflow-wrap:anywhere]">{titleCase(owner.name)}</a>
+        <a href={`#/owners/${encodeURIComponent(owner.id)}`} className="text-meta font-semibold text-gold-ink no-underline">Open owner</a>
+      </div>
+      <p className="mt-0 mb-[22px] text-meta text-muted-ink">Payout details (bank, account and holder) belong to the owner and are edited on the owner's page, for every unit they own. To give this unit to another owner, use Link unit on that owner's page.</p>
 
       <SectionHead>Revenue model</SectionHead>
       <div className="flex flex-wrap items-center gap-3 mb-[6px]">
@@ -146,43 +142,6 @@ export function DocumentsCard({ unitId, unitLabel, documents, onUploaded }: { un
         <input ref={fileRef} type="file" className="hidden" onChange={e => { const f = e.currentTarget.files?.item(0); if (f) void upload(f); e.currentTarget.value = ''; }} />
       </div>
     </Card>
-  );
-}
-
-export function ExpensesEditor({ u, canEdit, onChange }: { u: Unit; canEdit: boolean; onChange: Change }) {
-  const total = u.expenses.reduce((s, e) => s + e.amount, 0);
-  const setAmt = (id: string, sen: number | null) => onChange({ expenses: u.expenses.map(e => e.id === id ? { ...e, amount: sen ?? 0 } : e) });
-  const remove = (id: string) => onChange({ expenses: u.expenses.filter(e => e.id !== id) });
-  return (
-    <fieldset disabled={!canEdit} className="p-5 m-0 border-0 min-w-0">
-      <div className="border border-solid border-line rounded-card overflow-hidden">
-        {u.expenses.length === 0 && <div className="py-3 px-[14px] text-copy text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]">No recurring expenses.</div>}
-        {u.expenses.map(e => (
-          <div key={e.id} className="grid grid-cols-[minmax(0,1fr)_110px_30px] sm:grid-cols-[minmax(0,1fr)_160px_30px] gap-2 sm:gap-3 items-center py-[10px] px-[14px] [border-bottom:1px_solid_var(--color-line-soft)]">
-            <input aria-label="Expense category" value={e.category} onChange={ev => onChange({ expenses: u.expenses.map(x => x.id === e.id ? { ...x, category: ev.target.value } : x) })} className="field-input h-[38px]! min-w-0" />
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="text-meta text-muted-ink">RM</span>
-              <MoneyInput aria-label={`${e.category} amount`} valueSen={e.amount} onChangeSen={sen => setAmt(e.id, sen)} className="field-input h-[38px]! min-w-0 text-right tabular-nums" />
-            </div>
-            {canEdit ? (
-              <button onClick={() => remove(e.id)} aria-label={`Remove ${e.category}`} title="Remove"
-                className="w-[30px] h-[30px] grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted"><Icon name="X" size="sm" /></button>
-            ) : <span />}
-          </div>
-        ))}
-        {canEdit && (
-          <button type="button" onClick={() => onChange({ expenses: [...u.expenses, { id: crypto.randomUUID(), category: 'Other', amount: 0, note: '' }] })}
-            className="flex items-center gap-2 w-full py-[10px] px-[14px] bg-card [border:none] [border-bottom:1px_solid_var(--color-line-soft)]! cursor-pointer font-sans text-copy font-medium text-gold-ink text-left">
-            <Icon name="Plus" size="sm" /> Add expense
-          </button>
-        )}
-        <div className="flex justify-between py-3 px-[14px] bg-muted">
-          <span className="text-copy font-semibold">Total monthly</span>
-          <span className="text-copy font-semibold tabular-nums">{rm(total)}</span>
-        </div>
-      </div>
-      <p className="text-meta text-muted-ink mt-[10px] mb-0">Deducted from the owner statement each month.</p>
-    </fieldset>
   );
 }
 
