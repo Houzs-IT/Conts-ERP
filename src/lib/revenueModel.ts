@@ -30,17 +30,17 @@ export const MODEL_TONE: Record<RevenueModel, StatusTone> = {
 /** Who pays an expense (expenses.charge_to). Only the owner's reach the statement. */
 export const PAYERS: { value: string; label: string; help: string }[] = [
   { value: 'owner', label: 'Owner (via statement)', help: 'Deducted on the owner statement.' },
-  { value: 'the_conts', label: 'Company', help: 'The Conts pays. Shows in the unit\'s profit and loss only.' },
+  { value: 'the_conts', label: 'The Conts', help: 'The Conts pays. Shows in The Conts\' share of the unit only.' },
   { value: 'tenant', label: 'Tenant', help: 'The tenant pays. Not on the owner statement.' },
   { value: 'guest_deposit', label: 'Guest', help: 'Charged to the guest (deposit). Not on the owner statement.' },
 ];
-export const PAYER_LABEL: Record<string, string> = { owner: 'Owner', the_conts: 'Company', tenant: 'Tenant', guest_deposit: 'Guest', warranty: 'Warranty' };
+export const PAYER_LABEL: Record<string, string> = { owner: 'Owner', the_conts: 'The Conts', tenant: 'Tenant', guest_deposit: 'Guest', warranty: 'Warranty' };
 
 /** The categories an expense is entered under, in the owner's words. Value = expenses.category. */
 export const ENTRY_CATEGORIES: { value: string; label: string }[] = [
   { value: 'electricity', label: 'Electricity' }, { value: 'water', label: 'Water' }, { value: 'internet', label: 'Internet' },
-  { value: 'sewerage', label: 'Indah Water' }, { value: 'cleaning', label: 'Cleaning' }, { value: 'maintenance', label: 'Maintenance' },
-  { value: 'other', label: 'Misc' },
+  { value: 'sewerage', label: 'Indah Water' }, { value: 'building_fee', label: 'Building maintenance fee' }, { value: 'cleaning', label: 'Cleaning' },
+  { value: 'maintenance', label: 'Maintenance' }, { value: 'other', label: 'Misc' },
 ];
 export const CATEGORY_LABEL: Record<string, string> = {
   ...Object.fromEntries(ENTRY_CATEGORIES.map(c => [c.value, c.label])),

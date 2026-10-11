@@ -32,19 +32,19 @@ import {
 type Category =
   | 'internet' | 'electricity' | 'water' | 'cleaning'
   | 'housekeeping' | 'maintenance' | 'utilities' | 'consumables'
-  | 'furniture' | 'management_fee' | 'channel_fee' | 'other';
+  | 'furniture' | 'management_fee' | 'channel_fee' | 'building_fee' | 'other';
 
 const CAT_LABEL: Record<Category, string> = {
   internet: 'Internet', electricity: 'Electricity', water: 'Water', cleaning: 'Cleaning',
   housekeeping: 'Housekeeping', maintenance: 'Maintenance', utilities: 'Utilities',
   consumables: 'Consumables', furniture: 'Furniture', management_fee: 'Management fee',
-  channel_fee: 'Channel fee', other: 'Other',
+  channel_fee: 'Channel fee', building_fee: 'Building maintenance fee', other: 'Other',
 };
 const CAT_TONE: Record<Category, Tone> = {
   internet: 'info', electricity: 'warning', water: 'info', cleaning: 'info',
   housekeeping: 'info', maintenance: 'warning', utilities: 'neutral',
   consumables: 'neutral', furniture: 'info', management_fee: 'neutral',
-  channel_fee: 'neutral', other: 'neutral',
+  channel_fee: 'neutral', building_fee: 'neutral', other: 'neutral',
 };
 const catLabel = (c: string) => CAT_LABEL[c as Category] ?? c.replace(/_/g, ' ').replace(/^./, x => x.toUpperCase());
 const catTone = (c: string): Tone => CAT_TONE[c as Category] ?? 'neutral';
