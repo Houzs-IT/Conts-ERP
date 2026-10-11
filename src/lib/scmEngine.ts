@@ -7,7 +7,8 @@ export const ENGINE_PATH: Record<string, string> = {
   '/service/maintenance': '/assr?view=settings',
   '/service/my-cases': '/my-cases',
   '/projects/list': '/projects?view=list',
-  '/projects/monitor': '/projects?view=monitor',
+  // Project monitor was dropped (owner, 11 Oct 2026: the Schedule covers it); old links open the Schedule.
+  '/projects/monitor': '/projects?view=calendar',
   '/projects/calendar': '/projects?view=calendar',
   '/projects/finances': '/projects?view=finances',
   '/projects/maintenance': '/projects?view=maintenance',

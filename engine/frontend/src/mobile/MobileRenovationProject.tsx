@@ -35,7 +35,8 @@ function MobileRenovationProjects({ onBack, initialProjectId, initialView }: { o
   const [projectId, setProjectId] = useState<number | null>(initialProjectId ?? null);
   const [receiving, setReceiving] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
-  const [view, setView] = useState<"list" | "monitor">(initialView === "monitor" ? "monitor" : "list");
+  // Project monitor was dropped (owner, 11 Oct 2026): the phone opens the list; the monitor code stays for now.
+  const [view] = useState<"list" | "monitor">("list");
   const board = useQuery(["renovation", "board-rows"], () => simpleApi.boardRows());
   const rows = board.data?.data ?? [];
   const current = rows.find((r) => r.id === projectId);
@@ -72,15 +73,7 @@ function MobileRenovationProjects({ onBack, initialProjectId, initialView }: { o
 
   return (
     <div className="min-h-screen bg-surface-dim">
-      <TopBar title={view === "monitor" ? "Project monitor" : "Projects"} onBack={onBack} />
-      <div role="tablist" aria-label="Projects view" className="grid grid-cols-2 gap-1 px-3 pt-3">
-        {(["list", "monitor"] as const).map((v) => (
-          <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)}
-            className={`rounded-md border py-2 text-sm font-medium ${view === v ? "border-primary bg-primary/10 text-primary" : "border-border bg-surface text-ink-secondary"}`}>
-            {v === "list" ? "Projects" : "Monitor"}
-          </button>
-        ))}
-      </div>
+      <TopBar title="Projects" onBack={onBack} />
       {view === "monitor" ? (
         <div className="p-3">
           <ProjectMonitor canWrite={can("projects.write")} embedded docLinks={false} onOpenProject={(id) => setProjectId(id)} />

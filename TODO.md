@@ -266,7 +266,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Done (owner, 11 Oct): the hardware gate no longer blocks anything (task start, stage start/complete, site receipt); it only raises the red flag "Works started before: <missing items>".
 - Open: the SO page "Project" card and the quotation "No project yet" choice were not seen in a browser (the local engine has no Supabase REST for the SCM routes); check them on the staging preview.
 
-## Project Monitor (feat/reno-monitor, /projects?view=monitor, Property OS Projects > Project monitor)
+## Project Monitor (feat/reno-monitor) - DROPPED from the menus 11 Oct 2026 (owner: the Schedule covers it)
+- Menus (Property OS, engine desktop sidebar, phone Projects tabs) no longer show it; old /projects/monitor and ?view=monitor links open the Schedule. ProjectMonitor.tsx and GET /api/renovation/monitor are kept, unused; delete them if the owner does not ask for it back.
 - Done: role tabs Sales / Design / Renovation / Admin / Boss with queue tiles, red-flag strip, person filter, board-column table (cards on a phone; on the phone app it is a tab of Projects), site calendar; GET /api/renovation/monitor (23 queries in the PGlite test). No migration.
 - Owner to confirm: "payment behind" norm = received % by step (Signed 10, Ordering 40, Renovation 60, Handover 90) and "no SO" red flag after 14 days (PAYMENT_NORM_PCT, NO_SO_FLAG_DAYS in engine/backend/src/services/renovation/monitor.ts).
 - Open: add an "SLA passed" red flag once the project SLA due date from feat/reno-settings-e2e is merged (read it defensively).

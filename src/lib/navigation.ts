@@ -82,7 +82,6 @@ export const NAV: NavGroup[] = [
   ] },
   { label: 'PROJECTS', workspace: 'supply', items: [
     { key: 'projectList', label: 'Project list', icon: 'folder-kanban', path: '/projects/list', area: 'projects' },
-    { key: 'projectMonitor', label: 'Project monitor', icon: 'activity', path: '/projects/monitor', area: 'projects' },
     { key: 'projectCalendar', label: 'Schedule', icon: 'calendar-days', path: '/projects/calendar', area: 'projects' },
     { key: 'projectFinances', label: 'Finances', icon: 'wallet', path: '/projects/finances', area: 'projects' },
     { key: 'projectMaintenance', label: 'Project settings', icon: 'settings', path: '/projects/maintenance', area: 'projects' },
