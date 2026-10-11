@@ -11,6 +11,7 @@ import { api } from '../lib/api';
 import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
+import { CloseButton } from '../components/CloseButton';
 
 /** Warehouses — warehouse master, ported from 2990's SCM and drawn in Conts. Racks
  *  (bin management) are a later Warehouse-ops slice. */
@@ -106,7 +107,7 @@ function WarehouseDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; o
     <Drawer open onClose={onClose} width={480}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <h2 className="m-0 text-[19px] font-semibold">{draft.isNew ? 'New warehouse' : 'Edit warehouse'}</h2>
-        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button>
+        <CloseButton onClick={onClose} />
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">

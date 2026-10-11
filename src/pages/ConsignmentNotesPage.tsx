@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Plus, Trash2, X } from 'lucide-react';
+import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
-import { MoneyInput, NumberInput, PhoneInput, DateField } from '../components/inputs';
+import { MoneyInput, NumberInput, PhoneInput, DateField, PHONE_SIZING } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { Segmented } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
@@ -17,6 +17,7 @@ import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
+import { CloseButton } from '../components/CloseButton';
 
 /** Consignment Notes (sell-side) — ported from 2990's SCM, drawn in Conts. Consign stock out
  *  to a consignee; track consigned / sold / returned per line. */
@@ -135,7 +136,7 @@ function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onC
     <Drawer open onClose={onClose} width={820}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <h2 className="m-0 text-[19px] font-semibold">New consignment note</h2>
-        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
+        <CloseButton onClick={onClose} />
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
@@ -200,7 +201,7 @@ function SettleDrawer({ cn, canWrite, onClose, onAct }: { cn: Cn; canWrite: bool
     <Drawer open onClose={onClose} width={760}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{cn.cnNumber}</h2><StatusBadge entity="consignment_note" value={cn.status} /></div>
-        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
+        <CloseButton onClick={onClose} />
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-[13px]">
@@ -240,7 +241,7 @@ function SettleDrawer({ cn, canWrite, onClose, onAct }: { cn: Cn; canWrite: bool
 
 function Cell({ value, onChange, w }: { value: string; onChange: (v: string) => void; w: string }) {
   return <input value={value} onChange={e => onChange(e.target.value)} style={{ width: w }}
-    className="h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" />;
+    className={`h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none ${PHONE_SIZING}`} />;
 }
 function NumCell({ label, value, error, onChange }: { label: string; value: number | null; error?: string; onChange: (v: number | null) => void }) {
   return <NumberInput aria-label={label} min={0} value={value} error={error} onChange={onChange} className="h-8 w-[70px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" />;

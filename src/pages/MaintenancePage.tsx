@@ -329,7 +329,7 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
 
   return (
     <div className="flex flex-col gap-4 p-5 text-copy">
-      <div className="flex items-start gap-3">
+      <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-5 pb-3 bg-card [border-bottom:1px_solid_var(--color-line-soft)] flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="text-meta text-muted-ink">{i.propertyName} · {i.unitNumber}</div>
           <div className="text-title font-semibold">{i.title}</div>
@@ -369,9 +369,9 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
       {!done && (
         <section className="flex flex-col gap-2">
           <h3 className="m-0 text-copy font-semibold">Assigned to</h3>
-          <div className="flex gap-2 flex-wrap">
-            <input className={cx(INPUT, 'flex-1 min-w-[140px]')} value={assignee} onChange={e => setAssignee(e.target.value)} placeholder="Technician or contractor name" aria-label="Assigned to" maxLength={80} />
-            <select className={cx(INPUT, 'w-[130px]')} value={assigneeKind} onChange={e => setAssigneeKind(e.target.value as 'in_house' | 'contractor')} aria-label="In-house or contractor">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            <input className={cx(INPUT, 'col-span-2')} value={assignee} onChange={e => setAssignee(e.target.value)} placeholder="Technician or contractor name" aria-label="Assigned to" maxLength={80} />
+            <select className={INPUT} value={assigneeKind} onChange={e => setAssigneeKind(e.target.value as 'in_house' | 'contractor')} aria-label="In-house or contractor">
               <option value="in_house">In-house</option><option value="contractor">Contractor</option>
             </select>
             <Button size="sm" variant="secondary" className="h-10" disabled={!assignee.trim() || (assignee.trim() === (i.vendorName ?? '') && assigneeKind === (i.assigneeKind ?? 'contractor'))} disabledReason="Enter a different name."

@@ -363,7 +363,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
 
   return (
     <div className="flex flex-col gap-4 p-5 text-copy">
-      <div className="flex items-start gap-3">
+      <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-5 pb-3 bg-card [border-bottom:1px_solid_var(--color-line-soft)] flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="text-meta text-muted-ink">{row.propertyName}</div>
           <div className="text-title font-semibold">{row.unitNumber} · {KIND_NAME[picked.kind ?? row.kind] ?? kindName}</div>

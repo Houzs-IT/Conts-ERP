@@ -15,6 +15,7 @@ import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
 import { statusLabel } from '../lib/status';
+import { CloseButton } from '../components/CloseButton';
 
 /** Customers (debtors) — sell-side counterpart of Suppliers, drawn in Conts. Money sen. */
 
@@ -109,7 +110,7 @@ function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
   const canSave = f.code.trim() !== '' && f.name.trim() !== '' && !emailBad(f.email);
   return (
     <Drawer open onClose={onClose} width={640}>
-      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New customer' : 'Edit customer'}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button></div>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New customer' : 'Edit customer'}</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <Section title="Identity">
           <Field label="Code" placeholder="e.g. CUST-VJ" value={f.code} onChange={set('code')} />

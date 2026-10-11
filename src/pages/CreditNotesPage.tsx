@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Search, Plus, X, Trash2 } from 'lucide-react';
+import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
-import { MoneyInput, DateField } from '../components/inputs';
+import { MoneyInput, DateField, PHONE_SIZING } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { TableSkeleton } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
@@ -18,6 +18,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
 import { Eyebrow, Figure, Segmented } from '../components/Metric';
 import { FilterSelect } from './finance/listKit';
+import { CloseButton } from '../components/CloseButton';
 
 /** Credit / debit notes — copied from Houzs ERP (Finance › Money in), drawn in Conts.
  *  A note is a draft until posted; only a posted note changes what a customer or supplier owes
@@ -169,7 +170,7 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
     <Drawer open onClose={onClose} width={760}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <h2 className="m-0 text-[19px] font-semibold">New note</h2>
-        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
+        <CloseButton onClick={onClose} />
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="flex flex-col gap-[7px]">
@@ -217,9 +218,9 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
           <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">Lines</div>
           <div className="border border-solid border-line rounded-card overflow-hidden">
             {lines.map((l, i) => (
-              <div key={i} className={cx('grid grid-cols-[1fr_140px_36px] gap-2.5 items-center py-2 px-3', i > 0 && '[border-top:1px_solid_var(--color-line-soft)]')}>
+              <div key={i} className={cx('grid grid-cols-[minmax(0,1fr)_120px_36px] sm:grid-cols-[minmax(0,1fr)_140px_36px] gap-2.5 items-center py-2 px-3', i > 0 && '[border-top:1px_solid_var(--color-line-soft)]')}>
                 <input value={l.description} onChange={e => setLine(i, { description: e.target.value })} placeholder="Description" aria-label={`Line ${i + 1} description`}
-                  className="h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" />
+                  className={cx('h-8 w-full min-w-0 box-border px-2 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none', PHONE_SIZING)} />
                 <MoneyInput valueSen={l.amountSen} onChangeSen={v => setLine(i, { amountSen: v })} placeholder="Amount (RM)" aria-label={`Line ${i + 1} amount`} error={errors[`amount.${i}`]}
                   className="h-8 box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" />
                 <button type="button" aria-label={`Remove line ${i + 1}`} disabled={lines.length === 1} onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}
@@ -267,7 +268,7 @@ function ViewNoteDrawer({ id, canWrite, onClose, onDone }: { id: string; canWrit
     <Drawer open onClose={onClose} width={620}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{n?.noteNumber ?? 'Note'}</h2>{n && <StatusBadge entity="credit_note" value={n.status} />}</div>
-        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
+        <CloseButton onClick={onClose} />
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         {loading && !n ? <TableSkeleton rows={3} cols={2} /> : n && (

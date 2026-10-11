@@ -5,3 +5,4 @@ export { PhoneInput, phoneProblem } from './PhoneInput';
 export { CodeInput } from './CodeInput';
 export { DateField, TimeField, DateTimeField } from './DateField';
 export { parseScaled, formatScaled } from './numberText';
+export { PHONE_SIZING } from './InputShell';

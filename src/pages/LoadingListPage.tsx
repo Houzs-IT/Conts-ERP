@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Drawer } from '../components/Dialog';
 import { DateField } from '../components/inputs';
@@ -7,6 +6,7 @@ import { StatRow, StatTile } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
+import { CloseButton } from '../components/CloseButton';
 
 /** Loading List — the warehouse loading manifest: delivery orders that are LOADED (packed,
  *  ready to dispatch), with what and how much to load. Read-only view over delivery orders,
@@ -91,7 +91,7 @@ function ItemsDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
     <Drawer open onClose={onClose} width={620}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <div className="flex flex-col"><h2 className="m-0 text-[19px] font-semibold">{row.doNumber}</h2><span className="text-[12.5px] text-muted-ink">{row.customerName} · {row.warehouseName}</span></div>
-        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
+        <CloseButton onClick={onClose} />
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">Items to load</div>

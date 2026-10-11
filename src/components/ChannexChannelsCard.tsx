@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import { Card } from './Card';
 import { Button } from './Button';
 import { StatusBadge } from './StatusBadge';
@@ -12,6 +11,7 @@ import { api, notifyFailure } from '../lib/api';
 import { useToast } from './Toast';
 import { date } from '../lib/format';
 import { cx } from '../lib/design-tokens';
+import { CloseButton } from './CloseButton';
 
 type Ota = 'airbnb' | 'booking_com' | 'agoda';
 const OTA_LABEL: Record<Ota, string> = { airbnb: 'Airbnb', booking_com: 'Booking.com', agoda: 'Agoda' };
@@ -120,7 +120,7 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
       <Drawer open={!!connecting} onClose={() => setConnecting(null)} width={560}>
         <div className="flex items-center justify-between px-6 pt-[18px] pb-3">
           <h2 className="m-0 text-title font-semibold">Connect {connecting === 'booking_com' ? 'Booking.com' : connecting === 'agoda' ? 'Agoda' : 'Airbnb'}</h2>
-          <button onClick={() => setConnecting(null)} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
+          <CloseButton onClick={() => setConnecting(null)} />
         </div>
         <div className="px-6 pb-6 overflow-y-auto grow">
           {(connecting === 'booking_com' || connecting === 'agoda') && <HotelConnect unitId={unitId} ota={connecting} onDone={() => done(connecting)} onCancel={() => setConnecting(null)} />}

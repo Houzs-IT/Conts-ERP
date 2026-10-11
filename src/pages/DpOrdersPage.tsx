@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { Segmented } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import PageHeader from '../components/PageHeader';
@@ -17,6 +17,7 @@ import { useSession } from '../lib/session';
 import { SLOT_LABEL, DRIVERS_FALLBACK, VEHICLES_FALLBACK, SO_FALLBACK, schedFallback, type Sched, type SchedPayload, type SchedStatus, type TimeSlot } from '../lib/schedule';
 import { statusLabel } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
+import { CloseButton } from '../components/CloseButton';
 
 /** DP Orders — the delivery-planning queue. One row per sales order to be delivered; the entry
  *  point for the Transportation scheduling cluster. Ported from 2990's SCM (manual). */
@@ -91,7 +92,7 @@ function NewDrawer({ openSos, onClose, onCreated }: { openSos: { id: string; doc
   }
   return (
     <Drawer open onClose={onClose} width={520}>
-      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">Schedule a sales order</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">Schedule a sales order</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <div className="flex flex-col gap-[7px]"><label className="text-[12px] font-medium text-muted-ink">Sales order</label>
           <select value={soId} onChange={e => setSoId(e.target.value)} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
@@ -123,7 +124,7 @@ function EditDrawer({ row, onClose, onSaved, onDelete }: { row: Sched; onClose: 
   }
   return (
     <Drawer open onClose={onClose} width={560}>
-      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{row.soDocNo}</h2><StatusBadge entity="delivery_schedule" value={f.status} /></div><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{row.soDocNo}</h2><StatusBadge entity="delivery_schedule" value={f.status} /></div><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <div className="text-[13px] text-muted-ink">{row.customerName}</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">

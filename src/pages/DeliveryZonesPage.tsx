@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
@@ -12,6 +12,7 @@ import { api } from '../lib/api';
 import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
+import { CloseButton } from '../components/CloseButton';
 
 /** Delivery Zones — ported from 2990's SCM zone-classify, drawn in Conts. The postcode-prefix
  *  -> area-zone map. Prefixes are the FIRST TWO digits of a Malaysian postcode (00–99). */
@@ -99,7 +100,7 @@ function ZoneDrawer({ draft, isNew, knownZones, onClose, onSave, onDelete }: { d
   const canSave = f.zone.trim() !== '' && inRange(start) && inRange(end) && !endError;
   return (
     <Drawer open onClose={onClose} width={520}>
-      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New zone rule' : 'Edit zone rule'}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New zone rule' : 'Edit zone rule'}</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <div className="flex flex-col gap-[7px]">
           <label className="text-[12px] font-medium text-muted-ink">Zone</label>

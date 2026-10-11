@@ -9,6 +9,7 @@ import { Drawer } from './Dialog';
 import { CATEGORY as REPAIR_CATEGORY } from './ops/OpsUi';
 import { PAYER_LABEL, CATEGORY_LABEL, MODEL } from '../lib/revenueModel';
 import { statusLabel, type StatusEntity } from '../lib/status';
+import { CloseButton } from './CloseButton';
 
 /* ------------------------------------------------------------------ *
  * The History panel on every detail view: who changed what and when, field by field,
@@ -386,9 +387,7 @@ export function HistoryDrawer({ target, onClose }: {
             <h2 className="m-0 text-title font-semibold [overflow-wrap:anywhere]">{target.title}</h2>
             {target.sub && <span className="text-meta text-muted-ink">{target.sub}</span>}
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="w-9 h-9 flex-none grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer hover:bg-muted">
-            <Icon name="X" size="sm" />
-          </button>
+          <CloseButton onClick={onClose} />
         </div>
         <RecordHistory key={`${target.entity}:${target.id}`} entity={target.entity} id={target.id} also={target.also} bare title={`History of ${target.title}`} />
       </>}

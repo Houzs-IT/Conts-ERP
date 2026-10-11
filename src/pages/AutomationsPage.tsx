@@ -12,6 +12,7 @@ import { api, errorMessage } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
+import { CloseButton } from '../components/CloseButton';
 
 /* ------------------------------------------------------------------ model */
 
@@ -490,7 +491,7 @@ function RulePanel({ r, contact, onClose, onToggle }: { r: Rule; contact: string
 
   return (
     <>
-      <div className="py-[18px] px-5 [border-bottom:1px_solid_var(--color-line)] flex items-start gap-3 flex-none">
+      <div className="sticky top-0 z-[1] bg-card py-[18px] px-5 [border-bottom:1px_solid_var(--color-line)] flex items-start gap-3 flex-none">
         <span className="w-[34px] h-[34px] flex-none grid place-items-center rounded-control bg-muted text-ink-2">
           <Icon name={groupMeta.icon} size="sm" />
         </span>
@@ -501,9 +502,7 @@ function RulePanel({ r, contact, onClose, onToggle }: { r: Rule; contact: string
             {r.quietHours === 'override' && <StatusBadge tone="warning" label="Overrides quiet hours" size="sm" />}
           </div>
         </div>
-        <button onClick={onClose} aria-label="Close" className="w-[30px] h-[30px] flex-none grid place-items-center rounded-full bg-muted border-none text-muted-ink cursor-pointer">
-          <Icon name="X" size="sm" />
-        </button>
+        <CloseButton onClick={onClose} />
       </div>
 
       <div className="p-5 flex flex-col gap-5 flex-1">
@@ -534,7 +533,7 @@ function RulePanel({ r, contact, onClose, onToggle }: { r: Rule; contact: string
         </div>
       </div>
 
-      <div className="p-4 [border-top:1px_solid_var(--color-line)] bg-page flex-none flex items-center justify-between gap-3">
+      <div className="sticky bottom-0 z-[1] p-4 [border-top:1px_solid_var(--color-line)] bg-page flex-none flex items-center justify-between gap-3">
         <div className="flex flex-col gap-px min-w-0">
           <span className="text-copy font-semibold">{r.running ? 'Running' : r.isActive ? 'Wanted, not running yet' : 'Not wanted'}</span>
           <span className="text-meta text-muted-ink text-pretty">

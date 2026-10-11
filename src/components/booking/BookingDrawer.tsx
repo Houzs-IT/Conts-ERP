@@ -22,6 +22,7 @@ import { RecordHistory } from '../RecordHistory';
 import ApprovalBanner from '../ApprovalBanner';
 import { DocumentsSection, type GuestDocument } from './GuestDocuments';
 import { isStaged, stagedToast, useApprovalsOn, type Approval } from '../../lib/approvals';
+import { CloseButton } from '../CloseButton';
 
 /* ------------------------------------------------------------------ */
 /* Shapes (GET /api/reservations/:id)                                  */
@@ -561,7 +562,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
   if (!s) {
     return (
       <div className="p-5 flex flex-col gap-3">
-        <div className="flex justify-end"><CloseButton onClose={onClose} /></div>
+        <div className="flex justify-end"><CloseButton onClick={onClose} /></div>
         <div className="text-copy text-muted-ink">{error ?? 'Loading the reservation…'}</div>
       </div>
     );
@@ -638,7 +639,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
 
   return (
     <>
-      <div className="relative z-[1] flex-none bg-black text-white px-[18px] pt-[14px] pb-[16px] flex flex-col gap-[10px]">
+      <div className="sticky top-0 z-[2] flex-none bg-black text-white px-[18px] pt-[14px] pb-[16px] flex flex-col gap-[10px]">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-[10px] min-w-0">
             <ChannelMark ch={s.channel} size={24} />
@@ -647,7 +648,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
               <span className="text-meta text-[rgba(255,255,255,0.72)] whitespace-nowrap overflow-hidden text-ellipsis">{s.propertyName} {s.unitNumber} · {fmtNights(nights)}</span>
             </div>
           </div>
-          <CloseButton onClose={onClose} dark />
+          <CloseButton onClick={onClose} onDark />
         </div>
         <div className="flex items-center gap-2 flex-wrap text-meta text-[rgba(255,255,255,0.72)]">
           <span className="font-semibold text-white">{ch.label}</span>
@@ -797,12 +798,3 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
   );
 }
 
-function CloseButton({ onClose, dark }: { onClose: () => void; dark?: boolean }) {
-  return (
-    <button type="button" onClick={onClose} aria-label="Close"
-      className={cx('w-[30px] h-[30px] flex-none grid place-items-center rounded-pill border-none cursor-pointer',
-        dark ? 'bg-[rgba(255,255,255,0.14)] text-white hover:bg-[rgba(255,255,255,0.24)]' : 'bg-muted text-muted-ink')}>
-      <Icon name="X" size="sm" />
-    </button>
-  );
-}
