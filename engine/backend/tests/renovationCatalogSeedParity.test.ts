@@ -28,14 +28,16 @@ describe("migration 0061 seeds the same tree as renovation-catalog.ts", () => {
     expect([...stages].sort()).toEqual(["appliances", "furniture", "hardware", "soft_furnishing"]);
   });
 
-  test("sub-categories: group, code, label, sort, legacy list", () => {
-    const rows = tuples(sql, /^\s+\('([A-Z]+)', '([A-Z_]+)', '([^']+)', (\d+), (?:'\{\}'|array\[([^\]]*)\])::text\[\]\)[,;]$/gm);
+  test("sub-categories: group, code, label, sort, legacy list (0061 plus the Notion trades of 0085)", () => {
+    const byCode = (a: { code: string }, b: { code: string }) => a.code.localeCompare(b.code);
+    const both = sql + "\n" + read("0085_renovation_works_subs_notion.sql");
+    const rows = tuples(both, /^\s+\('([A-Z]+)', '([A-Z_]+)', '([^']+)', (\d+), (?:'\{\}'|array\[([^\]]*)\])::text\[\]\)[,;]?$/gm);
     expect(
       rows.map(([group, code, label, sort, legacy]) => ({
         group, code, label, sort: Number(sort),
         legacy: legacy ? legacy.split(",").map((s) => s.trim().replace(/'/g, "")) : [],
-      })),
-    ).toEqual(SUB_CATEGORIES.map((s) => ({ group: s.group, code: s.code, label: s.label, sort: s.sort, legacy: [...(s.legacy ?? [])] })));
+      })).sort(byCode),
+    ).toEqual(SUB_CATEGORIES.map((s) => ({ group: s.group, code: s.code, label: s.label, sort: s.sort, legacy: [...(s.legacy ?? [])] })).sort(byCode));
   });
 
   test("the UOM check lists the same eight codes", () => {
@@ -48,11 +50,17 @@ describe("migration 0061 seeds the same tree as renovation-catalog.ts", () => {
   });
 });
 
-describe("migration 0064 seeds the generic SKUs", () => {
+describe("migrations 0064 and 0085 seed the generic SKUs", () => {
   test("RN-<SUB> rows match genericSkus()", () => {
-    const sql = read("0064_renovation_generic_skus.sql");
+    const byCode = (a: { code: string }, b: { code: string }) => a.code.localeCompare(b.code);
+    const sql = read("0064_renovation_generic_skus.sql") + "\n" + read("0085_renovation_works_subs_notion.sql");
     const rows = tuples(sql, /^\s+\('(RN-[A-Z_]+)', '([^']+)', '([A-Z]+)', '([A-Z_]+)', '([A-Z]+)'\)[,)]?$/gm);
-    expect(rows.map(([code, name, group, sub, uom]) => ({ code, name, group, sub, uom }))).toEqual(genericSkus());
+    expect(rows.map(([code, name, group, sub, uom]) => ({ code, name, group, sub, uom })).sort(byCode)).toEqual([...genericSkus()].sort(byCode));
+  });
+
+  test("every WORKS sub-category has its RN- SKU in 0064 or 0085", () => {
+    const sql = read("0064_renovation_generic_skus.sql") + "\n" + read("0085_renovation_works_subs_notion.sql");
+    for (const s of SUB_CATEGORIES.filter((x) => x.group === "WORKS")) expect(sql, s.code).toContain(`'RN-${s.code}'`);
   });
 });
 

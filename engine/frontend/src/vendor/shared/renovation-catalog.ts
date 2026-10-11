@@ -51,7 +51,8 @@ export interface SubCategoryDef {
   legacy?: readonly string[];
 }
 
-/* WORKS sort order is the site trade order (see renovation-stages.ts TRADE_ORDER). */
+/* WORKS sort order is the site trade order (see renovation-stages.ts TRADE_ORDER).
+   PARTITION, DOOR and FEATURE_WALL came with the Notion task categories (migration 0085). */
 export const SUB_CATEGORIES: readonly SubCategoryDef[] = [
   { group: 'WORKS', code: 'PROTECTION', label: 'Protection', sort: 10 },
   { group: 'WORKS', code: 'HACKING', label: 'Hacking', sort: 20 },
@@ -60,10 +61,13 @@ export const SUB_CATEGORIES: readonly SubCategoryDef[] = [
   { group: 'WORKS', code: 'ELECTRICAL', label: 'Electrical', sort: 50 },
   { group: 'WORKS', code: 'MASONRY_TILING', label: 'Masonry / tiling', sort: 60 },
   { group: 'WORKS', code: 'PLASTER_CEILING', label: 'Plaster ceiling', sort: 70 },
+  { group: 'WORKS', code: 'PARTITION', label: 'Partition', sort: 75 },
   { group: 'WORKS', code: 'ALUMINIUM_GLASS', label: 'Window / sliding door / glass', sort: 80 },
+  { group: 'WORKS', code: 'DOOR', label: 'Door', sort: 82 },
   { group: 'WORKS', code: 'GRILL', label: 'Grill', sort: 85 },
   { group: 'WORKS', code: 'PAINTING', label: 'Painting', sort: 90 },
   { group: 'WORKS', code: 'TEXTURED_PAINTING', label: 'Textured painting', sort: 95 },
+  { group: 'WORKS', code: 'FEATURE_WALL', label: 'Feature wall', sort: 97 },
   { group: 'WORKS', code: 'FLOORING', label: 'Flooring', sort: 100 },
   { group: 'WORKS', code: 'AIRCON_INSTALL', label: 'Aircon install', sort: 110 },
   { group: 'WORKS', code: 'CLEANING', label: 'Cleaning', sort: 120 },
