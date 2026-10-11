@@ -51,6 +51,17 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Cleaning jobs imported from HostPlatform have no creation entry; their History starts with "Cleaning job created" from the job's own date.
 - Logo is blurry: public/brand art is 203 x 181 px cropped from a report and no larger file exists in the repo or the brand guide; needs the original logo file (AI, SVG or PNG at 1000 px+) from the owner.
 
+## Maintenance rework (feat/maintenance-rework, 11 Oct 2026)
+- Migration 0108 (maintenance_issues.billing_date, collected_at, contractor_amount, contractor_paid_at) must be applied on staging, then production. Until then the screen hides billing date, collected and contractor payment, and a repair's expense is dated the day it is marked done, as before.
+- Guessed default: "collected from the owner" is ticked by hand (date picked); the owner statement already deducts the cost in the billing month, so for most owners the statement payout is the collection. Owner to confirm whether it should tick itself when that month's statement is paid.
+- Guessed default: the quote is what the payer is charged; "owed to the technician or contractor" is entered separately (from their claim). No automatic markup between the two.
+- Guessed default: a finished job's billing date can still be changed; its expense moves with it unless either month's owner statement is final.
+- Guessed default: the technician list is every active technician, housekeeper and operations account (in-house) plus every contractor name used on a job before; a new contractor is typed once and then appears in the list. No separate contractor register (phone, bank details) yet.
+- Finance admins have no Operations access by default (Settings > Access), so they cannot open Maintenance to pay contractors. Owner to decide: grant finance_admin Operations (view), or a contractor payouts list on the finance side.
+- Owners now see their own notices (bell on the owner portal); a quote sent for approval also emails them where mail is configured (MAIL_API_KEY), with a link that is a bare "/" rather than the portal address.
+- scripts/api-checks/maintenance.mjs "unit with another open blocker stays off sale" fails on a fresh demo database: the demo data has no other open blocking job on #2207. Test-data issue, not code; fix the check's setup.
+- No Who pays choice in the create form any more: a new job defaults to the owner paying, changed in the job's panel.
+
 ## Performance (audit 11 Oct 2026, docs/audits/performance-from-sister-erps.md)
 - Owner decision: Workers Paid on the Conts ERP account. On the free plan, Send statements makes one email call per owner (~100 a month) against 50 outside calls per request; calls past 50 fail and are not retried while the cron is off. Until then send 40 at a time.
 - Done (feat/calendar-bulk): a bulk price change goes a few units per request (6,000 price rows at most; the server refuses over 20,000 with 413), so a year for all 139 units is about 25 requests in a row; the time per request on Cloudflare's free plan is UNTESTED.
