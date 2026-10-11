@@ -98,7 +98,7 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
     <Drawer open onClose={onClose} width={640}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">New stock take</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div className="flex flex-col gap-[7px]"><label className="text-[12px] font-medium text-muted-ink">Warehouse</label>
             <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">{warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
           </div>
@@ -162,9 +162,9 @@ function CountDrawer({ k, canWrite, onClose, onAct }: { k: Take; canWrite: boole
       <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
         <div>{editable && <ConfirmButton confirm={{ title: `Cancel ${k.takeNumber}?`, body: 'It is marked Cancelled and its counts are not applied to stock.', meta: k.warehouseName, confirmLabel: 'Cancel stock take', cancelLabel: 'Keep stock take' }} onConfirm={() => onAct(k, { status: 'CANCELLED' }, { status: 'CANCELLED' }, 'Stock take cancelled.')}>Cancel</ConfirmButton>}</div>
         <div className="flex gap-2.5">
+          <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
           {editable && <Button size="sm" variant="secondary" onClick={saveCounts}>Save counts</Button>}
           {editable && <Button size="sm" variant="primary" onClick={post}>Post &amp; adjust</Button>}
-          <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
         </div>
       </div>
     </Drawer>

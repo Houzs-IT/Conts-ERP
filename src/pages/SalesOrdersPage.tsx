@@ -163,7 +163,7 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5">
           <div className="md:col-span-2"><Field label="Customer" placeholder="Customer name" value={h.customerName} onChange={setHf('customerName')} disabled={!editable} /></div>
           <PhoneInput label="Phone" value={h.customerPhone} onChange={v => setH(s => ({ ...s, customerPhone: v }))} disabled={!editable} />
           <Field label="Customer PO" value={h.customerPo} onChange={setHf('customerPo')} disabled={!editable} />

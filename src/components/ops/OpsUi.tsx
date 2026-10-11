@@ -85,9 +85,9 @@ export function OpsModal({ title, sub, children, footer, onClose, busy, width = 
     return () => { document.removeEventListener('keydown', onKey); back?.focus?.(); };
   }, [busy, onClose]);
   return (
-    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-4 bg-[rgba(21,21,21,0.44)]">
+    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-4 bg-[var(--color-surface-scrim)]">
       <div className="absolute inset-0" onClick={busy ? undefined : onClose} />
-      <div ref={ref} style={{ maxWidth: width }} className="relative w-full max-h-[calc(100dvh-32px)] flex flex-col bg-card rounded-card overflow-hidden [box-shadow:0_12px_32px_rgba(21,21,21,0.16)]">
+      <div ref={ref} style={{ maxWidth: width }} className="relative w-full max-h-[calc(100dvh-32px)] flex flex-col bg-card rounded-card overflow-hidden shadow-[var(--shadow-overlay)]">
         <div className="px-[22px] pt-5 pb-3 flex flex-col gap-1">
           <h2 className="m-0 text-title font-semibold">{title}</h2>
           {sub && <div className="text-copy text-muted-ink">{sub}</div>}

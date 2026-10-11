@@ -34,6 +34,29 @@ body { margin: 0; }
   /* .field-input sets height: var(--control-height) (40px) but, with no preflight, kept content-box sizing
      and drew 42px, so text fields stood 2px taller than the selects beside them. */
   .field-input { box-sizing: border-box; }
+  /* Without this every checkbox and radio drew in the browser's own blue, the one colour the brand never uses. */
+  input[type='checkbox'], input[type='radio'] { accent-color: var(--color-brand-black); }
+  /* A plain <select> drew the operating system's own arrow, a different one on every platform and nothing like
+     the chevron of the shared Select. Selects that already draw their own (appearance-none) are left alone. */
+  select:not(.appearance-none):not([multiple]) {
+    appearance: none;
+    /* Two strokes drawn as gradients make the shared Select's chevron (a "v", not a filled triangle) in a theme colour. */
+    background-image:
+      linear-gradient(45deg, transparent calc(50% - 0.8px), var(--color-text-muted) calc(50% - 0.8px), var(--color-text-muted) calc(50% + 0.8px), transparent calc(50% + 0.8px)),
+      linear-gradient(135deg, transparent calc(50% - 0.8px), var(--color-text-muted) calc(50% - 0.8px), var(--color-text-muted) calc(50% + 0.8px), transparent calc(50% + 0.8px));
+    background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
+    background-size: 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 34px !important;
+    text-overflow: ellipsis;
+  }
+  /* Fields styled by utility classes instead of .field-input took focus with the browser's blue ring; this is the
+     .field-input focus look. A control that sets outline-none keeps its own focus treatment. */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible, select:focus-visible, textarea:focus-visible {
+    border-color: var(--color-border-focus);
+    outline: 2px solid color-mix(in srgb, var(--color-border-focus) 35%, transparent);
+    outline-offset: 0;
+  }
 }
 
 /* Design tokens -> Tailwind theme. Utilities such as text-ink, bg-page, bg-gold,

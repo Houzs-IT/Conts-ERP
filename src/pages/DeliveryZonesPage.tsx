@@ -107,7 +107,7 @@ function ZoneDrawer({ draft, isNew, knownZones, onClose, onSave, onDelete }: { d
             {knownZones.map(z => <option key={z} value={z}>{z}</option>)}
           </select>
         </div>
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <NumberInput label="Prefix from (00–99)" required min={0} max={99} grouping={false} value={start} onChange={setStart} />
           <NumberInput label="Prefix to (00–99)" required min={0} max={99} grouping={false} value={end} onChange={setEnd} error={endError} />
         </div>

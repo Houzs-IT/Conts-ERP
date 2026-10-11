@@ -114,8 +114,8 @@ function ThreePlDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Thr
           <PhoneInput label="Contact phone" value={f.contactPhone} onChange={v => setF(s => ({ ...s, contactPhone: v }))} />
           <PhoneInput label="Office phone" value={f.officePhone} onChange={v => setF(s => ({ ...s, officePhone: v }))} />
           <Field label="Email" type="email" value={f.email} onChange={set('email')} error={emailBad(f.email) ? 'Check the email, or leave it blank.' : undefined} />
-          <div className="col-span-2"><Field label="Address" value={f.address} onChange={set('address')} /></div>
-          <div className="col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
+          <div className="sm:col-span-2"><Field label="Address" value={f.address} onChange={set('address')} /></div>
+          <div className="sm:col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
         </Section>
       </div>
       <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
@@ -129,5 +129,5 @@ function ThreePlDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Thr
   );
 }
 function Section({ title, children }: { title: string; children: ReactNode }) {
-  return <div className="flex flex-col gap-2.5"><div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">{title}</div><div className="grid grid-cols-2 gap-3.5">{children}</div></div>;
+  return <div className="flex flex-col gap-2.5"><div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">{title}</div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">{children}</div></div>;
 }

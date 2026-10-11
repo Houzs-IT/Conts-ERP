@@ -84,7 +84,7 @@ function DriverDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onCl
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow">
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <Field label="Driver code" placeholder="e.g. DRV-01" value={f.driverCode} onChange={set('driverCode')} />
           <Field label="Name" value={f.name} onChange={set('name')} />
           <PhoneInput label="Phone" value={f.phone} onChange={v => setF(s => ({ ...s, phone: v }))} />

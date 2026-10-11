@@ -115,7 +115,7 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
     <Drawer open onClose={onClose} width={720}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">New stock transfer</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
           <Sel label="From warehouse" value={from} onChange={setFrom} options={warehouses} />
           <Sel label="To warehouse" value={to} onChange={setTo} options={warehouses} />
           <DateField label="Date" required value={tdate} onChange={setTdate} error={fields.transferDate ?? (tried && !tdate ? 'Required.' : undefined)} />

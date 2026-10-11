@@ -88,7 +88,7 @@ export default function AppShell({
             onClick={() => setDrawerOpen(false)}
             aria-hidden={!drawerOpen}
             style={{
-              position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(21,21,21,0.44)',
+              position: 'fixed', inset: 0, zIndex: 50, background: 'var(--color-surface-scrim)',
               opacity: drawerOpen ? 1 : 0,
               visibility: drawerOpen ? 'visible' : 'hidden',
               transition: reduceMotion ? 'none' : `opacity ${motion.standard} ${motion.ease}, visibility ${motion.standard} ${motion.ease}`,
