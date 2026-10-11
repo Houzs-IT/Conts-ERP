@@ -4,6 +4,7 @@ import { HashRouter } from 'react-router-dom';
 import App from './App';
 import { CrashScreen } from './components/CrashScreen';
 import './styles/tokens.css';
+import './styles/devices.css';
 
 // Self-heal after a deploy. Pages are lazy-loaded, so a browser holding a stale
 // index.html asks for an old chunk hash that no longer exists; Cloudflare Pages

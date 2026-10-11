@@ -50,10 +50,11 @@ export const space = { 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 6: 24, 8: 32, 10: 40, 12
 export const radius = { xs: 4, sm: 6, control: 8, card: 12, pill: 999 } as const;
 
 export const shadow = {
-  card: '0 1px 2px 0 rgba(21,21,21,0.04), 0 0 0 1px rgba(21,21,21,0.04)',
-  raised: '0 2px 8px 0 rgba(21,21,21,0.06)',
-  dropdown: '0 4px 6px -1px rgba(21,21,21,0.08), 0 2px 4px -2px rgba(21,21,21,0.06)',
-  overlay: '0 12px 32px 0 rgba(21,21,21,0.16)',
+  // Warm-tinted, layered: a hairline contact shadow plus a soft ambient one, so surfaces lift without a hard edge.
+  card: '0 1px 2px 0 rgba(40,32,20,0.04), 0 2px 8px -2px rgba(40,32,20,0.06)',
+  raised: '0 1px 2px 0 rgba(40,32,20,0.05), 0 6px 16px -4px rgba(40,32,20,0.10)',
+  dropdown: '0 2px 4px -1px rgba(40,32,20,0.06), 0 12px 28px -6px rgba(40,32,20,0.16)',
+  overlay: '0 4px 8px -2px rgba(21,21,21,0.08), 0 24px 48px -12px rgba(21,21,21,0.28)',
 } as const;
 
 export const motion = {
