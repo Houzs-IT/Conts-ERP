@@ -1,5 +1,5 @@
 import { type Env, one, run, json, fail, nowIso, audit } from '../../_lib/db';
-import { signSession, cookie, hashPassword, sessionLimits, securitySettings, revokeSessions } from '../../_lib/auth';
+import { signSession, cookie, hashPassword, sessionLimits, securitySettings, revokeSessions, startSession } from '../../_lib/auth';
 import { logLogin, signChallenge, twoFactorAvailable, twoFactorTables } from '../../_lib/twoFactor';
 import { doorFor, doorRefusal, HOME } from '../../_lib/door';
 import { notify } from '../../_lib/notify';
@@ -106,8 +106,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   await logLogin(env, request, { userId: user.id, email: user.email, result: 'success', method: 'reset_link' });
   const { ttlHours, absoluteDays } = sessionLimits(await securitySettings(env), user.role);
+  const sid = await startSession(env, request, user.id, absoluteDays);
   const sessionToken = await signSession(env.SESSION_SECRET, {
-    userId: user.id, email: user.email, role: user.role, fullName: user.full_name,
+    userId: user.id, email: user.email, role: user.role, fullName: user.full_name, sid,
   }, ttlHours, absoluteDays);
 
   return json({

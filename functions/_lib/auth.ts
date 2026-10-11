@@ -46,33 +46,75 @@ export async function hasColumn(env: Env, table: string, column: string): Promis
   return found;
 }
 
+/** Migration 0106: one row per signed-in browser, so signing out ends that cookie everywhere it was copied, not
+ *  just in the browser that pressed the button. Without the table, cookies carry no session id and behave as before. */
+export function sessionTable(env: Env) {
+  return hasColumn(env, 'user_sessions', 'id');
+}
+
+/** Records a new signed-in browser and returns its id for the cookie, or undefined when there is no table (or the
+ *  write failed): such a cookie is checked the old way only, so a sign-in never fails over this. */
+export async function startSession(env: Env, request: Request, userId: string, absoluteDays: number): Promise<string | undefined> {
+  try {
+    if (!(await sessionTable(env))) return undefined;
+    const id = crypto.randomUUID();
+    const now = nowIso();
+    // Rows outlive their cookie only until this person next signs in.
+    await run(env, 'DELETE FROM user_sessions WHERE user_id = ? AND expires_at < ?', userId, now);
+    await run(env,
+      'INSERT INTO user_sessions (id, user_id, created_at, expires_at, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?)',
+      id, userId, now, new Date(Date.now() + absoluteDays * 864e5).toISOString(),
+      request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      (request.headers.get('user-agent') ?? '').slice(0, 300) || null);
+    return id;
+  } catch (e) {
+    console.error('startSession failed', e);
+    return undefined;
+  }
+}
+
+/** Ends one signed-in browser. `userId` scopes it, so nobody can end someone else's by guessing an id. */
+export async function endSession(env: Env, sid: string | undefined, userId: string) {
+  if (!sid || !(await sessionTable(env))) return false;
+  await run(env, 'DELETE FROM user_sessions WHERE id = ? AND user_id = ?', sid, userId);
+  return true;
+}
+
 /** The security settings and the signed-in user's current role and active flag, in one query (one
  *  connection), for the session middleware. The cookie only says who signed in; what they may do is read
- *  from users on every request, so deactivating someone or changing their role takes effect at once. */
-export async function sessionState(env: Env, userId: string): Promise<{
+ *  from users on every request, so deactivating someone or changing their role takes effect at once.
+ *  `sid` (a cookie issued once migration 0106 is in) is looked up in the same query: `sessionLive` is false
+ *  once that browser has signed out. */
+export async function sessionState(env: Env, userId: string, sid?: string): Promise<{
   settings: SecuritySettings;
-  user: { role: string; active: boolean; fullName: string; revokedAt: number; twoFactorOn: boolean } | null;
+  user: { role: string; active: boolean; fullName: string; revokedAt: number; twoFactorOn: boolean; sessionLive: boolean } | null;
 }> {
-  const [revokedCol, totpCol] = await Promise.all([hasColumn(env, 'users', 'sessions_revoked_at'), hasColumn(env, 'users', 'totp_enabled_at')]);
+  const [revokedCol, totpCol, sessions] = await Promise.all([
+    hasColumn(env, 'users', 'sessions_revoked_at'), hasColumn(env, 'users', 'totp_enabled_at'), sid ? sessionTable(env) : false,
+  ]);
   const rows = await all<{ key: string; value: string }>(env, `
     SELECT key, value FROM settings WHERE key LIKE 'security.%'
     UNION ALL
     SELECT '~user', role || '|' || is_active::text || '|' || ${revokedCol ? "COALESCE(sessions_revoked_at, '')" : "''"}
-      || '|' || ${totpCol ? "(totp_enabled_at IS NOT NULL)::int::text" : "'0'"} || '|' || full_name FROM users WHERE id = ?`, userId);
+      || '|' || ${totpCol ? "(totp_enabled_at IS NOT NULL)::int::text" : "'0'"}
+      || '|' || ${sessions ? '(SELECT count(*) FROM user_sessions s WHERE s.id = ? AND s.user_id = users.id)::text' : "'1'"}
+      || '|' || full_name FROM users WHERE id = ?`, ...(sessions ? [sid, userId] : [userId]));
   const u = rows.find(r => r.key === '~user');
-  const [role, active, revoked, totp, ...name] = (u?.value ?? '').split('|');
+  const [role, active, revoked, totp, live, ...name] = (u?.value ?? '').split('|');
   return {
     settings: parseSecurity(rows.filter(r => r.key !== '~user')),
-    user: u ? { role, active: active === '1', fullName: name.join('|'), revokedAt: revoked ? Date.parse(revoked) : 0, twoFactorOn: totp === '1' } : null,
+    user: u ? { role, active: active === '1', fullName: name.join('|'), revokedAt: revoked ? Date.parse(revoked) : 0, twoFactorOn: totp === '1', sessionLive: live !== '0' } : null,
   };
 }
 
-/** Ends every session this person has open: the middleware refuses any cookie signed before this moment.
- *  False when the database does not have migration 0055 yet, so the caller can say so instead of failing. */
-export async function revokeSessions(env: Env, userId: string): Promise<boolean> {
-  if (!(await hasColumn(env, 'users', 'sessions_revoked_at'))) return false;
-  await run(env, 'UPDATE users SET sessions_revoked_at = ? WHERE id = ?', nowIso(), userId);
-  return true;
+/** Ends every session this person has open: the middleware refuses any cookie signed before this moment, and
+ *  (migration 0106) their signed-in browser rows go, except `keep` (the browser asking, for "sign out the others").
+ *  False when the database has neither migration 0055 nor 0106, so the caller can say so instead of failing. */
+export async function revokeSessions(env: Env, userId: string, keep?: string): Promise<boolean> {
+  const [stamp, table] = await Promise.all([hasColumn(env, 'users', 'sessions_revoked_at'), sessionTable(env)]);
+  if (stamp) await run(env, 'UPDATE users SET sessions_revoked_at = ? WHERE id = ?', nowIso(), userId);
+  if (table) await run(env, 'DELETE FROM user_sessions WHERE user_id = ? AND id <> ?', userId, keep ?? '');
+  return stamp || table;
 }
 
 /** Emails a one-hour, single-use reset link. Only the token's hash is stored; the token itself leaves the server
@@ -110,7 +152,7 @@ export function sessionLimits(settings: SecuritySettings, role: string) {
  *  extended on every request but never past `iat + SESSION_ABSOLUTE_DAYS` — see signSession. */
 /** `manage`: whether the management-only actions in the area this request belongs to are open to the role
  *  (Users and roles > Permissions; functions/_lib/access.ts). Set by requireSession, not stored in the cookie. */
-export interface Session { userId: string; email: string; role: string; fullName: string; iat: number; manage?: boolean; picked?: Level | null }
+export interface Session { userId: string; email: string; role: string; fullName: string; iat: number; sid?: string; manage?: boolean; picked?: Level | null }
 
 const ENC = new TextEncoder();
 
@@ -124,7 +166,7 @@ async function hmac(secret: string, data: string) {
  *  `iat` back in when it slides an existing session's idle deadline forward, so the
  *  absolute cap always counts from first login, never from the latest request. */
 export async function signSession(
-  secret: string, s: { userId: string; email: string; role: string; fullName: string },
+  secret: string, s: { userId: string; email: string; role: string; fullName: string; sid?: string },
   ttlHours: number, absoluteDays: number, iat = Date.now(),
 ) {
   const exp = Math.min(Date.now() + ttlHours * 36e5, iat + absoluteDays * 864e5);
@@ -151,7 +193,7 @@ export async function readSession(secret: string, token: string | null): Promise
   try {
     const p = JSON.parse(atob(body));
     if (!p.exp || p.exp < Date.now()) return null;
-    return { userId: p.userId, email: p.email, role: p.role, fullName: p.fullName, iat: p.iat ?? Date.now() };
+    return { userId: p.userId, email: p.email, role: p.role, fullName: p.fullName, iat: p.iat ?? Date.now(), ...(typeof p.sid === 'string' ? { sid: p.sid } : {}) };
   } catch { return null; }
 }
 

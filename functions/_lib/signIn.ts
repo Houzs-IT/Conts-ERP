@@ -1,6 +1,6 @@
 import { type Env, json, run, nowIso } from './db';
 import { levelsFor } from './access';
-import { signSession, cookie, sessionLimits, type SecuritySettings } from './auth';
+import { signSession, cookie, sessionLimits, startSession, type SecuritySettings } from './auth';
 import { HOME } from './door';
 import { logLogin, twoFactorAvailable, twoFactorTables, type LoginMethod } from './twoFactor';
 
@@ -20,8 +20,9 @@ export async function completeSignIn(env: Env, request: Request, user: SignInUse
   await logLogin(env, request, { userId: user.id, email: user.email, result: 'success', method });
 
   const { ttlHours, absoluteDays } = sessionLimits(settings, user.role);
+  const sid = await startSession(env, request, user.id, absoluteDays);
   const token = await signSession(env.SESSION_SECRET, {
-    userId: user.id, email: user.email, role: user.role, fullName: user.full_name,
+    userId: user.id, email: user.email, role: user.role, fullName: user.full_name, sid,
   }, ttlHours, absoluteDays);
 
   return json({

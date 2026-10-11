@@ -78,9 +78,10 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   // The cookie only says who signed in. Their role and whether the account is still on are read from
   // users on every request (one query, shared with the security settings below), so switching someone
   // off or changing their role on Users and roles takes effect on their very next click.
-  const live = await sessionState(env, signed.userId);
-  // A cookie signed before management's "Sign out everywhere" (or a password reset) is refused the same way.
-  if (!live.user?.active || signed.iat < live.user.revokedAt) {
+  const live = await sessionState(env, signed.userId, signed.sid);
+  // A cookie signed before management's "Sign out everywhere" (or a password reset) is refused the same way, and so
+  // is one whose browser signed out (its user_sessions row is gone), even if the cookie was copied elsewhere.
+  if (!live.user?.active || signed.iat < live.user.revokedAt || !live.user.sessionLive) {
     return new Response(JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: 'This account has been switched off or changed. Sign in again, or ask management.' } }),
       { status: 401, headers: { 'content-type': 'application/json; charset=utf-8', 'set-cookie': clearCookie(request) } });
   }
