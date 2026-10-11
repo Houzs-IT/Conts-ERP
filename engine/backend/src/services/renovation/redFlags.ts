@@ -31,6 +31,8 @@ export interface RedFlagInput {
   plannedHandoverDate: string | null;
   handedOver: boolean;
   gateOpen: boolean;
+  /** What is missing when works start early (owner 11 Oct: the gate warns, it never blocks). */
+  gateMessages?: readonly string[];
 }
 
 export function redFlags(i: RedFlagInput): RedFlag[] {
@@ -51,7 +53,8 @@ export function redFlags(i: RedFlagInput): RedFlag[] {
   }
   const hw = i.views.find((v) => v.key === "hardware");
   if (hw && hw.state === "in_progress" && !i.gateOpen) {
-    flags.push({ code: "gate_blocked_works", text: "Hardware works in progress while the gate is closed" });
+    const missing = (i.gateMessages ?? []).join("; ");
+    flags.push({ code: "gate_blocked_works", text: missing ? `Works started before: ${missing}` : "Works started before the project was ready" });
   }
   return flags;
 }

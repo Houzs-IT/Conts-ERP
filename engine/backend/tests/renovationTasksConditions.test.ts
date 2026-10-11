@@ -156,4 +156,12 @@ describe("red flags", () => {
     });
     expect(f.map((x) => x.code)).toEqual(["task_overdue", "billing_due", "snag_overdue", "handover_overdue"]);
   });
+
+  test("works started before the project is ready: a warning that names what is missing, never a block", () => {
+    const base = { today: "2026-10-11", taskStatuses: [], prompts: [], billingAvailable: true, hasSo: true, openSnags: [], plannedHandoverDate: null, handedOver: false };
+    const hw = [{ key: "hardware", state: "in_progress" }] as unknown as Parameters<typeof redFlags>[0]["views"];
+    const f = redFlags({ ...base, views: hw, gateOpen: false, gateMessages: ["Instalment 1 has not been received.", "The renovation permit is not approved."] });
+    expect(f).toEqual([{ code: "gate_blocked_works", text: "Works started before: Instalment 1 has not been received.; The renovation permit is not approved." }]);
+    expect(redFlags({ ...base, views: hw, gateOpen: true })).toEqual([]);
+  });
 });

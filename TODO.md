@@ -228,7 +228,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## Renovation project, simplified (feat/reno-simplify)
 - Done: 6-step flow (derived from SO / PO / site tasks / handover / paid, manual move + follow data, IN DEFECT / ON HOLD flag), people master, key log, design records, SO <-> project in either order, Notion task categories, in-house crew on site tasks, board columns per the owner, source/source_ref on importable rows. Migrations 0083-0086 not yet applied to staging/production.
-- Open: the old hardware gate (SO + instalment 1 + shop drawings + permit) still refuses "Start" on a hardware-stage task, in-house or not; ask the owner whether the simplified flow should drop that gate.
+- Done (owner, 11 Oct): the hardware gate no longer blocks anything (task start, stage start/complete, site receipt); it only raises the red flag "Works started before: <missing items>".
 - Open: the SO page "Project" card and the quotation "No project yet" choice were not seen in a browser (the local engine has no Supabase REST for the SCM routes); check them on the staging preview.
 
 ## System bugs from Houzs / Hookka (fix/audit-system, docs/audits/system-from-sister-erps.md)

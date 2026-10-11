@@ -322,13 +322,6 @@ app.post("/trade-tasks/:taskId/start", requirePermission("projects.write"), fail
   const task = await taskWithProject(c, taskId);
   if (!task) return c.json({ error: "not_found" }, 404);
   if (task.state === "skipped" || task.state === "done") return c.json({ error: `task_${task.state}` }, 409);
-  if (task.stage_key === "hardware") {
-    const one = await loadOne(c, task.project_id, { checklistKeys: BOARD_CHECKLIST_KEYS });
-    if (!one) return c.json({ error: "not_found" }, 404);
-    if (!one.view.gate.open) {
-      return c.json({ error: "hardware_gate_closed", reasons: one.view.gate.reasons, messages: one.view.gate.reasons.map((r) => GATE_REASON_TEXT[r]) }, 409);
-    }
-  }
   await db(c).prepare(`UPDATE project_trade_tasks SET state = 'in_progress', actual_start = coalesce(actual_start, ?::date), updated_at = now() WHERE id = ?`)
     .bind(todayMyt(), taskId).run();
   return c.json({ ok: true });
@@ -471,9 +464,6 @@ app.post("/:id/stages/:key/start", requirePermission("projects.write"), failClos
   const stage = one.view.stages.find((s) => s.key === key)!;
   if (stage.state === "skipped") return c.json({ error: "stage_skipped", message: "Un-skip the stage first." }, 409);
   if (stage.state !== "not_started") return c.json({ error: `stage_${stage.state}` }, 409);
-  if (key === "hardware" && !one.view.gate.open) {
-    return c.json({ error: "hardware_gate_closed", reasons: one.view.gate.reasons, messages: one.view.gate.reasons.map((r) => GATE_REASON_TEXT[r]) }, 409);
-  }
   await db(c).prepare(
     `UPDATE project_stages SET state = 'in_progress', started_at = now(), started_by = ?, updated_at = now() WHERE project_id = ? AND stage_key = ?`,
   ).bind(userId(c), id, key).run();
@@ -489,7 +479,6 @@ app.post("/:id/stages/:key/complete", requirePermission("projects.write"), failC
   const one = await loadOne(c, id);
   if (!one) return c.json({ error: "not_found" }, 404);
   const blockers = stageCompletionBlockers(one.facts, one.view, key);
-  if (key === "hardware" && !one.view.gate.open) blockers.push("hardware_gate_closed");
   if (blockers.length > 0) return c.json({ error: "stage_blocked", blockers }, 409);
   await db(c).prepare(
     `UPDATE project_stages SET state = 'done', started_at = coalesce(started_at, now()), started_by = coalesce(started_by, ?),

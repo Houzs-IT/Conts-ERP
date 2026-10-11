@@ -3,7 +3,7 @@
 
 import { billingPrompts, instalmentOneReceived, paymentSummary, type BillingPrompt, type PaymentSummary } from "./billing";
 import { boardConditions, unitKeyStatus, type ConditionSummary, type UnitKeyStatus } from "./conditions";
-import { evaluateHardwareGate, isSoConfirmed, permitStateOf, type GateResult } from "./gate";
+import { evaluateHardwareGate, GATE_REASON_TEXT, isSoConfirmed, permitStateOf, type GateResult } from "./gate";
 import type { ProjectFacts, TaskRow } from "./load";
 import { podCoverage, podQtyBySoItem, type PodCoverage } from "./pod";
 import { redFlags, type RedFlag } from "./redFlags";
@@ -134,6 +134,7 @@ export function computeProjectView(f: ProjectFacts, today: string): ProjectView 
       plannedHandoverDate: f.project.planned_handover_date,
       handedOver,
       gateOpen: gate.open,
+      gateMessages: gate.reasons.map((r) => GATE_REASON_TEXT[r]),
     }),
   };
 }

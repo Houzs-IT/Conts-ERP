@@ -47,7 +47,7 @@ describe("renovation model", () => {
     expect(blockerText(["checklist_open:3", "pod_missing:1", "handover_unsigned"])).toBe("3 checklist items open, 1 lines without proof of delivery, handover form not signed");
     expect(errorText({ rawBody: JSON.stringify({ error: "stage_blocked", blockers: ["tasks_open:2"] }) })).toBe("This stage still has open items. 2 tasks not done.");
     expect(errorText({ rawBody: JSON.stringify({ error: "hardware_gate_closed", reasons: ["so_missing"], messages: ["No renovation sales order is linked to this project yet."] }) }))
-      .toBe("Hardware works cannot start yet. No renovation sales order is linked to this project yet.");
+      .toBe("Not ready for site works yet. No renovation sales order is linked to this project yet.");
     expect(errorText({ rawBody: JSON.stringify({ error: "snags_open", message: "Close every snag first." }) })).toBe("Close every snag first.");
     expect(errorText(new Error("network down"))).toBe("network down");
   });
