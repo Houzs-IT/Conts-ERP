@@ -13,16 +13,17 @@ import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
-import { api, ApiFailure, errorMessage } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { rm, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
 import { MODEL, type RevenueModel } from '../lib/revenueModel';
 import { PayoutDetails } from './owners/PayoutDetails';
-import { OwnerCostsCard } from './owners/Costs';
+import { OwnerAdjustments } from './owners/Adjustments';
+import { ExpensesCard } from './owners/ExpenseEntry';
 import { ModelChip } from './units/ContractTab';
 import { RecordHistory } from '../components/RecordHistory';
 import { MonthStepper, shiftMonth } from './finance/listKit';
 import { cx } from '../lib/design-tokens';
-import { Segmented, StatTile, StatRow } from '../components/Metric';
+import { Eyebrow, Segmented } from '../components/Metric';
 import {
   type Owner, type UnitLine, type Payload,
   FALLBACK, terms, Section, StatementHistory, LinkUnitModal,
@@ -31,12 +32,11 @@ import { statusLabel } from '../lib/status';
 import { PhoneText } from '../components/PhoneText';
 
 /**
- * The OWNER PROFILE (`#/owners/:id`): one card per unit with its revenue model and the month's Unit P&L (Gross Income,
- * each deduction, To Operator, what comes off after the split, Net Payout to Owner), worked out by the statement
- * engine (GET /api/owners?id=&month=), the month's totals, and the Owner Income Report by owner (all units combined)
- * or by unit, generated here when the month has no owner statement yet. Below: expenses by unit (Cleaning,
- * Maintenance, each bill paid on behalf), payout details (edited here; they are the owner's, not a unit's) and the
- * statement history, each statement's make-up opening in place.
+ * The OWNER PROFILE (`#/owners/:id`): one card per unit with its revenue model and the month's figures (income,
+ * the costs the owner pays, the operator's share, owner credits and charges, the owner's net), worked out by the
+ * statement engine (GET /api/owners?id=&month=), a totals bar with the statement's state, and the Owner Income
+ * Report by owner (all units combined) or by unit. Below: expenses recorded to the units (with who pays), owner
+ * credits and charges, payout details and statement history.
  */
 
 type ReportView = 'owner' | 'unit';
@@ -74,37 +74,10 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
 
   const patch = (p: Partial<Owner>) => setEdits(e => ({ ...e, ...p }));
   const canDelete = o.units.length === 0 && !o.contract;
-  // The month's totals as the owner statement adds them: a fixed-rent or master-lease unit brings its rent, not the
-  // unit's trading (its income, costs and the rest are The Conts').
-  const figures = o.units.filter(u => u.figures).map(u => ({ fixed: u.revenueModel === 'grr' || u.revenueModel === 'master_lease', f: u.figures! }));
-  const sum = (k: 'income' | 'costs' | 'operatorShare' | 'adjustments') => figures.reduce((n, { fixed, f }) => n + (k === 'adjustments' ? f[k] : fixed ? (k === 'income' ? f.fixedRent : 0) : f[k]), 0);
   const total = o.units.reduce((n, u) => n + (u.figures?.netPayout ?? u.net), 0);
   const st = o.statement ?? null;
-  const reportHref = st?.hasUnits ? `#/finance/statements/${encodeURIComponent(st.id)}/report${view === 'owner' ? '?view=owner' : ''}` : null;
+  const reportHref = st ? `#/finance/statements/${encodeURIComponent(st.id)}/report${view === 'owner' ? '?view=owner' : ''}` : null;
   const unitChoices = o.units.map(u => ({ id: u.unitId, label: u.unitLabel }));
-  // What the report button does for the month: open the report; for a month paid before Property OS (no unit figures),
-  // the statement as it was paid; otherwise build this owner's statement first (a draft, or a draft rebuilt).
-  const reportAction: 'open' | 'legacy' | 'generate' = reportHref ? 'open' : st && st.state !== 'provisional' ? 'legacy' : 'generate';
-
-  async function ownerReport() {
-    if (!o) return;
-    if (reportAction === 'open' && reportHref) { window.location.hash = reportHref.slice(1); return; }
-    if (reportAction === 'legacy' && st) { window.open(`/api/statements/${encodeURIComponent(st.id)}/pdf?format=legacy`, '_blank', 'noopener'); return; }
-    setBusy(true);
-    try {
-      const r = await api.post<{ count: number; skipped: number; statements?: { ownerId: string; id: string }[] }>('/statements/generate', { period: month, ownerIds: [o.id] });
-      const made = r.statements?.find(x => x.ownerId === o.id);
-      if (!made) {
-        toast({ tone: 'info', title: `Nothing to report for ${monthLabel(month)}.`, body: r.skipped ? 'This owner statement is already final; open it from the statement history.' : 'No bookings, costs or charges on this owner\'s units that month.' });
-        return;
-      }
-      toast({ tone: 'success', title: `Owner statement for ${monthLabel(month)} generated as a draft.`, body: 'Opening the Owner Income Report. Review it on Owner statements before sending.' });
-      window.location.hash = `#/finance/statements/${encodeURIComponent(made.id)}/report${view === 'owner' ? '?view=owner' : ''}`;
-    } catch (e) {
-      const locked = e instanceof ApiFailure && e.status === 409;
-      toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'That month is already sent.' : 'The owner report was not generated.', body: errorMessage(e, 'Try again in a moment.') });
-    } finally { setBusy(false); }
-  }
 
   async function linkUnit(u: UnitLine) {
     if (!o) return;
@@ -194,49 +167,49 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       <Card>
         <div className="flex flex-wrap items-center gap-3 py-3 px-4">
           <MonthStepper label={monthLabel(month)} onStep={by => setParam('month', shiftMonth(month, by) === shiftMonth(thisMonth, -1) ? null : shiftMonth(month, by))} />
-          <span className="text-meta text-muted-ink">Owner statement: {st ? statusLabel('statement', st.state) : 'not generated yet'}
-            {st && <> · <a href={`#/finance/statements/${encodeURIComponent(st.id)}`} className="text-gold-ink no-underline font-medium">Open</a></>}
-          </span>
           <span className="flex-1" />
           <Segmented<ReportView> label="Report by" value={view} onChange={v => setParam('report', v === 'owner' ? null : 'unit')}
             options={[{ key: 'owner', label: 'By owner' }, { key: 'unit', label: 'By unit' }]} />
-          <Button size="sm" variant="primary" icon={<Icon name="FileText" size="sm" />} loading={busy && reportAction === 'generate'} disabled={o.units.length === 0}
-            disabledReason="Link a unit to this owner first." onClick={() => void ownerReport()}>
-            {reportAction === 'generate' ? 'Generate owner report' : reportAction === 'legacy' ? 'Owner statement PDF' : 'Owner report PDF'}
-          </Button>
+          <Button size="sm" variant="primary" icon={<Icon name="FileText" size="sm" />} disabled={!reportHref}
+            disabledReason={`No ${monthLabel(month)} statement for this owner yet. Generate it on Finance, Statements.`}
+            onClick={() => { if (reportHref) window.location.hash = reportHref.slice(1); }}>Owner report PDF</Button>
         </div>
         <div className="px-4 pb-3 -mt-1 text-meta text-muted-ink">
-          {reportAction === 'generate'
-            ? `No ${monthLabel(month)} owner statement with unit figures yet: the button builds this owner's as a draft, then opens the report.`
-            : reportAction === 'legacy' ? `${monthLabel(month)} was paid from the owner workbook before Property OS, so it has the statement as paid, not an Owner Income Report.`
-            : view === 'owner' ? 'By owner: one report with every unit combined, then each unit.' : 'By unit: each unit on its own report, as the owner has always received it.'}
+          {view === 'owner' ? 'By owner: one report with every unit combined, then each unit.' : 'By unit: each unit on its own report, as the owner has always received it.'}
         </div>
       </Card>
-
-      {o.units.length > 0 && (
-        <StatRow cols={5}>
-          <StatTile className="col-span-2 xl:col-span-1" hero label={`Net Payout to Owner · ${monthLabel(month)}`} value={rm(total)} hint={plural(o.units.length, 'unit')} />
-          <StatTile label="Gross Income" value={figures.length ? rm(sum('income')) : undefined} />
-          <StatTile label="Deductions" value={figures.length ? rm(sum('costs')) : undefined} hint="Before the split" />
-          <StatTile label="To Operator" value={figures.length ? rm(sum('operatorShare')) : undefined} />
-          <StatTile label="Paid on behalf, after the split" value={figures.length ? rm(-sum('adjustments')) : undefined} />
-        </StatRow>
-      )}
 
       {o.units.length === 0 ? (
         <Card><EmptyState bare title="No units linked yet." body="Link a unit to assign it to this owner and set how they are paid." action={{ label: 'Link unit', onClick: () => setModal('link') }} /></Card>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))] gap-4">
-          {o.units.map(u => <UnitCard key={u.unitId} u={u} reportHref={st?.hasUnits ? `#/finance/statements/${encodeURIComponent(st.id)}/report?unit=${encodeURIComponent(u.unitId)}` : null} />)}
+          {o.units.map(u => <UnitCard key={u.unitId} u={u} reportHref={st ? `#/finance/statements/${encodeURIComponent(st.id)}/report?unit=${encodeURIComponent(u.unitId)}` : null} />)}
         </div>
       )}
 
-      {o.units.length > 0 && <OwnerCostsCard ownerId={o.id} ownerName={o.displayName} month={month} units={unitChoices} canEdit onChanged={reload} />}
+      {o.units.length > 0 && (
+        <section aria-label={`${monthLabel(month)} total`} className="relative flex flex-wrap items-end justify-between gap-x-6 gap-y-3 py-5 px-5 sm:px-6 rounded-card bg-black text-white overflow-hidden">
+          <span aria-hidden className="absolute left-5 sm:left-6 top-0 h-[2px] w-8 bg-gold" />
+          <span className="flex flex-col gap-2.5 min-w-0">
+            <Eyebrow className="text-gold!">{monthLabel(month, { long: true })} total · {plural(o.units.length, 'unit')}</Eyebrow>
+            <MoneyText sen={total} mode="exact" className="text-[26px] sm:text-[30px] leading-none font-medium tracking-[-0.025em] text-white!" />
+          </span>
+          <span className="text-copy text-[var(--color-text-on-dark)]">
+            Statement: {st ? statusLabel('statement', st.state) : 'not generated yet'}
+            {st && <> · <a href={`#/finance/statements/${encodeURIComponent(st.id)}`} style={{ color: "var(--color-gold)" }}>Open statement</a></>}
+          </span>
+        </section>
+      )}
+
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(420px,100%),1fr))] gap-5 [align-items:start]">
+        <ExpensesCard ownerId={o.id} month={month} units={unitChoices} canEdit onChanged={reload} />
+        <OwnerAdjustments key={o.id} owner={o} />
+      </div>
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(420px,100%),1fr))] gap-5 [align-items:start]">
         <Card>
           <div className="p-5 flex flex-col gap-5">
-            <PayoutDetails owner={o} canEdit onSaved={reload} />
+            <PayoutDetails owner={o} />
             <StatementHistory key={o.id} o={o} />
           </div>
         </Card>
@@ -249,8 +222,8 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
               <Section title="Owner-level default fee" action={<Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setModal('defaultFee')}>{o.defaultManagementFeePct != null ? 'Change' : 'Set'}</Button>}>
                 <div className="text-copy text-muted-ink leading-[1.6]">
                   {o.defaultManagementFeePct != null
-                    ? <>Recorded for {titleCase(o.displayName)}: <strong className="font-semibold text-ink">{o.defaultManagementFeePct}%</strong>, for reference. Each unit's own contract decides its owner statement.</>
-                    : <>No owner default set. Each unit's contract decides its owner statement.</>}
+                    ? <>Recorded for {titleCase(o.displayName)}: <strong className="font-semibold text-ink">{o.defaultManagementFeePct}%</strong>, for reference. Each unit's own contract decides its statement.</>
+                    : <>No owner default set. Each unit's contract decides its statement.</>}
                 </div>
               </Section>
             </div>
@@ -279,17 +252,16 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
   );
 }
 
-/** One unit's month, the way its revenue model pays the owner: its Unit P&L, which rolls up to the owner. */
+/** One unit's month, the way its revenue model pays the owner. */
 function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null }) {
   const f = u.figures;
   const model: RevenueModel = u.revenueModel ?? (u.model === 'grr' ? 'grr' : 'management');
-  const Row = ({ label, sen, muted, sign, indent }: { label: string; sen: number; muted?: boolean; sign?: boolean; indent?: boolean }) => (
+  const Row = ({ label, sen, muted, sign }: { label: string; sen: number; muted?: boolean; sign?: boolean }) => (
     <div className="flex items-baseline justify-between gap-3">
-      <span className={cx('text-meta min-w-0', muted ? 'text-faint' : 'text-muted-ink', indent && 'pl-3')}>{label}</span>
+      <span className={cx('text-meta min-w-0', muted ? 'text-faint' : 'text-muted-ink')}>{label}</span>
       <MoneyText sen={sen} mode="exact" tone={muted ? 'muted' : undefined} className={cx('text-copy text-right whitespace-nowrap', sign && sen > 0 ? 'before:content-["+_"]' : '')} />
     </div>
   );
-  const after = (sen: number) => sen !== 0 && <Row label={sen < 0 ? 'Paid on behalf, after the split' : 'Credit to owner, after the split'} sen={sen} sign />;
   const operatorPct = u.feePct;
   return (
     <section className="bg-card border border-solid border-line rounded-card p-4 flex flex-col gap-2 min-w-0">
@@ -299,24 +271,22 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
       </div>
       {!f ? <div className="text-meta text-muted-ink">Figures are visible to finance and management.</div> : model === 'master_lease' ? <>
         <div className="text-meta text-muted-ink">{MODEL.master_lease.statement}</div>
-        {after(f.adjustments)}
+        {f.adjustments !== 0 && <Row label="Owner credits & charges" sen={f.adjustments} sign />}
       </> : model === 'grr' ? <>
         <Row label="Fixed rent" sen={f.fixedRent} />
-        {after(f.adjustments)}
-        <Row label="Unit income (The Conts')" sen={f.income} muted />
+        {f.adjustments !== 0 && <Row label="Owner credits & charges" sen={f.adjustments} sign />}
+        <Row label="Unit income (the company's)" sen={f.income} muted />
       </> : <>
-        <Row label={model === 'long_term' ? 'Gross Income (rent from tenant)' : `Gross Income (${f.nights} ${f.nights === 1 ? 'night' : 'nights'})`} sen={f.income} />
-        {f.costLines.length === 0
-          ? <Row label="Deductions" sen={0} muted />
-          : f.costLines.map(c => <Row key={c.label} label={c.label} sen={-c.amount} indent />)}
-        <Row label={model === 'long_term' ? `Management fee ${operatorPct ?? 0}%` : `${operatorPct != null ? `${Number(operatorPct.toFixed(2))}% ` : ''}To Operator`} sen={-f.operatorShare} />
+        <Row label={model === 'long_term' ? 'Rent from tenant' : `Income (${f.nights} ${f.nights === 1 ? 'night' : 'nights'})`} sen={f.income} />
+        <Row label="Costs the owner pays" sen={-f.costs} />
+        <Row label={model === 'long_term' ? `Management fee ${operatorPct ?? 0}%` : `Management and agent ${operatorPct != null ? `${Number(operatorPct.toFixed(2))}%` : ''}`} sen={-f.operatorShare} />
         {f.guarantee > 0 && (f.topUp > 0
           ? <Row label={`Below the ${rm(f.guarantee)} minimum: top-up`} sen={f.topUp} sign />
           : <div className="text-meta text-muted-ink">Above the {rm(f.guarantee)} minimum</div>)}
-        {after(f.adjustments)}
+        {f.adjustments !== 0 && <Row label="Owner credits & charges" sen={f.adjustments} sign />}
       </>}
       <div className="flex items-baseline justify-between gap-3 mt-auto pt-2 [border-top:1px_solid_var(--color-line-soft)]">
-        <span className="text-copy font-semibold">Net Payout to Owner</span>
+        <span className="text-copy font-semibold">Owner net</span>
         <MoneyText sen={f?.netPayout ?? u.net} mode="exact" strong className="text-copy" />
       </div>
       <div className="flex gap-3 text-meta">

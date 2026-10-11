@@ -25,8 +25,7 @@ import type { UnitReadiness } from '../lib/types';
 import UnitTree, { firstUnitId } from './units/UnitTree';
 import AccessTab from './units/AccessTab';
 import BookingsTab from './units/BookingsTab';
-import { SaveBar, DetailsForm, DocumentsCard, BuildingModal, ConfirmAdd } from './units/UnitForms';
-import { UnitCostsCard } from './owners/Costs';
+import { SaveBar, DetailsForm, DocumentsCard, ExpensesEditor, BuildingModal, ConfirmAdd } from './units/UnitForms';
 import ContractTab, { ModelChip } from './units/ContractTab';
 import { ExpensesCard } from './owners/ExpenseEntry';
 import { todayMyt } from '../lib/format';
@@ -131,10 +130,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     const before = original.find(u => u.id === form.id);
     // The contract is saved on its own tab (PUT /units/:id/contract); never sent from here, so an older copy in
     // this form cannot overwrite it.
-    // Owner and payout details belong to the owner and are edited on the owner's page; the old monthly costs list and
-    // the cleaning price are saved on the Financials tab. None of them is sent from this form.
-    const { baseRate, contract: _contract, revenueModel: _model, termsLabel: _terms, ownerName: _on, ic: _ic, bankName: _bn, bankAccount: _ba,
-      accountHolder: _ah, expenses: _ex, cleaningPrice: _cp, ...body } = form;
+    const { baseRate, contract: _contract, revenueModel: _model, termsLabel: _terms, ...body } = form;
     setSaving(true);
     try {
       await api.patch(`/units/${form.id}`, body);
@@ -459,7 +455,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       {shown === 'details' && (form ? (
         <Card>
           <SaveBar title="Details & owner" sub="Listing, building, owner and revenue model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave} />
-          <DetailsForm u={form} owner={u.owner} buildings={buildings} money={money} canEdit={canEdit} onChange={onChange} onOpenContract={() => setTab('contract')} />
+          <DetailsForm u={form} buildings={buildings} money={money} canEdit={canEdit} onChange={onChange} onOpenContract={() => setTab('contract')} />
         </Card>
       ) : needsForm)}
 
@@ -509,11 +505,17 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       )}
       {shown === 'financials' && d.pnl && (
         <>
-          <UnitCostsCard unitId={u.id} ownerId={u.owner.id} unitLabel={unitLabel} canEdit={canEdit} cleaningPrice={form?.cleaningPrice}
-            legacyCosts={form?.expenses ?? []} onChanged={() => { reloadDetail(); reload(); }} />
+          <ExpensesCard title="Expenses this month" unitId={u.id} month={todayMyt().slice(0, 7)} units={[{ id: u.id, label: unitLabel }]} canEdit={canEdit} onChanged={reloadDetail} />
+          {form && (
+            <Card>
+              <SaveBar title="Recurring monthly costs" sub="The unit's usual monthly costs, for reference and the expenses report. Record the actual bills above." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave}
+                extra={<Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={expensesReport}>Generate report</Button>} />
+              <ExpensesEditor u={form} canEdit={canEdit} onChange={onChange} />
+            </Card>
+          )}
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">Unit P&amp;L this month</span>
+              <span className="text-[16px] font-semibold tracking-[-0.01em]">Gross to net</span>
               <span className="text-meta text-muted-ink">{periodLabel}</span>
             </div>
             {d.pnl.map((l, i) => {
@@ -526,14 +528,14 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               );
             })}
             <div className="py-[13px] px-5 text-meta text-muted-ink [text-wrap:pretty]">
-              The owner statement for this unit so far, by its revenue model: Gross Income split by night into the month, less the costs the owner pays, less the operator's share. It rolls up to the owner by the unit's split. The month is not closed yet, so the figures still move.
+              The owner statement for the month so far, by the unit's revenue model: income split by night into the month, less the costs the owner pays. The month is not closed yet, so the figures still move.
             </div>
           </Card>
           {d.companyPnl && (
             <Card>
               <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
-                <span className="text-[16px] font-semibold tracking-[-0.01em]">The Conts' share</span>
-                <span className="text-meta text-muted-ink">What The Conts keeps or pays on this unit, {periodLabel.toLowerCase()}. Costs paid by The Conts, a tenant or a guest show here, never on the owner statement.</span>
+                <span className="text-[16px] font-semibold tracking-[-0.01em]">Company side</span>
+                <span className="text-meta text-muted-ink">What the company keeps or pays on this unit, {periodLabel.toLowerCase()}. Costs paid by the company, a tenant or a guest show here, never on the owner statement.</span>
               </div>
               {d.companyPnl.map((l, i) => {
                 const net = l.type === 'net';
@@ -546,13 +548,6 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               })}
             </Card>
           )}
-        </>
-      )}
-
-      {shown === 'financials' && d.pnl && (
-        <>
-          <ExpensesCard title="Every expense this month" unitId={u.id} month={todayMyt().slice(0, 7)} units={[{ id: u.id, label: unitLabel }]} canEdit={canEdit} onChanged={reloadDetail} />
-          {form && <div className="flex justify-end -mt-2"><Button size="sm" variant="tertiary" icon={<Icon name="Download" size="sm" />} onClick={expensesReport}>Expenses report</Button></div>}
         </>
       )}
 

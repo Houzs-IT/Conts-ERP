@@ -24,7 +24,7 @@ if (!SECRET) { console.error('Set SESSION_SECRET (or run from the repository roo
 // PGlite serves one wire connection at a time, so each query opens and closes its own: a connection held open
 // across an HTTP call would leave the server's own query waiting forever.
 const db = async (strings, ...values) => {
-  const c = postgres(`postgres://postgres@127.0.0.1:${PORT}/${process.env.BIGDATA_DB ?? 'postgres'}`, { max: 1, onnotice: () => {}, connection: { search_path: 'pos' } });
+  const c = postgres(`postgres://postgres@127.0.0.1:${PORT}/postgres`, { max: 1, onnotice: () => {}, connection: { search_path: 'pos' } });
   try { return await c(strings, ...values); } finally { await c.end({ timeout: 5 }); }
 };
 let fails = 0;
