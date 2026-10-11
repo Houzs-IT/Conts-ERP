@@ -16,6 +16,20 @@ export function unitCode(propertyName: string, unitNumber: string): string {
 }
 
 export type { Company } from './letterhead';
+
+/** The terms printed on the owner's own report (Sep 2026 sample), used until Settings > Owner Income Report saves others. */
+export const DEFAULT_MONTHLY_TERMS = [
+  'Rental/booking revenue is based on actual confirmed stays during the billing month.',
+  'Cleaning, utilities, maintenance, and other expenses are deducted as per agreed service terms.',
+  'Owner payouts will be processed and transferred by the 7 working day of the following month, unless delayed by force majeure or third-party platform settlement.',
+  'Any discrepancies or disputes regarding the report must be raised in writing within 7 days of receiving the statement. After this period, the report is deemed accepted.',
+  'This report is confidential and is intended solely for the property owner. It may not be shared or disclosed to third parties without written consent from The Conts Sdn Bhd.',
+].join('\n');
+export const DEFAULT_YEAR_TERMS = [
+  'All monthly payouts have been made based on verified reports. This annual summary is for owner reference and may be used for internal financial review or tax preparation.',
+  'Any income or cost adjustment (e.g., guest refunds, penalty charges, or ad-hoc maintenance) will be reflected in the monthly reports and carried forward into the annual summary accordingly.',
+  'This report is confidential and is intended solely for the property owner. It may not be shared or disclosed to third parties without written consent from The Conts Sdn Bhd.',
+].join('\n');
 export interface ReportSettings { company: Company; paymentTerms: string; monthlyTerms: string[]; yearTerms: string[] }
 
 export async function reportSettings(q: Query): Promise<ReportSettings> {
@@ -26,8 +40,9 @@ export async function reportSettings(q: Query): Promise<ReportSettings> {
     // The same details, and the same defaults, as every printed document (letterhead.ts).
     company: companyFrom(m),
     paymentTerms: m.get('report.paymentTerms') ?? '7th every month',
-    monthlyTerms: lines(m.get('report.monthlyTerms')),
-    yearTerms: lines(m.get('report.yearTerms')),
+    // Saved empty prints none; never saved prints the owner's own terms.
+    monthlyTerms: lines(m.get('report.monthlyTerms') ?? DEFAULT_MONTHLY_TERMS),
+    yearTerms: lines(m.get('report.yearTerms') ?? DEFAULT_YEAR_TERMS),
   };
 }
 
@@ -69,7 +84,9 @@ export async function buildReport(q: Query, statementId: string, onlyUnit: strin
       const ls = mine.filter((l: any) => l.line_type === 'expense' && l.category === key);
       const amount = -ls.reduce((n: number, l: any) => n + Number(l.amount), 0);
       const amounts = ls.map((l: any) => -Number(l.amount));
-      const perUnit = uom === 'sessions' || key === 'additional';
+      // As the owner's report prints them: cleaning by the session (9 sessions x 80.00); every other row 1 of its unit
+      // at the row's total (Additional Deduction 1 tasks 640.00), and 1 with '-' when there is nothing.
+      const perUnit = uom === 'sessions';
       const quantity = !ls.length ? 1 : perUnit ? ls.length : 1;
       const price = !ls.length ? null : perUnit ? (amounts.every((a: number) => a === amounts[0]) ? amounts[0] : null) : amount;
       return { key, label, quantity, uom, price, amount };
