@@ -1,5 +1,6 @@
 import { type Env, all, json } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
+import { levelsFor } from '../../_lib/access';
 
 interface Hit {
   id: string; kind: 'unit' | 'guest' | 'reservation' | 'owner'; label: string; sub: string; target: string;
@@ -19,8 +20,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const digits = q.replace(/\D/g, '');
   const phoneLike = digits.length >= 5 ? `%${digits}%` : null;
   const out: Hit[] = [];
+  // Each kind of result follows the role's level for its area, like the screens it opens: a role with no access
+  // to Reservations finds no bookings or guests here either. Field and owner accounts never reach this.
+  if (isFieldRole(session.role)) return json(out);
+  const lv = await levelsFor(env, session.role);
+  const sees = (area: string) => session.role === 'management' || lv[area] !== 'none';
 
-  const units = await all<any>(env, `
+  const units = !sees('properties') ? [] : await all<any>(env, `
     SELECT u.id, u.unit_number, u.bedrooms, u.readiness, p.name AS property_name
     FROM units u JOIN properties p ON p.id = u.property_id
     WHERE ? = '' OR lower(p.name || ' ' || u.unit_number) LIKE ? OR lower(COALESCE(u.listing_name, '')) LIKE ?
@@ -28,10 +34,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   for (const u of units) {
     out.push({ id: u.id, kind: 'unit', label: `${u.property_name} ${u.unit_number}`, sub: `${u.bedrooms} bedroom${Number(u.bedrooms) === 1 ? '' : 's'}`, state: u.readiness, target: `/properties/units/${encodeURIComponent(u.id)}` });
   }
-  if (!q || isFieldRole(session.role)) return json(out);
+  if (!q) return json(out);
 
   // A pasted booking reference is the most common search, so exact reference matches come first.
-  const bookings = await all<any>(env, `
+  const bookings = !sees('reservations') ? [] : await all<any>(env, `
     SELECT r.id, r.external_ref, r.channel, r.check_in, r.check_out, r.state, u.unit_number, p.name AS property_name, g.full_name
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id
     WHERE lower(COALESCE(r.external_ref, '')) LIKE ? OR lower(COALESCE(g.full_name, '')) LIKE ? OR lower(COALESCE(g.email, '')) LIKE ?
@@ -48,14 +54,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     });
   }
 
-  const guests = await all<any>(env, `
+  const guests = !sees('reservations') ? [] : await all<any>(env, `
     SELECT g.id, g.full_name, g.email, g.phone FROM guests g
     WHERE lower(g.full_name || ' ' || COALESCE(g.email, '')) LIKE ?
        ${phoneLike ? `OR regexp_replace(COALESCE(g.phone, ''), '[^0-9]', '', 'g') LIKE ?` : ''}
     ORDER BY g.full_name LIMIT 4`, like, ...(phoneLike ? [phoneLike] : []));
   for (const g of guests) out.push({ id: g.id, kind: 'guest', label: g.full_name, sub: g.email || g.phone || 'No contact details', target: `/reservations/guests?g=${encodeURIComponent(g.id)}` });
 
-  if (session.manage || session.role === 'operations_manager') {
+  if (sees('owners')) {
     const owners = await all<any>(env, `
       SELECT o.id, o.display_name, o.email, (SELECT count(*)::int FROM units u WHERE u.owner_id = o.id) AS units
       FROM owners o WHERE lower(o.display_name || ' ' || COALESCE(o.email, '')) LIKE ? ORDER BY o.display_name LIMIT 4`, like);

@@ -1,22 +1,49 @@
 import { type Env, one, fail } from '../../../_lib/db';
-import { requireSession } from '../../../_lib/auth';
+import { requireSession, isFieldRole } from '../../../_lib/auth';
+import { levelsFor } from '../../../_lib/access';
 
 const INLINE_TYPES = /^(?:image\/(?:png|jpe?g|gif|webp|heic|heif|avif)|video\/(?:mp4|quicktime|webm)|application\/pdf)$/;
 
-/** GET /api/documents/:id/download — stream a stored file (R2, binding MEDIA).
- *  Files are written by POST /api/tasks/:id/photos; this is the matching read
- *  path used by the housekeeping POD gallery. Without the MEDIA binding there is
- *  nothing to serve, so it refuses (501) rather than pretend, mirroring upload. */
+interface Doc { storage_key: string; mime_type: string; file_name: string; unit_id: string | null; owner_id: string | null; task_id: string | null; maintenance_id: string | null; visible_to_owner: number | boolean; uploaded_by: string | null }
+
+/** Whether this person may open the file: the file's own record decides, not knowing its id. An owner gets only
+ *  files staff marked visible to them; a housekeeper or technician only files on their own jobs; desk roles need
+ *  access to the area the file belongs to (a unit's or a job's files: Properties or Operations; an owner's own
+ *  papers and receipts: Owners or Finance). */
+async function mayOpen(env: Env, s: { userId: string; role: string }, d: Doc): Promise<boolean> {
+  if (s.role === 'management') return true;
+  if (s.role === 'owner') {
+    if (!d.owner_id || !d.visible_to_owner) return false;
+    return !!(await one(env, 'SELECT 1 AS x FROM owners WHERE id = ? AND user_id = ?', d.owner_id, s.userId));
+  }
+  if (isFieldRole(s.role)) {
+    if (d.uploaded_by === s.userId) return true;
+    if (d.task_id) {
+      return !!(await one(env, `
+        SELECT 1 AS x FROM tasks t LEFT JOIN cleaners c ON c.id = t.cleaner_id
+        WHERE t.id = ? AND (t.assignee_id = ? OR t.completed_by = ? OR c.user_id = ?)`, d.task_id, s.userId, s.userId, s.userId));
+    }
+    if (d.maintenance_id) return !!(await one(env, 'SELECT 1 AS x FROM maintenance_issues WHERE id = ? AND reported_by = ?', d.maintenance_id, s.userId));
+    return false;
+  }
+  const lv = await levelsFor(env, s.role);
+  if (d.unit_id || d.task_id || d.maintenance_id) return lv.properties !== 'none' || lv.operations !== 'none';
+  return lv.owners !== 'none' || lv.finance !== 'none';
+}
+
+/** GET /api/documents/:id/download — stream a stored file (R2, binding MEDIA): job photos, unit contracts and
+ *  photos, expense receipts, files shared with an owner. Without the MEDIA binding there is nothing to serve, so
+ *  it refuses (501) rather than pretend, mirroring upload. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
 
-  if (!env.MEDIA) return fail('NOT_CONFIGURED', 'File download is not set up yet. Ask an administrator to enable media storage.', 501);
-
   const id = String(params.id);
-  const doc = await one<{ storage_key: string; mime_type: string; file_name: string }>(env,
-    'SELECT storage_key, mime_type, file_name FROM documents WHERE id = ?', id);
-  if (!doc) return fail('NOT_FOUND', 'That file no longer exists.', 404);
+  const doc = await one<Doc>(env,
+    'SELECT storage_key, mime_type, file_name, unit_id, owner_id, task_id, maintenance_id, visible_to_owner, uploaded_by FROM documents WHERE id = ?', id);
+  // Refused and missing answer alike, so an id cannot be used to learn that a file exists.
+  if (!doc || !(await mayOpen(env, session, doc))) return fail('NOT_FOUND', 'That file no longer exists.', 404);
+  if (!env.MEDIA) return fail('NOT_CONFIGURED', 'File download is not set up yet. Ask an administrator to enable media storage.', 501);
 
   const object = await env.MEDIA.get(doc.storage_key);
   if (!object) return fail('NOT_FOUND', 'That file is missing from storage.', 404);

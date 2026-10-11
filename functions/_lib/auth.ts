@@ -191,7 +191,7 @@ export async function verifyPassword(password: string, stored: string) {
 export async function requireSession(req: Request, env: Env) {
   const s = await readSession(env.SESSION_SECRET, readCookie(req));
   if (!s) return { session: null, response: fail('UNAUTHENTICATED', 'Your session expired. Sign in to continue.', 401) };
-  const access = await accessFor(env, s.role, new URL(req.url).pathname);
+  const access = await accessFor(env, s.role, new URL(req.url).pathname.replace(/\/+$/, ''), req.method);
   const session = { ...s, manage: canManage(s.role, access), picked: access.chosen ? access.level : null };
   return { session: session as Session & { manage: boolean }, response: null };
 }
