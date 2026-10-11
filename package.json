@@ -20,6 +20,7 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "clsx": "^2.1.1",
+    "libphonenumber-js": "1.13.13",
     "lucide-react": "^0.477.0",
     "postgres": "^3.4.9",
     "qrcode-generator": "1.4.4",

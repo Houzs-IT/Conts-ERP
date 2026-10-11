@@ -208,3 +208,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Done: every money, number, percent, phone, date and time field uses src/components/inputs (no raw type="number"/date/time left; `npm run check` enforces it). Endpoints behind them refuse bad values with a field-level 422 (functions/_lib/validate.ts; scripts/api-checks/input-validation.mjs).
 - Open: native date/time pickers are kept on purpose (phone calendars work well); a typed-text date field is not built.
 - Open: lockout attempts accepts 3-20 on the server but the Settings screen offers 3-10; left to the security stream to align.
+
+## Phones for every country (fix/fix-phone-intl)
+- Done: phones read, format and validate for every country through libphonenumber (src/lib/phone.ts, shared by format.ts, PhoneInput and the server's checkPhone); PhoneInput has a searchable country picker (MY +60 by default). 3,417 of 3,417 local guest phones read in their country's grouping (scripts/api-checks/phone-shapes.mjs).
+- Open: "already on file" for a new guest matches the phone text exactly, so a typed +60 18-980 0069 does not match an imported 60189800069; compare digits (phoneDigits) if duplicates appear.
+- Open: 3 stored guest phones are the right length but outside any known range (2 x +60 2..., 1 x +49), so they show ungrouped.

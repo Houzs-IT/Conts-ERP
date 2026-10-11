@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { CrashScreen } from './components/CrashScreen';
 import { Routes, Route, Outlet, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { SessionProvider, useSession } from './lib/session';
 import { ToastProvider } from './components/Toast';
@@ -118,7 +119,7 @@ function AppLayout() {
       {closed ? <NoAccess />
         : viaEngine ? <SupplyChainEngine enginePath={enginePath} />
         : enginePath && !engine.data && engine.loading ? <Fallback />
-        : <Suspense fallback={<Fallback />}><Outlet /></Suspense>}
+        : <CrashScreen inline key={location.pathname}><Suspense fallback={<Fallback />}><Outlet /></Suspense></CrashScreen>}
     </AppShell>
   );
 }
