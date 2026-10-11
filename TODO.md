@@ -266,3 +266,13 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner to decide: finance_admin sees "Create reservation" on Bookings and the Dashboard; confirm finance should create bookings.
 - The login page always logs one console 401 (GET /api/auth/session before sign-in); auth area, not changed here.
 - `[font:inherit]` next to a text-size class resets the size to 16px; fixed in the booking drawer, Bookings and Guests, still present in Units, Owners, Users and Guest documents pages.
+
+## Units and owners click sweep (fix/sweep-units-owners, 11 Oct 2026)
+- Run `node scripts/fix-statement-line-wording.mjs --env-file=<file>` (dry run, then `--apply`) on staging and production so existing statement lines use the report words.
+- Owner to decide: on a guaranteed-rent or master-lease unit, a cost marked "Paid by: Owner" is never deducted (fixed rent is paid in full); the screen now says so. Deduct it from the rent, or stop offering "Owner" there?
+- Owner to decide: the year-to-date report shows a minimum guarantee top-up as a negative "Gross Deduction" so each row adds up; the owner's own report has no example of a top-up month.
+- Owner to decide: "A33A-09 (1)" / "(2)" are two listings of one apartment, named so in HostPlatform; rename the units on the Units page if the owner wants a different code.
+- Owner to decide: Link unit (owner profile) offers only management fee or GRR; the other three models are set on the unit's Contract tab afterwards.
+- Release of a held credit or charge defaults to last month's statement, which is refused when that month is final; pick a later month in the dialog.
+- Owners list chips count an owner under each model they have, so the chips add up to more than "All owners".
+- A negative cost floor on Pricing shows the number without its minus sign next to "This cannot be negative." (shared money input).
