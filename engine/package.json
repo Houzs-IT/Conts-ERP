@@ -1,0 +1,9 @@
+{
+  "name": "conts-scm-engine",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Conts's copy of the Houzs supply chain engine. backend/ and frontend/ each have their own package.json.",
+  "scripts": {
+    "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck"
+  }
+}
