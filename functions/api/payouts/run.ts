@@ -1,12 +1,12 @@
 import { type Env, all, json, fail, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { stage } from '../../_lib/approvals';
+import { approvalsEnabled, submit } from '../../_lib/approvals';
 
-/** POST /api/payouts/run { payoutIds, reason? } — asks for a payout run: the chosen Pending payouts are to move to
- *  Processing, which means "the bank transfers are being made". Money leaving needs a second person, so this only
- *  stages the run (functions/_lib/approvals.ts); approving it moves the payouts, each audited with the run's
- *  reference. Nothing is sent to any bank from here: finance makes the transfers in the bank's own system, then marks
- *  each payout Paid once the bank confirms it left. Answers 202 with the request. */
+/** POST /api/payouts/run { payoutIds, reason? } — starts a payout run: the chosen Pending payouts move to
+ *  Processing, which means "the bank transfers are being made", each audited with the run's reference. With
+ *  Settings > Approvals on, the run is only staged (202) and approving it moves the payouts (functions/_lib/approvals.ts).
+ *  Nothing is sent to any bank from here: finance makes the transfers in the bank's own system, then marks each
+ *  payout Paid once the bank confirms it left. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -19,7 +19,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const rows = await all<{ id: string; state: string; amount: number; bank_last4: string | null; owner_id: string }>(env,
     `SELECT id, state, amount, bank_last4, owner_id FROM payouts WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids);
   // A payout already in another run waiting for approval cannot join a second one.
-  const queued = new Set((await all<{ id: string }>(env, `SELECT jsonb_array_elements_text(payload->'payoutIds') AS id FROM approval_requests WHERE kind = 'payout_run' AND status = 'pending'`)).map(r => r.id));
+  const queued = new Set<string>();
+  if (await approvalsEnabled(env)) {
+    for (const r of await all<{ id: string }>(env, `SELECT jsonb_array_elements_text(payload->'payoutIds') AS id FROM approval_requests WHERE kind = 'payout_run' AND status = 'pending'`)) queued.add(r.id);
+  }
   const chosen: typeof rows = [];
   const skipped: { id: string; reason: string }[] = [];
   for (const id of ids) {
@@ -36,11 +39,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const total = chosen.reduce((n, r) => n + Number(r.amount), 0);
   const owners = new Set(chosen.map(r => r.owner_id)).size;
   const amount = `RM ${(total / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}`;
-  const staged = await stage(env, session, {
+  return submit(env, session, {
     kind: 'payout_run', entity: 'payouts', entityId: runRef, amount: total,
     summary: `Payout run ${runRef}: ${chosen.length} ${chosen.length === 1 ? 'payout' : 'payouts'} to ${owners} ${owners === 1 ? 'owner' : 'owners'}, ${amount}`,
     reason: (typeof b?.reason === 'string' && b.reason.trim()) || `Owner payouts, ${chosen.length} ${chosen.length === 1 ? 'transfer' : 'transfers'}`,
     payload: { payoutIds: chosen.map(r => r.id), runRef },
-  });
-  return json({ ...staged, run: runRef, queued: chosen.length, total, skipped }, 202);
+  }, r => json({ run: r.run, started: r.started, total: r.total, skipped: [...skipped, ...r.skipped] }),
+  { run: runRef, queued: chosen.length, total, skipped });
 };

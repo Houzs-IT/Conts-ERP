@@ -1,8 +1,10 @@
 import { api } from './api';
+import { useNavCounts } from './navBadges';
 import { rm } from './format';
 import type { Tone } from './types';
 
-/** Money requests waiting for a second person (functions/_lib/approvals.ts). */
+/** Money requests waiting for a second person (functions/_lib/approvals.ts). Off unless Settings > Approvals turns them
+ *  on (owner, 11 Oct 2026): then every money action happens at once and nothing here is shown. */
 export type ApprovalKind = 'guest_refund' | 'payout_run' | 'owner_adjustment' | 'expense' | 'debt_write_off';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 
@@ -18,6 +20,10 @@ export interface Approval {
 export interface Staged { pendingApproval: { id: string; kind: ApprovalKind; amount: number; summary: string; selfApproval: boolean } }
 export const isStaged = (x: unknown): x is Staged => !!x && typeof x === 'object' && 'pendingApproval' in (x as object);
 
+
+/** Whether money actions wait for a second person. Read from the shell's shared nav request; false until it answers,
+ *  which is the default. */
+export const useApprovalsOn = () => useNavCounts()?.approvalsOn === true;
 
 export type Decision = 'approve' | 'reject' | 'cancel';
 export const decide = (id: string, decision: Decision, note?: string) => api.post<Approval>(`/approvals/${encodeURIComponent(id)}`, { decision, note: note || undefined });

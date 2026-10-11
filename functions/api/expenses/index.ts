@@ -3,7 +3,7 @@ import { requireSession } from '../../_lib/auth';
 import { isIsoDate } from '../../_lib/validate';
 import { resolveUnit } from '../../_lib/ops';
 import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked } from '../../_lib/expenses';
-import { approvalSettings, stage } from '../../_lib/approvals';
+import { approvalSettings, approvalsEnabled, stage } from '../../_lib/approvals';
 
 /** POST /api/expenses { unitId | unitNumber (+propertyName), category, amount, incurredOn, description, reference, chargeTo, receiptDocumentId }
  *  Every deduction needs a category, an amount and a date: that is what makes an owner statement explainable. */
@@ -31,8 +31,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return fail('VALIDATION', 'That receipt was not found. Upload it again.', 422, { receipt: 'Upload the receipt again.' });
   }
   const { expenseThreshold } = await approvalSettings(env);
-  if (b.amount > expenseThreshold) {
-    // Above Settings > Approvals' threshold the expense waits for a second person (functions/_lib/approvals.ts).
+  if (b.amount > expenseThreshold && await approvalsEnabled(env)) {
+    // With approvals on, above Settings > Approvals' threshold the expense waits for a second person (functions/_lib/approvals.ts).
     const label = await one<{ name: string }>(env, `SELECT p.name || ' ' || u.unit_number AS name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, unit.id);
     const staged = await stage(env, session, {
       kind: 'expense', entity: 'units', entityId: unit.id, amount: b.amount,

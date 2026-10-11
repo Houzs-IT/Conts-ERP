@@ -1,7 +1,7 @@
 import { type Env, one, json, fail, audit, nowIso } from '../../../../_lib/db';
 import { requireSession } from '../../../../_lib/auth';
 import { mayChangeAdjustments } from '../../../../_lib/ownerScope';
-import { stage } from '../../../../_lib/approvals';
+import { approvalsEnabled, submit } from '../../../../_lib/approvals';
 
 const LOCKED = ['finalised', 'sent', 'paid'];
 
@@ -12,7 +12,7 @@ const LOCKED = ['finalised', 'sent', 'paid'];
  *             ending after it). A month whose statement for this owner is already final is refused.
  *    hold     open -> held. Not once a final statement carries it.
  *    settle   open or held -> settled, paid outside Property OS; `note` says where. Not once a final statement carries it.
- *             A held one (a debt written off) is staged for approval (202) and settled when approved.
+ *             A held one (a debt written off) is settled at once, or staged for approval (202) when approvals are on.
  *  When a provisional statement carried the adjustment, holding or settling takes it off that statement's list:
  *  regenerate the month to rebuild the statement's lines. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -56,20 +56,19 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     const note = String(b?.note ?? '').trim();
     if (action === 'settle' && (!note || note.length > 300)) return fail('VALIDATION', 'Say where it was settled, in up to 300 characters.', 422, { note: 'Say where it was settled.' });
     if (action === 'settle' && cur.state === 'held') {
-      // Writing off a held debt forgoes money owed to the company: a second person approves it
-      // (functions/_lib/approvals.ts), which settles it then.
+      // Writing off a held debt forgoes money owed to the company; with approvals on a second person approves it
+      // (functions/_lib/approvals.ts). Either way the approval executor settles it.
       const row = await one<{ amount: number; description: string; display_name: string }>(env,
         'SELECT a.amount, a.description, o.display_name FROM owner_adjustments a JOIN owners o ON o.id = a.owner_id WHERE a.id = ?', id);
-      if (await one(env, `SELECT 1 AS x FROM approval_requests WHERE kind = 'debt_write_off' AND status = 'pending' AND payload->>'adjustmentId' = ?`, id)) {
+      if (await approvalsEnabled(env) && await one(env, `SELECT 1 AS x FROM approval_requests WHERE kind = 'debt_write_off' AND status = 'pending' AND payload->>'adjustmentId' = ?`, id)) {
         return fail('ALREADY_REQUESTED', 'A write-off of this debt is already waiting for approval.', 409);
       }
       const amount = Math.abs(Number(row?.amount ?? 0));
-      const staged = await stage(env, session, {
+      return submit(env, session, {
         kind: 'debt_write_off', entity: 'owners', entityId: ownerId, amount, reason: note,
         summary: `Write off RM ${(amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })} held for ${row?.display_name ?? 'owner'}: ${row?.description ?? ''}`.trim(),
         payload: { ownerId, adjustmentId: id, note },
-      });
-      return json(staged, 202);
+      }, () => json({ ok: true, state: 'settled', regenerate }));
     }
     const to = action === 'hold' ? 'held' : 'settled';
     const done = await one(env, `UPDATE owner_adjustments SET state = ?, statement_id = NULL, settled_note = ?, updated_at = ? WHERE id = ? AND state = ? RETURNING id`,

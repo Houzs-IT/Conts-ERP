@@ -186,7 +186,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## Money approvals and guest documents (feat/s4-money-docs, migrations 0096-0097)
 - Migrations 0096 (approval_requests) and 0097 (document_counters, issued_documents) must be applied on production before this ships; until then refunds, payout runs, owner credits and charges, large expenses and write-offs answer with a database error.
-- Owner to set the approval limits in Settings > Approvals (defaults RM 500 for expenses, RM 2,000 for finance admins); they were chosen as placeholders, not by the owner.
+- Approvals switched off by default (owner, 11 Oct 2026: "the whole approval step is not needed"; fix/approvals-off): money actions apply at once. Settings > Approvals has one switch to bring them back; the limits (RM 500 / RM 2,000 placeholders) only matter when it is on. Production had 0 approval requests on 11 Oct.
 - Done (feat/s3-history-notify): approvers get a bell notice when a request is waiting, the requester when it is decided, and finance when a payout run is approved.
 - Expenses written by the system (finished cleans, utility bills from Record utilities, the workbook import) are not staged for approval; only expenses typed in on Expenses or an owner's page are.
 - Guest documents are print-ready pages (Save as PDF from the browser), not PDF files; same as owner statements.

@@ -1,5 +1,5 @@
 import { type Env, all, one, json, fail, nowIso } from '../../../../_lib/db';
-import { stage } from '../../../../_lib/approvals';
+import { submit } from '../../../../_lib/approvals';
 import { requireSession } from '../../../../_lib/auth';
 import { isIsoDate } from '../../../../_lib/validate';
 import { mayChangeAdjustments as mayChange } from '../../../../_lib/ownerScope';
@@ -41,7 +41,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 };
 
 /** POST /api/owners/:id/adjustments { kind: 'credit'|'charge', amount (sen, > 0), description, occurredOn, unitId? }
- *  A manual credit (adds to the payout) or charge (deducts), staged for approval (202). Once approved it is open, so the next statement generated for a
+ *  A manual credit (adds to the payout) or charge (deducts). Created open at once (201), or staged for approval (202)
+ *  when Settings > Approvals is on. Once open it is so the next statement generated for a
  *  month ending on or after occurredOn carries it. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
@@ -61,15 +62,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (unitId && !await one(env, 'SELECT 1 AS x FROM units WHERE id = ? AND owner_id = ?', unitId, ownerId)) fields.unitId = 'That unit is not this owner\'s.';
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the highlighted fields.', 422, fields);
 
-  // A credit pays the owner more and a charge changes what they are paid: both wait for a second person
-  // (functions/_lib/approvals.ts), which creates the open adjustment once approved.
+  // With approvals on, a credit or charge waits for a second person (functions/_lib/approvals.ts).
   const signed = kind === 'credit' ? amount : -amount;
   const owner = await one<{ display_name: string }>(env, 'SELECT display_name FROM owners WHERE id = ?', ownerId);
   const reason = String(b?.reason ?? '').trim() || description;
-  const staged = await stage(env, session, {
+  return submit(env, session, {
     kind: 'owner_adjustment', entity: 'owners', entityId: ownerId, amount, reason,
     summary: `${kind === 'credit' ? 'Credit' : 'Charge'} RM ${(amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })} ${kind === 'credit' ? 'to' : 'against'} ${owner?.display_name ?? 'owner'}: ${description}`,
     payload: { ownerId, unitId, kind, amount: signed, description, occurredOn },
-  });
-  return json(staged, 202);
+  }, r => json({ id: r.adjustmentId, state: 'open' }, 201));
 };

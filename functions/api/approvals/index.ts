@@ -59,7 +59,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     pendingAmount: byStatus.pending.amount,
     kinds: APPROVAL_KINDS.map(k => ({ value: k, label: KIND_LABEL[k], count: Number(kinds.find(x => x.kind === k)?.n ?? 0) })),
     rules: {
-      financeAdminLimit: ctx.settings.financeAdminLimit, expenseThreshold: ctx.settings.expenseThreshold, managementCount: ctx.managementCount,
+      enabled: ctx.enabled, financeAdminLimit: ctx.settings.financeAdminLimit, expenseThreshold: ctx.settings.expenseThreshold, managementCount: ctx.managementCount,
       you: session.role === 'management' ? 'any' : session.role === 'finance_admin' ? 'below_limit' : 'none',
     },
     data: rows.map(r => toView(r, session, ctx)),
