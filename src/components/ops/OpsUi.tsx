@@ -35,19 +35,24 @@ export const stamp = (iso: string | null | undefined) => (iso ? dateTimeShort(is
 /** YYYY-MM-DD in Malaysia, offset by days. */
 export const mytDay = (offset = 0) => new Date(Date.now() + 8 * 3600e3 + offset * 864e5).toISOString().slice(0, 10);
 
-/** One row of choices that reads as tabs: [Today][Tomorrow][Pick date]. */
+/** One row of choices that reads as tabs: [Today][Tomorrow][Pick date]. Drawn like Metric's Segmented pill switch,
+ *  but kept as a tablist because these swap the whole view. */
 export function Segmented<T extends string>({ value, options, onChange, label, className }: {
   value: T; options: { value: T; label: ReactNode }[]; onChange: (v: T) => void; label: string; className?: string;
 }) {
   return (
-    <div role="tablist" aria-label={label} className={cx('inline-flex border border-solid border-line rounded-control overflow-hidden bg-card flex-none', className)}>
-      {options.map(o => (
-        <button key={o.value} type="button" role="tab" aria-selected={o.value === value} onClick={() => onChange(o.value)}
-          className={cx('h-9 px-3.5 text-copy cursor-pointer whitespace-nowrap [&+&]:[border-left:1px_solid_var(--color-line)]',
-            o.value === value ? 'bg-black text-white font-medium' : 'bg-card text-ink hover:bg-muted')}>
-          {o.label}
-        </button>
-      ))}
+    <div role="tablist" aria-label={label}
+      className={cx('inline-flex items-center p-[3px] gap-[2px] rounded-control bg-muted max-w-full overflow-x-auto [scrollbar-width:none] flex-none', className)}>
+      {options.map(o => {
+        const on = o.value === value;
+        return (
+          <button key={o.value} type="button" role="tab" aria-selected={on} onClick={() => onChange(o.value)}
+            className={cx('h-8 px-3 rounded-[6px] cursor-pointer text-copy whitespace-nowrap transition-colors duration-[var(--motion-fast)]',
+              on ? 'bg-card text-ink font-medium shadow-[var(--shadow-card)]' : 'text-muted-ink hover:text-ink')}>
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

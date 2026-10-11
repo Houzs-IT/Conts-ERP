@@ -53,7 +53,7 @@ export default function FieldTodayPage() {
         : jobs.length === 0 ? <EmptyState icon="Sparkles" title={`No jobs for you on ${dayLabel(date)}.`} body="New jobs appear here as soon as the office gives them to you." />
         : groups.map(([id, g]) => (
           <section key={id} className="flex flex-col gap-2">
-            <h2 className="m-0 text-heading font-semibold flex items-center gap-2">{g.name}<span className="text-copy text-muted-ink font-normal">{g.jobs.filter(j => j.done).length} of {g.jobs.length} done</span></h2>
+            <h2 className="m-0 text-[16px] font-semibold tracking-[-0.01em] flex items-baseline gap-2">{g.name}<span className="text-meta text-muted-ink font-normal tabular-nums">{g.jobs.filter(j => j.done).length} of {g.jobs.length} done</span></h2>
             {g.jobs.map(j => <JobCard key={j.id} job={j} now={now} open={open === j.id} onToggle={() => setOpen(open === j.id ? null : j.id)} onChanged={reload} />)}
           </section>
         ))}
@@ -78,7 +78,7 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
     finally { setBusy(null); }
   }
   const status = j.done ? <StatusBadge tone="success">Done</StatusBadge> : j.state === 'in_progress' ? <StatusBadge tone="info">Cleaning</StatusBadge>
-    : j.guestOut ? <StatusBadge tone="gold">Guest out, ready</StatusBadge> : j.previous ? <StatusBadge tone="neutral">Guest not out yet</StatusBadge> : <StatusBadge tone="warning">To do</StatusBadge>;
+    : j.guestOut ? <StatusBadge tone="gold">Guest out, ready to clean</StatusBadge> : j.previous ? <StatusBadge tone="neutral">Guest still in</StatusBadge> : <StatusBadge tone="warning">To do</StatusBadge>;
 
   return (
     <article className={cx('bg-card rounded-card border border-solid overflow-hidden', open ? 'border-gold' : 'border-line')}>
@@ -88,7 +88,7 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
           {status}
         </div>
         <div className="grid grid-cols-2 gap-2 text-copy">
-          <div className="rounded-control bg-muted px-2.5 py-2"><span className="block text-meta text-muted-ink">Leaving</span>{j.previous ? <><b>{j.previous.checkOutTime}</b> {j.previous.guestName}</> : <span className="text-muted-ink">Nobody</span>}</div>
+          <div className="rounded-control bg-muted px-2.5 py-2"><span className="block text-meta text-muted-ink">Leaving</span>{j.previous ? <><b>{j.previous.checkOutTime}</b> {j.previous.guestName}</> : <span className="text-muted-ink">No departing guest</span>}</div>
           <div className="rounded-control bg-gold-tint px-2.5 py-2"><span className="block text-meta text-muted-ink">Arriving</span>{j.next ? <><b>{j.next.checkInTime}</b> {j.next.guestName}</> : <span className="text-muted-ink">No arrival</span>}</div>
         </div>
         {j.next && !j.done && <div className="text-copy">Time left <TimeLeft at={j.next.checkInAt} now={now} /></div>}
@@ -116,7 +116,7 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
           )}
 
           <section className="flex flex-col gap-2">
-            <h3 className="m-0 text-copy font-semibold">Photos and videos <span className="text-muted-ink font-normal">{files}{!j.done && ', at least 1 to finish'}</span></h3>
+            <h3 className="m-0 text-copy font-semibold">Proof of work <span className="text-muted-ink font-normal">{files} {files === 1 ? 'file' : 'files'}{!j.done && ', at least 1 to complete'}</span></h3>
             {detail.data && <MediaGrid items={detail.data.media} cols={3} />}
             {!j.done && <MediaDrop upload={uploadTo(`/tasks/${j.id}/photos`)} onDone={() => { detail.reload(); onChanged(); }} label="Take or add photos and videos" />}
           </section>

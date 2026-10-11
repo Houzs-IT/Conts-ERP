@@ -231,7 +231,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
 /* ---------- one building ---------- */
 
 // Columns follow the card's own width, not the window's: with the detail panel open the list is narrow on a laptop.
-const COLS = '@2xl:grid @2xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.6fr)_minmax(0,0.8fr)_minmax(0,1.1fr)] @2xl:items-center @2xl:gap-2.5';
+const COLS = '@2xl:grid @2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,1.1fr)_minmax(0,0.6fr)_minmax(0,0.6fr)_minmax(0,0.85fr)_minmax(0,1fr)] @2xl:items-center @2xl:gap-2.5';
 
 function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLeft, onPlan, onAssign }: {
   group: { id: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }; now: number; future: boolean; selected: string | null; busy: string | null;
@@ -244,10 +244,10 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   const names = [...new Set(group.rows.map(r => r.assigneeName).filter(Boolean))];
   return (
     <section className="@container bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
-      <header className="flex items-center justify-between gap-3 flex-wrap px-4 @2xl:px-[18px] py-3 bg-muted">
-        <div className="min-w-0">
-          <b className="text-heading">{group.name}</b>
-          <span className="text-copy text-muted-ink"> · {count} {count === 1 ? 'unit' : 'units'} · {doneN} done</span>
+      <header className="flex items-center justify-between gap-3 flex-wrap px-4 @2xl:px-5 pt-4 pb-3">
+        <div className="min-w-0 flex items-baseline gap-2 flex-wrap">
+          <span className="text-[16px] font-semibold tracking-[-0.01em]">{group.name}</span>
+          <span className="text-meta text-muted-ink tabular-nums">{count} {count === 1 ? 'unit' : 'units'} · {doneN} done</span>
         </div>
         <div className="flex items-center gap-2 text-copy flex-wrap">
           {unassigned > 0 ? <span className="text-danger font-medium">{unassigned} unassigned</span>
@@ -255,12 +255,12 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
           {open.length > 0 && <Button size="sm" variant="secondary" onClick={onAssign}>Assign whole building</Button>}
         </div>
       </header>
-      <div className={cx('hidden text-meta text-muted-ink px-[18px] py-2 [border-bottom:1px_solid_var(--color-line-soft)]', COLS)}>
+      <div className={cx('hidden text-meta font-semibold text-muted-ink px-5 py-2 [border-top:1px_solid_var(--color-line-soft)]', COLS)}>
         <div>Unit</div><div>Check-out (leaving)</div><div>Check-in (arriving)</div><div>Time left</div><div>Type</div><div>Cleaner</div><div>Status</div>
       </div>
       {group.rows.map(r => <CleanRow key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} />)}
       {group.departures.map(d => (
-        <div key={d.reservationId} className={cx('px-4 @2xl:px-[18px] py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy flex flex-col gap-1.5', COLS)}>
+        <div key={d.reservationId} className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy flex flex-col gap-1.5', COLS)}>
           <div className="flex items-center gap-2"><b>{d.unitNumber}</b><span className="@2xl:hidden"><StatusBadge tone="critical">No clean planned</StatusBadge></span></div>
           <div><b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b> · {d.guestName}{d.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late check-out</StatusBadge>}{d.state === 'checked_out' && <StatusBadge tone="gold" className="ml-1">Out</StatusBadge>}</div>
           <div>{d.next ? <><b className="[font-variant-numeric:tabular-nums]">{d.next.checkInTime}</b> · {d.next.guestName}</> : <span className="text-muted-ink">No arrival</span>}</div>
@@ -275,7 +275,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
         </div>
       ))}
       {group.repairs.length > 0 && (
-        <div className="px-4 @2xl:px-[18px] py-2.5 [border-top:1px_solid_var(--color-line-soft)] bg-page flex flex-col gap-1">
+        <div className="px-4 @2xl:px-5 py-2.5 [border-top:1px_solid_var(--color-line-soft)] bg-page flex flex-col gap-1">
           {group.repairs.map(w => (
             <div key={w.id} className="flex items-center gap-2 text-meta flex-wrap">
               <Icon name="Wrench" size="sm" color="var(--color-gold-ink)" />
@@ -295,11 +295,11 @@ function CleanRow({ r, now, active, busy, onSelect, onGuestLeft }: { r: Row; now
   const canMarkLeft = r.previous && !r.guestOut && r.status !== 'done' && r.status !== 'cleaning' && r.day <= mytDay(0);
   return (
     <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); } }}
-      className={cx('px-4 @2xl:px-[18px] py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer flex flex-col gap-1.5 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
+      className={cx('px-4 @2xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer flex flex-col gap-1.5 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
         active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : 'hover:bg-page', r.status === 'done' && 'text-muted-ink')}>
       <div className="flex items-center gap-2 flex-wrap">
         <b className="text-ink">{r.unitNumber}</b>
-        {r.carriedOver && <StatusBadge tone="warning">From {dayLabel(r.day)}</StatusBadge>}
+        {r.carriedOver && <StatusBadge tone="warning" className="whitespace-normal">From {dayLabel(r.day)}</StatusBadge>}
         <span className="@2xl:hidden ml-auto"><StatusBadge tone={st.tone}>{st.label}</StatusBadge></span>
       </div>
       <div className="min-w-0">
@@ -675,10 +675,10 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
         </>}
         toolbar={<>
           <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="Search unit or building" aria-label="Search" className={cx(INPUT, 'h-9 w-[220px] max-md:w-full')} />
-          <Select label="Show" value={show} onChange={v => setParam('state', v)} options={SHOW} className="w-[150px] max-md:flex-1" />
-          <Select label="Cleaner" value={cleaner} onChange={v => setParam('cleaner', v)} options={cleaners.map(c => ({ value: c.id, label: c.name }))} placeholder="All cleaners" className="w-[160px] max-md:flex-1" />
-          <label className="flex items-center gap-1.5 text-meta text-muted-ink">From <DateField aria-label="From" value={from} max={to || undefined} onChange={v => { if (v) setParam('from', v); }} className={cx(INPUT, 'h-9 w-auto')} /></label>
-          <label className="flex items-center gap-1.5 text-meta text-muted-ink">To <DateField aria-label="To" value={to} min={from || undefined} onChange={v => { if (v) setParam('to', v); }} className={cx(INPUT, 'h-9 w-auto')} /></label>
+          <Select label="Show" value={show} onChange={v => setParam('state', v)} options={SHOW} className="w-[150px] max-md:flex-1 max-md:min-w-[130px]" />
+          <Select label="Cleaner" value={cleaner} onChange={v => setParam('cleaner', v)} options={cleaners.map(c => ({ value: c.id, label: c.name }))} placeholder="All cleaners" className="w-[160px] max-md:flex-1 max-md:min-w-[130px]" />
+          <label className="flex items-center gap-1.5 text-meta text-muted-ink max-md:w-full">From <DateField aria-label="From" value={from} max={to || undefined} onChange={v => { if (v) setParam('from', v); }} className={cx(INPUT, 'h-9 w-auto max-md:flex-1 max-md:min-w-0 max-md:px-2')} /></label>
+          <label className="flex items-center gap-1.5 text-meta text-muted-ink max-md:w-full">To <DateField aria-label="To" value={to} min={from || undefined} onChange={v => { if (v) setParam('to', v); }} className={cx(INPUT, 'h-9 w-auto max-md:flex-1 max-md:min-w-0 max-md:px-2')} /></label>
         </>}
         renderCard={r => (
           <span className="flex flex-col gap-0.5 text-copy min-w-0">

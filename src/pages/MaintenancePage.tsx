@@ -157,10 +157,10 @@ export default function MaintenancePage() {
               { value: 'done', label: 'Done' },
               { value: 'history', label: 'History' },
             ]} />
-            <div className="flex gap-2 flex-wrap md:ml-auto">
-              {tab === 'history' && <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit or issue" aria-label="Search" className={cx(INPUT, 'h-9 w-[200px]')} />}
-              <Select label="Category" value={category} onChange={setCategory} options={Object.entries(CATEGORY).map(([value, label]) => ({ value, label }))} placeholder="All categories" className="w-[150px]" />
-              <Select label="Building" value={building} onChange={setBuilding} options={buildingOptions} placeholder="All buildings" className="w-[170px]" />
+            <div className="flex gap-2 flex-wrap md:ml-auto max-md:w-full">
+              {tab === 'history' && <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit or issue" aria-label="Search" className={cx(INPUT, 'h-9 w-[200px] max-md:w-full')} />}
+              <Select label="Category" value={category} onChange={setCategory} options={Object.entries(CATEGORY).map(([value, label]) => ({ value, label }))} placeholder="All categories" className="w-[150px] max-md:flex-1" />
+              <Select label="Building" value={building} onChange={setBuilding} options={buildingOptions} placeholder="All buildings" className="w-[170px] max-md:flex-1" />
             </div>
           </div>
           <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={440}

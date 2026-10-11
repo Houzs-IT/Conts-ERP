@@ -11,7 +11,6 @@ import { useCleaners, type Cleaner, type Employment } from '../lib/useCleaners';
 import { api, notifyFailure } from '../lib/api';
 import { plural } from '../lib/format';
 import { Select } from '../components/Select';
-import type { Tone } from '../lib/types';
 
 /* ------------------------------------------------------------------ *
  * Operations -> Cleaners — the housekeeping roster master data.
@@ -114,8 +113,8 @@ export default function CleanersPage() {
       {error && <StaleBanner message={`Showing the last roster we have. ${error}`} onRetry={reload} />}
 
       <div className="flex flex-col gap-5">
-        <RosterSection kind="internal" title="Internal staff" hint="Your own housekeepers. They log in and get push jobs." tone="info" emptyTitle="No internal cleaners yet." addLabel="Add internal cleaner" onAdd={() => setModal({ mode: 'create', draft: emptyDraft('internal') })} cleaners={loading && roster.length === 0 ? null : internal} onEdit={openEdit} onToggle={toggleActive} />
-        <RosterSection kind="outsourced" title="Outsourced / third-party" hint="Vendor crews you assign by hand or by rule. No login." tone="warning" emptyTitle="No outsourced cleaners yet." addLabel="Add outsourced" onAdd={() => setModal({ mode: 'create', draft: emptyDraft('outsourced') })} cleaners={loading && roster.length === 0 ? null : outsourced} onEdit={openEdit} onToggle={toggleActive} />
+        <RosterSection kind="internal" title="Internal staff" hint="Your own housekeepers. They log in and get push jobs." emptyTitle="No internal cleaners yet." addLabel="Add internal cleaner" onAdd={() => setModal({ mode: 'create', draft: emptyDraft('internal') })} cleaners={loading && roster.length === 0 ? null : internal} onEdit={openEdit} onToggle={toggleActive} />
+        <RosterSection kind="outsourced" title="Outsourced / third-party" hint="Vendor crews you assign by hand or by rule. No login." emptyTitle="No outsourced cleaners yet." addLabel="Add outsourced" onAdd={() => setModal({ mode: 'create', draft: emptyDraft('outsourced') })} cleaners={loading && roster.length === 0 ? null : outsourced} onEdit={openEdit} onToggle={toggleActive} />
       </div>
 
       {modal && (
@@ -135,8 +134,8 @@ export default function CleanersPage() {
   );
 }
 
-function RosterSection({ kind, title, hint, tone, emptyTitle, addLabel, onAdd, cleaners, onEdit, onToggle }: {
-  kind: Employment; title: string; hint: string; tone: Tone; emptyTitle: string; addLabel: string; onAdd: () => void; cleaners: Cleaner[] | null;
+function RosterSection({ kind, title, hint, emptyTitle, addLabel, onAdd, cleaners, onEdit, onToggle }: {
+  kind: Employment; title: string; hint: string; emptyTitle: string; addLabel: string; onAdd: () => void; cleaners: Cleaner[] | null;
   onEdit: (c: Cleaner) => void; onToggle: (c: Cleaner) => void;
 }) {
   const columns = useMemo<Column<Cleaner>[]>(() => [
@@ -166,8 +165,11 @@ function RosterSection({ kind, title, hint, tone, emptyTitle, addLabel, onAdd, c
       pageSize={0} noun={['cleaner', 'cleaners']} exportName={kind === 'internal' ? 'cleaners-internal' : 'cleaners-outsourced'}
       rowTone={c => (c.isActive ? null : 'muted')}
       header={
-        <div className="py-[18px] px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line)]">
-          <span className="text-heading font-semibold flex items-center gap-2"><StatusBadge tone={tone} label={String(cleaners?.length ?? 0)} size="sm" />{title}</span>
+        <div className="pt-5 pb-3 px-5 flex items-baseline justify-between gap-x-3 gap-y-1 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
+          <span className="flex items-baseline gap-2 min-w-0">
+            <span className="text-[16px] font-semibold tracking-[-0.01em]">{title}</span>
+            <span className="text-meta text-muted-ink tabular-nums">{cleaners?.length ?? 0}</span>
+          </span>
           <span className="text-meta text-muted-ink">{hint}</span>
         </div>
       }
