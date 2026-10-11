@@ -50,15 +50,20 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const esc = csvCell;
   const opt = (sen: unknown) => (sen == null ? '' : money(Number(sen)));
   const rows = raw.map(r => ({ r, x: toRow(r) }));
+  const nBuildings = q.filters.property ? q.filters.property.split(',').length : 0;
   const filters = [VIEW_LABEL[q.view] ?? q.view, ...(q.todo ? [TODO_LABEL[q.todo]] : []),
-    ...(q.filters.channel ? [`channel ${CHANNEL[q.filters.channel]}`] : []), ...(q.filters.property ? ['one building'] : []),
+    ...(q.filters.channel ? [`channel ${q.filters.channel.split(',').map(c => CHANNEL[c] ?? c).join(' or ')}`] : []),
+    ...(nBuildings ? [nBuildings === 1 ? 'one building' : `${nBuildings} buildings`] : []),
+    ...(q.filters.states.length ? [`status ${q.filters.states.join(' or ')}`] : []),
+    ...(q.filters.country.length ? [`country ${q.filters.country.join(' or ')}`] : []),
+    ...(q.filters.nightsMin !== null || q.filters.nightsMax !== null ? [`nights ${q.filters.nightsMin ?? 0} to ${q.filters.nightsMax ?? 'any'}`] : []),
     ...(q.filters.from || q.filters.to ? [`reservations touching ${q.filters.from ?? 'any date'} to ${q.filters.to ?? 'any date'}`] : []),
     ...(q.filters.grossMin !== null || q.filters.grossMax !== null ? [`guest total ${q.filters.grossMin !== null ? `from RM ${money(q.filters.grossMin)}` : ''}${q.filters.grossMax !== null ? ` up to RM ${money(q.filters.grossMax)}` : ''}`.trim()] : []),
     ...Object.entries(q.searches).map(([k, v]) => `${k === 'q' ? 'search' : k} contains "${v}"`)];
   if (q.sortLabel) filters.push(`sorted by ${q.sortLabel}`);
   const sum = (f: (x: ReturnType<typeof toRow>) => number) => rows.reduce((n, { x }) => n + f(x), 0);
 
-  const head = ['Reference', 'Guest', 'Guests', 'Contact', 'Nationality', 'Unit', 'Building', 'Channel', 'Check-in', 'Checkout', 'Nights', 'Status',
+  const head = ['Reference', 'Guest', 'Guests', 'Contact', 'Country', 'Unit', 'Building', 'Channel', 'Check-in', 'Checkout', 'Nights', 'Status',
     'Accommodation as recorded (RM)', 'Cleaning fee (RM)', 'Other fees (RM)', 'SST (RM)', 'Tourism tax (RM)', 'Guest total (RM)', 'Tax kept by the channel (RM)',
     'Service fee (RM)', 'Payment processing (RM)', 'Expected to receive (RM)', 'Received (RM)', 'Outstanding (RM)', 'Payments'];
   const lines = [
@@ -67,7 +72,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     '',
     head.map(esc).join(','),
     ...rows.map(({ r, x }) => [
-      x.externalRef, x.guestName, x.guestsCount, x.guestPhone, x.guestNationality ?? x.guestCountry ?? '', x.unitNumber, x.propertyName, CHANNEL[x.channel] ?? x.channel,
+      x.externalRef, x.guestName, x.guestsCount, x.guestPhone, x.country?.name ?? '', x.unitNumber, x.propertyName, CHANNEL[x.channel] ?? x.channel,
       x.checkIn, x.checkOut, x.nights, STATE[x.state] ?? x.state,
       opt(r.room_revenue), opt(r.guest_cleaning_fee), opt(r.extra_fees), opt(r.sst_amount), opt(r.tourism_tax), money(x.grossBookingValue), opt(r.ota_tax),
       money(x.channelFee), opt(r.payment_processing_fee), money(x.expectedPayout), money(x.received), money(['cancelled', 'no_show'].includes(x.state) ? 0 : x.outstanding),

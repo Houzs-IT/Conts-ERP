@@ -1,12 +1,13 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { findClash, clashResponseBody, upsertGuest, nextBookingRef, holdOnChannels, withUnitLock } from '../../_lib/reservations';
-import { VIEWS, TODOS, fromSql, columnsSql, parseListQuery, viewWhere, todoWhere, toRow } from '../../_lib/bookingList';
+import { VIEWS, TODOS, FACETS, fromSql, columnsSql, parseListQuery, viewWhere, todoWhere, toRow } from '../../_lib/bookingList';
+import { countryName } from '../../_lib/guestCountry';
 import { moneySchema, moneySql } from '../../_lib/bookingMoney';
 import { checkSen, checkInt, checkDate, checkPhone, invalid, type Fields } from '../../_lib/validate';
 import { bookingNotice } from '../../_lib/notices';
 
-/** GET /api/reservations?view=&todo=&ch=&building=&from=&to=&page=&size=&sort=&q=&ref=&guest=&unit=&stay=&gross=&status=
+/** GET /api/reservations?view=&todo=&ch=&building=&st=&country=&from=&to=&nightsMin=&nightsMax=&page=&size=&sort=&q=&ref=&guest=&unit=&stay=&gross=&status=
  *  One page of the Bookings list; each tab's count and each to-do card's count and amount under the same searches
  *  and filters; and the totals of the whole filtered set (not just the page). Blocks and owner stays are not listed. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -35,6 +36,27 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     SELECT ${columnsSql(schema)} ${fromSql(schema)} WHERE ${q.where} AND ${current}
     ORDER BY ${q.orderBy} LIMIT ${q.pageSize} OFFSET ${(page - 1) * q.pageSize}`, ...q.args) : [];
 
+  // What each filter can pick from, with how many bookings each choice would show under everything else on screen
+  // (the tab, the card, the search and the other filters), so the Filter panel offers the data's own values.
+  const FACET_SQL: Record<typeof FACETS[number], string> = { ch: 'r.channel', building: 'u.property_id', st: 'r.state', country: 'gc.iso' };
+  // Filters that leave out the same conditions share one query (usually all four: one GROUPING SETS pass), and the
+  // money join is only read when the to-do card needs it.
+  const needsMoney = q.todo === 'unpaid' || q.todo === 'payout';
+  const groups = new Map<string, { w: { where: string; args: unknown[] }; keys: (typeof FACETS[number])[] }>();
+  for (const f of FACETS) {
+    const w = q.whereExcept(f);
+    const k = `${w.where}|${JSON.stringify(w.args)}`;
+    groups.set(k, { w, keys: [...(groups.get(k)?.keys ?? []), f] });
+  }
+  const facetMap = Object.fromEntries(FACETS.map(f => [f, [] as { value: string; count: number; label?: string }[]]));
+  await Promise.all([...groups.values()].map(async ({ w, keys }) => {
+    const rows = await all<Record<string, unknown>>(env, `SELECT ${keys.map(k => `${FACET_SQL[k]} AS "v_${k}", GROUPING(${FACET_SQL[k]}) AS "g_${k}"`).join(', ')}, COUNT(*) AS n
+      ${fromSql(schema, needsMoney)} WHERE ${w.where} AND ${current}
+      GROUP BY GROUPING SETS (${keys.map(k => `(${FACET_SQL[k]})`).join(', ')})`, ...w.args);
+    for (const r of rows) for (const k of keys) if (Number(r[`g_${k}`]) === 0) facetMap[k].push({ value: (r[`v_${k}`] as string | null) ?? 'none', count: Number(r.n) });
+  }));
+  const facets = Object.fromEntries(FACETS.map(f => [f, facetMap[f].sort((a, b) => b.count - a.count).slice(0, 300)]));
+  facets.country = facets.country.map(c => ({ ...c, label: c.value === 'none' ? 'Not known' : countryName(c.value) ?? c.value }));
   const buildings = await all<{ id: string; name: string }>(env, 'SELECT id, name FROM properties ORDER BY name');
   return json({
     generatedAt: nowIso(), today: q.today, view: q.view, todo: q.todo, filters: q.filters, page, pageSize: q.pageSize, total,
@@ -43,6 +65,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     totals: { bookings: total, nights: Number(sums?.nights ?? 0), gross: Number(sums?.gross ?? 0), fees: Number(sums?.fees ?? 0), outstanding: Number(sums?.outstanding ?? 0) },
     paymentsReady: schema.payments,
     buildings,
+    facets,
     data: rows.map(toRow),
   });
 };

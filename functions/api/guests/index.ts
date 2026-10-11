@@ -2,14 +2,15 @@ import { mayWork } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { CONTACT_ROLES, FILTERS, filterWhere, guestSort, type GuestFilter, guestTags, monthYear, statsCte, todayAndTomorrow, hasGuestColumns, MISSING_ID } from '../../_lib/guestList';
-import { like } from '../../_lib/bookingList';
+import { guestSearch } from '../../_lib/guestList';
+import { countryJoin, countryWhere, parseCountries, countryName } from '../../_lib/guestCountry';
 import { countryCode } from '../../_lib/hostplatformImport';
 import { checkPhone, invalid, type Fields } from '../../_lib/validate';
 import { parsePhone } from '../../../src/lib/phone';
 
 const OPS = CONTACT_ROLES;
 
-/** GET /api/guests?q=&filter=&sort=<key>[:asc|desc]&page=&size= — one page of the guest directory with lifetime
+/** GET /api/guests?q=&filter=&country=&sort=<key>[:asc|desc]&page=&size= — one page of the guest directory with lifetime
  *  figures, plus the count behind each filter. The full profile is GET /api/guests/:id. Merged duplicates are hidden. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -33,24 +34,24 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const args: unknown[] = [];
   if (except) { conds.push('g.id <> ?'); args.push(except); }
   if (q) {
-    const p = like(q);
-    const digits = q.replace(/\D/g, '');
-    if (contact) {
-      conds.push(`(g.full_name ILIKE ? OR g.email ILIKE ? OR g.phone ILIKE ?${digits.length >= 3 ? ` OR regexp_replace(COALESCE(g.phone, ''), '[^0-9]', '', 'g') LIKE ?` : ''}
-        OR EXISTS (SELECT 1 FROM reservations rr WHERE rr.guest_id = g.id AND rr.external_ref ILIKE ?))`);
-      args.push(p, p, p, ...(digits.length >= 3 ? [`%${digits}%`] : []), p);
-    } else {
-      conds.push('g.full_name ILIKE ?');
-      args.push(p);
-    }
+    const gs = guestSearch(q, contact);
+    conds.push(gs.sql);
+    args.push(...gs.args);
   }
+  // Where the guest is from: the stored nationality, else the country of their phone (functions/_lib/guestCountry.ts).
+  const countries = parseCountries(sp.get('country'));
+  const baseWhere = conds.length ? conds.join(' AND ') : 'TRUE';
+  const baseArgs = [...args];
+  const cw = countryWhere('gc.iso', countries);
+  if (cw) { conds.push(cw.sql); args.push(...cw.args); }
   const where = conds.length ? conds.join(' AND ') : 'TRUE';
+  const GC = countryJoin('gc', { guest: 'g' });
   const { today, tomorrow } = todayAndTomorrow();
   const cte = statsCte(today, tomorrow);
 
   const counts = await one<Record<GuestFilter, number>>(env, `${cte}
     SELECT ${FILTERS.map(f => `COUNT(*) FILTER (WHERE ${filterWhere(f, cols)}) AS "${f}"`).join(', ')}
-    FROM guests g LEFT JOIN s ON s.guest_id = g.id WHERE ${where}`, ...args);
+    FROM guests g LEFT JOIN s ON s.guest_id = g.id ${GC} WHERE ${where}`, ...args);
   const total = Number(counts?.[filter] ?? 0);
   const page = Math.min(Math.max(1, Math.floor(Number(sp.get('page')) || 1)), Math.max(1, Math.ceil(total / pageSize)));
 
@@ -58,17 +59,24 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     SELECT g.id, g.full_name, g.email, g.phone, g.created_at, g.country_code,
            ${cols ? `g.tags, (COALESCE(s.live, false) AND ${MISSING_ID}) AS missing_id` : `'' AS tags, false AS missing_id`},
            COALESCE(s.stays, 0) AS stays, COALESCE(s.upcoming, 0) AS upcoming, COALESCE(s.nights, 0) AS nights,
-           COALESCE(s.value, 0) AS value, s.last_check_in, s.channel
-    FROM guests g LEFT JOIN s ON s.guest_id = g.id
+           COALESCE(s.value, 0) AS value, s.last_check_in, s.channel, gc.iso AS country_iso, gc.src AS country_src
+    FROM guests g LEFT JOIN s ON s.guest_id = g.id ${GC}
     WHERE ${where} AND ${filterWhere(filter, cols)}
     ORDER BY ${sort.sql} LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`, ...args) : [];
 
+  // The Country filter's choices with their counts, under the search and chip on screen (not the country picked).
+  const facetRows = await all<{ v: string | null; n: number }>(env, `${cte}
+    SELECT gc.iso AS v, COUNT(*) AS n FROM guests g LEFT JOIN s ON s.guest_id = g.id ${GC}
+    WHERE ${baseWhere} AND ${filterWhere(filter, cols)} GROUP BY 1 ORDER BY 2 DESC LIMIT 300`, ...baseArgs);
+  const facets = { country: facetRows.map(r => ({ value: r.v ?? 'none', label: r.v ? countryName(r.v) ?? r.v : 'Not known', count: Number(r.n) })) };
+
   return json({
-    generatedAt: nowIso(), filter, sort: `${sort.key}:${sort.dir}`, page, pageSize, total, registrationReady: cols,
+    generatedAt: nowIso(), filter, facets, sort: `${sort.key}:${sort.dir}`, page, pageSize, total, registrationReady: cols,
     counts: Object.fromEntries(FILTERS.map(f => [f, Number(counts?.[f] ?? 0)])),
     data: rows.map(g => ({
       id: g.id, fullName: g.full_name,
       email: contact ? g.email : null, phone: contact ? g.phone : null, countryCode: g.country_code ?? null,
+      country: g.country_iso ? { code: g.country_iso, name: countryName(g.country_iso), from: g.country_src } : null,
       channel: g.channel ?? 'direct', tags: guestTags(Number(g.stays), g.channel, g.tags), missingId: !!g.missing_id,
       since: `Guest since ${monthYear(g.created_at)}`,
       stays: Number(g.stays), upcoming: Number(g.upcoming), nights: Number(g.nights), lifetimeValue: Number(g.value), lastCheckIn: g.last_check_in ?? null,
