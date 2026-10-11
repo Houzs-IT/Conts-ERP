@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isDoStatus, nextDoNumber, maybeMarkSoDelivered, toDoHeaderPayload, type DoHeaderRow } from '../../_lib/delivery-orders';
 import { postStockMovement, stockShortages, shortageText } from '../../_lib/stock-ops';
@@ -70,14 +70,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const id = genId('do');
-  const doNumber = await nextDoNumber(env);
+  let doNumber = '';
   const now = nowIso();
   const doDate = strOrNull(b.doDate) ?? mytToday();
-  await run(env, `INSERT INTO delivery_orders (id, do_number, sales_order_id, customer_name, do_date, expected_delivery_at, status,
-      driver_name, vehicle, address1, city, state, postcode, phone, notes, warehouse_id, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'LOADED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    id, doNumber, soId, so.customer_name, doDate, strOrNull(b.expectedDeliveryAt),
-    strOrNull(b.driverName), strOrNull(b.vehicle), strOrNull(b.address1), strOrNull(b.city), strOrNull(b.state), strOrNull(b.postcode), strOrNull(b.phone), strOrNull(b.notes), warehouseId, session.userId, now, now);
+  // The number is the highest so far plus one, so two made at once can pick the same one: the second header insert
+  // then hits the unique number before anything is written, and simply takes the next number (isNumberClash).
+  for (let attempt = 1; ; attempt++) {
+    doNumber = await nextDoNumber(env);
+    try {
+      await run(env, `INSERT INTO delivery_orders (id, do_number, sales_order_id, customer_name, do_date, expected_delivery_at, status,
+          driver_name, vehicle, address1, city, state, postcode, phone, notes, warehouse_id, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'LOADED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, doNumber, soId, so.customer_name, doDate, strOrNull(b.expectedDeliveryAt),
+        strOrNull(b.driverName), strOrNull(b.vehicle), strOrNull(b.address1), strOrNull(b.city), strOrNull(b.state), strOrNull(b.postcode), strOrNull(b.phone), strOrNull(b.notes), warehouseId, session.userId, now, now);
+      break;
+    } catch (e) { if (attempt >= 5 || !isNumberClash(e)) throw e; }
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];

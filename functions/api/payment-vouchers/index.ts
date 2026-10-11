@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { nextVoucherNumber, toPvHeaderPayload, PV_METHODS, type PvHeaderRow } from '../../_lib/payment-vouchers';
 import { recomputePiStatus } from '../../_lib/purchase-invoices';
@@ -62,13 +62,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const amount = filtered.reduce((s, a) => s + a.amount, 0);
   const method = PV_METHODS.includes(String(b.method) as typeof PV_METHODS[number]) ? String(b.method) : 'TRANSFER';
   const id = genId('pv');
-  const voucherNumber = await nextVoucherNumber(env);
+  let voucherNumber = '';
   const now = nowIso();
   const paymentDate = strOrNull(b.paymentDate) ?? mytToday();
 
-  await run(env, `INSERT INTO payment_vouchers (id, voucher_number, supplier_id, payment_date, method, reference, amount_sen, notes, status, created_by, created_at, updated_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?)`,
-    id, voucherNumber, supplierId, paymentDate, method, strOrNull(b.reference), amount, strOrNull(b.notes), session.userId, now, now);
+  // The number is the highest so far plus one, so two made at once can pick the same one: the second header insert
+  // then hits the unique number before anything is written, and simply takes the next number (isNumberClash).
+  for (let attempt = 1; ; attempt++) {
+    voucherNumber = await nextVoucherNumber(env);
+    try {
+      await run(env, `INSERT INTO payment_vouchers (id, voucher_number, supplier_id, payment_date, method, reference, amount_sen, notes, status, created_by, created_at, updated_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?)`,
+        id, voucherNumber, supplierId, paymentDate, method, strOrNull(b.reference), amount, strOrNull(b.notes), session.userId, now, now);
+      break;
+    } catch (e) { if (attempt >= 5 || !isNumberClash(e)) throw e; }
+  }
 
   for (const a of filtered) {
     await run(env, 'INSERT INTO payment_voucher_allocations (id, voucher_id, purchase_invoice_id, amount_sen) VALUES (?, ?, ?, ?)', genId('pva'), id, a.invoiceId, a.amount);

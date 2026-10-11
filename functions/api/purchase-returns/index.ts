@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { nextReturnNumber, toPretHeaderPayload, type PretHeaderRow } from '../../_lib/purchase-returns';
 import { recomputePoStatus } from '../../_lib/goods-receipts';
@@ -66,13 +66,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const refund = lines.reduce((s, l) => s + l.lineTotalSen, 0);
   const id = genId('pret');
-  const returnNumber = await nextReturnNumber(env);
+  let returnNumber = '';
   const now = nowIso();
   const returnDate = strOrNull(b.returnDate) ?? mytToday();
 
-  await run(env, `INSERT INTO purchase_returns (id, return_number, purchase_order_id, grn_id, supplier_id, return_date, reason, status, credit_note_ref, refund_sen, notes, posted_at, created_by, created_at, updated_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?, ?, ?, ?)`,
-    id, returnNumber, grn.purchase_order_id, grnId, grn.supplier_id, returnDate, strOrNull(b.reason), strOrNull(b.creditNoteRef), refund, strOrNull(b.notes), now, session.userId, now, now);
+  // The number is the highest so far plus one, so two made at once can pick the same one: the second header insert
+  // then hits the unique number before anything is written, and simply takes the next number (isNumberClash).
+  for (let attempt = 1; ; attempt++) {
+    returnNumber = await nextReturnNumber(env);
+    try {
+      await run(env, `INSERT INTO purchase_returns (id, return_number, purchase_order_id, grn_id, supplier_id, return_date, reason, status, credit_note_ref, refund_sen, notes, posted_at, created_by, created_at, updated_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?, ?, ?, ?)`,
+        id, returnNumber, grn.purchase_order_id, grnId, grn.supplier_id, returnDate, strOrNull(b.reason), strOrNull(b.creditNoteRef), refund, strOrNull(b.notes), now, session.userId, now, now);
+      break;
+    } catch (e) { if (attempt >= 5 || !isNumberClash(e)) throw e; }
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];

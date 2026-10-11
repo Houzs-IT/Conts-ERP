@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { nextInvoiceNumber, toPiHeaderPayload, type PiHeaderRow } from '../../_lib/purchase-invoices';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
@@ -75,16 +75,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const tax = Math.max(0, intOrNull(b.taxSen) ?? 0);
   const total = subtotal + tax;
   const id = genId('pinv');
-  const invoiceNumber = await nextInvoiceNumber(env);
+  let invoiceNumber = '';
   const now = nowIso();
   const invoiceDate = strOrNull(b.invoiceDate) ?? mytToday();
 
-  await run(env, `
-    INSERT INTO purchase_invoices (id, invoice_number, supplier_invoice_ref, supplier_id, purchase_order_id, grn_id, invoice_date,
-      due_date, currency, subtotal_sen, tax_sen, total_sen, paid_sen, status, notes, posted_at, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, 0, 'POSTED', ?, ?, ?, ?, ?)`,
-    id, invoiceNumber, strOrNull(b.supplierInvoiceRef), supplierId, poId, grnId, invoiceDate, strOrNull(b.dueDate),
-    subtotal, tax, total, strOrNull(b.notes), now, session.userId, now, now);
+  // The number is the highest so far plus one, so two made at once can pick the same one: the second header insert
+  // then hits the unique number before anything is written, and simply takes the next number (isNumberClash).
+  for (let attempt = 1; ; attempt++) {
+    invoiceNumber = await nextInvoiceNumber(env);
+    try {
+      await run(env, `
+        INSERT INTO purchase_invoices (id, invoice_number, supplier_invoice_ref, supplier_id, purchase_order_id, grn_id, invoice_date,
+          due_date, currency, subtotal_sen, tax_sen, total_sen, paid_sen, status, notes, posted_at, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, 0, 'POSTED', ?, ?, ?, ?, ?)`,
+        id, invoiceNumber, strOrNull(b.supplierInvoiceRef), supplierId, poId, grnId, invoiceDate, strOrNull(b.dueDate),
+        subtotal, tax, total, strOrNull(b.notes), now, session.userId, now, now);
+      break;
+    } catch (e) { if (attempt >= 5 || !isNumberClash(e)) throw e; }
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];

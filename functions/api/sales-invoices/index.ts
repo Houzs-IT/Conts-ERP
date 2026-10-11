@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { nextSiNumber, toSiHeaderPayload, type SiHeaderRow } from '../../_lib/sales-invoices';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
@@ -50,12 +50,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const tax = Math.max(0, intOrNull(b.taxSen) ?? 0);
   const total = subtotal + tax;
   const id = genId('sinv');
-  const invoiceNumber = await nextSiNumber(env);
+  let invoiceNumber = '';
   const now = nowIso();
 
-  await run(env, `INSERT INTO sales_invoices (id, invoice_number, delivery_order_id, sales_order_id, customer_name, invoice_date, due_date, currency, subtotal_sen, tax_sen, total_sen, paid_sen, status, notes, created_by, created_at, updated_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, 0, 'SENT', ?, ?, ?, ?)`,
-    id, invoiceNumber, doId, dord.sales_order_id, dord.customer_name, strOrNull(b.invoiceDate) ?? mytToday(), strOrNull(b.dueDate), subtotal, tax, total, strOrNull(b.notes), session.userId, now, now);
+  // The number is the highest so far plus one, so two made at once can pick the same one: the second header insert
+  // then hits the unique number before anything is written, and simply takes the next number (isNumberClash).
+  for (let attempt = 1; ; attempt++) {
+    invoiceNumber = await nextSiNumber(env);
+    try {
+      await run(env, `INSERT INTO sales_invoices (id, invoice_number, delivery_order_id, sales_order_id, customer_name, invoice_date, due_date, currency, subtotal_sen, tax_sen, total_sen, paid_sen, status, notes, created_by, created_at, updated_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, 0, 'SENT', ?, ?, ?, ?)`,
+        id, invoiceNumber, doId, dord.sales_order_id, dord.customer_name, strOrNull(b.invoiceDate) ?? mytToday(), strOrNull(b.dueDate), subtotal, tax, total, strOrNull(b.notes), session.userId, now, now);
+      break;
+    } catch (e) { if (attempt >= 5 || !isNumberClash(e)) throw e; }
+  }
   for (let i = 0; i < doLines.length; i++) {
     const l = doLines[i];
     await run(env, `INSERT INTO sales_invoice_lines (id, sales_invoice_id, line_no, item_code, description, uom, qty, unit_price_sen, line_total_sen)

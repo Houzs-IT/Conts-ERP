@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isPcStatus, normalizeLines, computeTotals, toPcHeaderPayload, checkPricedBody, type PcHeaderRow } from '../../_lib/purchase-consignment';
 import { invalid, type Fields } from '../../_lib/validate';
@@ -52,12 +52,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const totals = computeTotals(lines, intOrNull(b.taxSen) ?? 0);
   const id = genId('pc');
-  const pcNumber = await nextPcNumber(env);
+  let pcNumber = '';
   const now = nowIso();
-  await run(env, `INSERT INTO pc_orders (id, pc_number, supplier_id, status, pc_date, expected_at, warehouse_id, currency, subtotal_sen, tax_sen, total_sen, notes, submitted_at, created_by, created_at, updated_at)
-                  VALUES (?, ?, ?, 'SUBMITTED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    id, pcNumber, supplierId, strOrNull(b.pcDate) ?? today(), strOrNull(b.expectedAt), strOrNull(b.warehouseId), strOrNull(b.currency) ?? 'MYR',
-    totals.subtotalSen, totals.taxSen, totals.totalSen, strOrNull(b.notes), now, session.userId, now, now);
+  // The number is the highest so far plus one, so two made at once can pick the same one: the second header insert
+  // then hits the unique number before anything is written, and simply takes the next number (isNumberClash).
+  for (let attempt = 1; ; attempt++) {
+    pcNumber = await nextPcNumber(env);
+    try {
+      await run(env, `INSERT INTO pc_orders (id, pc_number, supplier_id, status, pc_date, expected_at, warehouse_id, currency, subtotal_sen, tax_sen, total_sen, notes, submitted_at, created_by, created_at, updated_at)
+                      VALUES (?, ?, ?, 'SUBMITTED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, pcNumber, supplierId, strOrNull(b.pcDate) ?? today(), strOrNull(b.expectedAt), strOrNull(b.warehouseId), strOrNull(b.currency) ?? 'MYR',
+        totals.subtotalSen, totals.taxSen, totals.totalSen, strOrNull(b.notes), now, session.userId, now, now);
+      break;
+    } catch (e) { if (attempt >= 5 || !isNumberClash(e)) throw e; }
+  }
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     await run(env, `INSERT INTO pc_order_lines (id, pc_order_id, line_no, item_code, description, uom, qty, unit_price_sen, discount_sen, line_total_sen, received_qty, notes)

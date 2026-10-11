@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { nextNumber, toTransferPayload, stockShortages, shortageText, type TransferHeaderRow } from '../../_lib/stock-ops';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
@@ -40,11 +40,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (short.length) return fail('INSUFFICIENT_STOCK', `Not enough stock to transfer. ${await shortageText(env, from, short)}.`, 409, { lines: 'Not enough stock at the source warehouse.' });
 
   const id = genId('trf');
-  const transferNumber = await nextNumber(env, 'stock_transfers', 'transfer_number', 'TRF');
+  let transferNumber = '';
   const now = nowIso();
   const tdate = strOrNull(b.transferDate) ?? mytToday();
-  await run(env, `INSERT INTO stock_transfers (id, transfer_number, from_warehouse_id, to_warehouse_id, transfer_date, status, notes, created_by, created_at, updated_at)
-                  VALUES (?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?)`, id, transferNumber, from, to, tdate, strOrNull(b.notes), session.userId, now, now);
+  // The number is the highest so far plus one, so two made at once can pick the same one: the second header insert
+  // then hits the unique number before anything is written, and simply takes the next number (isNumberClash).
+  for (let attempt = 1; ; attempt++) {
+    transferNumber = await nextNumber(env, 'stock_transfers', 'transfer_number', 'TRF');
+    try {
+      await run(env, `INSERT INTO stock_transfers (id, transfer_number, from_warehouse_id, to_warehouse_id, transfer_date, status, notes, created_by, created_at, updated_at)
+                      VALUES (?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?)`, id, transferNumber, from, to, tdate, strOrNull(b.notes), session.userId, now, now);
+      break;
+    } catch (e) { if (attempt >= 5 || !isNumberClash(e)) throw e; }
+  }
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     await run(env, 'INSERT INTO stock_transfer_lines (id, stock_transfer_id, line_no, item_code, description, qty) VALUES (?, ?, ?, ?, ?, ?)', genId('trl'), id, i + 1, l.itemCode, l.description, l.qty);

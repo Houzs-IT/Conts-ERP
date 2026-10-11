@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { HEADER_SQL, NOTE_KIND_WORD, buildLines, isNoteKind, nextNoteNumber, toNotePayload, type NoteHeaderRow } from '../../_lib/credit-notes';
 import { strOrNull, genId } from '../../_lib/scm-util';
@@ -81,14 +81,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const id = genId('cn');
-  const noteNumber = await nextNoteNumber(env, kind);
+  let noteNumber = '';
   const now = nowIso();
   const noteDate = strOrNull(b.noteDate) ?? mytToday();
-  await run(env, `INSERT INTO credit_notes (id, note_number, kind, party_type, party_name, supplier_id, sales_order_id, sales_invoice_id, purchase_invoice_id,
-      source_doc_no, note_date, total_sen, reason, notes, status, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)`,
-    id, noteNumber, kind, partyType, partyName, supplierId, salesOrderId, salesInvoiceId, purchaseInvoiceId,
-    strOrNull(b.sourceDocNo), noteDate, built.total, strOrNull(b.reason), strOrNull(b.notes), session.userId, now, now);
+  // The number is the highest so far plus one, so two made at once can pick the same one: the second header insert
+  // then hits the unique number before anything is written, and simply takes the next number (isNumberClash).
+  for (let attempt = 1; ; attempt++) {
+    noteNumber = await nextNoteNumber(env, kind);
+    try {
+      await run(env, `INSERT INTO credit_notes (id, note_number, kind, party_type, party_name, supplier_id, sales_order_id, sales_invoice_id, purchase_invoice_id,
+          source_doc_no, note_date, total_sen, reason, notes, status, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)`,
+        id, noteNumber, kind, partyType, partyName, supplierId, salesOrderId, salesInvoiceId, purchaseInvoiceId,
+        strOrNull(b.sourceDocNo), noteDate, built.total, strOrNull(b.reason), strOrNull(b.notes), session.userId, now, now);
+      break;
+    } catch (e) { if (attempt >= 5 || !isNumberClash(e)) throw e; }
+  }
   for (const [i, l] of built.lines.entries()) {
     await run(env, 'INSERT INTO credit_note_lines (id, note_id, line_no, description, amount_sen) VALUES (?, ?, ?, ?, ?)', genId('cnl'), id, i + 1, l.description, l.amountSen);
   }

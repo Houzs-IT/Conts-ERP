@@ -152,4 +152,14 @@ check('a unit to book exists', !!unitId && !!unitId2, units.text.slice(0, 200));
   check('dashboard period is the MYT month', k.json?.period === mytDay(0).slice(0, 7), `${k.json?.period} vs ${mytDay(0).slice(0, 7)}`);
 }
 
+// 11. Supply chain numbers: ten stock takes at once all save, each with its own number.
+{
+  const w = await c('POST', '/api/warehouses', { code: `AU${Date.now() % 100000}`, name: 'Audit warehouse' });
+  check('a warehouse to count in', w.status === 201, w.text.slice(0, 200));
+  const rs = await Promise.all(Array.from({ length: 10 }, () => c('POST', '/api/stock-takes', { warehouseId: w.json?.id, lines: [{ itemCode: 'AUDIT-1' }] })));
+  const nums = rs.filter(r => r.status === 201).map(r => r.json.takeNumber);
+  check('10 simultaneous stock takes: all 10 saved', nums.length === 10, rs.map(r => r.status).join(','));
+  check('each with its own number', new Set(nums).size === nums.length, nums.join(' '));
+}
+
 done();

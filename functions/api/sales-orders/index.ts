@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isSoStatus, normalizeLines, computeTotals, toSoHeaderPayload, type SoHeaderRow } from '../../_lib/sales-orders';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
@@ -56,12 +56,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const totals = computeTotals(lines, intOrNull(b.taxSen) ?? 0);
   const id = genId('so');
-  const docNo = await nextDocNo(env);
+  let docNo = '';
   const now = nowIso();
-  await run(env, `INSERT INTO sales_orders (id, doc_no, customer_name, customer_phone, customer_po, so_date, target_date, status, currency, subtotal_sen, tax_sen, total_sen, deposit_sen, paid_sen, notes, created_by, created_at, updated_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
-    id, docNo, customerName, strOrNull(b.customerPhone), strOrNull(b.customerPo), strOrNull(b.soDate) ?? today(), strOrNull(b.targetDate),
-    strOrNull(b.currency) ?? 'MYR', totals.subtotalSen, totals.taxSen, totals.totalSen, Math.max(0, intOrNull(b.depositSen) ?? 0), strOrNull(b.notes), session.userId, now, now);
+  // The number is the highest so far plus one, so two made at once can pick the same one: the second header insert
+  // then hits the unique number before anything is written, and simply takes the next number (isNumberClash).
+  for (let attempt = 1; ; attempt++) {
+    docNo = await nextDocNo(env);
+    try {
+      await run(env, `INSERT INTO sales_orders (id, doc_no, customer_name, customer_phone, customer_po, so_date, target_date, status, currency, subtotal_sen, tax_sen, total_sen, deposit_sen, paid_sen, notes, created_by, created_at, updated_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+        id, docNo, customerName, strOrNull(b.customerPhone), strOrNull(b.customerPo), strOrNull(b.soDate) ?? today(), strOrNull(b.targetDate),
+        strOrNull(b.currency) ?? 'MYR', totals.subtotalSen, totals.taxSen, totals.totalSen, Math.max(0, intOrNull(b.depositSen) ?? 0), strOrNull(b.notes), session.userId, now, now);
+      break;
+    } catch (e) { if (attempt >= 5 || !isNumberClash(e)) throw e; }
+  }
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     await run(env, `INSERT INTO sales_order_lines (id, sales_order_id, line_no, item_code, description, uom, qty, unit_price_sen, discount_sen, line_total_sen, delivered_qty, notes)
