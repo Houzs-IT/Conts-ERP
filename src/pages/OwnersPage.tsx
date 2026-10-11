@@ -152,21 +152,21 @@ export default function OwnersPage() {
 
   return (
     <>
-      <PageHeader title="Owners" sub={`${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')} under management`}
+      <PageHeader title="Owners" sub={data ? `${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')} under management` : 'Loading owners…'}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal(true)}>Add owner</Button>} />
 
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-5 pt-5 pb-4 px-5 sm:px-[22px]">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-5 flex-1 min-w-[min(100%,560px)] items-end">
-            <Roll label={`Owner payouts, ${monthText} (estimate)`} value={rmShort(portfolioNet)} strong />
-            <Roll label="from managed units" value={rmShort(portfolioManagedNet)} />
-            <Roll label="guaranteed rent (GRR units)" value={rmShort(portfolioGuaranteed)} />
-            <Roll label={`Booking revenue, managed units`} value={rmShort(portfolioManagedGross)} />
+            <Roll label={`Owner payouts, ${monthText} (estimate)`} value={data ? rmShort(portfolioNet) : '—'} strong />
+            <Roll label="from managed units" value={data ? rmShort(portfolioManagedNet) : '—'} />
+            <Roll label="guaranteed rent (GRR units)" value={data ? rmShort(portfolioGuaranteed) : '—'} />
+            <Roll label={`Booking revenue, managed units`} value={data ? rmShort(portfolioManagedGross) : '—'} />
           </div>
           <MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} />
         </div>
         <div className="px-5 sm:px-[22px] pt-4 pb-4 [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink text-pretty">
-          Each unit is worked out the way its owner statement is, by its revenue model: income split by night into the month, less the costs the owner pays, then the share, minimum or fixed rent, and owner credits and charges. Guaranteed rent is counted on its own, not as a share of revenue. Until the month's statement is final, these are estimates.
+          Each unit is worked out the way its owner statement is, by its revenue model: income split by night into the month, less the costs the owner pays, then the share, minimum or fixed rent, and anything paid on the owner's behalf after the split. Guaranteed rent is counted on its own, not as a share of revenue. Until the month's statement is final, these are estimates.
         </div>
       </Card>
 
