@@ -266,3 +266,11 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner to decide: finance_admin sees "Create reservation" on Bookings and the Dashboard; confirm finance should create bookings.
 - The login page always logs one console 401 (GET /api/auth/session before sign-in); auth area, not changed here.
 - `[font:inherit]` next to a text-size class resets the size to 16px; fixed in the booking drawer, Bookings and Guests, still present in Units, Owners, Users and Guest documents pages.
+
+## Infrastructure, checked 11 Oct (replaces older guesses above where they differ)
+- Verified: production and staging engine workers run code from before the renovation work. The phase-1 public photo route /api/scm/mfg-products/:id/photo/:key answers 401 (not mounted), while the old /api/scm/product-models/:id/photo/:key answers 404. Engine screens are current (published by .github/workflows/deploy-engine-production.yml).
+- Verified: the GitHub CLOUDFLARE_API_TOKEN cannot deploy workers ("No access to the specified service" on conts-scm-engine); it can publish Pages. Fix, one of: invite the owner to the Conts ERP Cloudflare account (then `npx wrangler login` here), add Workers Scripts Edit to the token, or run `node scripts/engine-production.mjs deploy` on the machine holding C:/dev/Conts-ERP-deploy.
+- Verified: Supabase organisation "Conts ERP" is on the Pro plan, so the database has Supabase's daily backups (7 days). The extra GitHub nightly backup (backup.yml) is not active: only CLOUDFLARE_API_TOKEN exists as a repo secret.
+- Verified: production has migrations 0055 and 0098 (two-step sign-in database side).
+- Not verifiable from this machine (may already be done; confirm with whoever runs the Conts ERP Cloudflare account): cron worker theconts-cron deployed, Workers Paid plan, Pages secret TOTP_ENC_KEY, Hyperdrive origin on the session pooler.
+
