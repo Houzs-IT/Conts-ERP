@@ -39,7 +39,7 @@ export function StatTile({ label, value, hint, loading, hero, className }: {
         : <Figure value={value} className={cx(
             'leading-none font-medium tracking-[-0.025em]',
             // Sized to the tile, so five across on a laptop never clips "RM 121,900".
-            hero ? 'text-[clamp(26px,16cqi,40px)]' : 'text-[clamp(20px,15cqi,30px)] text-ink',
+            hero ? 'text-[clamp(20px,13cqi,40px)]' : 'text-[clamp(16px,12cqi,30px)] text-ink',
           )} />}
       {hint && <div className={cx('text-meta', hero ? 'text-faint' : 'text-muted-ink')}>{hint}</div>}
     </div>
@@ -102,6 +102,8 @@ export function BarTrend({ bars, height = 200, lineLabel }: { bars: TrendBar[]; 
         <div className={cx('absolute inset-0 flex items-end', many ? 'gap-1 sm:gap-2' : 'gap-3 sm:gap-6')}>
           {bars.map((b, i) => {
             const key = b.current || b.value === max;
+            // The card clips overflow, so the tooltips of the outer bars open inwards.
+            const edge = i < 2 ? 'left-0' : i >= bars.length - 2 ? 'right-0' : 'left-1/2 -translate-x-1/2';
             const h = b.value > 0 ? Math.max(2, (b.value / max) * 82) : 0.5;
             return (
               <div key={b.key} className="group relative flex-1 min-w-0 h-full flex flex-col justify-end items-center">
@@ -118,7 +120,7 @@ export function BarTrend({ bars, height = 200, lineLabel }: { bars: TrendBar[]; 
                   )}
                   style={{ height: `${h}%`, animationDelay: `${i * 28}ms` }} />
                 <div role="tooltip"
-                  className="pointer-events-none absolute bottom-full mb-1 left-1/2 -translate-x-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-[var(--motion-fast)] rounded-[6px] bg-black text-white text-meta px-2.5 py-1.5 whitespace-nowrap shadow-[var(--shadow-overlay)]">
+                  className={cx('pointer-events-none absolute bottom-full mb-1 z-10', edge, ' opacity-0 group-hover:opacity-100 transition-opacity duration-[var(--motion-fast)] rounded-[6px] bg-black text-white text-meta px-2.5 py-1.5 whitespace-nowrap shadow-[var(--shadow-overlay)]')}>
                   {b.title}
                 </div>
               </div>
@@ -140,7 +142,7 @@ export function BarTrend({ bars, height = 200, lineLabel }: { bars: TrendBar[]; 
 
       {lineLabel && (
         <div className="hidden sm:flex items-center justify-end gap-1.5 text-caption text-muted-ink">
-          <span className="w-2 h-2 rounded-full bg-gold" />{lineLabel}
+          <span className="w-2 h-2 rounded-full bg-gold-ink" />{lineLabel}
         </div>
       )}
     </div>

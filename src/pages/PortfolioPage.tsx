@@ -142,10 +142,10 @@ export default function PortfolioPage() {
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         {/* Until the figures arrive the tiles show a skeleton, not a zero that then jumps. Revenue leads as the dark tile. */}
         {[tiles[3], tiles[0], tiles[1], tiles[2]].map((t, i) => (
-          <StatTile key={t.label} label={t.label} value={t.value} loading={!data} hero={i === 0} />
+          <StatTile key={t.label} label={t.label} value={data ? t.value : '—'} loading={loading && !data} hero={i === 0} />
         ))}
       </div>
 

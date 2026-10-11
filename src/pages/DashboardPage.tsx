@@ -33,13 +33,16 @@ const KPI_LABEL: Record<string, string> = {
 const KPI_FALLBACK: KpiPayload = {
   period: '2026-09', generatedAt: '2026-09-16T06:06:00Z',
   kpis: [
-    { key: 'accommodation_revenue', value: 12190000, currency: 'MYR' },
     { key: 'occupancy', value: '86.2', unit: 'percent' },
+    { key: 'accommodation_revenue', value: 12190000, currency: 'MYR' },
     { key: 'adr', value: 27600, currency: 'MYR' },
     { key: 'revpar', value: 23800, currency: 'MYR' },
     { key: 'net_owner_payout', value: 8890000, currency: 'MYR' },
   ],
 };
+
+/** The one figure shown as the dark statement tile. */
+const HERO_KPI = 'accommodation_revenue';
 
 function kpiValue(k: Kpi) {
   if (k.unit === 'percent') return `${k.value}%`;
@@ -288,7 +291,8 @@ export default function DashboardPage() {
   const [assign, setAssign] = useState<{ ex: Exception; cleanerId: string } | null>(null);
   const [notify, setNotify] = useState<Exception | null>(null);
 
-  const kpis = kpi.data?.kpis ?? [];
+  // The API lists occupancy first (every role gets it; money only with manage), so revenue is moved to the front here.
+  const kpis = [...(kpi.data?.kpis ?? [])].sort((a, b) => Number(b.key === HERO_KPI) - Number(a.key === HERO_KPI));
   const allExceptions = (exc.data?.exceptions ?? []).filter(e => !handled.has(e.id));
   const exceptions = allExceptions.slice(0, 5);
   const allRows = portfolio.data?.rows ?? [];
@@ -351,16 +355,17 @@ export default function DashboardPage() {
       {failure && <StaleBanner message={`Showing the last figures we have. ${failure}`} onRetry={() => { kpi.reload(); trend.reload(); today.reload(); exc.reload(); portfolio.reload(); }} />}
 
       {/* KPI row — revenue leads as the one dark statement tile; the rest follow at equal weight. */}
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-[minmax(0,1.35fr)_repeat(4,minmax(0,1fr))] gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-[minmax(0,1.35fr)_repeat(4,minmax(0,1fr))] gap-3 sm:gap-4">
         {kpi.loading && kpis.length === 0
-          ? Array.from({ length: 5 }).map((_, i) => (
-              <StatTile key={i} label={"\u00a0"} value="" loading hero={i === 0} className={i === 0 ? 'col-span-2 md:col-span-4 xl:col-span-1' : undefined} />
-            ))
-          : kpis.map((k, i) => (
-              <StatTile key={k.key} label={KPI_LABEL[k.key] ?? humanize(k.key)} value={kpiValue(k)}
-                hero={i === 0} className={i === 0 ? 'col-span-2 md:col-span-4 xl:col-span-1' : undefined}
-                hint={i === 0 && period ? `${monthLabel(period)} to date` : undefined} />
-            ))}
+          ? Array.from({ length: 2 }).map((_, i) => <StatTile key={i} label={'\u00a0'} value="" loading />)
+          : kpis.map(k => {
+              const hero = k.key === HERO_KPI;
+              return (
+                <StatTile key={k.key} label={KPI_LABEL[k.key] ?? humanize(k.key)} value={kpiValue(k)}
+                  hero={hero} className={hero ? 'col-span-2 xl:col-span-1' : undefined}
+                  hint={hero && period ? `${monthLabel(period)} to date` : undefined} />
+              );
+            })}
       </div>
 
       {/* Trend chart + exceptions */}
