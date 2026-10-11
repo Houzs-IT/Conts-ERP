@@ -13,7 +13,7 @@ import { fetchAllPages } from '../lib/export';
 import { runEach, skippedNote } from '../lib/bulk';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
-import { CentreModal } from '../components/booking/BookingDrawer';
+import { CentreModal, ModalActions } from '../components/booking/BookingDrawer';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../lib/api';
@@ -718,31 +718,23 @@ function MessageModal({ g, onClose, onSend }: { g: Guest; onClose: () => void; o
   const [busy, setBusy] = useState(false);
   return (
     <CentreModal title={`Message ${g.fullName}`} sub={`Goes to the guest's latest conversation on ${threadName(g.channel)}.`} onClose={() => { if (!busy) onClose(); }}>
-      <form onSubmit={async (e: FormEvent) => { e.preventDefault(); if (!body.trim()) return; setBusy(true); await onSend(body.trim()); setBusy(false); }} className="px-[22px] py-4 flex flex-col gap-[14px]">
+      <form onSubmit={async (e: FormEvent) => { e.preventDefault(); if (!body.trim()) return; setBusy(true); await onSend(body.trim()); setBusy(false); }} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div className="flex flex-col gap-[6px]">
           <label htmlFor="msg-body" className={labelClass}>Message</label>
           <textarea id="msg-body" required value={body} onChange={e => setBody(e.target.value)} rows={4}
             placeholder={`Hi ${greetName(g.fullName)}, just checking that everything is fine…`} className={cx(fieldBase, 'p-[10px_12px] resize-y')} />
         </div>
-        <div className="flex justify-end gap-[9px]">
+        <ModalActions>
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!body.trim()} disabledReason="Write a message first.">Send message</Button>
-        </div>
+        </ModalActions>
       </form>
     </CentreModal>
   );
 }
 
-function NativeSelect({ id, label, value, onChange, options, placeholder }: { id: string; label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; placeholder: string }) {
-  return (
-    <div className="flex flex-col gap-[6px] min-w-0">
-      <label htmlFor={id} className={labelClass}>{label}</label>
-      <select id={id} value={value} onChange={e => onChange(e.target.value)} className={cx(fieldBase, 'h-10 px-3')}>
-        <option value="">{placeholder}</option>
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-    </div>
-  );
+function NativeSelect({ label, value, onChange, options, placeholder }: { id: string; label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; placeholder: string }) {
+  return <Select label={label} showLabel size="md" value={value} onChange={onChange} options={options} placeholder={placeholder} />;
 }
 
 /** The guest record only: a stay is booked separately, with a unit and dates. */
@@ -764,7 +756,7 @@ function AddGuestModal({ onClose, onAdd }: { onClose: () => void; onAdd: (input:
   }
   return (
     <CentreModal title="Add guest" sub="Creates the guest's record only. To give them a unit and dates, use Add reservation on their profile." onClose={() => { if (!busy) onClose(); }}>
-      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" required />
         <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
           <PhoneInput label="Phone" value={phone} onChange={setPhone} error={errors.phone} />
@@ -774,10 +766,10 @@ function AddGuestModal({ onClose, onAdd }: { onClose: () => void; onAdd: (input:
           <NativeSelect id="ag-country" label="Nationality" value={countryCode} onChange={setCountryCode} options={COUNTRIES} placeholder="Not known yet" />
           <NativeSelect id="ag-lang" label="Language" value={language} onChange={setLanguage} options={LANGUAGES.map(l => ({ value: l, label: l }))} placeholder="Not known yet" />
         </div>
-        <div className="flex justify-end gap-[9px]">
+        <ModalActions>
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!fullName.trim()} disabledReason="A name is required.">Add guest</Button>
-        </div>
+        </ModalActions>
       </form>
     </CentreModal>
   );
@@ -815,7 +807,7 @@ function EditGuestModal({ g, onClose, onSaved }: { g: Guest; onClose: () => void
   }
   return (
     <CentreModal title="Edit guest details" sub="Registration details are what Malaysian short-stay rules ask for: ID, its number, date of birth and nationality." onClose={() => { if (!busy) onClose(); }} maxWidth={540}>
-      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto">
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} required error={errors.fullName} />
         <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
           <PhoneInput label="Phone" value={phone} onChange={setPhone} error={errors.phone} />
@@ -831,10 +823,10 @@ function EditGuestModal({ g, onClose, onSaved }: { g: Guest; onClose: () => void
             placeholder={r.hasIdNumber ? `${r.idNumberMasked} on file` : 'e.g. 900101-14-5678'} help={r.hasIdNumber ? 'Leave empty to keep the one on file.' : undefined} />
           <DateField label="Date of birth" value={dob} min="1900-01-01" max={todayMyt()} onChange={setDob} error={errors.dateOfBirth} />
         </div>
-        <div className="flex justify-end gap-[9px]">
+        <ModalActions>
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!fullName.trim()} disabledReason="A name is required.">Save details</Button>
-        </div>
+        </ModalActions>
       </form>
     </CentreModal>
   );
@@ -861,7 +853,7 @@ function MergeModal({ g, onClose, onMerged }: { g: Guest; onClose: () => void; o
   }
   return (
     <CentreModal title={`Merge ${g.fullName}`} sub={`Pick the guest to keep. ${g.fullName}'s ${plural(g.stays, 'reservation')} and conversations move to them, and details they lack are filled in.`} onClose={() => { if (!busy) onClose(); }} maxWidth={520}>
-      <div className="px-[22px] py-4 flex flex-col gap-[14px]">
+      <div className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <label className="relative">
           <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid"><Icon name="Search" size="sm" /></span>
           <input autoFocus value={q} onChange={e => { setQ(e.target.value); setInto(null); }} placeholder="Name, phone, email or reservation reference" aria-label="Find the guest to keep"
@@ -882,10 +874,10 @@ function MergeModal({ g, onClose, onMerged }: { g: Guest; onClose: () => void; o
               </button>
             ))}
         </div>
-        <div className="flex justify-end gap-[9px]">
+        <ModalActions>
           <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button size="sm" variant="primary" loading={busy} disabled={!into} disabledReason="Pick the guest to keep." onClick={merge}>{into ? `Merge into ${into.fullName}` : 'Merge'}</Button>
-        </div>
+        </ModalActions>
       </div>
     </CentreModal>
   );

@@ -5,6 +5,7 @@ import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
+import { Select } from '../components/Select';
 import { MoneyInput } from '../components/inputs';
 import { EmptyState } from '../components/States';
 import { StaleBanner } from '../components/DataState';
@@ -231,7 +232,7 @@ export default function StatementsPage() {
         right={
           <div className="flex gap-[9px] flex-wrap items-center">
             <div className="flex items-center h-9 rounded-control border border-solid border-line bg-card">
-              <button aria-label="Previous period" onClick={() => setViewPeriod(shiftMonth(viewPeriod, -1))} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">‹</button>
+              <button aria-label="Previous period" onClick={() => setViewPeriod(shiftMonth(viewPeriod, -1))} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink"><Icon name="ChevronLeft" size="sm" /></button>
               <label className="relative h-full">
                 <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Statement period</span>
                 <select value={viewPeriod} onChange={e => setViewPeriod(e.target.value)}
@@ -242,7 +243,7 @@ export default function StatementsPage() {
                   })}
                 </select>
               </label>
-              <button aria-label="Next period" onClick={() => setViewPeriod(shiftMonth(viewPeriod, 1))} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink text-[16px]">›</button>
+              <button aria-label="Next period" onClick={() => setViewPeriod(shiftMonth(viewPeriod, 1))} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink"><Icon name="ChevronRight" size="sm" /></button>
             </div>
             <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => openGenerate(lockedPeriods.has(shiftMonth(thisMonth, -1)) ? thisMonth : shiftMonth(thisMonth, -1))}>Generate statements</Button>
           </div>
@@ -388,25 +389,16 @@ function GenerateDialog({ initialPeriod, periods, lockedPeriods, onClose, onGene
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Generate statements"
-      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
       <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
       <div ref={ref} className="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
         <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-3">
-          <h2 className="m-0 text-[18px] leading-[1.3] font-semibold">Generate statements</h2>
+          <h2 className="m-0 text-title font-semibold">Generate statements</h2>
           <p className="m-0 text-[13px] leading-[1.55] text-muted-ink">
             Builds each owner's month by the owner workbook's rules: reservations split by night into the month, cleaning, bills and other deductions, the contract split, then Owner Adjustments. Owner statements land as Draft and must be reviewed before sending.
           </p>
-          <div className="flex flex-col gap-[7px]">
-            <label htmlFor="gen-period" className="text-[12px] font-medium text-muted-ink">Period</label>
-            <select id="gen-period" value={period} onChange={e => setPeriod(e.target.value)} disabled={busy}
-              className="h-10 py-0 px-3 rounded-control border border-solid border-line bg-card text-ink [font:inherit] cursor-pointer">
-              {periods.map(p => (
-                <option key={p} value={p} disabled={lockedPeriods.has(p)}>
-                  {periodLabel(p)}{lockedPeriods.has(p) ? ' — already sent' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
+          <Select label="Period" showLabel size="md" value={period} onChange={setPeriod} disabled={busy}
+            options={periods.map(p => ({ value: p, label: `${periodLabel(p)}${lockedPeriods.has(p) ? ' — already sent' : ''}`, disabled: lockedPeriods.has(p) }))} />
           <div className={`py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-[12px] ${locked ? TONE.critical.text : 'text-muted-ink'}`}>
             {locked ? 'This period has already been sent and cannot be regenerated.' : 'A period that has already been sent cannot be regenerated.'}
           </div>
@@ -445,12 +437,12 @@ function AdjustDialog({ target, busy, onClose, onSubmit }: {
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Adjust statement"
-      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
       <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
       <div ref={ref} className="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
         <form onSubmit={e => { e.preventDefault(); if (valid && !busy) onSubmit(label.trim(), sen); }}>
           <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-3">
-            <h2 className="m-0 text-[18px] leading-[1.3] font-semibold">Adjust statement</h2>
+            <h2 className="m-0 text-title font-semibold">Adjust statement</h2>
             <p className="m-0 text-[13px] leading-[1.55] text-muted-ink">
               {target.ownerName} · {target.unitsLabel}. Adds a labelled line to the statement and rebalances the net payout. The gross, fee and expenses are unchanged.
             </p>

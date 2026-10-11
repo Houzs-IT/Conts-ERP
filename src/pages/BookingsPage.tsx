@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import { useLocation, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
-import { BookingDrawer, MessageGuestModal, CentreModal } from '../components/booking/BookingDrawer';
+import { BookingDrawer, MessageGuestModal, CentreModal, ModalActions } from '../components/booking/BookingDrawer';
 import { UnitPicker } from '../components/booking/UnitPicker';
 import { channelNote, STATUS } from '../lib/bookingStatus';
 import { Button } from '../components/Button';
@@ -576,7 +576,7 @@ function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClo
   }
   return (
     <CentreModal title="Mark host payouts received" sub={`Records one host payout per reservation for what it still has outstanding: ${plural(rows.length, 'reservation')}, ${rm(owed)} in all.${left ? ` ${plural(left, 'ticked reservation')} ${left === 1 ? 'is' : 'are'} left out: not from a channel, cancelled, or nothing owed.` : ''}`} onClose={() => { if (!busy) onClose(); }}>
-      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div className="max-h-[180px] overflow-y-auto border border-solid border-line rounded-control">
           {rows.map(r => (
             <div key={r.id} className="flex justify-between gap-3 px-3 py-2 text-meta [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
@@ -589,10 +589,10 @@ function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClo
           <DateField label="Arrived on" value={receivedOn} max={todayMyt()} onChange={setReceivedOn} required />
           <Field label="Bank reference (optional)" value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. AIRBNB 2610" />
         </div>
-        <div className="flex justify-end gap-[9px]">
+        <ModalActions>
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!receivedOn || !rows.length} disabledReason={!rows.length ? 'None of the ticked reservations is waiting for a host payout.' : 'Pick the date.'}>Mark received</Button>
-        </div>
+        </ModalActions>
       </form>
     </CentreModal>
   );
@@ -713,7 +713,7 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
 
   return (
     <CentreModal title={owner ? 'Owner stay' : 'Create reservation'} sub="Checked against the unit's other reservations before it is saved, then blocked on the channels the unit is listed on." onClose={() => { if (!busy) onClose(); }} maxWidth={520}>
-      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto">
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div role="radiogroup" aria-label="What is this" className="grid grid-cols-3 gap-1 p-1 rounded-control bg-muted">
           {([['direct', 'Direct'], ['ota', 'From a channel'], ['owner_stay', 'Owner stay']] as const).map(([k, l]) => (
             <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
@@ -759,10 +759,10 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
           <textarea id="cr-notes" value={notes} onChange={e => setNotes(e.target.value)} rows={2} maxLength={2000} placeholder="e.g. Arrives late, around 21:00"
             className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
         </div>
-        <div className="flex justify-end gap-[9px] pt-1">
-          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Close</Button>
+        <ModalActions>
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={missing}>{owner ? 'Save owner stay' : 'Create reservation'}</Button>
-        </div>
+        </ModalActions>
       </form>
     </CentreModal>
   );
@@ -778,7 +778,7 @@ function ImportPreviewModal({ rows, onClose, onConfirm }: { rows: ParsedRow[]; o
         <StatusBadge tone="success" label={`${num(ok)} ready`} size="sm" />
         {bad > 0 && <StatusBadge tone="critical" label={`${num(bad)} with ${bad === 1 ? 'an error' : 'errors'}`} size="sm" />}
       </div>
-      <div className="mx-[22px] mb-2 border border-solid border-line rounded-card overflow-y-auto">
+      <div className="mx-[22px] mb-2 border border-solid border-line rounded-card overflow-y-auto min-h-0">
         {rows.map((r, i) => (
           <div key={i} className={cx('flex items-start gap-3 py-[10px] px-[13px]', i < rows.length - 1 && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
             <Icon name={r.row ? 'CheckCircle2' : 'AlertCircle'} size="sm" color={r.row ? 'var(--color-success-fg)' : 'var(--color-critical-fg)'} style={{ marginTop: 2 }} />

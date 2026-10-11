@@ -1067,11 +1067,11 @@ function SaveViewDialog({ initial, canShare, onClose, onSave }: {
     return () => document.removeEventListener('keydown', k);
   }, [busy, onClose]);
   return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-[rgba(20,18,15,0.35)] p-4" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-[var(--color-surface-scrim)] p-4 sm:p-6" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <form role="dialog" aria-modal="true" aria-label="Save view" className="w-full max-w-[420px] bg-card rounded-card border border-solid border-line shadow-[var(--shadow-overlay)] flex flex-col"
         onSubmit={async e => { e.preventDefault(); if (!name.trim()) return; setBusy(true); await onSave(name.trim(), scope, isDefault); setBusy(false); }}>
         <div className="px-[22px] pt-[18px] pb-2">
-          <h2 className="m-0 text-heading font-semibold">Save view</h2>
+          <h2 className="m-0 text-title font-semibold">Save view</h2>
           <p className="m-0 mt-1 text-meta text-muted-ink">Keeps the columns, their order, the sort, the filters and rows per page. Saving under an existing name replaces it.</p>
         </div>
         <div className="px-[22px] py-3 flex flex-col gap-3">
