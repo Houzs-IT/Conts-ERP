@@ -162,6 +162,7 @@ async function convertWithCatalogue(filler: number, pickSupplierId?: string) {
   ];
   const sb = fakeSb({
     mfg_sales_order_items: soLines,
+    mfg_products: soLines.map((l) => ({ code: l.item_code, company_id: 1, status: 'ACTIVE' })), // Conts C6: codes must be in Products
     mfg_sales_orders: [{ doc_no: DOC, status: 'CONFIRMED' }],
     warehouses: [{ id: 'wh-kl', code: 'KL', name: 'KL' }],
     suppliers: [

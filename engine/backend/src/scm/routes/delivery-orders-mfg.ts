@@ -93,7 +93,7 @@ import { SO_CONVERT_HEADER, soHeaderToDoSource, missingSourceFields } from '../l
 import { canViewAllSales, canViewScmFinance } from '../lib/houzs-perms';
 import { SO_ITEM_FINANCE_KEYS } from '../lib/finance-keys';
 import { freezeShipCost } from '../lib/fulfillment-costing';
-import { validateItemCodes, unknownItemCodeResponse } from '../lib/validate-item-codes';
+import { validateItemCodes, unknownItemCodeResponse, unknownProductCodeRefusal } from '../lib/validate-item-codes';
 import { resolveItemGroups } from '../lib/sku-category';
 import { buildDoItemRow as buildItemRow, loadCarriedSoLinePhotos, carriedPhotoUrls } from '../lib/do-item-row';
 import { soRemainingByItemId } from '../lib/so-remaining-by-item';
@@ -3716,6 +3716,11 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
        guards determinism if two lines ever shared a seq. */
     .sort((a, b) => a.docNo.localeCompare(b.docNo) || (a.lineSeq - b.lineSeq) || a.soItemId.localeCompare(b.soItemId));
   const firstSoDocNo = sortedPicks[0]!.docNo;
+  // Conts C6: a copied line's code must still be in Products (the source SO's catalogue).
+  {
+    const unknownCodes = await unknownProductCodeRefusal(sb, sortedPicks.map((l) => ({ code: l.itemCode })), doCompanyId);
+    if (unknownCodes) return c.json(unknownCodes, 409);
+  }
 
   /* Sofa batch guard — block any picked sofa line with no production PO (no
      dye-lot batch ⇒ would steal another order's colour lot). Applies even to a

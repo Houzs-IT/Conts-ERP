@@ -3,6 +3,7 @@
 // note undoes its effect; a posted note can't be edited; posting twice is harmless.
 import { call, check, done } from './harness.mjs';
 const tag = Date.now().toString().slice(-6);
+await call('POST', '/api/products', { code: `CNI-${tag}`, name: `CN item ${tag}`, category: 'ACCESSORY' }); // documents only take Products codes
 const ap = async (code) => ((await call('GET', '/api/accounting')).json?.payables ?? []).find(p => p.code === code)?.outstandingSen ?? 0;
 const ar = async (name) => ((await call('GET', '/api/accounting')).json?.receivables ?? []).find(p => p.name === name)?.outstandingSen ?? 0;
 

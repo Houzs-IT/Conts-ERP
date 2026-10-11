@@ -187,3 +187,29 @@ export const freeTextSoLineResponse = (labels: string[]) => ({
     `Every Sales Order line must be a catalog SKU — pick the product from the dropdown; free-typed lines cannot be saved.`,
   lines: labels,
 });
+
+/**
+ * Conts (owner decision C6, 11 Oct 2026): an item code on ANY document must be
+ * in Products — the purchase side (PO, GRN, purchase return) and the paths that
+ * copy lines from a source document included, not only the SO / DO / SI / DR
+ * line writes above. One call per write path: returns the 409 body to send, or
+ * null when every code is catalogued.
+ *
+ * Only PRODUCT lines are checked. A purchase line whose material kind is
+ * `fabric` (a fabric series) or `raw` (an uncatalogued raw material bought by
+ * description, purchase-doc-vocab.ts) is not a Products row by design; a line
+ * with no kind is a product line. Blank codes are skipped, as validateItemCodes
+ * does. Existence only: a copied line whose product was later set INACTIVE is
+ * still a real product.
+ */
+export async function unknownProductCodeRefusal(
+  sb: any,
+  lines: Array<{ code: unknown; kind?: unknown }>,
+  companyId: number | null | undefined,
+): Promise<ReturnType<typeof unknownItemCodeResponse> | null> {
+  const codes = lines
+    .filter((l) => l.kind == null || l.kind === '' || l.kind === 'mfg_product')
+    .map((l) => (typeof l.code === 'string' ? l.code : null));
+  const check = await validateItemCodes(sb, codes, companyId);
+  return check.ok ? null : unknownItemCodeResponse(check.unknown, check.inactive);
+}

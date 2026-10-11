@@ -1,4 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
+import { refuseUnknownItemCodes } from '../../_lib/products';
 import { requireSession } from '../../_lib/auth';
 import { nextReturnNumber, toPretHeaderPayload, type PretHeaderRow } from '../../_lib/purchase-returns';
 import { recomputePoStatus } from '../../_lib/goods-receipts';
@@ -57,6 +58,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return { grnLineId: strOrNull(l.grnLineId), itemCode: String(l.itemCode ?? '').trim(), description: String(l.description ?? '').trim(), uom: String(l.uom ?? 'UNIT').trim() || 'UNIT', qty, unitPriceSen, lineTotalSen: qty * unitPriceSen, reason: strOrNull(l.reason) };
   }).filter(l => l.itemCode && l.description && l.qty > 0);
   if (!lines.length) return fail('VALIDATION', 'Return at least one line with a quantity.', 422, { lines: 'Enter a return quantity.' });
+  { const unknownCodes = await refuseUnknownItemCodes(env, lines.map(l => l.itemCode)); if (unknownCodes) return unknownCodes; } // every item code must be in Products
   // Houzs: returning more than is on hand is allowed, but only after the operator confirms it
   // (the screen asks, then resends with confirmShortStock).
   if (grn.warehouse_id && b.confirmShortStock !== true) {

@@ -22,6 +22,7 @@
 // ----------------------------------------------------------------------------
 
 import { lineDiscountShare } from '../shared/line-discount-share';
+import { unknownProductCodeRefusal } from './validate-item-codes';
 import { normalizePhone, buildVariantSummary, isServiceLine } from '../shared';
 import { scopeToCompanyIdOrOpen } from './companyScope';
 import { mintMonthlyDocNo, insertWithDocNoRetry } from './doc-no';
@@ -417,6 +418,9 @@ export async function createSalesInvoiceFromDoLines(sb: Db, input: SiFromDoInput
     .map((id) => remainingMap.get(id)!)
     .sort((a, b) => a.doNumber.localeCompare(b.doNumber) || (a.lineSeq - b.lineSeq) || a.doItemId.localeCompare(b.doItemId));
   const firstDoId = sortedPicks[0]!.deliveryOrderId;
+  // Conts C6: a copied line's code must still be in Products.
+  const unknownCodes = await unknownProductCodeRefusal(sb, sortedPicks.map((l) => ({ code: l.itemCode })), companyId);
+  if (unknownCodes) return refuse(409, unknownCodes);
   const distinctDoNumbers = [...new Set(sortedPicks.map((l) => l.doNumber))].sort();
 
   const DO_HEADER =

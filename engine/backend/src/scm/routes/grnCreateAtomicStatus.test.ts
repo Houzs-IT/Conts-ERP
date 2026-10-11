@@ -17,7 +17,7 @@ const grnInserts: Row[] = [];
 const base = fakeSb({
   grns: [],
   grn_items: [],
-  mfg_products: [],
+  mfg_products: [{ code: 'X-1', company_id: 1, status: 'ACTIVE' }], // Conts C6: codes must be in Products
   purchase_orders: [],
   purchase_order_items: [],
   warehouses: [{ id: 'wh-1', company_id: 1, is_default: true, code: 'KL' }],

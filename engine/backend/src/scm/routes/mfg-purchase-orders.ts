@@ -93,6 +93,7 @@ import { signSoItemPhotoUrl, soItemPhotoBindings } from '../lib/r2';
 import { baseKeyOf, thumbKeyFor } from '../../services/photoThumbs';
 import { proxyFallbackPayload, type PhotoUrlPayload } from '../lib/photoProxyFallback';
 import { markIdempotencyNoWrite } from '../../middleware/idempotency';
+import { unknownProductCodeRefusal } from '../lib/validate-item-codes';
 import { supabaseAuth } from '../middleware/auth';
 import { recordEntityAudit, diffFields, compactChanges, fieldChange, statusChange } from '../lib/entity-audit';
 import { PO_LINE_AUDIT_FIELDS, PO_LINE_AUDIT_SELECT } from '../lib/entity-audit-fields';
@@ -1116,6 +1117,10 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
     return `${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, '0')}`;
   })();
 
+  // Conts C6: every product line's code must be in Products.
+  const unknownCodes = await unknownProductCodeRefusal(supabase, items.map((it) => ({ code: it.itemCode, kind: it.materialKind })), activeCompanyId(c));
+  if (unknownCodes) { markIdempotencyNoWrite(c); return c.json(unknownCodes, 409); }
+
   // PO# generation: max(suffix)+1 over the month's POs (see lib/doc-no.ts).
   // NOT count+1 — count+1 is non-self-healing (a mid-month delete leaves a gap
   // and re-mints a surviving number, jamming the NOT NULL UNIQUE po_number).
@@ -1678,6 +1683,11 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
   }
 
   if (pickedItems.length === 0) return c.json({ error: 'no_pickable_lines' }, 400);
+  // Conts C6: a copied line's code must still be in Products.
+  {
+    const unknownCodes = await unknownProductCodeRefusal(supabase, pickedItems.map((p) => ({ code: p.row.item_code })), activeCompanyId(c));
+    if (unknownCodes) return c.json(unknownCodes, 409);
+  }
 
   /* PO/MRP only from CONFIRMED orders — every source SO must be committed
      (CONFIRMED or beyond) before its lines can be converted to a PO. Deny-list
@@ -2907,6 +2917,9 @@ mfgPurchaseOrders.post('/:id/items', async (c) => {
   const childLock = await poHasDownstream(sb, poId);
   if (childLock) return c.json(childLock, 409);
 
+  // Conts C6: the line's code must be in Products.
+  const unknownAdd = await unknownProductCodeRefusal(sb, [{ code: it.itemCode, kind: it.materialKind }], co.companyId);
+  if (unknownAdd) return c.json(unknownAdd, 409);
   const addGroupOf = await skuCategoryResolver(sb, [it], co.companyId ?? null); // SKU wins — lib/sku-category.ts
   /* Non-finite guard — the clamp below cannot catch NaN (Math.max(0, NaN) is
      NaN), so a junk qty/price reached line_total_sen and the PO total. */
@@ -3078,6 +3091,11 @@ mfgPurchaseOrders.patch('/:id/items/:itemId', async (c) => {
     } catch { /* table absent pre-0235 — nothing to guard */ }
   }
 
+  /* Conts C6: a CHANGED code must be in Products (an unchanged one keeps its line editable). */
+  if (it.itemCode !== undefined && String(it.itemCode ?? '') !== String((prev as { item_code?: string }).item_code ?? '')) {
+    const unknownEdit = await unknownProductCodeRefusal(sb, [{ code: it.itemCode, kind: it.materialKind ?? (prev as { material_kind?: string }).material_kind }], co.companyId);
+    if (unknownEdit) return c.json(unknownEdit, 409);
+  }
   /* SKU wins on edit too (create + add-line already do): a sent group, or a moved code, stores the SKU's category. */
   const editedGroup = await editedLineGroup(sb, co.companyId ?? null, prev, it);
   if (editedGroup !== undefined) it.itemGroup = editedGroup;
@@ -3733,6 +3751,11 @@ mfgPurchaseOrders.post('/:id/convert-from-so', async (c) => {
   const toInsert = notOnPo.filter((r) => (Number(r.qty ?? 0) - Number(r.po_qty_picked ?? 0)) > 0);
   if (toInsert.length === 0) {
     return c.json({ copied: 0, skipped: wanted.length, reason: 'All matching SO items are already on a PO (or on this one).' });
+  }
+  // Conts C6: a copied line's code must still be in Products.
+  {
+    const unknownCodes = await unknownProductCodeRefusal(sb, toInsert.map((r) => ({ code: r.item_code })), co.companyId);
+    if (unknownCodes) return c.json(unknownCodes, 409);
   }
 
   /* Supplier-cost pricing (F1 audit fix 2026-06-10) — this path used to copy

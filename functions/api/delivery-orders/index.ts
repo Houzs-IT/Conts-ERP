@@ -1,4 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
+import { refuseUnknownItemCodes } from '../../_lib/products';
 import { requireSession } from '../../_lib/auth';
 import { isDoStatus, nextDoNumber, maybeMarkSoDelivered, toDoHeaderPayload, type DoHeaderRow } from '../../_lib/delivery-orders';
 import { postStockMovement, stockShortages, shortageText } from '../../_lib/stock-ops';
@@ -62,6 +63,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return { soLineId: strOrNull(l.salesOrderLineId), itemCode: String(l.itemCode ?? '').trim(), description: String(l.description ?? '').trim(), uom: String(l.uom ?? 'UNIT').trim() || 'UNIT', qty, unitPriceSen, lineTotalSen: qty * unitPriceSen };
   }).filter(l => l.itemCode && l.description && l.qty > 0);
   if (!lines.length) return fail('VALIDATION', 'Deliver at least one line with a quantity.', 422, { lines: 'Enter a delivery quantity.' });
+  { const unknownCodes = await refuseUnknownItemCodes(env, lines.map(l => l.itemCode)); if (unknownCodes) return unknownCodes; } // every item code must be in Products
   // The sales order line's discount carries through: each delivered line takes its share of it (owner, 11 Oct 2026).
   const soLines = new Map((await all<{ id: string; qty: number; delivered_qty: number; discount_sen: number }>(env,
     'SELECT id, qty, delivered_qty, discount_sen FROM sales_order_lines WHERE sales_order_id = ?', soId)).map(r => [r.id, { ...r }]));

@@ -1,4 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
+import { refuseUnknownItemCodes } from '../../_lib/products';
 import { requireSession } from '../../_lib/auth';
 import { normalizeLines, nextStatus, toSoHeaderPayload, toSoLinePayload, type SoHeaderRow, type SoLineRow } from '../../_lib/sales-orders';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
@@ -91,6 +92,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b.lines !== undefined) {
     const lines = normalizeLines(b.lines);
     if (!lines.length) return fail('VALIDATION', 'A sales order needs at least one line.', 422, { lines: 'Add at least one line.' });
+    { const unknownCodes = await refuseUnknownItemCodes(env, lines.map(l => l.itemCode)); if (unknownCodes) return unknownCodes; } // every item code must be in Products
     await run(env, 'DELETE FROM sales_order_lines WHERE sales_order_id = ?', id);
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
