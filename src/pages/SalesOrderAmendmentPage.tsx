@@ -24,6 +24,7 @@ import { statusLabel } from '../lib/status';
 type Status = 'REQUESTED' | 'APPROVED' | 'APPLIED' | 'REJECTED' | 'CANCELLED';
 const FILTERS: (Status | 'all')[] = ['all', 'REQUESTED', 'APPROVED', 'APPLIED', 'REJECTED', 'CANCELLED'];
 
+const ACTION_LABEL: Record<AmdLine['action'], string> = { CHANGE: 'Changed', ADD: 'Added', REMOVE: 'Removed' };
 interface AmdLine { id?: string; salesOrderLineId: string; action: 'CHANGE' | 'ADD' | 'REMOVE'; itemCode: string; description: string; uom: string; oldQty: number | null; oldUnitPriceSen: number | null; newQty: number; newUnitPriceSen: number }
 interface Amd { id: string; amendmentNo: string; salesOrderId: string; soDocNo: string; customerName: string; status: Status; reason: string; appliedAt: string; lines?: AmdLine[] }
 interface Payload { data: Amd[]; generatedAt: string }
@@ -189,7 +190,7 @@ function NewDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[
 /* ---------- view ---------- */
 const lineColumns: Column<AmdLine>[] = [
   { key: 'item', label: 'Item', value: l => l.description, sub: l => <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{l.itemCode}</span>, text: l => `${l.description} ${l.itemCode}` },
-  { key: 'action', label: 'Change', value: l => l.action, filter: false, render: l => <span className={cx('text-[12px] font-semibold', l.action === 'REMOVE' ? TONE.critical.text : l.action === 'ADD' ? TONE.success.text : TONE.info.text)}>{l.action}</span> },
+  { key: 'action', label: 'Change', value: l => ACTION_LABEL[l.action], filter: false, render: l => <span className={cx('text-[12px] font-semibold', l.action === 'REMOVE' ? TONE.critical.text : l.action === 'ADD' ? TONE.success.text : TONE.info.text)}>{ACTION_LABEL[l.action]}</span> },
   { key: 'from', label: 'From', align: 'right', sortable: false, filter: false, value: l => l.oldQty != null ? `${l.oldQty} × ${rm(l.oldUnitPriceSen ?? 0)}` : null, render: l => <span className="tabular-nums text-[12.5px] text-muted-ink">{l.oldQty != null ? `${l.oldQty} × ${rm(l.oldUnitPriceSen ?? 0)}` : '—'}</span> },
   { key: 'to', label: 'To', align: 'right', sortable: false, filter: false, value: l => l.action === 'REMOVE' ? null : `${l.newQty} × ${rm(l.newUnitPriceSen)}`, render: l => <span className="tabular-nums text-[12.5px]">{l.action === 'REMOVE' ? '—' : `${l.newQty} × ${rm(l.newUnitPriceSen)}`}</span> },
 ];

@@ -24,7 +24,7 @@ type Status = 'SENT' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'CANCELLED';
 const FILTERS: (Status | 'all')[] = ['all', 'SENT', 'PARTIALLY_PAID', 'PAID', 'OVERDUE', 'CANCELLED'];
 
 interface SiLine { itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; lineTotalSen: number }
-interface Si { id: string; invoiceNumber: string; doNumber: string; soDocNo: string; customerName: string; invoiceDate: string; dueDate: string; status: Status; totalSen: number; paidSen: number; outstandingSen: number; notes: string; lines?: SiLine[] }
+interface Si { id: string; invoiceNumber: string; doNumber: string; soDocNo: string; customerName: string; invoiceDate: string; dueDate: string; status: Status; subtotalSen?: number; taxSen?: number; totalSen: number; paidSen: number; outstandingSen: number; notes: string; lines?: SiLine[] }
 interface Payload { data: Si[]; generatedAt: string }
 interface DoLine { itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; lineTotalSen: number }
 interface OpenDo { id: string; doNumber: string; customerName: string; status: string; lines?: DoLine[] }
@@ -213,6 +213,10 @@ function ViewDrawer({ si, canWrite, onClose, onAct }: { si: Si; canWrite: boolea
             empty={{ title: 'No lines on this invoice.' }} />
         </div>
         <div className="flex flex-col gap-1.5 items-end">
+          {!!si.taxSen && <>
+            <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Subtotal</span><span className="tabular-nums w-[120px] text-right">{rm(si.subtotalSen ?? si.totalSen - si.taxSen)}</span></div>
+            <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Tax</span><span className="tabular-nums w-[120px] text-right">{rm(si.taxSen)}</span></div>
+          </>}
           <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Total</span><span className="tabular-nums w-[120px] text-right">{rm(si.totalSen)}</span></div>
           <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Received</span><span className="tabular-nums w-[120px] text-right">{rm(si.paidSen)}</span></div>
           <div className="flex gap-8 text-[15px] font-semibold"><span>Outstanding</span><span className="tabular-nums w-[120px] text-right">{rm(si.outstandingSen)}</span></div>

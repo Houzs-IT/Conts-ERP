@@ -183,7 +183,7 @@ function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onC
 
 function SettleDrawer({ cn, canWrite, onClose, onAct }: { cn: Cn; canWrite: boolean; onClose: () => void; onAct: (c: Cn, patch: Record<string, unknown>, optimistic: Partial<Cn>, title: string) => void }) {
   const { record, loading: linesLoading, error: linesError } = useRecord<Cn>('consignment-notes', cn.id);
-  const lines = record?.lines ?? cn.lines ?? [];
+  const lines = cn.lines ?? record?.lines ?? [];
   const [qty, setQty] = useState<{ sold: number | null; returned: number | null }[]>(lines.map(l => ({ sold: l.qtySold, returned: l.qtyReturned })));
   useEffect(() => { if (record?.lines) setQty(record.lines.map(l => ({ sold: l.qtySold, returned: l.qtyReturned }))); }, [record]);
   const editable = canWrite && (cn.status === 'OPEN' || cn.status === 'PARTIALLY_SETTLED') && !linesLoading && !linesError && qty.length === lines.length;

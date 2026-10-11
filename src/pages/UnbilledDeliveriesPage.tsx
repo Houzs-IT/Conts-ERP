@@ -22,7 +22,7 @@ const FALLBACK: Payload = {
 
 function ageDays(iso: string): number {
   const d = new Date(iso + 'T00:00:00'); if (Number.isNaN(d.getTime())) return 0;
-  return Math.max(0, Math.round((Date.now() - d.getTime()) / 86400000));
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
 }
 
 export default function UnbilledDeliveriesPage() {
