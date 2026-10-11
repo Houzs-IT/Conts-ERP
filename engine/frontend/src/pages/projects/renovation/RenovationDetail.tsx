@@ -24,6 +24,7 @@ import { simpleApi, type ProjectDetailV2 } from "./simpleApi";
 import { FlowPanel } from "./FlowPanel";
 import { ContractCard, DesignCard, KeyCard, PeopleCard } from "./ProjectRecords";
 import { SiteTasksPanel } from "./SiteTasksPanel";
+import { ProjectInfoCard } from "./ProjectInfoCard";
 
 type Skipping = { kind: "stage"; key: StageKey; label: string } | { kind: "item"; id: number; label: string } | { kind: "task"; id: number; label: string };
 
@@ -113,6 +114,7 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
           </details>
         </div>
         <aside className="space-y-4 min-w-0">
+          <ProjectInfoCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <ContractCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <PeopleCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
           <KeyCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
@@ -155,7 +157,7 @@ function SummaryStrip({ d }: { d: ProjectDetailV2 }) {
   );
   const handover = d.handover?.signed_at ?? d.project.handed_over_at;
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 rounded-lg border border-border bg-surface p-3 mb-3">
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 rounded-lg border border-border bg-surface p-3 mb-3">
       {cell("Status", <span className={d.hold ? "font-semibold text-err" : ""}>{[d.hold ? HOLD_FLAG_LABEL[d.hold.flag] : null, d.flow.currentLabel].filter(Boolean).join(" · ")}</span>)}
       {cell("Contract total", d.financeHidden ? "Hidden" : d.so ? money(d.money.contractSen) : "No SO yet")}
       {cell("Received", d.financeHidden ? "Hidden" : !d.so ? "-" : d.money.receivedSen == null ? "Not available" : `${money(d.money.receivedSen)}${d.money.receivedPct != null ? ` (${d.money.receivedPct}%)` : ""}`)}
@@ -163,6 +165,7 @@ function SummaryStrip({ d }: { d: ProjectDetailV2 }) {
       {cell("Reno items", d.so ? <Pill tone={supplyTone(d.conditions.renoItem?.condition)}>{supplyLabel(d.conditions.renoItem?.condition)}</Pill> : "-")}
       {cell("Key holder", d.keyHolder?.name ?? "-")}
       {cell(handover ? "Handed over" : "Planned handover", shortDate(handover ?? d.project.planned_handover_date))}
+      {cell("SLA due", !d.sla ? "-" : d.sla.overdue ? <Pill tone="err">{shortDate(d.sla.dueDate)} passed</Pill> : shortDate(d.sla.dueDate))}
     </div>
   );
 }

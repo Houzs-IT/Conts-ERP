@@ -90,6 +90,17 @@ export interface ProjectRow {
   hold_at?: string | null;
   source?: string | null;
   source_ref?: string | null;
+  /* new-project form (migration 0087) */
+  start_date?: string | null;
+  state?: string | null;
+  building_id?: number | null;
+  property_type_id?: number | null;
+  property_type_name?: string | null;
+  bedrooms?: number | null;
+  bathrooms?: number | null;
+  built_up_sqft?: number | null;
+  brand_id?: number | null;
+  brand?: string | null;
 }
 
 export const PROJECT_COLS =
@@ -100,14 +111,17 @@ export const PROJECT_COLS =
   "p.sales_person_id::int AS sales_person_id, sp.name AS sales_person_name, p.designer_person_id::int AS designer_person_id, " +
   "dp.name AS designer_person_name, p.reno_pic_person_id::int AS reno_pic_person_id, rp.name AS reno_pic_person_name, " +
   "p.flow_manual_step, p.flow_manual_base_step, p.flow_manual_reason, p.flow_manual_by::int AS flow_manual_by, p.flow_manual_at, " +
-  "p.hold_flag, p.hold_note, p.hold_at, p.source, p.source_ref";
+  "p.hold_flag, p.hold_note, p.hold_at, p.source, p.source_ref, " +
+  "p.start_date, p.state, p.building_id::int AS building_id, p.property_type_id::int AS property_type_id, " +
+  "(SELECT pt.name FROM project_property_types pt WHERE pt.id = p.property_type_id) AS property_type_name, " +
+  "p.bedrooms::int AS bedrooms, p.bathrooms::int AS bathrooms, p.built_up_sqft::float8 AS built_up_sqft, p.brand_id::int AS brand_id, p.brand";
 
 export const PROJECT_PEOPLE_JOINS =
   "LEFT JOIN project_people sp ON sp.id = p.sales_person_id " +
   "LEFT JOIN project_people dp ON dp.id = p.designer_person_id " +
   "LEFT JOIN project_people rp ON rp.id = p.reno_pic_person_id";
 
-export interface TypeRow { id: number; slug: string; name: string; stage_keys: string[]; checklist_template_id: number | null }
+export interface TypeRow { id: number; slug: string; name: string; stage_keys: string[]; checklist_template_id: number | null; sla_days?: number | null }
 
 export interface ChecklistRow {
   id: number;
@@ -249,7 +263,7 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
   const companyIds = [...new Set(projects.map((p) => Number(p.company_id)))];
   const [types, stages, checklist, sos, tasks, taskLines, handovers, defects, flowSteps, keyHolders, assignees] = await Promise.all([
     typeIds.length
-      ? rows<TypeRow>(db, `SELECT id::int AS id, slug, name, to_json(stage_keys) AS stage_keys, checklist_template_id::int AS checklist_template_id FROM project_types WHERE id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)`, ids(typeIds))
+      ? rows<TypeRow>(db, `SELECT id::int AS id, slug, name, to_json(stage_keys) AS stage_keys, checklist_template_id::int AS checklist_template_id, sla_days::int AS sla_days FROM project_types WHERE id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)`, ids(typeIds))
       : Promise.resolve([] as TypeRow[]),
     rows<StoredStage & { project_id: number }>(db,
       `SELECT project_id::int AS project_id, stage_key, state, skip_reason, skipped_by::int AS skipped_by, skipped_at, started_at, started_by::int AS started_by, done_at, done_by::int AS done_by,

@@ -1,7 +1,7 @@
 /* Renovation project board (owner decisions 11 Oct 2026, replaces the Notion
    "Project" table): Building, Project, SO no., Sales, Contract total, Received
    (%), Status (step + IN DEFECT / ON HOLD), Furniture and Reno-item arrival, Key
-   holder, VO and Handover date. Everything is read from its own module: money
+   holder, VO, Handover date and SLA due date (start + project type SLA days). Everything is read from its own module: money
    from the sales order, arrival from POs and receipts, the key from the key log.
    Table on desktop, cards on a phone. */
 
@@ -39,6 +39,13 @@ function StatusCell({ r }: { r: BoardRowV2 }) {
       <span className="whitespace-nowrap" title={r.step.manual ? "Set by hand" : undefined}>{r.step.index + 1}. {r.step.label}{r.step.manual ? " *" : ""}</span>
     </span>
   );
+}
+
+/** SLA due date (start + project type SLA days); red once passed before handover. */
+export function SlaCell({ r }: { r: Pick<BoardRowV2, "slaDueDate" | "slaOverdue" | "handoverDate"> }) {
+  if (!r.slaDueDate) return <>-</>;
+  if (r.slaOverdue) return <Pill tone="err" title="SLA due date passed">{shortDate(r.slaDueDate)} passed</Pill>;
+  return <span className={r.handoverDate ? "text-ink-secondary" : undefined}>{shortDate(r.slaDueDate)}</span>;
 }
 
 export function RenovationBoard({ canCreate }: { canCreate: boolean }) {
@@ -97,6 +104,7 @@ export function RenovationBoard({ canCreate }: { canCreate: boolean }) {
                   <th className="px-3 py-2">Key holder</th>
                   <th className="px-3 py-2">VO</th>
                   <th className="px-3 py-2">Handover</th>
+                  <th className="px-3 py-2">SLA due</th>
                 </tr>
               </thead>
               <tbody>
@@ -117,6 +125,7 @@ export function RenovationBoard({ canCreate }: { canCreate: boolean }) {
                     <td className="px-3 py-2 whitespace-nowrap">{r.keyHolder?.name ?? "-"}</td>
                     <td className="px-3 py-2">{r.vo ? (r.vo.has ? `Yes (${r.vo.count})` : "No") : "-"}</td>
                     <td className="px-3 py-2 whitespace-nowrap">{r.handoverDate ? shortDate(r.handoverDate) : r.plannedHandoverDate ? <span className="text-ink-secondary">plan {shortDate(r.plannedHandoverDate)}</span> : "-"}</td>
+                    <td className="px-3 py-2 whitespace-nowrap"><SlaCell r={r} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -142,6 +151,7 @@ export function RenovationBoard({ canCreate }: { canCreate: boolean }) {
                     <div><dt className="text-ink-secondary">Received</dt><dd className="text-ink tabular-nums">{received(r)}</dd></div>
                     <div><dt className="text-ink-secondary">Key holder</dt><dd className="text-ink">{r.keyHolder?.name ?? "-"}</dd></div>
                     <div><dt className="text-ink-secondary">Handover</dt><dd className="text-ink">{r.handoverDate ? shortDate(r.handoverDate) : "-"}</dd></div>
+                    <div><dt className="text-ink-secondary">SLA due</dt><dd className="text-ink"><SlaCell r={r} /></dd></div>
                   </dl>
                   <div className="mt-2 flex flex-wrap gap-1">
                     {r.soDocNo && <Pill tone={supplyTone(r.furnitureArrival)}>Furniture: {supplyLabel(r.furnitureArrival)}</Pill>}

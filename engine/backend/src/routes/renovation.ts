@@ -22,7 +22,8 @@ import {
 import { computeProjectView, stageCompletionBlockers, type ProjectView } from "../services/renovation/view";
 import { manualSkipRefusal } from "../services/renovation/stages";
 import { GATE_REASON_TEXT } from "../services/renovation/gate";
-import { createRenovationProject, validateCreate, type CreateRenovationInput } from "../services/renovation/create";
+import { CREATE_REFUSAL_TEXT, createRenovationProject, loadCreateRefs, validateCreate, type CreateRenovationInput } from "../services/renovation/create";
+import { cleanSlaDays } from "../services/renovation/projectSettings";
 import { plannedDatesRefusal, isInternalTradeCode, tradeTaskStatus } from "../services/renovation/tradeTasks";
 import { SUPPLY_CONDITION_LABEL } from "../services/renovation/conditions";
 import { groupEvidence, type EvidencePhoto } from "../services/renovation/pod";
@@ -95,7 +96,7 @@ app.get("/mode", requirePageAccess("projects.list"), async (c) => {
 
 app.get("/types", requirePageAccess("projects.list"), async (c) => {
   const res = await db(c).prepare(
-    `SELECT id::int AS id, slug, name, to_json(stage_keys) AS stage_keys, checklist_template_id::int AS checklist_template_id, sort_order, active FROM project_types WHERE true${coSql(c)} ORDER BY sort_order, name`,
+    `SELECT id::int AS id, slug, name, to_json(stage_keys) AS stage_keys, checklist_template_id::int AS checklist_template_id, sort_order, active, sla_days::int AS sla_days FROM project_types WHERE true${coSql(c)} ORDER BY sort_order, name`,
   ).bind().all();
   return c.json({ data: res.results ?? [], stages: RENO_STAGES.map((k) => ({ key: k, label: STAGE_LABEL[k] })) });
 });
@@ -110,29 +111,33 @@ function cleanStageKeys(x: unknown): string[] | null {
 app.post("/types", requirePermission("projects.manage"), async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
-  const b = await c.req.json<{ name?: string; slug?: string; stageKeys?: unknown; sortOrder?: number }>();
+  const b = await c.req.json<{ name?: string; slug?: string; stageKeys?: unknown; sortOrder?: number; slaDays?: unknown }>();
   const name = String(b.name ?? "").trim();
   const keys = cleanStageKeys(b.stageKeys);
   if (!name || !keys) return c.json({ error: "name_and_stages_required" }, 400);
+  const sla = cleanSlaDays(b.slaDays);
+  if (!sla.ok) return c.json(sla, 400);
   const slug = String(b.slug ?? name).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
   const row = await db(c).prepare(
-    `INSERT INTO project_types (slug, name, stage_keys, sort_order, company_id) VALUES (?, ?, ?::text[], ?, ?) RETURNING id`,
-  ).bind(slug, name, `{${keys.join(",")}}`, Number(b.sortOrder ?? 100), co.companyId).first<{ id: number }>();
+    `INSERT INTO project_types (slug, name, stage_keys, sort_order, company_id, sla_days) VALUES (?, ?, ?::text[], ?, ?, ?) RETURNING id`,
+  ).bind(slug, name, `{${keys.join(",")}}`, Number(b.sortOrder ?? 100), co.companyId, sla.value).first<{ id: number }>();
   return c.json({ id: row?.id }, 201);
 });
 
 app.patch("/types/:id", requirePermission("projects.manage"), async (c) => {
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
-  const b = await c.req.json<{ name?: string; stageKeys?: unknown; active?: boolean; sortOrder?: number }>();
+  const b = await c.req.json<{ name?: string; stageKeys?: unknown; active?: boolean; sortOrder?: number; slaDays?: unknown }>();
   const keys = b.stageKeys !== undefined ? cleanStageKeys(b.stageKeys) : undefined;
   if (keys === null) return c.json({ error: "invalid_stages" }, 400);
+  const sla = cleanSlaDays(b.slaDays);
+  if (!sla.ok) return c.json(sla, 400);
   const res = await db(c).prepare(
     `UPDATE project_types SET name = coalesce(?, name), stage_keys = coalesce(?::text[], stage_keys), active = coalesce(?, active),
-            sort_order = coalesce(?, sort_order), updated_at = now()
+            sort_order = coalesce(?, sort_order), sla_days = CASE WHEN ? THEN ?::int ELSE sla_days END, updated_at = now()
       WHERE id = ?${coSql(c)}`,
   ).bind(b.name?.trim() || null, keys ? `{${keys.join(",")}}` : null, typeof b.active === "boolean" ? b.active : null,
-    b.sortOrder ?? null, id).run() as { meta?: { changes?: number } };
+    b.sortOrder ?? null, "slaDays" in b, sla.value, id).run() as { meta?: { changes?: number } };
   if (!res.meta?.changes) return c.json({ error: "not_found" }, 404);
   return c.json({ ok: true });
 });
@@ -181,9 +186,20 @@ app.post("/", requirePermission("projects.write"), async (c) => {
   if (!co.ok) return c.json(co.refusal, 409);
   const body = await c.req.json<Partial<CreateRenovationInput>>().catch(() => ({} as Partial<CreateRenovationInput>));
   const refusal = validateCreate(body);
-  if (refusal) return c.json({ error: refusal }, 400);
+  if (refusal) return c.json({ error: refusal, message: CREATE_REFUSAL_TEXT[refusal] }, 400);
+  const refs = await loadCreateRefs(db(c), body, co.companyId);
+  if (!refs.building) return c.json({ error: "building_required", message: CREATE_REFUSAL_TEXT.building_required }, 400);
+  if (!refs.brand) return c.json({ error: "brand_required", message: CREATE_REFUSAL_TEXT.brand_required }, 400);
+  if (body.propertyTypeId && !refs.propertyTypeId) return c.json({ error: "property_type_invalid", message: CREATE_REFUSAL_TEXT.property_type_invalid }, 400);
+  const people = [body.salesPersonId, body.designerPersonId, body.renoPicPersonId].filter((x) => x != null && x !== ("" as unknown)).map(Number);
+  if (people.length) {
+    const found = await db(c).prepare(
+      `SELECT count(DISTINCT id)::int AS n FROM project_people WHERE company_id = ? AND id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)`,
+    ).bind(co.companyId, JSON.stringify(people.map(String))).first<{ n: number }>();
+    if (Number(found?.n ?? 0) !== new Set(people).size) return c.json({ error: "person_invalid", message: CREATE_REFUSAL_TEXT.person_invalid }, 400);
+  }
   const created = await createRenovationProject(db(c), body as CreateRenovationInput, userId(c), co.companyId);
-  if (!created) return c.json({ error: "type_not_found" }, 400);
+  if (!created) return c.json({ error: "type_not_found", message: "That project type does not exist or is switched off." }, 400);
   return c.json(created, 201);
 });
 
@@ -442,6 +458,7 @@ app.get("/:id", requirePageAccess("projects.list"), failClosed(async (c) => {
     money: hideMoney ? { contractSen: null, receivedSen: null, receivedPct: null } : v.money,
     keyHolder: v.keyHolder,
     vo: v.vo,
+    sla: v.sla,
     people: {
       sales: { id: f.project.sales_person_id ?? null, name: f.project.sales_person_name ?? null },
       designer: { id: f.project.designer_person_id ?? null, name: f.project.designer_person_name ?? null },
@@ -540,22 +557,55 @@ app.patch("/:id/stages/:key", requirePermission("projects.write"), async (c) => 
 app.patch("/:id", requirePermission("projects.write"), async (c) => {
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
-  if (!(await projectInCompany(c, id))) return c.json({ error: "not_found" }, 404);
+  const proj = await db(c).prepare(`SELECT company_id::int AS company_id FROM projects WHERE id = ? AND project_kind = 'renovation'${coSql(c)}`).bind(id).first<{ company_id: number }>();
+  if (!proj) return c.json({ error: "not_found" }, 404);
+  const co = Number(proj.company_id);
   const b = await c.req.json<Record<string, unknown>>();
   const allowed: Record<string, string> = {
     name: "name", building: "building", unitNo: "unit_no", siteAddress: "site_address", customerName: "customer_name",
     customerPhone: "customer_phone", customerEmail: "customer_email", salespersonName: "salesperson_name", notes: "notes",
-    plannedHandoverDate: "planned_handover_date",
+    plannedHandoverDate: "planned_handover_date", state: "state",
   };
   const sets: string[] = [];
   const args: unknown[] = [];
   for (const [k, col] of Object.entries(allowed)) {
     if (!(k in b)) continue;
-    const val = b[k] == null || b[k] === "" ? null : String(b[k]);
-    if (col === "name" && !val) return c.json({ error: "name_required" }, 400);
+    const val = b[k] == null || b[k] === "" ? null : String(b[k]).trim();
+    if (col === "name" && !val) return c.json({ error: "name_required", message: "A project needs a name." }, 400);
     if (col === "planned_handover_date" && val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) return c.json({ error: "date_invalid" }, 400);
     sets.push(col === "planned_handover_date" ? `${col} = ?::date` : `${col} = ?`);
     args.push(val);
+  }
+  // migration 0087: the new-project form's optional fields; each id must be this company's
+  const blankOr = (v: unknown) => (v == null || v === "" ? null : Number(v));
+  for (const [k, col, lo, hi] of [["bedrooms", "bedrooms", 0, 50], ["bathrooms", "bathrooms", 0, 50]] as const) {
+    if (!(k in b)) continue;
+    const n = blankOr(b[k]);
+    if (n != null && !(Number.isInteger(n) && n >= lo && n <= hi)) return c.json({ error: "rooms_invalid", message: "Bedrooms and bathrooms are whole numbers from 0 to 50." }, 400);
+    sets.push(`${col} = ?::smallint`);
+    args.push(n);
+  }
+  if ("builtUpSqft" in b) {
+    const n = blankOr(b.builtUpSqft);
+    if (n != null && !(Number.isFinite(n) && n > 0 && n < 1e8)) return c.json({ error: "size_invalid", message: "Built-up size is a number of square feet above 0." }, 400);
+    sets.push(`built_up_sqft = ?::numeric`);
+    args.push(n);
+  }
+  for (const [k, col, table] of [["propertyTypeId", "property_type_id", "project_property_types"], ["brandId", "brand_id", "project_brands"], ["buildingId", "building_id", "project_buildings"]] as const) {
+    if (!(k in b)) continue;
+    const n = blankOr(b[k]);
+    if (n != null) {
+      if (!Number.isInteger(n) || n <= 0) return c.json({ error: `${col}_invalid` }, 400);
+      const ok = await db(c).prepare(`SELECT name FROM ${table} WHERE id = ? AND company_id = ?`).bind(n, co).first<{ name: string }>();
+      if (!ok) return c.json({ error: `${col}_invalid`, message: "Pick it from the list." }, 400);
+      // the text columns follow the links (the board and the Notion importer read them)
+      if (col === "building_id" && !("building" in b)) { sets.push("building = ?"); args.push(ok.name); }
+      if (col === "brand_id") { sets.push("brand = ?"); args.push(ok.name); }
+    } else if (col === "brand_id") {
+      return c.json({ error: "brand_required", message: "A project needs a brand." }, 400);
+    }
+    sets.push(`${col} = ?::bigint`);
+    args.push(n);
   }
   if (sets.length === 0) return c.json({ ok: true });
   await db(c).prepare(`UPDATE projects SET ${sets.join(", ")}, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') WHERE id = ?`)

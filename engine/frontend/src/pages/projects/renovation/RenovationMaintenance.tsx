@@ -12,7 +12,7 @@ import { simpleApi, type FlowStepRow, type Person, type TaskCategoryRow } from "
 import { errorText } from "./renovationModel";
 import { inputClass } from "./renovationUi";
 
-function Box({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
+export function Box({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
   return (
     <section className="rounded-md border border-border bg-surface p-4 sm:p-6 min-w-0">
       <h2 className="text-[10px] font-semibold uppercase tracking-brand text-accent">{title}</h2>
@@ -52,7 +52,7 @@ export function PeopleManager() {
   }
 
   return (
-    <Box title="People" hint="Sales, designers, renovation PICs, admin, boss and site crew / contractors. Every person field on a project picks from this list. Switch a person off instead of deleting them, so old records keep their name.">
+    <Box title="People" hint="Sales, designers, renovation PICs, admin, boss and in-house site crew. Subcontractors go under Contractors. Every person field on a project picks from this list. Switch a person off instead of deleting them, so old records keep their name.">
       {error && <p role="alert" className="mb-2 text-sm text-err">{error}</p>}
       <div className="mb-3 grid grid-cols-1 gap-2">
         <input className={inputClass} placeholder="Name, e.g. INHOUSE - ZAINAL" value={name} onChange={(e) => setName(e.target.value)} aria-label="New person name" />

@@ -1,5 +1,6 @@
 import { ProjectTypeManager } from "./projects/renovation/ProjectTypeManager";
 import { FlowStepsManager, PeopleManager, TaskCategoriesManager } from "./projects/renovation/RenovationMaintenance";
+import { BuildingsManager, ContractorsManager, PropertyTypesManager } from "./projects/renovation/SettingsManagers";
 import { useProjectsMode } from "./projects/renovation/RenovationRoutes";
 import { SectionStageSelect } from "./projects/renovation/SectionStageSelect";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -107,9 +108,11 @@ export function ProjectMaintenanceView() {
   // section AND must NOT fire the fetch (which would 403). Fail-open when the
   // flag is absent — the backend still enforces.
   const canProjectFinance = !!user?.project_finance_viewer;
-  // Renovation mode: project types and the stage checklist templates; the
-  // exhibition pickers (event types, organizers, venues, contractors, cost
-  // rates) are hidden, not deleted. Brands stay (letterheads).
+  // Renovation mode (owner 11 Oct 2026) shows ONLY: brands, contractors, people,
+  // buildings, property types, project types with SLA days, site task categories
+  // and the six main steps. The exhibition pickers (event types, organizers,
+  // venues, booth contractors, cost rates) and the stage checklist templates are
+  // hidden, not deleted; the templates still clone into every new project.
   const mode = useProjectsMode();
   if (mode === "renovation") {
     return (
@@ -117,21 +120,21 @@ export function ProjectMaintenanceView() {
         <PageHeader
           eyebrow="Operations · Projects"
           title="Project Maintenance"
-          description="People, the main steps and site task categories; project types, brands, and the stage checklist that clones into every new project."
+          description="The lists behind a renovation project: brands, contractors, people, buildings, property types, project types and their SLA days, site task categories and the main steps."
         />
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <PeopleManager />
           <div className="space-y-6 min-w-0">
+            <BuildingsManager />
+            <ProjectTypeManager />
+            <PropertyTypesManager />
+            <BrandManager />
+          </div>
+          <div className="space-y-6 min-w-0">
+            <PeopleManager />
+            <ContractorsManager />
             <FlowStepsManager />
             <TaskCategoriesManager />
           </div>
-        </div>
-        <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <ProjectTypeManager />
-          <BrandManager />
-        </div>
-        <div className="mt-6">
-          <ChecklistManager />
         </div>
       </div>
     );

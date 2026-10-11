@@ -40,6 +40,11 @@ export interface BoardRowV2 {
   archived: boolean;
   source: string;
   sourceRef: string | null;
+  /** migration 0087: SLA due date (start + type SLA days), flagged when passed before handover */
+  slaDueDate: string | null;
+  slaOverdue: boolean;
+  typeName: string | null;
+  state: string | null;
 }
 
 export function boardRowOf(f: ProjectFacts, v: ProjectView, opts: { hideMoney: boolean }): BoardRowV2 {
@@ -74,5 +79,9 @@ export function boardRowOf(f: ProjectFacts, v: ProjectView, opts: { hideMoney: b
     archived: !!p.archived_at,
     source: p.source ?? "app",
     sourceRef: p.source_ref ?? null,
+    slaDueDate: v.sla?.dueDate ?? null,
+    slaOverdue: !!v.sla?.overdue,
+    typeName: f.type?.name ?? null,
+    state: p.state ?? null,
   };
 }

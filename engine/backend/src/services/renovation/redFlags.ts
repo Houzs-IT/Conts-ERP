@@ -12,7 +12,8 @@ export type RedFlagCode =
   | "billing_unavailable"
   | "snag_overdue"
   | "handover_overdue"
-  | "gate_blocked_works";
+  | "gate_blocked_works"
+  | "sla_overdue";
 
 export interface RedFlag {
   code: RedFlagCode;
@@ -33,6 +34,8 @@ export interface RedFlagInput {
   gateOpen: boolean;
   /** What is missing when works start early (owner 11 Oct: the gate warns, it never blocks). */
   gateMessages?: readonly string[];
+  /** the SLA due date, when it has passed and the project is not handed over */
+  slaOverdueSince?: string | null;
 }
 
 export function redFlags(i: RedFlagInput): RedFlag[] {
@@ -56,5 +59,6 @@ export function redFlags(i: RedFlagInput): RedFlag[] {
     const missing = (i.gateMessages ?? []).join("; ");
     flags.push({ code: "gate_blocked_works", text: missing ? `Works started before: ${missing}` : "Works started before the project was ready" });
   }
+  if (i.slaOverdueSince) flags.push({ code: "sla_overdue", text: `SLA due date passed (${i.slaOverdueSince})` });
   return flags;
 }

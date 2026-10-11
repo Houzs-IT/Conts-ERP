@@ -12,6 +12,7 @@ import { tradeTaskStatus, type TaskStatus } from "./tradeTasks";
 import { isFlowStepKey, type HoldFlag, type StageKey } from "../../scm/shared/renovation-stages";
 import { derivedFlowStep, effectiveFlowStep, type FlowFacts, type FlowView } from "./flow";
 import type { KeyHolder, VoSummary } from "./load";
+import { slaOf, type SlaView } from "./projectSettings";
 
 export interface TaskView extends TaskRow {
   status: TaskStatus;
@@ -37,6 +38,8 @@ export interface ProjectView {
   money: { contractSen: number | null; receivedSen: number | null; receivedPct: number | null };
   keyHolder: KeyHolder | null;
   vo: VoSummary | null;
+  /** SLA due date = start + the type's SLA days (migration 0087); null when the type has none */
+  sla: SlaView | null;
 }
 
 /** What the six flow steps read from the modules. */
@@ -107,6 +110,7 @@ export function computeProjectView(f: ProjectFacts, today: string): ProjectView 
   const flow = effectiveFlowStep(flowSteps, derived, manualStep
     ? { step: manualStep, base: isFlowStepKey(f.project.flow_manual_base_step) ? f.project.flow_manual_base_step : null }
     : null);
+  const sla = slaOf({ startDate: f.project.start_date, createdAt: f.project.created_at, slaDays: f.type?.sla_days, handedOver, today });
   const holdFlag = f.project.hold_flag === "in_defect" || f.project.hold_flag === "on_hold" ? f.project.hold_flag : null;
   return {
     flow,
@@ -114,6 +118,7 @@ export function computeProjectView(f: ProjectFacts, today: string): ProjectView 
     money: moneyOf(f),
     keyHolder: f.keyHolder ?? null,
     vo: f.vo ?? null,
+    sla,
     stages,
     currentStage: currentStage(views),
     gate,
@@ -135,6 +140,7 @@ export function computeProjectView(f: ProjectFacts, today: string): ProjectView 
       handedOver,
       gateOpen: gate.open,
       gateMessages: gate.reasons.map((r) => GATE_REASON_TEXT[r]),
+      slaOverdueSince: sla?.overdue ? sla.dueDate : null,
     }),
   };
 }

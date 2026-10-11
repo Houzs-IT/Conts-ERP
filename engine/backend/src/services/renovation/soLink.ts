@@ -15,6 +15,7 @@
 import type { Db } from "./load";
 import { loadProjectRows, loadRenovationFacts } from "./load";
 import { onContractLinesChanged, writeCachedStage } from "./contractSync";
+import { autoProjectName } from "./projectSettings";
 import { createRenovationProject, type CreateRenovationInput } from "./create";
 
 export type LinkRefusal =
@@ -169,7 +170,7 @@ export async function createProjectFromSo(
   const refusal = linkRefusal(so, { projectCompanyId: companyId, projectProjectSo: null, projectId: -1 });
   if (refusal) return { ok: false, status: refusal === "so_not_found" ? 404 : 409, error: refusal, message: LINK_REFUSAL_TEXT[refusal] };
   const customer = (so!.customer_name || so!.debtor_name || "").trim();
-  const name = String(input.name ?? "").trim() || [so!.building, so!.unit_no, customer].map((x) => String(x ?? "").trim()).filter(Boolean).join(" ") || docNo;
+  const name = String(input.name ?? "").trim() || autoProjectName(so!.building, so!.unit_no, customer) || docNo;
   const body: CreateRenovationInput = {
     name, projectTypeId: input.projectTypeId, customerKind: "customer", customerName: customer || name,
     customerPhone: so!.phone, customerEmail: so!.email, building: so!.building || null, unitNo: so!.unit_no || null,

@@ -125,6 +125,9 @@ export interface ProjectDetail {
     id: number; code: string | null; name: string; customer_name: string | null; customer_phone: string | null; customer_kind: string | null;
     building: string | null; unit_no: string | null; site_address: string | null; planned_handover_date: string | null;
     handed_over_at: string | null; salesperson_name: string | null; notes: string | null;
+    /* migration 0087 */
+    start_date?: string | null; state?: string | null; building_id?: number | null; property_type_id?: number | null; property_type_name?: string | null;
+    bedrooms?: number | null; bathrooms?: number | null; built_up_sqft?: number | null; brand_id?: number | null; brand?: string | null; created_at?: string | null;
   };
   type: { id: number; name: string; stage_keys: string[] } | null;
   so: { doc_no: string; status: string; so_date: string | null; agent: string | null } | null;
@@ -174,7 +177,7 @@ export interface CalendarTask {
   assignees?: Array<{ id: number; name: string }>;
 }
 
-export interface ProjectType { id: number; slug: string; name: string; stage_keys: string[]; active: boolean; sort_order: number }
+export interface ProjectType { id: number; slug: string; name: string; stage_keys: string[]; active: boolean; sort_order: number; sla_days: number | null }
 
 export interface OpenLine {
   po_item_id: string;
@@ -195,8 +198,9 @@ export const renovationApi = {
   board: () => api.get<{ data: BoardRow[] }>(R),
   types: () => api.get<{ data: ProjectType[]; stages: Array<{ key: StageKey; label: string }> }>(`${R}/types`),
   createType: (b: { name: string; stageKeys: string[] }) => api.post<{ id: number }>(`${R}/types`, b),
-  patchType: (id: number, b: { name?: string; stageKeys?: string[]; active?: boolean }) => api.patch<{ ok: true }>(`${R}/types/${id}`, b),
-  create: (b: Record<string, unknown>) => api.post<{ id: number; code: string }>(R, b),
+  patchType: (id: number, b: { name?: string; stageKeys?: string[]; active?: boolean; slaDays?: number | null }) => api.patch<{ ok: true }>(`${R}/types/${id}`, b),
+  create: (b: Record<string, unknown>) => api.post<{ id: number; code: string; name: string }>(R, b),
+  patchProject: (id: number, b: Record<string, unknown>) => api.patch<{ ok: true }>(`${R}/${id}`, b),
   detail: (id: number) => api.get<ProjectDetail>(`${R}/${id}`),
   pod: (id: number) => api.get<PodView>(`${R}/${id}/pod`),
   startStage: (id: number, key: string) => api.post<{ ok: true }>(`${R}/${id}/stages/${key}/start`),

@@ -34,7 +34,10 @@ export interface ProjectDetailV2 extends Omit<ProjectDetail, "tasks"> {
   vo: { count: number; approved: number } | null;
   people: { sales: PersonRef; designer: PersonRef; renoPic: PersonRef };
   tasks: TaskViewV2[];
+  sla?: Sla | null;
 }
+
+export interface Sla { startDate: string; days: number; dueDate: string; daysLeft: number; overdue: boolean }
 
 export interface BoardRowV2 {
   id: number;
@@ -61,6 +64,10 @@ export interface BoardRowV2 {
   plannedHandoverDate: string | null;
   redFlagCount: number;
   archived: boolean;
+  /** migration 0087: start + type SLA days; flagged when passed before handover */
+  slaDueDate?: string | null;
+  slaOverdue?: boolean;
+  typeName?: string | null;
 }
 
 export interface Person {

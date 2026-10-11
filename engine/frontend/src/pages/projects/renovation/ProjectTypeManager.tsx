@@ -1,4 +1,5 @@
-/* Project types (Full renovation, Airbnb package, Carpentry only...): which of
+/* Project types (Full renovation, Airbnb package, Carpentry only, Design only...):
+   the SLA days (start date + SLA days = the project's SLA due date) and which of
    the 11 stages a project of that type runs. Design, handover and closed are
    always on. Lives in Project Maintenance in renovation mode. */
 
@@ -32,7 +33,7 @@ export function ProjectTypeManager() {
   return (
     <section className="rounded-md border border-border bg-surface p-6">
       <h2 className="text-[10px] font-semibold uppercase tracking-brand text-accent">Project types</h2>
-      <p className="mt-1 mb-4 text-[12px] text-ink-secondary">Which stages a project of each type goes through. A stage that is off is skipped for that type; design, handover and closed always run.</p>
+      <p className="mt-1 mb-4 text-[12px] text-ink-secondary">SLA days: a project is due that many days after it starts (shown on the board, flagged when passed). Stages: a stage that is off is skipped for that type; design, handover and closed always run.</p>
       {error && <p role="alert" className="mb-2 text-sm text-err">{error}</p>}
       <div className="space-y-4">
         {types.map((t) => <TypeRow key={t.id} t={t} onSave={(b) => run(() => renovationApi.patchType(t.id, b))} />)}
@@ -45,9 +46,12 @@ export function ProjectTypeManager() {
   );
 }
 
-function TypeRow({ t, onSave }: { t: ProjectType; onSave: (b: { stageKeys?: string[]; active?: boolean }) => void }) {
+function TypeRow({ t, onSave }: { t: ProjectType; onSave: (b: { stageKeys?: string[]; active?: boolean; slaDays?: number | null }) => void }) {
   const [keys, setKeys] = useState<string[]>(t.stage_keys);
+  const [sla, setSla] = useState(t.sla_days == null ? "" : String(t.sla_days));
   const dirty = keys.join(",") !== t.stage_keys.join(",");
+  const slaDirty = sla !== (t.sla_days == null ? "" : String(t.sla_days));
+  const slaValid = sla === "" || (/^\d+$/.test(sla) && Number(sla) >= 1 && Number(sla) <= 3650);
   return (
     <div className="rounded border border-border p-3">
       <div className="flex items-center justify-between gap-2">
@@ -56,6 +60,14 @@ function TypeRow({ t, onSave }: { t: ProjectType; onSave: (b: { stageKeys?: stri
           {dirty && <Button onClick={() => onSave({ stageKeys: keys })}>Save stages</Button>}
           <Button variant="ghost" onClick={() => onSave({ active: !t.active })}>{t.active ? "Deactivate" : "Activate"}</Button>
         </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-ink-secondary">SLA
+          <input className={inputClass + " w-20"} inputMode="numeric" value={sla} onChange={(e) => setSla(e.target.value.trim())} aria-label={`SLA days of ${t.name}`} />
+          days
+        </label>
+        {slaDirty && <Button variant="secondary" disabled={!slaValid} onClick={() => onSave({ slaDays: sla === "" ? null : Number(sla) })}>Save SLA</Button>}
+        {!slaValid && <span className="text-xs text-err">1 to 3650 days</span>}
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
         {RENO_STAGES.map((k) => {

@@ -28,6 +28,7 @@ import { createProjectFromSo, linkSoToProject, unlinkSoFromProject } from "../se
 import { manualTaskRow, plannedDatesRefusal } from "../services/renovation/tradeTasks";
 import { writeCachedStage } from "../services/renovation/contractSync";
 import { SUPPLY_CONDITION_LABEL } from "../services/renovation/conditions";
+import renovationSettings from "./renovationSettings";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -77,6 +78,9 @@ async function loadViews(c: Ctx, opts: { projectId?: number; includeArchived?: b
     return { f, v: computeProjectView(f, today) };
   });
 }
+
+// ── Settings: buildings, property types, contractors, brands (migration 0087) ──
+app.route("/", renovationSettings);
 
 // ── Board rows (read API) ───────────────────────────────────────────────
 
