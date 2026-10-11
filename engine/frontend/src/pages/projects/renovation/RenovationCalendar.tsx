@@ -20,11 +20,19 @@ function todayMyt(): string {
   return new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
 }
 
+/** Who does the task: the subcontractor, or the in-house crew picked from the people list. */
+export function doerText(t: Pick<CalendarTask, "fulfilment_kind" | "supplier_name" | "assignees">): string {
+  const crew = (t.assignees ?? []).map((a) => a.name).join(", ");
+  if (t.fulfilment_kind === "internal") return crew ? `In-house: ${crew}` : "In-house (no crew yet)";
+  return (t.supplier_name ?? "No subcontractor yet") + (crew ? ` · ${crew}` : "");
+}
+
 export function groupByContractor(tasks: readonly CalendarTask[]): Array<{ key: string; name: string; tasks: CalendarTask[] }> {
   const m = new Map<string, { key: string; name: string; tasks: CalendarTask[] }>();
   for (const t of tasks) {
-    const key = t.fulfilment_kind === "internal" ? "__internal" : (t.supplier_id ?? "__none");
-    const name = t.fulfilment_kind === "internal" ? "Our team" : (t.supplier_name ?? "No subcontractor yet");
+    const crewKey = (t.assignees ?? []).map((a) => a.id).sort((a, b) => a - b).join(",");
+    const key = t.fulfilment_kind === "internal" ? `__internal:${crewKey}` : (t.supplier_id ?? "__none");
+    const name = t.fulfilment_kind === "internal" ? doerText({ ...t, supplier_name: null }) : (t.supplier_name ?? "No subcontractor yet");
     const g = m.get(key) ?? { key, name, tasks: [] };
     g.tasks.push(t);
     m.set(key, g);
@@ -38,7 +46,12 @@ export function RenovationCalendar({ canWrite }: { canWrite: boolean }) {
   const [supplierId, setSupplierId] = useState("");
   const [projectFilter, setProjectFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const q = useQuery(["renovation", "calendar", from, supplierId], () => renovationApi.calendar({ from, to, supplierId: supplierId || undefined }), [from, supplierId]);
+  /* one filter for both: "s:<supplier uuid>" or "p:<person id>" (in-house crew) */
+  const q = useQuery(["renovation", "calendar", from, supplierId], () => renovationApi.calendar({
+    from, to,
+    supplierId: supplierId.startsWith("s:") ? supplierId.slice(2) : undefined,
+    personId: supplierId.startsWith("p:") ? Number(supplierId.slice(2)) : undefined,
+  }), [from, supplierId]);
   const days = useMemo(() => dateRange(from, to), [from, to]);
   const tasks = useMemo(() => {
     const f = projectFilter.trim().toLowerCase();
@@ -71,8 +84,9 @@ export function RenovationCalendar({ canWrite }: { canWrite: boolean }) {
           <span className="ml-2 text-sm text-ink-secondary whitespace-nowrap">{from} to {to}</span>
         </div>
         <select className={inputClass + " sm:max-w-[14rem]"} value={supplierId} onChange={(e) => setSupplierId(e.target.value)} aria-label="Contractor">
-          <option value="">All contractors</option>
-          {(q.data?.contractors ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          <option value="">All contractors and crew</option>
+          {(q.data?.contractors ?? []).map((c) => <option key={c.id} value={`s:${c.id}`}>{c.name}</option>)}
+          {(q.data?.crew ?? []).map((c) => <option key={`p${c.id}`} value={`p:${c.id}`}>In-house: {c.name}</option>)}
         </select>
         <input className={inputClass + " sm:max-w-[14rem]"} placeholder="Project or building" value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} aria-label="Project filter" />
       </div>
@@ -156,7 +170,7 @@ export function RenovationCalendar({ canWrite }: { canWrite: boolean }) {
                             <span className="text-sm font-medium text-ink truncate">{t.label}</span>
                             <span className={cn("rounded-full border px-2 text-[11px]", TONE_CLASS[taskTone(t.status)])}>{TASK_STATUS_LABEL[t.status]}</span>
                           </div>
-                          <div className="text-xs text-ink-secondary truncate">{[t.project_code, t.building, t.unit_no].filter(Boolean).join(" ")} · {t.fulfilment_kind === "internal" ? "Our team" : (t.supplier_name ?? "No subcontractor yet")}</div>
+                          <div className="text-xs text-ink-secondary truncate">{[t.project_code, t.building, t.unit_no].filter(Boolean).join(" ")} · {doerText(t)}</div>
                         </Link>
                       </li>
                     ))}

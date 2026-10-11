@@ -1,7 +1,9 @@
-/* One renovation project: billing prompt, hardware gate, stage timeline, the
-   selected stage's checklist / tasks / proof of delivery, handover and warranty,
-   and the linked documents. Every write goes through /api/renovation and the
-   page reloads from the server afterwards: the server decides, the page shows. */
+/* One renovation project, simplified (owner decisions 11 Oct 2026): the six main
+   steps with the hold flag, what the sales order says (contract, received, VO),
+   arrivals, the unit key, people, design records, site tasks and handover. The
+   older 11-stage machinery (checklists, gate, billing prompts) still runs
+   underneath and sits in a collapsible "Stage details". Every write goes through
+   /api/renovation and the page reloads from the server afterwards. */
 
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -11,18 +13,22 @@ import { Button } from "../../../components/Button";
 import { api } from "../../../api/client";
 import { useQuery } from "../../../hooks/useQuery";
 import { cn } from "../../../lib/utils";
-import { renovationApi, type ChecklistItem, type ProjectDetail, type StageView, type TaskView } from "./renovationApi";
+import { renovationApi, type ChecklistItem, type ProjectDetail, type StageView } from "./renovationApi";
 import {
-  SKIP_SOURCE_TEXT, STAGE_STATE_LABEL, TASK_STATUS_LABEL, UNIT_KEY_LABEL,
-  errorText, money, shortDate, stageTone, supplyLabel, supplyTone, taskTone,
+  SKIP_SOURCE_TEXT, STAGE_STATE_LABEL,
+  errorText, money, shortDate, stageTone, supplyLabel, supplyTone,
 } from "./renovationModel";
 import { AuthImage, Dialog, Field, Pill, SignaturePad, SkipReasonDialog, canvasBlob, inputClass } from "./renovationUi";
-import type { StageKey } from "../../../vendor/shared/renovation-stages";
+import { HOLD_FLAG_LABEL, type StageKey } from "../../../vendor/shared/renovation-stages";
+import { simpleApi, type ProjectDetailV2 } from "./simpleApi";
+import { FlowPanel } from "./FlowPanel";
+import { ContractCard, DesignCard, KeyCard, PeopleCard } from "./ProjectRecords";
+import { SiteTasksPanel } from "./SiteTasksPanel";
 
 type Skipping = { kind: "stage"; key: StageKey; label: string } | { kind: "item"; id: number; label: string } | { kind: "task"; id: number; label: string };
 
 export function RenovationDetail({ id, canWrite, embedded = false }: { id: number; canWrite: boolean; embedded?: boolean }) {
-  const q = useQuery(["renovation", "detail", id], () => renovationApi.detail(id), [id]);
+  const q = useQuery(["renovation", "detail", id], () => simpleApi.detail(id), [id]);
   const [selected, setSelected] = useState<StageKey | null>(null);
   const [skipping, setSkipping] = useState<Skipping | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
@@ -42,8 +48,10 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
       setBusy(false);
     }
   }
+  const done = (text: string) => { setNotice({ tone: "ok", text }); q.reload(); };
+  const failed = (text: string) => setNotice({ tone: "err", text });
 
-  if (q.loading) return <p className="py-10 text-center text-sm text-ink-secondary">Loading project...</p>;
+  if (q.loading && !d) return <p className="py-10 text-center text-sm text-ink-secondary">Loading project...</p>;
   if (q.error || !d) return <p role="alert" className="py-6 text-sm text-err">The project could not be loaded: {q.error ?? "not found"}</p>;
   const stageKey: StageKey = selected ?? d.currentStage;
   const stage = d.stages.find((s) => s.key === stageKey) ?? d.stages[0]!;
@@ -65,43 +73,50 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
         </div>
       )}
 
+      <FlowPanel projectId={id} flow={d.flow} hold={d.hold} canWrite={canWrite} onChanged={done} />
       <SummaryStrip d={d} />
-      {!d.financeHidden && d.so && <BillingPromptBanner d={d} canWrite={canWrite} onDone={(t) => { setNotice({ tone: "ok", text: t }); q.reload(); }} onError={(t) => setNotice({ tone: "err", text: t })} />}
-      <GateCard d={d} />
 
-      <StageTimeline stages={d.stages} current={d.currentStage} selected={stageKey} onSelect={setSelected} />
-
-      <div className="grid gap-4 lg:grid-cols-3 mt-4">
-        <div className="lg:col-span-2 space-y-4">
-          <StagePanel
-            d={d}
-            stage={stage}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-4 min-w-0">
+          <SiteTasksPanel
+            projectId={id}
+            tasks={d.tasks}
             canWrite={canWrite}
-            busy={busy}
-            onStart={() => act(() => renovationApi.startStage(id, stage.key), `${stage.label} started.`)}
-            onComplete={() => act(() => renovationApi.completeStage(id, stage.key), `${stage.label} marked done.`)}
-            onSkip={() => setSkipping({ kind: "stage", key: stage.key, label: stage.label })}
-            onUnskip={() => act(() => renovationApi.unskipStage(id, stage.key), `${stage.label} is back in the plan.`)}
-            onPlan={(a, b) => act(() => renovationApi.planStage(id, stage.key, a, b))}
-            onTick={(item, done) => act(() => renovationApi.tickItem(item.id, done))}
-            onSkipItem={(item) => setSkipping({ kind: "item", id: item.id, label: item.title })}
-            onUnskipItem={(item) => act(() => renovationApi.unskipItem(item.id))}
+            linesAvailable={!d.linesUnavailable}
+            onAct={act}
+            onSkip={(t) => setSkipping({ kind: "task", id: t.id, label: t.label })}
           />
-          {(stage.key === "hardware" || stage.key === "handover" || d.tasks.some((t) => t.stage_key === stage.key)) && (
-            <TradeTasksPanel
-              projectId={id}
-              tasks={d.tasks.filter((t) => t.stage_key === stage.key)}
-              canWrite={canWrite}
-              linesAvailable={!d.linesUnavailable}
-              onAct={act}
-              onSkip={(t) => setSkipping({ kind: "task", id: t.id, label: t.label })}
-            />
-          )}
-          {stage.key === "handover" && <HandoverPanel d={d} canWrite={canWrite} onAct={act} />}
-          {stage.key === "warranty" && <WarrantyPanel d={d} />}
+          <HandoverPanel d={d} canWrite={canWrite} onAct={act} />
+          {d.serviceCases.length > 0 && <WarrantyPanel d={d} />}
           <EvidenceGallery projectId={id} />
+          <details className="rounded-lg border border-border bg-surface p-3">
+            <summary className="cursor-pointer text-sm font-semibold text-ink">Stage details: checklists, hardware gate, billing prompts</summary>
+            <div className="mt-3 space-y-3">
+              {!d.financeHidden && d.so && <BillingPromptBanner d={d} canWrite={canWrite} onDone={done} onError={failed} />}
+              <GateCard d={d} />
+              <StageTimeline stages={d.stages} current={d.currentStage} selected={stageKey} onSelect={setSelected} />
+              <StagePanel
+                d={d}
+                stage={stage}
+                canWrite={canWrite}
+                busy={busy}
+                onStart={() => act(() => renovationApi.startStage(id, stage.key), `${stage.label} started.`)}
+                onComplete={() => act(() => renovationApi.completeStage(id, stage.key), `${stage.label} marked done.`)}
+                onSkip={() => setSkipping({ kind: "stage", key: stage.key, label: stage.label })}
+                onUnskip={() => act(() => renovationApi.unskipStage(id, stage.key), `${stage.label} is back in the plan.`)}
+                onPlan={(a, b) => act(() => renovationApi.planStage(id, stage.key, a, b))}
+                onTick={(item, isDone) => act(() => renovationApi.tickItem(item.id, isDone))}
+                onSkipItem={(item) => setSkipping({ kind: "item", id: item.id, label: item.title })}
+                onUnskipItem={(item) => act(() => renovationApi.unskipItem(item.id))}
+              />
+            </div>
+          </details>
         </div>
-        <aside className="space-y-4">
+        <aside className="space-y-4 min-w-0">
+          <ContractCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
+          <PeopleCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
+          <KeyCard d={d} canWrite={canWrite} onDone={done} onError={failed} />
+          <DesignCard projectId={id} canWrite={canWrite} onDone={(t) => setNotice({ tone: "ok", text: t })} onError={failed} />
           <LinkedDocuments d={d} />
           {d.redFlags.length > 0 && (
             <section className="rounded-lg border border-err/30 bg-err-bg p-3">
@@ -134,18 +149,20 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
   );
 }
 
-function SummaryStrip({ d }: { d: ProjectDetail }) {
+function SummaryStrip({ d }: { d: ProjectDetailV2 }) {
   const cell = (label: string, value: ReactNode) => (
     <div className="min-w-0"><div className="text-xs text-ink-secondary">{label}</div><div className="text-sm text-ink truncate">{value}</div></div>
   );
+  const handover = d.handover?.signed_at ?? d.project.handed_over_at;
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 rounded-lg border border-border bg-surface p-3 mb-3">
-      {cell("Sales order", d.so ? `${d.so.doc_no} · ${d.so.status.replace(/^RENO_/, "").toLowerCase()}` : "Not yet")}
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 rounded-lg border border-border bg-surface p-3 mb-3">
+      {cell("Status", <span className={d.hold ? "font-semibold text-err" : ""}>{[d.hold ? HOLD_FLAG_LABEL[d.hold.flag] : null, d.flow.currentLabel].filter(Boolean).join(" · ")}</span>)}
+      {cell("Contract total", d.financeHidden ? "Hidden" : d.so ? money(d.money.contractSen) : "No SO yet")}
+      {cell("Received", d.financeHidden ? "Hidden" : !d.so ? "-" : d.money.receivedSen == null ? "Not available" : `${money(d.money.receivedSen)}${d.money.receivedPct != null ? ` (${d.money.receivedPct}%)` : ""}`)}
       {cell("Furniture", <Pill tone={supplyTone(d.conditions.furniture?.condition)}>{supplyLabel(d.conditions.furniture?.condition)}</Pill>)}
       {cell("Reno items", <Pill tone={supplyTone(d.conditions.renoItem?.condition)}>{supplyLabel(d.conditions.renoItem?.condition)}</Pill>)}
-      {cell("Payment", d.payment.label)}
-      {cell("Unit key", UNIT_KEY_LABEL[d.unitKey])}
-      {cell("Planned handover", shortDate(d.project.planned_handover_date))}
+      {cell("Key holder", d.keyHolder?.name ?? "-")}
+      {cell(handover ? "Handed over" : "Planned handover", shortDate(handover ?? d.project.planned_handover_date))}
     </div>
   );
 }
@@ -330,67 +347,6 @@ function StagePanel(props: {
         </ul>
       )}
     </section>
-  );
-}
-
-function TradeTasksPanel({ projectId, tasks, canWrite, linesAvailable, onAct, onSkip }: {
-  projectId: number; tasks: TaskView[]; canWrite: boolean; linesAvailable: boolean;
-  onAct: (fn: () => Promise<unknown>, ok?: string) => Promise<void>; onSkip: (t: TaskView) => void;
-}) {
-  return (
-    <section className="rounded-lg border border-border bg-surface p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="text-base font-semibold text-ink">Site tasks</h3>
-          <p className="text-xs text-ink-secondary">The order is a suggestion: tasks may overlap and move. Only dates that pass raise a flag.</p>
-        </div>
-        {canWrite && linesAvailable && <Button variant="secondary" icon={<RefreshCw size={14} />} onClick={() => onAct(() => renovationApi.syncTasks(projectId), "Tasks updated from the contract.")}>Update from contract</Button>}
-      </div>
-      {tasks.length === 0 && <p className="mt-3 text-sm text-ink-secondary">No tasks in this stage yet.</p>}
-      <ul className="mt-3 space-y-2">
-        {tasks.map((t) => <TaskRow key={t.id} t={t} canWrite={canWrite} onAct={onAct} onSkip={() => onSkip(t)} />)}
-      </ul>
-    </section>
-  );
-}
-
-function TaskRow({ t, canWrite, onAct, onSkip }: { t: TaskView; canWrite: boolean; onAct: (fn: () => Promise<unknown>, ok?: string) => Promise<void>; onSkip: () => void }) {
-  const [s, setS] = useState(t.planned_start ?? "");
-  const [e, setE] = useState(t.planned_end ?? "");
-  const dirty = s !== (t.planned_start ?? "") || e !== (t.planned_end ?? "");
-  return (
-    <li className="rounded-md border border-border p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-sm font-medium text-ink">{t.label}</div>
-          <div className="text-xs text-ink-secondary">
-            {t.fulfilment_kind === "internal" ? "Done by our team" : [t.supplier_name ?? "No subcontractor yet", t.po_number].filter(Boolean).join(" · ")}
-          </div>
-        </div>
-        <Pill tone={taskTone(t.status)}>{TASK_STATUS_LABEL[t.status]}</Pill>
-      </div>
-      {t.status !== "skipped" && t.status !== "done" && (
-        <div className="mt-2 grid grid-cols-2 sm:grid-cols-[1fr_1fr_auto_auto] gap-2 items-end">
-          <Field label="Start"><input type="date" className={inputClass} value={s} disabled={!canWrite} onChange={(ev) => setS(ev.target.value)} /></Field>
-          <Field label="End"><input type="date" className={inputClass} value={e} disabled={!canWrite} onChange={(ev) => setE(ev.target.value)} /></Field>
-          {canWrite && dirty && <Button variant="secondary" onClick={() => onAct(() => renovationApi.planTask(t.id, s || null, e || null))}>Save</Button>}
-          {canWrite && (
-            <div className="flex gap-2 col-span-2 sm:col-span-1">
-              {t.state === "open" && <Button variant="secondary" onClick={() => onAct(() => renovationApi.startTask(t.id), `${t.label} started.`)}>Start</Button>}
-              {t.fulfilment_kind === "internal" && <Button onClick={() => onAct(() => renovationApi.completeTask(t.id), `${t.label} done.`)}>Done</Button>}
-              <Button variant="ghost" onClick={onSkip}>Skip...</Button>
-            </div>
-          )}
-        </div>
-      )}
-      {t.status === "skipped" && (
-        <div className="mt-1 flex items-center justify-between text-xs text-ink-secondary">
-          <span>{t.skip_source === "vo_omitted" ? "All its lines were omitted by a variation order" : `Skipped: ${t.skip_reason ?? ""}`}</span>
-          {canWrite && t.skip_source === "manual" && <button type="button" className="text-primary" onClick={() => onAct(() => renovationApi.unskipTask(t.id))}>Un-skip</button>}
-        </div>
-      )}
-      {t.fulfilment_kind === "po" && t.status !== "done" && t.status !== "skipped" && <p className="mt-1 text-xs text-ink-secondary">Completes when its purchase order is received on site.</p>}
-    </li>
   );
 }
 

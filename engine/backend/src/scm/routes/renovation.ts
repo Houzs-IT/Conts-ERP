@@ -241,9 +241,10 @@ renovation.get('/lookups/projects', handle(null, async (c, { sqlRead }) => {
     `select p.id, p.code, p.name, p.stage, p.status,
             (select o.doc_no from scm.mfg_sales_orders o where o.project_id = p.id and o.so_kind = 'RENOVATION' and o.status <> 'CANCELLED' limit 1) as contract_doc_no
        from public.projects p
-      where p.archived_at is null and ($1 = '' or p.name ilike '%' || $1 || '%' or coalesce(p.code, '') ilike '%' || $1 || '%')
+      where p.archived_at is null and p.company_id = $2 and p.project_kind = 'renovation'
+        and ($1 = '' or p.name ilike '%' || $1 || '%' or coalesce(p.code, '') ilike '%' || $1 || '%')
       order by p.id desc limit 50`,
-    [q],
+    [q, actorOf(c).companyId],
   );
   return c.json({ projects: rows.map((r) => ({ id: Number(r.id), code: r.code, name: r.name, stage: r.stage, status: r.status, contractDocNo: r.contract_doc_no })) });
 }));
