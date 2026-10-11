@@ -232,7 +232,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Open: the 15-minute email/WhatsApp retry does not claim its rows, so a double-fired cron could resend one message; add a 'sending' state (migration) before the cron worker is deployed.
 - Open: built-in supply chain create screens add a placeholder row before the save answers and keep it if the save fails; only matters if the engine is switched off.
 - Open: field edits are last-write-wins (no version column); status and dates are already protected.
-- Note: booking-lifecycle.mjs signs an operations_staff cookie for the dev user, but the middleware now reads the live role from users, so its three non-management checks fail on any database where that user is management; give the check a real non-management user.
 
 ## Supply chain click sweep (fix/sweep-supply-chain, 11 Oct)
 - Done: built-in supply chain screens wait for the server before saying "saved" and re-read the list (src/lib/persist.ts); document drawers load their lines from the record; tested by scripts/api-checks/supply-chain-sweep.mjs.
