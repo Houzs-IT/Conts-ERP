@@ -148,7 +148,7 @@ function ModelDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Draft
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow">
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <Field label="Model code" placeholder="e.g. EMMA" value={f.modelCode} onChange={set('modelCode')} />
           <Field label="Name" placeholder="Model name" value={f.name} onChange={set('name')} />
           <div className="flex flex-col gap-[7px]">
@@ -168,7 +168,7 @@ function ModelDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Draft
           </div>
           <Field label="Branding" placeholder="Optional" value={f.branding} onChange={set('branding')} />
           <Field label="Photo URL" placeholder="Optional" value={f.photoUrl} onChange={set('photoUrl')} />
-          <div className="col-span-2"><Field label="Description" placeholder="Optional" value={f.description} onChange={set('description')} /></div>
+          <div className="sm:col-span-2"><Field label="Description" placeholder="Optional" value={f.description} onChange={set('description')} /></div>
         </div>
         <p className="mt-4 text-[12px] text-muted-ink">Variant options (fabrics, sizes, compartments) are edited in the Variants tab — coming in a later slice.</p>
       </div>

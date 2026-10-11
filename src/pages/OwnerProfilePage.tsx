@@ -28,6 +28,7 @@ import {
   FALLBACK, terms, Section, StatementHistory, LinkUnitModal,
 } from './owners/shared';
 import { statusLabel } from '../lib/status';
+import { TERMS, toOperator } from '../lib/statementTerms';
 import { PhoneText } from '../components/PhoneText';
 
 /**
@@ -227,9 +228,11 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       {o.units.length === 0 ? (
         <Card><EmptyState bare title="No units linked yet." body="Link a unit to assign it to this owner and set how they are paid." action={{ label: 'Link unit', onClick: () => setModal('link') }} /></Card>
       ) : (
+        view === 'owner' ? <OwnerCombined o={o} month={month} /> : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))] gap-4">
           {o.units.map(u => <UnitCard key={u.unitId} u={u} reportHref={st?.hasUnits ? `#/finance/statements/${encodeURIComponent(st.id)}/report?unit=${encodeURIComponent(u.unitId)}` : null} />)}
         </div>
+        )
       )}
 
       {o.units.length > 0 && <OwnerCostsCard ownerId={o.id} ownerName={o.displayName} month={month} units={unitChoices} canEdit onChanged={reload} />}
@@ -280,6 +283,54 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
   );
 }
 
+/** By owner: one combined report across the owner's units, in the report's words, with each unit's part under it. */
+function OwnerCombined({ o, month }: { o: Owner; month: string }) {
+  const units = o.units.filter(u => u.figures);
+  if (!units.length) return <Card><div className="p-5 text-copy text-muted-ink">Figures are visible to finance and management.</div></Card>;
+  const fixed = units.filter(u => u.revenueModel === 'grr' || u.revenueModel === 'master_lease');
+  const share = units.filter(u => !fixed.includes(u));
+  const add = (us: UnitLine[], k: 'income' | 'costs' | 'operatorShare' | 'topUp' | 'fixedRent' | 'adjustments' | 'netPayout') => us.reduce((n, u) => n + Number(u.figures![k] ?? 0), 0);
+  const pcts = [...new Set(share.map(u => u.feePct))];
+  const Line = ({ label, sen, strong, sub }: { label: string; sen: number; strong?: boolean; sub?: boolean }) => (
+    <div className={cx('flex items-baseline justify-between gap-3 py-2 [border-bottom:1px_solid_var(--color-line-soft)]', strong && 'font-semibold')}>
+      <span className={cx('text-copy min-w-0', sub ? 'text-muted-ink pl-3' : 'text-ink')}>{label}</span>
+      <MoneyText sen={sen} mode="exact" className={cx('text-copy whitespace-nowrap', strong && 'font-semibold')} />
+    </div>
+  );
+  return (
+    <Card>
+      <div className="py-4 px-5 flex flex-col">
+        <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+          <span className="text-heading font-semibold">{titleCase(o.displayName)} · all {plural(units.length, 'unit')}</span>
+          <span className="text-meta text-muted-ink">{monthLabel(month, { long: true })}</span>
+        </div>
+        {share.length > 0 && <>
+          <Line label={TERMS.grossIncome} sen={add(share, 'income')} />
+          <Line label={TERMS.totalDeduction} sen={-add(share, 'costs')} sub />
+          <Line label={pcts.length === 1 && pcts[0] != null ? toOperator(pcts[0]) : TERMS.toOperator} sen={-add(share, 'operatorShare')} sub />
+          {add(share, 'topUp') !== 0 && <Line label={TERMS.topUp} sen={add(share, 'topUp')} sub />}
+        </>}
+        {fixed.length > 0 && <Line label={TERMS.fixedRent} sen={add(fixed, 'fixedRent')} />}
+        {add(units, 'adjustments') !== 0 && <Line label={TERMS.adjustments} sen={add(units, 'adjustments')} sub />}
+        <Line label={TERMS.netPayout} sen={add(units, 'netPayout')} strong />
+        <div className="mt-3 text-meta font-semibold text-muted-ink">By unit</div>
+        {units.map(u => {
+          const f = u.figures!, none = f.nights === 0 && f.income === 0 && !fixed.includes(u);
+          return (
+            <div key={u.unitId} className="flex items-baseline justify-between gap-3 py-2 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
+              <span className="flex flex-col min-w-0">
+                <a href={`#/properties/units/${encodeURIComponent(u.unitId)}?tab=financials`} className="text-copy text-ink no-underline [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</a>
+                <span className="text-meta text-muted-ink">{terms(u)}{none ? ' · No reservations this month' : fixed.includes(u) ? '' : ` · ${TERMS.grossIncome} ${rm(f.income)}`}</span>
+              </span>
+              <MoneyText sen={f.netPayout} mode="exact" className="text-copy whitespace-nowrap" />
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 /** One unit's month, the way its revenue model pays the owner: its Unit P&L, which rolls up to the owner. */
 function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null }) {
   const f = u.figures;
@@ -306,7 +357,9 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
         {after(f.adjustments)}
         <Row label="Unit income (The Conts')" sen={f.income} muted />
       </> : <>
-        <Row label={model === 'long_term' ? 'Gross Income (rent from tenant)' : `Gross Income (${f.nights} ${f.nights === 1 ? 'night' : 'nights'})`} sen={f.income} />
+        {model !== 'long_term' && f.nights === 0 && f.income === 0
+          ? <div className="text-meta text-muted-ink">No reservations this month.</div>
+          : <Row label={model === 'long_term' ? 'Gross Income (rent from tenant)' : `Gross Income (${f.nights} ${f.nights === 1 ? 'night' : 'nights'})`} sen={f.income} />}
         {f.costLines.length === 0
           ? <Row label="Deductions" sen={0} muted />
           : f.costLines.map(c => <Row key={c.label} label={c.label} sen={-c.amount} indent />)}
@@ -333,7 +386,7 @@ function DefaultFeeModal({ current, owner, onClose, onSubmit }: { current: numbe
   const [busy, setBusy] = useState(false);
   const valid = parsed == null || (parsed >= 0 && parsed <= 100);
   return (
-    <div role="dialog" aria-modal="true" aria-label="Owner default fee" className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+    <div role="dialog" aria-modal="true" aria-label="Owner default fee" className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
       <div onClick={onClose} className="absolute inset-0" />
       <div className="relative w-full max-w-[440px] bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
         <form onSubmit={e => { e.preventDefault(); if (valid && !busy) { setBusy(true); onSubmit(parsed); } }}>

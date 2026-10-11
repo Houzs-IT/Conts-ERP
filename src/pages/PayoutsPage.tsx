@@ -24,7 +24,7 @@ import type { PayoutState } from '../lib/types';
 import { useUrlState, SearchBox, FilterSelect } from './finance/listKit';
 import ApprovalBanner from '../components/ApprovalBanner';
 import { isStaged, stagedToast, useApprovalsOn, type Approval, type Staged } from '../lib/approvals';
-import { statusLabel } from '../lib/status';
+import { statusLabel, statusOf } from '../lib/status';
 import { StatRow, StatTile } from '../components/Metric';
 
 interface Payout {
@@ -55,11 +55,16 @@ type Filter = 'all' | PayoutState;
 
 /** Bank never shows more than the tail; the raw number needs an audited reveal on the owner profile. */
 const destination = (p: Payout) => p.bankLast4 ? `${bankName(p.bankName) ?? 'Bank'} ${masked(p.bankLast4)}` : (bankName(p.bankName) ?? 'No bank account');
-const valueDate = (p: Payout) =>
-  p.state === 'paid' ? (p.paidAt ? fmtDate(p.paidAt) : 'Date not recorded')
+/** One status, the paid date folded in when there is one (owner, 11 Oct 2026: "paid date is not needed; simply merge
+ *  it"). 531 of 536 imported payouts have no date, so a separate date column mostly said "Date not recorded". */
+const payoutStatus = (p: Payout) =>
+  p.state === 'paid' ? (p.paidAt ? `Paid · ${fmtDate(p.paidAt)}` : 'Paid')
     : p.state === 'processing' ? 'Transfer in progress'
-    : p.state === 'failed' ? 'On hold'
-    : 'Not in a run yet';
+    : p.state === 'failed' ? 'Failed'
+    : 'Not paid yet';
+const PayoutBadge = ({ p, size }: { p: Payout; size?: 'sm' | 'md' }) => (
+  <StatusBadge label={payoutStatus(p)} tone={statusOf('payout', p.state).tone} size={size} />
+);
 
 export default function PayoutsPage() {
   const url = useUrlState();
@@ -161,12 +166,10 @@ export default function PayoutsPage() {
     { key: 'period', label: 'Statement month', value: r => r.period ?? null, text: r => (r.period ? monthLabel(r.period) : ''), hidden: true, width: 130 },
     { key: 'method', label: 'Method', value: r => r.method, width: 110 },
     { key: 'destination', label: 'Destination', value: r => destination(r), width: 170 },
-    { key: 'paidOn', label: 'Paid on', type: 'date', value: r => (r.state === 'paid' ? r.paidAt : null), width: 150,
-      render: r => <span className="text-muted-ink whitespace-nowrap">{valueDate(r)}</span> },
     { key: 'amount', label: 'Amount', type: 'money', value: r => r.amount, width: 130,
       render: r => <MoneyText sen={r.amount} mode="exact" strong className="text-copy" /> },
-    { key: 'status', label: 'Status', type: 'status', value: r => r.state, width: 120,
-      entity: 'payout' },
+    { key: 'status', label: 'Status', type: 'status', value: r => r.state, entity: 'payout', text: r => payoutStatus(r), width: 170,
+      render: r => <PayoutBadge p={r} /> },
     { key: 'failure', label: 'Failure reason', value: r => r.failureReason, hidden: true, width: 220 },
     { key: 'action', label: 'Action', width: 170, align: 'right', noExport: true, sortable: false, filter: false,
       render: r => (
@@ -263,12 +266,12 @@ export default function PayoutsPage() {
             <span className="flex flex-col gap-[3px] min-w-0 flex-1">
               <span className="text-copy font-medium truncate">{titleCase(r.ownerName)}</span>
               <span className="text-meta text-muted-ink truncate">{destination(r)} · {r.method}</span>
-              <span className="text-meta text-muted-ink">{r.period ? `${monthLabel(r.period)} statement · ` : ''}{valueDate(r)}</span>
+              <span className="text-meta text-muted-ink">{r.period ? `${monthLabel(r.period)} statement` : ''}</span>
               {r.state === 'processing' && <Button size="sm" variant="secondary" style={{ alignSelf: 'flex-start', marginTop: 4 }} onClick={e => { e.stopPropagation(); setConfirm({ payout: r, kind: 'paid' }); }}>Mark paid</Button>}
             </span>
             <span className="flex flex-col items-end gap-[5px] shrink-0">
               <MoneyText sen={r.amount} mode="exact" strong className="text-copy" />
-              <StatusBadge entity="payout" value={r.state} size="sm" />
+              <PayoutBadge p={r} size="sm" />
               <span onClick={e => e.stopPropagation()}>{historyButton(r)}</span>
             </span>
           </span>

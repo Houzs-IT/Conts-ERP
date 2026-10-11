@@ -326,7 +326,7 @@ function ProductDrawer({ draft, onClose, onSubmit, onDelete }: { draft: Draft; o
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow">
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <Field label="Code" placeholder="e.g. SF-3S-GRY" value={f.code} onChange={set('code')} />
           <Field label="Name" placeholder="Product name" value={f.name} onChange={set('name')} />
           <div className="flex flex-col gap-[7px]">
@@ -340,7 +340,7 @@ function ProductDrawer({ draft, onClose, onSubmit, onDelete }: { draft: Draft; o
           {isSofa && <Field label="Base model" placeholder="Model family" value={f.baseModel} onChange={set('baseModel')} />}
           {isMattress && <Field label="Branding" placeholder="e.g. HILTON" value={f.branding} onChange={set('branding')} />}
           <Field label="Barcode" placeholder="optional" value={f.barcode} onChange={set('barcode')} />
-          <div className="col-span-2"><Field label="Description" placeholder="Secondary description" value={f.description} onChange={set('description')} /></div>
+          <div className="sm:col-span-2"><Field label="Description" placeholder="Secondary description" value={f.description} onChange={set('description')} /></div>
           <MoneyInput label={isMattress ? 'Price (RM)' : 'Base price / Price 2 (RM)'} valueSen={f.basePriceSen} onChangeSen={v => setF(s => ({ ...s, basePriceSen: v }))} />
           {!hidePrice1 && <MoneyInput label="Price 1 (RM)" valueSen={f.price1Sen} onChangeSen={v => setF(s => ({ ...s, price1Sen: v }))} />}
           <MoneyInput label="Cost price (RM)" valueSen={f.costPriceSen} onChangeSen={v => setF(s => ({ ...s, costPriceSen: v }))} />

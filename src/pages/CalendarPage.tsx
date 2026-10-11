@@ -14,16 +14,19 @@ import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { api, notifyFailure, errorMessage } from '../lib/api';
-import { todayMyt, rm, date, dateRange, dateShort, dateTime, time, timeWithZone, monthLabel, weekdayDay, year, plural, rmShort, amount } from '../lib/format';
+import { todayMyt, date, dateRange, dateShort, dateTime, time, timeWithZone, monthLabel, weekdayDay, plural, rmShort, amount } from '../lib/format';
 import { CHANNEL, TONE } from '../lib/vocabulary';
 import type { BookingChannel, Tone } from '../lib/types';
 import { CalendarFilters } from '../components/calendar/CalendarFilters';
 import { BlockWizard, RateUpdate, SetPriceModal, type BlockKind } from '../components/calendar/CalendarModals';
 import { SelectionPopover, type NightSelection } from '../components/calendar/SelectionPopover';
+import { BarContent, BarHoverCard, barStyle, displayName, holdName, phaseOf, PHASE_LABEL, type StayPhase } from '../components/calendar/ReservationBar';
+import { CalendarRangeControl, addDaysIso, daysBetween, isDay, LEAD_DAYS, MAX_WINDOW } from '../components/calendar/DatePicker';
 import { type CalendarBlock as Block, type CalendarUnit as Unit } from '../components/calendar/types';
 
-/** Width of one night column, px. The unit column width is the CSS variable --unit-col (narrower on phones). */
-const COL = 60;
+/** Width of one night column, px (narrower on phones, so a thumb's swipe covers a week). The unit column width is the
+ *  CSS variable --unit-col. */
+const DESK_COL = 60, PHONE_COL = 50;
 const SPAN = 30;
 /** Above this many units on the board, the rate rows start hidden: 139 units with three or four rate rows
  *  each is some 15,000 extra cells, and the board is read for occupancy first. */
@@ -115,6 +118,13 @@ const CELL_EDGE = '[border-left:1px_solid_var(--color-line-soft)]';
 const STICKY_COL = 'w-[var(--unit-col)] flex-none box-border sticky left-0 bg-card [border-right:1px_solid_var(--color-line)]';
 const buildingOf = (u: Unit) => u.propertyId ?? u.propertyName;
 
+/** An on/off view choice remembered in this browser; works without storage. */
+function useStoredFlag(key: string, initial: boolean) {
+  const [on, setOn] = useState<boolean>(() => { try { const v = localStorage.getItem(key); return v == null ? initial : v === '1'; } catch { return initial; } });
+  useEffect(() => { try { localStorage.setItem(key, on ? '1' : '0'); } catch { /* not remembered */ } }, [key, on]);
+  return [on, setOn] as const;
+}
+
 /** Folded buildings, remembered per person in this browser. Storage can be missing or refuse; the board works without it. */
 function useFolded(userId: string | undefined) {
   const key = `tc.calendar.folded.${userId ?? 'anon'}`;
@@ -131,20 +141,27 @@ function useFolded(userId: string | undefined) {
 }
 
 export default function CalendarPage() {
-  // Fixed 30-day window; scroll the grid sideways, or jump a window with the arrows.
-  const span = SPAN;
-  // The window and the building live in the address (?w=, ?b=), so a link or a reload shows the same board.
+  // The window lives in the address (?start=YYYY-MM-DD&days=N, ?b=building), so a link or a reload shows the same
+  // board. With no start the window follows today, opening LEAD_DAYS before it; 30 days on a laptop, 14 on a phone.
   const [params, setParams] = useSearchParams();
   const setParam = (k: string, v: string | null) => setParams(p => { const n = new URLSearchParams(p); if (v == null) n.delete(k); else n.set(k, v); return n; }, { replace: true });
-  const weekOffset = Math.trunc(Number(params.get('w'))) || 0;
-  const setWeekOffset = (next: number | ((w: number) => number)) => {
-    const v = typeof next === 'function' ? next(weekOffset) : next;
-    setParam('w', v ? String(v) : null);
-  };
+  const phone = usePhone();
+  const COL = phone ? PHONE_COL : DESK_COL;
+  const todayIso = iso(today);
+  const legacyWeeks = Math.trunc(Number(params.get('w'))) || 0;
+  const startParam = isDay(params.get('start')) ? params.get('start')! : legacyWeeks ? addDaysIso(todayIso, legacyWeeks * SPAN) : null;
+  const defaultDays = phone ? 14 : SPAN;
+  const daysParam = Math.trunc(Number(params.get('days')));
+  const wantSpan = daysParam >= 1 && daysParam <= MAX_WINDOW ? daysParam : defaultDays;
+  const setWindow = (s: string | null, n: number) => setParams(p => {
+    const q = new URLSearchParams(p); q.delete('w');
+    if (s) q.set('start', s); else q.delete('start');
+    if (n === defaultDays) q.delete('days'); else q.set('days', String(n));
+    return q;
+  }, { replace: true });
   const property = params.get('b') || 'all';
   const setProperty = (b: string) => setParam('b', b === 'all' ? null : b);
-  const start = addDays(today, weekOffset * span);
-  const from = iso(start), to = iso(addDays(start, span - 1));
+  const from = startParam ?? addDaysIso(todayIso, -LEAD_DAYS), to = addDaysIso(from, wantSpan - 1);
   // One building asks the server for just that building: a few KB instead of about 150.
   const { data, loading, error, reload } = useApi<Payload>(`/reservations/calendar?from=${from}&to=${to}${property !== 'all' ? `&property=${encodeURIComponent(property)}` : ''}`, FALLBACK);
   const { user } = useSession();
@@ -152,12 +169,15 @@ export default function CalendarPage() {
   // No fallback on purpose: without the real connection status the page shows no sync claims at all.
   const { data: integrations, reload: reloadIntegrations } = useApi<{ data: IntegrationRow[] }>('/integrations');
   const toast = useToast();
-  const phone = usePhone();
 
   const [off, setOff] = useState<Partial<Record<BookingChannel, boolean>>>({});
   const [statusOff, setStatusOff] = useState<Record<string, boolean>>({});
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [ratesPref, setRatesPref] = useState<boolean | null>(null);
+  const [showFree, setShowFree] = useStoredFlag('tc.calendar.free', true);
+  const gridRef = useRef<HTMLDivElement>(null);
+  // A new window starts at its first night; a reload of the same window keeps the scroll where it was.
+  useEffect(() => { gridRef.current?.scrollTo({ left: 0 }); }, [from]);
   const [unitOpen, setUnitOpen] = useState<Record<string, boolean>>({});
   // Prices set on the board before the reload brings them back, keyed `${unitId}:${channel}:${date}`: by date, not
   // by column, so they stay on their night when the board pages to another 30 days.
@@ -179,6 +199,7 @@ export default function CalendarPage() {
   const refusedDrag = useRef(false);
   const [rateUpdate, setRateUpdate] = useState<false | { unitIds?: string[]; from?: string; to?: string }>(false);
   const [openBlock, setOpenBlock] = useState<Block | null>(null);
+  const [hover, setHover] = useState<{ b: Block; phase: StayPhase; unit: string; x: number; y: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [syncing, setSyncing] = useState(false);
   // Optimistic overlays, rolled back if the API refuses.
@@ -221,6 +242,8 @@ export default function CalendarPage() {
     return !statusOff[b.state];
   }), [liveBlocks, off, statusOff]);
   const gridStart = new Date(data?.from ?? from);
+  // Until the next window arrives the board keeps drawing the one it has, so nothing jumps while it loads.
+  const span = data ? daysBetween(data.from, data.to) + 1 : wantSpan;
   const dayIndex = (d: string) => Math.round((new Date(d).getTime() - gridStart.getTime()) / 864e5);
   const dayIso = (i: number) => iso(addDays(gridStart, i));
   const todayIdx = dayIndex(iso(today));
@@ -383,10 +406,6 @@ export default function CalendarPage() {
     }
   }
 
-  const segBtn = 'h-full min-w-10 md:min-w-0 px-2.5 grid place-items-center bg-transparent hover:bg-muted border-none cursor-pointer font-sans text-copy text-ink';
-  // Phones drop the year: the month header right under it already says it.
-  const rangeShort = `${dateShort(iso(start))} – ${dateShort(iso(addDays(start, span - 1)))}`;
-  const rangeYear = year(iso(addDays(start, span - 1)));
   // View toggles: icon-only 40px squares on phones; icon and label from md up.
   const toolBtn = 'relative inline-flex items-center justify-center gap-1.5 h-[42px] w-[42px] md:w-auto md:h-9 md:px-3 box-border rounded-control border border-solid border-line bg-card hover:bg-muted cursor-pointer font-sans text-copy font-medium text-ink whitespace-nowrap flex-none disabled:cursor-default';
   const refreshIcon = <span className={`inline-grid ${syncing ? 'animate-spin' : ''}`}><Icon name="RefreshCw" size="sm" /></span>;
@@ -420,15 +439,8 @@ export default function CalendarPage() {
         {/* Toolbar + filters */}
         <div className="px-3 md:px-4 py-2.5 md:py-3 flex flex-col gap-2.5 md:gap-3 [border-bottom:1px_solid_var(--color-line)]">
           <div className="flex items-center gap-2">
-            <div className="flex flex-1 md:flex-none min-w-0 items-stretch h-[42px] md:h-9 box-border rounded-control border border-solid border-line bg-card overflow-hidden">
-              <button type="button" onClick={() => setWeekOffset(w => w - 1)} className={segBtn} aria-label="Previous 30 days"><Icon name="ChevronLeft" size="sm" /></button>
-              <span className="flex-1 md:flex-none min-w-0 px-1.5 md:px-3 grid place-items-center [border-left:1px_solid_var(--color-line)] [border-right:1px_solid_var(--color-line)] text-copy font-medium whitespace-nowrap [font-variant-numeric:tabular-nums] md:min-w-[156px]">
-                <span>{rangeShort}<span className="hidden md:inline"> {rangeYear}</span></span>
-              </span>
-              <button type="button" onClick={() => setWeekOffset(w => w + 1)} className={segBtn} aria-label="Next 30 days"><Icon name="ChevronRight" size="sm" /></button>
-              <button type="button" onClick={() => setWeekOffset(0)} disabled={weekOffset === 0}
-                className={`${segBtn} [border-left:1px_solid_var(--color-line)]! px-3 font-medium disabled:text-faint disabled:cursor-default disabled:hover:bg-transparent`}>Today</button>
-            </div>
+            <CalendarRangeControl start={from} days={wantSpan} today={todayIso} phone={phone} isDefault={!startParam}
+              onChange={(st, n) => setWindow(st, n)} />
 
             <div className="ml-auto flex items-center gap-2">
               {lastSync && (
@@ -451,6 +463,10 @@ export default function CalendarPage() {
                   <Icon name={allFolded ? 'UnfoldVertical' : 'FoldVertical'} size="sm" /><span className="hidden md:inline">{allFolded ? 'Expand all' : 'Collapse all'}</span>
                 </button>
               )}
+              <button type="button" className={`${toolBtn} hidden! md:inline-flex!`} onClick={() => setShowFree(v => !v)} aria-pressed={showFree}
+                title={showFree ? 'Hide the free-unit count on each building row' : 'Show how many units are free each night on each building row'}>
+                <Icon name={showFree ? 'EyeOff' : 'Eye'} size="sm" /><span className="hidden md:inline">{showFree ? 'Hide free count' : 'Show free count'}</span>
+              </button>
               <button type="button" className={toolBtn} onClick={() => { setRatesPref(!expanded); setUnitOpen({}); }}
                 aria-label={expanded ? 'Hide prices' : 'Show prices'} title={expanded ? 'Hide the price rows' : 'Show the availability and price rows under every unit'}>
                 <Icon name={expanded ? 'ChevronsDownUp' : 'ChevronsUpDown'} size="sm" /><span className="hidden md:inline">{expanded ? 'Hide prices' : 'Show prices'}</span>
@@ -463,13 +479,14 @@ export default function CalendarPage() {
               off={off} setOff={setOff} statusOff={statusOff} setStatusOff={setStatusOff} dirty={filtersDirty}
               onReset={() => { setOff({}); setStatusOff({}); setProperty('all'); }} />
             {(offCount > 0 || Object.values(statusOff).some(Boolean)) && (
-              <p className="m-0 mt-2 text-meta text-muted-ink">Filters only hide reservation bars. Free and Full always count every reservation.</p>
+              <p className="m-0 mt-2 text-meta text-muted-ink">Filters only hide reservation bars. The free count always counts every reservation.</p>
             )}
           </div>
         </div>
 
         {/* Grid: scrolls inside the card both ways; the date header and unit column stay put. */}
-        <div className="max-h-[72vh] overflow-auto overscroll-x-contain rounded-none md:rounded-b-card [scrollbar-width:thin] [--unit-col:104px] md:[--unit-col:224px]">
+        <div ref={gridRef} tabIndex={0} aria-label="Reservation calendar. Arrow keys scroll."
+          className="max-h-[calc(100dvh-230px)] md:max-h-[74vh] min-h-[320px] overflow-auto overscroll-contain rounded-none md:rounded-b-card [scrollbar-width:thin] outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)] [--unit-col:96px] md:[--unit-col:208px]">
           <div style={{ minWidth: `calc(var(--unit-col) + ${span * COL}px)` }} aria-busy={loading}
             className={`transition-opacity duration-150 ${loading && data ? 'opacity-70' : ''}`}>
             <div className="sticky top-0 z-20 flex bg-muted [border-bottom:1px_solid_var(--color-line)]">
@@ -541,7 +558,7 @@ export default function CalendarPage() {
                   <div key={g.id}>
                     <BuildingRowHeader name={g.name} units={g.units} folded={isFolded} showToggle={groups.length > 1}
                       onToggle={() => setFolded(f => ({ ...f, [g.id]: !isFolded }))}
-                      days={days} byUnit={byUnit} dayIso={dayIso} />
+                      days={days} byUnit={byUnit} dayIso={dayIso} col={COL} showFree={showFree} />
                     {!isFolded && (
                       <div>
                 {g.units.map(u => {
@@ -647,24 +664,24 @@ export default function CalendarPage() {
                             const ci = dayIndex(b.checkIn), co = dayIndex(b.checkOut);
                             const s = Math.max(0, ci), e = Math.min(span, co);
                             if (e <= s) return null;
-                            const ch = CHANNEL[b.channel]; const hold = ch.border !== 'solid';
-                            const inquiry = b.state === 'inquiry';
+                            const ch = CHANNEL[b.channel];
+                            const phase = phaseOf(b, todayIso);
+                            const inquiry = phase === 'inquiry';
                             const ota = OTA_CHANNELS.includes(b.channel);
                             const movable = !inquiry && !ota;
                             const clipL = ci < 0, clipR = co > span;
-                            const inset = 3;
+                            const inset = 2;
                             const left = s * COL + (clipL ? 0 : inset), width = (e - s) * COL - (clipL ? 0 : inset) - (clipR ? 0 : inset);
-                            const r = (on: boolean) => (on ? 0 : 8);
-                            const fullName = inquiry ? `Inquiry · not holding${b.guestName ? ` · ${b.guestName}` : ''}`
-                              : b.guestName || (b.channel === 'owner_stay' ? 'Owner stay' : b.channel === 'maintenance_block' ? (b.blockReason === 'other' ? 'Blocked' : 'Repair') : ch.label);
-                            const firstName = fullName.split(' ')[0];
-                            // A one-night bar is too narrow for logo and name side by side, so they stack.
-                            const narrow = width < 100;
+                            const name = displayName(b);
                             return (
-                              <div key={b.id} draggable={!inquiry} onClick={e => { e.stopPropagation(); if (refusedDrag.current) { refusedDrag.current = false; return; } setOpenBlock(b); }}
+                              <div key={b.id} draggable={!inquiry} onClick={e => { e.stopPropagation(); if (refusedDrag.current) { refusedDrag.current = false; return; } setHover(null); setOpenBlock(b); }}
                                 onPointerDown={e => e.stopPropagation()}
-                                title={`${fullName} · ${ch.label}${b.ref ? ' · ' + b.ref : ''} · ${dateRange(b.checkIn, b.checkOut)}${b.reason ? ' · ' + b.reason : ''}${movable ? ' · drag to move' : ota ? ` · dates change on ${ch.label}` : ''}`}
+                                onPointerEnter={e => { if (e.pointerType === 'mouse') setHover({ b, phase, unit: `${u.propertyName} ${u.unitNumber}`, x: e.clientX, y: e.clientY }); }}
+                                onPointerMove={e => { e.stopPropagation(); if (e.pointerType === 'mouse') setHover(h => (h && h.b.id === b.id ? { ...h, x: e.clientX, y: e.clientY } : h)); }}
+                                onPointerLeave={() => setHover(null)}
+                                aria-label={`${name} · ${phase === 'hold' ? holdName(b) : ch.label} · ${PHASE_LABEL[phase]} · ${dateRange(b.checkIn, b.checkOut)}`}
                                 onDragStart={ev => {
+                                  setHover(null);
                                   if (!movable) {
                                     // A booking site owns its booking's dates: moving it here would leave the site on the old ones.
                                     ev.preventDefault();
@@ -678,31 +695,9 @@ export default function CalendarPage() {
                                   dragRef.current = { id: b.id, grabOffset: (s - ci) + Math.max(0, Math.floor((ev.clientX - rect.left) / COL)) };
                                 }}
                                 onDragEnd={() => { dragRef.current = null; }}
-                                className={`absolute top-2.5 bottom-2.5 z-[2] box-border flex overflow-hidden ${movable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} select-none hover:brightness-[0.98] ${narrow ? 'flex-col justify-center items-start gap-0.5 px-1.5' : 'items-center gap-1.5 px-2'}`}
-                                style={inquiry ? {
-                                  // An inquiry holds nothing: an outline only, so the night still reads as open.
-                                  left, width, color: 'var(--color-text-muted)', background: 'transparent',
-                                  border: '1px dashed var(--color-line-strong)',
-                                  borderRadius: `${r(clipL)}px ${r(clipR)}px ${r(clipR)}px ${r(clipL)}px`,
-                                } : {
-                                  left, width, color: ch.ink,
-                                  // Holds read as a pale, finely hatched band so a long block does not shout over the bookings around it.
-                                  background: hold ? `repeating-linear-gradient(135deg, color-mix(in srgb, ${ch.tint} 70%, var(--color-surface-card)) 0 2px, var(--color-surface-card) 2px 9px)` : ch.tint,
-                                  border: hold ? `1px ${ch.border} color-mix(in srgb, ${ch.color} 45%, transparent)` : `1px solid color-mix(in srgb, ${ch.color} 28%, transparent)`,
-                                  borderLeft: clipL ? undefined : hold ? undefined : `3px solid ${ch.color}`,
-                                  borderRadius: `${r(clipL)}px ${r(clipR)}px ${r(clipR)}px ${r(clipL)}px`,
-                                }}>
-                                {width >= 30 && <ChannelMark ch={b.channel} size={narrow ? 14 : 16} />}
-                                {/* The name may wrap onto a second line rather than be cut short; the tooltip has it in full. */}
-                                {narrow
-                                  ? <span className="max-w-full text-caption leading-[13px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{firstName}</span>
-                                  : <span className="min-w-0 flex flex-col">
-                                      <span className="md:hidden text-meta leading-[14px] font-semibold [overflow-wrap:anywhere] line-clamp-2">{fullName}</span>
-                                      <span className="hidden md:[display:-webkit-box] text-meta leading-[14px] font-semibold [overflow-wrap:anywhere] line-clamp-2">{fullName}</span>
-                                      {b.grossBookingValue > 0 && width > 150 && (
-                                        <span className="hidden md:block text-caption leading-[13px] whitespace-nowrap opacity-75 [font-variant-numeric:tabular-nums]">{rm(b.grossBookingValue, { cents: false })}</span>
-                                      )}
-                                    </span>}
+                                className={`absolute top-2 bottom-2 z-[2] box-border flex items-center overflow-hidden ${movable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} select-none hover:brightness-[0.97] ${width < 70 ? 'px-1.5' : 'gap-1.5 px-2'}`}
+                                style={{ left, width, ...barStyle(b, phase, clipL, clipR) }}>
+                                <BarContent b={b} visible={e - s} width={width} nights={co - ci} />
                               </div>
                             );
                           })}
@@ -795,6 +790,7 @@ export default function CalendarPage() {
           grossBookingValue: openBlock.grossBookingValue,
         }; })() : null} />
 
+      {hover && !phone && <BarHoverCard {...hover} />}
       <ConfirmDialog spec={dialog} busy={busy} onClose={() => { if (!busy) setDialog(null); }} />
       {priceModal && <SetPriceModal m={priceModal} onClose={() => setPriceModal(null)}
         onSave={rmValue => { const i = dayIndex(priceModal.dayIso); setPrice(priceModal.unit.id, priceModal.channel, i, rmValue); setPriceModal(null); }} />}
@@ -855,11 +851,12 @@ export default function CalendarPage() {
   );
 }
 
-/** A building's row on the board: fold toggle on the left, and for each night how many of its units are
- *  still free, so a folded building still says where there is room. */
-function BuildingRowHeader({ name, units, folded, showToggle, onToggle, days, byUnit, dayIso }: {
+/** A building's row on the board: fold toggle on the left, and on each night the number of its units still free, in
+ *  green, only where there is one. A full night stays blank: the eye goes to the free nights, which is the question
+ *  (where can I still sell?), and a folded building still answers it. */
+function BuildingRowHeader({ name, units, folded, showToggle, onToggle, days, byUnit, dayIso, col, showFree }: {
   name: string; units: Unit[]; folded: boolean; showToggle: boolean; onToggle: () => void;
-  days: Date[]; byUnit: Map<string, { cells: (Block | null)[] }>; dayIso: (i: number) => string;
+  days: Date[]; byUnit: Map<string, { cells: (Block | null)[] }>; dayIso: (i: number) => string; col: number; showFree: boolean;
 }) {
   const n = units.length;
   const freeOn = (i: number) => units.reduce((k, u) => k + (byUnit.get(u.id)?.cells[i] ? 0 : 1), 0);
@@ -868,18 +865,18 @@ function BuildingRowHeader({ name, units, folded, showToggle, onToggle, days, by
       <div className={`${STICKY_COL} bg-page! z-10 flex`}>
         <button type="button" onClick={onToggle} disabled={!showToggle} aria-expanded={!folded}
           title={`${name} · ${plural(n, 'unit')}${showToggle ? (folded ? ' · show its units' : ' · fold it away') : ''}`}
-          className="flex-1 min-w-0 flex items-center gap-1 pl-1.5 pr-2 md:pr-3 h-9 m-0 border-none bg-transparent enabled:hover:bg-muted/60 enabled:cursor-pointer text-left font-sans text-ink">
+          className="flex-1 min-w-0 flex items-center gap-1 pl-1.5 pr-2 md:pr-3 h-8 m-0 border-none bg-transparent enabled:hover:bg-muted/60 enabled:cursor-pointer text-left font-sans text-ink">
           {showToggle && <span className="w-5 h-5 flex-none grid place-items-center text-muted-ink"><Icon name={folded ? 'ChevronRight' : 'ChevronDown'} size="sm" /></span>}
           <span className="min-w-0 flex-1 text-meta font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{name}</span>
           <span className="flex-none text-caption font-medium text-muted-ink [font-variant-numeric:tabular-nums]">{n}</span>
         </button>
       </div>
-      {days.map((_, i) => {
+      {showFree && days.map((_, i) => {
         const free = freeOn(i);
         return (
-          <div key={i} style={{ width: COL }} title={`${name} · ${date(dayIso(i))} · ${free} of ${plural(n, 'unit')} free`}
-            className={`flex-none box-border h-9 pr-2 flex items-center justify-end text-caption whitespace-nowrap [font-variant-numeric:tabular-nums] ${free === 0 ? 'text-faint' : 'text-muted-ink font-medium'}`}>
-            {free === 0 ? 'Full' : `${free} free`}
+          <div key={i} style={{ width: col }} title={`${name} · ${date(dayIso(i))} · ${free ? `${free} of ${plural(n, 'unit')} free` : 'every unit booked'}`}
+            className="flex-none box-border h-8 pr-2 flex items-center justify-end text-caption whitespace-nowrap [font-variant-numeric:tabular-nums]">
+            {free > 0 && <span className="font-semibold" style={{ color: TONE.success.fg }}>{free}<span className="hidden md:inline font-medium"> free</span></span>}
           </div>
         );
       })}

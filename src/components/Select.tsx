@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import Icon from './Icon';
 import { cx } from '../lib/design-tokens';
 
@@ -154,10 +154,12 @@ export function Menu({ trigger, items, label, align = 'right' }: { trigger: Reac
       {open && (
         <div role="menu" aria-label={label}
           className={cx('absolute z-30 top-[calc(100%+6px)] min-w-[240px] max-w-[calc(100vw-32px)] bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] py-1', align === 'right' ? 'right-0' : 'left-0')}>
-          {items.map(it => {
+          {items.map((it, i) => {
             const off = !!it.disabledReason;
             return (
-              <button key={it.key} type="button" role="menuitem" aria-disabled={off} title={it.disabledReason}
+              <Fragment key={it.key}>
+              {it.danger && i > 0 && !items[i - 1].danger && <div role="separator" className="my-1 mx-1 h-px bg-line-soft" />}
+              <button type="button" role="menuitem" aria-disabled={off} title={it.disabledReason}
                 onClick={() => { if (off) return; setOpen(false); it.onSelect(); }}
                 className={cx('w-full flex items-start gap-2.5 px-3 py-2 bg-transparent border-none text-left font-sans',
                   off ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-muted')}>
@@ -167,6 +169,7 @@ export function Menu({ trigger, items, label, align = 'right' }: { trigger: Reac
                   {(it.disabledReason || it.hint) && <span className="text-meta text-muted-ink">{it.disabledReason ?? it.hint}</span>}
                 </span>
               </button>
+              </Fragment>
             );
           })}
         </div>

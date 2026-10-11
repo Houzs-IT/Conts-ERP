@@ -190,7 +190,7 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
           <Field label="Website" value={f.website} onChange={set('website')} />
         </Section>
         <Section title="Address">
-          <div className="col-span-2"><Field label="Address" value={f.address} onChange={set('address')} /></div>
+          <div className="sm:col-span-2"><Field label="Address" value={f.address} onChange={set('address')} /></div>
           <Field label="Area" value={f.area} onChange={set('area')} />
           <Field label="Postcode" value={f.postcode} onChange={set('postcode')} />
           <Field label="State" value={f.state} onChange={set('state')} />
@@ -205,7 +205,7 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
           <NumberInput label="Rating (0–5)" min={0} max={5} value={f.rating} onChange={v => setF(s => ({ ...s, rating: v }))} error={ratingError} />
           <Field label="TIN number" value={f.tinNumber} onChange={set('tinNumber')} />
           <Field label="Business reg. no" value={f.businessRegNo} onChange={set('businessRegNo')} />
-          <div className="col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
+          <div className="sm:col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
         </Section>
       </div>
       <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
@@ -223,7 +223,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-2.5">
       <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">{title}</div>
-      <div className="grid grid-cols-2 gap-3.5">{children}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">{children}</div>
     </div>
   );
 }

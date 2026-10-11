@@ -17,6 +17,7 @@ import { downloadTable, type ExportColumn, type ExportCell, type ExportKind } fr
 import { cx } from '../lib/design-tokens';
 import { statusOf, type AnyTone, type StatusEntity } from '../lib/status';
 import { errorMessage } from '../lib/api';
+import { useFillHeight } from '../lib/useFillHeight';
 
 /**
  * The one table every list in the app uses (like Houzs's DataTable and Hookka's DataGrid).
@@ -501,6 +502,8 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const colsBtn = useRef<HTMLButtonElement>(null), viewsBtn = useRef<HTMLButtonElement>(null), exportBtn = useRef<HTMLButtonElement>(null);
   const filtersBtn = useRef<HTMLButtonElement>(null), bulkExportBtn = useRef<HTMLButtonElement>(null);
   const headAnchor = useRef<HTMLElement | null>(null);
+  // With no height given, the table's scroll box runs to the bottom of the screen (see useFillHeight).
+  const scrollBox = useFillHeight({ enabled: maxHeight === undefined, fallback: maxHeight ?? 'calc(100dvh - 300px)' });
   const [saving, setSaving] = useState<null | { name: string; scope: 'mine' | 'company'; isDefault: boolean }>(null);
 
   /* ---- states ---- */
@@ -604,7 +607,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
       {/* Wide screens: the table. Its own scroll box keeps the header in view and scrolls sideways when narrow. */}
       <div className="max-md:hidden relative">
         <BusyLine on={refreshing} />
-        <div className="overflow-auto" style={{ maxHeight: maxHeight ?? 'calc(100dvh - 300px)', minHeight: firstLoad || shown.length > 6 ? 240 : undefined }} aria-busy={!!loading}>
+        <div ref={scrollBox} data-keep-scroll={id} className="overflow-auto" style={{ minHeight: firstLoad || shown.length > 6 ? 240 : undefined }} aria-busy={!!loading}>
           {firstLoad && !error ? <RowsSkeleton rows={8} cols={Math.min(7, visible.length || 5)} /> : errorView ?? (
             <table className="w-full border-collapse [table-layout:fixed]" style={{ minWidth }}>
               <colgroup>
@@ -1067,11 +1070,11 @@ function SaveViewDialog({ initial, canShare, onClose, onSave }: {
     return () => document.removeEventListener('keydown', k);
   }, [busy, onClose]);
   return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-[rgba(20,18,15,0.35)] p-4" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-[var(--color-surface-scrim)] p-4 sm:p-6" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <form role="dialog" aria-modal="true" aria-label="Save view" className="w-full max-w-[420px] bg-card rounded-card border border-solid border-line shadow-[var(--shadow-overlay)] flex flex-col"
         onSubmit={async e => { e.preventDefault(); if (!name.trim()) return; setBusy(true); await onSave(name.trim(), scope, isDefault); setBusy(false); }}>
         <div className="px-[22px] pt-[18px] pb-2">
-          <h2 className="m-0 text-heading font-semibold">Save view</h2>
+          <h2 className="m-0 text-title font-semibold">Save view</h2>
           <p className="m-0 mt-1 text-meta text-muted-ink">Keeps the columns, their order, the sort, the filters and rows per page. Saving under an existing name replaces it.</p>
         </div>
         <div className="px-[22px] py-3 flex flex-col gap-3">

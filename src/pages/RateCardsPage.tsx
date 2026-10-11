@@ -127,8 +127,8 @@ function CardDrawer({ card, isNew, carriers, onClose, onSave, onDelete }: { card
     <Drawer open onClose={onClose} width={880}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New rate card' : 'Edit rate card'}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
-          <div className="col-span-2 md:col-span-1"><Field label="Card name" placeholder="e.g. Own fleet — KV" value={f.name} onChange={e => set('name', e.target.value)} /></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
+          <div className="sm:col-span-2 md:col-span-1"><Field label="Card name" placeholder="e.g. Own fleet — KV" value={f.name} onChange={e => set('name', e.target.value)} /></div>
           <div className="flex flex-col gap-[7px]"><label className="text-[12px] font-medium text-muted-ink">Carrier</label>
             <select value={f.carrierCompanyId} onChange={e => set('carrierCompanyId', e.target.value)} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
               <option value="">Own fleet / none</option>
@@ -174,7 +174,7 @@ function CardDrawer({ card, isNew, carriers, onClose, onSave, onDelete }: { card
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <Field label="Notes" placeholder="Optional" value={f.notes} onChange={e => set('notes', e.target.value)} />
           <Sel label="Status" value={f.isActive ? '1' : '0'} onChange={v => set('isActive', v === '1')} options={[{ value: '1', label: 'Active' }, { value: '0', label: 'Inactive' }]} />
         </div>

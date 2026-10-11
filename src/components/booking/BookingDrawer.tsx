@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Drawer } from '../Dialog';
 import { Button } from '../Button';
 import { Field } from '../Field';
+import { Select } from '../Select';
 import { DateField, TimeField, MoneyInput } from '../inputs';
 import Icon from '../Icon';
 import ChannelMark from '../ChannelMark';
@@ -56,6 +57,7 @@ interface Ledger {
 }
 interface Detail extends Required<Omit<BookingSummary, 'guestPhone'>> {
   guestPhone: string | null; guestEmail: string | null; guestId: string | null; nationality: string | null;
+  country: { code: string; name: string; from: 'nationality' | 'phone' } | null;
   unitId: string; notes: string | null; staffNotes: string | null; createdAt: string;
   money: Money; ledger: Ledger; timeline: TimelineEvent[]; moves: Move[];
   documents?: GuestDocument[]; approvals?: Approval[];
@@ -238,7 +240,7 @@ export function CentreModal({ title, sub, onClose, children, maxWidth = 460 }: {
     <div role="dialog" aria-modal="true" aria-label={title}
       className="fixed inset-0 z-[70] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
       <div onClick={onClose} className="absolute inset-0" />
-      <div style={{ maxWidth }} className="relative w-full bg-card rounded-card shadow-[var(--shadow-overlay)] max-h-[90vh] flex flex-col [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
+      <div style={{ maxWidth }} className="relative w-full bg-card rounded-card shadow-[var(--shadow-overlay)] max-h-[90dvh] flex flex-col overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
         <div className="px-[22px] pt-[22px] pb-1 flex-none">
           <h2 className="m-0 text-title font-semibold">{title}</h2>
           {sub && <p className="mt-[6px] mx-0 mb-0 text-copy text-muted-ink">{sub}</p>}
@@ -247,6 +249,16 @@ export function CentreModal({ title, sub, onClose, children, maxWidth = 460 }: {
       </div>
     </div>,
     document.body,
+  );
+}
+
+/** The buttons at the foot of a CentreModal form (whose padding is px-[22px] py-4): a footer bar on the page tint, as on
+ *  every other dialog, kept in view while a long form scrolls. A sticky box stops at the scroller's padding, hence -bottom-4 against the form's py-4. */
+export function ModalActions({ children }: { children: ReactNode }) {
+  return (
+    <div className="sticky -bottom-4 z-[1] -mx-[22px] -mb-4 mt-1 px-[22px] py-[14px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end flex-wrap gap-[9px]">
+      {children}
+    </div>
   );
 }
 
@@ -270,17 +282,17 @@ export function MessageGuestModal({ r, onClose, onSent }: { r: { id: string; gue
   }
   return (
     <CentreModal title={`Message ${r.guestName || 'guest'}`} sub={`Goes to the guest's ${thread} conversation when that channel is connected.`} onClose={() => { if (!busy) onClose(); }}>
-      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div className="flex flex-col gap-[6px]">
           <label htmlFor="bk-msg" className="text-meta font-medium text-muted-ink">Message</label>
           <textarea id="bk-msg" required value={body} onChange={e => setBody(e.target.value)} rows={4}
             placeholder={`Hi ${greetName(r.guestName)}, a quick note about your reservation…`}
             className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
         </div>
-        <div className="flex justify-end gap-[9px]">
-          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Close</Button>
+        <ModalActions>
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!body.trim()} disabledReason="Write a message first.">Send message</Button>
-        </div>
+        </ModalActions>
       </form>
     </CentreModal>
   );
@@ -324,7 +336,7 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
 
   return (
     <CentreModal title="Change dates" sub="Checked against the unit's other reservations before it is saved. The guest is not messaged." onClose={() => { if (!busy) onClose(); }}>
-      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-meta text-muted-ink">
           Now: {dateRange(d.checkIn, d.checkOut)} · {fmtNights(d.nights)}{d.money.gross > 0 ? ` · ${rm(d.money.gross)}` : ''}
         </div>
@@ -345,10 +357,10 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
           <p className="m-0 text-meta text-muted-ink">The price is set by {CHANNEL_META[d.channel].label}, so it stays as recorded. Change the reservation there too.</p>
         )}
         {error && <p role="alert" className="m-0 text-meta text-danger">{error}</p>}
-        <div className="flex justify-end gap-[9px]">
-          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Close</Button>
+        <ModalActions>
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason="Pick a new, valid date range first.">Save new dates</Button>
-        </div>
+        </ModalActions>
       </form>
     </CentreModal>
   );
@@ -396,7 +408,7 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
   }
   return (
     <CentreModal title="Record payment" sub={`Expected ${rm(d.ledger.expected)} · received ${rm(d.ledger.received)} · outstanding ${rm(d.ledger.outstanding)}`} onClose={() => { if (!busy) onClose(); }}>
-      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div role="radiogroup" aria-label="What is this" className="grid grid-cols-3 gap-1 p-1 rounded-control bg-muted">
           {(['guest_payment', 'ota_payout', 'refund'] as const).map(k => (
             <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => {
@@ -414,14 +426,8 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
             error={tooMuch ? (d.ledger.received > 0 ? `At most ${rm(d.ledger.received)}, what was received.` : 'Nothing has been received to refund.') : errors.amount} />
           <DateField label={kind === 'refund' ? 'Refunded on' : 'Received on'} value={receivedOn} max={todayIso()} onChange={setReceivedOn} required error={errors.receivedOn} />
         </div>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="pay-method" className="text-meta font-medium text-muted-ink">Method</label>
-            <select id="pay-method" value={method} onChange={e => setMethod(e.target.value)}
-              className="h-10 rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-copy px-3">
-              {METHODS.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+          <Select label="Method" showLabel size="md" value={method} onChange={setMethod} options={METHODS.map(m => ({ value: m, label: m }))} />
           <Field label="Reference (optional)" value={reference} onChange={e => setReference(e.target.value)} placeholder="Bank or receipt reference" />
         </div>
         <Field label="Note (optional)" value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Deposit, balance at check-in" />
@@ -430,10 +436,10 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
             placeholder="e.g. Cancelled 10 days before check-in, full refund" error={errors.reason} />
           <p className="m-0 text-meta text-muted-ink text-pretty">A refund is money leaving the company. It is sent for approval and recorded only once it is approved.</p>
         </>}
-        <div className="flex justify-end gap-[9px]">
+        <ModalActions>
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={tooMuch ? 'A refund cannot be more than what was received.' : refund && approvalsOn ? 'Enter an amount, a date and the reason.' : 'Enter an amount and a date.'}>{refund ? (approvalsOn ? 'Send for approval' : 'Record refund') : 'Record payment'}</Button>
-        </div>
+        </ModalActions>
       </form>
     </CentreModal>
   );
@@ -462,16 +468,16 @@ function TimesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => void; o
   }
   return (
     <CentreModal title="Check-in and checkout times" sub="For an early check-in or a late checkout. The dates do not change, and the guest is not messaged." onClose={() => { if (!busy) onClose(); }}>
-      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <TimeField label={`Check-in from (${date(d.checkIn)})`} value={inTime} onChange={setInTime} required disabled={d.state === 'checked_in'}
             help={d.state === 'checked_in' ? 'The guest is already in.' : 'Standard 15:00'} error={errors.checkInTime} />
           <TimeField label={`Checkout by (${date(d.checkOut)})`} value={outTime} onChange={setOutTime} required help="Standard 11:00" error={errors.checkOutTime} />
         </div>
-        <div className="flex justify-end gap-[9px]">
+        <ModalActions>
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!changed} disabledReason="Change a time first.">Save times</Button>
-        </div>
+        </ModalActions>
       </form>
     </CentreModal>
   );
@@ -681,8 +687,15 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
             <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink mb-1">Guest</div>
             <div className="flex justify-between gap-3"><span className="text-muted-ink">Phone</span><span className="text-right break-all"><PhoneText value={d.guestPhone} className="text-ink" /></span></div>
             {d.guestEmail && <div className="flex justify-between gap-3"><span className="text-muted-ink">Email</span><span className="text-right break-all">{d.guestEmail}</span></div>}
-            <div className="flex justify-between gap-3"><span className="text-muted-ink">Nationality</span>
-              <span className="text-right">{nationality ?? '—'}{nationality && !/malaysia/i.test(nationality) ? <span className="text-muted-ink"> · tourism tax applies</span> : null}</span></div>
+            {nationality || !d.country ? (
+              <div className="flex justify-between gap-3"><span className="text-muted-ink">Nationality</span>
+                <span className="text-right">{nationality ?? '—'}{nationality && !/malaysia/i.test(nationality) ? <span className="text-muted-ink"> · tourism tax applies</span> : null}</span></div>
+            ) : (
+              // No nationality on record: the phone number's country says where the guest is likely from, but it is not
+              // a nationality, so it says nothing about tourism tax.
+              <div className="flex justify-between gap-3"><span className="text-muted-ink">Country</span>
+                <span className="text-right">{d.country.name}<span className="text-muted-ink"> · from phone number</span></span></div>
+            )}
             {d.guestId && <a href={`#/reservations/guests?g=${encodeURIComponent(d.guestId)}`} className="self-start mt-1 text-meta text-ink underline">Open guest profile</a>}
           </div>
         )}
@@ -724,8 +737,8 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
           </div>
         ) : <>
           <div className="flex gap-[9px]">
-            <Button variant="primary" style={{ flex: 1 }} icon={<Icon name="MessageSquare" size="sm" />} onClick={() => setMessageOpen(true)}>Message guest</Button>
             <Button variant="secondary" style={{ flex: 1 }} icon={<Icon name="Copy" size="sm" />} onClick={duplicate}>Duplicate</Button>
+            <Button variant="primary" style={{ flex: 1 }} icon={<Icon name="MessageSquare" size="sm" />} onClick={() => setMessageOpen(true)}>Message guest</Button>
           </div>
           {live && (
             <div className="flex gap-[9px]">

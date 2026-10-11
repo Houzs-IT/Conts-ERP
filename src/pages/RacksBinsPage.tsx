@@ -104,7 +104,7 @@ function RackDrawer({ draft, isNew, warehouses, onClose, onSave, onDelete }: { d
             {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}
           </select>
         </div>
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <Field label="Rack / bin code" placeholder="e.g. A-01" value={f.rack} onChange={e => setF(s => ({ ...s, rack: e.target.value }))} />
           <Field label="Position" placeholder="Optional" value={f.position} onChange={e => setF(s => ({ ...s, position: e.target.value }))} />
         </div>

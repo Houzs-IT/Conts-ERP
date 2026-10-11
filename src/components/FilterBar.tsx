@@ -74,7 +74,7 @@ export function FilterMenu({ items, active, onToggle, onClear, single, label = '
       </button>
       {open && (
         <div ref={menu} role="menu" aria-label={label} onKeyDown={onMenuKey}
-          className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[220px] max-w-[calc(100vw-32px)] p-1 bg-card border border-solid border-line rounded-control shadow-[var(--shadow-overlay)]">
+          className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[220px] max-w-[calc(100vw-32px)] max-h-[min(440px,70dvh)] overflow-y-auto p-1 bg-card border border-solid border-line rounded-control shadow-[var(--shadow-overlay)]">
           {items.map(t => {
             const checked = active.includes(t.key);
             const empty = t.count === 0 && !checked;

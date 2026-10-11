@@ -148,7 +148,7 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
           <div className="flex flex-col gap-[7px]">
             <label className="text-[12px] font-medium text-muted-ink">Delivery order</label>
             <select value={doId} onChange={e => void pick(e.target.value)} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">

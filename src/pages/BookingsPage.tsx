@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import { useLocation, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
-import { BookingDrawer, MessageGuestModal, CentreModal } from '../components/booking/BookingDrawer';
+import { BookingDrawer, MessageGuestModal, CentreModal, ModalActions } from '../components/booking/BookingDrawer';
 import { UnitPicker } from '../components/booking/UnitPicker';
 import { channelNote, STATUS } from '../lib/bookingStatus';
 import { Button } from '../components/Button';
@@ -12,6 +12,7 @@ import { Field } from '../components/Field';
 import { DateField, TimeField, NumberInput, MoneyInput, PhoneInput } from '../components/inputs';
 import { Select } from '../components/Select';
 import { StatTile, StatRow, Segmented } from '../components/Metric';
+import { FilterMenu } from '../components/FilterBar';
 import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import { fetchAllPages } from '../lib/export';
@@ -32,6 +33,8 @@ interface Row {
   state: ReservationState; checkIn: string; checkOut: string; checkInTime: string; checkOutTime: string;
   nights: number; grossBookingValue: number; channelFee: number; collectedRevenue: number;
   expectedPayout: number; received: number; outstanding: number; createdAt: string;
+  /** Where the guest is from: the nationality on record, else the country of their phone number. */
+  country: { code: string; name: string; from: 'nationality' | 'phone' } | null;
 }
 
 /** Five tabs, no overlap: every booking is in exactly one of the first four, and All is their sum. */
@@ -60,10 +63,12 @@ interface Payload {
   totals: { bookings: number; nights: number; gross: number; fees: number; outstanding: number };
   buildings: { id: string; name: string }[];
   paymentsReady: boolean;
+  /** Each filter's choices with how many reservations each would show under everything else on screen. */
+  facets?: Record<'ch' | 'building' | 'st' | 'country', { value: string; count: number; label?: string }[]>;
 }
 
 const SAMPLE: Row[] = [
-  { id: 'b1', externalRef: 'HMF4323EHS', guestName: 'Nadia Abdullah', guestsCount: 2, guestPhone: null, guestCountry: 'MY', guestNationality: null, unitNumber: 'A-12-03', propertyName: 'Vista Jaya One', channel: 'airbnb', state: 'checked_in', checkIn: '2026-09-16', checkOut: '2026-09-19', checkInTime: '15:00', checkOutTime: '11:00', nights: 3, grossBookingValue: 85200, channelFee: 12780, collectedRevenue: 0, expectedPayout: 72420, received: 0, outstanding: 72420, createdAt: '2026-09-12T02:02:00Z' },
+  { id: 'b1', externalRef: 'HMF4323EHS', guestName: 'Nadia Abdullah', guestsCount: 2, guestPhone: null, guestCountry: 'MY', guestNationality: null, unitNumber: 'A-12-03', propertyName: 'Vista Jaya One', channel: 'airbnb', state: 'checked_in', checkIn: '2026-09-16', checkOut: '2026-09-19', checkInTime: '15:00', checkOutTime: '11:00', nights: 3, grossBookingValue: 85200, channelFee: 12780, collectedRevenue: 0, expectedPayout: 72420, received: 0, outstanding: 72420, createdAt: '2026-09-12T02:02:00Z', country: null },
 ];
 const FALLBACK: Payload = {
   total: 1, page: 1, pageSize: 50, generatedAt: '', today: '2026-09-16', view: 'upcoming', todo: null, data: SAMPLE,
@@ -74,7 +79,7 @@ const FALLBACK: Payload = {
 
 /** Searches the server reads. The column searches are kept for links from global search (?ref=, ?guest=). */
 const SEARCH_PARAMS = ['q', 'ref', 'guest', 'unit', 'channel', 'stay', 'gross', 'status'];
-const FILTER_PARAMS = ['ch', 'building', 'from', 'to', 'grossMin', 'grossMax'];
+const FILTER_PARAMS = ['ch', 'building', 'country', 'from', 'to', 'grossMin', 'grossMax'];
 /** URL parameters the server reads. The drawer's `open` stays out so opening a booking does not refetch the list. */
 const API_PARAMS = ['view', 'todo', 'sort', 'page', 'size', ...SEARCH_PARAMS, ...FILTER_PARAMS];
 const CHANNEL_CHOICES: BookingChannel[] = ['airbnb', 'booking_com', 'agoda', 'direct'];
@@ -88,6 +93,7 @@ const countryName = (code: string | null) => {
   try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code; } catch { return code; }
 };
 const nationalityOf = (r: { guestNationality?: string | null; guestCountry?: string | null }) => r.guestNationality || countryName(r.guestCountry ?? null);
+const countryOf = (r: Row) => r.country?.name ?? nationalityOf(r);
 
 /** Rows per import request (the server takes at most 100). */
 const IMPORT_PART = 50;
@@ -295,7 +301,7 @@ export default function BookingsPage() {
       ) },
     { key: 'guest', label: 'Guest', value: r => r.guestName, sortKey: 'guest', width: 170, filter: { kind: 'text', param: 'guest' },
       render: b => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block" title={b.guestName}>{b.guestName || '—'}</span>,
-      sub: b => [b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, nationalityOf(b)].filter(Boolean).join(' · ') || '—' },
+      sub: b => [b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, countryOf(b)].filter(Boolean).join(' · ') || '—' },
     { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, sortKey: 'unit', width: 140,
       filter: { kind: 'text', param: 'unit' }, exportValue: r => r.unitNumber, sub: b => b.propertyName },
     { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150, filter: false },
@@ -310,7 +316,7 @@ export default function BookingsPage() {
     { key: 'nights', label: 'Nights', type: 'number', value: r => r.nights, hidden: true, sortKey: 'nights', filter: false, width: 80 },
     { key: 'guests', label: 'Guests', type: 'number', value: r => r.guestsCount, hidden: true, sortKey: 'guests', filter: false, width: 80 },
     { key: 'phone', label: 'Phone', type: 'phone', value: r => r.guestPhone, hidden: true, filter: false, width: 140 },
-    { key: 'nationality', label: 'Nationality', value: r => nationalityOf(r), hidden: true, filter: false, width: 130 },
+    { key: 'country', label: 'Country', value: r => countryOf(r), hidden: true, sortKey: 'country', filter: false, width: 130 },
     { key: 'gross', label: 'Guest total', type: 'money', value: r => (r.grossBookingValue > 0 ? r.grossBookingValue : null), sortKey: 'gross', width: 120,
       title: 'What the guest paid: accommodation, fees and the taxes we collect. Tax a channel keeps is not included.',
       filter: { kind: 'number', params: ['grossMin', 'grossMax'] },
@@ -389,9 +395,10 @@ export default function BookingsPage() {
             <Segmented<ViewKey> label="Reservation views" value={todo ? '' : view} onChange={setView}
               options={VIEWS.map(v => ({ key: v.key, label: v.label, count: counts?.[v.key] }))} />
             <div className="flex items-center gap-2 flex-wrap ml-auto max-md:ml-0 max-md:w-full">
-              <ChannelFilter value={params.get('ch') ?? ''} onChange={v => setParam('ch', v)} />
+              <ChannelFilter value={params.get('ch') ?? ''} onChange={v => setParam('ch', v)} counts={data?.facets?.ch} />
               <Select label="Building" value={params.get('building') ?? ''} onChange={v => setParam('building', v)} className="w-[170px] max-md:w-full max-md:order-last"
                 options={[{ value: '', label: 'All buildings' }, ...(data?.buildings ?? []).map(b => ({ value: b.id, label: b.name }))]} />
+              <CountryFilter value={params.get('country') ?? ''} onChange={v => setParam('country', v)} facets={data?.facets?.country} />
               <DateFilter from={params.get('from') ?? ''} to={params.get('to') ?? ''}
                 onChange={(f, t) => updateParams(p => { if (f) p.set('from', f); else p.delete('from'); if (t) p.set('to', t); else p.delete('to'); p.delete('page'); })} />
             </div>
@@ -489,7 +496,8 @@ function Popover({ label, active, children, width = 240 }: { label: ReactNode; a
   );
 }
 
-function ChannelFilter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function ChannelFilter({ value, onChange, counts }: { value: string; onChange: (v: string) => void; counts?: { value: string; count: number }[] }) {
+  const n = (c: string) => (c ? counts?.find(x => x.value === c)?.count ?? (counts ? 0 : null) : null);
   const cur = value ? CHANNEL_META[value as BookingChannel] : null;
   return (
     <Popover active={!!cur} width={210} label={cur ? <span className="inline-flex items-center gap-2"><ChannelMark ch={value as BookingChannel} size={16} />{cur.label}</span> : 'All channels'}>
@@ -499,12 +507,26 @@ function ChannelFilter({ value, onChange }: { value: string; onChange: (v: strin
             <button key={c || 'all'} type="button" role="menuitemradio" aria-checked={value === c} onClick={() => { onChange(c); close(); }}
               className={cx('w-full flex items-center gap-2 px-[10px] py-2 rounded-[8px] border-none [font-family:inherit] text-copy text-left cursor-pointer hover:bg-muted', value === c ? 'bg-muted font-semibold' : 'bg-transparent')}>
               {c ? <ChannelMark ch={c} size={18} /> : <span className="w-[18px]" />}
-              {c ? CHANNEL_META[c].label : 'All channels'}
+              <span className="flex-1">{c ? CHANNEL_META[c].label : 'All channels'}</span>
+              {n(c) != null && <span className="text-meta text-muted-ink tabular-nums">{countLabel(n(c)!)}</span>}
             </button>
           ))}
         </div>
       )}
     </Popover>
+  );
+}
+
+/** Where guests are from, as the data has it, each with how many reservations it would show under the rest of the
+ *  screen's filters. Several can be ticked; "Not known" is a guest with neither a nationality nor a readable phone. */
+function CountryFilter({ value, onChange, facets }: { value: string; onChange: (v: string) => void; facets?: { value: string; count: number; label?: string }[] }) {
+  const active = value ? value.split(',') : [];
+  const items = [...(facets ?? []).map(f => ({ key: f.value, label: f.label ?? f.value, count: f.count })),
+    ...active.filter(a => !facets?.some(f => f.value === a)).map(a => ({ key: a, label: a === 'none' ? 'Not known' : countryName(a.toUpperCase()) ?? a, count: 0 }))];
+  return (
+    <FilterMenu label="Country" items={items} active={active}
+      onToggle={k => onChange((active.includes(k) ? active.filter(a => a !== k) : [...active, k]).join(','))}
+      onClear={() => onChange('')} />
   );
 }
 
@@ -576,7 +598,7 @@ function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClo
   }
   return (
     <CentreModal title="Mark host payouts received" sub={`Records one host payout per reservation for what it still has outstanding: ${plural(rows.length, 'reservation')}, ${rm(owed)} in all.${left ? ` ${plural(left, 'ticked reservation')} ${left === 1 ? 'is' : 'are'} left out: not from a channel, cancelled, or nothing owed.` : ''}`} onClose={() => { if (!busy) onClose(); }}>
-      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div className="max-h-[180px] overflow-y-auto border border-solid border-line rounded-control">
           {rows.map(r => (
             <div key={r.id} className="flex justify-between gap-3 px-3 py-2 text-meta [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
@@ -589,10 +611,10 @@ function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClo
           <DateField label="Arrived on" value={receivedOn} max={todayMyt()} onChange={setReceivedOn} required />
           <Field label="Bank reference (optional)" value={reference} onChange={e => setReference(e.target.value)} placeholder="e.g. AIRBNB 2610" />
         </div>
-        <div className="flex justify-end gap-[9px]">
+        <ModalActions>
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!receivedOn || !rows.length} disabledReason={!rows.length ? 'None of the ticked reservations is waiting for a host payout.' : 'Pick the date.'}>Mark received</Button>
-        </div>
+        </ModalActions>
       </form>
     </CentreModal>
   );
@@ -713,7 +735,7 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
 
   return (
     <CentreModal title={owner ? 'Owner stay' : 'Create reservation'} sub="Checked against the unit's other reservations before it is saved, then blocked on the channels the unit is listed on." onClose={() => { if (!busy) onClose(); }} maxWidth={520}>
-      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto">
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div role="radiogroup" aria-label="What is this" className="grid grid-cols-3 gap-1 p-1 rounded-control bg-muted">
           {([['direct', 'Direct'], ['ota', 'From a channel'], ['owner_stay', 'Owner stay']] as const).map(([k, l]) => (
             <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
@@ -759,10 +781,10 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
           <textarea id="cr-notes" value={notes} onChange={e => setNotes(e.target.value)} rows={2} maxLength={2000} placeholder="e.g. Arrives late, around 21:00"
             className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
         </div>
-        <div className="flex justify-end gap-[9px] pt-1">
-          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Close</Button>
+        <ModalActions>
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={missing}>{owner ? 'Save owner stay' : 'Create reservation'}</Button>
-        </div>
+        </ModalActions>
       </form>
     </CentreModal>
   );
@@ -778,7 +800,7 @@ function ImportPreviewModal({ rows, onClose, onConfirm }: { rows: ParsedRow[]; o
         <StatusBadge tone="success" label={`${num(ok)} ready`} size="sm" />
         {bad > 0 && <StatusBadge tone="critical" label={`${num(bad)} with ${bad === 1 ? 'an error' : 'errors'}`} size="sm" />}
       </div>
-      <div className="mx-[22px] mb-2 border border-solid border-line rounded-card overflow-y-auto">
+      <div className="mx-[22px] mb-2 border border-solid border-line rounded-card overflow-y-auto min-h-0">
         {rows.map((r, i) => (
           <div key={i} className={cx('flex items-start gap-3 py-[10px] px-[13px]', i < rows.length - 1 && '[border-bottom:1px_solid_var(--color-line-soft)]')}>
             <Icon name={r.row ? 'CheckCircle2' : 'AlertCircle'} size="sm" color={r.row ? 'var(--color-success-fg)' : 'var(--color-critical-fg)'} style={{ marginTop: 2 }} />

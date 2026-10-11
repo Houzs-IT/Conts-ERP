@@ -102,10 +102,10 @@ function FabricDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onCl
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow">
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <Field label="Id (slug)" placeholder="e.g. fab-prem-navy" value={f.id} onChange={set('id')} disabled={!draft.isNew} help={draft.isNew ? undefined : 'Id is fixed once created.'} />
           <Field label="Fabric code" placeholder="e.g. F-PRM-NVY" value={f.fabricCode} onChange={set('fabricCode')} />
-          <div className="col-span-2"><Field label="Label" placeholder="e.g. Premium Navy Velvet" value={f.label} onChange={set('label')} /></div>
+          <div className="sm:col-span-2"><Field label="Label" placeholder="e.g. Premium Navy Velvet" value={f.label} onChange={set('label')} /></div>
           <div className="flex flex-col gap-[7px]">
             <label className="text-[12px] font-medium text-muted-ink">Tier</label>
             <select value={f.tier} onChange={set('tier')} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">

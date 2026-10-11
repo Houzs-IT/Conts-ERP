@@ -123,7 +123,7 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onCreate }: { warehouses:
             {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}
           </select>
         </div>
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div className="flex flex-col gap-[7px]"><label className="text-[12px] font-medium text-muted-ink">Direction</label>
             <select value={direction} onChange={e => setDirection(e.target.value as 'in' | 'out')} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
               <option value="in">Increase (+)</option><option value="out">Decrease (−)</option>

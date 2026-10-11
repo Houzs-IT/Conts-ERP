@@ -84,7 +84,7 @@ function VehicleDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onC
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow">
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <Field label="Code" placeholder="e.g. LRY-01" value={f.code} onChange={set('code')} />
           <Field label="Plate" value={f.plate} onChange={set('plate')} />
           <Field label="Type" placeholder="e.g. 3-tonne lorry" value={f.vehicleType} onChange={set('vehicleType')} />
@@ -95,7 +95,7 @@ function VehicleDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onC
               <option value="1">Active</option><option value="0">Inactive</option>
             </select>
           </div>
-          <div className="col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
+          <div className="sm:col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
         </div>
       </div>
       <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">

@@ -159,17 +159,18 @@ export default function TopBar({
       {/* --------------------------- search overlay --------------------------- */}
       {searchOpen && (
         <div onClick={closeSearch}
-          style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(21,21,21,0.24)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '12vh 16px 16px' }}>
-          <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Search"
+          style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(21,21,21,0.24)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: compact ? '8px' : '12vh 16px 16px' }}>
+          <div onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Search"
             style={{ width: 600, maxWidth: '100%', background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: shadow.overlay, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: `1px solid ${color.borderMuted}` }}>
               <Icon name="Search" size="nav" color={color.textMuted} />
               <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)} onKeyDown={onSearchKeyDown}
                 placeholder="Reservation reference, guest, phone, unit or owner" aria-label="Search"
                 style={{ font: 'inherit', flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', fontSize: 15, color: color.ink }} />
-              <button type="button" onClick={closeSearch} style={{ font: 'inherit', fontSize: text.micro, color: color.textMuted, flex: 'none', border: `1px solid ${color.border}`, borderRadius: 4, background: 'none', padding: '2px 6px', cursor: 'pointer' }}>Esc</button>
+              <button type="button" onClick={closeSearch} aria-label="Close search" style={{ font: 'inherit', fontSize: compact ? text.meta : text.micro, color: color.textMuted, flex: 'none', border: `1px solid ${color.border}`, borderRadius: 4, background: 'none', padding: compact ? '0 12px' : '2px 6px', height: compact ? 36 : undefined, cursor: 'pointer' }}>{compact ? 'Close' : 'Esc'}</button>
             </div>
-            <div style={{ maxHeight: 420, overflowY: 'auto', padding: 6 }}>
+            {/* Never taller than the window (a phone's keyboard takes half of it). */}
+            <div style={{ maxHeight: compact ? 'calc(100dvh - 80px)' : 'min(420px, calc(100dvh - 12vh - 90px))', overflowY: 'auto', overscrollBehavior: 'contain', padding: 6 }}>
               {results.length === 0 ? (
                 <div style={{ padding: '20px 12px', fontSize: text.small, color: color.textMuted }}>
                   {searching || query.trim() !== debounced ? 'Searching...' : debounced ? `No matches for "${debounced}". Try the reservation reference from Airbnb or Booking.com, a guest name or a phone number.` : 'Type to search.'}

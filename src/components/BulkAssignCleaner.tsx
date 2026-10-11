@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { CentreModal } from './booking/BookingDrawer';
+import { CentreModal, ModalActions } from './booking/BookingDrawer';
 import { Button } from './Button';
 import { Select } from './Select';
 import { useToast } from './Toast';
@@ -39,17 +39,17 @@ export function BulkAssignCleaner({ taskIds, reservationIds, onClose, onDone }: 
   }
   return (
     <CentreModal title="Assign a cleaner" sub={`${what} ticked.${reservationIds?.length ? ' Each reservation\'s open cleaning job goes to the cleaner.' : ''}`} onClose={() => { if (!busy) onClose(); }}>
-      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
+      <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <Select label="Cleaner" showLabel size="md" value={cleanerId} onChange={setCleanerId} placeholder="Pick a cleaner"
           options={cleaners.map(c => ({ value: c.id, label: c.name, hint: c.employmentType === 'outsourced' ? (c.vendorName ?? 'Outsourced') : `${c.busy} open today` }))} />
         <label className="flex items-start gap-2 text-copy cursor-pointer">
           <input type="checkbox" className="w-4 h-4 mt-[2px]" checked={force} onChange={e => setForce(e.target.checked)} />
           <span>Assign even where it overlaps the cleaner's other work</span>
         </label>
-        <div className="flex justify-end gap-[9px]">
+        <ModalActions>
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!cleanerId} disabledReason="Pick a cleaner.">Assign</Button>
-        </div>
+        </ModalActions>
       </form>
     </CentreModal>
   );

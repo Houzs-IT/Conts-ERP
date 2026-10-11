@@ -121,7 +121,7 @@ function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
           <Field label="Contact person" value={f.contactPerson} onChange={set('contactPerson')} />
           <PhoneInput label="Phone" value={f.phone} onChange={v => setF(s => ({ ...s, phone: v }))} />
           <Field label="Email" type="email" value={f.email} onChange={set('email')} error={emailBad(f.email) ? 'Check the email, or leave it blank.' : undefined} />
-          <div className="col-span-2"><Field label="Address" value={f.address} onChange={set('address')} /></div>
+          <div className="sm:col-span-2"><Field label="Address" value={f.address} onChange={set('address')} /></div>
           <Field label="Postcode" value={f.postcode} onChange={set('postcode')} />
           <Field label="State" value={f.state} onChange={set('state')} />
         </Section>
@@ -130,7 +130,7 @@ function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
           <MoneyInput label="Credit limit (RM)" valueSen={f.creditLimitSen} onChangeSen={v => setF(s => ({ ...s, creditLimitSen: v }))} />
           <Field label="TIN number" value={f.tinNumber} onChange={set('tinNumber')} />
           <Field label="Business reg. no" value={f.businessRegNo} onChange={set('businessRegNo')} />
-          <div className="col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
+          <div className="sm:col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
         </Section>
       </div>
       <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
@@ -144,7 +144,7 @@ function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
   );
 }
 function Section({ title, children }: { title: string; children: ReactNode }) {
-  return <div className="flex flex-col gap-2.5"><div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">{title}</div><div className="grid grid-cols-2 gap-3.5">{children}</div></div>;
+  return <div className="flex flex-col gap-2.5"><div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">{title}</div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">{children}</div></div>;
 }
 function Sel({ label, value, onChange, options }: { label: string; value: string; onChange: (e: { target: { value: string } }) => void; options: { value: string; label: string }[] }) {
   return <div className="flex flex-col gap-[7px]"><label className="text-[12px] font-medium text-muted-ink">{label}</label><select value={value} onChange={onChange} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>;

@@ -261,10 +261,10 @@ function Modal({ title, sub, onClose, footer, children, width = 480 }: {
 }) {
   return (
     <div role="dialog" aria-modal="true" aria-label={title}
-      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
       <div onClick={onClose} className="absolute inset-0" />
       <div style={{ maxWidth: width }}
-        className="relative w-full max-h-[90vh] overflow-y-auto bg-white rounded-card shadow-[var(--shadow-overlay)] animate-dialog">
+        className="relative w-full max-h-[90vh] overflow-y-auto bg-card rounded-card shadow-[var(--shadow-overlay)] animate-dialog">
         <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-1">
           <h2 className="m-0 text-title font-semibold text-pretty">{title}</h2>
           {sub && <p className="m-0 text-copy leading-[1.55] text-muted-ink text-pretty">{sub}</p>}

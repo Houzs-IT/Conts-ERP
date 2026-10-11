@@ -105,8 +105,8 @@ export default function ChannexChannelsCard({ unitId, linked, canManage, onChang
           <>
             <span className="text-ink">This creates the unit as a listing in Channex (billed as a vacation rental), sends its open dates and prices, and then lets you connect channels.</span>
             <div className="flex gap-2.5">
-              <Button size="sm" variant="primary" loading={busy} onClick={() => void setUp()}>Set up now</Button>
               <Button size="sm" variant="secondary" disabled={busy} onClick={() => setConfirming(false)}>Cancel</Button>
+              <Button size="sm" variant="primary" loading={busy} onClick={() => void setUp()}>Set up now</Button>
             </div>
           </>
         ) : (

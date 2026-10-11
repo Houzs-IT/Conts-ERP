@@ -138,7 +138,7 @@ function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onC
         <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
           <Field label="Consignee" placeholder="Showroom / retailer" value={consigneeName} onChange={e => setConsigneeName(e.target.value)} />
           <PhoneInput label="Phone" value={consigneePhone} onChange={setConsigneePhone} />
           <DateField label="Date" required value={cnDate} error={errors.cnDate} onChange={setCnDate} />

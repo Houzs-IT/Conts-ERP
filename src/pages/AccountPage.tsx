@@ -221,8 +221,8 @@ function TwoStepCard({ data, loading, gate, onChanged }: { data: Account | null;
               <CodeInput value={code} required onChange={setCode} error={codeError} />
             </div>
             <div className="flex gap-2 flex-wrap">
-              <Button type="submit" variant="primary" size="sm" loading={busy} disabled={code.length !== 6}>Turn on two-step sign-in</Button>
               <Button type="button" variant="secondary" size="sm" onClick={() => setSetup(null)} disabled={busy}>Cancel</Button>
+              <Button type="submit" variant="primary" size="sm" loading={busy} disabled={code.length !== 6}>Turn on two-step sign-in</Button>
             </div>
           </form>
         ) : ask ? (
@@ -230,8 +230,8 @@ function TwoStepCard({ data, loading, gate, onChanged }: { data: Account | null;
             <span className="text-copy">{ask === 'disable' ? 'Enter your password to turn two-step sign-in off.' : 'Enter your password to get ten new backup codes. The old ones stop working.'}</span>
             <PasswordField label="Password" value={password} required autoComplete="current-password" onChange={e => setPassword(e.target.value)} error={passwordError} />
             <div className="flex gap-2 flex-wrap">
-              <Button type="submit" variant={ask === 'disable' ? 'danger' : 'primary'} size="sm" loading={busy}>{ask === 'disable' ? 'Turn off' : 'Get new backup codes'}</Button>
               <Button type="button" variant="secondary" size="sm" onClick={() => { setAsk(null); setPassword(''); setPasswordError(''); }} disabled={busy}>Cancel</Button>
+              <Button type="submit" variant={ask === 'disable' ? 'danger' : 'primary'} size="sm" loading={busy}>{ask === 'disable' ? 'Turn off' : 'Get new backup codes'}</Button>
             </div>
           </form>
         ) : !t.available ? (

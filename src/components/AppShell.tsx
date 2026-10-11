@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useScrollMemory } from '../lib/useScrollMemory';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import Icon from './Icon';
@@ -74,13 +75,18 @@ export default function AppShell({
     return () => document.removeEventListener('keydown', onKey);
   }, [drawerOpen]);
 
+  // The content area is the page's one scroller: it remembers where each list was, starts a new page at the top,
+  // and takes the keyboard (PageUp/PageDown, arrows, Space) without a click first.
+  const mainRef = useRef<HTMLElement>(null);
+  useScrollMemory(mainRef, path);
+
   const drawerTransition = reduceMotion ? 'none' : `transform ${motion.standard} ${motion.ease}`;
 
   // On phone the drawer navigates AND closes; the sidebar's own chevron closes it.
   const drawerNavigate = (p: string) => { navigate(p); setDrawerOpen(false); };
 
   return (
-    <div data-print-root style={{ flex: 1, minWidth: 0, height: '100vh', display: 'flex', overflow: 'hidden' }}>
+    <div data-print-root style={{ flex: 1, minWidth: 0, height: '100dvh', display: 'flex', overflow: 'hidden' }}>
       {isNarrow ? (
         <>
           {/* Scrim behind the open drawer. */}
@@ -88,7 +94,7 @@ export default function AppShell({
             onClick={() => setDrawerOpen(false)}
             aria-hidden={!drawerOpen}
             style={{
-              position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(21,21,21,0.44)',
+              position: 'fixed', inset: 0, zIndex: 50, background: 'var(--color-surface-scrim)',
               opacity: drawerOpen ? 1 : 0,
               visibility: drawerOpen ? 'visible' : 'hidden',
               transition: reduceMotion ? 'none' : `opacity ${motion.standard} ${motion.ease}, visibility ${motion.standard} ${motion.ease}`,
@@ -114,7 +120,7 @@ export default function AppShell({
         <Sidebar path={path} navigate={navigate} open={navOpen} onToggle={toggleNav} />
       )}
 
-      <div data-print-root style={{ position: 'relative', flex: 1, minWidth: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div data-print-root style={{ position: 'relative', flex: 1, minWidth: 0, height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <RefreshLine />
         {isNarrow && (
           // One row on phones: menu, logo, then search / bell / page action. The desk top bar's crumbs are
@@ -136,7 +142,12 @@ export default function AppShell({
         )}
         {!isNarrow && <TopBar path={path} navigate={navigate} action={action} />}
         {/* Phones get the standard 16px side gutter; the desk keeps its wider one. */}
-        <main style={{ flex: 1, minHeight: 0, overflowY: flush ? 'hidden' : 'auto', padding: flush ? 0 : isNarrow ? '16px 16px 32px' : '24px 28px 40px', display: 'flex', flexDirection: 'column', gap: flush ? 0 : isNarrow ? 16 : 20 }}>
+        {/* The phone's bottom padding clears the home indicator / browser bar (safe area). */}
+        <main ref={mainRef} data-app-main tabIndex={-1} className="app-main" style={{
+          flex: 1, minHeight: 0, overflowY: flush ? 'hidden' : 'auto', overflowX: 'hidden',
+          padding: flush ? 0 : isNarrow ? '16px 16px calc(32px + env(safe-area-inset-bottom))' : '24px 28px 40px',
+          display: 'flex', flexDirection: 'column', gap: flush ? 0 : isNarrow ? 16 : 20,
+        }}>
           {children}
         </main>
       </div>

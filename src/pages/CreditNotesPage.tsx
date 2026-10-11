@@ -181,7 +181,7 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
         </div>
 
         {isSupplier ? (
-          <div className="grid grid-cols-2 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div className="flex flex-col gap-[7px]"><label className={labelCls} htmlFor="cn-sup">Supplier</label>
               <select id="cn-sup" value={supplierId} onChange={e => { setSupplierId(e.target.value); setPurchaseInvoiceId(''); }} className={selectCls}>
                 <option value="">Select a supplier…</option>
@@ -196,7 +196,7 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div className="flex flex-col gap-[7px]"><label className={labelCls} htmlFor="cn-si">Against sales invoice (optional)</label>
               <select id="cn-si" value={salesInvoiceId} onChange={e => setSalesInvoiceId(e.target.value)} className={selectCls}>
                 <option value="">None — name the customer instead</option>
@@ -207,7 +207,7 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
           <DateField label="Note date" required value={noteDate} error={errors.noteDate} onChange={setNoteDate} />
           <Field label="Source document (optional)" placeholder="e.g. PRET-2026-0001" value={sourceDocNo} onChange={e => setSourceDocNo(e.target.value)} />
           <Field label="Reason (optional)" placeholder="e.g. Goods returned" value={reason} onChange={e => setReason(e.target.value)} />
