@@ -22,7 +22,7 @@ import { deliveryToast } from '../lib/bookingStatus';
 import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, phone, todayMyt, greetName } from '../lib/format';
 import { phoneCountries } from '../lib/phone';
 import { Select, Menu } from '../components/Select';
-import { Chip as FilterChip } from './finance/listKit';
+import { FilterBar } from '../components/FilterBar';
 import type { BookingChannel, ReservationState, UnitReadiness, UserRole, Tone } from '../lib/types';
 import { RecordHistory } from '../components/RecordHistory';
 import { Eyebrow, Figure } from '../components/Metric';
@@ -74,9 +74,9 @@ interface Guest {
 }
 
 const FILTERS = [
-  { key: 'all', label: 'All guests', empty: 'No guests yet.' },
-  { key: 'arriving_today', label: 'Arriving today', empty: 'Nobody arrives today.' },
-  { key: 'departing_today', label: 'Departing today', empty: 'Nobody departs today.' },
+  { key: 'all', label: 'All guests', short: 'All', empty: 'No guests yet.' },
+  { key: 'arriving_today', label: 'Arriving today', short: 'Arriving', empty: 'Nobody arrives today.' },
+  { key: 'departing_today', label: 'Departing today', short: 'Departing', empty: 'Nobody departs today.' },
   { key: 'tomorrow', label: 'Tomorrow', empty: 'No arrivals or departures tomorrow.' },
   { key: 'missing_id', label: 'Missing ID', empty: 'Every guest with a stay coming has their registration details.' },
   { key: 'repeat', label: 'Repeat', empty: 'No repeat guests yet.' },
@@ -84,6 +84,8 @@ const FILTERS = [
   { key: 'blacklist', label: 'Blacklist', empty: 'No guest is blacklisted.' },
 ] as const;
 type Filter = typeof FILTERS[number]['key'];
+/** Ways to slice the whole directory; the rest are flags on a guest and live behind the Filter button. */
+const VIEW_KEYS: readonly Filter[] = ['all', 'arriving_today', 'departing_today', 'tomorrow'];
 interface ListPayload {
   data: GuestSummary[]; total: number; page: number; pageSize: number; generatedAt: string; registrationReady: boolean;
   counts: Record<Filter, number>;
@@ -361,12 +363,14 @@ export default function GuestsPage() {
                 ]} />
             ) : undefined}
             header={
-              <div role="group" aria-label="Filter guests" className="flex gap-2 flex-wrap py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
-                {FILTERS.map(f => (
-                  <FilterChip key={f.key} on={f.key === filter} onClick={() => setFilter(f.key)} count={counts?.[f.key]}>
-                    {f.key === 'missing_id' && !!counts?.missing_id && f.key !== filter ? <span className="text-danger">{f.label}</span> : f.label}
-                  </FilterChip>
-                ))}
+              <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
+                <FilterBar<Filter> label="Guest views" value={filter} onChange={setFilter}
+                  views={FILTERS.filter(f => VIEW_KEYS.includes(f.key)).map(f => ({ key: f.key, label: f.label, short: 'short' in f ? f.short : undefined, count: counts?.[f.key] }))}
+                  tags={{
+                    single: true, active: [filter], onClear: () => setFilter('all'),
+                    onToggle: k => setFilter(k === filter ? 'all' : k as Filter),
+                    items: FILTERS.filter(f => !VIEW_KEYS.includes(f.key)).map(f => ({ key: f.key, label: f.label, count: counts?.[f.key], tone: f.key === 'missing_id' ? 'danger' as const : undefined })),
+                  }} />
               </div>
             }
             toolbar={<>

@@ -13,7 +13,8 @@ import { refreshNavCounts } from '../lib/navBadges';
 import { statusLabel } from '../lib/status';
 import { type Approval, type ApprovalStatus, type Decision } from '../lib/approvals';
 import { date, dateTime, plural } from '../lib/format';
-import { useUrlState, SearchBox, FilterSelect, Chip } from './finance/listKit';
+import { useUrlState, SearchBox, FilterSelect } from './finance/listKit';
+import { FilterBar } from '../components/FilterBar';
 
 interface Payload {
   view: 'pending' | 'decided'; total: number; page: number; pageSize: number;
@@ -91,11 +92,16 @@ export default function ApprovalsPage() {
     <>
       <PageHeader title="Approvals" sub={sub} />
 
-      <div className="flex gap-2 overflow-x-auto pb-[2px] shrink-0 [scrollbar-width:none]">
-        <Chip on={view === 'pending'} onClick={() => url.set({ view: null, status: null, page: null })} count={data?.counts.pending}>Waiting</Chip>
-        <Chip on={view === 'decided'} onClick={() => url.set({ view: 'decided', page: null })} count={data?.counts.decided}>Decided</Chip>
-        <Chip on={mine} onClick={() => url.set({ mine: mine ? null : '1', page: null })}>Asked by me</Chip>
-      </div>
+      <FilterBar label="Approval views" className="shrink-0" value={view}
+        onChange={k => url.set(k === 'decided' ? { view: 'decided', page: null } : { view: null, status: null, page: null })}
+        views={[
+          { key: 'pending', label: 'Waiting', count: data?.counts.pending },
+          { key: 'decided', label: 'Decided', count: data?.counts.decided },
+        ]}
+        tags={{
+          items: [{ key: 'mine', label: 'Asked by me' }], active: mine ? ['mine'] : [],
+          onToggle: () => url.set({ mine: mine ? null : '1', page: null }), onClear: () => url.set({ mine: null, page: null }),
+        }} />
       <div className="flex flex-wrap gap-2 shrink-0">
         <SearchBox className="flex-[2_1_240px]" label="Search requests" placeholder="Search owner, booking, reason or person" value={q} onChange={v => url.set({ q: v || null, page: null })} />
         <FilterSelect className="flex-[1_1_200px]" label="Request type" all="All request types" value={kind} onChange={v => url.set({ kind: v || null, page: null })}

@@ -13,7 +13,7 @@ import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
 import { rating as fmtRating, date as fmtDate, todayMyt, count, plural } from '../lib/format';
 import type { BookingChannel } from '../lib/types';
-import { Chip } from './finance/listKit';
+import { FilterBar } from '../components/FilterBar';
 import { PageControls } from '../components/PageControls';
 
 /** A guest review pulled in from a channel. `reply`/`repliedAt` are set once the
@@ -153,26 +153,18 @@ export default function ReviewsPage() {
         </div>
       </Card>
 
-      {/* Filters */}
-      <div className="flex gap-4 flex-wrap items-center">
-        <div role="group" aria-label="Filter by rating" className="flex gap-2 flex-wrap items-center">
-          <span className="text-meta font-semibold text-muted-ink">Rating</span>
-          <Chip on={ratingFilter === 'all'} onClick={() => rate('all')}>All</Chip>
-          {([5, 4, 3, 2, 1] as const).map(n => (
-            <Chip key={n} on={ratingFilter === n} onClick={() => rate(n)}>
-              {n}<Icon name="Star" size="sm" color={color.gold} />
-            </Chip>
-          ))}
-        </div>
-        <div role="group" aria-label="Filter by reply state" className="flex gap-2 flex-wrap items-center">
-          <span className="text-meta font-semibold text-muted-ink">Status</span>
-          <Chip on={replyFilter === 'all'} onClick={() => replyState('all')}>All</Chip>
-          <Chip on={replyFilter === 'needs_reply'} onClick={() => replyState('needs_reply')} count={needsReplyCount || undefined}>
-            Needs reply
-          </Chip>
-          <Chip on={replyFilter === 'replied'} onClick={() => replyState('replied')}>Replied</Chip>
-        </div>
-      </div>
+      {/* Reply state is the main view; a star rating narrows it from the Filter menu. */}
+      <FilterBar<ReplyState> label="Filter by reply state" value={replyFilter} onChange={replyState}
+        views={[
+          { key: 'all', label: 'All' },
+          { key: 'needs_reply', label: 'Needs reply', count: needsReplyCount || undefined },
+          { key: 'replied', label: 'Replied' },
+        ]}
+        tags={{
+          single: true, active: ratingFilter === 'all' ? [] : [String(ratingFilter)],
+          items: ([5, 4, 3, 2, 1] as const).map(n => ({ key: String(n), label: `${n} ${n === 1 ? 'star' : 'stars'}` })),
+          onToggle: k => rate(String(ratingFilter) === k ? 'all' : Number(k) as RatingFilter), onClear: () => rate('all'),
+        }} />
 
       {/* List */}
       {loading && rows.length === 0 ? (

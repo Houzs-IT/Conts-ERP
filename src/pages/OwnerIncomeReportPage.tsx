@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
-import { amount, phone } from '../lib/format';
+import { amount, parsePhone } from '../lib/format';
 
 /** `#/finance/statements/:id/report[?unit=|?view=owner]` — the Owner Income Report, laid out as the owner's own report:
  *  page 1 the unit's month (OWNER INCOME REPORT), page 2 its year to date. `view=owner` puts the owner's whole
@@ -36,6 +36,14 @@ const money = (sen: number | null, opts: { brackets?: boolean; dash?: boolean } 
 };
 const pct = (n: number) => `${Number(n.toFixed(2))}%`;
 const dayMonYear = (iso: string) => `${iso.slice(8, 10)}-${MON_TITLE[Number(iso.slice(5, 7)) - 1]}-${iso.slice(0, 4)}`;
+/** "No. 2" never splits across lines (the letterhead's address wraps as on the owner's report). */
+const keepNumbers = (text: string) => text.replace(/\b(No\.?)\s+(?=\d)/gi, '$1\u00a0');
+/** As the owner's report prints a phone: a Malaysian number as dialled at home (011-6133 3289), any other with its code. */
+const printedPhone = (raw: string | null | undefined) => {
+  const p = parsePhone(raw);
+  if (!p?.possible) return (raw ?? '').trim();
+  return p.callingCode === '60' ? `0${p.national}` : p.international;
+};
 
 export default function OwnerIncomeReportPage() {
   const { id = '' } = useParams();
@@ -115,22 +123,38 @@ function Letterhead({ r }: { r: Report }) {
       <div>
         <div className="oir-company">{c.legalName}</div>
         {c.companyNumber && <div className="oir-small">Company No: {c.companyNumber}</div>}
-        {c.address && <div className="oir-addr">{c.address}</div>}
-        {(c.phone || c.email) && <div className="oir-addr oir-contact">{[c.phone && `TEL: ${phone(c.phone)}`, c.email && `EMAIL: ${c.email}`].filter(Boolean).join(' | ')}</div>}
+        {c.address && <div className="oir-addr">{keepNumbers(c.address)}</div>}
+        {(c.phone || c.email) && <div className="oir-addr oir-contact">{[c.phone && `TEL: ${printedPhone(c.phone)}`, c.email && `EMAIL: ${c.email}`].filter(Boolean).join(' | ')}</div>}
       </div>
       <img src={c.logo} alt="The Conts" className="oir-logo" />
     </header>
   );
 }
 
-function Parties({ r, u, right }: { r: Report; u: Unit; right: [string, string][] }) {
-  const left: [string, string][] = [['OWNER', r.owner.name.toUpperCase()], ['BUILDING', u.code], ['UNIT', u.address ?? `${u.propertyName} ${u.unitNumber}`], ['TEL', r.owner.phone ?? ''], ['EMAIL', r.owner.email ?? '']];
+/** The owner's details on the left, the report's on the right, row for row as on the owner's report: REF. NO. beside
+ *  OWNER, DATE (or MONTH) beside UNIT, MONTHS beside TEL, TERMS beside EMAIL. `right` is indexed by left row; null
+ *  leaves the place empty. TEL and EMAIL stand a little apart, as printed. */
+type Pair = [string, string] | null;
+function PartyRows({ left, right }: { left: [string, string][]; right: Pair[] }) {
   return (
     <div className="oir-parties">
-      <dl>{left.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>: {v}</dd></div>)}</dl>
-      <dl>{right.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>: {v}</dd></div>)}</dl>
+      {left.map(([k, v], i) => {
+        const rv = right[i];
+        return (
+          <div key={k} className={k === 'TEL' || k === 'EMAIL' ? 'oir-prow oir-apart' : 'oir-prow'}>
+            <div className="oir-pair"><span className="oir-k">{k}</span><span className="oir-v">: {v}</span></div>
+            <div className="oir-pair oir-right">{rv && <><span className="oir-k">{rv[0]}</span><span className="oir-v">: {rv[1]}</span></>}</div>
+          </div>
+        );
+      })}
     </div>
   );
+}
+
+function Parties({ r, u, right }: { r: Report; u: Unit; right: Pair[] }) {
+  const left: [string, string][] = [['OWNER', r.owner.name.toUpperCase()], ['BUILDING', u.code], ['UNIT', (u.address ?? `${u.propertyName} ${u.unitNumber}`).toUpperCase()],
+    ['TEL', printedPhone(r.owner.phone)], ['EMAIL', r.owner.email ?? '']];
+  return <PartyRows left={left} right={right} />;
 }
 
 function Signatures() {
@@ -149,9 +173,9 @@ function MonthPage({ r, u }: { r: Report; u: Unit }) {
     <article className="oir-sheet">
       <Letterhead r={r} />
       <h1>OWNER INCOME REPORT</h1>
-      <Parties r={r} u={u} right={[['REF. NO.', u.refNo], ['DATE', dayMonYear(r.periodEnd)], ['MONTHS', mon], ['TERMS', r.settings.paymentTerms]]} />
+      <Parties r={r} u={u} right={[['REF. NO.', u.refNo], null, ['DATE', dayMonYear(r.periodEnd)], ['MONTHS', mon], ['TERMS', r.settings.paymentTerms]]} />
       <table className="oir-table">
-        <colgroup><col style={{ width: '45%' }} /><col style={{ width: '8%' }} /><col style={{ width: '10%' }} /><col style={{ width: '18%' }} /><col style={{ width: '19%' }} /></colgroup>
+        <colgroup><col style={{ width: '44%' }} /><col style={{ width: '9%' }} /><col style={{ width: '11%' }} /><col style={{ width: '18%' }} /><col style={{ width: '18%' }} /></colgroup>
         <thead><tr><th>DESCRIPTION</th><th>QTY</th><th>UOM</th><th>PRICE (RM)</th><th>AMOUNT (RM)</th></tr></thead>
         <tbody>
           <tr><td><u><b>Gross Income</b></u></td><td /><td /><td /><td /></tr>
@@ -167,14 +191,14 @@ function MonthPage({ r, u }: { r: Report; u: Unit }) {
             {u.deductions.map(d => (
               <tr key={d.key}><td className="oir-in">{d.label}</td><td className="c">{d.quantity ?? ''}</td><td className="c">{d.uom}</td><td className="r">{money(d.price)}</td><td className="r">{money(d.amount)}</td></tr>
             ))}
-            <tr><td /><td /><td /><td className="r"><b>Total Deduction</b></td><td className="r oir-box"><b>{money(u.deductionsTotal, { dash: false })}</b></td></tr>
+            <tr><td /><td /><td /><td className="c"><b>Total Deduction</b></td><td className="r oir-box oir-closed"><b>{money(u.deductionsTotal, { dash: false })}</b></td></tr>
             <tr className="oir-gap"><td><b>Net Income Before Deduct Management Fees</b></td><td /><td /><td /><td className="r">{money(u.net, { dash: false })}</td></tr>
             <tr><td><b>{pct(u.operatorPct ?? 0)} To Operator</b></td><td /><td /><td className="r">{pct(u.operatorPct ?? 0)}</td><td className="r">{money(-u.operatorShare, { dash: false })}</td></tr>
             {u.topUp > 0 && <tr><td><b>Minimum Guarantee Top-up</b></td><td /><td /><td className="r">{money(u.guarantee)}</td><td className="r">{money(u.topUp)}</td></tr>}
           </>}
           <tr><td><b>Payout Before O2 Adjustment</b></td><td /><td /><td /><td className="r oir-box"><b>{money(u.payoutBeforeAdjustments, { dash: false })}</b></td></tr>
-          {u.adjustments.map(a => <tr key={a.id} className="oir-gap"><td>{a.description}</td><td /><td /><td /><td className="r">{money(a.amount)}</td></tr>)}
-          <tr><td><b>Net Payout to Owner</b></td><td /><td /><td /><td className="r oir-box"><b>{money(u.netPayout, { dash: false })}</b></td></tr>
+          {u.adjustments.map((a, i) => <tr key={a.id} className={i === 0 ? 'oir-gap' : undefined}><td>{a.description.toUpperCase()}</td><td /><td /><td /><td className="r">{money(a.amount)}</td></tr>)}
+          <tr><td><b>Net Payout to Owner</b></td><td /><td /><td /><td className="r oir-box">{money(u.netPayout, { dash: false })}</td></tr>
           <tr className="oir-fill"><td /><td /><td /><td /><td className="oir-box" /></tr>
         </tbody>
       </table>
@@ -191,9 +215,9 @@ function YearPage({ r, u }: { r: Report; u: Unit }) {
     <article className="oir-sheet">
       <Letterhead r={r} />
       <h1>YEAR-TO-DATE OWNER INCOME REPORT (JAN - DEC {year})</h1>
-      <Parties r={r} u={u} right={[['REF. NO.', u.refNo], ['MONTH', `${MON[Number(r.period.slice(5, 7)) - 1]} ${year}`]]} />
+      <Parties r={r} u={u} right={[['REF. NO.', u.refNo], null, ['MONTH', `${MON[Number(r.period.slice(5, 7)) - 1]} ${year}`]]} />
       <table className="oir-table oir-ytd">
-        <colgroup><col style={{ width: '12%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /></colgroup>
+        <colgroup><col style={{ width: '14%' }} /><col style={{ width: '21%' }} /><col style={{ width: '22%' }} /><col style={{ width: '21%' }} /><col style={{ width: '22%' }} /></colgroup>
         <thead><tr><th>MONTH</th><th>GROSS INCOME (RM)</th><th>EXPENSE DEDUCTION (RM)</th><th>GROSS DEDUCTION (RM)</th><th>NET INCOME (RM)</th></tr></thead>
         <tbody>
           {u.year.map(y => (
@@ -223,16 +247,13 @@ function OwnerMonthPage({ r }: { r: Report }) {
   const income = (u: Unit) => (u.basis === 'share' ? u.gross : u.fixedRent);
   const adj = (u: Unit) => u.adjustments.reduce((n, a) => n + a.amount, 0);
   const ref = `${r.period.slice(2, 4)}${r.period.slice(5, 7)}-OWNER`;
-  const left: [string, string][] = [['OWNER', r.owner.name.toUpperCase()], ['UNITS', String(r.units.length)], ['TEL', r.owner.phone ?? ''], ['EMAIL', r.owner.email ?? '']];
-  const right: [string, string][] = [['REF. NO.', ref], ['DATE', dayMonYear(r.periodEnd)], ['MONTHS', mon], ['TERMS', r.settings.paymentTerms]];
+  const left: [string, string][] = [['OWNER', r.owner.name.toUpperCase()], ['UNITS', String(r.units.length)], ['TEL', printedPhone(r.owner.phone)], ['EMAIL', r.owner.email ?? '']];
+  const right: Pair[] = [['REF. NO.', ref], ['DATE', dayMonYear(r.periodEnd)], ['MONTHS', mon], ['TERMS', r.settings.paymentTerms]];
   return (
     <article className="oir-sheet">
       <Letterhead r={r} />
       <h1>OWNER INCOME REPORT (ALL UNITS)</h1>
-      <div className="oir-parties">
-        <dl>{left.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>: {v}</dd></div>)}</dl>
-        <dl>{right.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>: {v}</dd></div>)}</dl>
-      </div>
+      <PartyRows left={left} right={right} />
       <table className="oir-table oir-ytd oir-owner">
         <colgroup><col style={{ width: '25%' }} /><col style={{ width: '13%' }} /><col style={{ width: '13%' }} /><col style={{ width: '12%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11%' }} /><col style={{ width: '13%' }} /></colgroup>
         <thead><tr><th>UNIT</th><th>GROSS INCOME (RM)</th><th>EXPENSE DEDUCTION (RM)</th><th>TO OPERATOR (RM)</th><th>PAYOUT BEFORE O2 (RM)</th><th>O2 (RM)</th><th>NET PAYOUT (RM)</th></tr></thead>
@@ -279,12 +300,9 @@ function OwnerYearPage({ r }: { r: Report }) {
     <article className="oir-sheet">
       <Letterhead r={r} />
       <h1>YEAR-TO-DATE OWNER INCOME REPORT, ALL UNITS (JAN - DEC {year})</h1>
-      <div className="oir-parties">
-        <dl>{([['OWNER', r.owner.name.toUpperCase()], ['UNITS', r.units.map(u => u.code).join(', ')]] as [string, string][]).map(([k, v]) => <div key={k}><dt>{k}</dt><dd>: {v}</dd></div>)}</dl>
-        <dl><div><dt>MONTH</dt><dd>: {MON[Number(r.period.slice(5, 7)) - 1]} {year}</dd></div></dl>
-      </div>
+      <PartyRows left={[['OWNER', r.owner.name.toUpperCase()], ['UNITS', r.units.map(u => u.code).join(', ')]]} right={[null, ['MONTH', `${MON[Number(r.period.slice(5, 7)) - 1]} ${year}`]]} />
       <table className="oir-table oir-ytd">
-        <colgroup><col style={{ width: '12%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /></colgroup>
+        <colgroup><col style={{ width: '14%' }} /><col style={{ width: '21%' }} /><col style={{ width: '22%' }} /><col style={{ width: '21%' }} /><col style={{ width: '22%' }} /></colgroup>
         <thead><tr><th>MONTH</th><th>GROSS INCOME (RM)</th><th>EXPENSE DEDUCTION (RM)</th><th>GROSS DEDUCTION (RM)</th><th>NET INCOME (RM)</th></tr></thead>
         <tbody>
           {months.map(m => (
@@ -313,38 +331,43 @@ const CSS = `
 .oir-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .oir-note { max-width: 560px; margin: 48px auto; padding: 0 16px; font: 14px/1.5 "IBM Plex Sans", system-ui, sans-serif; color: #444; }
 .oir-sheets { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 16px 0; }
-.oir-sheet { box-sizing: border-box; width: 210mm; min-height: 297mm; padding: 11mm 15mm 9mm; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.18);
-  font-family: "Times New Roman", Times, serif; font-size: 10.5pt; line-height: 1.3; display: flex; flex-direction: column; }
+.oir-sheet { box-sizing: border-box; width: 210mm; min-height: 297mm; padding: 11mm 14mm 9mm; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.18);
+  font-family: "Times New Roman", Times, serif; font-size: 9pt; line-height: 1.3; display: flex; flex-direction: column; }
 .oir-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding-bottom: 4px; border-bottom: 1.5px solid #000; }
-.oir-company { font-size: 19pt; font-weight: 700; text-transform: uppercase; letter-spacing: .01em; margin-bottom: 3px; }
-.oir-small { font-size: 9pt; margin-bottom: 3px; }
-.oir-addr { font-size: 9.5pt; font-weight: 700; max-width: 112mm; text-transform: uppercase; }
-.oir-contact { text-transform: none; }
-.oir-logo { width: 34mm; height: auto; margin-top: 2mm; }
-.oir-sheet h1 { margin: 9px 0 10px; text-align: center; font-size: 12.5pt; font-weight: 700; }
-.oir-parties { display: grid; grid-template-columns: 1.25fr 1fr; gap: 0 24px; margin-bottom: 10px; }
-.oir-parties dl { margin: 0; }
-.oir-parties dl > div { display: grid; grid-template-columns: 22mm 1fr; margin-bottom: 5px; }
-.oir-parties dl:last-child > div { grid-template-columns: 22mm 1fr; }
-.oir-parties dt { font-weight: 700; }
-.oir-parties dd { margin: 0; padding-left: 1.2em; text-indent: -1.2em; }
+/* Sizes measured off the owner's printed report. The address keeps its own line breaks; one saved on a single line
+   wraps at the sample's width (after "KL GATEWAY," and "KERINCHI LESTARI,"). */
+.oir-company { font-size: 16.5pt; font-weight: 700; text-transform: uppercase; margin-bottom: 2px; }
+.oir-small { font-size: 8pt; margin-bottom: 3px; }
+.oir-addr { font-size: 9pt; font-weight: 700; max-width: 89.5mm; text-transform: uppercase; white-space: pre-line; line-height: 1.35; }
+.oir-contact { text-transform: none; white-space: nowrap; max-width: none; }
+.oir-logo { width: 28mm; height: auto; margin-top: 1mm; margin-right: 1mm; }
+.oir-sheet h1 { margin: 2.5mm 0 2mm; text-align: center; font-size: 11pt; font-weight: 700; }
+.oir-parties { display: flex; flex-direction: column; margin-bottom: 3mm; font-size: 9.5pt; }
+.oir-prow { display: grid; grid-template-columns: 62.5% 37.5%; margin-bottom: 1.1mm; }
+.oir-prow.oir-apart { margin-top: 2.6mm; margin-bottom: 1.1mm; }
+.oir-pair { display: flex; align-items: flex-start; min-width: 0; }
+.oir-k { flex: none; min-width: 20mm; font-weight: 700; white-space: nowrap; }
+.oir-right .oir-k { min-width: 15.2mm; }
+.oir-v { flex: 1; min-width: 0; padding-left: .75em; text-indent: -.75em; padding-right: 20mm; }
+.oir-right .oir-v { padding-right: 0; }
 .oir-table { width: 100%; border-collapse: collapse; border: 1.5px solid #000; }
-.oir-table th { background: #dce9f5; border: 1.5px solid #000; padding: 5px 6px; font-weight: 700; text-align: center; }
-.oir-table td { border-left: 1.5px solid #000; padding: 3px 6px; vertical-align: top; }
+.oir-table th { background: #dce9f5; border: 1.5px solid #000; padding: 1mm 1.5mm; font-weight: 700; text-align: center; }
+.oir-table td { border-left: 1.5px solid #000; padding: .8mm 1.5mm; vertical-align: top; }
 .oir-table .c { text-align: center; } .oir-table .r { text-align: right; white-space: nowrap; }
-.oir-table .oir-in { padding-left: 16px; }
-.oir-table tr.oir-gap td { padding-top: 9px; }
+.oir-table .oir-in { padding-left: 4.5mm; }
+.oir-table tr.oir-gap td { padding-top: 2.6mm; }
 .oir-table td.oir-box { border-top: 1.5px solid #000; border-right: 1.5px solid #000; }
+.oir-table td.oir-closed { border-bottom: 1.5px solid #000; }
 .oir-table tr.oir-fill td { height: 18px; }
-.oir-ytd td, .oir-ytd th { border: 1.5px solid #000; padding: 6px 7px; }
-.oir-ytd tr.oir-total td { padding: 7px; }
+.oir-ytd td, .oir-ytd th { border: 1.5px solid #000; padding: 1.4mm 1.5mm; }
+.oir-ytd tr.oir-total td { padding: 1.4mm 1.5mm; }
 .oir-foot { margin: 6px 0 0; font-size: 9pt; }
-.oir-terms { margin-top: 12px; font-size: 10pt; }
-.oir-terms h3 { margin: 0 0 4px; font-size: 10pt; font-style: italic; font-weight: 700; text-decoration: underline; }
-.oir-terms ol { margin: 0; padding-left: 28px; }
-.oir-terms li { margin-bottom: 3px; }
-.oir-sign { display: flex; justify-content: space-between; margin-top: auto; padding-top: 18px; }
-.oir-sign div { width: 62mm; padding-top: 6px; border-top: 1.5px solid #000; font-size: 11pt; }
+.oir-terms { margin-top: 5mm; font-size: 9pt; }
+.oir-terms h3 { margin: 0 0 1.5mm; font-size: 9pt; font-style: italic; font-weight: 700; text-decoration: underline; }
+.oir-terms ol { margin: 0; padding-left: 9.5mm; }
+.oir-terms li { margin-bottom: 1.2mm; padding-left: 1mm; }
+.oir-sign { display: flex; justify-content: space-between; margin-top: 8mm; }
+.oir-sign div { width: 53mm; padding-top: 1.5mm; border-top: 1.5px solid #000; font-size: 10pt; }
 @page { size: A4; margin: 0; }
 @media print {
   html, body { background: #fff !important; }

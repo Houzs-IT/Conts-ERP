@@ -3,7 +3,6 @@ import Icon from '../../components/Icon';
 import { useSearchParams } from 'react-router-dom';
 import { cx } from '../../lib/design-tokens';
 import { useApi } from '../../lib/useApi';
-import { count as countLabel } from '../../lib/format';
 
 /**
  * Small pieces the finance and owner lists share so thousands of rows read the same way on every screen:
@@ -107,22 +106,6 @@ export function FilterSelect({ label, value, onChange, all, options, className }
       </select>
       <span className="absolute right-2.5 flex pointer-events-none text-muted-ink"><Icon name="ChevronDown" size="sm" /></span>
     </label>
-  );
-}
-
-/** Pill with an optional count, for category / state chips. */
-export function Chip({ on, onClick, children, count }: { on: boolean; onClick: () => void; children: ReactNode; count?: number }) {
-  return (
-    <button onClick={onClick} aria-pressed={on}
-      className={cx('inline-flex shrink-0 items-center gap-[7px] h-8 px-[12px] rounded-full cursor-pointer whitespace-nowrap font-sans text-copy font-medium border border-solid',
-        on ? 'border-black bg-black text-white' : 'border-line bg-card text-muted-ink')}>
-      {children}
-      {count !== undefined && (
-        <span className={cx('text-caption font-semibold py-px px-[6px] rounded-full tabular-nums', on ? 'bg-[rgba(255,255,255,0.18)] text-white' : 'bg-muted text-muted-ink')}>
-          {countLabel(count)}
-        </span>
-      )}
-    </button>
   );
 }
 

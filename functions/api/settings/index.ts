@@ -2,6 +2,8 @@ import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { checkPhone } from '../../_lib/validate';
 import { ROLES } from '../../_lib/roles';
+import { COMPANY_DEFAULTS } from '../../_lib/letterhead';
+import { DEFAULT_MONTHLY_TERMS, DEFAULT_YEAR_TERMS } from '../../_lib/ownerReport';
 
 const MANAGE = ['management'];
 
@@ -10,11 +12,12 @@ type Field = { def: string | number | boolean; legacy?: string; kind: 'text' | '
 /** Every setting, its default, and how to check a saved value. Stored as one row per setting, keyed "section.name". */
 const SPEC: Record<string, Record<string, Field>> = {
   company: {
-    legalName: { def: 'The Conts Sdn Bhd', legacy: 'org.legal_name', kind: 'text', required: true },
+    legalName: { def: 'The Conts Sdn. Bhd.', legacy: 'org.legal_name', kind: 'text', required: true },
     companyNumber: { def: '202301027399 (1521322-V)', legacy: 'org.company_number', kind: 'text', required: true },
-    address: { def: 'C-41-06, Jaya One, Jalan Universiti, 46200 Petaling Jaya', legacy: 'org.address', kind: 'text' },
-    supportPhone: { def: '+60 17-465 8868', legacy: 'org.support_phone', kind: 'phone' },
-    supportEmail: { def: 'support@theconts.com', kind: 'email' },
+    // As printed on the owner's report; the address keeps its line breaks on every letterhead (letterhead.ts).
+    address: { def: COMPANY_DEFAULTS.address, legacy: 'org.address', kind: 'longtext' },
+    supportPhone: { def: COMPANY_DEFAULTS.phone, legacy: 'org.support_phone', kind: 'phone' },
+    supportEmail: { def: COMPANY_DEFAULTS.email, kind: 'email' },
   },
   locale: {
     default: { def: 'en-MY', legacy: 'locale.default', kind: 'choice', options: ['en-MY', 'ms-MY', 'zh-Hans'] },
@@ -44,8 +47,8 @@ const SPEC: Record<string, Record<string, Field>> = {
   // deducted each month from units whose contract has miscellaneous charges). Terms are one per line.
   report: {
     paymentTerms: { def: '7th every month', kind: 'text', required: true },
-    monthlyTerms: { def: '', kind: 'longtext' },
-    yearTerms: { def: '', kind: 'longtext' },
+    monthlyTerms: { def: DEFAULT_MONTHLY_TERMS, kind: 'longtext' },
+    yearTerms: { def: DEFAULT_YEAR_TERMS, kind: 'longtext' },
     miscChargeMonthly: { def: 10000, kind: 'number', min: 0, max: 10_000_000, integer: true },
   },
   // Maker-checker (functions/_lib/approvals.ts), off unless enabled (owner, 11 Oct 2026). Limits in sen: with it on, an
