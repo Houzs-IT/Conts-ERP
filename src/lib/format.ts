@@ -3,6 +3,9 @@
  * transport and state; it only becomes a string at the edge, here.
  */
 
+import { parsePhone } from './phone';
+export { parsePhone } from './phone';
+
 const MYT = 'Asia/Kuala_Lumpur';
 
 
@@ -160,56 +163,27 @@ export const rmRange = (loSen: number, hiSen: number) =>
 /* ---------- Phone numbers ----------
  * Guests' phones arrive as bare digits with the country code (60189800069, from the booking sites and the
  * HostPlatform import), sometimes with + and spaces, sometimes as a Malaysian local number (0189800069).
- * They are stored as they came; this only changes how they read: +60 18-980 0069. */
-
-/** Country calling codes we expect, longest first so 852 wins over 85. */
-const CALLING_CODES = ['852', '853', '855', '856', '880', '886', '960', '971', '966', '673', '670',
-  '60', '65', '62', '63', '66', '84', '86', '81', '82', '91', '92', '94', '95', '61', '64', '44', '33', '49', '31', '39', '34', '7', '1']
-  .sort((a, b) => b.length - a.length);
-
-const group = (s: string, sizes: number[]) => {
-  const out: string[] = []; let i = 0;
-  for (const n of sizes) { if (i >= s.length) break; out.push(s.slice(i, i + n)); i += n; }
-  if (i < s.length) out.push(s.slice(i));
-  return out;
-};
+ * They are stored as they came; this only changes how they read, for every country: +60 18-980 0069,
+ * +44 7700 900123, +7 912 345-67-89. The reading rules live in phone.ts, shared with the server checks. */
 
 /** The digits a phone link dials, with the country code: "60189800069". Empty when there is no usable number. */
 export const phoneDigits = (raw: string | null | undefined) => {
-  if (!raw) return '';
-  const trimmed = raw.trim();
-  let d = trimmed.replace(/\D/g, '');
+  const p = parsePhone(raw);
+  if (p?.possible) return p.digits;
+  const trimmed = (raw ?? '').trim();
+  const d = trimmed.replace(/\D/g, '');
   if (!d) return '';
-  if (trimmed.startsWith('00')) d = d.slice(2);
-  // A Malaysian local number (leading 0, 9-11 digits) gets Malaysia's code.
-  else if (!trimmed.startsWith('+') && /^0[1-9]\d{7,9}$/.test(d)) d = `60${d.slice(1)}`;
-  return d;
+  return trimmed.startsWith('00') ? d.slice(2) : d;
 };
 
-/** +60 18-980 0069 · +65 9123 4567 · +62 812 3456 7890 · +63 917 123 4567 · otherwise +<code> <rest>. */
+/** +60 18-980 0069 for any country; a number of the wrong length shows as +<digits>, and text with too few digits
+ *  to be a phone shows as typed. */
 export const phone = (raw: string | null | undefined) => {
   if (!raw) return '';
+  const p = parsePhone(raw);
+  if (p?.possible) return p.international;
   const d = phoneDigits(raw);
-  if (d.length < 7) return raw.trim();
-  const cc = CALLING_CODES.find(c => d.startsWith(c) && d.length - c.length >= 6);
-  if (!cc) return `+${d}`;
-  const n = d.slice(cc.length);
-  switch (cc) {
-    case '60': {
-      // Mobiles 1x (011 numbers carry 8 digits after the prefix), KL 3, other states one digit, Sabah / Sarawak 8x.
-      const area = n.startsWith('1') || n.startsWith('8') ? n.slice(0, 2) : n.slice(0, 1);
-      const rest = n.slice(area.length);
-      return `+60 ${area}-${rest.length > 7 ? group(rest, [4, 4]).join(' ') : group(rest, [3, 4]).join(' ')}`;
-    }
-    case '65': case '852': case '853': return `+${cc} ${group(n, [4, 4]).join(' ')}`;
-    case '62': return `+62 ${group(n, [3, 4, 4]).join(' ')}`;
-    case '63': return `+63 ${group(n, [3, 3, 4]).join(' ')}`;
-    case '66': return `+66 ${group(n, [n.startsWith('2') ? 1 : 2, 3, 4]).join(' ')}`;
-    case '86': return `+86 ${group(n, [3, 4, 4]).join(' ')}`;
-    case '1': return `+1 ${group(n, [3, 3, 4]).join(' ')}`;
-    case '44': return `+44 ${group(n, [4, 6]).join(' ')}`;
-    default: return `+${cc} ${group(n, [3, 3, 4]).join(' ')}`;
-  }
+  return d.length < 7 ? raw.trim() : `+${d}`;
 };
 
 /** tel: link for a phone, or '' when there is no number. */

@@ -3,6 +3,7 @@
  *  and returns nothing; the handler ends with `const bad = invalid(fields); if (bad) return bad;`.
  *  A value that is absent passes unless `required`, so PATCH bodies can be checked with the same calls. */
 import { fail } from './db';
+import { parsePhone } from '../../src/lib/phone';
 
 export type Fields = Record<string, string>;
 
@@ -64,13 +65,14 @@ export function checkTime(fields: Fields, key: string, v: unknown, o: { label?: 
   if (typeof v !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(v)) fields[key] = `${label} must be a time such as 15:00.`;
 }
 
-/** A phone number: 7 to 15 digits, with spaces, dashes, brackets and a leading + allowed. */
+/** A phone number of any country, read the way the screens read it (+60 / 0060 / 60... / a Malaysian 0...).
+ *  Lenient on purpose: the right length for its country is enough, so a real guest number is never refused. */
 export function checkPhone(fields: Fields, key: string, v: unknown, o: { label?: string; required?: boolean } = {}) {
   const label = o.label ?? 'Phone';
   if (absent(v)) { if (o.required) fields[key] = `${label} is required.`; return; }
   if (typeof v !== 'string' || !/^\+?[\d\-() ]+$/.test(v.trim())) { fields[key] = `${label} can only hold digits, spaces, dashes and a leading +.`; return; }
-  const digits = v.replace(/\D/g, '').length;
-  if (digits < 7 || digits > 15) fields[key] = `${label} must have 7 to 15 digits, e.g. +60 12-345 6789.`;
+  const p = parsePhone(v);
+  if (!p?.possible) fields[key] = `${label} is not a complete number for its country. Start with + and the country code, e.g. +60 12-345 6789 or +44 7700 900123.`;
 }
 
 /** The 422 response when any check failed, else null. */

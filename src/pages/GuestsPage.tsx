@@ -760,7 +760,7 @@ function AddGuestModal({ onClose, onAdd }: { onClose: () => void; onAdd: (input:
     <CentreModal title="Add guest" sub="Creates the guest's record only. To give them a unit and dates, use Book a stay on their profile." onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
         <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" required />
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
           <PhoneInput label="Phone" value={phone} onChange={setPhone} error={errors.phone} />
           <Field label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com" error={errors.email} />
         </div>

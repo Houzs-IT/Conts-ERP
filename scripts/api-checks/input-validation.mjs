@@ -43,6 +43,14 @@ await refuses('settings check-in 25:00', 'PUT', '/api/settings', { operations: {
   const after = (await call('GET', '/api/settings')).json;
   check('settings accepts RM 12.30 as 1230 sen and a +60 phone', r.status === 200 && after?.report?.miscChargeMonthly === 1230, `${r.status} ${r.text}`);
   await call('PUT', '/api/settings', { report: { miscChargeMonthly: before.report.miscChargeMonthly }, company: { supportPhone: before.company.supportPhone } });
+  // Any country, in the shapes guests' numbers arrive in; a number too short for its country is refused.
+  for (const p of ['+44 7700 900123', '+7 912 345-67-89', '966558607042', '6596532231', '0189800069', '+82 10-1234-5678', '+1 416 555 0199']) {
+    const ok = await call('PUT', '/api/settings', { company: { supportPhone: p } });
+    check(`settings accepts phone ${p}`, ok.status === 200, `${ok.status} ${ok.text}`);
+  }
+  await refuses('settings phone too short for the UK', 'PUT', '/api/settings', { company: { supportPhone: '+44 7700 9' } }, 'company.supportPhone');
+  await refuses('settings phone too long for Malaysia', 'PUT', '/api/settings', { company: { supportPhone: '+60 12-345 6789 0123' } }, 'company.supportPhone');
+  await call('PUT', '/api/settings', { company: { supportPhone: before.company.supportPhone } });
 }
 
 // Forms behind the converted fields. Every body below is refused before anything is written.
