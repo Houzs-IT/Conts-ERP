@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { color, channel as CH } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
+import { CoverPhotoDrop } from '../components/Attachments';
 import { Eyebrow, Figure, SectionTitle } from '../components/Metric';
 import PageHeader from '../components/PageHeader';
 import { EmptyState } from '../components/States';
@@ -298,10 +299,9 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   const { user } = useSession();
   // Matches MASTER_ROLES on the server's channex-setup / channex-connect.
   const canManageChannels = !!user && MASTER_ROLES.includes(user.role);
-  const fileRef = useRef<HTMLInputElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [photo, setPhoto] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
   useEffect(() => { setPhoto(null); }, [d.unit.id]);
 
   const u = d.unit;
@@ -332,9 +332,11 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   function takeFile(file: File) {
     const fd = new FormData();
     fd.append('file', file); fd.append('unitId', u.id); fd.append('kind', 'photo');
+    setUploading(true);
     api.post('/documents', fd)
       .then(() => { setPhoto(URL.createObjectURL(file)); toast({ tone: 'success', title: 'Photo added to this unit.', body: 'It will appear on the owner statement and channel listings.' }); reloadDetail(); })
-      .catch(notifyFailure);
+      .catch(notifyFailure)
+      .finally(() => setUploading(false));
   }
   function expensesReport() {
     if (!form) return;
@@ -350,22 +352,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
     <>
       <Card>
         <div className="pt-[14px] px-[14px] pb-0">
-          <div
-            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files.item(0); if (f) takeFile(f); }}
-            className={cx('h-[84px] sm:h-[112px] rounded-control grid place-items-center overflow-hidden bg-muted', dragOver ? '[border:1px_dashed_var(--color-gold)]' : '[border:1px_solid_var(--color-line-soft)]')}
-            style={photo ? { background: `center / cover no-repeat url(${photo})` } : undefined}>
-            {!photo && (
-              <div className="flex items-center gap-[10px] text-center px-4">
-                <Icon name="Image" size="base" color={color.faint} />
-                <span className="text-meta text-muted-ink">
-                  <span className="font-medium text-ink">Drop a photo of this unit</span> or <button onClick={() => fileRef.current?.click()} className="[font-family:inherit] text-meta bg-transparent [border:none] p-0 cursor-pointer text-gold-ink underline">browse files</button>
-                </span>
-              </div>
-            )}
-          </div>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.currentTarget.files?.item(0); if (f) takeFile(f); e.currentTarget.value = ''; }} />
+          <CoverPhotoDrop photo={photo} onPick={takeFile} busy={uploading} className="h-[96px] sm:h-[128px]"
+            label="Add a photo of this unit" hint="Drop an image here, or click to browse" />
         </div>
 
         <div className="pt-[18px] px-5 sm:px-6 pb-4 flex items-start justify-between gap-6 flex-wrap">
