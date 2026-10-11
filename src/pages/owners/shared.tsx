@@ -46,11 +46,26 @@ export interface Owner {
   /** Owner-level default management fee, applied to units with no per-unit override. Null = none set. */
   defaultManagementFeePct: number | null;
   contract: { feePct: number; startedOn: string; renewsOn: string | null; endsOn?: string | null } | null;
+  /** Owner details card. Address and alternate contact need migration 0110 (Payload.detailsReady). */
+  legalName?: string | null; notes?: string | null;
+  address?: OwnerAddress | null; altContact?: { name: string | null; phone: string | null; relation: string | null } | null;
   /** The owner's statement for the month asked for, if generated. */
   statement?: { id: string; state: StatementState; hasUnits?: boolean } | null;
   units: UnitLine[];
 }
-export interface Payload { data: Owner[]; generatedAt: string; month?: string }
+export interface OwnerAddress { lines: string | null; postcode: string | null; city: string | null; state: string | null; country: string | null }
+/** False until migration 0110 is applied on this database: the address and alternate contact are then hidden. */
+export interface Payload { data: Owner[]; generatedAt: string; month?: string; detailsReady?: boolean }
+
+/** An address as it is written on an envelope: the street lines, then "postcode city", then "state, country". */
+export function addressLines(a: OwnerAddress | null | undefined): string[] {
+  if (!a) return [];
+  return [
+    ...(a.lines ?? '').split('\n'),
+    [a.postcode, a.city].filter(Boolean).join(' '),
+    [a.state, a.country].filter(Boolean).join(', '),
+  ].map(l => l.trim()).filter(Boolean);
+}
 
 export const line = (unitId: string, unitLabel: string, model: FeeModel, feePct: number | undefined, grrAmount: number | undefined, occupancy: number, adr: number, gross: number, net: number): UnitLine =>
   ({ unitId, unitLabel, model, feePct, grrAmount, occupancy, adr, gross, net });

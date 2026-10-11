@@ -8,6 +8,7 @@ import { contractView } from '../../_lib/unitContract';
 import { DEDUCTION_WORDS } from '../../_lib/unitCosts';
 import { monthEndExclusive } from '../../_lib/revenue';
 import { checkPhone } from '../../_lib/validate';
+import { addressOf, altContactOf, ownerDetailsReady } from '../../_lib/ownerDetails';
 
 const READ_ROLES = [...MASTER_ROLES, 'operations_staff'];
 /** Last four characters, ignoring spaces and dashes ("680606-08-5101" -> "5101"). */
@@ -31,13 +32,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ? await all<any>(env, 'SELECT * FROM owners WHERE id = ?', id)
     : await all<any>(env, 'SELECT * FROM owners ORDER BY display_name');
   const q: Query = (sql, ...args) => all(env, sql, ...args);
-  const [settings, inputs, contracts, statements] = await Promise.all([
+  const [settings, inputs, contracts, statements, detailsReady] = await Promise.all([
     statementSettings(q),
     loadInputs(q, `${month}-01`, monthEndExclusive(month), id ? { ownerIds: [id] } : {}),
     all<any>(env, `SELECT * FROM owner_contracts ${id ? 'WHERE owner_id = ?' : ''} ORDER BY starts_on DESC`, ...(id ? [id] : [])),
     // hasUnits: built by the workbook rules, so it has an Owner Income Report; months paid before Property OS carry only the payout.
     all<any>(env, `SELECT s.id, s.owner_id, s.state, EXISTS (SELECT 1 FROM statement_units su WHERE su.statement_id = s.id) AS has_units
       FROM owner_statements s WHERE s.period_start = ? ${id ? 'AND s.owner_id = ?' : ''}`, `${month}-01`, ...(id ? [id] : [])),
+    ownerDetailsReady(env),
   ]);
   const months = new Map(computeMonth(month, inputs, settings, 'dated').map(m => [m.unitId, m]));
   const statementOf = new Map(statements.map(s => [s.owner_id, s]));
@@ -47,6 +49,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   return json({
     generatedAt: nowIso(), month,
+    // false until migration 0110 is applied: the owner page then hides the address and alternate contact.
+    detailsReady,
     data: owners.map(o => {
       const mine = contracts.find(c => c.owner_id === o.id) ?? null;
       // Owner-level default management fee (migration 0009). Absent until applied → null.
@@ -54,6 +58,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       const st = statementOf.get(o.id);
       return {
         id: o.id, displayName: o.display_name, email: o.email, phone: o.phone,
+        legalName: o.legal_name ?? null, notes: o.notes ?? null, address: addressOf(o), altContact: altContactOf(o),
         // Identity and bank numbers leave the server only as their last four characters; the full value needs an
         // audited reveal (GET /api/owners/:id/reveal), the same rule as access codes and the Payouts screen.
         ic: null, bankAccount: null,
