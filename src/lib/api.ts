@@ -70,12 +70,28 @@ export function remember(path: string, data: unknown) {
 
 const RETRY_STATUS = new Set([502, 503, 504]);
 
+/** Money and document writes: payments, payouts, statements, expenses, credit notes, guest documents, owner adjustments. */
+const ONCE = /^\/(reservations\/[^/]+\/payments(\/[^/]+)?|payouts(\/run)?|statements\/(generate|finalise|send|[^/]+\/adjust)|expenses(\/utilities)?|credit-notes(\/[^/]+)?|guest-documents(\/[^/]+\/void)?|owners\/[^/]+\/adjustments(\/[^/]+)?|payment-vouchers(\/[^/]+)?)$/;
+/** The Idempotency-Key of each money or document write still in flight, or whose answer never arrived, by its exact
+ *  content. Sending the same write again (a second click, or a retry after "Could not reach the server") reuses the
+ *  key, so the server hands back the first answer instead of saving it twice. Once an answer arrives the key is let
+ *  go, so the same entry made again on purpose is a new write. */
+const writeKeys = new Map<string, string>();
+const KEEP_UNANSWERED_MS = 10 * 60_000;
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const isRead = !init?.method || init.method === 'GET';
   if (!isRead) readCache.clear();
+  const intent = !isRead && init?.method !== 'DELETE' && typeof init?.body === 'string' && ONCE.test(path.split('?')[0])
+    ? `${init.method} ${path} ${init.body}` : null;
+  const key = intent ? writeKeys.get(intent) ?? crypto.randomUUID() : null;
+  if (intent && key) writeKeys.set(intent, key);
   const send = () => fetch(`/api${path}`, {
     credentials: 'include',
-    headers: init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' },
+    headers: {
+      ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(key ? { 'Idempotency-Key': key } : {}),
+    },
     ...init,
   });
   // A cold Hyperdrive pool after a quiet spell answers the first read with a gateway error; one retry clears it.
@@ -90,6 +106,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       continue;
     }
     if (!RETRY_STATUS.has(res.status)) break;
+  }
+  if (intent) {
+    // A 409 with Retry-After is "the first one is still being saved": that one's answer is still to come.
+    const answered = res && !RETRY_STATUS.has(res.status) && !(res.status === 409 && res.headers.has('retry-after'));
+    if (answered) writeKeys.delete(intent);
+    else setTimeout(() => { if (writeKeys.get(intent) === key) writeKeys.delete(intent); }, KEEP_UNANSWERED_MS);
   }
   if (!res) throw new ApiFailure(0, 'NETWORK', CODE_MESSAGE.NETWORK);
 

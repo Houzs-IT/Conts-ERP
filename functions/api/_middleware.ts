@@ -6,6 +6,7 @@ import { flushWhenQuiet, FLUSH_DELAY_MS } from '../_lib/channexQueue';
 import { closePastStaysSometimes } from '../_lib/autoCheckout';
 import { twoStepSetupDue } from '../_lib/signIn';
 import { overLimit } from '../_lib/textLimits';
+import { once } from '../_lib/idempotency';
 
 /**
  * Runs before every /api endpoint. Most endpoints only check that someone is signed
@@ -132,7 +133,8 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
     if (over) return fail('VALIDATION', over.message, 422, { [over.field]: over.message });
   }
 
-  const response = await next(forward);
+  // A money or document write sent again with the same Idempotency-Key gets the first answer back (functions/_lib/idempotency.ts).
+  const response = await once(env, forward, session.userId, () => next(forward));
   closePastStaysSometimes(env, waitUntil);
   // Any write may have queued Channex updates; send them once the burst of edits has gone quiet.
   if (request.method !== 'GET' && response.status < 400) {
