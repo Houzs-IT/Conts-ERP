@@ -57,7 +57,19 @@ export function friendlyMessage(status: number, code: string | undefined, messag
   return (code && CODE_MESSAGE[code]) || statusMessage(status);
 }
 
+/** The last answer to each GET a screen read through useApi, so going back to a page shows its figures at once while
+ *  they are re-read, instead of empty boxes. Any write (including sign-in, sign-out and view-as) empties it, so a
+ *  screen never shows data from before a change it might have made. Capped so a long session does not grow it. */
+export const readCache = new Map<string, unknown>();
+const READ_CACHE_MAX = 80;
+export function remember(path: string, data: unknown) {
+  readCache.delete(path);
+  readCache.set(path, data);
+  if (readCache.size > READ_CACHE_MAX) readCache.delete(readCache.keys().next().value!);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (init?.method && init.method !== 'GET') readCache.clear();
   let res: Response;
   try {
     res = await fetch(`/api${path}`, {
