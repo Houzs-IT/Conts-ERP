@@ -1,4 +1,4 @@
-import { type Env, one } from './db';
+import { type Env } from './db';
 import { hasColumn } from './auth';
 import { technicianFor } from './notify';
 
@@ -18,14 +18,8 @@ export const ASSIGNEE_KINDS = ['in_house', 'contractor'] as const;
 /** Who pays: the owner through the statement, the company, the guest from the deposit, or a warranty. */
 export const CHARGE_TO = ['owner', 'the_conts', 'guest_deposit', 'warranty'] as const;
 
-/** Above this quote (sen) a repair the owner pays waits for the owner's approval. Settings > operations. */
-export async function approvalThreshold(env: Env): Promise<number> {
-  const v = Number((await one<{ value: string }>(env, `SELECT value FROM settings WHERE key = 'operations.maintenanceApprovalThreshold'`))?.value);
-  return Number.isInteger(v) && v >= 0 ? v : 30000;
-}
-
-/** Whether a quote needs the owner's yes: the owner pays and it is above the threshold. */
-export const needsApproval = (quote: number | null, chargeTo: string, threshold: number) => quote != null && chargeTo === 'owner' && quote > threshold;
+// No approval threshold (owner, 11 Oct 2026): a quote goes to the owner only when the office presses "Send to owner for
+// approval" (request-approval.ts). The old setting operations.maintenanceApprovalThreshold may still be saved; nothing reads it.
 
 /** A Malaysian-time instant "YYYY-MM-DDTHH:MM:00+08:00" from a datetime-local value ("2026-10-10T14:00", read as
  *  Malaysian time) or any ISO instant, or null. One format, so stored instants also compare as text. */

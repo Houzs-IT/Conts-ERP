@@ -1,7 +1,7 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { MASTER_ROLES } from '../../../_lib/properties';
-import { CATEGORIES, URGENCIES, CHARGE_TO, DAY, approvalThreshold, needsApproval, assigneeUserId, assigneeKindFor, hasBilling } from '../../../_lib/maintenance';
+import { CATEGORIES, URGENCIES, CHARGE_TO, DAY, assigneeUserId, assigneeKindFor, hasBilling } from '../../../_lib/maintenance';
 import { isPeriodLocked } from '../../../_lib/expenses';
 import { repairNotice } from '../../../_lib/notices';
 
@@ -15,8 +15,7 @@ const MONEY_KEYS = ['billingDate', 'collectedAt', 'contractorAmount', 'contracto
  *   { category, urgency, chargeTo, title, detail, quotedAmount }
  *   { billingDate, collectedAt, contractorAmount, contractorPaidAt }   also on a finished job
  *   { state: 'reopened' }                        a finished job back to work
- *  A quote (or a change of payer) is checked against the approval threshold: above it, a repair the owner pays waits
- *  for the owner; back under it, a job still waiting goes back to work. An approval already given stands.
+ *  Nothing here sends a job to the owner: that is "Send to owner for approval" (request-approval.ts) only.
  *  A new billing date on a finished job moves its expense to that day, unless either month's owner statement is final. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
@@ -103,21 +102,14 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     }
   }
 
-  // The state that follows: approval gate first, then whether someone is on it.
-  const quote = b?.quotedAmount !== undefined ? b.quotedAmount : cur.quoted_amount;
+  // The state that follows. A job sent to the owner stops waiting only if the company or the guest now pays.
   const payer = b?.chargeTo ?? cur.charge_to;
   const vendor = after.assignee ?? cur.vendor_name;
   let state = cur.state;
   if (cur.state !== 'resolved') {
-    if (b?.quotedAmount !== undefined || b?.chargeTo !== undefined) {
-      const required = needsApproval(quote, payer, await approvalThreshold(env));
-      if (required && !cur.owner_approved_at) {
-        put('owner_approval_required', 'ownerApprovalRequired', 1);
-        state = 'waiting';
-      } else if (!required && !cur.owner_approved_at && cur.state === 'waiting') {
-        put('owner_approval_required', 'ownerApprovalRequired', 0);
-        state = cur.started_at ? 'in_progress' : vendor ? 'assigned' : 'open';
-      }
+    if (cur.state === 'waiting' && !cur.owner_approved_at && payer !== 'owner') {
+      put('owner_approval_required', 'ownerApprovalRequired', 0);
+      state = cur.started_at ? 'in_progress' : vendor ? 'assigned' : 'open';
     }
     if (state === 'open' && vendor) state = 'assigned';
     if (state !== cur.state) put('state', 'state', state);
@@ -130,6 +122,5 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: name !== undefined ? 'maintenance.assign' : 'maintenance.edit', entityTable: 'maintenance_issues', entityId: id, before, after });
   if (name !== undefined && after.assignee !== before.assignee) await repairNotice(env, id, 'assigned', session.userId);
-  if (state === 'waiting' && cur.state !== 'waiting') await repairNotice(env, id, 'approval_requested', session.userId);
   return json({ ok: true, state, expenseMovedTo: moved?.to ?? null });
 };

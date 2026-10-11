@@ -7,8 +7,17 @@ import { color } from '../theme';
  * The gold reads on black; on a light surface the towers sit on a black tile so they never wash out.
  */
 
-const MARK = { src: '/brand/mark-gold.png', w: 117, h: 136 };
+export const MARK = { src: '/brand/mark-gold.png', w: 117, h: 136 };
 const LOCKUP = { src: '/brand/logo-gold.png', w: 195, h: 162 };
+
+/** The towers' weight sits right of and below their bounding box (thin lines on the left, the block on the right),
+ *  so a box-centred mark reads as off-centre in its tile. This nudge, as a share of the mark's own width and height,
+ *  puts the visual centre in the middle; about half the measured offset of the artwork's centre of mass. */
+export const MARK_OPTICAL = { x: -0.05, y: -0.02 };
+export const markNudge = (h: number) => {
+  const w = MARK.w * h / MARK.h;
+  return `translate(${(MARK_OPTICAL.x * w).toFixed(2)}px, ${(MARK_OPTICAL.y * h).toFixed(2)}px)`;
+};
 
 export function Logo({ variant = 'full', size = 'md', onDark = false, product = false }: {
   variant?: 'full' | 'mark' | 'wordmark';
@@ -28,10 +37,11 @@ export function Logo({ variant = 'full', size = 'md', onDark = false, product = 
   }
 
   const towers = (h: number) => (
-    <img src={MARK.src} alt="" aria-hidden width={Math.round(MARK.w * h / MARK.h)} height={h} style={{ display: 'block', flex: 'none' }} />
+    <img src={MARK.src} alt="" aria-hidden width={Math.round(MARK.w * h / MARK.h)} height={h} style={{ display: 'block', flex: 'none', transform: markNudge(h) }} />
   );
+  // On dark there is no tile; the towers keep a little air inside their square so the lockup is not cramped.
   const mark = onDark
-    ? <div aria-hidden style={{ width: height, height, flex: 'none', display: 'grid', placeItems: 'center' }}>{towers(height)}</div>
+    ? <div aria-hidden style={{ width: height, height, flex: 'none', display: 'grid', placeItems: 'center' }}>{towers(Math.round(height * 0.9))}</div>
     : (
       <div aria-hidden style={{ width: height, height, flex: 'none', borderRadius: Math.round(height * 0.24), background: color.black, display: 'grid', placeItems: 'center' }}>
         {towers(Math.round(height * 0.72))}

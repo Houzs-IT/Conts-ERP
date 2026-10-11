@@ -1,4 +1,5 @@
-import { channel } from '../theme';
+import { channel, color } from '../theme';
+import { MARK, markNudge } from './Logo';
 import type { BookingChannel } from '../lib/types';
 
 /* Brand marks: Airbnb and Booking.com paths are from Simple Icons (CC0, 24x24 viewBox).
@@ -38,7 +39,15 @@ function Glyph({ ch }: { ch: BookingChannel }) {
   }
 }
 
-/** Channel logo tile. Direct keeps The Conts monogram; the others use their brand mark.
+/** The Conts towers for the Direct channel, drawn through the artwork's alpha so the same file can be gold on the black
+ *  tile or grey on the muted one. Larger share of the tile than the app logo uses: below 24px the thin lines vanish. */
+function ContsTowers({ box, ink }: { box: number; ink: string }) {
+  const h = Math.round(box * (box < 24 ? 0.8 : 0.72));
+  const mask = `url(${MARK.src}) center / contain no-repeat`;
+  return <span style={{ width: Math.round(MARK.w * h / MARK.h), height: h, background: ink, WebkitMask: mask, mask, transform: markNudge(h) }} />;
+}
+
+/** Channel logo tile. Direct is The Conts' own channel, so it carries the company mark; the others use their brand mark.
  *  Muted renders the plain grey tile so an off filter still reads as off. */
 export default function ChannelMark({
   ch, size = 20, muted = false,
@@ -46,6 +55,7 @@ export default function ChannelMark({
   const c = channel[ch];
   const box = Math.max(size, 18);
   const logo = ch !== 'direct' && !muted;
+  const conts = ch === 'direct';
   const px = Math.max(11, c.glyph.length > 1 ? Math.round(box * 0.42) : Math.round(box * 0.56));
   return (
     <span
@@ -55,10 +65,12 @@ export default function ChannelMark({
         width: box, height: box, flex: 'none', borderRadius: Math.round(box * 0.28),
         display: 'grid', placeItems: 'center', lineHeight: 1, fontWeight: 700,
         fontSize: px, letterSpacing: c.glyph.length > 1 ? '-0.03em' : 0,
-        background: muted ? '#F1F0ED' : c.fill,
+        background: muted ? '#F1F0ED' : conts ? color.black : c.fill,
         color: muted ? '#706D67' : c.markInk,
+        // A gold hairline keeps the black tile visible on dark surfaces (the reservation drawer's header).
+        boxShadow: conts && !muted ? 'inset 0 0 0 1px rgba(200,164,106,0.45)' : undefined,
       }}
-    >{logo ? <Glyph ch={ch} /> : c.glyph}</span>
+    >{conts ? <ContsTowers box={box} ink={muted ? '#5C5952' : color.gold} /> : logo ? <Glyph ch={ch} /> : c.glyph}</span>
   );
 }
 

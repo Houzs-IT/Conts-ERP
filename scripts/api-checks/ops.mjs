@@ -143,12 +143,11 @@ try {
   row = (await call('GET', `/api/housekeeping/board?date=${today}`)).json.rows.find(x => x.id === taskId);
   check('board shows done with 2 files', row?.status === 'done' && row.photoCount + row.videoCount === 2, JSON.stringify(row));
 
-  // ---- maintenance: threshold, approval, windows, payer, expense ----
-  r = await call('GET', '/api/maintenance/issues'); check('jobs list has threshold and new fields', r.status === 200 && r.json.threshold === 30000 && r.json.data.every(x => x.category && x.urgency && Array.isArray(x.windows)), r.text.slice(0, 300));
-  r = await call('PATCH', `/api/maintenance/issues/${damageId}`, { quotedAmount: 45000 }); check('quote above RM 300 waits for the owner', r.status === 200 && r.json.state === 'waiting', r.text);
+  // ---- maintenance: approval (only when the office sends it, owner 11 Oct), windows, payer, expense ----
+  r = await call('GET', '/api/maintenance/issues'); check('jobs list has the new fields', r.status === 200 && r.json.data.every(x => x.category && x.urgency && Array.isArray(x.windows)), r.text.slice(0, 300));
+  r = await call('PATCH', `/api/maintenance/issues/${damageId}`, { quotedAmount: 45000 }); check('a large quote alone does not wait for the owner', r.status === 200 && r.json.state !== 'waiting', r.text);
+  r = await call('POST', `/api/maintenance/issues/${damageId}/request-approval`, {}); check('sent to the owner for approval', r.status === 200, r.text);
   r = await call('POST', `/api/maintenance/issues/${damageId}/start`, {}); check('cannot start before approval (409)', r.status === 409 && r.json.error.code === 'APPROVAL_PENDING', r.text);
-  r = await call('PATCH', `/api/maintenance/issues/${damageId}`, { chargeTo: 'the_conts' }); check('company pays: no owner approval needed', r.status === 200 && r.json.state !== 'waiting', r.text);
-  r = await call('PATCH', `/api/maintenance/issues/${damageId}`, { chargeTo: 'owner' }); check('owner pays again: waits again', r.json?.state === 'waiting', r.text);
   r = await call('PATCH', `/api/maintenance/issues/${damageId}`, { quotedAmount: 1 }, HK); check('field role cannot change a job (403)', r.status === 403, r.text);
   r = await call('POST', `/api/maintenance/issues/${damageId}/approve`, { approved: true, quotedAmount: 45000 }); check('management records the owner approval', r.status === 200, r.text);
   r = await call('PATCH', `/api/maintenance/issues/${damageId}`, { assigneeName: 'Ops Check Plumbing', assigneeKind: 'contractor' }); check('assign a contractor', r.status === 200, r.text);
@@ -184,13 +183,15 @@ try {
 
   r = await call('POST', '/api/maintenance/issues', { unitId: dep.unitId, title: 'Ops check: small fix', quotedAmount: 10000, category: 'other' });
   made.issues.push(r.json?.id);
-  check('quote under the threshold goes straight to work', r.status === 201 && r.json.state !== 'waiting' && r.json.ownerApprovalRequired === false, r.text);
+  check('a quote at creation goes straight to work', r.status === 201 && r.json.state !== 'waiting' && r.json.ownerApprovalRequired === false, r.text);
   r = await call('POST', '/api/maintenance/issues', { unitId: dep.unitId, title: 'x', category: 'roof' }); check('unknown category 422', r.status === 422, r.text);
 
-  // ---- threshold is a setting ----
-  r = await call('PUT', '/api/settings', { operations: { maintenanceApprovalThreshold: 50000 } }); check('set the approval threshold', r.status === 200, r.text);
+  // ---- the old threshold setting is still accepted but no longer sends anything to the owner ----
+  r = await call('PUT', '/api/settings', { operations: { maintenanceApprovalThreshold: 100 } }); check('old threshold setting still saves', r.status === 200, r.text);
   restore.push(() => sql`delete from settings where key = 'operations.maintenanceApprovalThreshold'`);
-  r = await call('GET', '/api/maintenance/issues'); check('threshold read back', r.json.threshold === 50000, r.json.threshold);
+  r = await call('POST', '/api/maintenance/issues', { unitId: dep.unitId, title: 'Ops check: over the old threshold', quotedAmount: 90000, category: 'other' });
+  made.issues.push(r.json?.id);
+  check('a quote over the old threshold is not sent to the owner', r.status === 201 && r.json.state !== 'waiting' && r.json.ownerApprovalRequired === false, r.text);
 } catch (e) {
   check('run finished', false, e.stack ?? e);
 } finally {

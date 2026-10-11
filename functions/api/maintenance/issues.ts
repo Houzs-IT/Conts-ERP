@@ -3,12 +3,12 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { resolveUnit } from '../../_lib/ops';
 import { windowsFor } from '../../_lib/cleaning';
-import { CATEGORIES, URGENCIES, SOURCES, CHARGE_TO, approvalThreshold, needsApproval, assigneeUserId, assigneeKindFor, hasBilling } from '../../_lib/maintenance';
+import { CATEGORIES, URGENCIES, SOURCES, CHARGE_TO, assigneeUserId, assigneeKindFor, hasBilling } from '../../_lib/maintenance';
 import { repairNotice } from '../../_lib/notices';
 
 /** GET /api/maintenance/issues?state=&unitId= — every job, with its technician, category, urgency, source, repair
  *  windows (and the stays each overlaps), photo and document counts, and what it cost and who paid once done.
- *  `threshold` is the quote above which a repair the owner pays waits for the owner's approval. */
+ *  A job waits for the owner only after the office sends it for approval. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -41,7 +41,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const billing = await hasBilling(env);
   return json({
     generatedAt: nowIso(),
-    threshold: await approvalThreshold(env),
     // False until migration 0108 is applied: the screen then hides billing date, collected and contractor payment.
     billing,
     data: rows.map(r => ({
@@ -70,7 +69,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
 /** POST /api/maintenance/issues — a job from the office, or damage reported from a clean or the field app.
  *  unitId may be a unit id or its display number (with propertyName when two buildings share a number).
- *  A quote above the approval threshold on a repair the owner pays sends the job to the owner first. */
+ *  `ownerApprovalRequired: true` sends it to the owner at once; otherwise nothing waits for the owner. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -111,8 +110,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (quoted == null && !field) quoted = sku.default_price;
   }
 
-  const threshold = await approvalThreshold(env);
-  const approval = needsApproval(quoted, chargeTo, threshold) || !!b.ownerApprovalRequired;
+  const approval = !!b.ownerApprovalRequired;
   const vendor = typeof b.assigneeName === 'string' && b.assigneeName.trim() && !field ? b.assigneeName.trim().slice(0, 80) : null;
   const state = approval ? 'waiting' : vendor ? 'assigned' : 'open';
 

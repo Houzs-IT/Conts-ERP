@@ -46,7 +46,8 @@ def tile(size, radius):
     h = round(size * scale * 0.70)
     w = round(mark.width * h / mark.height)
     m = mark.resize((w, h), Image.LANCZOS)
-    big.alpha_composite(m, ((size * scale - w) // 2, (size * scale - h) // 2))
+    # Optical centre: the towers' weight sits right and low in their box (MARK_OPTICAL in src/components/Logo.tsx).
+    big.alpha_composite(m, ((size * scale - w) // 2 - round(0.05 * w), (size * scale - h) // 2 - round(0.02 * h)))
     return big.resize((size, size), Image.LANCZOS)
 
 

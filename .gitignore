@@ -16,3 +16,8 @@ engine/backend/.secrets-upload.json
 
 # TypeScript build cache
 engine/frontend/*.tsbuildinfo
+
+# Owner workbooks and exports hold IC numbers, bank details and logins: never commit them.
+uploads/*.xlsx
+uploads/*.xls
+uploads/*.csv

@@ -47,10 +47,8 @@ const setting = async (env: Env, key: string) => (await one<{ value: string }>(e
  *  else the organisation default. Deep: the last deep clean charged on the unit, else the default. */
 export async function cleanPrice(env: Env, unitId: string, kind: string): Promise<{ amount: number; source: 'unit' | 'history' | 'default' }> {
   const deep = kind === 'deep_clean';
-  if (!deep) {
-    const unit = await one<{ amount: number }>(env, `SELECT amount FROM unit_expenses WHERE unit_id = ? AND category = 'cleaning' AND amount > 0 ORDER BY sort_order LIMIT 1`, unitId);
-    if (unit) return { amount: Number(unit.amount), source: 'unit' };
-  }
+  const unit = await one<{ amount: number }>(env, `SELECT amount FROM unit_expenses WHERE unit_id = ? AND category = ? AND amount > 0 ORDER BY sort_order LIMIT 1`, unitId, deep ? 'cleaning_deep' : 'cleaning');
+  if (unit) return { amount: Number(unit.amount), source: 'unit' };
   const last = await one<{ amount: number }>(env, `
     SELECT e.amount FROM expenses e JOIN tasks t ON t.id = e.task_id
     WHERE e.unit_id = ? AND e.category = 'cleaning' AND e.amount > 0 AND t.kind ${deep ? "= 'deep_clean'" : "!= 'deep_clean'"}
