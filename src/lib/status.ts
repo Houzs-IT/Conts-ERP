@@ -23,11 +23,12 @@ const ACTIVE_INACTIVE: Vocab = {
 const BOOKING = {
   inquiry: { label: 'Inquiry', tone: 'neutral' },
   pending: { label: 'Pending', tone: 'warning' },
-  confirmed: { label: 'Confirmed', tone: 'info' },
-  checked_in: { label: 'Checked in', tone: 'success' },
-  checked_out: { label: 'Checked out', tone: 'neutral' },
+  // The owner's decided words (docs/VOCABULARY.md, 11 Oct 2026): Airbnb's host statuses.
+  confirmed: { label: 'Upcoming', tone: 'info' },
+  checked_in: { label: 'Currently hosting', tone: 'success' },
+  checked_out: { label: 'Past', tone: 'neutral' },
   cancelled: { label: 'Cancelled', tone: 'danger', outline: true },
-  no_show: { label: 'No show', tone: 'warning', outline: true },
+  no_show: { label: 'No-show', tone: 'warning', outline: true },
 } satisfies Vocab;
 
 export const STATUS_VOCAB = {

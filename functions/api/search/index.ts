@@ -1,10 +1,8 @@
 import { type Env, all, json } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { levelsFor } from '../../_lib/access';
-import { phoneCore } from '../../_lib/bookingList';
-
-/** A stored phone as the digits after the Malaysian country code or trunk 0, the way phoneCore() reads a typed one. */
-const PHONE_CORE = `regexp_replace(regexp_replace(COALESCE(g.phone, ''), '[^0-9]', '', 'g'), '^(60|0)', '')`;
+import { quickSearch } from '../../_lib/bookingList';
+import { guestSearch } from '../../_lib/guestList';
 
 interface Hit {
   id: string; kind: 'unit' | 'guest' | 'reservation' | 'owner'; label: string; sub: string; target: string;
@@ -21,8 +19,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const q = (new URL(request.url).searchParams.get('q') ?? '').trim().toLowerCase().slice(0, 60);
   const like = `%${q.replace(/[%_\\]/g, m => '\\' + m)}%`;
-  const core = phoneCore(q);
-  const phoneLike = core ? `%${core}%` : null;
   // Every word has to match, so "Skyline D25" finds unit D25-13 in Skyline KL.
   const words = q.split(/\s+/).filter(Boolean).slice(0, 5).map(w => `%${w.replace(/[%_\\]/g, m => '\\' + m)}%`);
   const out: Hit[] = [];
@@ -42,29 +38,30 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
   if (!q) return json(out);
 
-  // A pasted booking reference is the most common search, so exact reference matches come first.
+  // A pasted booking reference is the most common search, so exact reference matches come first. The words are read
+  // the way the Reservations search box reads them: a name in any order, any reference, a phone in any format.
+  const rq = quickSearch(q, false);
   const bookings = !sees('reservations') ? [] : await all<any>(env, `
     SELECT r.id, r.external_ref, r.channel, r.check_in, r.check_out, r.state, u.unit_number, p.name AS property_name, g.full_name
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id
-    WHERE lower(COALESCE(r.external_ref, '')) LIKE ? OR lower(COALESCE(g.full_name, '')) LIKE ? OR lower(COALESCE(g.email, '')) LIKE ?
-       ${phoneLike ? `OR ${PHONE_CORE} LIKE ?` : ''}
+    WHERE r.channel NOT IN ('maintenance_block', 'owner_stay') AND ${rq.map(c => c.sql).join(' AND ') || 'FALSE'}
     ORDER BY (lower(COALESCE(r.external_ref, '')) = ?) DESC, (r.state IN ('cancelled', 'no_show')) ASC, r.check_in DESC LIMIT 6`,
-    like, like, like, ...(phoneLike ? [phoneLike] : []), q);
+    ...rq.flatMap(c => c.args), q);
   for (const r of bookings) {
     const ref = r.external_ref as string | null;
     out.push({
       id: r.id, kind: 'reservation', label: r.full_name ?? 'No guest name', sub: `${r.property_name} ${r.unit_number}`,
       channel: r.channel, state: r.state, checkIn: r.check_in, checkOut: r.check_out, ref,
       // The Bookings list filters by reference (or guest), across every date, so the booking is the one row shown.
-      target: ref ? `/reservations/bookings?view=all&ref=${encodeURIComponent(ref)}` : `/reservations/bookings?view=all&guest=${encodeURIComponent(r.full_name ?? '')}`,
+      target: `${ref ? `/reservations/bookings?view=all&ref=${encodeURIComponent(ref)}` : `/reservations/bookings?view=all&guest=${encodeURIComponent(r.full_name ?? '')}`}&open=${encodeURIComponent(r.id)}`,
     });
   }
 
+  const gq = guestSearch(q, true);
   const guests = !sees('reservations') ? [] : await all<any>(env, `
     SELECT g.id, g.full_name, g.email, g.phone FROM guests g
-    WHERE lower(g.full_name || ' ' || COALESCE(g.email, '')) LIKE ?
-       ${phoneLike ? `OR ${PHONE_CORE} LIKE ?` : ''}
-    ORDER BY g.full_name LIMIT 4`, like, ...(phoneLike ? [phoneLike] : []));
+    WHERE ${gq.sql}
+    ORDER BY g.full_name LIMIT 4`, ...gq.args);
   for (const g of guests) out.push({ id: g.id, kind: 'guest', label: g.full_name, sub: g.email || g.phone || 'No contact details', target: `/reservations/guests?g=${encodeURIComponent(g.id)}` });
 
   if (sees('owners')) {

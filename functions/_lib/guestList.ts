@@ -1,4 +1,5 @@
 import { type Env, one } from './db';
+import { like, phoneCore, phoneCoreSql } from './bookingList';
 
 /** The guest directory list: lifetime figures and today/tomorrow movement computed in SQL, so the
  *  screen can page and search thousands of guests without loading every stay. */
@@ -103,6 +104,31 @@ export function guestSort(raw: string | null, fallback = 'name'): { key: string;
   const { expr } = SORT_KEYS[key];
   const tie = key === 'name' ? 'g.id' : 'lower(g.full_name), g.id';
   return { key, dir, sql: `${expr} ${dir.toUpperCase()}${key === 'recent' ? ' NULLS LAST' : ''}, ${tie}` };
+}
+
+/** The guest search: name words in any order ("tan wei" finds "Wei Ling Tan"), a reservation reference (full or part,
+ *  with or without spaces), or a phone number in any format, including just its last 4 or more digits. Roles that
+ *  may not see contact details search by name only. */
+export function guestSearch(q: string, contact: boolean): { sql: string; args: unknown[] } {
+  const d = q.replace(/\D/g, '');
+  const digitsOnly = /^[\d\s+()\-./]+$/.test(q);
+  const refMatch = `EXISTS (SELECT 1 FROM reservations rr WHERE rr.guest_id = g.id AND (rr.external_ref ILIKE ? OR regexp_replace(COALESCE(rr.external_ref, ''), '[^0-9]', '', 'g') LIKE ?))`;
+  if (contact && digitsOnly && d.length >= 4) {
+    const core = phoneCore(q);
+    return {
+      sql: `(${core ? `${phoneCoreSql('g.phone')} LIKE ?` : `regexp_replace(COALESCE(g.phone, ''), '[^0-9]', '', 'g') LIKE ?`} OR ${refMatch})`,
+      args: [core ? like(core) : `%${d}`, like(q.trim()), like(d)],
+    };
+  }
+  const words = q.split(/\s+/).filter(Boolean).slice(0, 6);
+  if (!words.length) return { sql: 'TRUE', args: [] };
+  const per = words.map(w => {
+    const p = like(w);
+    return contact
+      ? { sql: `(g.full_name ILIKE ? OR g.email ILIKE ? OR g.phone ILIKE ? OR EXISTS (SELECT 1 FROM reservations rr WHERE rr.guest_id = g.id AND rr.external_ref ILIKE ?))`, args: [p, p, p, p] }
+      : { sql: 'g.full_name ILIKE ?', args: [p] };
+  });
+  return { sql: `(${per.map(x => x.sql).join(' AND ')})`, args: per.flatMap(x => x.args) };
 }
 
 /** The last four characters of an ID number, the rest hidden. */

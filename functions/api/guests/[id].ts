@@ -4,6 +4,8 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { CONTACT_ROLES, guestTags, monthYear, todayAndTomorrow, hasGuestColumns, maskId, MANUAL_TAGS } from '../../_lib/guestList';
 import { countryCode } from '../../_lib/hostplatformImport';
 import { checkPhone, isIsoDate } from '../../_lib/validate';
+import { moneySchema, moneySql } from '../../_lib/bookingMoney';
+import { countryJoin, countryName } from '../../_lib/guestCountry';
 
 const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 864e5));
 const at = (date: string, time: string) => `${date}T${time}:00+08:00`;
@@ -25,15 +27,35 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   if (g.merged_into) return json({ redirectTo: g.merged_into }, 200);
 
   const { today, tomorrow } = todayAndTomorrow();
-  const mine = await all<any>(env, `
+  const schema = await moneySchema(env);
+  const m = moneySql(schema);
+  // Every stay, cancelled ones too (listed, not counted), with its money read by the same rules as the reservation
+  // drawer (functions/_lib/bookingMoney.ts) and the times the guest actually arrived and left, when someone marked them.
+  const every = await all<any>(env, `
     SELECT r.id, r.channel, r.state, r.check_in, r.check_out, r.check_in_time, r.check_out_time, r.guests_count, r.external_ref,
-           r.gross_booking_value, u.unit_number, u.readiness, p.name AS property_name,
+           r.gross_booking_value, r.channel_fee, u.unit_number, u.readiness, p.name AS property_name,
+           ${m.expected} AS expected, ${m.received} AS received, ${m.outstanding} AS outstanding,
+           ${schema.payments ? `(SELECT MAX(bp2.received_on) FROM booking_payments bp2 WHERE bp2.reservation_id = r.id AND bp2.status = 'received' AND bp2.kind <> 'refund')` : 'NULL'} AS paid_on,
+           ${schema.payoutCols ? 'r.payout_date' : 'NULL'} AS payout_date,
+           (SELECT MIN(a.occurred_at) FROM audit_log a WHERE a.entity_table = 'reservations' AND a.entity_id = r.id
+              AND a.action = 'reservation.status' AND a.after_state LIKE '%"state":"checked_in"%') AS arrived_at,
+           (SELECT MAX(a.occurred_at) FROM audit_log a WHERE a.entity_table = 'reservations' AND a.entity_id = r.id
+              AND a.action = 'reservation.status' AND a.after_state LIKE '%"state":"checked_out"%') AS left_at,
            (SELECT MIN(t.created_at) FROM tasks t WHERE t.reservation_id = r.id) AS prepared_at,
            (SELECT MAX(n.sent_at) FROM notification_log n WHERE n.template = 'access_details' AND n.entity_id = r.id) AS access_sent_at,
            (SELECT AVG(v.rating) FROM reviews v WHERE v.reservation_id = r.id) AS rating
-    FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id
-    WHERE r.guest_id = ? AND r.channel NOT IN ('maintenance_block','owner_stay') AND r.state NOT IN ('cancelled','no_show','inquiry')
+    FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id ${m.join}
+    WHERE r.guest_id = ? AND r.channel NOT IN ('maintenance_block','owner_stay') AND r.state <> 'inquiry'
     ORDER BY r.check_in DESC`, g.id);
+  const mine = every.filter(s => s.state !== 'cancelled' && s.state !== 'no_show');
+  const reviews = every.length ? await all<any>(env, `SELECT reservation_id, rating, comment, reply, replied_at, reviewed_at FROM reviews
+    WHERE reservation_id IN (${every.map(() => '?').join(', ')}) ORDER BY reviewed_at DESC`, ...every.map(s => s.id)) : [];
+  const where = await one<{ iso: string | null; src: string | null }>(env, `SELECT gc.iso, gc.src FROM guests g
+    ${countryJoin('gc', { phone: 'g.phone', stored: 'g.country_code' })} WHERE g.id = ?`, g.id);
+  // The stay that matters now: the one under way, else the next one coming.
+  const current = mine.find(s => s.state === 'checked_in')
+    ?? mine.filter(s => ['confirmed', 'pending'].includes(s.state) && s.check_out >= today).sort((a, b) => a.check_in.localeCompare(b.check_in))[0]
+    ?? null;
 
   const upcoming = mine.filter(s => (s.state === 'confirmed' || s.state === 'pending') && s.check_in >= today);
   const live = mine.some(s => ['confirmed', 'pending', 'checked_in'].includes(s.state) && s.check_out >= today);
@@ -73,12 +95,25 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     lifetimeValue: mine.reduce((n, s) => n + Number(s.gross_booking_value), 0),
     ratingScore: ratings.length ? Number((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1)) : null,
     registration: { ...reg, missing, required: live },
+    // Where the guest is from: the stored nationality, else the country of their phone.
+    country: where?.iso ? { code: where.iso, name: countryName(where.iso), from: where.src } : null,
+    currentStayId: current?.id ?? null,
     notes: contact && cols ? g.notes ?? null : null,
     can: { edit: contact && cols, reveal: !!session.manage && cols, merge: contact && cols },
-    history: mine.map(s => ({
+    history: every.map(s => ({
       reservationId: s.id, externalRef: s.external_ref, checkIn: s.check_in, checkOut: s.check_out, unitNumber: s.unit_number, propertyName: s.property_name,
       nights: nightsBetween(s.check_in, s.check_out), channel: s.channel, value: Number(s.gross_booking_value), state: s.state,
-      rating: s.rating == null ? null : Number(Number(s.rating).toFixed(1)),
+      guestsCount: s.guests_count, rating: s.rating == null ? null : Number(Number(s.rating).toFixed(1)),
+      checkInTime: s.check_in_time, checkOutTime: s.check_out_time, arrivedAt: s.arrived_at ?? null, leftAt: s.left_at ?? null,
+      money: {
+        guestTotal: Number(s.gross_booking_value), serviceFee: Number(s.channel_fee), expected: Number(s.expected ?? 0),
+        received: Number(s.received ?? 0), outstanding: ['cancelled', 'no_show'].includes(s.state) ? 0 : Number(s.outstanding ?? 0),
+        paidOn: s.paid_on ?? (s.payout_date ? String(s.payout_date).slice(0, 10) : null),
+      },
+      reviews: reviews.filter(v => v.reservation_id === s.id).map(v => ({
+        rating: Number(v.rating), comment: v.comment ?? null, reply: v.reply ?? null,
+        reviewedAt: String(v.reviewed_at).slice(0, 10), repliedAt: v.replied_at ? String(v.replied_at).slice(0, 10) : null,
+      })),
     })),
     ...(movement ? { movement } : {}),
   });

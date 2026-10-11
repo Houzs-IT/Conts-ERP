@@ -15,8 +15,8 @@ export const STATES = ['inquiry', 'pending', 'confirmed', 'checked_in', 'checked
 export type State = typeof STATES[number];
 
 const LABEL: Record<State, string> = {
-  inquiry: 'Inquiry', pending: 'Pending', confirmed: 'Confirmed', checked_in: 'Checked in',
-  checked_out: 'Checked out', cancelled: 'Cancelled', no_show: 'No show',
+  inquiry: 'Inquiry', pending: 'Pending', confirmed: 'Upcoming', checked_in: 'Currently hosting',
+  checked_out: 'Past', cancelled: 'Cancelled', no_show: 'No-show',
 };
 const BLOCK_CHANNELS = ['maintenance_block', 'owner_stay'];
 
@@ -57,7 +57,7 @@ export function movesFor(from: State, c: MoveContext): Move[] {
   const ended = c.today >= c.checkOut;
   const sameDay = c.enteredOn === c.today;
   const mgmtOnly = 'Only management can do this.';
-  const cancel: Move = { to: 'cancelled', label: 'Cancel booking', hint: 'Releases the dates for sale again.', allowed: true, needsReason: true };
+  const cancel: Move = { to: 'cancelled', label: 'Cancel reservation', hint: 'Releases the dates for sale again.', allowed: true, needsReason: true };
   const confirm: Move = { to: 'confirmed', label: 'Confirm', hint: 'Holds the dates.', allowed: true };
 
   switch (from) {
@@ -82,19 +82,19 @@ export function movesFor(from: State, c: MoveContext): Move[] {
       return [
         { to: 'checked_out', label: 'Check out', hint: 'Guest has left. Unit is marked dirty and a turnover clean is created.', allowed: true },
         {
-          to: 'confirmed', label: 'Undo check-in', hint: 'Back to Confirmed. Unit goes back to ready.',
+          to: 'confirmed', label: 'Undo check-in', hint: 'Back to Upcoming. Unit goes back to ready.',
           allowed: c.manage && sameDay, reason: !c.manage ? mgmtOnly : !sameDay ? 'Only on the day of the check-in.' : undefined,
         },
       ];
     case 'checked_out':
       return [{
-        to: 'checked_in', label: 'Undo check-out', hint: 'Back to Checked in. Removes the turnover clean if nobody has started it.',
+        to: 'checked_in', label: 'Undo check-out', hint: 'Back to Currently hosting. Removes the turnover clean if nobody has started it.',
         allowed: c.manage && sameDay, reason: !c.manage ? mgmtOnly : !sameDay ? 'Only on the day of the check-out.' : undefined,
       }];
     case 'cancelled':
     case 'no_show':
       return [{
-        to: 'confirmed', label: 'Reinstate booking', hint: 'Back to Confirmed. Holds the dates again if they are still free.',
+        to: 'confirmed', label: 'Reinstate reservation', hint: 'Back to Upcoming. Holds the dates again if they are still free.',
         allowed: c.manage && !ended, reason: !c.manage ? mgmtOnly : ended ? 'The stay dates have already passed.' : undefined,
       }];
   }

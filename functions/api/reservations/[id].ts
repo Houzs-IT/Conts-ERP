@@ -33,8 +33,8 @@ const CHANNEL_LABEL: Record<string, string> = {
   airbnb: 'Airbnb', booking_com: 'Booking.com', agoda: 'Agoda', direct: 'Direct', maintenance_block: 'Block', owner_stay: 'Owner stay',
 };
 const STATE_LABEL: Record<string, string> = {
-  inquiry: 'Inquiry', pending: 'Pending', confirmed: 'Confirmed', checked_in: 'Checked in',
-  checked_out: 'Checked out', cancelled: 'Cancelled', no_show: 'No show',
+  inquiry: 'Inquiry', pending: 'Pending', confirmed: 'Upcoming', checked_in: 'Currently hosting',
+  checked_out: 'Past', cancelled: 'Cancelled', no_show: 'No-show',
 };
 
 interface TimelineEvent { at: string; label: string; detail?: string; actor?: string; upcoming?: boolean }
