@@ -10,6 +10,7 @@ import { api } from '../../lib/api';
 import { fetchAllPages } from '../../lib/export';
 import { rm, dateRange, dateShort, count } from '../../lib/format';
 import { type UnitDetail } from './shared';
+import { DateField } from '../../components/inputs';
 
 type When = 'upcoming' | 'past' | 'cancelled' | 'all';
 const WHENS: { key: When; label: string; empty: string }[] = [
@@ -37,7 +38,11 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
   const when: When = isWhen(params.get('when')) ? (params.get('when') as When) : 'upcoming';
   const page = Math.max(1, Number(params.get('page')) || 1);
   const size = SIZES.includes(Number(params.get('size'))) ? Number(params.get('size')) : PAGE_SIZE;
-  const base = `/units/stays?unitId=${encodeURIComponent(unitId)}&when=${when}`;
+  // A date range (?from=&to=) keeps the stays that overlap it, on every filter.
+  const from = params.get('from') ?? '', to = params.get('to') ?? '';
+  const range = `${from ? `&from=${from}` : ''}${to ? `&to=${to}` : ''}`;
+  const setRange = (r: { from?: string; to?: string }) => setParams(p => { const n = new URLSearchParams(p); for (const [k, v] of Object.entries(r)) { if (v) n.set(k, v); else n.delete(k); } n.delete('page'); return n; }, { replace: true });
+  const base = `/units/stays?unitId=${encodeURIComponent(unitId)}&when=${when}${range}`;
   const q = useApi<StaysPage>(`${base}&page=${page}&pageSize=${size}`);
   const d = q.data;
 
@@ -50,7 +55,7 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
 
   async function fetchAll(onProgress: (got: number, of: number) => void) {
     const r = await fetchAllPages<Stay>(async (pg, sz) => {
-      const p = await api.get<StaysPage>('/units/stays', { unitId, when, page: pg, pageSize: sz });
+      const p = await api.get<StaysPage>('/units/stays', { unitId, when, page: pg, pageSize: sz, ...(from ? { from } : {}), ...(to ? { to } : {}) });
       return { rows: p.rows, total: p.total };
     }, { size: 100, onProgress });
     return r.rows;
@@ -88,7 +93,8 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
       id="unit.bookings" columns={columns} rows={d ? d.rows : null} rowKey={s => s.id}
       loading={q.loading} error={q.error} onRetry={q.reload}
       server={{ total: d?.total ?? 0, page: d?.page ?? page, pageSize: d?.pageSize ?? size, sizes: SIZES, defaultPageSize: PAGE_SIZE, fetchAll }}
-      noViews viewParams={['when']} selectionKey={when} noun={['booking', 'bookings']} exportName={`unit-bookings-${when}`}
+      noViews compact viewParams={['when', 'from', 'to']} selectionKey={`${when}${range}`}
+      toolbar={<DateRange from={from} to={to} onChange={setRange} />} noun={['booking', 'bookings']} exportName={`unit-bookings-${when}`}
       empty={{ title: WHENS.find(w => w.key === when)!.empty, icon: 'CalendarDays' }}
       header={
         <div className="py-4 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
@@ -130,5 +136,17 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
         </span>
       )}
     />
+  );
+}
+
+/** From and To for an embedded list: either may be empty; To never before From. */
+export function DateRange({ from, to, onChange }: { from: string; to: string; onChange: (r: { from?: string; to?: string }) => void }) {
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <DateField aria-label="From" value={from} onChange={v => onChange(v && to && to < v ? { from: v, to: v } : { from: v })} className="w-[150px]" />
+      <span className="text-meta text-muted-ink">to</span>
+      <DateField aria-label="To" value={to} min={from || undefined} onChange={v => onChange({ to: v })} className="w-[150px]" />
+      {(from || to) && <button type="button" onClick={() => onChange({ from: '', to: '' })} className="text-meta text-muted-ink bg-transparent border-none cursor-pointer underline p-0">Any dates</button>}
+    </div>
   );
 }

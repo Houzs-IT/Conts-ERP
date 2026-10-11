@@ -157,6 +157,8 @@ export interface DataTableProps<R> {
   phoneSort?: boolean;
   /** No saved views (tiny tables). */
   noViews?: boolean;
+  /** A list embedded in a record (a unit's bookings or cleans): its own toolbar (dates, status) plus Export; no Columns or Filter menus. */
+  compact?: boolean;
   footer?: ReactNode;
 }
 
@@ -288,7 +290,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const {
     id, columns, rows, rowKey, loading, error, onRetry, onRowClick, rowTone, urlPrefix = '', pageSize: clientSize = 50,
     server, header, toolbar, actions, above, viewParams = [], filtered, onClearFilters, empty, selectable, bulkActions, selectionKey,
-    exportName, noun = ['row', 'rows'], renderCard, maxHeight, bare, noToolbar, noViews, footer, defaultSort, phoneSort = true,
+    exportName, noun = ['row', 'rows'], renderCard, maxHeight, bare, noToolbar, noViews, compact, footer, defaultSort, phoneSort = true,
   } = props;
   const toast = useToast();
   const [params, setParams] = useSearchParams();
@@ -551,7 +553,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
                 <span className="absolute right-2 pointer-events-none text-muted-ink flex"><Icon name="ArrowUpDown" size="sm" /></span>
               </label>
             )}
-            {filterable.length > 0 && (
+            {!compact && filterable.length > 0 && (
               <ToolButton icon="ListFilter" label="Filter" btnRef={filtersBtn} active={panel === 'filters'} count={activeFilters.length}
                 onClick={() => setPanel(p => (p === 'filters' ? null : 'filters'))} />
             )}
@@ -559,7 +561,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
               <ToolButton icon="Bookmark" label={active ? active.name : 'Views'} btnRef={viewsBtn} active={panel === 'views'}
                 onClick={() => setPanel(p => (p === 'views' ? null : 'views'))} title="Saved views" />
             )}
-            <ToolButton icon="Columns3" label="Columns" btnRef={colsBtn} active={panel === 'columns'} onClick={() => setPanel(p => (p === 'columns' ? null : 'columns'))} />
+            {!compact && <ToolButton icon="Columns3" label="Columns" btnRef={colsBtn} active={panel === 'columns'} onClick={() => setPanel(p => (p === 'columns' ? null : 'columns'))} />}
             <ToolButton icon={exporting ? 'Loader' : 'Download'} label={exporting ? `Exporting ${exporting}` : 'Export'} btnRef={exportBtn} active={panel === 'export'}
               onClick={() => { if (!exporting) setPanel(p => (p === 'export' ? null : 'export')); }} />
           </div>

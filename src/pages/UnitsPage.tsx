@@ -36,6 +36,7 @@ import {
 import { statusLabel } from '../lib/status';
 import { PnlTable } from './units/PnlTable';
 import { MonthStepper, shiftMonth } from './finance/listKit';
+import { DateRange } from './units/BookingsTab';
 
 /** True at the width where the tree becomes a sticky pane (Tailwind xl). */
 function useWide() {
@@ -475,16 +476,7 @@ function UnitRecord({ pnlMonth, setPnlMonth, d, form, buildings, building, unitL
 
       {shown === 'operations' && (
         <>
-          <Card>
-            <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
-              <span className="text-heading font-semibold">Cleaning and tasks</span>
-              {/* units/detail.ts sends the latest 12; the full list is on the Housekeeping board. */}
-              {d.tasks.length >= 12 && <span className="text-meta text-muted-ink">Latest 12</span>}
-            </div>
-            <DataTable<TaskRow> id="unit.tasks" urlPrefix="tasks." bare noViews pageSize={0} maxHeight="none"
-              columns={TASK_COLUMNS} rows={d.tasks} rowKey={t => t.id} noun={['task', 'tasks']} exportName={`${stem}-tasks`}
-              empty={{ title: 'No tasks for this unit.', icon: 'Sparkles' }} />
-          </Card>
+          <UnitTasks unitId={u.id} stem={stem} />
           <Card>
             <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
               <span className="text-heading font-semibold">Maintenance</span>
@@ -558,6 +550,31 @@ const TASK_COLUMNS: Column<TaskRow>[] = [
     sub: t => (t.completedAt ? 'Done' : t.dueAt ? 'Due' : null) },
   { key: 'state', label: 'Status', type: 'status', value: t => t.state, entity: 'task', width: 130 },
 ];
+
+/** The unit's cleans and tasks in a date range (default: the last 30 days and the next 14), from units/tasks.ts. */
+function UnitTasks({ unitId, stem }: { unitId: string; stem: string }) {
+  const [params, setParams] = useSearchParams();
+  const today = todayMyt();
+  const shift = (days: number) => new Date(Date.parse(`${today}T00:00:00Z`) + days * 864e5).toISOString().slice(0, 10);
+  const from = params.get('tfrom') ?? shift(-30), to = params.get('tto') ?? shift(14);
+  const setRange = (r: { from?: string; to?: string }) => setParams(p => {
+    const n = new URLSearchParams(p);
+    if (r.from !== undefined) n.set('tfrom', r.from); if (r.to !== undefined) n.set('tto', r.to);
+    return n;
+  }, { replace: true });
+  const q = useApi<{ data: TaskRow[] }>(`/units/tasks?unitId=${encodeURIComponent(unitId)}${from ? `&from=${from}` : ''}${to ? `&to=${to}` : ''}`);
+  return (
+    <DataTable<TaskRow> id="unit.tasks" urlPrefix="tasks." noViews compact pageSize={0} maxHeight="none"
+      columns={TASK_COLUMNS} rows={q.data?.data ?? null} loading={q.loading} error={q.error} onRetry={q.reload} rowKey={t => t.id}
+      noun={['task', 'tasks']} exportName={`${stem}-tasks`}
+      header={<div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-0.5">
+        <span className="text-heading font-semibold">Cleaning and tasks</span>
+        <span className="text-meta text-muted-ink">{q.data ? `${q.data.data.length} in these dates` : 'Loading…'}</span>
+      </div>}
+      toolbar={<DateRange from={from} to={to} onChange={setRange} />}
+      empty={{ title: 'No cleans or tasks in these dates.', icon: 'Sparkles' }} />
+  );
+}
 
 const JOB_COLUMNS: Column<JobRow>[] = [
   { key: 'title', label: 'Job', value: m => m.title, hideable: false, width: 240,

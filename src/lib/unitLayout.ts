@@ -1,4 +1,4 @@
-/** A unit's layout (户型), as cleaning and the owner name it. Stored in units.layout_type (0102); shared by the app and
+/** A unit's layout, as cleaning and the owner name it. Stored in units.layout_type (0102); shared by the app and
  *  functions/ so the Units form, the units API and the Cleaning board say the same thing. */
 
 export const LAYOUTS = [

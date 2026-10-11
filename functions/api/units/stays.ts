@@ -13,7 +13,8 @@ const FILTER: Record<When, { where: string; order: string; usesToday: boolean }>
 };
 
 /**
- * GET /api/units/stays?unitId=&when=upcoming|past|cancelled|all&page=1&pageSize=20
+ * GET /api/units/stays?unitId=&when=upcoming|past|cancelled|all&page=1&pageSize=20[&from=YYYY-MM-DD&to=YYYY-MM-DD]
+ * from/to keep the stays that overlap those dates (counts too).
  * One page of a unit's bookings for the unit record's Bookings tab, with the count of
  * each filter so the tab can label them. A busy unit has a few hundred bookings a year,
  * so the record itself only carries the latest few.
@@ -30,6 +31,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const when = whenParam as When;
   const pageSize = Math.min(100, Math.max(5, Number(url.searchParams.get('pageSize')) || 20));
   const page = Math.max(1, Math.floor(Number(url.searchParams.get('page')) || 1));
+  const ISO = /^\d{4}-\d{2}-\d{2}$/;
+  const from = url.searchParams.get('from'), to = url.searchParams.get('to');
+  if ((from && !ISO.test(from)) || (to && !ISO.test(to))) return fail('VALIDATION', 'Dates must look like 2026-10-01.', 422);
+  const range = `${from ? 'AND check_out > ?' : ''} ${to ? 'AND check_in <= ?' : ''}`;
+  const rangeArgs = [...(from ? [from] : []), ...(to ? [to] : [])];
 
   const unit = await one<{ owner_id: string }>(env, 'SELECT owner_id FROM units WHERE id = ?', unitId);
   if (!unit) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
@@ -49,14 +55,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
              COUNT(*) AS all_count,
              COALESCE(SUM(gross_booking_value) FILTER (WHERE state != 'cancelled' AND check_out >= ?), 0) AS upcoming_gross,
              COALESCE(SUM(gross_booking_value) FILTER (WHERE state != 'cancelled' AND check_out < ?), 0) AS past_gross
-      FROM reservations WHERE unit_id = ?`, today, today, today, today, unitId),
+      FROM reservations WHERE unit_id = ? ${range}`, today, today, today, today, unitId, ...rangeArgs),
     all<any>(env, `
       SELECT r.id, r.channel, r.state, r.check_in, r.check_out, r.guests_count, r.external_ref,
              r.gross_booking_value, COALESCE(g.full_name, '') AS guest_name
       FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id
-      WHERE r.unit_id = ? ${f.where}
+      WHERE r.unit_id = ? ${f.where} ${range.replace(/check_/g, 'r.check_')}
       ORDER BY ${f.order}
-      LIMIT ? OFFSET ?`, ...[unitId, ...(f.usesToday ? [today] : []), pageSize, (page - 1) * pageSize]),
+      LIMIT ? OFFSET ?`, ...[unitId, ...(f.usesToday ? [today] : []), ...rangeArgs, pageSize, (page - 1) * pageSize]),
   ]);
 
   const total = when === 'all' ? Number(counts.all_count) : Number(counts[when]);
