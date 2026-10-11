@@ -22,13 +22,13 @@ import { ExpenseEntryModal, UtilitiesModal, type UnitChoice } from './ExpenseEnt
 import { AdjustmentActions, ADJUSTMENT_KIND, ADJUSTMENT_STATE } from './Adjustments';
 
 /** A month's costs the way the owner reads them (GET /api/expenses/breakdown, functions/_lib/unitCosts.ts):
- *  Cleaning, Maintenance, and Paid on behalf (water, electricity, Wi-Fi, IndahWater, the building's maintenance fee,
- *  other), each totalled from the expenses recorded to the unit. What the owner pays is deducted before the operator's
- *  share; what The Conts, a tenant or a guest paid is shown apart and never deducted. The owner's credits and charges on
- *  file (the workbook's O2 lines) are listed with the paid-on-behalf bills and still come off after the split. */
+ *  Cleaning, Maintenance, and Paid on behalf (water, electricity, Wi-Fi, IndahWater, other fees), each totalled from the
+ *  expenses recorded to the unit. What the owner pays is deducted before the operator's share; what The Conts, a tenant
+ *  or a guest paid is shown apart and never deducted. The owner's credits and charges on file (the workbook's O2 lines,
+ *  and the Maintenance fee (condo) added here) are listed with the paid-on-behalf bills and come off after the split. */
 
 type Group = 'cleaning' | 'maintenance' | 'paid_on_behalf';
-interface Kind { key: string; label: string; group: Group; amount: number; others: number }
+interface Kind { key: string; label: string; group: Group; amount: number; others: number; afterSplit: number }
 interface Totals { cleaning: number; maintenance: number; paidOnBehalf: number; deducted: number; notCharged: number; credits: number; charges: number }
 interface Breakdown { totals: Totals; kinds: Kind[] }
 interface UnitCosts extends Breakdown { unitId: string; unitLabel: string; revenueModel: string; deductsFromOwner: boolean }
@@ -43,17 +43,32 @@ export interface AdjustmentItem {
 }
 interface Payload { month: string; canChangeAdjustments: boolean; units: UnitCosts[]; total: Breakdown; items: CostItem[]; adjustments: AdjustmentItem[] }
 
-/** The kinds of bill The Conts pays for the owner. Value = expenses.category. */
+/** The kinds of bill The Conts pays for the owner. Value = expenses.category, except building_fee: the condo's
+ *  maintenance fee, an owner charge after the split (not an expense). */
 export const BILL_KINDS = [
   { value: 'water', label: 'Water' }, { value: 'electricity', label: 'Electricity' }, { value: 'internet', label: 'Wi-Fi' },
-  { value: 'sewerage', label: 'IndahWater' }, { value: 'building_fee', label: 'Building maintenance fee' }, { value: 'other', label: 'Other' },
+  { value: 'sewerage', label: 'IndahWater' }, { value: 'building_fee', label: 'Maintenance fee (condo)' }, { value: 'other', label: 'Other fees' },
 ];
+
+/** The owner workbook's month words on its O2 lines ("MAINTENANCE FEE SEPT 26"). */
+const FEE_MONTH = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEPT', 'OCT', 'NOV', 'DEC'];
+/** 2026-09-30 -> "MAINTENANCE FEE SEPT 26"; typed text is kept, in capitals, led by MAINTENANCE FEE. */
+export const maintenanceFeeText = (typed: string, isoDate: string) => {
+  const t = typed.trim().toUpperCase();
+  if (t) return /^MAINTENANCE FEE\b/.test(t) ? t : `MAINTENANCE FEE ${t}`;
+  return `MAINTENANCE FEE ${FEE_MONTH[Number(isoDate.slice(5, 7)) - 1]} ${isoDate.slice(2, 4)}`;
+};
 
 const lastDayOf = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); };
 
 /** "Add a bill paid on behalf": a bill The Conts paid for the owner, recorded to the unit with the owner paying, so the
- *  statement deducts it before the operator's share. */
-export function BillModal({ units, defaultUnitId, month, onClose, onSaved }: { units: UnitChoice[]; defaultUnitId?: string; month: string; onClose: () => void; onSaved: () => void }) {
+ *  statement deducts it before the operator's share. The condo's maintenance fee is the exception: it comes off after
+ *  the operator's share (the owner's report lists it below "Payout Before O2 Adjustment"), so it is recorded as an
+ *  owner charge on the unit (POST /api/owners/:id/adjustments, the same rules, approval and audit as any owner charge),
+ *  offered only to those who may add owner charges. */
+export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onClose, onSaved }: {
+  units: UnitChoice[]; defaultUnitId?: string; ownerId: string; canAdjust: boolean; month: string; onClose: () => void; onSaved: () => void;
+}) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const today = todayMyt();
@@ -67,25 +82,31 @@ export function BillModal({ units, defaultUnitId, month, onClose, onSaved }: { u
   const [busy, setBusy] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
   const ok = !!unitId && amount != null && amount > 0 && /^\d{4}-\d{2}-\d{2}$/.test(incurredOn);
+  const kinds = canAdjust ? BILL_KINDS : BILL_KINDS.filter(k => k.value !== 'building_fee');
   const kind = BILL_KINDS.find(k => k.value === category)?.label ?? category;
+  const fee = category === 'building_fee';
 
   async function save() {
     if (!ok || busy) return;
     setBusy(true); setFields({});
     try {
+      if (fee) {
+        const res = await api.post<unknown>(`/owners/${encodeURIComponent(ownerId)}/adjustments`, {
+          kind: 'charge', amount, occurredOn: incurredOn, unitId, reference: reference.trim() || null, description: maintenanceFeeText(description, incurredOn),
+        });
+        if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); onSaved(); onClose(); return; }
+        toast({ tone: 'success', title: 'Maintenance fee recorded.', body: 'The owner statement deducts it after the operator\'s share.' });
+        onSaved(); onClose(); return;
+      }
       let receiptDocumentId: string | null = null;
       if (receipt) {
         const fd = new FormData();
         fd.append('file', receipt); fd.append('unitId', unitId); fd.append('kind', 'receipt');
         receiptDocumentId = (await api.post<{ id: string }>('/documents', fd)).id;
       }
-      // The building's maintenance fee is stored as 'other' with its name leading the description, which is how
-      // the breakdown recognises it (functions/_lib/unitCosts.ts); the statement deducts it as an Additional Deduction.
-      const fee = category === 'building_fee';
       const text = description.trim() || `${kind} ${monthLabel(incurredOn.slice(0, 7))}`;
       const res = await api.post<unknown>('/expenses', {
-        unitId, category: fee ? 'other' : category, amount, incurredOn, chargeTo: 'owner', reference: reference.trim() || null,
-        description: fee && !/^building maintenance fee\b/i.test(text) ? `Building maintenance fee: ${text}` : text, receiptDocumentId,
+        unitId, category, amount, incurredOn, chargeTo: 'owner', reference: reference.trim() || null, description: text, receiptDocumentId,
       });
       if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); onSaved(); onClose(); return; }
       toast({ tone: 'success', title: 'Bill recorded.', body: `${kind}, paid on behalf. The owner statement deducts it before the operator's share.` });
@@ -102,18 +123,21 @@ export function BillModal({ units, defaultUnitId, month, onClose, onSaved }: { u
       <div className="relative w-full max-w-[500px] max-h-[calc(100vh-32px)] flex flex-col bg-card rounded-card shadow-[var(--shadow-overlay)]">
         <div className="pt-[22px] px-[22px] pb-1 flex-none">
           <h2 className="m-0 text-title font-semibold">Add a bill paid on behalf</h2>
-          <p className="mt-[5px] mb-0 text-copy text-muted-ink">A bill The Conts paid for the owner. The owner statement deducts it before the operator's share.</p>
+          <p className="mt-[5px] mb-0 text-copy text-muted-ink">{fee
+            ? 'The condo\'s maintenance fee, paid for the owner. The owner statement deducts it after the operator\'s share.'
+            : 'A bill The Conts paid for the owner. The owner statement deducts it before the operator\'s share.'}</p>
         </div>
         <div className="py-4 px-[22px] flex flex-col gap-[14px] overflow-y-auto min-h-0">
           {units.length > 1 && <Select showLabel size="md" label="Unit" value={unitId} onChange={setUnitId} options={units.map(u => ({ value: u.id, label: titleCase(u.label) }))} />}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Select showLabel size="md" label="Bill" value={category} onChange={setCategory} options={BILL_KINDS} />
+            <Select showLabel size="md" label="Bill" value={category} onChange={setCategory} options={kinds} />
             <MoneyInput label="Amount (RM)" placeholder="e.g. 120.50" minSen={1} valueSen={amount} onChangeSen={setAmount} error={fields.amount} />
             <DateField label="Date" value={incurredOn} onChange={setIncurredOn} error={fields.incurredOn} />
             <Field label="Reference (optional)" placeholder="Bill or account number" maxLength={80} value={reference} onChange={e => setReference(e.target.value)} />
           </div>
-          <Field label="Description (optional)" placeholder={`e.g. ${kind} ${monthLabel(month)}`} maxLength={300} value={description} onChange={e => setDescription(e.target.value)} />
-          <div className="flex flex-col gap-1.5">
+          <Field label="Description (optional)" placeholder={fee ? `e.g. ${maintenanceFeeText('', incurredOn)}` : `e.g. ${kind} ${monthLabel(month)}`} maxLength={fee ? 200 : 300}
+            value={description} onChange={e => setDescription(e.target.value)} error={fields.description} />
+          {!fee && <div className="flex flex-col gap-1.5">
             <span className="text-meta font-medium text-muted-ink">Receipt (optional)</span>
             <div className="flex items-center gap-2 flex-wrap">
               <Button size="sm" variant="secondary" icon={<Icon name="Upload" size="sm" />} onClick={() => fileRef.current?.click()}>{receipt ? 'Change file' : 'Attach photo or PDF'}</Button>
@@ -121,7 +145,7 @@ export function BillModal({ units, defaultUnitId, month, onClose, onSaved }: { u
               {fields.receipt && <span className="text-meta text-critical">{fields.receipt}</span>}
             </div>
             <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={e => { setReceipt(e.currentTarget.files?.item(0) ?? null); e.currentTarget.value = ''; }} />
-          </div>
+          </div>}
         </div>
         <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end flex-wrap gap-[9px] flex-none">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
@@ -145,6 +169,13 @@ function Line({ label, sen, sub, strong, indent }: { label: string; sen: number;
   );
 }
 
+/** Maintenance fee (condo): what comes off after the split, and any saved as an expense before the split (to check). */
+const feeNote = (k: Kind) => [
+  k.afterSplit ? `${rm(k.afterSplit)} after the operator's share` : null,
+  k.amount ? 'Entered before the split: check' : null,
+  k.others ? `Also ${rm(k.others)} paid by others, not deducted` : null,
+].filter(Boolean).join(' · ') || undefined;
+
 /** Cleaning, Maintenance, then each paid-on-behalf kind, and the total the owner pays. */
 function KindBreakdown({ b, deducts = true }: { b: Breakdown; deducts?: boolean }) {
   const by = (g: Group) => b.kinds.filter(k => k.group === g);
@@ -154,7 +185,7 @@ function KindBreakdown({ b, deducts = true }: { b: Breakdown; deducts?: boolean 
       {by('cleaning').map(k => <Line key={k.key} label="Cleaning" sen={k.amount} sub={others(k)} />)}
       {by('maintenance').map(k => <Line key={k.key} label="Maintenance" sen={k.amount} sub={others(k)} />)}
       <span className="pt-2 pb-0.5"><Eyebrow>Paid on behalf</Eyebrow></span>
-      {by('paid_on_behalf').map(k => <Line key={k.key} label={k.label} sen={k.amount} sub={others(k)} indent />)}
+      {by('paid_on_behalf').map(k => <Line key={k.key} label={k.label} sen={k.amount} sub={k.key === 'building_fee' ? feeNote(k) : others(k)} indent />)}
       <Line label={deducts ? 'Deducted before the split' : 'Owner-paid costs (the company bears them on this contract)'} sen={b.totals.deducted} strong />
       {(b.totals.charges > 0 || b.totals.credits > 0) && (
         <span className="text-meta text-muted-ink pt-1">
@@ -185,7 +216,9 @@ function PaidOnBehalfList({ items, adjustments, ownerId, showUnit, canChange, on
           </span>
           <span className="flex flex-col items-end shrink-0">
             <MoneyText sen={it.amount} mode="exact" className="text-copy font-medium" />
-            <span className="text-caption text-muted-ink">{it.chargeTo === 'owner' ? 'Before the split' : `${PAYER_LABEL[it.chargeTo] ?? it.chargeTo} pays, not deducted`}</span>
+            <span className={cx('text-caption', it.chargeTo === 'owner' && it.kind === 'building_fee' ? 'text-warning' : 'text-muted-ink')}>
+              {it.chargeTo !== 'owner' ? `${PAYER_LABEL[it.chargeTo] ?? it.chargeTo} pays, not deducted` : it.kind === 'building_fee' ? 'Entered before the split: check' : 'Before the split'}
+            </span>
           </span>
         </div>
       ))}
@@ -257,7 +290,8 @@ export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPri
           <CleaningPrice unitId={unitId} price={cleaningPrice} legacy={legacyCosts} canEdit={canEdit} onSaved={onChanged} />
         </div>
       )}
-      {modal === 'bill' && <BillModal units={[{ id: unitId, label: unitLabel }]} defaultUnitId={unitId} month={month} onClose={() => setModal(null)} onSaved={changed} />}
+      {modal === 'bill' && <BillModal units={[{ id: unitId, label: unitLabel }]} defaultUnitId={unitId} ownerId={ownerId} canAdjust={!!data?.canChangeAdjustments}
+        month={month} onClose={() => setModal(null)} onSaved={changed} />}
     </Card>
   );
 }
@@ -411,7 +445,7 @@ export function OwnerCostsCard({ ownerId, ownerName, month, units, canEdit, onCh
             </span>
           )} />
       </div>
-      {modal === 'bill' && <BillModal units={units} month={month} onClose={() => setModal(null)} onSaved={changed} />}
+      {modal === 'bill' && <BillModal units={units} ownerId={ownerId} canAdjust={!!data?.canChangeAdjustments} month={month} onClose={() => setModal(null)} onSaved={changed} />}
       {modal === 'expense' && <ExpenseEntryModal units={units} month={month} onClose={() => setModal(null)} onSaved={changed} />}
       {modal === 'utilities' && <UtilitiesModal ownerId={ownerId} month={month} onClose={() => setModal(null)} onSaved={changed} />}
     </Card>
