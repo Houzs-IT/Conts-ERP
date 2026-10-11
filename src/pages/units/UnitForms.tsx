@@ -181,7 +181,7 @@ export function ExpensesEditor({ u, canEdit, onChange }: { u: Unit; canEdit: boo
           <span className="text-copy font-semibold tabular-nums">{rm(total)}</span>
         </div>
       </div>
-      <p className="text-meta text-muted-ink mt-[10px] mb-0">Deducted from the owner statement each month.</p>
+      <p className="text-meta text-muted-ink mt-[10px] mb-0">For reference only: the owner statement deducts the bills recorded above, not these.</p>
     </fieldset>
   );
 }

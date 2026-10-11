@@ -188,8 +188,10 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
 }
 
 /** The month's expenses on a unit or on all of an owner's units, with who paid each and its receipt. */
-export function ExpensesCard({ title = 'Expenses recorded to units', ownerId, unitId, month, units, canEdit, onChanged }: {
+export function ExpensesCard({ title = 'Expenses recorded to units', ownerId, unitId, month, units, canEdit, onChanged, fixedRent }: {
   title?: string; ownerId?: string; unitId?: string; month: string; units: UnitChoice[]; canEdit: boolean; onChanged?: () => void;
+  /** The unit pays its owner a fixed rent (guaranteed rent, master lease): no cost is deducted from it (ownerStatement.ts). */
+  fixedRent?: boolean;
 }) {
   const scope = ownerId ? `&owner=${encodeURIComponent(ownerId)}` : unitId ? `&unit=${encodeURIComponent(unitId)}` : '';
   const { data, loading, error, reload } = useApi<ListPayload>(`/finance/expenses?month=${month}${scope}&pageSize=200&sort=date`);
@@ -221,7 +223,7 @@ export function ExpensesCard({ title = 'Expenses recorded to units', ownerId, un
       <div className="flex items-start justify-between gap-3 flex-wrap py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
         <div className="flex flex-col gap-1 min-w-0">
           <span className="text-heading font-semibold">{title}</span>
-          <span className="text-meta text-muted-ink">{monthLabel(month)} · owner pays <MoneyText sen={ownerTotal} mode="exact" className="text-ink font-medium" /> (on the statement) · others pay <MoneyText sen={otherTotal} mode="exact" className="text-ink font-medium" /></span>
+          <span className="text-meta text-muted-ink">{monthLabel(month)} · owner pays <MoneyText sen={ownerTotal} mode="exact" className="text-ink font-medium" /> {fixedRent ? '(not deducted: this unit pays the owner a fixed rent)' : '(on the statement)'} · others pay <MoneyText sen={otherTotal} mode="exact" className="text-ink font-medium" /></span>
         </div>
         {canEdit && (
           <div className="flex gap-2 flex-wrap">

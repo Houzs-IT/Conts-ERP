@@ -506,7 +506,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       )}
       {shown === 'financials' && d.pnl && (
         <>
-          <ExpensesCard title="Expenses this month" unitId={u.id} month={todayMyt().slice(0, 7)} units={[{ id: u.id, label: unitLabel }]} canEdit={canEdit} onChanged={reloadDetail} />
+          <ExpensesCard title="Expenses this month" unitId={u.id} month={todayMyt().slice(0, 7)} units={[{ id: u.id, label: unitLabel }]} canEdit={canEdit} onChanged={reloadDetail}
+            fixedRent={u.revenueModel === 'grr' || u.revenueModel === 'master_lease'} />
           {form && (
             <Card>
               <SaveBar title="Recurring monthly costs" sub="The unit's usual monthly costs, for reference and the expenses report. Record the actual bills above." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave}
