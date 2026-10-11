@@ -141,7 +141,7 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
 
   function submit() {
     const req = api.post('/sales-invoices', { deliveryOrderId: doId, invoiceDate, dueDate: dueDate || null, taxSen: taxSen ?? 0, notes });
-    onCreated({ id: `si-new-${crypto.randomUUID().slice(0, 8)}`, invoiceNumber: `SINV-${new Date().getFullYear()}-NEW`, doNumber: dord?.doNumber ?? '', soDocNo: '', customerName: dord?.customerName ?? '', invoiceDate, dueDate, status: 'SENT', totalSen: total, paidSen: 0, outstandingSen: total, notes, lines }, req);
+    onCreated({ id: `si-new-${crypto.randomUUID().slice(0, 8)}`, invoiceNumber: 'Saving…', doNumber: dord?.doNumber ?? '', soDocNo: '', customerName: dord?.customerName ?? '', invoiceDate, dueDate, status: 'SENT', totalSen: total, paidSen: 0, outstandingSen: total, notes, lines }, req);
   }
 
   return (

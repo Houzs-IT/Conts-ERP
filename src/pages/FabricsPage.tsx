@@ -62,7 +62,7 @@ export default function FabricsPage() {
 
   function save(d: Draft) {
     const body = { id: d.id.trim(), fabricCode: d.fabricCode.trim(), label: d.label.trim(), tier: d.tier.trim() || 'standard', defaultSurchargeSen: d.defaultSurchargeSen, sofaTier: d.sofaTier.trim(), bedframeTier: d.bedframeTier.trim(), active: d.active, sortOrder: d.sortOrder };
-    if (d.isNew) { setAdded(a => [{ ...body }, ...a]); persist(api.post('/fabrics', body), { reload, ok: () => toast({ tone: 'success', title: 'Fabric added.', body: body.label }) }); }
+    if (d.isNew) { if (!rows.some(x => x.id === body.id)) setAdded(a => [{ ...body }, ...a]); persist(api.post('/fabrics', body), { reload, ok: () => toast({ tone: 'success', title: 'Fabric added.', body: body.label }) }); }
     else { setEdits(e => ({ ...e, [d.id]: { ...e[d.id], ...body } })); persist(api.patch(`/fabrics/${d.id}`, body), { reload, ok: () => toast({ tone: 'success', title: 'Fabric updated.', body: body.label }) }); }
     setDrawer(null);
   }

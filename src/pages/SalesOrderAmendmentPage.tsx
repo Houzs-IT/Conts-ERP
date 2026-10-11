@@ -138,7 +138,7 @@ function NewDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[
       newQty: r.remove ? 0 : r.newQty ?? 0, newUnitPriceSen: r.remove ? r.line.unitPriceSen : r.newPriceSen ?? 0,
     }));
     const req = api.post('/so-amendments', { salesOrderId: soId, reason, lines });
-    onCreated({ id: `amd-new-${crypto.randomUUID().slice(0, 8)}`, amendmentNo: `AMD-${new Date().getFullYear()}-NEW`, salesOrderId: soId, soDocNo: so?.docNo ?? '', customerName: so?.customerName ?? '', status: 'REQUESTED', reason, appliedAt: '' }, req);
+    onCreated({ id: `amd-new-${crypto.randomUUID().slice(0, 8)}`, amendmentNo: 'Saving…', salesOrderId: soId, soDocNo: so?.docNo ?? '', customerName: so?.customerName ?? '', status: 'REQUESTED', reason, appliedAt: '' }, req);
   }
 
   return (

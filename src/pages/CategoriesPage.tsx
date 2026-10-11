@@ -61,7 +61,7 @@ export default function CategoriesPage() {
   function save(d: Draft) {
     const body = { id: d.id.trim(), label: d.label.trim(), icon: d.icon.trim(), tbc: d.tbc, heroImageKey: d.heroImageKey.trim(), sortOrder: d.sortOrder };
     if (d.isNew) {
-      setAdded(a => [{ ...body }, ...a]);
+      if (!rows.some(c => c.id === body.id)) setAdded(a => [{ ...body }, ...a]);
       persist(api.post('/categories', body), { reload, ok: () => toast({ tone: 'success', title: 'Category added.', body: body.label }) });
     } else {
       setEdits(e => ({ ...e, [d.id]: { ...e[d.id], ...body } }));

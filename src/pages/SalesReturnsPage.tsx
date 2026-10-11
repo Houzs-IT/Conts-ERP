@@ -148,7 +148,7 @@ function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: Open
     const payloadLines = willReturn.map(l => ({ deliveryOrderLineId: l.doLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qtyReturned: l.qty ?? 0, reason: l.reason }));
     const req = api.post('/sales-returns', { deliveryOrderId: doId, returnDate, reason, creditNoteRef, notes, lines: payloadLines });
     onCreated({
-      id: `sret-new-${crypto.randomUUID().slice(0, 8)}`, returnNumber: `SRET-${new Date().getFullYear()}-NEW`, customerName: dord?.customerName ?? '', doNumber: dord?.doNumber ?? '',
+      id: `sret-new-${crypto.randomUUID().slice(0, 8)}`, returnNumber: 'Saving…', customerName: dord?.customerName ?? '', doNumber: dord?.doNumber ?? '',
       returnDate, status: 'POSTED', refundSen: refund, creditNoteRef, reason, notes,
       lines: payloadLines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qtyReturned: l.qtyReturned, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qtyReturned * l.unitPriceSen, reason: l.reason })),
     }, req);

@@ -130,7 +130,7 @@ function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onC
     if (Object.keys(e).length) return;
     const b = built();
     const req = api.post('/consignment-notes', { consigneeName, consigneePhone, cnDate, notes, lines: b });
-    onCreated({ id: `cn-new-${crypto.randomUUID().slice(0, 8)}`, cnNumber: `CN-${new Date().getFullYear()}-NEW`, consigneeName, consigneePhone, cnDate, status: 'OPEN', totalSen: total, notes,
+    onCreated({ id: `cn-new-${crypto.randomUUID().slice(0, 8)}`, cnNumber: 'Saving…', consigneeName, consigneePhone, cnDate, status: 'OPEN', totalSen: total, notes,
       lines: b.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qtyConsigned: l.qtyConsigned, qtySold: 0, qtyReturned: 0, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qtyConsigned * l.unitPriceSen })) }, req);
   }
 

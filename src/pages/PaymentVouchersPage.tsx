@@ -145,7 +145,7 @@ function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { supp
       .filter(a => a.amountSen > 0);
     const req = api.post('/payment-vouchers', { supplierId, paymentDate, method, reference, notes, allocations: allocations.map(({ purchaseInvoiceId, amountSen }) => ({ purchaseInvoiceId, amountSen })) });
     onCreated({
-      id: `pv-new-${crypto.randomUUID().slice(0, 8)}`, voucherNumber: `PV-${new Date().getFullYear()}-NEW`, supplierName: supplier?.name ?? '', supplierCode: supplier?.code ?? '', supplierId,
+      id: `pv-new-${crypto.randomUUID().slice(0, 8)}`, voucherNumber: 'Saving…', supplierName: supplier?.name ?? '', supplierCode: supplier?.code ?? '', supplierId,
       paymentDate, method, reference, amountSen: amount, status: 'POSTED', notes, allocations: allocations.map(a => ({ invoiceNumber: a.invoiceNumber, amountSen: a.amountSen })),
     }, req);
   }

@@ -98,7 +98,7 @@ export default function PurchaseOrdersPage() {
 
   function saveNew(po: Po, lines: Line[]) {
     const supplier = suppliers.find(s => s.id === po.supplierId);
-    const local: Po = { ...po, id: `po-new-${crypto.randomUUID().slice(0, 8)}`, poNumber: `PO-${new Date().getFullYear()}-NEW`, supplierCode: supplier?.code ?? '', supplierName: supplier?.name ?? '', lines };
+    const local: Po = { ...po, id: `po-new-${crypto.randomUUID().slice(0, 8)}`, poNumber: 'Saving…', supplierCode: supplier?.code ?? '', supplierName: supplier?.name ?? '', lines };
     setAdded(a => [local, ...a]);
     persist(api.post('/purchase-orders', body(po, lines)), { reload, ok: () => toast({ tone: 'success', title: 'Purchase order raised.', body: local.supplierName }) });
     setDrawer(null);
@@ -189,7 +189,7 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
   const [tried, setTried] = useState(false);
   const qtyError = (l: DraftLine) => (tried && isKept(l) && l.qty == null ? 'Required.' : undefined);
 
-  const subtotal = lines.reduce((s, l) => s + lineTotal(l), 0);
+  const subtotal = !isNew && linesLoading ? po.subtotalSen : lines.reduce((s, l) => s + lineTotal(l), 0);
   const total = subtotal + Math.max(0, h.taxSen);
   const built = (): Line[] => lines.filter(isKept).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), uom: l.uom.trim() || 'UNIT', qty: l.qty ?? 0, unitPriceSen: l.unitPriceSen ?? 0, discountSen: l.discountSen ?? 0, lineTotalSen: lineTotal(l) }));
   const canSave = h.supplierId !== '' && built().length > 0;

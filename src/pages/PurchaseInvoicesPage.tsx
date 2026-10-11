@@ -155,7 +155,7 @@ function BillDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Open
     const payloadLines = willBill.map(l => ({ grnLineId: l.grnLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qty: l.qty ?? 0 }));
     const req = api.post('/purchase-invoices', { grnId, supplierInvoiceRef: ref, invoiceDate, dueDate: dueDate || null, notes, lines: payloadLines });
     onCreated({
-      id: `pi-new-${crypto.randomUUID().slice(0, 8)}`, invoiceNumber: `PINV-${new Date().getFullYear()}-NEW`, supplierInvoiceRef: ref, supplierName: grn?.supplierName ?? '', supplierCode: '',
+      id: `pi-new-${crypto.randomUUID().slice(0, 8)}`, invoiceNumber: 'Saving…', supplierInvoiceRef: ref, supplierName: grn?.supplierName ?? '', supplierCode: '',
       grnNumber: grn?.grnNumber ?? '', poNumber: grn?.poNumber ?? '', invoiceDate, dueDate, status: 'POSTED', totalSen: total, paidSen: 0, outstandingSen: total, notes,
       lines: payloadLines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qty: l.qty, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qty * l.unitPriceSen })),
     }, req);

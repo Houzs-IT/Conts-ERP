@@ -171,7 +171,7 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
     const payloadLines = willReceive.map(l => ({ purchaseOrderLineId: l.poLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qtyReceived: l.receive ?? 0, qtyAccepted: l.accepted ?? 0 }));
     const req = api.post('/goods-receipts', { purchaseOrderId: poId, receivedAt, deliveryNoteRef: dnRef, notes, warehouseId: warehouseId || undefined, lines: payloadLines });
     onCreated({
-      id: `grn-new-${crypto.randomUUID().slice(0, 8)}`, grnNumber: `GRN-${new Date().getFullYear()}-NEW`, poNumber: po?.poNumber ?? '', purchaseOrderId: poId,
+      id: `grn-new-${crypto.randomUUID().slice(0, 8)}`, grnNumber: 'Saving…', poNumber: po?.poNumber ?? '', purchaseOrderId: poId,
       supplierName: po?.supplierName ?? '', supplierCode: '', receivedAt, deliveryNoteRef: dnRef, status: 'POSTED', notes, totalSen: total,
       lines: payloadLines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qtyReceived: l.qtyReceived, qtyAccepted: l.qtyAccepted, qtyRejected: l.qtyReceived - l.qtyAccepted, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qtyAccepted * l.unitPriceSen })),
     }, req);

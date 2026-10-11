@@ -91,7 +91,7 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
     if (!takeDate) return;
     const b = built();
     const req = api.post('/stock-takes', { warehouseId, takeDate, notes, lines: b });
-    onCreated({ id: `stk-new-${crypto.randomUUID().slice(0, 8)}`, takeNumber: `STK-${new Date().getFullYear()}-NEW`, warehouseName: warehouses.find(w => w.id === warehouseId)?.name ?? '', warehouseId, takeDate, status: 'OPEN', notes, lines: b.map(i => ({ itemCode: i.itemCode, description: i.description, systemQty: 0, countedQty: null, variance: null })) }, req);
+    onCreated({ id: `stk-new-${crypto.randomUUID().slice(0, 8)}`, takeNumber: 'Saving…', warehouseName: warehouses.find(w => w.id === warehouseId)?.name ?? '', warehouseId, takeDate, status: 'OPEN', notes, lines: b.map(i => ({ itemCode: i.itemCode, description: i.description, systemQty: 0, countedQty: null, variance: null })) }, req);
   }
 
   return (

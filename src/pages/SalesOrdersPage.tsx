@@ -79,7 +79,7 @@ export default function SalesOrdersPage() {
   function save(so: So, lines: Line[]) {
     const t = totalsOf(lines, so.taxSen);
     if (isNew) {
-      setAdded(a => [{ ...so, ...t, id: `so-new-${crypto.randomUUID().slice(0, 8)}`, docNo: `SO-${new Date().getFullYear()}-NEW`, outstandingSen: t.totalSen - so.paidSen, lines }, ...a]);
+      setAdded(a => [{ ...so, ...t, id: `so-new-${crypto.randomUUID().slice(0, 8)}`, docNo: 'Saving…', outstandingSen: t.totalSen - so.paidSen, lines }, ...a]);
       persist(api.post('/sales-orders', body(so, lines)), { reload, ok: () => toast({ tone: 'success', title: 'Sales order raised.', body: so.customerName }) });
     } else {
       setEdits(e => ({ ...e, [so.id]: { ...e[so.id], ...t, customerName: so.customerName, customerPhone: so.customerPhone, customerPo: so.customerPo, soDate: so.soDate, targetDate: so.targetDate, depositSen: so.depositSen, notes: so.notes, outstandingSen: t.totalSen - so.paidSen, lines } }));
@@ -142,7 +142,7 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const setHf = <K extends keyof So>(k: K) => (e: { target: { value: string } }) => setH(s => ({ ...s, [k]: e.target.value as So[K] }));
   const setLine = <K extends keyof DraftLine>(i: number, k: K, v: DraftLine[K]) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
-  const subtotal = lines.reduce((s, l) => s + lineTotal(l), 0);
+  const subtotal = !isNew && linesLoading ? so.subtotalSen : lines.reduce((s, l) => s + lineTotal(l), 0);
   const total = subtotal + Math.max(0, taxSen ?? 0);
   const built = (): Line[] => lines.filter(isUsed).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), uom: l.uom.trim() || 'UNIT', qty: l.qty ?? 0, unitPriceSen: l.unitPriceSen ?? 0, discountSen: l.discountSen ?? 0, lineTotalSen: lineTotal(l) }));
   function problems() {

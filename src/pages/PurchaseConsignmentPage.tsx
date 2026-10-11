@@ -76,7 +76,7 @@ export default function PurchaseConsignmentPage() {
   function save(pc: Pc, lines: Line[]) {
     const supplier = suppliers.find(s => s.id === pc.supplierId);
     if (isNew) {
-      setAdded(a => [{ ...pc, id: `pc-new-${crypto.randomUUID().slice(0, 8)}`, pcNumber: `PC-${new Date().getFullYear()}-NEW`, supplierCode: supplier?.code ?? '', supplierName: supplier?.name ?? '', lines }, ...a]);
+      setAdded(a => [{ ...pc, id: `pc-new-${crypto.randomUUID().slice(0, 8)}`, pcNumber: 'Saving…', supplierCode: supplier?.code ?? '', supplierName: supplier?.name ?? '', lines }, ...a]);
       persist(api.post('/purchase-consignment', body(pc, lines)), { reload, ok: () => toast({ tone: 'success', title: 'Consignment order raised.', body: supplier?.name ?? '' }) });
     } else {
       setEdits(e => ({ ...e, [pc.id]: { ...e[pc.id], ...totalsOf(lines, pc.taxSen), supplierId: pc.supplierId, supplierCode: supplier?.code ?? pc.supplierCode, supplierName: supplier?.name ?? pc.supplierName, expectedAt: pc.expectedAt, warehouseId: pc.warehouseId, notes: pc.notes, pcDate: pc.pcDate, lines } }));
@@ -133,7 +133,7 @@ function PcDrawer({ pc, isNew, suppliers, warehouses, canWrite, onClose, onSave,
   const setLine = <K extends keyof DraftLine>(i: number, k: K, v: DraftLine[K]) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
   const [tried, setTried] = useState(false);
   const qtyError = (l: DraftLine) => (tried && isKept(l) && l.qty == null ? 'Required.' : undefined);
-  const subtotal = lines.reduce((s, l) => s + lineTotal(l), 0);
+  const subtotal = !isNew && linesLoading ? pc.subtotalSen : lines.reduce((s, l) => s + lineTotal(l), 0);
   const total = subtotal + Math.max(0, h.taxSen);
   const built = (): Line[] => lines.filter(isKept).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), uom: l.uom.trim() || 'UNIT', qty: l.qty ?? 0, unitPriceSen: l.unitPriceSen ?? 0, discountSen: l.discountSen ?? 0, lineTotalSen: lineTotal(l) }));
   const canSave = h.supplierId !== '' && built().length > 0;
