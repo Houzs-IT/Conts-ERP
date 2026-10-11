@@ -1,7 +1,7 @@
 import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { checkDate, invalid, type Fields } from '../../_lib/validate';
-import { syncRateIfLinked, syncRestrictionsIfLinked } from '../../_lib/channexSync';
+import { enqueueRestrictionsMany } from '../../_lib/channexQueue';
 import { upliftFor, webRate, type SalesChannel } from '../../_lib/channelPrice';
 
 const CHANNELS = ['web', 'airbnb', 'booking_com', 'agoda'];
@@ -149,24 +149,27 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     // Channex: everything for the unit is queued together and leaves as one call (channexQueue.ts). A run of
     // consecutive nights at one price is one range. Nothing here can undo the save above.
     try {
+      const queued: Parameters<typeof enqueueRestrictionsMany>[2] = [];
       for (const channel of mine) {
         const nights = toSync.filter(r => r.channel === channel).sort((x, y) => x.date.localeCompare(y.date));
         let i = 0;
         while (i < nights.length) {
           let j = i;
           while (j + 1 < nights.length && nights[j + 1].rate === nights[i].rate && nights[j + 1].date === addDay(nights[j].date)) j++;
-          await syncRateIfLinked(env, u.id, nights[i].date, nights[i].rate, nights[j].date, channel as SalesChannel);
+          queued.push({ dateFrom: nights[i].date, dateTo: nights[j].date, r: { rateSen: nights[i].rate }, channel: channel as SalesChannel });
           i = j + 1;
         }
       }
       for (const r of restrictions) {
         for (const span of runsOf(r.days)) {
           // Clearing a minimum stay means one night again, as far as the channels are concerned.
-          await syncRestrictionsIfLinked(env, u.id, span[0], span[span.length - 1], {
+          queued.push({ dateFrom: span[0], dateTo: span[span.length - 1], r: {
             ...(r.minStay !== undefined ? { minStay: r.minStay ?? 1 } : {}), ...(r.stopSell !== undefined ? { stopSell: r.stopSell } : {}),
-          });
+          } });
         }
       }
+      // One insert per unit: a year of weekend prices is about 100 ranges per channel.
+      await enqueueRestrictionsMany(env, u.id, queued);
     } catch (e) {
       syncFailed.push(u.id);
       await audit(env, { actorId: null, actorLabel: 'Channex sync', action: 'channex.enqueue_failed', entityTable: 'units', entityId: u.id, after: { source: 'rates.bulk', error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
