@@ -186,13 +186,15 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
   return (
     <div role="dialog" aria-modal="true" aria-label={j ? `${j.unitNumber} ${j.title}` : 'Repair job'} data-repair-sheet
       className="fixed inset-0 z-[55] bg-page flex flex-col">
-      <header className="flex-none flex items-center gap-2 px-2 py-2 bg-card [border-bottom:1px_solid_var(--color-line)]">
+      <header className="flex-none bg-card [border-bottom:1px_solid_var(--color-line)]">
+        <div className="max-w-[560px] mx-auto flex items-center gap-2 px-2 py-2">
         <button type="button" onClick={onClose} aria-label="Back to the list" className="w-11 h-11 grid place-items-center rounded-control cursor-pointer text-ink hover:bg-muted">
           <Icon name="ChevronLeft" size="nav" />
         </button>
         <div className="flex-1 min-w-0">
           <div className="text-heading font-semibold truncate">{j ? `${j.unitNumber} · ${j.propertyName}` : 'Repair job'}</div>
           {j && <div className="text-meta text-muted-ink truncate">{j.title}</div>}
+        </div>
         </div>
       </header>
 
@@ -248,15 +250,15 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
                 <section className="flex flex-col gap-2">
                   <AttachmentLabel title="Claim, receipts and invoices" count={d.data!.files.length} />
                   {working && <span className="text-meta text-muted-ink">Your claim or the shop receipt, so accounts can pay you. The office enters the amount.</span>}
-                  <FileList files={d.data!.files.map(f => ({ id: f.id, name: f.fileName, href: f.url, size: f.byteSize, label: `${FILE_KIND[f.kind] ?? 'File'} · ${dateShort(f.uploadedAt)}` }))}
-                    add={working ? { label: 'Add file', hint: 'Photo or PDF, several at once', accept: 'image/*,application/pdf', multiple: true, busy: busy === 'files', onPick: fl => void uploadFiles(fl) } : undefined} />
                   {working && (
-                    <FormRow label="These files are">
+                    <FormRow label="Kind of file to add">
                       <select className={cx(INPUT, 'h-11')} value={fileKind} onChange={e => setFileKind(e.target.value)}>
                         {['claim', 'receipt', 'invoice', 'pod'].map(k => <option key={k} value={k}>{FILE_KIND[k]}</option>)}
                       </select>
                     </FormRow>
                   )}
+                  <FileList files={d.data!.files.map(f => ({ id: f.id, name: f.fileName, href: f.url, size: f.byteSize, label: `${FILE_KIND[f.kind] ?? 'File'} · ${dateShort(f.uploadedAt)}` }))}
+                    add={working ? { label: 'Add file', hint: 'Photo or PDF, several at once', accept: 'image/*,application/pdf', multiple: true, busy: busy === 'files', onPick: fl => void uploadFiles(fl) } : undefined} />
                 </section>
               )}
 
@@ -342,11 +344,13 @@ function ReportSheet({ onClose, onDone }: { onClose: () => void; onDone: () => v
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Report a problem" className="fixed inset-0 z-[55] bg-page flex flex-col">
-      <header className="flex-none flex items-center gap-2 px-2 py-2 bg-card [border-bottom:1px_solid_var(--color-line)]">
+      <header className="flex-none bg-card [border-bottom:1px_solid_var(--color-line)]">
+        <div className="max-w-[560px] mx-auto flex items-center gap-2 px-2 py-2">
         <button type="button" onClick={onClose} disabled={busy} aria-label="Cancel" className="w-11 h-11 grid place-items-center rounded-control cursor-pointer text-ink hover:bg-muted">
           <Icon name="X" size="nav" />
         </button>
         <div className="flex-1 min-w-0 text-heading font-semibold">Report a problem</div>
+        </div>
       </header>
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-[560px] mx-auto px-4 py-4 flex flex-col gap-3.5">
