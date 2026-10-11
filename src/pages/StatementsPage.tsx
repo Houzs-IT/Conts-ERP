@@ -22,7 +22,7 @@ import { TERMS } from '../lib/statementTerms';
 
 interface Statement {
   id: string; period?: string; ownerName: string; unitsLabel: string; state: StatementState;
-  grossBookingValue: number; managementFee: number; expensesTotal: number; netPayout: number;
+  grossBookingValue: number; managementFee: number; expensesTotal: number; adjustmentsTotal?: number; netPayout: number;
 }
 interface PeriodSummary { period: string; count: number; net: number; provisional: number; finalised: number; sent: number; paid: number }
 interface Payload {
@@ -198,6 +198,9 @@ export default function StatementsPage() {
       render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">{r.expensesTotal ? <>&minus; </> : ''}{rm(r.expensesTotal, { cents: false })}</span> },
     { key: 'fee', label: TERMS.toOperator, type: 'money', value: r => r.managementFee, width: 120,
       render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">{r.managementFee ? <>&minus; </> : ''}{rm(r.managementFee, { cents: false })}</span> },
+    // Fixed rent, minimum guarantee top-ups and owner credits and charges: what makes the row add up to the net payout.
+    { key: 'adjustments', label: `${TERMS.fixedRent}, top-ups & adjustments`, type: 'money', value: r => r.adjustmentsTotal ?? null, width: 150,
+      render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">{r.adjustmentsTotal == null ? '' : `${r.adjustmentsTotal < 0 ? '− ' : ''}${rm(Math.abs(r.adjustmentsTotal), { cents: false })}`}</span> },
     { key: 'net', label: TERMS.netPayout, type: 'money', value: r => r.netPayout, width: 130,
       render: r => <span className={cx('tabular-nums whitespace-nowrap font-semibold', r.netPayout < 0 ? TONE.critical.text : '')}>{rm(r.netPayout)}</span> },
     { key: 'status', label: 'Status', type: 'status', value: r => r.state, width: 120,
@@ -226,7 +229,7 @@ export default function StatementsPage() {
     <>
       <PageHeader
         title="Owner statements"
-        sub={`${periodLabel(viewPeriod)} period · ${current?.count ?? 0} statements · ${notSent} not yet sent`}
+        sub={`${periodLabel(viewPeriod)} period · ${current?.count ?? 0} statements · ${notSent} finalised, not yet sent`}
         right={
           <div className="flex gap-[9px] flex-wrap items-center">
             <div className="flex items-center h-9 rounded-control border border-solid border-line bg-card">
