@@ -27,7 +27,7 @@ const FILTERS: (Status | 'all')[] = ['all', 'REQUESTED', 'APPROVED', 'APPLIED', 
 
 const ACTION_LABEL: Record<AmdLine['action'], string> = { CHANGE: 'Changed', ADD: 'Added', REMOVE: 'Removed' };
 interface AmdLine { id?: string; salesOrderLineId: string; action: 'CHANGE' | 'ADD' | 'REMOVE'; itemCode: string; description: string; uom: string; oldQty: number | null; oldUnitPriceSen: number | null; newQty: number; newUnitPriceSen: number }
-interface Amd { id: string; amendmentNo: string; salesOrderId: string; soDocNo: string; customerName: string; status: Status; reason: string; appliedAt: string; lines?: AmdLine[] }
+interface Amd { id: string; amendmentNo: string; salesOrderId: string; soDocNo: string; customerName: string; status: Status; reason: string; appliedAt: string; rejectionReason?: string; lines?: AmdLine[] }
 interface Payload { data: Amd[]; generatedAt: string }
 interface SoLine { id: string; itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; deliveredQty: number }
 interface OpenSo { id: string; docNo: string; customerName: string; status: string; lines?: SoLine[] }
@@ -72,9 +72,9 @@ export default function SalesOrderAmendmentPage() {
   ], []);
 
   function created(a: Amd, req: Promise<unknown>) { setAdded(x => [a, ...x]); setDrawer(null); persist(req, { reload, ok: () => toast({ tone: 'success', title: 'Amendment raised.', body: a.soDocNo }) }); }
-  function act(a: Amd, action: 'approve' | 'reject' | 'cancel' | 'apply', next: Status, label: string) {
-    setEdits(e => ({ ...e, [a.id]: { ...e[a.id], status: next } }));
-    persist(api.patch(`/so-amendments/${a.id}`, { action }), { reload, ok: () => toast({ tone: 'success', title: label, body: a.amendmentNo }) });
+  function act(a: Amd, action: 'approve' | 'reject' | 'cancel' | 'apply', next: Status, label: string, reason?: string) {
+    setEdits(e => ({ ...e, [a.id]: { ...e[a.id], status: next, ...(reason ? { rejectionReason: reason } : {}) } }));
+    persist(api.patch(`/so-amendments/${a.id}`, reason ? { action, reason } : { action }), { reload, ok: () => toast({ tone: 'success', title: label, body: a.amendmentNo }) });
     setDrawer(null);
   }
 
@@ -192,7 +192,7 @@ const lineColumns: Column<AmdLine>[] = [
   { key: 'to', label: 'To', align: 'right', sortable: false, filter: false, value: l => l.action === 'REMOVE' ? null : `${l.newQty} × ${rm(l.newUnitPriceSen)}`, render: l => <span className="tabular-nums text-[12.5px]">{l.action === 'REMOVE' ? '—' : `${l.newQty} × ${rm(l.newUnitPriceSen)}`}</span> },
 ];
 
-function ViewDrawer({ amd, canWrite, onClose, onAct }: { amd: Amd; canWrite: boolean; onClose: () => void; onAct: (a: Amd, action: 'approve' | 'reject' | 'cancel' | 'apply', next: Status, label: string) => void }) {
+function ViewDrawer({ amd, canWrite, onClose, onAct }: { amd: Amd; canWrite: boolean; onClose: () => void; onAct: (a: Amd, action: 'approve' | 'reject' | 'cancel' | 'apply', next: Status, label: string, reason?: string) => void }) {
   const { data } = useApi<{ data: Amd }>(`/so-amendments/${amd.id}`, { data: { ...amd, lines: amd.lines ?? [] } });
   const full = data?.data ?? amd;
   const lineRows = useMemo(() => (full.lines ?? []).map((l, i) => ({ ...l, key: l.id ?? String(i) })), [full.lines]);
@@ -208,6 +208,7 @@ function ViewDrawer({ amd, canWrite, onClose, onAct }: { amd: Amd; canWrite: boo
           <Meta label="Customer" value={full.customerName} />
           <Meta label="Applied" value={full.appliedAt ? date(full.appliedAt) : '—'} />
           <Meta label="Reason" value={full.reason || '—'} />
+          {full.status === 'REJECTED' && full.rejectionReason ? <Meta label="Rejected because" value={full.rejectionReason} /> : null}
         </div>
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<AmdLine & { key: string }>
@@ -218,7 +219,7 @@ function ViewDrawer({ amd, canWrite, onClose, onAct }: { amd: Amd; canWrite: boo
         </div>
       </div>
       <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
-        <div>{canWrite && (full.status === 'REQUESTED' || full.status === 'APPROVED') && <ConfirmButton confirm={{ title: `Reject ${full.amendmentNo}?`, body: 'It is marked Rejected and the sales order stays as it is.', meta: `${full.soDocNo} · ${full.customerName}`, confirmLabel: 'Reject amendment', cancelLabel: 'Keep it' }} onConfirm={() => onAct(full, 'reject', 'REJECTED', 'Amendment rejected.')}>Reject</ConfirmButton>}</div>
+        <div>{canWrite && (full.status === 'REQUESTED' || full.status === 'APPROVED') && <ConfirmButton confirm={{ title: `Reject ${full.amendmentNo}?`, body: 'It is marked Rejected and the sales order stays as it is.', meta: `${full.soDocNo} · ${full.customerName}`, confirmLabel: 'Reject amendment', cancelLabel: 'Keep it', reason: { label: 'Why is it rejected?', maxLength: 300 } }} onConfirm={reason => onAct(full, 'reject', 'REJECTED', 'Amendment rejected.', reason)}>Reject</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
           {canWrite && full.status === 'REQUESTED' && <Button size="sm" variant="secondary" onClick={() => onAct(full, 'approve', 'APPROVED', 'Amendment approved.')}>Approve</Button>}

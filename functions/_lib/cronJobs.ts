@@ -1,5 +1,5 @@
 import { type Env, all, one, run, nowIso } from './db';
-import { deliver, notifyUsers, retryAt, MAX_SEND_ATTEMPTS } from './notify';
+import { deliver, notifyUsers, retryAt, MAX_SEND_ATTEMPTS, hasSendLease, sendLeaseUntil } from './notify';
 import { flushWhenQuiet } from './channexQueue';
 import { channexConfigured } from './channex';
 import { cleaningNotice, repairNotice } from './notices';
@@ -37,12 +37,19 @@ export async function drainOutbox(env: Env, o: RunOptions = {}): Promise<JobRepo
   const quiet = hour >= 22 || hour < 8;
   type Row = { id: string; template: string; recipient: string; channel: string; entity_table: string | null; entity_id: string | null; subject: string | null; body: string | null; state: string; attempts: number };
   let retryable = true;
-  const queued = quiet ? [] : await all<Row>(env, `
-    SELECT id, template, recipient, channel, entity_table, entity_id, subject, body, state, 0 AS attempts FROM notification_log
-    WHERE state = 'queued' ORDER BY queued_at LIMIT 100`);
-  const failed = await all<Row>(env, `
-    SELECT id, template, recipient, channel, entity_table, entity_id, subject, body, state, attempts FROM notification_log
-    WHERE state = 'failed' AND attempts < ? AND next_attempt_at IS NOT NULL AND next_attempt_at <= ? ORDER BY next_attempt_at LIMIT 50`, MAX_SEND_ATTEMPTS, now.toISOString())
+  const cols = 'id, template, recipient, channel, entity_table, entity_id, subject, body, state';
+  // With migration 0103 each due row is claimed (sending_until) in the same statement that picks it, so a second run
+  // at the same moment, or the request still sending a message it just wrote, gets other rows or none.
+  const lease = await hasSendLease(env);
+  const free = lease ? 'AND (sending_until IS NULL OR sending_until <= ?)' : '';
+  const nowArg = lease ? [now.toISOString()] : [];
+  const pick = (where: string, order: string, limit: number, args: unknown[], attempts: string) => lease && !o.dryRun
+    ? all<Row>(env, `UPDATE notification_log SET sending_until = ? WHERE id IN (
+        SELECT id FROM notification_log WHERE ${where} ${free} ORDER BY ${order} LIMIT ${limit} FOR UPDATE SKIP LOCKED)
+        RETURNING ${cols}, ${attempts} AS attempts`, sendLeaseUntil(now.getTime()), ...args, ...nowArg)
+    : all<Row>(env, `SELECT ${cols}, ${attempts} AS attempts FROM notification_log WHERE ${where} ${free} ORDER BY ${order} LIMIT ${limit}`, ...args, ...nowArg);
+  const queued = quiet ? [] : await pick("state = 'queued'", 'queued_at', 100, [], '0');
+  const failed = await pick("state = 'failed' AND attempts < ? AND next_attempt_at IS NOT NULL AND next_attempt_at <= ?", 'next_attempt_at', 50, [MAX_SEND_ATTEMPTS, now.toISOString()], 'attempts')
     .catch(() => { retryable = false; return [] as Row[]; }); // before migration 0095 there is nothing to retry by
   const rows = [...queued, ...failed];
   const items = rows.map(r => `${r.state === 'queued' ? 'send' : `retry #${r.attempts + 1}`}: ${r.template} by ${r.channel}`);
@@ -57,13 +64,13 @@ export async function drainOutbox(env: Env, o: RunOptions = {}): Promise<JobRepo
         template: q.template, recipient: q.recipient, channel: q.channel as any, subject: q.subject ?? undefined, body: q.body ?? '',
         entityTable: q.entity_table ?? undefined, entityId: q.entity_id ?? undefined,
       });
-      await run(env, "UPDATE notification_log SET state = 'sent', sent_at = ?, provider_message_id = ?, error = NULL WHERE id = ?", nowIso(), providerId, q.id);
+      await run(env, `UPDATE notification_log SET state = 'sent', sent_at = ?, provider_message_id = ?, error = NULL${lease ? ', sending_until = NULL' : ''} WHERE id = ?`, nowIso(), providerId, q.id);
       sent++;
     } catch (e) {
       failedAgain++;
       const reason = e instanceof Error ? e.message : 'Unknown delivery error';
       const attempts = Number(q.attempts) + 1;
-      await run(env, "UPDATE notification_log SET state = 'failed', error = ? WHERE id = ?", reason, q.id);
+      await run(env, `UPDATE notification_log SET state = 'failed', error = ?${lease ? ', sending_until = NULL' : ''} WHERE id = ?`, reason, q.id);
       await run(env, 'UPDATE notification_log SET attempts = ?, next_attempt_at = ? WHERE id = ?', attempts, attempts >= MAX_SEND_ATTEMPTS ? null : retryAt(attempts, now.getTime()), q.id).catch(() => {});
     }
   }

@@ -193,9 +193,9 @@ export default function StatementsPage() {
       render: r => <span className="font-medium block truncate" title={r.ownerName}>{r.ownerName}</span> },
     { key: 'units', label: 'Units', value: r => r.unitsLabel, hidden: true, width: 220 },
     { key: 'period', label: 'Period', value: r => r.period ?? null, text: r => (r.period ? periodLabel(r.period) : ''), hidden: true, width: 110 },
-    { key: 'gross', label: 'Hospitality income', type: 'money', value: r => r.grossBookingValue, width: 140,
+    { key: 'gross', label: 'Gross Income', type: 'money', value: r => r.grossBookingValue, width: 140,
       render: r => <span className="tabular-nums whitespace-nowrap">{rm(r.grossBookingValue, { cents: false })}</span> },
-    { key: 'fee', label: 'Operator share', type: 'money', value: r => r.managementFee, width: 120,
+    { key: 'fee', label: 'To Operator', type: 'money', value: r => r.managementFee, width: 120,
       render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">&minus; {rm(r.managementFee, { cents: false })}</span> },
     { key: 'expenses', label: 'Deductions', type: 'money', value: r => r.expensesTotal, width: 120,
       render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">&minus; {rm(r.expensesTotal, { cents: false })}</span> },
@@ -254,7 +254,7 @@ export default function StatementsPage() {
       {periodHasNone ? (
         <EmptyState
           title={`No statements for ${periodLabel(viewPeriod)} yet.`}
-          body="Generate the period to draw every settled reservation, fee and documented expense into draft statements."
+          body="Generate the period to draw every settled reservation, fee and documented expense into draft owner statements."
           action={{ label: 'Generate statements', onClick: () => openGenerate(viewPeriod) }}
         />
       ) : (
@@ -303,10 +303,10 @@ export default function StatementsPage() {
                 <span className="text-meta text-muted-ink">Every deduction carries a category, date and amount.</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
-                <Sum label="Income" value={rm(totals.gross, { cents: false })} />
-                <Sum label="Operator share" value={rm(totals.fee, { cents: false })} minus />
+                <Sum label="Gross Income" value={rm(totals.gross, { cents: false })} />
+                <Sum label="To Operator" value={rm(totals.fee, { cents: false })} minus />
                 <Sum label="Deductions" value={rm(totals.expenses, { cents: false })} minus />
-                <Sum label="Net" value={rm(totals.net)} strong />
+                <Sum label="Net Payout" value={rm(totals.net)} strong />
               </div>
             </div>
           )}
@@ -393,7 +393,7 @@ function GenerateDialog({ initialPeriod, periods, lockedPeriods, onClose, onGene
         <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-3">
           <h2 className="m-0 text-[18px] leading-[1.3] font-semibold">Generate statements</h2>
           <p className="m-0 text-[13px] leading-[1.55] text-muted-ink">
-            Builds each owner's month by the owner workbook's rules: reservations split by night into the month, cleaning, bills and other deductions, the contract split, then Owner Adjustments. Statements start as Draft and must be reviewed before sending.
+            Builds each owner's month by the owner workbook's rules: reservations split by night into the month, cleaning, bills and other deductions, the contract split, then Owner Adjustments. Owner statements land as Draft and must be reviewed before sending.
           </p>
           <div className="flex flex-col gap-[7px]">
             <label htmlFor="gen-period" className="text-[12px] font-medium text-muted-ink">Period</label>

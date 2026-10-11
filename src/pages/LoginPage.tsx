@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useSession, type TwoStep } from '../lib/session';
-import { ApiFailure } from '../lib/api';
+import { ApiFailure, api } from '../lib/api';
+import { phone } from '../lib/format';
 import Icon from '../components/Icon';
 import { Logo } from '../components/Logo';
 import { Button } from '../components/Button';
@@ -18,6 +19,8 @@ const COPY: Record<Screen, { eyebrow: string; heading: string; sub: string; subm
 };
 
 
+const SUPPORT_PHONE = '+60 17-465 8868';
+
 export default function LoginPage({ forceChangePassword = false, resetToken = null }: { forceChangePassword?: boolean; resetToken?: string | null }) {
   const { login, verifyCode, requestReset, changePassword, resetPassword, checkResetToken } = useSession();
   const [screen, setScreen] = useState<Screen>(forceChangePassword ? 'change' : resetToken ? 'reset' : 'signin');
@@ -25,6 +28,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [supportPhone, setSupportPhone] = useState(SUPPORT_PHONE);
   const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
   // Set once the password is right on an account with two-step sign-in; the code is asked for next.
@@ -35,6 +39,14 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
   // already-used or expired link otherwise renders an identical form and only
   // reveals the problem after a submit.
   const [tokenState, setTokenState] = useState<'checking' | 'valid' | 'invalid'>(resetToken ? 'checking' : 'valid');
+
+  useEffect(() => {
+    let live = true;
+    api.get<{ supportPhone: string }>('/settings/public')
+      .then(r => { if (live && r?.supportPhone) setSupportPhone(r.supportPhone); })
+      .catch(() => { /* the number above is shown instead */ });
+    return () => { live = false; };
+  }, []);
 
   useEffect(() => {
     if (!resetToken) return;
@@ -225,7 +237,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
 
         <div className="flex items-center justify-between gap-4 flex-wrap text-caption text-faint">
           <span>The Conts Sdn Bhd · 202301027399</span>
-          <span>+60 17-465 8868</span>
+          <span>{phone(supportPhone) || supportPhone}</span>
         </div>
       </div>
     </div>

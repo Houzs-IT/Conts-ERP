@@ -14,6 +14,7 @@ import { api, errorMessage } from '../lib/api';
 import { rating as fmtRating, date as fmtDate, todayMyt, count, plural } from '../lib/format';
 import type { BookingChannel } from '../lib/types';
 import { Chip } from './finance/listKit';
+import { PageControls } from '../components/PageControls';
 
 /** A guest review pulled in from a channel. `reply`/`repliedAt` are set once the
  *  host has responded; a null `reply` is the "needs reply" state. */
@@ -22,7 +23,10 @@ interface Review {
   channel: BookingChannel; rating: number; comment: string | null; reviewedAt: string;
   reply: string | null; repliedAt: string | null;
 }
-interface Payload { data: Review[]; average: number | null; generatedAt: string }
+interface Payload {
+  data: Review[]; average: number | null; generatedAt: string;
+  summary?: { total: number; replied: number }; page?: number; pageSize?: number; total?: number;
+}
 
 const FALLBACK: Payload = {
   average: 4.6, generatedAt: '',
@@ -56,15 +60,22 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+const PAGE_SIZE = 50;
+
 export default function ReviewsPage() {
-  const { data, loading, error, reload } = useApi<Payload>('/reviews', FALLBACK);
+  const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
+  const [replyFilter, setReplyFilter] = useState<ReplyState>('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (ratingFilter !== 'all') query.set('rating', String(ratingFilter));
+  if (replyFilter !== 'all') query.set('reply', replyFilter);
+  const { data, loading, error, reload } = useApi<Payload>(`/reviews?${query}`, FALLBACK);
   const toast = useToast();
 
   // Optimistic overlay — there is no backend in dev. A local reply marks the
   // review "replied" the moment it is posted, before any round-trip resolves.
   const [replies, setReplies] = useState<Record<string, { reply: string; repliedAt: string }>>({});
-  const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
-  const [replyFilter, setReplyFilter] = useState<ReplyState>('all');
   const [composingId, setComposingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
 
@@ -76,22 +87,26 @@ export default function ReviewsPage() {
     });
   }, [data, replies]);
 
-  // Summary is over the whole set, not the filtered view.
-  const total = rows.length;
-  const repliedCount = rows.filter(r => r.reply != null).length;
+  // Summary is over every review (the server counts it), not the filtered page.
+  const total = data?.summary?.total ?? rows.length;
+  const repliedCount = data?.summary?.replied ?? rows.filter(r => r.reply != null).length;
   const needsReplyCount = total - repliedCount;
-  const average = total > 0 ? rows.reduce((s, r) => s + r.rating, 0) / total : (data?.average ?? null);
+  const average = data?.average ?? (rows.length > 0 ? rows.reduce((s, r) => s + r.rating, 0) / rows.length : null);
   const pctReplied = total > 0 ? Math.round((repliedCount / total) * 100) : 0;
 
-  const visible = rows.filter(r => {
+  // The development fallback is not filtered by a server, so filter it here too; a server page is already filtered.
+  const visible = data?.summary ? rows : rows.filter(r => {
     if (ratingFilter !== 'all' && r.rating !== ratingFilter) return false;
     if (replyFilter === 'replied' && r.reply == null) return false;
     if (replyFilter === 'needs_reply' && r.reply != null) return false;
     return true;
   });
+  const matching = data?.total ?? visible.length;
 
   const filtered = ratingFilter !== 'all' || replyFilter !== 'all';
-  function clearFilters() { setRatingFilter('all'); setReplyFilter('all'); }
+  function rate(f: RatingFilter) { setRatingFilter(f); setPage(1); }
+  function replyState(f: ReplyState) { setReplyFilter(f); setPage(1); }
+  function clearFilters() { rate('all'); replyState('all'); }
 
   function startReply(id: string) { setComposingId(id); setDraft(''); }
   function cancelReply() { setComposingId(null); setDraft(''); }
@@ -142,20 +157,20 @@ export default function ReviewsPage() {
       <div className="flex gap-4 flex-wrap items-center">
         <div role="group" aria-label="Filter by rating" className="flex gap-2 flex-wrap items-center">
           <span className="text-meta font-semibold text-muted-ink">Rating</span>
-          <Chip on={ratingFilter === 'all'} onClick={() => setRatingFilter('all')}>All</Chip>
+          <Chip on={ratingFilter === 'all'} onClick={() => rate('all')}>All</Chip>
           {([5, 4, 3, 2, 1] as const).map(n => (
-            <Chip key={n} on={ratingFilter === n} onClick={() => setRatingFilter(n)}>
+            <Chip key={n} on={ratingFilter === n} onClick={() => rate(n)}>
               {n}<Icon name="Star" size="sm" color={color.gold} />
             </Chip>
           ))}
         </div>
         <div role="group" aria-label="Filter by reply state" className="flex gap-2 flex-wrap items-center">
           <span className="text-meta font-semibold text-muted-ink">Status</span>
-          <Chip on={replyFilter === 'all'} onClick={() => setReplyFilter('all')}>All</Chip>
-          <Chip on={replyFilter === 'needs_reply'} onClick={() => setReplyFilter('needs_reply')} count={needsReplyCount || undefined}>
+          <Chip on={replyFilter === 'all'} onClick={() => replyState('all')}>All</Chip>
+          <Chip on={replyFilter === 'needs_reply'} onClick={() => replyState('needs_reply')} count={needsReplyCount || undefined}>
             Needs reply
           </Chip>
-          <Chip on={replyFilter === 'replied'} onClick={() => setReplyFilter('replied')}>Replied</Chip>
+          <Chip on={replyFilter === 'replied'} onClick={() => replyState('replied')}>Replied</Chip>
         </div>
       </div>
 
@@ -225,6 +240,12 @@ export default function ReviewsPage() {
             </Card>
           );
         })
+      )}
+      {matching > 25 && (
+        <Card>
+          <PageControls page={page} pageSize={pageSize} total={matching} onPage={setPage}
+            onSize={s => { setPageSize(s); setPage(1); }} noun="reviews" />
+        </Card>
       )}
     </>
   );

@@ -50,9 +50,6 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 ## Performance (audit 11 Oct 2026, docs/audits/performance-from-sister-erps.md)
 - Owner decision: Workers Paid on the Conts ERP account. On the free plan, Send statements makes one email call per owner (~100 a month) against 50 outside calls per request; calls past 50 fail and are not retried while the cron is off. Until then send 40 at a time.
 - A bulk price update for all 139 units over a year builds 152,205 rate rows in one request (12.6 s locally); UNTESTED against the free plan's CPU limit on Cloudflare.
-- Not yet batched (allow-listed in scripts/checks/no-query-in-loop.mjs): reservations/mark-paid-out (3 queries per booking), expenses/utilities (~6 per bill), payouts/index (payout run), approvals bulk approve.
-- Reviews list and Channex call log stop at 500 rows without paging; add paging before 500 reviews.
-- GETs are not retried on 502/503/504 (a cold Hyperdrive pool after a quiet spell); a single retry for GETs in src/lib/api.ts.
 - Confirm the Hyperdrive origin is Supabase's session pooler (port 5432), not the transaction pooler.
 - libphonenumber (149 KB) is in the entry script because src/lib/format.ts formats phones; lazy-load it if the entry budget (scripts/checks/entry-bundle.mjs, 180 KB gzipped) gets tight.
 
@@ -102,7 +99,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Done (fix/audit-rbac): the level the Permissions chart shows is the level enforced, built-in or chosen: No access refuses reads in every area (exports and search included), View refuses writes. Reads other screens share (unit list, cleaner names, record history, supply chain reference lists) and cross-screen actions are listed with reasons in ROUTE_AREAS (functions/_lib/access.ts). Housekeepers and technicians are deny-by-default like owners (FIELD_ALLOWED). File downloads check the file's record. Checked by scripts/api-checks/rbac-matrix.mjs (361 route-methods x 8 roles + 40 scenarios) and the require-permission gate in npm run check; catalogue docs/audits/rbac-from-sister-erps.md.
 - Owner to decide: management can make a password reset link for another management account (Users > Reset link), which is a way into that account; limit reset links to non-management accounts?
 - Open: some handlers look a record up before checking the role, so a desk role can tell that a record id exists (404 vs 403); ids are random, low risk.
-- Open: a technician's repair history is matched by vendor name = their name (functions/api/audit/index.ts); link maintenance jobs to the technician's user id instead.
 - Permissions inside the supply chain engine (7 Oct): the sign-on carries the role's level for the 8 engine areas (functions/_lib/scmEngine.ts); the engine turns them into its page access and permission keys per role "Conts: <role>" (engine/backend/src/conts/access.ts, sso.ts) and one hook in Houzs's services/auth.ts (hydrateAuthUser) applies them. Full in all 8 keeps the full-access role. Standard for operations staff: edit in supply chain and service cases, view on projects, no invoices or accounting. Tested on the local engine: scripts/api-checks/scm-engine-access.mjs (17). Needs the engine worker redeployed (owner). Known: Houzs lets a role with Sales order view read sales invoices (read-inherit); raising one is refused. Test accounts chart-*@theconts.test were created on staging by the check.
 - Permissions (8 Oct): the 20 handlers with their own role lists (guests, housekeeping, inventory, maintenance SKUs, channel sync, owners, contracts, reviews, unit readiness, automations, integrations, access codes) follow a chosen level through mayWork / maySee / mayRun in functions/_lib/access.ts. Inviting users, organisation settings and the audit endpoint stay fixed to their roles on purpose (a role that could invite users could make itself management).
 - Permissions, not done: per-person exceptions (owner, 8 Oct: later); production migrations 0049-0050 and the merge, after the owner approves staging.
@@ -138,10 +134,10 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Money that reaches owner statements: imported bookings set collected_revenue (HostPlatform "Payment Received"; the workbook's Airbnb payout where it has one) and the workbook adds cleaning and utility expenses. Check one owner's statement against the workbook before sending any (see the open collected_revenue decision above).
 - feat/data-complete (migration 0052): Package D, contract agent share / Package D minimum / agreement file / misc-charges flag, 329 utility accounts, 5 debts (held), 306 guarantee-pool months, 3 cleaners linked to 4,024 cleans, 187 workbook credits as owner_adjustments, OWNER PAYOUT history as paid statements Jan-Aug 2026 (step 7), booking money breakdown columns, building state/city clean-up (step 8). Production needs `node scripts/migrate-pg.mjs --prompt --dry-run`, then `--prompt`, then import steps 2-8 again.
 - Not imported, no data or no home: HostPlatform weekend price (equal to weekday on all 114), per-booking cleaning cost, SALES ORDER and STAMPING (blank on every unit), agent names (not in the workbook), water account numbers (no column in the workbook), 整体报告 for months other than Aug 2026 (the sheet holds one month).
-- Owner to decide: when the 5 held debts (RM 38,341.88) are deducted. Owner profile > Adjustments releases one into a chosen statement month (also Hold, Mark settled outside, add a manual credit/charge; management, finance, operations manager). A released debt larger than the month's payout makes the payout negative (RM 14,000 debt on a RM 4,630 month gave -RM 9,369.70): decide whether to deduct it in full or spread it over months. Check: scripts/api-checks/owner-adjustments.mjs.
+- Owner to decide: when the 5 held debts (RM 38,341.88) are deducted. Owner page > Expenses by unit > Paid on behalf (or the unit's Financials tab) releases one into a chosen statement month (also Hold, Settle outside; management, finance, operations manager); new amounts are entered as bills paid on behalf. A released debt larger than the month's payout makes the payout negative (RM 14,000 debt on a RM 4,630 month gave -RM 9,369.70): decide whether to deduct it in full or spread it over months. Check: scripts/api-checks/owner-adjustments.mjs.
 - Owner to decide: September 2026 has no OWNER PAYOUT figures, so it is the first month Property OS generates; Jan-Aug are locked as paid workbook history.
 - 3 credits (RM 339.04) on SKYLINE-C1513 wait for that unit's owner to be named; re-run step 6 after.
-- No screen yet shows unit utility accounts, guarantee pool months, owner adjustments or the new contract fields.
+- No screen yet shows unit utility accounts or guarantee pool months (owner adjustments now show under Paid on behalf on the unit and owner pages).
 - Owner ids no longer carry IC numbers: 0052 re-keys 'wb-owner-<IC>' / 'hp-owner-<name>' to opaque hashes (checked by scripts/api-checks/owner-rekey.mjs). Guest ids are an unsalted 64-bit hash of name, phone and email: not readable, but a phone number could be guessed back from one; re-key with a secret if that matters.
 - Owner to check: 7 units still under "Owner to be confirmed"; the listing names owner "sad asd" on 2 units (looks like test data); 'Trion KL (2)' came in as its own building next to 'Trion KL'; 1 Airbnb stay (UNO-1503A, 31 Aug) appears under two codes in the workbook and so twice on the calendar.
 
@@ -162,7 +158,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## UI audit follow-ups: shell, system and growth pages (fix/system-growth)
 - Automations: 9 of 30 rules are sent by code today; the other 21 (every guest message) need a sender in the cron worker (theconts-cron, not deployed) plus email/WhatsApp keys. The page says so; the on/off switch is stored only. Owner decision: build the sender.
-- Units > owner details form (functions/api/properties) still returns the full IC and bank number for editing; mask it like the owner profile.
 - Imported owner ids embed the IC number (e.g. wb-owner-940413-13-6097, functions/_lib/hostplatformImport*), so it shows in URLs and the audit log. Data agent to switch to opaque ids.
 - Settings: operations defaults and statement settings are saved but not read anywhere (marked "Not used yet"), nor the locale's language/timezone/currency; wire or remove. Company details and Owner report are used by the report; the default fee by statements.
 - Pricing: channel commission (15/15/18%) and the 22% weekend uplift are fixed in code; owner to decide whether they become settings.
@@ -213,17 +208,14 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 ## Standards (docs/UI-STANDARDS.md, checked by npm run check and CI)
 - Done (s1-standards): one status vocabulary (src/lib/status.ts) and StatusBadge / StatusMenu everywhere; text-success / text-danger now render the text colour; ConfirmDialog for every confirm; dates, money, counts and phones through lib/format; plain-English API errors; no Change dates on OTA bookings.
 - Done: the 32 one-click Delete / Cancel buttons on the built-in supply chain screens now ask first (ConfirmButton).
-- Open: rejecting a sales order amendment asks no reason; the amendments API has no field to store one.
 - Open: make the CI workflow (.github/workflows/ci.yml) a required check on main (GitHub > Settings > Branches; owner, needs admin).
 
 ## Form inputs (feat/s6-inputs)
 - Done: every money, number, percent, phone, date and time field uses src/components/inputs (no raw type="number"/date/time left; `npm run check` enforces it). Endpoints behind them refuse bad values with a field-level 422 (functions/_lib/validate.ts; scripts/api-checks/input-validation.mjs).
 - Open: native date/time pickers are kept on purpose (phone calendars work well); a typed-text date field is not built.
-- Open: lockout attempts accepts 3-20 on the server but the Settings screen offers 3-10; left to the security stream to align.
 
 ## Phones for every country (fix/fix-phone-intl)
 - Done: phones read, format and validate for every country through libphonenumber (src/lib/phone.ts, shared by format.ts, PhoneInput and the server's checkPhone); PhoneInput has a searchable country picker (MY +60 by default). 3,417 of 3,417 local guest phones read in their country's grouping (scripts/api-checks/phone-shapes.mjs).
-- Open: "already on file" for a new guest matches the phone text exactly, so a typed +60 18-980 0069 does not match an imported 60189800069; compare digits (phoneDigits) if duplicates appear.
 - Open: 3 stored guest phones are the right length but outside any known range (2 x +60 2..., 1 x +49), so they show ungrouped.
 
 ## Renovation project, simplified (feat/reno-simplify)
@@ -233,10 +225,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## System bugs from Houzs / Hookka (fix/audit-system, docs/audits/system-from-sister-erps.md)
 - Done: same nights cannot be booked twice at the same moment (unit lock); status and dates changes are compare-and-set; statement generation is one transaction per period; supply chain numbers retry on a clash; MYT dates everywhere (gate myt-dates); CSV formula guard (gate csv-formula); uploads that are not images, video or PDF download instead of opening; 300 / 10,000-character text limits on every write; bookings CSV import validates each row.
-- Open: the 15-minute email/WhatsApp retry does not claim its rows, so a double-fired cron could resend one message; add a 'sending' state (migration) before the cron worker is deployed.
 - Open: built-in supply chain create screens add a placeholder row before the save answers and keep it if the save fails; only matters if the engine is switched off.
 - Open: field edits are last-write-wins (no version column); status and dates are already protected.
-- Note: booking-lifecycle.mjs signs an operations_staff cookie for the dev user, but the middleware now reads the live role from users, so its three non-management checks fail on any database where that user is management; give the check a real non-management user.
 
 ## Supply chain click sweep (fix/sweep-supply-chain, 11 Oct)
 - Done: built-in supply chain screens wait for the server before saying "saved" and re-read the list (src/lib/persist.ts); document drawers load their lines from the record; tested by scripts/api-checks/supply-chain-sweep.mjs.
@@ -254,12 +244,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner to decide: should finance admins see Users and roles? The list refuses them (functions/api/users), so their built-in access is now none; management can still raise it, and then the page shows "could not load".
 - Imported paid payouts have no paid date (the workbook has none), so Payouts shows "Date not recorded" for 531 of 536.
 - Performance "Management fees" over 12 months only counts Aug 2026: the workbook's 整体报告 breakdown exists for that month alone.
-- The sign-in footer phone (+60 17-465 8868) is fixed in LoginPage.tsx; Settings > Support phone is not read there before sign-in.
-- Integrations header counts "2 not connected" from the provider cards only; the Channex panel above it is not counted.
-- A new password equal to the current one is accepted on My account.
 
 ## Reservations click sweep (fix/sweep-reservations, 11 Oct 2026)
-- Inbox: the messages table keeps no delivery state, so after a reload a reply WhatsApp refused looks sent (marked only until the page reloads). Needs a migration (a delivery column) — no number was reserved for this sweep.
 - Owner to decide: a guest name "请设置姓名" (Airbnb's "please set your name" placeholder) arrives from the booking data; treat it as no name at import?
 - Owner to decide: changing the dates or total of a booking that already has an issued invoice leaves that invoice for the old stay; warn, or void and reissue?
 - Owner to decide: adding a guest with the phone of an existing guest gives no duplicate warning (merge exists after the fact).
@@ -273,4 +259,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Verified: Supabase organisation "Conts ERP" is on the Pro plan, so the database has Supabase's daily backups (7 days). The extra GitHub nightly backup (backup.yml) is not active: only CLOUDFLARE_API_TOKEN exists as a repo secret.
 - Verified: production has migrations 0055 and 0098 (two-step sign-in database side).
 - Not verifiable from this machine (may already be done; confirm with whoever runs the Conts ERP Cloudflare account): cron worker theconts-cron deployed, Workers Paid plan, Pages secret TOTP_ENC_KEY, Hyperdrive origin on the session pooler.
+
+## Owner money screens (feat/ownermoney, no migration)
+- No migration: the standard cleaning price is the unit's 'cleaning' row in unit_expenses; a building maintenance fee bill is category 'other' with a description starting "Building maintenance fee" (statement: Additional Deduction). Unit Financials: Costs this month (Cleaning, Maintenance, Paid on behalf) with Add a bill paid on behalf; Unit P&L this month; The Conts' share. Owner page: Expenses by unit, editable payout details (no longer on the unit form), statement make-up in place, Generate owner report.
+- Generate owner report on the owner page builds only that owner's draft statement (POST /api/statements/generate ownerIds); it is refused only when that owner's statement is already sent, not when other owners' are. Owner to confirm that rule.
+- The old "Recurring monthly costs" rows other than cleaning (never deducted) are listed once on the unit as "never deducted"; owner to decide whether any should become bills paid on behalf.
 

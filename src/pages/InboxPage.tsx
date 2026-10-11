@@ -14,9 +14,10 @@ import { Button } from '../components/Button';
 import { deliveryToast } from '../lib/bookingStatus';
 import type { BookingChannel } from '../lib/types';
 
-/** A single message in a thread. `status` only ever exists on an outbound message
- *  we sent from this client: it reads `sending` until the round-trip resolves, then
- *  `sent`. Messages from the server are already delivered and carry no status. */
+/** A single message in a thread. `status` only exists on an outbound message: one sent
+ *  from this client reads `sending` until the round-trip resolves; the server gives
+ *  `sent` or `undelivered` for replies it kept a delivery state for (migration 0104),
+ *  with the channel's reason. Older messages carry no status. */
 interface Message {
   id: string;
   direction: 'inbound' | 'outbound';
@@ -24,6 +25,7 @@ interface Message {
   sentAt: string;
   isAutomated: boolean;
   status?: 'sending' | 'sent' | 'undelivered';
+  deliveryReason?: string | null;
 }
 interface Thread {
   id: string;
@@ -150,7 +152,7 @@ export default function InboxPage() {
       // Only now, after the round-trip resolves, does it read as sent.
       setSentByThread(s => ({
         ...s,
-        [activeId]: (s[activeId] ?? []).map(m => (m.id === id ? { ...m, status: res.delivery === 'sent' ? 'sent' : 'undelivered' } : m)),
+        [activeId]: (s[activeId] ?? []).map(m => (m.id === id ? { ...m, status: res.delivery === 'sent' ? 'sent' : 'undelivered', deliveryReason: res.reason ?? null } : m)),
       }));
       toast(deliveryToast(res.delivery, open?.guestName || 'the guest', res.reason));
     } catch (e) {
@@ -259,7 +261,7 @@ export default function InboxPage() {
                       <span className="text-caption text-muted-ink">
                         {sending ? 'Sending…' : time(m.sentAt)}
                       </span>
-                      {m.status === 'undelivered' && <StatusBadge tone="critical" label="Not delivered" size="sm" />}
+                      {m.status === 'undelivered' && <span title={m.deliveryReason ?? undefined}><StatusBadge tone="critical" label="Not delivered" size="sm" /></span>}
                       {m.isAutomated && <StatusBadge tone="neutral" label="Automated" size="sm" />}
                     </div>
                   </div>

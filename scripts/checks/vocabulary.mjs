@@ -188,12 +188,9 @@ export const allow = {
   'src/pages/OwnerIncomeReportPage.tsx': 'The printed report copies the owner\'s sample word for word.',
 };
 
-/** Screens being reworked in parallel by the units-owners sweep, which applies these words there itself
- *  (docs/VOCABULARY.md, status line). Remove a prefix here once its rework lands. */
-export const PENDING_REWORK = [
-  'src/pages/units/', 'src/pages/owners/', 'src/pages/OwnerProfilePage.tsx', 'src/pages/OwnersPage.tsx', 'src/pages/UnitsPage.tsx',
-  'functions/_lib/ownerStatement.ts', 'functions/api/units/', 'functions/api/owners/',
-];
+/** Files being reworked elsewhere that apply these words themselves when their rework lands: the check skips them
+ *  and `--pending` lists what is left in them. Empty since the units-owners rework merged (11 Oct 2026). */
+export const PENDING_REWORK = [];
 const pending = rel => PENDING_REWORK.some(p => rel === p || (p.endsWith('/') && rel.startsWith(p)));
 
 /** Lines excused by a `vocab-ok: <reason>` comment on the line itself or the line above (reason at least 10 chars). */

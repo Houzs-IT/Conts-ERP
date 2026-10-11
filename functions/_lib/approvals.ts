@@ -19,6 +19,7 @@ import type { Session } from './auth';
 import { insertPayment } from './bookingPayments';
 import { isPeriodLocked } from './expenses';
 import { notifyUsers } from './notify';
+import { auditMany } from './history';
 
 export const APPROVAL_KINDS = ['guest_refund', 'payout_run', 'owner_adjustment', 'expense', 'debt_write_off'] as const;
 export type ApprovalKind = typeof APPROVAL_KINDS[number];
@@ -319,12 +320,16 @@ const EXECUTE: Record<ApprovalKind, Executor> = {
     const runRef = String(p.runRef);
     const started: string[] = [], skipped: { id: string; reason: string }[] = [];
     let total = 0;
+    // One UPDATE for the whole run; a payout named twice moves once and its repeat is skipped, as one at a time would.
+    const movedRows = ids.length ? await all<{ id: string; amount: number }>(tx, `UPDATE payouts SET state = 'processing'
+      WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND state = 'pending' AND bank_last4 IS NOT NULL RETURNING id, amount`, JSON.stringify(ids)) : [];
+    const amounts = new Map(movedRows.map(m => [m.id, Number(m.amount)]));
     for (const id of ids) {
-      const moved = await one<{ amount: number; bank_last4: string | null }>(tx, "UPDATE payouts SET state = 'processing' WHERE id = ? AND state = 'pending' AND bank_last4 IS NOT NULL RETURNING amount, bank_last4", id);
-      if (!moved) { skipped.push({ id, reason: 'No longer pending, or no bank account.' }); continue; }
-      await audit(tx, { ...actor(c), action: 'payout.run', entityTable: 'payouts', entityId: id, before: { state: 'pending' }, after: { state: 'processing', run: runRef, amount: Number(moved.amount), approvalId: c.approvalId } });
-      started.push(id); total += Number(moved.amount);
+      if (!amounts.has(id) || started.includes(id)) { skipped.push({ id, reason: 'No longer pending, or no bank account.' }); continue; }
+      started.push(id); total += amounts.get(id)!;
     }
+    await auditMany(tx, started.map(id => ({ ...actor(c), action: 'payout.run', entityTable: 'payouts', entityId: id, before: { state: 'pending' },
+      after: { state: 'processing', run: runRef, amount: amounts.get(id)!, approvalId: c.approvalId } })));
     if (!started.length) throw new ApprovalRefused('NOTHING_TO_RUN', 'None of these owner payouts is still pending. Reject this request and start a new run.');
     return { run: runRef, started: started.length, total, skipped };
   },

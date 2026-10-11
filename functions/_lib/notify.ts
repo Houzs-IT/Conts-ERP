@@ -1,4 +1,5 @@
 import { type Env, all, one, run, nowIso } from './db';
+import { hasColumn } from './auth';
 
 /**
  * Every outbound message goes through here. Templates and their triggers are in
@@ -24,6 +25,9 @@ export interface Send {
   entityId?: string;
   /** Overrides quiet hours. Check-in risk and payout failure only. */
   urgent?: boolean;
+  /** Set when every call is a new message (a staff reply): the default key below would treat a second reply to the
+   *  same guest within the hour as a retry of the first, skip it and report the first one's result. */
+  idempotencyKey?: string;
 }
 
 const QUIET_FROM = 22;
@@ -45,7 +49,7 @@ function nextSendTime(now = new Date()) {
 
 /** {template, entity, hour} — a retry of the same event never double-sends. */
 async function key(s: Send) {
-  const raw = `${s.template}|${s.entityId ?? s.recipient}|${new Date().toISOString().slice(0, 13)}`;
+  const raw = s.idempotencyKey ?? `${s.template}|${s.entityId ?? s.recipient}|${new Date().toISOString().slice(0, 13)}`;
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
 }
@@ -59,11 +63,13 @@ export async function notify(env: Env, s: Send): Promise<{ state: 'sent' | 'queu
 
   const id = crypto.randomUUID();
   const queued = !s.urgent && inQuietHours();
+  // Sent now: the row is claimed as it is written, so the scheduled job does not send it a second time meanwhile.
+  const lease = !queued && await hasSendLease(env);
 
   await run(env, `
-    INSERT INTO notification_log (id, template, recipient, channel, entity_table, entity_id, idempotency_key, state, queued_at, subject, body)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
-    id, s.template, s.recipient, s.channel, s.entityTable ?? null, s.entityId ?? null, idem, nowIso(), s.subject ?? null, s.body);
+    INSERT INTO notification_log (id, template, recipient, channel, entity_table, entity_id, idempotency_key, state, queued_at, subject, body${lease ? ', sending_until' : ''})
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?${lease ? ', ?' : ''})`,
+    id, s.template, s.recipient, s.channel, s.entityTable ?? null, s.entityId ?? null, idem, nowIso(), s.subject ?? null, s.body, ...(lease ? [sendLeaseUntil()] : []));
 
   if (queued) {
     // The scheduled Worker (worker/scheduled.ts) actually sends these at 08:00 using the
@@ -74,18 +80,25 @@ export async function notify(env: Env, s: Send): Promise<{ state: 'sent' | 'queu
 
   try {
     const providerId = await deliver(env, s);
-    await run(env, "UPDATE notification_log SET state = 'sent', sent_at = ?, provider_message_id = ? WHERE id = ?",
+    await run(env, `UPDATE notification_log SET state = 'sent', sent_at = ?, provider_message_id = ?${lease ? ', sending_until = NULL' : ''} WHERE id = ?`,
       nowIso(), providerId, id);
     return { state: 'sent' };
   } catch (e) {
     const reason = e instanceof Error ? e.message : 'Unknown delivery error';
     // A failed send is a visible state on the related record, never a silent drop.
-    await run(env, "UPDATE notification_log SET state = 'failed', error = ? WHERE id = ?", reason, id);
+    await run(env, `UPDATE notification_log SET state = 'failed', error = ?${lease ? ', sending_until = NULL' : ''} WHERE id = ?`, reason, id);
     // The scheduled job retries it (worker/scheduled.ts); separate so a database without migration 0095 still records the failure.
     await run(env, 'UPDATE notification_log SET attempts = 1, next_attempt_at = ? WHERE id = ?', retryAt(1), id).catch(() => {});
     return { state: 'failed', reason };
   }
 }
+
+/** How long a run holds a message it is sending (migration 0103, notification_log.sending_until). Longer than any
+ *  provider call, shorter than the 15-minute job, so a run that died mid-send is picked up by the next one. */
+export const SEND_LEASE_MS = 10 * 60_000;
+export const sendLeaseUntil = (now = Date.now()) => new Date(now + SEND_LEASE_MS).toISOString();
+/** Whether this database has the claim column; without it everything behaves as before migration 0103. */
+export const hasSendLease = (env: Env) => hasColumn(env, 'notification_log', 'sending_until').catch(() => false);
 
 /** Retries wait 5 min, 20 min, 80 min, ... and stop after MAX_SEND_ATTEMPTS. */
 export const MAX_SEND_ATTEMPTS = 5;

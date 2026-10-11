@@ -5,6 +5,7 @@ import { CONTACT_ROLES, FILTERS, filterWhere, guestSort, type GuestFilter, guest
 import { like } from '../../_lib/bookingList';
 import { countryCode } from '../../_lib/hostplatformImport';
 import { checkPhone, invalid, type Fields } from '../../_lib/validate';
+import { parsePhone } from '../../../src/lib/phone';
 
 const OPS = CONTACT_ROLES;
 
@@ -95,7 +96,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const found = email
     ? await one<{ id: string; full_name: string }>(env, 'SELECT id, full_name FROM guests WHERE lower(email) = lower(?) ORDER BY created_at LIMIT 1', email)
-    : phone ? await one<{ id: string; full_name: string }>(env, 'SELECT id, full_name FROM guests WHERE phone = ? ORDER BY created_at LIMIT 1', phone) : null;
+    : phone ? await samePhone(env, phone) : null;
   if (found) return json({ id: found.id, created: false, existingName: found.full_name });
 
   const id = crypto.randomUUID(), now = nowIso();
@@ -107,3 +108,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'guest.create', entityTable: 'guests', entityId: id, after: { hasEmail: !!email, hasPhone: !!phone } });
   return json({ id, created: true }, 201);
 };
+
+/** Digits with the country code, the way a phone is compared: "00" dropped, a leading 0 read as Malaysian. */
+const PHONE_KEY_SQL = `(CASE WHEN d LIKE '00%' THEN substr(d, 3) WHEN d LIKE '0%' THEN '60' || substr(d, 2) ELSE d END)`;
+
+/** The first guest whose phone is the same number, however either was written: stored phones came from booking
+ *  sites and imports as bare digits, with + and spaces, or as a local 0... number. */
+async function samePhone(env: Env, phone: string) {
+  const raw = phone.replace(/\D/g, '');
+  const keys = new Set([raw.startsWith('00') ? raw.slice(2) : raw.startsWith('0') ? `60${raw.slice(1)}` : raw]);
+  const parsed = parsePhone(phone);
+  if (parsed?.possible) keys.add(parsed.digits);
+  const list = [...keys].filter(k => k.length >= 7);
+  if (!list.length) return null;
+  return one<{ id: string; full_name: string }>(env, `
+    SELECT id, full_name FROM (SELECT id, full_name, created_at, regexp_replace(phone, '\\D', '', 'g') AS d FROM guests WHERE phone IS NOT NULL) g
+    WHERE ${PHONE_KEY_SQL} IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+    ORDER BY created_at LIMIT 1`, JSON.stringify(list));
+}

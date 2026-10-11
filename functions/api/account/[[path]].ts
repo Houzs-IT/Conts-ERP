@@ -61,6 +61,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     const password = String(body.password ?? '');
     const problem = password.length < 8 ? 'At least 8 characters' : !/[A-Z]/.test(password) ? 'At least 1 uppercase letter' : !/[0-9]/.test(password) ? 'At least 1 digit' : null;
     if (problem) return fail('VALIDATION', 'Password does not meet the requirements.', 422, { password: problem });
+    if (password === String(body.current ?? '')) {
+      return fail('VALIDATION', 'The new password is the same as your current one. Choose a different password.', 422, { password: 'Same as your current password' });
+    }
     await run(env, 'UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?', await hashPassword(password), nowIso(), session.userId);
     await audit(env, { ...me, action: 'account.password_changed' });
     // A third-party send never fails the change itself.

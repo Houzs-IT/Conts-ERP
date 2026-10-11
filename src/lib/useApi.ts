@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, ApiFailure, errorMessage } from './api';
+import { api, ApiFailure, errorMessage, readCache, remember } from './api';
 
 export interface Query<T> {
   data: T | null;
@@ -10,7 +10,7 @@ export interface Query<T> {
 }
 
 /**
- * Fetches once per path change. Pages pass a fallback so the UI renders while the
+ * Fetches once per path change, showing the last answer for that path (lib/api.ts readCache) while it does. Pages pass a fallback so the UI renders while the
  * API is still stubbed — delete the fallback once the endpoint is live.
  *
  * `path` may be `null` to skip fetching entirely — for a detail call whose id comes
@@ -19,7 +19,8 @@ export interface Query<T> {
  */
 export function useApi<T>(path: string | null, fallback?: T): Query<T> {
   // The fallback is design sample data. It exists only in dev; a real build shows nothing rather than invented figures.
-  const [data, setData] = useState<T | null>(import.meta.env.DEV ? (fallback ?? null) : null);
+  const cached = path !== null ? readCache.get(path) as T | undefined : undefined;
+  const [data, setData] = useState<T | null>(cached ?? (import.meta.env.DEV ? (fallback ?? null) : null));
   const [loading, setLoading] = useState(path !== null);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -28,8 +29,11 @@ export function useApi<T>(path: string | null, fallback?: T): Query<T> {
     if (path === null) { setLoading(false); return; }
     let live = true;
     setLoading(true);
+    // A page revisited (or a range switched back) shows its last answer straight away; the read below refreshes it.
+    const seen = readCache.get(path) as T | undefined;
+    if (seen !== undefined) setData(seen);
     api.get<T>(path)
-      .then(r => { if (live) { setData(r); setError(null); } })
+      .then(r => { remember(path, r); if (live) { setData(r); setError(null); } })
       .catch((e: unknown) => {
         if (!live) return;
         // With a fallback present the page still renders; the banner explains why

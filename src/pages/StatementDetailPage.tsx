@@ -109,14 +109,14 @@ export default function StatementDetailPage() {
 
       <StatRow cols={5}>
         <StatTile className="col-span-2 xl:col-span-1" label="Net Payout to Owner" value={rm(s.totals.netPayout)} hero />
-        <StatTile label="Hospitality Income" value={rm(s.totals.grossIncome)} />
+        <StatTile label="Gross Income" value={rm(s.totals.grossIncome)} />
         <StatTile label="Expense Deduction" value={signed(-s.totals.deductions)} />
-        <StatTile label="Operator share" value={signed(-s.totals.operatorShare)} />
+        <StatTile label="To Operator" value={signed(-s.totals.operatorShare)} />
         <StatTile label="Owner Adjustments" value={signed(s.totals.adjustments)} />
       </StatRow>
       <div className="flex flex-wrap gap-x-[18px] gap-y-1 px-1 -mt-1 text-meta text-muted-ink">
         <span>Generated {date(s.generatedAt)}</span>
-        {s.finalisedAt && <span>Marked final {date(s.finalisedAt)}</span>}
+        {s.finalisedAt && <span>Final since {date(s.finalisedAt)}</span>}
         {s.sentAt && <span>Sent {date(s.sentAt)}</span>}
         {s.payout && <span>Owner payout {s.payout.state}{s.payout.paidAt ? ` ${date(s.payout.paidAt)}` : ''}{s.payout.failureReason ? ` · ${s.payout.failureReason}` : ''}</span>}
         {s.owner.bankLast4 && <span>{s.owner.bankName ?? 'Bank'} ending {s.owner.bankLast4}</span>}

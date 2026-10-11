@@ -1,5 +1,5 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, isFieldRole } from '../../_lib/auth';
+import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { pushMessageIfLinked } from '../../_lib/channexMessageSync';
 
@@ -63,7 +63,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (thread.channel === 'direct') {
     const guest = thread.guest_id ? await one<{ phone: string | null }>(env, 'SELECT phone FROM guests WHERE id = ?', thread.guest_id) : null;
     delivery = guest?.phone
-      ? await notify(env, { template: b.kind === 'access_details' ? 'access_details' : 'guest.reply', recipient: guest.phone, channel: 'whatsapp', body, entityTable: b.kind ? 'reservations' : 'message_threads', entityId: b.kind ? (reservationId ?? thread.id) : thread.id, urgent: true })
+      ? await notify(env, { template: b.kind === 'access_details' ? 'access_details' : 'guest.reply', recipient: guest.phone, channel: 'whatsapp', body, entityTable: b.kind ? 'reservations' : 'message_threads', entityId: b.kind ? (reservationId ?? thread.id) : thread.id, urgent: true, idempotencyKey: `message:${id}` })
       : { state: 'failed', reason: 'This guest has no phone number on file.' };
   } else {
     // Airbnb/Booking.com: pushed to the guest's own inbox on that platform. Agoda, and any
@@ -72,6 +72,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     delivery = pushed.state === 'sent'
       ? { state: 'sent' }
       : { state: 'not_linked', reason: pushed.reason ?? "This guest's messages are not linked to the channel, so they will not see this reply there." };
+  }
+  // Kept on the message (migration 0104) so the Inbox still shows "Not delivered" after a reload. Never fails the
+  // reply, which is already saved and sent.
+  try {
+    if (await hasColumn(env, 'messages', 'delivery_state')) {
+      const state = ['sent', 'failed', 'queued', 'not_linked'].includes(delivery.state) ? delivery.state : 'failed';
+      await run(env, 'UPDATE messages SET delivery_state = ?, delivery_error = ? WHERE id = ?', state, state === 'sent' || !delivery.reason ? null : delivery.reason.slice(0, 500), id);
+    }
+  } catch (e) {
+    await audit(env, { actorId: null, actorLabel: 'system', action: 'message.delivery_state_failed', entityTable: 'message_threads', entityId: thread.id, after: { messageId: id, error: String(e).slice(0, 300) } }).catch(() => {});
   }
   return json({ id, threadId: thread.id, sentAt: now, delivery: delivery.state, reason: delivery.reason }, 201);
 };

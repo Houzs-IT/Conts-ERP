@@ -3,7 +3,7 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { resolveUnit } from '../../_lib/ops';
 import { windowsFor } from '../../_lib/cleaning';
-import { CATEGORIES, URGENCIES, SOURCES, ASSIGNEE_KINDS, CHARGE_TO, approvalThreshold, needsApproval } from '../../_lib/maintenance';
+import { CATEGORIES, URGENCIES, SOURCES, ASSIGNEE_KINDS, CHARGE_TO, approvalThreshold, needsApproval, assigneeUserId } from '../../_lib/maintenance';
 import { repairNotice } from '../../_lib/notices';
 
 /** GET /api/maintenance/issues?state=&unitId= — every job, with its technician, category, urgency, source, repair
@@ -109,17 +109,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const state = approval ? 'waiting' : vendor ? 'assigned' : 'open';
 
   const id = crypto.randomUUID(), now = nowIso();
+  const userId = await assigneeUserId(env, vendor);
+  const withUser = userId !== undefined;
   await run(env, `
     INSERT INTO maintenance_issues
       (id, unit_id, reported_by, state, title, detail, sku_id, quoted_amount, owner_approval_required,
        blocks_unit, blocked_from, blocked_to, charge_to, category, urgency, source, source_task_id, vendor_name, assignee_kind,
-       reported_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       reported_at, created_at, updated_at${withUser ? ', assignee_user_id' : ''})
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${withUser ? ', ?' : ''})`,
     id, unit.id, session.userId, state, b.title.trim().slice(0, 160), b.detail ? String(b.detail).slice(0, 2000) : null, skuId,
     quoted, approval ? 1 : 0,
     b.blocksUnit ? 1 : 0, b.blocksUnit ? (b.blockedFrom ?? mytToday()) : null, b.blockedTo ?? null,
     chargeTo, category, urgency, source, sourceTaskId, vendor, vendor ? (b.assigneeKind ?? 'contractor') : null,
-    now, now, now);
+    now, now, now, ...(withUser ? [userId] : []));
 
   if (b.blocksUnit) await run(env, "UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?", now, unit.id);
 

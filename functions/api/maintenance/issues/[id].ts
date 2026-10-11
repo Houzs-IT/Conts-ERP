@@ -1,6 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
-import { CATEGORIES, URGENCIES, ASSIGNEE_KINDS, CHARGE_TO, approvalThreshold, needsApproval } from '../../../_lib/maintenance';
+import { CATEGORIES, URGENCIES, ASSIGNEE_KINDS, CHARGE_TO, approvalThreshold, needsApproval, assigneeUserId } from '../../../_lib/maintenance';
 import { repairNotice } from '../../../_lib/notices';
 
 /** PATCH /api/maintenance/issues/:id — any of:
@@ -39,6 +39,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     const kind = b?.assigneeKind ?? cur.assignee_kind ?? 'contractor';
     if (!ASSIGNEE_KINDS.includes(kind)) return fail('VALIDATION', 'In-house or contractor.', 422, { assigneeKind: 'In-house or contractor.' });
     put('assignee_kind', 'assigneeKind', kind);
+    const userId = await assigneeUserId(env, name.trim().slice(0, 80));
+    if (userId !== undefined) put('assignee_user_id', 'assigneeUserId', userId);
   }
   if (b?.category !== undefined) {
     if (!CATEGORIES.includes(b.category)) return fail('VALIDATION', 'Pick a category.', 422, { category: 'Pick a category.' });

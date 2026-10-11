@@ -14,6 +14,7 @@ export const allow = {
   'functions/api/auth/logout.ts': 'Only clears the cookie; works even when the session has already expired.',
   'functions/api/auth/session.ts': 'Reads and verifies the cookie itself (readSession) to answer "who am I", including 401 when signed out.',
   'functions/api/auth/view-as.ts': 'Staging account switcher: verifies the signed-in and original sessions itself with readSession.',
+  'functions/api/settings/public.ts': 'The sign-in page shows the support phone before anyone is signed in; it returns that one value only.',
   'functions/api/integrations/channex-webhook.ts': 'Called by Channex, not a person; authenticated by the shared webhook secret instead of a cookie.',
 };
 

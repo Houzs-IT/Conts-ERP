@@ -229,7 +229,7 @@ export default function OwnerPortalPage() {
             {payoutLine && <span className="text-meta text-[var(--color-text-on-dark)]">{payoutLine}</span>}
           </div>
           <span className={cx('mt-1 text-meta', st.isFinal ? 'text-[var(--color-text-on-dark-muted)]' : 'text-[var(--color-gold-300)]')}>
-            {st.isFinal ? 'Final statement.' : 'Draft figures. This statement is not final and may change.'}
+            {st.isFinal ? 'Final owner statement.' : 'Draft figures. This owner statement is not final and may change.'}
           </span>
         </div>
 

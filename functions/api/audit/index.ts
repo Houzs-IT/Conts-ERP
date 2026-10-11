@@ -1,5 +1,5 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
-import { requireSession, isFieldRole } from '../../_lib/auth';
+import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
 import { levelsFor } from '../../_lib/access';
 
 const AUDIT_ROLES = ['management', 'operations_manager', 'finance_admin'];
@@ -32,9 +32,14 @@ async function fieldOwns(env: Env, userId: string, table: string, id: string) {
       WHERE t.id = ? AND (t.assignee_id = ? OR t.completed_by = ? OR c.user_id = ?)`, id, userId, userId, userId));
   }
   if (table === 'maintenance_issues') {
+    // A job assigned since migration 0105 names its technician's account; older jobs (and a database without the
+    // column) are matched by the technician's name, as before.
+    const byId = await hasColumn(env, 'maintenance_issues', 'assignee_user_id').catch(() => false);
+    const named = 'lower(m.vendor_name) = (SELECT lower(full_name) FROM users WHERE id = ?)';
     return !!(await one(env, `
       SELECT 1 AS x FROM maintenance_issues m
-      WHERE m.id = ? AND (m.reported_by = ? OR lower(m.vendor_name) = (SELECT lower(full_name) FROM users WHERE id = ?))`, id, userId, userId));
+      WHERE m.id = ? AND (m.reported_by = ? OR ${byId ? `m.assignee_user_id = ? OR (m.assignee_user_id IS NULL AND ${named})` : named})`,
+      id, userId, ...(byId ? [userId] : []), userId));
   }
   return false;
 }
