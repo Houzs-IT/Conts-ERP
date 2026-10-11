@@ -29,6 +29,7 @@ import { groupEvidence, type EvidencePhoto } from "../services/renovation/pod";
 import { renderPodNoteHtml } from "../services/renovation/podNote";
 import { syncTradeTasks, writeCachedStage } from "../services/renovation/contractSync";
 import renovationProject from "./renovationProject";
+import renovationMonitor from "./renovationMonitor";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -78,6 +79,8 @@ function parseId(x: string | undefined): number | null {
 
 // ── Simplified project (owner decisions 11 Oct 2026): own file, mounted before the /:id routes ──
 app.route("/", renovationProject);
+// Project Monitor hub (GET /monitor), also before /:id
+app.route("/", renovationMonitor);
 
 // ── Mode: which Projects screens this install shows (app_settings projects_mode, mig 0082) ──
 

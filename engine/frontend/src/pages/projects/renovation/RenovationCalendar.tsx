@@ -40,10 +40,12 @@ export function groupByContractor(tasks: readonly CalendarTask[]): Array<{ key: 
   return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function RenovationCalendar({ canWrite }: { canWrite: boolean }) {
+/** `embedded`: inside another page (the Project Monitor), without the page header.
+    `initialPersonId`: start filtered to this in-house crew member. */
+export function RenovationCalendar({ canWrite, embedded = false, initialPersonId = null }: { canWrite: boolean; embedded?: boolean; initialPersonId?: number | null }) {
   const [from, setFrom] = useState(() => weekStart(todayMyt()));
   const to = addDays(from, DAYS - 1);
-  const [supplierId, setSupplierId] = useState("");
+  const [supplierId, setSupplierId] = useState(initialPersonId ? `p:${initialPersonId}` : "");
   const [projectFilter, setProjectFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
   /* one filter for both: "s:<supplier uuid>" or "p:<person id>" (in-house crew) */
@@ -75,7 +77,7 @@ export function RenovationCalendar({ canWrite }: { canWrite: boolean }) {
 
   return (
     <div>
-      <PageHeader eyebrow="Operations · Projects" title="Task calendar" description="Every site task across projects by planned dates. Drag a bar to move it; the order of trades is only a suggestion." />
+      {!embedded && <PageHeader eyebrow="Operations · Projects" title="Task calendar" description="Every site task across projects by planned dates. Drag a bar to move it; the order of trades is only a suggestion." />}
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-3">
         <div className="flex items-center gap-1">
           <Button variant="secondary" aria-label="Previous weeks" onClick={() => setFrom(addDays(from, -7))}><ChevronLeft size={16} /></Button>

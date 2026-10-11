@@ -32,6 +32,7 @@ import {
   Users,
   Phone,
   ClipboardList,
+  Activity,
   DollarSign,
   Wrench,
 } from "lucide-react";
@@ -127,7 +128,7 @@ import { OrganizerPicker, VenuePicker } from "./projects/ProjectPickers";
 import { CreateProjectPanel } from "./projects/CreateProjectPanel";
 import { DateRangeFilter, MultiSelectFilter, SectionTaskBadges, ImportCsvPanel } from "./projects/ProjectsListParts";
 import { ProjectsCalendarView } from "./projects/ProjectsCalendarView";
-import { ByProjectsMode, RenovationCalendarView, RenovationListView, RenovationProjectRoute } from "./projects/renovation/RenovationRoutes";
+import { ByProjectsMode, RenovationCalendarView, RenovationListView, RenovationMonitorView, RenovationProjectRoute } from "./projects/renovation/RenovationRoutes";
 export { buildCalendarWindow, buildProjectsCalendarModel } from "./projects/calendarModel";
 import { SPEC_INPUT_CLASS, QuickRentalField, SpecTextField, SpecCell, SpecValue } from "./projects/specFields";
 import { LogisticsDateTimeField, GrabHelperBox, type CrewMember } from "./projects/logisticsParts";
@@ -375,10 +376,11 @@ const stageVariant = pmsStageVariant;
 
 // ── Main page ────────────────────────────────────────────────
 
-type ProjectsView = "hub" | "list" | "calendar" | "finances" | "maintenance";
+type ProjectsView = "hub" | "list" | "monitor" | "calendar" | "finances" | "maintenance";
 
 const PROJECTS_VIEWS: ProjectsView[] = [
   "list",
+  "monitor",
   "calendar",
   "finances",
   "maintenance",
@@ -410,6 +412,8 @@ export function Projects() {
   // role-matrix trio.
   const access = {
     list: usePageAccess("projects.list"),
+    // The Project Monitor reads the same rows as the list, so it shares its access.
+    monitor: usePageAccess("projects.list"),
     calendar: usePageAccess("projects.calendar"),
     finances: usePageAccess("projects.finances"),
     maintenance: usePageAccess("projects.maintenance"),
@@ -474,6 +478,7 @@ export function Projects() {
     const hubCards = (
       [
         { key: "list", label: "Project List", description: "All projects — status, brand, dates, PIC, budget.", icon: ClipboardList, v: "list" },
+        { key: "monitor", label: "Project Monitor", description: "Renovation queues per team: what needs doing, red flags, site calendar.", icon: Activity, v: "monitor" },
         { key: "calendar", label: "Calendar", description: "Projects & tasks on a month timeline.", icon: Calendar, v: "calendar" },
         { key: "finances", label: "Finances", description: "Revenue, spend and margin across projects.", icon: DollarSign, v: "finances" },
         { key: "maintenance", label: "Project Maintenance", description: "Templates, checklists and defaults.", icon: Wrench, v: "maintenance" },
@@ -507,6 +512,7 @@ export function Projects() {
   return (
     <div>
       {view === "list" && <ByProjectsMode renovation={() => <RenovationListView />} exhibition={() => <ProjectsListView />} />}
+      {view === "monitor" && <ByProjectsMode renovation={() => <RenovationMonitorView />} exhibition={() => <ProjectsListView />} />}
       {view === "calendar" && <ByProjectsMode renovation={() => <RenovationCalendarView />} exhibition={() => <ProjectsCalendarView />} />}
       {view === "finances" &&
         (canProjectFinance ? (

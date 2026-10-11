@@ -227,6 +227,12 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Done (owner, 11 Oct): the hardware gate no longer blocks anything (task start, stage start/complete, site receipt); it only raises the red flag "Works started before: <missing items>".
 - Open: the SO page "Project" card and the quotation "No project yet" choice were not seen in a browser (the local engine has no Supabase REST for the SCM routes); check them on the staging preview.
 
+## Project Monitor (feat/reno-monitor, /projects?view=monitor, Property OS Projects > Project monitor)
+- Done: role tabs Sales / Design / Renovation / Admin / Boss with queue tiles, red-flag strip, person filter, board-column table (cards on a phone; on the phone app it is a tab of Projects), site calendar; GET /api/renovation/monitor (23 queries in the PGlite test). No migration.
+- Owner to confirm: "payment behind" norm = received % by step (Signed 10, Ordering 40, Renovation 60, Handover 90) and "no SO" red flag after 14 days (PAYMENT_NORM_PCT, NO_SO_FLAG_DAYS in engine/backend/src/services/renovation/monitor.ts).
+- Open: add an "SLA passed" red flag once the project SLA due date from feat/reno-settings-e2e is merged (read it defensively).
+- Open: the Admin queue (money received, items not arrived) was not seen with data locally: the local database has no paid invoices; check it on staging after the Notion import.
+
 ## System bugs from Houzs / Hookka (fix/audit-system, docs/audits/system-from-sister-erps.md)
 - Done: same nights cannot be booked twice at the same moment (unit lock); status and dates changes are compare-and-set; statement generation is one transaction per period; supply chain numbers retry on a clash; MYT dates everywhere (gate myt-dates); CSV formula guard (gate csv-formula); uploads that are not images, video or PDF download instead of opening; 300 / 10,000-character text limits on every write; bookings CSV import validates each row.
 - Open: the 15-minute email/WhatsApp retry does not claim its rows, so a double-fired cron could resend one message; add a 'sending' state (migration) before the cron worker is deployed.
