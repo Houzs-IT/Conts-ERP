@@ -3,7 +3,8 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { date } from '../lib/format';
@@ -14,7 +15,7 @@ import { SLOT_LABEL, schedFallback, type Sched, type SchedPayload, type SchedSta
  *  over delivery_schedule; ported from 2990's SCM (manual). */
 
 const FILTERS: ('active' | 'SCHEDULED' | 'DISPATCHED' | 'DELIVERED')[] = ['active', 'SCHEDULED', 'DISPATCHED', 'DELIVERED'];
-const FILTER_LABEL: Record<(typeof FILTERS)[number], string> = { active: 'Out today', SCHEDULED: 'Scheduled', DISPATCHED: 'In transit', DELIVERED: 'Delivered' };
+const FILTER_LABEL: Record<(typeof FILTERS)[number], string> = { active: 'All open', SCHEDULED: 'Scheduled', DISPATCHED: 'In transit', DELIVERED: 'Delivered' };
 const FALLBACK = schedFallback([
   { id: 's1', soDocNo: 'SO-2026-0004', customerName: 'Arcoris Owner', plannedDate: '2026-09-25', timeSlot: 'MORNING', driverName: 'Ahmad Zaki', vehicleCode: 'LRY-01', status: 'SCHEDULED' },
   { id: 's2', soDocNo: 'SO-2026-0003', customerName: 'Emporium Suites', plannedDate: '2026-09-25', timeSlot: 'AFTERNOON', driverName: 'Ravi Kumar', vehicleCode: 'LRY-02', status: 'DISPATCHED' },
@@ -27,14 +28,14 @@ export default function LastMileDeliveryPage() {
   const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('active');
   const [edits, setEdits] = useState<Record<string, SchedStatus>>({});
+  useResetOnReload(data, () => { setEdits({}); });
 
   const all = useMemo(() => (data?.data ?? []).map(r => ({ ...r, status: edits[r.id] ?? r.status })), [data, edits]);
   const rows = all.filter(r => filter === 'active' ? (r.status === 'SCHEDULED' || r.status === 'DISPATCHED') : r.status === filter);
 
   function act(r: Sched, action: 'dispatch' | 'deliver', next: SchedStatus, label: string) {
     setEdits(e => ({ ...e, [r.id]: next }));
-    api.patch(`/delivery-schedule/${r.id}`, { action }).catch(notifyFailure);
-    toast({ tone: 'success', title: label, body: `${r.soDocNo} · ${r.customerName}` });
+    persist(api.patch(`/delivery-schedule/${r.id}`, { action }), { reload, ok: () => toast({ tone: 'success', title: label, body: `${r.soDocNo} · ${r.customerName}` }) });
   }
 
   const columns = useMemo<Column<Sched>[]>(() => [

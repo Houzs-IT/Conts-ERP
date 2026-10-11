@@ -8,7 +8,8 @@ import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure, ApiFailure } from '../lib/api';
+import { api, ApiFailure, notifyFailure } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { ShortStockPrompt } from '../components/ShortStockPrompt';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
@@ -60,6 +61,10 @@ export default function DeliveryOrdersPage() {
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; d: Do } | null>(null);
   const [added, setAdded] = useState<Do[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Do>>>({});
+  useResetOnReload(data, () => {
+    setAdded([]); setEdits({});
+    setDrawer(dr => { const fresh = dr?.mode === 'view' ? data?.data.find(x => x.id === dr.d.id) : undefined; return dr?.mode === 'view' && fresh ? { mode: 'view', d: { ...dr.d, ...fresh } } : dr; });
+  });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].map(p => ({ ...p, ...edits[p.id] })), [added, data, edits]);
   const q = search.trim().toLowerCase();
@@ -74,17 +79,16 @@ export default function DeliveryOrdersPage() {
     { key: 'status', label: 'Status', type: 'status', value: p => p.status, entity: 'delivery_order' },
   ], []);
 
-  function created(d: Do) { setAdded(a => [d, ...a]); toast({ tone: 'success', title: 'Delivery order raised.', body: `${d.doNumber} · ${d.customerName}` }); setDrawer(null); }
+  function created(d: Do) { setAdded(a => [d, ...a]); reload(); toast({ tone: 'success', title: 'Delivery order raised.', body: `${d.doNumber} · ${d.customerName}` }); setDrawer(null); }
   function act(d: Do, patch: Record<string, unknown>, optimistic: Partial<Do>, title: string) {
     setEdits(e => ({ ...e, [d.id]: { ...e[d.id], ...optimistic } }));
-    api.patch(`/delivery-orders/${d.id}`, patch).catch(notifyFailure);
-    toast({ tone: 'success', title, body: d.doNumber });
+    persist(api.patch(`/delivery-orders/${d.id}`, patch), { reload, ok: () => toast({ tone: 'success', title, body: d.doNumber }) });
     setDrawer(dr => dr && dr.mode === 'view' ? { mode: 'view', d: { ...dr.d, ...optimistic } } : dr);
   }
 
   return (
     <>
-      <PageHeader title="Delivery orders" sub={`${all.length} deliveries`}
+      <PageHeader title="Delivery orders" sub={data ? `${all.length} ${all.length === 1 ? 'delivery' : 'deliveries'}` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New delivery</Button> : undefined} />
       <DataTable<Do>
         id="scm.delivery-orders" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
@@ -234,7 +238,9 @@ const lineColumns: Column<DoLine>[] = [
 ];
 
 function ViewDrawer({ d, canWrite, onClose, onAct }: { d: Do; canWrite: boolean; onClose: () => void; onAct: (d: Do, patch: Record<string, unknown>, optimistic: Partial<Do>, title: string) => void }) {
-  const lineRows = useMemo(() => (d.lines ?? []).map((l, i) => ({ ...l, key: String(i) })), [d.lines]);
+  const { record, loading: linesLoading, error: linesError } = useRecord<Do>('delivery-orders', d.id);
+  const lines = record?.lines ?? d.lines;
+  const lineRows = useMemo(() => (lines ?? []).map((l, i) => ({ ...l, key: String(i) })), [lines]);
   const advanceLabel = (() => { const i = FLOW.indexOf(d.status); return i >= 0 && i < FLOW.length - 1 ? statusLabel('delivery_order', FLOW[i + 1]) : null; })();
   return (
     <Drawer open onClose={onClose} width={720}>
@@ -253,7 +259,7 @@ function ViewDrawer({ d, canWrite, onClose, onAct }: { d: Do; canWrite: boolean;
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<DoLine & { key: string }>
             id="scm.delivery-order.lines" urlPrefix="lines." bare noViews noToolbar pageSize={0}
-            columns={lineColumns} rows={lineRows} rowKey={l => l.key}
+            columns={lineColumns} rows={lineRows} rowKey={l => l.key} loading={linesLoading} error={linesError}
             noun={['line', 'lines']} exportName={`${d.doNumber}-lines`}
             empty={{ title: 'No lines on this delivery.' }} />
         </div>

@@ -3,7 +3,8 @@ import { TimeField } from '../components/inputs';
 import PageHeader from '../components/PageHeader';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { SLOT_LABEL, schedFallback, type Sched, type SchedPayload, type TimeSlot } from '../lib/schedule';
@@ -23,12 +24,13 @@ export default function DeliveryTimeArrangementPage() {
   const canWrite = !!user && ['management', 'operations_manager', 'finance_admin'].includes(user.role);
   const [slotEdits, setSlotEdits] = useState<Record<string, TimeSlot>>({});
   const [timeEdits, setTimeEdits] = useState<Record<string, string>>({});
+  useResetOnReload(data, () => { setSlotEdits({}); setTimeEdits({}); });
 
   const all = useMemo(() => (data?.data ?? []).map(r => ({ ...r, timeSlot: slotEdits[r.id] ?? r.timeSlot, plannedTime: timeEdits[r.id] ?? r.plannedTime })), [data, slotEdits, timeEdits]);
   const rows = all.filter(r => r.plannedDate && r.status !== 'CANCELLED' && r.status !== 'DELIVERED');
 
-  function setSlot(r: Sched, value: TimeSlot) { setSlotEdits(e => ({ ...e, [r.id]: value })); api.patch(`/delivery-schedule/${r.id}`, { timeSlot: value || null }).catch(notifyFailure); toast({ tone: 'success', title: 'Time slot set.', body: r.soDocNo }); }
-  function setTime(r: Sched, value: string) { setTimeEdits(e => ({ ...e, [r.id]: value })); api.patch(`/delivery-schedule/${r.id}`, { plannedTime: value || null }).catch(notifyFailure); }
+  function setSlot(r: Sched, value: TimeSlot) { setSlotEdits(e => ({ ...e, [r.id]: value })); persist(api.patch(`/delivery-schedule/${r.id}`, { timeSlot: value || null }), { reload, ok: () => toast({ tone: 'success', title: 'Time slot set.', body: r.soDocNo }) }); }
+  function setTime(r: Sched, value: string) { setTimeEdits(e => ({ ...e, [r.id]: value })); persist(api.patch(`/delivery-schedule/${r.id}`, { plannedTime: value || null }), { reload }); }
 
   const columns = useMemo<Column<Sched>[]>(() => [
     { key: 'so', label: 'Sales order', type: 'ref', value: r => r.soDocNo, hideable: false, render: r => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold whitespace-nowrap">{r.soDocNo}</span> },

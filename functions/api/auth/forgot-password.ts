@@ -17,7 +17,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const sent = await sendPasswordReset(env, new URL(request.url).origin, { id: user.id, email: address });
   if (sent.state === 'failed') {
-    return fail('EMAIL_NOT_SENT', `The account exists, but the reset email could not be sent (${sent.reason ?? 'unknown error'}). Ask a manager to reset your password in Users and roles.`, 502);
+    return fail('EMAIL_NOT_SENT', `The account exists, but the reset email could not be sent (${(sent.reason ?? 'unknown error').replace(/\.$/, '')}). Ask a manager to reset your password in Users and roles.`, 502);
   }
   return json({ ok: true, sent: true });
 };

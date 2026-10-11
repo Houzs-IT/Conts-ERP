@@ -39,13 +39,15 @@ import { HistoryDisclosure } from '../components/RecordHistory';
 const ROLES: UserRole[] = ['management', 'operations_manager', 'operations_staff', 'finance_admin', 'housekeeper', 'technician', 'owner'];
 const roleLabel = (r: string) => ROLE_LABEL[r] ?? r;
 const ROLE_OPTIONS = ROLES.map(r => ({ value: r, label: roleLabel(r) }));
+// Owner logins are made from the owner's record (the server refuses them here), and a staff account never becomes one.
+const STAFF_ROLE_OPTIONS = ROLE_OPTIONS.filter(o => o.value !== 'owner');
 const roleTone: Record<UserRole, Tone> = {
   management: 'info', operations_manager: 'info', operations_staff: 'neutral',
   finance_admin: 'success', housekeeper: 'warning', technician: 'warning', owner: 'neutral',
 };
 
 interface Row {
-  id: string; fullName: string; email: string; phone: string; role: UserRole;
+  id: string; fullName: string; email: string; phone: string | null; role: UserRole;
   managerId: string | null;
   isActive: boolean; mustChangePassword: boolean; isLocked?: boolean; twoStep?: boolean; lastLoginAt: string | null;
 }
@@ -142,7 +144,7 @@ export default function UsersPage() {
           </span>
           <span className="flex flex-col gap-px min-w-0">
             <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={u.fullName}>{u.fullName}</span>
-            <span className="text-caption text-muted-ink whitespace-nowrap">{u.phone}</span>
+            <span className="text-caption text-muted-ink whitespace-nowrap">{u.phone || '—'}</span>
           </span>
         </span>
       ) },
@@ -286,8 +288,9 @@ export default function UsersPage() {
   function actionsFor(u: Row): RowAction[] {
     const self = u.id === me?.id;
     const invited = status(u).label === 'Invited';
+    // Only management may change an account (functions/api/users/[id].ts); others read the list.
+    if (!canManage) return [];
     const items: RowAction[] = [{ key: 'edit', label: 'Edit details', icon: 'Pencil', run: () => openEdit(u) }];
-    if (!canManage) return items;
     if (u.isActive && invited) items.push({ key: 'invite', label: 'Resend invitation', icon: 'Send', run: () => setConfirm({
       title: `Resend the invitation to ${u.fullName}?`,
       body: 'They get a fresh temporary password by email. The one in the first email stops working.',
@@ -356,7 +359,7 @@ export default function UsersPage() {
     setBusy(true); setEditErrors({});
     const roleChanged = editRole !== editing.role;
     const patch = {
-      role: editRole, managerId: editManager || null, isActive: editActive,
+      ...(roleChanged ? { role: editRole } : {}), managerId: editManager || null, isActive: editActive,
       fullName: editName.trim(), email: editEmail.trim().toLowerCase(), phone: editPhone.trim() || null,
     };
     try {
@@ -428,7 +431,7 @@ export default function UsersPage() {
       <PageHeader
         title="Users and roles"
         sub={`${plural(rows.length, 'account')} · ${count(invitedCount)} invited and not yet signed in`}
-        primary={tab === 'users' && (
+        primary={tab === 'users' && canManage && (
           <Button variant="primary" size="sm" onClick={() => { setLastTempPassword(null); setInviteOpen(true); }}>
             Invite user
           </Button>
@@ -459,7 +462,7 @@ export default function UsersPage() {
       {tab === 'users' && (
         <DataTable<Row>
           id="users" columns={columns} rows={data ? rows : null} rowKey={u => u.id}
-          loading={loading} error={error} onRetry={reload} onRowClick={openEdit}
+          loading={loading} error={error} onRetry={reload} onRowClick={canManage ? openEdit : undefined}
           pageSize={0} noun={['account', 'accounts']} exportName="users"
           header={
             <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)] text-meta text-muted-ink">
@@ -524,14 +527,14 @@ export default function UsersPage() {
             <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" error={fieldErrors.fullName} />
             <Field label="Work email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@theconts.com" error={fieldErrors.email} />
             <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
-              <Select label="Role" showLabel size="md" value={role} onChange={v => setRole(v as UserRole)} options={ROLE_OPTIONS} />
+              <Select label="Role" showLabel size="md" value={role} onChange={v => setRole(v as UserRole)} options={STAFF_ROLE_OPTIONS} />
               {role !== 'owner' && (
                 <Select label="Reports to" showLabel size="md" value={managerId} onChange={setManagerId} placeholder="No manager"
                   options={staff.map(s => ({ value: s.id, label: s.fullName }))} />
               )}
             </div>
             <div className="text-meta text-muted-ink leading-[1.5]">
-              The role sets their permissions and landing screen. The reporting line is for escalation and rosters only.
+              The role sets their permissions and landing screen. The reporting line is for escalation and rosters only. Owners are invited from their own record under Owners.
             </div>
           </form>
           {lastTempPassword && (
@@ -561,7 +564,8 @@ export default function UsersPage() {
             <Field label="Email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} error={editErrors.email} />
             <PhoneInput label="Phone" value={editPhone} onChange={setEditPhone} error={editErrors.phone} />
             <div className="flex flex-col gap-1.5">
-              <Select label="Role" showLabel size="md" value={editRole} onChange={v => setEditRole(v as UserRole)} options={ROLE_OPTIONS} />
+              <Select label="Role" showLabel size="md" value={editRole} onChange={v => setEditRole(v as UserRole)}
+                options={editing.role === 'owner' ? ROLE_OPTIONS.filter(o => o.value === 'owner') : STAFF_ROLE_OPTIONS} disabled={editing.role === 'owner'} />
               {editRole !== editing.role && (
                 <span className={cx('text-meta', TONE.warning.text)}>
                   Changing the role rebuilds this person’s navigation and permissions on their next sign-in.

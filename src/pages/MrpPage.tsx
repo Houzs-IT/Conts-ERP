@@ -43,7 +43,7 @@ export default function MrpPage() {
 
   return (
     <>
-      <PageHeader title="MRP" sub={`${shortItems} items short · ${totalNet} units to buy`} />
+      <PageHeader title="MRP" sub={data ? `${shortItems} ${shortItems === 1 ? 'item' : 'items'} short · ${totalNet} ${totalNet === 1 ? 'unit' : 'units'} to buy` : '\u00a0'} />
       <DataTable<Row>
         id="scm.mrp" columns={columns} rows={data ? rows : null} rowKey={r => r.itemCode}
         loading={loading} error={error} onRetry={reload} pageSize={0}

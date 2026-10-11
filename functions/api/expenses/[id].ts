@@ -1,7 +1,7 @@
 import { type Env, one, run, json, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isIsoDate } from '../../_lib/validate';
-import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked } from '../../_lib/expenses';
+import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked, expenseCategoryLabel, expenseDayLabel } from '../../_lib/expenses';
 import { approvalSettings, approvalsEnabled, stage } from '../../_lib/approvals';
 
 /** PATCH /api/expenses/:id { category?, description?, amount?, incurredOn?, reference?, chargeTo? }
@@ -34,7 +34,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     const staged = await stage(env, session, {
       kind: 'expense', entity: 'units', entityId: cur.unit_id, amount: b.amount,
       reason: String(b.reason ?? '').trim() || `Expense raised from RM ${(Number(cur.amount) / 100).toFixed(2)} to RM ${(b.amount / 100).toFixed(2)}`,
-      summary: `Expense ${cur.category} on ${cur.incurred_on} raised from RM ${(Number(cur.amount) / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })} to RM ${(b.amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}`,
+      summary: `${expenseCategoryLabel(cur.category)} expense of ${expenseDayLabel(cur.incurred_on)} raised from RM ${(Number(cur.amount) / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })} to RM ${(b.amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}`,
       payload: { op: 'update', expenseId: id, unitId: cur.unit_id, changes },
     });
     return json(staged, 202);

@@ -15,7 +15,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const vehicles = await all<VRow>(env, `
     SELECT v.id, v.code, v.plate, v.vehicle_type, v.active,
            (SELECT COUNT(*) FROM fleet_maintenance_records f WHERE f.vehicle_id = v.id AND f.status = 'SCHEDULED') AS open_maint,
-           (SELECT COUNT(*) FROM fleet_maintenance_records f WHERE f.vehicle_id = v.id AND f.next_due_date IS NOT NULL AND f.next_due_date < ?) AS overdue
+           (SELECT COUNT(*) FROM fleet_maintenance_records f WHERE f.vehicle_id = v.id AND f.next_due_date IS NOT NULL AND f.next_due_date < ?
+             AND NOT EXISTS (SELECT 1 FROM fleet_maintenance_records g WHERE g.vehicle_id = f.vehicle_id AND g.record_type = f.record_type AND g.service_date > f.service_date)) AS overdue
     FROM vehicles v ORDER BY v.code`, today);
 
   const drivers = await all<DRow>(env, `

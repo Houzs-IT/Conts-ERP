@@ -29,7 +29,8 @@ const FALLBACK: Payload = {
 export default function AccountingPage() {
   const { data, loading, error, reload } = useApi<Payload>('/accounting', FALLBACK);
   const [tab, setTab] = useState<'ap' | 'ar'>('ap');
-  const d = data ?? FALLBACK;
+  // Never the sample figures: until the real ones arrive (or if they are refused) the cards show a dash.
+  const d: Payload = data ?? { generatedAt: '', payables: [], receivables: [], apTotalSen: 0, arTotalSen: 0 };
   const net = d.arTotalSen - d.apTotalSen;
 
   const overdueCell = (n: number): ReactNode => <span className={cx('tabular-nums', n ? 'text-danger font-semibold' : 'text-muted-ink')}>{n || '—'}</span>;
@@ -63,9 +64,9 @@ export default function AccountingPage() {
       <PageHeader title="Accounting" sub="Payables and receivables · outstanding" />
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3">
-        <Stat label="Payables (AP)" value={rm(d.apTotalSen, { cents: false })} hint="Owed to suppliers" tone="warning" />
-        <Stat label="Receivables (AR)" value={rm(d.arTotalSen, { cents: false })} hint="Owed by customers" tone="info" />
-        <Stat label="Net position" value={rm(net, { cents: false })} hint={net >= 0 ? 'Receivables exceed payables' : 'Payables exceed receivables'} tone={net >= 0 ? 'success' : 'critical'} />
+        <Stat label="Payables (AP)" value={data ? rm(d.apTotalSen, { cents: false }) : '—'} hint="Owed to suppliers" tone="warning" />
+        <Stat label="Receivables (AR)" value={data ? rm(d.arTotalSen, { cents: false }) : '—'} hint="Owed by customers" tone="info" />
+        <Stat label="Net position" value={data ? rm(net, { cents: false }) : '—'} hint={!data ? 'Receivables less payables' : net >= 0 ? 'Receivables exceed payables' : 'Payables exceed receivables'} tone={!data || net >= 0 ? 'success' : 'critical'} />
       </div>
 
       {tab === 'ap' ? (

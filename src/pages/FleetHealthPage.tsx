@@ -8,7 +8,8 @@ import { MoneyInput, NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date, todayMyt } from '../lib/format';
@@ -48,11 +49,14 @@ export default function FleetHealthPage() {
   const [added, setAdded] = useState<Rec[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Rec>>>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); setRemoved(new Set()); });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].filter(r => !removed.has(r.id)).map(r => ({ ...r, ...edits[r.id] })), [added, data, edits, removed]);
   const q = search.trim().toLowerCase();
   const rows = all.filter(r => (vehFilter === 'all' || r.vehicleId === vehFilter) && (!q || `${r.vehicleCode} ${r.vehiclePlate} ${r.vendor}`.toLowerCase().includes(q)));
-  const overdue = all.filter(r => r.nextDueDate && r.nextDueDate < today()).length;
+  // A due date stops counting once a later record of the same kind is logged for that vehicle.
+  const isOverdue = (r: Rec) => !!r.nextDueDate && r.nextDueDate < today() && !all.some(g => g.vehicleId === r.vehicleId && g.recordType === r.recordType && g.serviceDate > r.serviceDate);
+  const overdue = all.filter(isOverdue).length;
 
   const columns = useMemo<Column<Rec>[]>(() => [
     { key: 'date', label: 'Date', type: 'date', value: r => r.serviceDate },
@@ -61,27 +65,27 @@ export default function FleetHealthPage() {
     { key: 'cost', label: 'Cost', type: 'money', value: r => r.costSen, render: r => r.costSen ? <span className="tabular-nums whitespace-nowrap">{rm(r.costSen)}</span> : <span className="text-muted-ink">—</span> },
     { key: 'due', label: 'Next due', type: 'date', value: r => r.nextDueDate, render: r => {
       if (!r.nextDueDate) return <span className="text-muted-ink">—</span>;
-      const isOverdue = r.nextDueDate < today();
-      return <span className={cx('whitespace-nowrap tabular-nums', isOverdue ? cx(TONE.critical.text, 'font-semibold') : 'text-muted-ink')}>{date(r.nextDueDate)}{isOverdue ? ' · overdue' : ''}</span>;
+      const late = isOverdue(r);
+      return <span className={cx('whitespace-nowrap tabular-nums', late ? cx(TONE.critical.text, 'font-semibold') : 'text-muted-ink')}>{date(r.nextDueDate)}{late ? ' · overdue' : ''}</span>;
     } },
     { key: 'status', label: 'Status', type: 'status', value: r => r.status, status: r => (r.status === 'DONE' ? { label: 'Done', tone: 'success' } : { label: 'Scheduled', tone: 'info' }) },
-  ], []);
+  ], [all]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function save(draft: Rec, isNew: boolean) {
     const v = vehicles.find(x => x.id === draft.vehicleId);
     const withV = { ...draft, vehicleCode: v?.code ?? draft.vehicleCode, vehiclePlate: v?.plate ?? draft.vehiclePlate };
     const body = { vehicleId: draft.vehicleId, recordType: draft.recordType, serviceDate: draft.serviceDate, odometerKm: draft.odometerKm, costSen: draft.costSen, nextDueDate: draft.nextDueDate || null, nextDueKm: draft.nextDueKm, status: draft.status, vendor: draft.vendor, notes: draft.notes };
-    if (isNew) { setAdded(a => [{ ...withV, id: `fmr-new-${crypto.randomUUID().slice(0, 8)}` }, ...a]); api.post('/fleet-health', body).catch(notifyFailure); toast({ tone: 'success', title: 'Record logged.', body: `${TYPE_LABEL[draft.recordType]} · ${withV.vehicleCode}` }); }
-    else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...withV } })); api.patch(`/fleet-health/${draft.id}`, body).catch(notifyFailure); toast({ tone: 'success', title: 'Record updated.', body: withV.vehicleCode }); }
+    if (isNew) { setAdded(a => [{ ...withV, id: `fmr-new-${crypto.randomUUID().slice(0, 8)}` }, ...a]); persist(api.post('/fleet-health', body), { reload, ok: () => toast({ tone: 'success', title: 'Record logged.', body: `${TYPE_LABEL[draft.recordType]} · ${withV.vehicleCode}` }) }); }
+    else { setEdits(e => ({ ...e, [draft.id]: { ...e[draft.id], ...withV } })); persist(api.patch(`/fleet-health/${draft.id}`, body), { reload, ok: () => toast({ tone: 'success', title: 'Record updated.', body: withV.vehicleCode }) }); }
     setDrawer(null);
   }
-  function remove(r: Rec) { setRemoved(s => new Set(s).add(r.id)); api.del(`/fleet-health/${r.id}`).catch(notifyFailure); toast({ tone: 'success', title: 'Record removed.', body: r.vehicleCode }); setDrawer(null); }
+  function remove(r: Rec) { setRemoved(s => new Set(s).add(r.id)); persist(api.del(`/fleet-health/${r.id}`), { reload, ok: () => toast({ tone: 'success', title: 'Record removed.', body: r.vehicleCode }) }); setDrawer(null); }
 
   const emptyRec = (): Rec => ({ id: '', vehicleId: vehicles[0]?.id ?? '', recordType: 'SERVICE', serviceDate: today(), odometerKm: null, costSen: 0, nextDueDate: '', nextDueKm: null, status: 'DONE', vendor: '', notes: '', vehicleCode: '', vehiclePlate: '' });
 
   return (
     <>
-      <PageHeader title="Fleet health" sub={`${all.length} records${overdue ? ` · ${overdue} overdue` : ''}`}
+      <PageHeader title="Fleet health" sub={data ? `${all.length} ${all.length === 1 ? 'record' : 'records'}${overdue ? ` · ${overdue} overdue` : ''}` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyRec(), isNew: true })}>Log maintenance</Button> : undefined} />
       <DataTable<Rec>
         id="scm.fleet-health" columns={columns} rows={data ? rows : null} rowKey={r => r.id}

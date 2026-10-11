@@ -8,7 +8,8 @@ import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date, todayMyt } from '../lib/format';
@@ -55,6 +56,10 @@ export default function SalesReturnsPage() {
   const [drawer, setDrawer] = useState<{ mode: 'new' } | { mode: 'view'; sret: Sret } | null>(null);
   const [added, setAdded] = useState<Sret[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Sret>>>({});
+  useResetOnReload(data, () => {
+    setAdded([]); setEdits({});
+    setDrawer(d => { const fresh = d?.mode === 'view' ? data?.data.find(x => x.id === d.sret.id) : undefined; return d?.mode === 'view' && fresh ? { mode: 'view', sret: { ...d.sret, ...fresh } } : d; });
+  });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].map(p => ({ ...p, ...edits[p.id] })), [added, data, edits]);
   const q = search.trim().toLowerCase();
@@ -70,17 +75,16 @@ export default function SalesReturnsPage() {
     { key: 'refund', label: 'Refund', type: 'money', value: p => p.status === 'CANCELLED' ? null : p.refundSen, render: p => p.status === 'CANCELLED' ? <span className="text-muted-ink">—</span> : <span className="tabular-nums font-semibold">{rm(p.refundSen)}</span> },
   ], []);
 
-  function created(sret: Sret) { setAdded(a => [sret, ...a]); toast({ tone: 'success', title: 'Return raised.', body: `${sret.returnNumber} · ${sret.customerName}` }); setDrawer(null); }
+  function created(sret: Sret, req: Promise<unknown>) { setAdded(a => [sret, ...a]); setDrawer(null); persist(req, { reload, ok: () => toast({ tone: 'success', title: 'Return raised.', body: sret.customerName }) }); }
   function patch(p: Sret, status: Status, label: string) {
     setEdits(e => ({ ...e, [p.id]: { ...e[p.id], status } }));
-    api.patch(`/sales-returns/${p.id}`, { status }).catch(notifyFailure);
-    toast({ tone: 'success', title: label, body: p.returnNumber });
+    persist(api.patch(`/sales-returns/${p.id}`, { status }), { reload, ok: () => toast({ tone: 'success', title: label, body: p.returnNumber }) });
     setDrawer(null);
   }
 
   return (
     <>
-      <PageHeader title="Sales returns" sub={`${all.length} returns · from customers`}
+      <PageHeader title="Delivery returns" sub={data ? `${all.length} ${all.length === 1 ? 'return' : 'returns'} · from customers` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New return</Button> : undefined} />
 
       <DataTable<Sret>
@@ -113,7 +117,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 
 interface RetLine { doLineId: string; itemCode: string; description: string; uom: string; returnable: number; unitPriceSen: number; qty: number | null; reason: string }
 
-function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo[]; canWrite: boolean; onClose: () => void; onCreated: (p: Sret) => void }) {
+function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo[]; canWrite: boolean; onClose: () => void; onCreated: (p: Sret, req: Promise<unknown>) => void }) {
   const [doId, setDoId] = useState('');
   const [lines, setLines] = useState<RetLine[]>([]);
   const [returnDate, setReturnDate] = useState(todayMyt());
@@ -142,12 +146,12 @@ function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: Open
     setSubmitted(true);
     if (!returnDate || willReturn.some(qtyError)) return;
     const payloadLines = willReturn.map(l => ({ deliveryOrderLineId: l.doLineId, itemCode: l.itemCode, description: l.description, uom: l.uom, unitPriceSen: l.unitPriceSen, qtyReturned: l.qty ?? 0, reason: l.reason }));
-    api.post('/sales-returns', { deliveryOrderId: doId, returnDate, reason, creditNoteRef, notes, lines: payloadLines }).catch(notifyFailure);
+    const req = api.post('/sales-returns', { deliveryOrderId: doId, returnDate, reason, creditNoteRef, notes, lines: payloadLines });
     onCreated({
-      id: `sret-new-${crypto.randomUUID().slice(0, 8)}`, returnNumber: `SRET-${todayMyt().slice(0, 4)}-NEW`, customerName: dord?.customerName ?? '', doNumber: dord?.doNumber ?? '',
+      id: `sret-new-${crypto.randomUUID().slice(0, 8)}`, returnNumber: 'Saving…', customerName: dord?.customerName ?? '', doNumber: dord?.doNumber ?? '',
       returnDate, status: 'POSTED', refundSen: refund, creditNoteRef, reason, notes,
       lines: payloadLines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qtyReturned: l.qtyReturned, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qtyReturned * l.unitPriceSen, reason: l.reason })),
-    });
+    }, req);
   }
 
   return (
@@ -200,7 +204,7 @@ function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: Open
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <Field label="Notes" placeholder="Optional" value={notes} onChange={e => setNotes(e.target.value)} />
           <div className="flex items-end justify-end"><div className="flex gap-8 text-[15px] font-semibold"><span>Refund value</span><span className="tabular-nums w-[120px] text-right">{rm(refund)}</span></div></div>
         </div>
@@ -223,7 +227,8 @@ const lineColumns: Column<SretLine>[] = [
 ];
 
 function ViewDrawer({ sret, canWrite, onClose, onComplete, onCancel }: { sret: Sret; canWrite: boolean; onClose: () => void; onComplete: (p: Sret) => void; onCancel: (p: Sret) => void }) {
-  const lineRows = useMemo(() => (sret.lines ?? []).map((l, i) => ({ ...l, key: String(i) })), [sret.lines]);
+  const { record, loading: linesLoading, error: linesError } = useRecord<Sret>('sales-returns', sret.id);
+  const lineRows = useMemo(() => (record?.lines ?? sret.lines ?? []).map((l, i) => ({ ...l, key: String(i) })), [record, sret.lines]);
   return (
     <Drawer open onClose={onClose} width={720}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
@@ -241,7 +246,7 @@ function ViewDrawer({ sret, canWrite, onClose, onComplete, onCancel }: { sret: S
         <div className="border border-solid border-line rounded-card overflow-hidden">
           <DataTable<SretLine & { key: string }>
             id="scm.sales-return.lines" urlPrefix="lines." bare noViews noToolbar pageSize={0}
-            columns={lineColumns} rows={lineRows} rowKey={l => l.key}
+            columns={lineColumns} rows={lineRows} rowKey={l => l.key} loading={linesLoading} error={linesError}
             noun={['line', 'lines']} exportName={`${sret.returnNumber}-lines`}
             empty={{ title: 'No lines on this return.' }} />
         </div>

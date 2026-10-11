@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search, Plus, Trash2, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -8,7 +8,8 @@ import { MoneyInput, NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure } from '../lib/api';
+import { api } from '../lib/api';
+import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, todayMyt } from '../lib/format';
@@ -53,6 +54,7 @@ export default function PurchaseConsignmentPage() {
   const [isNew, setIsNew] = useState(false);
   const [added, setAdded] = useState<Pc[]>([]);
   const [edits, setEdits] = useState<Record<string, Partial<Pc>>>({});
+  useResetOnReload(data, () => { setAdded([]); setEdits({}); });
 
   const all = useMemo(() => [...added, ...(data?.data ?? [])].map(p => ({ ...p, ...edits[p.id] })), [added, data, edits]);
   const q = search.trim().toLowerCase();
@@ -74,21 +76,19 @@ export default function PurchaseConsignmentPage() {
   function save(pc: Pc, lines: Line[]) {
     const supplier = suppliers.find(s => s.id === pc.supplierId);
     if (isNew) {
-      setAdded(a => [{ ...pc, id: `pc-new-${crypto.randomUUID().slice(0, 8)}`, pcNumber: `PC-${todayMyt().slice(0, 4)}-NEW`, supplierCode: supplier?.code ?? '', supplierName: supplier?.name ?? '', lines }, ...a]);
-      api.post('/purchase-consignment', body(pc, lines)).catch(notifyFailure);
-      toast({ tone: 'success', title: 'Consignment order raised.', body: supplier?.name ?? '' });
+      setAdded(a => [{ ...pc, id: `pc-new-${crypto.randomUUID().slice(0, 8)}`, pcNumber: 'Saving…', supplierCode: supplier?.code ?? '', supplierName: supplier?.name ?? '', lines }, ...a]);
+      persist(api.post('/purchase-consignment', body(pc, lines)), { reload, ok: () => toast({ tone: 'success', title: 'Consignment order raised.', body: supplier?.name ?? '' }) });
     } else {
       setEdits(e => ({ ...e, [pc.id]: { ...e[pc.id], ...totalsOf(lines, pc.taxSen), supplierId: pc.supplierId, supplierCode: supplier?.code ?? pc.supplierCode, supplierName: supplier?.name ?? pc.supplierName, expectedAt: pc.expectedAt, warehouseId: pc.warehouseId, notes: pc.notes, pcDate: pc.pcDate, lines } }));
-      api.patch(`/purchase-consignment/${pc.id}`, body(pc, lines)).catch(notifyFailure);
-      toast({ tone: 'success', title: 'Consignment order updated.', body: pc.pcNumber });
+      persist(api.patch(`/purchase-consignment/${pc.id}`, body(pc, lines)), { reload, ok: () => toast({ tone: 'success', title: 'Consignment order updated.', body: pc.pcNumber }) });
     }
     setDrawer(null);
   }
-  function cancelPc(p: Pc) { setEdits(e => ({ ...e, [p.id]: { ...e[p.id], status: 'CANCELLED' } })); api.patch(`/purchase-consignment/${p.id}`, { status: 'CANCELLED' }).catch(notifyFailure); toast({ tone: 'success', title: 'Consignment order cancelled.', body: p.pcNumber }); setDrawer(null); }
+  function cancelPc(p: Pc) { setEdits(e => ({ ...e, [p.id]: { ...e[p.id], status: 'CANCELLED' } })); persist(api.patch(`/purchase-consignment/${p.id}`, { status: 'CANCELLED' }), { reload, ok: () => toast({ tone: 'success', title: 'Consignment order cancelled.', body: p.pcNumber }) }); setDrawer(null); }
 
   return (
     <>
-      <PageHeader title="Consignment orders" sub={`${all.length} orders · consigned stock`}
+      <PageHeader title="Purchase consignment orders" sub={data ? `${all.length} ${all.length === 1 ? 'order' : 'orders'} · consigned stock` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={openNew}>New consignment</Button> : undefined} />
       <DataTable<Pc>
         id="scm.purchase-consignment" columns={columns} rows={data ? rows : null} rowKey={p => p.id}
@@ -124,14 +124,16 @@ const isKept = (l: DraftLine) => !!(l.itemCode.trim() && l.description.trim());
 function PcDrawer({ pc, isNew, suppliers, warehouses, canWrite, onClose, onSave, onCancelPc, totalsOf }: {
   pc: Pc; isNew: boolean; suppliers: Opt[]; warehouses: Opt[]; canWrite: boolean; onClose: () => void; onSave: (p: Pc, l: Line[]) => void; onCancelPc: (p: Pc) => void; totalsOf: (l: Line[], t: number) => { subtotalSen: number; taxSen: number; totalSen: number };
 }) {
-  const editable = canWrite && (isNew || pc.status === 'SUBMITTED');
+  const { record, loading: linesLoading, error: linesError } = useRecord<Pc>('purchase-consignment', isNew ? null : pc.id);
+  const editable = canWrite && (isNew || pc.status === 'SUBMITTED') && !linesLoading && !linesError;
   const [h, setH] = useState<Pc>(pc);
   const [lines, setLines] = useState<DraftLine[]>((pc.lines ?? []).map(toDraftLine));
+  useEffect(() => { if (record?.lines) setLines(record.lines.map(toDraftLine)); }, [record]);
   const setHf = <K extends keyof Pc>(k: K) => (e: { target: { value: string } }) => setH(s => ({ ...s, [k]: e.target.value as Pc[K] }));
   const setLine = <K extends keyof DraftLine>(i: number, k: K, v: DraftLine[K]) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
   const [tried, setTried] = useState(false);
   const qtyError = (l: DraftLine) => (tried && isKept(l) && l.qty == null ? 'Required.' : undefined);
-  const subtotal = lines.reduce((s, l) => s + lineTotal(l), 0);
+  const subtotal = !isNew && linesLoading ? pc.subtotalSen : lines.reduce((s, l) => s + lineTotal(l), 0);
   const total = subtotal + Math.max(0, h.taxSen);
   const built = (): Line[] => lines.filter(isKept).map(l => ({ itemCode: l.itemCode.trim(), description: l.description.trim(), uom: l.uom.trim() || 'UNIT', qty: l.qty ?? 0, unitPriceSen: l.unitPriceSen ?? 0, discountSen: l.discountSen ?? 0, lineTotalSen: lineTotal(l) }));
   const canSave = h.supplierId !== '' && built().length > 0;
@@ -184,13 +186,13 @@ function PcDrawer({ pc, isNew, suppliers, warehouses, canWrite, onClose, onSave,
                     <td className="p-1.5 text-center">{editable && <button onClick={() => setLines(ls => ls.filter((_, j) => j !== i))} aria-label="Remove line" className="text-muted-ink hover:text-danger bg-transparent border-none cursor-pointer p-1"><Trash2 size={15} /></button>}</td>
                   </tr>
                 ))}
-                {lines.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-[12.5px] text-muted-ink">No lines yet.</td></tr>}
+                {lines.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-[12.5px] text-muted-ink">{linesLoading ? 'Loading lines…' : linesError ?? 'No lines yet.'}</td></tr>}
               </tbody>
             </table>
           </div>
           {editable && <div><Button size="sm" variant="secondary" icon={<Plus size={15} strokeWidth={1.75} />} onClick={() => setLines(ls => [...ls, blankLine()])}>Add line</Button></div>}
         </div>
-        <div className="grid grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <Field label="Notes" placeholder="Optional" value={h.notes} onChange={setHf('notes')} disabled={!editable} />
           <div className="flex flex-col gap-1.5 items-end justify-end">
             <div className="flex gap-8 text-[13px]"><span className="text-muted-ink">Subtotal</span><span className="tabular-nums w-[110px] text-right">{rm(subtotal)}</span></div>

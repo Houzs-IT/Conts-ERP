@@ -2,7 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { isCustomerStatus, invalidCustomer, toCustomerPayload, type CustomerRow } from '../../_lib/customers';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
-import { checkSen, checkPhone, invalid as invalidFields, type Fields } from '../../_lib/validate';
+import { checkSen, checkPhone, checkEmail, invalid as invalidFields, type Fields } from '../../_lib/validate';
 
 const COLS = `id, code, name, status, contact_person, phone, email, address, area, postcode, state, country,
               payment_terms, credit_limit_sen, currency, tin_number, business_reg_no, customer_type, notes`;
@@ -29,6 +29,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
   const fields: Fields = {};
   checkPhone(fields, 'phone', b.phone);
+  checkEmail(fields, 'email', b.email);
   checkSen(fields, 'creditLimitSen', b.creditLimitSen, { label: 'Credit limit' });
   const badFields = invalidFields(fields); if (badFields) return badFields;
   const code = (b.code as string).trim();
