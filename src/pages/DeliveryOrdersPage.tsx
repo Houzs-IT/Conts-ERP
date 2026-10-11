@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Search, Plus, X } from 'lucide-react';
+import { Search, Plus } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
@@ -18,6 +18,7 @@ import { date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { statusLabel } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
+import { CloseButton } from '../components/CloseButton';
 
 /** Delivery Orders — ported from 2990's SCM, drawn in Conts. Delivers a sales order's
  *  lines (fills SO delivered_qty; advances the SO to DELIVERED when complete). */
@@ -26,7 +27,7 @@ type Status = 'LOADED' | 'DISPATCHED' | 'IN_TRANSIT' | 'SIGNED' | 'DELIVERED' | 
 const FLOW: Status[] = ['LOADED', 'DISPATCHED', 'IN_TRANSIT', 'SIGNED', 'DELIVERED'];
 const FILTERS: (Status | 'all')[] = ['all', 'LOADED', 'DISPATCHED', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED'];
 
-interface DoLine { itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; lineTotalSen: number }
+interface DoLine { itemCode: string; description: string; uom: string; qty: number; unitPriceSen: number; discountSen?: number; lineTotalSen: number }
 interface Do { id: string; doNumber: string; soDocNo: string; salesOrderId: string; customerName: string; doDate: string; expectedDeliveryAt: string; status: Status; driverName: string; vehicle: string; address1: string; city: string; state: string; postcode: string; phone: string; notes: string; lines?: DoLine[] }
 interface Payload { data: Do[]; generatedAt: string }
 interface SoLine { id: string; itemCode: string; description: string; uom: string; qty: number; deliveredQty: number; unitPriceSen: number }
@@ -170,7 +171,7 @@ function DeliverDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: Ope
     <Drawer open onClose={onClose} width={860}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <h2 className="m-0 text-[19px] font-semibold">New delivery order</h2>
-        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
+        <CloseButton onClick={onClose} />
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5">
@@ -231,6 +232,7 @@ const lineColumns: Column<DoLine>[] = [
   { key: 'item', label: 'Item', value: l => l.description, sub: l => <span className="[font-family:var(--font-mono,ui-monospace,monospace)]">{l.itemCode}</span>, text: l => `${l.description} ${l.itemCode}` },
   { key: 'qty', label: 'Qty', type: 'number', value: l => l.qty },
   { key: 'price', label: 'Unit price', type: 'money', value: l => l.unitPriceSen },
+  { key: 'discount', label: 'Discount', type: 'money', value: l => l.discountSen ?? 0 },
   { key: 'total', label: 'Line total', type: 'money', value: l => l.lineTotalSen },
 ];
 
@@ -243,7 +245,7 @@ function ViewDrawer({ d, canWrite, onClose, onAct }: { d: Do; canWrite: boolean;
     <Drawer open onClose={onClose} width={720}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{d.doNumber}</h2><StatusBadge entity="delivery_order" value={d.status} /></div>
-        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
+        <CloseButton onClick={onClose} />
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-[13px]">

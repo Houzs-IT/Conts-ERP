@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { NAV_TABS, type NavTab } from './Sidebar';
+/* The registry's shape, before Conts switches the ledger off (conts/navOnly.ts, owner decision C7). */
+import { ALL_NAV_TABS as NAV_TABS, type NavTab } from './Sidebar';
 import { ACCOUNTING_TABS } from '../pages/scm-v2/accounting-tabs';
 
 /**

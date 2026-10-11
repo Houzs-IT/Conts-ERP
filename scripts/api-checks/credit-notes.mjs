@@ -3,6 +3,7 @@
 // note undoes its effect; a posted note can't be edited; posting twice is harmless.
 import { call, check, done } from './harness.mjs';
 const tag = Date.now().toString().slice(-6);
+await call('POST', '/api/products', { code: `CNI-${tag}`, name: `CN item ${tag}`, category: 'ACCESSORY' }); // documents only take Products codes
 const ap = async (code) => ((await call('GET', '/api/accounting')).json?.payables ?? []).find(p => p.code === code)?.outstandingSen ?? 0;
 const ar = async (name) => ((await call('GET', '/api/accounting')).json?.receivables ?? []).find(p => p.name === name)?.outstandingSen ?? 0;
 
@@ -49,6 +50,11 @@ check('posted CN lowers receivable to RM 420', await ar(CUST) === 42000, await a
 r = await call('POST', '/api/credit-notes', { kind: 'DN', salesOrderId: SO, lines: [{ description: 'Undercharged delivery', amountSen: 2000 }] }); const DN = r.json?.id;
 await call('PATCH', `/api/credit-notes/${DN}`, { status: 'POSTED' });
 check('posted DN raises receivable to RM 440', await ar(CUST) === 44000, await ar(CUST));
+// A credit note may exceed what the invoice still owes (owner, 11 Oct 2026): RM 600 against RM 440 owing.
+r = await call('POST', '/api/credit-notes', { kind: 'CN', salesInvoiceId: SI, lines: [{ description: 'Full refund plus goodwill', amountSen: 60000 }] });
+check('a CN larger than the invoice balance is accepted', r.status === 201, r.text);
+await call('PATCH', `/api/credit-notes/${r.json?.id}`, { status: 'POSTED' });
+check('posted, it leaves the customer in credit (-RM 160)', await ar(CUST) === -16000, await ar(CUST));
 
 // --- a typed customer with no invoice goes into credit ---
 const LONE = `Lone Customer ${tag}`;
@@ -67,5 +73,11 @@ r = await call('POST', '/api/credit-notes', { kind: 'SCN', supplierId: r.json?.i
 check("another supplier's invoice refused (422)", r.status === 422, r.text);
 r = await call('GET', '/api/credit-notes', undefined, 'housekeeper'); check('housekeeper cannot list notes (403)', r.status === 403, r.text);
 r = await call('POST', '/api/credit-notes', { kind: 'CN', partyName: 'x', lines: [{ amountSen: 100 }] }, 'housekeeper'); check('housekeeper cannot raise notes (403)', r.status === 403, r.text);
+
+// --- consignment notes number under CSN-, never CN- (owner, 11 Oct 2026) ---
+r = await call('POST', '/api/credit-notes', { kind: 'CN', partyName: `Series ${tag}`, lines: [{ description: 'Series check', amountSen: 100 }] });
+check('a credit note numbers under CN-', r.status === 201 && /^CN-\d{4}-\d{4}$/.test(r.json?.noteNumber ?? ''), r.text);
+r = await call('POST', '/api/consignment-notes', { consigneeName: `Showroom ${tag}`, lines: [{ itemCode: `CNI-${tag}`, description: 'CN item', qtyConsigned: 1, unitPriceSen: 100 }] });
+check('a consignment note numbers under CSN-, so the two never share a prefix', r.status === 201 && /^CSN-\d{4}-\d{4}$/.test(r.json?.cnNumber ?? ''), r.text);
 
 done();

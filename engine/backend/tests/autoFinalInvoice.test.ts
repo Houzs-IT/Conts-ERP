@@ -41,6 +41,8 @@ function harness(opts: { settings?: Row[]; doStatus?: string; extraDos?: Row[]; 
   const sb = fakeSb({
     accounts: CHART.map((r) => ({ ...r })),
     companies: [{ id: CO, code: '2990', name: '2990' }],
+    // Conts C6: a copied line's code must be in Products.
+    mfg_products: ['SOFA-3S', 'MAT-Q'].map((code) => ({ code, company_id: CO, status: 'ACTIVE' })),
     acc_account_roles: [],
     acc_company_settings: (opts.settings ?? []).map((r) => ({ ...r })),
     acc_item_group_accounts: [

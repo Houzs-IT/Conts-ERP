@@ -1,4 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
+import { refuseUnknownItemCodes } from '../../_lib/products';
 import { requireSession } from '../../_lib/auth';
 import { isSoStatus, normalizeLines, computeTotals, toSoHeaderPayload, type SoHeaderRow } from '../../_lib/sales-orders';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
@@ -53,6 +54,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const bad = invalid(fields); if (bad) return bad;
   const lines = normalizeLines(b.lines);
   if (!lines.length) return fail('VALIDATION', 'Add at least one line.', 422, { lines: 'Add at least one line.' });
+  { const unknownCodes = await refuseUnknownItemCodes(env, lines.map(l => l.itemCode)); if (unknownCodes) return unknownCodes; } // every item code must be in Products
 
   const totals = computeTotals(lines, intOrNull(b.taxSen) ?? 0);
   const id = genId('so');

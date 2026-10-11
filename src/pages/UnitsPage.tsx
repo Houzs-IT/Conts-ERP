@@ -8,7 +8,6 @@ import { Eyebrow, Figure, SectionTitle } from '../components/Metric';
 import PageHeader from '../components/PageHeader';
 import { EmptyState } from '../components/States';
 import { Select } from '../components/Select';
-import { MoneyText } from '../components/MoneyText';
 import { StatusBadge, StatusDot } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
@@ -38,6 +37,7 @@ import {
   type Unit, type Building, type PropertiesPayload, type UnitDetail, type RosterRow,
 } from './units/shared';
 import { statusLabel } from '../lib/status';
+import { PnlTable } from './units/PnlTable';
 
 /** True at the width where the tree becomes a sticky pane (Tailwind xl). */
 function useWide() {
@@ -445,15 +445,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           {d.pnl && (
             <Card>
               <SectionTitle title={`${periodLabel} P and L`} />
-              {d.pnl.map((l, i) => {
-                const net = l.type === 'net';
-                return (
-                  <div key={i} className={cx('flex items-center justify-between gap-5 py-3 px-5 [border-top:1px_solid_var(--color-line-soft)]', net && 'bg-page')}>
-                    <span className={cx('text-copy', net ? 'font-semibold text-ink' : 'font-normal text-muted-ink')}>{l.label}</span>
-                    <MoneyText sen={l.amount} mode="exact" className={cx('text-ink text-right', net ? 'text-heading font-semibold' : 'text-copy font-medium')} />
-                  </div>
-                );
-              })}
+              <div className="[border-top:1px_solid_var(--color-line-soft)]"><PnlTable rows={d.pnl} /></div>
             </Card>
           )}
         </div>
@@ -519,15 +511,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               <span className="text-[16px] font-semibold tracking-[-0.01em]">Unit P&amp;L this month</span>
               <span className="text-meta text-muted-ink">{periodLabel}</span>
             </div>
-            {d.pnl.map((l, i) => {
-              const net = l.type === 'net';
-              return (
-                <div key={i} className={cx('flex items-center justify-between gap-5 [border-bottom:1px_solid_var(--color-line-soft)]', net ? 'py-[15px] px-5 bg-page' : 'py-3 px-5 bg-card')}>
-                  <span className={cx(net ? 'text-copy font-semibold text-ink' : 'text-copy font-normal text-muted-ink')}>{l.label}</span>
-                  <MoneyText sen={l.amount} mode="exact" className={cx('text-right', net ? 'text-heading font-semibold' : 'text-copy font-medium')} />
-                </div>
-              );
-            })}
+            <PnlTable rows={d.pnl} />
             <div className="py-[13px] px-5 text-meta text-muted-ink [text-wrap:pretty]">
               The owner statement for this unit so far, by its income model: Gross Income split by night into the month, less the costs the owner pays, less the operator's share. It rolls up to the owner by the unit's split. The month is not closed yet, so the figures still move.
             </div>
@@ -538,15 +522,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
                 <span className="text-[16px] font-semibold tracking-[-0.01em]">The Conts' share</span>
                 <span className="text-meta text-muted-ink">What The Conts keeps or pays on this unit, {periodLabel.toLowerCase()}. Costs paid by The Conts, a tenant or a guest show here, never on the owner statement.</span>
               </div>
-              {d.companyPnl.map((l, i) => {
-                const net = l.type === 'net';
-                return (
-                  <div key={i} className={cx('flex items-center justify-between gap-5 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0', net ? 'py-[15px] px-5 bg-page' : 'py-3 px-5 bg-card')}>
-                    <span className={cx(net ? 'text-copy font-semibold text-ink' : 'text-copy font-normal text-muted-ink')}>{l.label}</span>
-                    <MoneyText sen={l.amount} mode="exact" className={cx('text-right', net ? 'text-heading font-semibold' : 'text-copy font-medium')} />
-                  </div>
-                );
-              })}
+              <PnlTable rows={d.companyPnl} />
             </Card>
           )}
         </>

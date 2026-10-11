@@ -133,7 +133,7 @@ function Panel({ title, count, loading, empty, children }: { title: string; coun
       <div className="[border-top:1px_solid_var(--color-line-soft)]">
         {loading ? <div className="p-5 flex flex-col gap-2"><Skeleton height={36} /><Skeleton height={36} /></div>
           : count === 0 ? <p className="m-0 px-5 py-5 text-copy text-muted-ink">{empty}</p>
-          : <div className="max-h-[420px] overflow-y-auto ops-scroll">{children}</div>}
+          : <div className="md:max-h-[420px] md:overflow-y-auto ops-scroll">{children}</div>}
       </div>
     </section>
   );

@@ -6,6 +6,7 @@ import { loadInputs, computeMonth, statementSettings, fmtPct, type Query } from 
 import { contractView, unitExample } from '../../_lib/unitContract';
 import { MODEL_LABEL } from '../../_lib/revenueModel';
 import { DEDUCTION_WORDS } from '../../_lib/unitCosts';
+import { addressOf, ownerDetailsReady } from '../../_lib/ownerDetails';
 
 const PAYER_LABEL: Record<string, string> = { the_conts: 'The Conts', tenant: 'Tenant', guest_deposit: 'Guest', warranty: 'Warranty' };
 const CATEGORY_LABEL: Record<string, string> = {
@@ -29,9 +30,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const unitId = url.searchParams.get('unitId');
   if (!unitId) return fail('VALIDATION', 'A unit is required.', 422);
 
+  const ownerAddress = await ownerDetailsReady(env);
   const unit = await one<any>(env, `
     SELECT u.*, p.name AS property_name, p.address_line, p.city, p.state, p.postcode,
-           o.id AS owner_id, o.display_name AS owner_name, o.email AS owner_email,
+           o.id AS owner_id, o.display_name AS owner_name, o.email AS owner_email, o.phone AS owner_phone,
+           ${ownerAddress ? 'o.address_lines, o.address_postcode, o.address_city, o.address_state, o.address_country,' : ''}
            c.management_fee_pct, c.renews_on, c.starts_on, c.id AS c_id, c.revenue_model, c.model, c.minimum_guarantee, c.grr_amount,
            c.agent_fee_pct, c.agent_name, c.tenant_name, c.deposit_amount, c.ends_on, c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges AS c_misc
     FROM units u
@@ -118,39 +121,71 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       'SELECT AVG(rating) AS avg, COUNT(*) AS n FROM reviews WHERE unit_id = ?', unitId),
 
     money ? Promise.all([statementSettings(q), loadInputs(q, `${month}-01`, monthEndEx, { unitId })])
-      .then(([settings, inputs]) => computeMonth(month, inputs, settings, 'dated').find(x => x.unitId === unitId) ?? null)
+      .then(([settings, inputs]) => {
+        const m = computeMonth(month, inputs, settings, 'dated').find(x => x.unitId === unitId) ?? null;
+        return m ? { m, channelOf: new Map(inputs.stays.map(st => [st.id, st.channel])) } : null;
+      })
       : Promise.resolve(null),
     statementSettings(q),
     money ? unitExample(q, unitId, month) : Promise.resolve(null),
     // Costs on the unit paid by someone other than the owner: the unit's own profit and loss, never the statement.
-    money ? all<any>(env, `SELECT category, charge_to, SUM(amount) AS total FROM expenses
-      WHERE unit_id = ? AND charge_to <> 'owner' AND incurred_on >= ? AND incurred_on < ? GROUP BY 1, 2 ORDER BY 3 DESC`, unitId, `${month}-01`, monthEndEx) : Promise.resolve([]),
+    money ? all<any>(env, `SELECT category, charge_to, description, amount, incurred_on FROM expenses
+      WHERE unit_id = ? AND charge_to <> 'owner' AND incurred_on >= ? AND incurred_on < ? ORDER BY incurred_on`, unitId, `${month}-01`, monthEndEx) : Promise.resolve([]),
   ]);
   const perf = metrics(perfRows, daysInMonth);
 
-  let pnl: { label: string; amount: number; type: string }[] | undefined;
-  const m = statement;
+  // Under each P&L row, what makes it up, as an Airbnb earnings page lists it: every reservation (guest, dates, nights,
+  // channel) under the income, every bill under its deduction, every credit or charge under Owner Adjustments.
+  type Item = { label: string; amount: number };
+  type PnlRow = { label: string; amount: number; type: string; items?: Item[] };
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const dm = (iso: string) => `${Number(iso.slice(8, 10))} ${MON[Number(iso.slice(5, 7)) - 1]}`;
+  const CHANNEL: Record<string, string> = { airbnb: 'Airbnb', booking_com: 'Booking.com', agoda: 'Agoda', direct: 'Direct' };
+  const m = statement?.m ?? null;
+  const lineItems = (type: string, category: string | null): Item[] => (m?.lines ?? []).filter(l => l.type === type && (category == null || l.category === category)).map(l => {
+    if (type === 'gross') {
+      // The generator writes "<unit> · <guest> · <in> to <out>": the unit is already the page's, so it is left off.
+      const s2 = /(?:^|· )([^·]*?) · (\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})/.exec(l.description);
+      const ch = l.reservationId ? CHANNEL[statement?.channelOf.get(l.reservationId) ?? ''] ?? null : null;
+      const nights = l.quantity != null ? `${l.quantity} ${l.quantity === 1 ? 'night' : 'nights'}` : null;
+      return { label: s2 ? [s2[1], `${dm(s2[2])} – ${dm(s2[3])}`, nights, ch].filter(Boolean).join(' · ') : l.description, amount: l.amount };
+    }
+    return { label: `${l.description} · ${dm(l.occurredOn)}`, amount: l.amount };
+  });
+  const ownerAdjustments = (m?.lines ?? []).filter(l => l.type === 'adjustment' && !['guarantee_top_up', 'fixed_rent'].includes(l.category ?? ''))
+    .map(l => ({ label: `${l.description} · ${dm(l.occurredOn)}`, amount: l.amount }));
+
+  let pnl: PnlRow[] | undefined;
   if (m) {
     pnl = m.terms.basis === 'none'
       ? [{ label: 'Master lease: no owner statement', amount: 0, type: 'gross' }]
       : m.terms.basis === 'fixed_rent'
       ? [{ label: 'Fixed monthly rent', amount: m.fixedRent, type: 'gross' }]
       : [
-        { label: m.terms.model === 'long_term' ? 'Gross Income (monthly rent from tenant)' : 'Gross Income (reservations)', amount: m.gross, type: 'gross' },
-        ...m.deductionGroups.filter(g => g.amount).map(g => ({ label: DEDUCTION_WORDS[g.category] ?? g.label, amount: -g.amount, type: 'expense' })),
+        { label: m.terms.model === 'long_term' ? 'Gross Income (monthly rent from tenant)' : 'Gross Income (reservations)', amount: m.gross, type: 'gross',
+          items: m.terms.model === 'long_term' ? undefined : (r => (r.length ? r : [{ label: 'No reservations this month', amount: 0 }]))(lineItems('gross', null)) },
+        ...m.deductionGroups.filter(g => g.amount).map(g => ({ label: DEDUCTION_WORDS[g.category] ?? g.label, amount: -g.amount, type: 'expense',
+          items: g.category === 'misc' ? undefined : lineItems('expense', g.category) })),
         { label: m.terms.model === 'long_term' ? `${fmtPct(100 - (m.ownerPct ?? 0))} To Operator (of the rent)` : `${fmtPct(100 - (m.ownerPct ?? 0))} To Operator`, amount: -m.operatorShare, type: 'fee' },
         ...(m.topUp ? [{ label: 'Minimum Guarantee Top-up', amount: m.topUp, type: 'adjustment' }] : []),
       ];
     // The owner's credits and charges (owner_adjustments, e.g. the building's maintenance fee from the workbook) come off
     // after the split, as on every statement already sent.
-    if (m.adjustmentsTotal) pnl.push({ label: m.adjustmentsTotal < 0 ? 'Owner Adjustments (charges), after the split' : 'Owner Adjustments (credits), after the split', amount: m.adjustmentsTotal, type: 'adjustment' });
+    if (m.adjustmentsTotal) pnl.push({ label: m.adjustmentsTotal < 0 ? 'Owner Adjustments (charges), after the split' : 'Owner Adjustments (credits), after the split', amount: m.adjustmentsTotal, type: 'adjustment', items: ownerAdjustments });
     pnl.push({ label: 'Net Payout to Owner', amount: m.netPayout, type: 'net' });
   }
   // The company's side of the unit this month: what it keeps or pays under the contract, and the costs it (or a
   // tenant or guest) paid, which never reach the owner statement.
-  let companyPnl: { label: string; amount: number; type: string }[] | undefined;
+  let companyPnl: PnlRow[] | undefined;
   if (m && example) {
-    const others = otherPaid.map(r => ({ label: `${CATEGORY_LABEL[r.category] ?? r.category} (paid by ${PAYER_LABEL[r.charge_to] ?? r.charge_to})`, amount: -Number(r.total), type: 'expense' }));
+    // One row per kind and payer, largest first, with every bill under it.
+    const byPayer = new Map<string, Item[]>();
+    for (const r of otherPaid) {
+      const k = `${CATEGORY_LABEL[r.category] ?? r.category} (paid by ${PAYER_LABEL[r.charge_to] ?? r.charge_to})`;
+      byPayer.set(k, [...(byPayer.get(k) ?? []), { label: `${r.description || CATEGORY_LABEL[r.category] || r.category} · ${dm(String(r.incurred_on))}`, amount: -Number(r.amount) }]);
+    }
+    const others: PnlRow[] = [...byPayer.entries()].map(([label, items]) => ({ label, amount: items.reduce((n, i) => n + i.amount, 0), type: 'expense', items }))
+      .sort((a, b) => a.amount - b.amount);
     const othersTotal = others.reduce((n, l) => n + l.amount, 0);
     if (example.company) {
       companyPnl = [
@@ -194,6 +229,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       owner: {
         id: unit.owner_id, name: unit.owner_name,
         email: session.manage ? unit.owner_email : null,
+        // Contact details for the roles that manage owners; edited on the owner's page only.
+        phone: session.manage ? unit.owner_phone ?? null : null,
+        address: session.manage ? addressOf(unit) : null,
       },
       contract: unit.management_fee_pct != null ? {
         id: unit.c_id ?? null,

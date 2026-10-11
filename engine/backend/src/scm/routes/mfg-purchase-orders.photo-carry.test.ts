@@ -103,6 +103,7 @@ async function convertAndCapture(soLines: Row[]): Promise<Row[]> {
   const captured: Row[] = [];
   const sb = fakeSb({
     mfg_sales_order_items: soLines,
+    mfg_products: soLines.map((l) => ({ code: l.item_code, company_id: 1, status: 'ACTIVE' })), // Conts C6: codes must be in Products
     // CONFIRMED — anything else is refused by the orderable gate before the map.
     mfg_sales_orders: [{ doc_no: 'SO-2608-001', status: 'CONFIRMED' }],
     warehouses: [{ id: 'wh-kl', code: 'KL', name: 'KL' }],

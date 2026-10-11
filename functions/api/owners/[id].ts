@@ -1,12 +1,18 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { MASK } from '../../_lib/properties';
+import { checkEmail, checkPhone } from '../../_lib/validate';
+import { DETAIL_TEXT, cleanText, ownerDetailsReady } from '../../_lib/ownerDetails';
 
 /** PATCH /api/owners/:id — any of:
  *   { defaultManagementFeePct: number | null }  the owner-level default management fee (a unit's own contract overrides it)
  *   { bankName, bankAccount, accountHolder, ic } payout details, kept on the owner (owner, 11 Oct 2026: edited on the
  *                                                owner page, no longer on each unit). Blank or the masked value
  *                                                ("••••1234") for the account or IC keeps what is stored.
+ *   { displayName, legalName, email, phone, notes,  the owner's details (owner page, Owner details card). The address
+ *     address, postcode, city, stateOrRegion,       and alternate contact need migration 0110; until it is applied
+ *     country, alternateContact,                    they are ignored and listed back in `ignored`.
+ *     alternateContactPhone, alternateContactRelation }
  *  Management, finance and operations managers. Bank and IC numbers are recorded in the audit log as changed, never
  *  copied into it. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -15,12 +21,14 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change owner details.', 403);
 
   const id = String(params.id);
-  const owner = await one<any>(env, 'SELECT id, display_name, default_management_fee_pct, bank_name, bank_account_holder, bank_account_number, ic_number FROM owners WHERE id = ?', id);
+  const owner = await one<any>(env, 'SELECT * FROM owners WHERE id = ?', id);
   if (!owner) return fail('NOT_FOUND', 'That owner no longer exists.', 404);
 
   const b = await request.json<any>().catch(() => null);
   const payout = !!b && ['bankName', 'bankAccount', 'accountHolder', 'ic'].some(k => k in b);
-  if (!b || (!('defaultManagementFeePct' in b) && !payout)) return fail('VALIDATION', 'Nothing to save.', 422);
+  const DETAIL_KEYS = ['displayName', 'email', 'phone', 'alternateContactPhone', ...DETAIL_TEXT.map(f => f.key)];
+  const details = !!b && DETAIL_KEYS.some(k => k in b);
+  if (!b || (!('defaultManagementFeePct' in b) && !payout && !details)) return fail('VALIDATION', 'Nothing to save.', 422);
   const fields: Record<string, string> = {};
   const before: Record<string, unknown> = {}, after: Record<string, unknown> = {};
   const sets: string[] = [], args: unknown[] = [];
@@ -63,12 +71,51 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       else if (v !== undefined && v !== owner.ic_number) { sets.push('ic_number = ?'); args.push(v); before.ic = 'unchanged'; after.ic = 'changed'; }
     }
   }
+  const ignored: string[] = [];
+  if (details) {
+    const ready = await ownerDetailsReady(env);
+    const set = (key: string, col: string, v: string) => {
+      const was = owner[col] ?? '';
+      if (v === was) return;
+      sets.push(`${col} = ?`); args.push(v || null); before[key] = was || null; after[key] = v || null;
+    };
+    if ('displayName' in b) {
+      const v = cleanText(b.displayName);
+      if (!v || v.length > 120) fields.displayName = 'Enter the owner name, up to 120 characters.';
+      else if (v !== owner.display_name) { sets.push('display_name = ?'); args.push(v); before.displayName = owner.display_name; after.displayName = v; }
+    }
+    if ('email' in b) {
+      const v = cleanText(b.email);
+      checkEmail(fields, 'email', v);
+      if (v === null) fields.email = 'Email does not look right. Check it, or leave it blank.';
+      else if (!fields.email && v.toLowerCase() !== String(owner.email ?? '').toLowerCase()) {
+        if (v && await one(env, 'SELECT 1 AS x FROM owners WHERE lower(email) = lower(?) AND id <> ?', v, id)) fields.email = 'Another owner already uses that email address.';
+        // email is NOT NULL on owners: no email is stored as ''.
+        else { sets.push('email = ?'); args.push(v); before.email = owner.email || null; after.email = v || null; }
+      }
+    }
+    for (const [key, col] of [['phone', 'phone'], ['alternateContactPhone', 'alt_contact_phone']] as const) {
+      if (!(key in b)) continue;
+      if (key !== 'phone' && !ready) { ignored.push(key); continue; }
+      const v = cleanText(b[key]);
+      checkPhone(fields, key, v, { label: key === 'phone' ? 'Phone' : 'Alternate contact phone' });
+      if (v === null) fields[key] = 'Enter a phone number, or leave it blank.';
+      else if (!fields[key]) set(key, col, v);
+    }
+    for (const f of DETAIL_TEXT) {
+      if (!(f.key in b)) continue;
+      if (f.details && !ready) { ignored.push(f.key); continue; }
+      const v = cleanText(b[f.key], f.multiline);
+      if (v === null || v.length > f.max) fields[f.key] = `${f.label}: up to ${f.max} characters.`;
+      else set(f.key, f.col, v);
+    }
+  }
   if (Object.keys(fields).length) return fail('VALIDATION', Object.values(fields)[0], 422, fields);
-  if (!sets.length) return json({ ok: true, changed: false });
+  if (!sets.length) return json({ ok: true, changed: false, ...(ignored.length ? { ignored } : {}) });
 
   await run(env, `UPDATE owners SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...args, nowIso(), id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'owner.update', entityTable: 'owners', entityId: id, before, after });
-  return json({ ok: true, changed: true, ...('defaultManagementFeePct' in after ? { defaultManagementFeePct: after.defaultManagementFeePct } : {}) });
+  return json({ ok: true, changed: true, ...(ignored.length ? { ignored } : {}), ...('defaultManagementFeePct' in after ? { defaultManagementFeePct: after.defaultManagementFeePct } : {}) });
 };
 
 /** DELETE /api/owners/:id — only when the owner has no units, contract, statements or payouts.

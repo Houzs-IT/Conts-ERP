@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
@@ -11,6 +11,7 @@ import { api } from '../lib/api';
 import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
+import { CloseButton } from '../components/CloseButton';
 
 /** Racks & Bins — ported from 2990's SCM (warehouse_racks), drawn in Conts. Rack/bin location
  *  master inside a warehouse. */
@@ -96,7 +97,7 @@ function RackDrawer({ draft, isNew, warehouses, onClose, onSave, onDelete }: { d
   const canSave = f.warehouseId !== '' && f.rack.trim() !== '';
   return (
     <Drawer open onClose={onClose} width={520}>
-      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New rack / bin' : 'Edit rack / bin'}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New rack / bin' : 'Edit rack / bin'}</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <div className="flex flex-col gap-[7px]"><label className="text-[12px] font-medium text-muted-ink">Warehouse</label>
           <select value={f.warehouseId} disabled={!isNew} onChange={e => setF(s => ({ ...s, warehouseId: e.target.value }))} className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer disabled:opacity-60">

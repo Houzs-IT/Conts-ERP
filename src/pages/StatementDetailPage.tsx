@@ -16,6 +16,7 @@ import { rm, date, monthLabel } from '../lib/format';
 import type { StatementState } from '../lib/types';
 import { RecordHistory } from '../components/RecordHistory';
 import { StatRow, StatTile } from '../components/Metric';
+import { TERMS, DEDUCTION_TERMS, deductionTerm, lineTerm, lineDetail, isSourceReference } from '../lib/statementTerms';
 
 /** `#/finance/statements/:id` — one owner's statement on screen: each unit's month the way the Owner Income
  *  Report prints it (income, deductions, split, owner adjustments, payout), every line behind it with a link to
@@ -41,10 +42,6 @@ interface Detail {
   units: UnitFigures[]; lines: Line[];
 }
 
-const DEDUCTION_LABEL: Record<string, string> = {
-  cleaning_basic: 'Basic cleaning', cleaning_deep: 'Deep cleaning', electricity: 'Electricity', water: 'Water', internet: 'Wi-Fi',
-  sewerage: 'Indah Water', additional: 'Additional deduction', misc: 'Miscellaneous charges',
-};
 const pct = (n: number) => `${Number(n.toFixed(2))}%`;
 const signed = (sen: number) => (sen < 0 ? `(${rm(-sen)})` : rm(Math.abs(sen)));
 
@@ -152,15 +149,15 @@ export default function StatementDetailPage() {
               {u.basis === 'share' ? (
                 <>
                   <Row label={`Hospitality Income · ${u.nights} of ${u.days} nights (${(u.nights / u.days * 100).toFixed(2)}%)`} value={rm(u.grossIncome)} />
-                  {Object.entries(groupDeductions(s.lines, u.unitId)).map(([k, v]) => <Row key={k} label={`${DEDUCTION_LABEL[k] ?? k}${v.n > 1 ? ` · ${v.n}` : ''}`} value={signed(-v.amount)} muted />)}
+                  {Object.entries(groupDeductions(s.lines, u.unitId)).map(([k, v]) => <Row key={k} label={`${k}${v.n > 1 ? ` · ${v.n}` : ''}`} value={signed(-v.amount)} muted />)}
                   <Row label="Net Income" value={rm(u.netIncome)} line />
                   <Row label={`${pct(100 - (u.ownerPct ?? 0))} To Operator`} value={signed(-u.operatorShare)} muted />
-                  {u.topUp > 0 && <Row label={`Minimum guarantee top-up (guaranteed ${rm(u.guarantee)})`} value={rm(u.topUp)} muted />}
+                  {u.topUp > 0 && <Row label={`${TERMS.topUp} (guaranteed ${rm(u.guarantee)})`} value={rm(u.topUp)} muted />}
                 </>
-              ) : <Row label="Fixed monthly rent" value={rm(u.fixedRent)} />}
+              ) : <Row label={TERMS.fixedRent} value={rm(u.fixedRent)} />}
               <Row label="Payout before Owner Adjustments" value={rm(u.payoutBeforeAdjustments)} line strong />
               {s.lines.filter(l => l.unitId === u.unitId && l.type === 'adjustment' && !['guarantee_top_up', 'fixed_rent'].includes(l.category ?? '')).map(l =>
-                <Row key={l.id} label={l.description} value={signed(l.amount)} muted />)}
+                <Row key={l.id} label={lineTerm(asTerm(l))} value={signed(l.amount)} muted />)}
               <Row label="Net Payout to Owner" value={rm(u.netPayout)} line strong />
             </div>
             <LineList id={u.unitId} lines={s.lines.filter(l => l.unitId === u.unitId)} />
@@ -191,15 +188,19 @@ export default function StatementDetailPage() {
   );
 }
 
+const asTerm = (l: Line) => ({ line_type: l.type, category: l.category, description: l.description });
+
+/** Deductions under the report's row names (a month imported from the owner workbook carries one figure for cleaning
+ *  and one for utilities, which keep their own names). */
 function groupDeductions(lines: Line[], unitId: string) {
   const out: Record<string, { n: number; amount: number }> = {};
   for (const l of lines) {
     if (l.unitId !== unitId || l.type !== 'expense') continue;
-    const k = l.category ?? 'additional';
+    const k = deductionTerm(l.category, l.description);
     out[k] = { n: (out[k]?.n ?? 0) + 1, amount: (out[k]?.amount ?? 0) - l.amount };
   }
   // In the order the report prints them.
-  const order = Object.keys(DEDUCTION_LABEL);
+  const order: string[] = DEDUCTION_TERMS.map(d => d[1]);
   const rank = (k: string) => { const i = order.indexOf(k); return i < 0 ? order.length : i; };
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => rank(a) - rank(b)));
 }
@@ -213,6 +214,10 @@ function Row({ label, value, muted, strong, line }: { label: string; value: stri
   );
 }
 
+/** The report's term, then what the line was (the stay, the expense's own text), without the unit or the import's tag. */
+const lineText = (l: Line) => { const d = lineDetail({ ...asTerm(l), unitLabel: l.unitLabel }); return d ? `${lineTerm(asTerm(l))} · ${d}` : lineTerm(asTerm(l)); };
+const refOf = (l: Line) => (l.reference && !isSourceReference(l.reference) ? l.reference : null);
+
 const qtyText = (l: Line) => (l.quantity === null ? '' : l.type === 'gross' ? `${l.quantity} n` : l.category === 'misc' ? `${(l.quantity * 100).toFixed(2)}%` : String(l.quantity));
 
 /** Every line behind the figures, folded away until asked for. A booking line links to the booking; an expense to Expenses.
@@ -221,13 +226,13 @@ function LineList({ id, lines }: { id: string; lines: Line[] }) {
   const [open, setOpen] = useState(false);
   const columns = useMemo<Column<Line>[]>(() => [
     { key: 'date', label: 'Date', type: 'date', value: l => l.occurredOn, width: 120 },
-    { key: 'line', label: 'Line', value: l => l.description, text: l => (l.reference && !l.booking ? `${l.description} · ${l.reference}` : l.description), hideable: false, width: 300,
+    { key: 'line', label: 'Line', value: l => lineText(l), text: l => (refOf(l) && !l.booking ? `${lineText(l)} · ${refOf(l)}` : lineText(l)), hideable: false, width: 300,
       render: l => (
-        <span className="block truncate" title={l.description}>
-          {l.booking?.ref ? <a href={`#/reservations/bookings?q=${encodeURIComponent(l.booking.ref)}`} className="text-ink underline underline-offset-2">{l.description}</a>
-            : l.expenseId ? <a href="#/finance/expenses" className="text-ink underline underline-offset-2">{l.description}</a>
-            : l.description}
-          {l.reference && !l.booking && <span className="text-muted-ink"> · {l.reference}</span>}
+        <span className="block truncate" title={lineText(l)}>
+          {l.booking?.ref ? <a href={`#/reservations/bookings?q=${encodeURIComponent(l.booking.ref)}`} className="text-ink underline underline-offset-2">{lineText(l)}</a>
+            : l.expenseId ? <a href="#/finance/expenses" className="text-ink underline underline-offset-2">{lineText(l)}</a>
+            : lineText(l)}
+          {refOf(l) && !l.booking && <span className="text-muted-ink"> · {refOf(l)}</span>}
         </span>
       ) },
     { key: 'unit', label: 'Unit', value: l => l.unitLabel, hidden: true, width: 160 },

@@ -45,6 +45,7 @@ import {
   type StockShortage,
 } from '../lib/check-stock-availability';
 import { markIdempotencyNoWrite } from '../../middleware/idempotency';
+import { unknownProductCodeRefusal } from '../lib/validate-item-codes';
 import { recordEntityAudit } from '../lib/entity-audit';
 import { buildReturnablePool, type GrnLineRow } from '../lib/returnable-grn-lines';
 import { chunkIn } from '../lib/paginate-all';
@@ -787,6 +788,9 @@ purchaseReturns.post('/', async (c) => {
   if (!Array.isArray(items) || !items.length) return refuse(400, { error: 'items_required' });
 
   const sb = c.get('supabase'); const user = c.get('user');
+  // Conts C6: every product line's code must be in Products.
+  const unknownCodes = await unknownProductCodeRefusal(sb, items.map((it) => ({ code: it.itemCode, kind: it.materialKind })), activeCompanyId(c));
+  if (unknownCodes) return refuse(409, unknownCodes);
 
   /* CROSS-COMPANY SOURCE (lib/companyScope) — the bare-create path takes the
      source GRN as a body field, and everything below stamps the ACTIVE company:
@@ -1134,6 +1138,11 @@ export const createPurchaseReturnFromGrnsHandler = async (c: Context<{ Bindings:
   if (rejectedItems.length === 0) {
     return c.json({ error: 'no_rejected_qty', message: 'None of the selected GRNs have remaining rejected qty to return' }, 400);
   }
+  // Conts C6: a copied line's code must still be in Products.
+  {
+    const unknownCodes = await unknownProductCodeRefusal(sb, rejectedItems.map((it) => ({ code: it.item_code, kind: it.material_kind })), activeCompanyId(c));
+    if (unknownCodes) { markIdempotencyNoWrite(c); return c.json(unknownCodes, 409); }
+  }
 
   // Generate PR number.
   const d = new Date();
@@ -1283,6 +1292,11 @@ export const createPurchaseReturnFromGrnHandler = async (c: Context<{ Bindings: 
      note is settled — the select is company-scoped and scopeToCompany fails
      closed (scm/lib/companyScope.ts). Refusing is right; the verdict was not. */
   if (lines.length === 0) { markIdempotencyNoWrite(c); return c.json({ error: 'nothing_to_return', message: 'No returnable lines came back for this GRN. Open it and check its returned balance before treating it as returned in full.' }, 400); }
+  // Conts C6: a copied line's code must still be in Products.
+  {
+    const unknownCodes = await unknownProductCodeRefusal(sb, lines.map((it) => ({ code: it.item_code, kind: it.material_kind })), activeCompanyId(c));
+    if (unknownCodes) { markIdempotencyNoWrite(c); return c.json(unknownCodes, 409); }
+  }
 
   /* Audit gap #7 — on-hand floor before the inventory OUT (soft-waivable via
      confirmShortStock, mirroring the DO ship side). */
@@ -1582,6 +1596,8 @@ export const addPurchaseReturnItemHandler = async (c: any) => {
   const { data: parent } = await scopeToCompanyId(sb.from('purchase_returns').select('id, grn_id').eq('id', prId), co.companyId).maybeSingle();
   if (!parent) return c.json(NOT_THIS_COMPANY, 404);
   { const lock = await prLineLock(sb, prId); if (lock) return c.json(lock, 409); }
+  // Conts C6: the line's code must be in Products.
+  { const unknownAdd = await unknownProductCodeRefusal(sb, [{ code: it.itemCode, kind: it.materialKind }], co.companyId); if (unknownAdd) return c.json(unknownAdd, 409); }
 
   /* The add-a-line half of the back door the CREATE path has closed since
      2026-08-04 — this path never had it, so the create-path refusal could be
@@ -1763,6 +1779,11 @@ export const patchPurchaseReturnItemHandler = async (c: any) => {
     .select('qty_returned, unit_price_sen, item_group, variants, grn_item_id, item_code, material_name')
     .eq('id', itemId).eq('purchase_return_id', prId), co.companyId).maybeSingle();
   if (!prev) return c.json(NOT_THIS_COMPANY, 404);
+  // Conts C6: a CHANGED code must be in Products.
+  if (it.itemCode !== undefined && String(it.itemCode ?? '') !== String((prev as { item_code?: string | null }).item_code ?? '')) {
+    const unknownEdit = await unknownProductCodeRefusal(sb, [{ code: it.itemCode, kind: it.materialKind }], co.companyId);
+    if (unknownEdit) return c.json(unknownEdit, 409);
+  }
 
   // The editable quantity is qty_returned.
   const prevQty = (prev as { qty_returned: number }).qty_returned;

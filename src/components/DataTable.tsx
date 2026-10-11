@@ -17,6 +17,7 @@ import { downloadTable, type ExportColumn, type ExportCell, type ExportKind } fr
 import { cx } from '../lib/design-tokens';
 import { statusOf, type AnyTone, type StatusEntity } from '../lib/status';
 import { errorMessage } from '../lib/api';
+import { useFillHeight } from '../lib/useFillHeight';
 
 /**
  * The one table every list in the app uses (like Houzs's DataTable and Hookka's DataGrid).
@@ -501,6 +502,8 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const colsBtn = useRef<HTMLButtonElement>(null), viewsBtn = useRef<HTMLButtonElement>(null), exportBtn = useRef<HTMLButtonElement>(null);
   const filtersBtn = useRef<HTMLButtonElement>(null), bulkExportBtn = useRef<HTMLButtonElement>(null);
   const headAnchor = useRef<HTMLElement | null>(null);
+  // With no height given, the table's scroll box runs to the bottom of the screen (see useFillHeight).
+  const scrollBox = useFillHeight({ enabled: maxHeight === undefined, fallback: maxHeight ?? 'calc(100dvh - 300px)' });
   const [saving, setSaving] = useState<null | { name: string; scope: 'mine' | 'company'; isDefault: boolean }>(null);
 
   /* ---- states ---- */
@@ -604,7 +607,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
       {/* Wide screens: the table. Its own scroll box keeps the header in view and scrolls sideways when narrow. */}
       <div className="max-md:hidden relative">
         <BusyLine on={refreshing} />
-        <div className="overflow-auto" style={{ maxHeight: maxHeight ?? 'calc(100dvh - 300px)', minHeight: firstLoad || shown.length > 6 ? 240 : undefined }} aria-busy={!!loading}>
+        <div ref={scrollBox} data-keep-scroll={id} className="overflow-auto" style={{ minHeight: firstLoad || shown.length > 6 ? 240 : undefined }} aria-busy={!!loading}>
           {firstLoad && !error ? <RowsSkeleton rows={8} cols={Math.min(7, visible.length || 5)} /> : errorView ?? (
             <table className="w-full border-collapse [table-layout:fixed]" style={{ minWidth }}>
               <colgroup>

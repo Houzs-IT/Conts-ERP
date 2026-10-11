@@ -43,7 +43,13 @@ import { ItemGroupPill } from '../../vendor/scm/lib/category-badges';
 import styles from './SalesOrderDetail.module.css';
 import { PageHeader } from '../../components/Layout';
 import { soRefOfCamelStamp } from '../../lib/so-ref-search';
+import { lineDiscountShare } from '../../vendor/shared/line-discount-share';
 import { fmtMoneySen, fmtQty } from '@2990s/shared';
+
+/* Conts C5: an invoice pick carries its share of the DO line's discount, so the
+   value shown here is the value the invoice will hold. */
+const pickDiscount = (r: DoRemainingLine, pickQty: number): number =>
+  lineDiscountShare(r.discountSen, r.delivered, r.delivered - r.remaining, pickQty);
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -314,11 +320,14 @@ export const SalesInvoiceFromDo = () => {
         const pickQty = p?.picked ? p.qty : r.remaining;
         return (
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-12)' }}>
-            {fmtRm(pickQty * r.unitPriceSen)}
+            {fmtRm(pickQty * r.unitPriceSen - pickDiscount(r, pickQty))}
           </span>
         );
       },
-      exportValue: (r) => ((Object.hasOwn(picks, r.doItemId) && picks[r.doItemId].picked ? picks[r.doItemId].qty : r.remaining) * r.unitPriceSen) / 100,
+      exportValue: (r) => {
+        const q = Object.hasOwn(picks, r.doItemId) && picks[r.doItemId].picked ? picks[r.doItemId].qty : r.remaining;
+        return (q * r.unitPriceSen - pickDiscount(r, q)) / 100;
+      },
       exportFormat: 'money',
       sortFn: (a, b) => a.remaining * a.unitPriceSen - b.remaining * b.unitPriceSen,
     },
@@ -346,7 +355,7 @@ export const SalesInvoiceFromDo = () => {
           uom: r.uom,
           qty: v.qty,
           unitPriceSen: r.unitPriceSen,
-          discountSen: r.discountSen,
+          discountSen: pickDiscount(r, v.qty),
           unitCostSen: r.unitCostSen,
           variants: r.variants,
           lineDeliveryDate: r.lineDeliveryDate,

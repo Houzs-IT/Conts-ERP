@@ -22,6 +22,7 @@ import { RecordHistory } from '../RecordHistory';
 import ApprovalBanner from '../ApprovalBanner';
 import { DocumentsSection, type GuestDocument } from './GuestDocuments';
 import { isStaged, stagedToast, useApprovalsOn, type Approval } from '../../lib/approvals';
+import { CloseButton } from '../CloseButton';
 
 /* ------------------------------------------------------------------ */
 /* Shapes (GET /api/reservations/:id)                                  */
@@ -57,6 +58,7 @@ interface Ledger {
 }
 interface Detail extends Required<Omit<BookingSummary, 'guestPhone'>> {
   guestPhone: string | null; guestEmail: string | null; guestId: string | null; nationality: string | null;
+  country: { code: string; name: string; from: 'nationality' | 'phone' } | null;
   unitId: string; notes: string | null; staffNotes: string | null; createdAt: string;
   money: Money; ledger: Ledger; timeline: TimelineEvent[]; moves: Move[];
   documents?: GuestDocument[]; approvals?: Approval[];
@@ -103,7 +105,7 @@ const Group = ({ title, children }: { title: string; children: ReactNode }) => (
 
 const KIND_LABEL: Record<Payment['kind'], string> = { guest_payment: 'Guest payment', ota_payout: 'Host payout', refund: 'Refund' };
 
-/** The money in three parts that add up: what the guest paid, what the platform took, what we receive. The server
+/** The money in three parts that add up: guest total, service fee, host payout (docs/VOCABULARY.md decision 13). The server
  *  works the figures out (functions/_lib/bookingMoney.ts); where its sources disagree it says so, and the figures
  *  behind it are one click away instead of being shown side by side as if they agreed. */
 function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void; onRemove: (p: Payment) => void }) {
@@ -116,7 +118,7 @@ function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void
   return (
     <div className="flex flex-col gap-2">
       <div className="border border-solid border-line rounded-card overflow-hidden">
-        <Group title="1 · What the guest paid">
+        <Group title="Guest">
           {L.guestLines.map(l => <Line key={l.key} label={l.label} sub={l.sub} value={rm(l.amount)} />)}
           <Line strong label={dead ? `Guest total before it was ${d.state === 'cancelled' ? 'cancelled' : 'marked no-show'}` : 'Guest total'}
             value={L.guestTotal > 0 ? rm(L.guestTotal) : 'Not recorded'} muted={L.guestTotal <= 0}
@@ -124,17 +126,17 @@ function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void
           {L.otaTax ? <Line label={`Tax collected by ${site}`} sub="Paid by the guest to the channel and kept by it. Not ours." value={rm(L.otaTax)} muted /> : null}
         </Group>
         {L.platformLines.length > 0 && (
-          <Group title="2 · Taken by the channel">
+          <Group title="Service fee">
             {L.platformLines.map(l => <Line key={l.key} label={l.label} sub={l.sub} value={rm(l.amount)} minus />)}
           </Group>
         )}
-        <Group title={`${L.platformLines.length ? 3 : 2} · What we receive`}>
+        <Group title={ota ? 'Host payout' : 'Guest payment'}>
           {dead ? (
             <Line strong label={d.state === 'cancelled' ? 'Kept after cancellation' : 'Kept after no-show'} value={rm(L.received)}
               sub={L.received ? undefined : 'No money is recorded on this reservation.'} />
           ) : <>
-            <Line strong label="Expected" value={rm(L.expected)} sub={L.platformTotal ? /* vocab-ok: ota is a code flag, the text says channel */ `Guest total less ${ota ? site : 'the channel'}'s share` : undefined} />
-            {L.receivedBefore > 0 && <Line label="Received before payments were recorded here" sub="From the import or the owner workbook" value={rm(L.receivedBefore)} />}
+            <Line strong label="Expected" value={rm(L.expected)} sub={L.platformTotal ? /* vocab-ok: ota is a code flag, the text says channel */ 'Guest total less the service fee' : undefined} />
+            {L.receivedBefore > 0 && <Line label="Received earlier" value={rm(L.receivedBefore)} />}
             {L.payments.map(p => (
               <div key={p.id} className="flex justify-between items-baseline gap-3 py-[7px] px-[14px]">
                 <span className="flex flex-col min-w-0">
@@ -172,7 +174,8 @@ function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void
           <span className="text-ink leading-[1.45]">{L.disagree}</span>
         </div>
       )}
-      {L.sources.length > 1 && (
+      {/* Where each figure came from is only worth showing when the figures disagree; otherwise it is plumbing. */}
+      {L.disagree && L.sources.length > 1 && (
         <button type="button" onClick={() => setSources(v => !v)} aria-expanded={sources}
           className={cx('self-start p-0 border-none bg-transparent [font-family:inherit] text-meta underline cursor-pointer', L.disagree ? 'font-semibold text-ink' : 'text-muted-ink')}>
           {sources ? 'Hide sources' : 'View sources'}
@@ -559,7 +562,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
   if (!s) {
     return (
       <div className="p-5 flex flex-col gap-3">
-        <div className="flex justify-end"><CloseButton onClose={onClose} /></div>
+        <div className="flex justify-end"><CloseButton onClick={onClose} /></div>
         <div className="text-copy text-muted-ink">{error ?? 'Loading the reservation…'}</div>
       </div>
     );
@@ -636,7 +639,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
 
   return (
     <>
-      <div className="relative z-[1] flex-none bg-black text-white px-[18px] pt-[14px] pb-[16px] flex flex-col gap-[10px]">
+      <div className="sticky top-0 z-[2] flex-none bg-black text-white px-[18px] pt-[14px] pb-[16px] flex flex-col gap-[10px]">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-[10px] min-w-0">
             <ChannelMark ch={s.channel} size={24} />
@@ -645,7 +648,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
               <span className="text-meta text-[rgba(255,255,255,0.72)] whitespace-nowrap overflow-hidden text-ellipsis">{s.propertyName} {s.unitNumber} · {fmtNights(nights)}</span>
             </div>
           </div>
-          <CloseButton onClose={onClose} dark />
+          <CloseButton onClick={onClose} onDark />
         </div>
         <div className="flex items-center gap-2 flex-wrap text-meta text-[rgba(255,255,255,0.72)]">
           <span className="font-semibold text-white">{ch.label}</span>
@@ -686,8 +689,15 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
             <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink mb-1">Guest</div>
             <div className="flex justify-between gap-3"><span className="text-muted-ink">Phone</span><span className="text-right break-all"><PhoneText value={d.guestPhone} className="text-ink" /></span></div>
             {d.guestEmail && <div className="flex justify-between gap-3"><span className="text-muted-ink">Email</span><span className="text-right break-all">{d.guestEmail}</span></div>}
-            <div className="flex justify-between gap-3"><span className="text-muted-ink">Nationality</span>
-              <span className="text-right">{nationality ?? '—'}{nationality && !/malaysia/i.test(nationality) ? <span className="text-muted-ink"> · tourism tax applies</span> : null}</span></div>
+            {nationality || !d.country ? (
+              <div className="flex justify-between gap-3"><span className="text-muted-ink">Nationality</span>
+                <span className="text-right">{nationality ?? '—'}{nationality && !/malaysia/i.test(nationality) ? <span className="text-muted-ink"> · tourism tax applies</span> : null}</span></div>
+            ) : (
+              // No nationality on record: the phone number's country says where the guest is likely from, but it is not
+              // a nationality, so it says nothing about tourism tax.
+              <div className="flex justify-between gap-3"><span className="text-muted-ink">Country</span>
+                <span className="text-right">{d.country.name}<span className="text-muted-ink"> · from phone number</span></span></div>
+            )}
             {d.guestId && <a href={`#/reservations/guests?g=${encodeURIComponent(d.guestId)}`} className="self-start mt-1 text-meta text-ink underline">Open guest profile</a>}
           </div>
         )}
@@ -788,12 +798,3 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
   );
 }
 
-function CloseButton({ onClose, dark }: { onClose: () => void; dark?: boolean }) {
-  return (
-    <button type="button" onClick={onClose} aria-label="Close"
-      className={cx('w-[30px] h-[30px] flex-none grid place-items-center rounded-pill border-none cursor-pointer',
-        dark ? 'bg-[rgba(255,255,255,0.14)] text-white hover:bg-[rgba(255,255,255,0.24)]' : 'bg-muted text-muted-ink')}>
-      <Icon name="X" size="sm" />
-    </button>
-  );
-}

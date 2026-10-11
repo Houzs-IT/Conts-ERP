@@ -4,6 +4,7 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { CONTACT_ROLES, guestTags, monthYear, todayAndTomorrow, hasGuestColumns, maskId, MANUAL_TAGS } from '../../_lib/guestList';
 import { countryCode } from '../../_lib/hostplatformImport';
 import { checkPhone, isIsoDate } from '../../_lib/validate';
+import { countryJoin, countryName } from '../../_lib/guestCountry';
 
 const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 864e5));
 const at = (date: string, time: string) => `${date}T${time}:00+08:00`;
@@ -34,6 +35,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id
     WHERE r.guest_id = ? AND r.channel NOT IN ('maintenance_block','owner_stay') AND r.state NOT IN ('cancelled','no_show','inquiry')
     ORDER BY r.check_in DESC`, g.id);
+
+  const where = await one<{ iso: string | null; src: string | null }>(env, `SELECT gc.iso, gc.src FROM guests g
+    ${countryJoin('gc', { guest: 'g' })} WHERE g.id = ?`, g.id);
 
   const upcoming = mine.filter(s => (s.state === 'confirmed' || s.state === 'pending') && s.check_in >= today);
   const live = mine.some(s => ['confirmed', 'pending', 'checked_in'].includes(s.state) && s.check_out >= today);
@@ -73,6 +77,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     lifetimeValue: mine.reduce((n, s) => n + Number(s.gross_booking_value), 0),
     ratingScore: ratings.length ? Number((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1)) : null,
     registration: { ...reg, missing, required: live },
+    // Where the guest is from: the stored nationality, else the country of their phone.
+    country: where?.iso ? { code: where.iso, name: countryName(where.iso), from: where.src } : null,
     notes: contact && cols ? g.notes ?? null : null,
     can: { edit: contact && cols, reveal: !!session.manage && cols, merge: contact && cols },
     history: mine.map(s => ({

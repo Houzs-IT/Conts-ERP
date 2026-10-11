@@ -120,13 +120,13 @@ export function ledger(m: MoneyIn, payments: PaymentRow[], site: string): Ledger
         // cleaning included): that is its convention, not a disagreement.
         && !(m.channel === 'airbnb' && [m.gross - m.channelFee, m.payoutAmount, m.collected].some(x => x != null && Math.abs(m.roomRevenue! - x) <= TOLERANCE))) {
         // vocab-ok: roomRevenue is a field name, the text says accommodation
-        notes.push(`HostPlatform recorded accommodation charges of ${ringgit(m.roomRevenue)}; the guest total less the fees listed leaves ${ringgit(room)}.`);
+        notes.push(`The imported reservation file recorded accommodation charges of ${ringgit(m.roomRevenue)}; the guest total less the fees listed leaves ${ringgit(room)}.`);
       }
     }
   }
-  sources.push({ label: 'Guest total', amount: guestTotal, from: m.fromWorkbook ? 'Owner workbook (Airbnb earnings report)' : ota ? `${site} via HostPlatform or Channex` : 'This reservation' });
-  if (m.roomRevenue != null) sources.push({ label: m.channel === 'airbnb' ? 'Accommodation (on Airbnb reservations HostPlatform records the host payout here)' : 'Accommodation charges', amount: m.roomRevenue, from: 'HostPlatform export' });
-  for (const l of others) sources.push({ label: l.label, amount: l.amount, from: l.key === 'cleaning' && m.fromWorkbook ? 'Owner workbook' : 'HostPlatform export' });
+  sources.push({ label: 'Guest total', amount: guestTotal, from: m.fromWorkbook ? 'Owner workbook (Airbnb earnings report)' : ota ? `From ${site}` : 'This reservation' });
+  if (m.roomRevenue != null) sources.push({ label: m.channel === 'airbnb' ? 'Host payout' : 'Accommodation charges', amount: m.roomRevenue, from: 'Imported reservation file' });
+  for (const l of others) sources.push({ label: l.label, amount: l.amount, from: l.key === 'cleaning' && m.fromWorkbook ? 'Owner workbook' : 'Imported reservation file' });
 
   // (2)
   const platformLines: LedgerLine[] = [];
@@ -142,16 +142,16 @@ export function ledger(m: MoneyIn, payments: PaymentRow[], site: string): Ledger
   const computed = guestTotal - platformTotal;
   const expected = imported.length ? reported : m.payoutAmount ?? computed;
   if ((imported.length || m.payoutAmount != null) && Math.abs(expected - computed) > TOLERANCE && !dead) {
-    notes.push(`${site} reported a host payout of ${ringgit(expected)}; the guest total less the channel's share is ${ringgit(computed)}. ${site}'s figure is used.`);
+    notes.push(`${site} reported a host payout of ${ringgit(expected)}; the guest total less the service fee is ${ringgit(computed)}. ${site}'s figure is used.`);
   }
   if (imported.length) sources.push({ label: `${site} host payout lines (${imported.length})`, amount: reported, from: 'Owner workbook' });
-  else if (m.payoutAmount != null) sources.push({ label: 'Host payout reported', amount: m.payoutAmount, from: m.fromWorkbook ? 'Owner workbook' : 'HostPlatform export' });
-  sources.push({ label: 'Service fee', amount: m.channelFee, from: m.fromWorkbook ? 'Owner workbook' : ota ? `${site} via HostPlatform or Channex` : 'This reservation' });
+  else if (m.payoutAmount != null) sources.push({ label: 'Host payout reported', amount: m.payoutAmount, from: m.fromWorkbook ? 'Owner workbook' : 'Imported reservation file' });
+  sources.push({ label: 'Service fee', amount: m.channelFee, from: m.fromWorkbook ? 'Owner workbook' : ota ? `From ${site}` : 'This reservation' });
 
   const paid = payments.filter(p => p.status === 'received').reduce((n, p) => n + (p.kind === 'refund' ? -p.amount : p.amount), 0);
   const receivedBefore = imported.length ? 0 : Math.max(m.collected, v(m.payoutAmount));
   const received = paid + receivedBefore;
-  if (receivedBefore > 0) sources.push({ label: 'Received before payments were recorded here', amount: receivedBefore, from: m.fromWorkbook ? 'Owner workbook' : 'HostPlatform export' });
+  if (receivedBefore > 0) sources.push({ label: 'Received earlier', amount: receivedBefore, from: m.fromWorkbook ? 'Owner workbook' : 'Imported reservation file' });
 
   return {
     guestLines, guestTotal, otaTax: v(m.otaTax) || null,

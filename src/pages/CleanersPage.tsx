@@ -11,6 +11,7 @@ import { useCleaners, type Cleaner, type Employment } from '../lib/useCleaners';
 import { api, notifyFailure } from '../lib/api';
 import { plural } from '../lib/format';
 import { Select } from '../components/Select';
+import { CloseButton } from '../components/CloseButton';
 
 /* ------------------------------------------------------------------ *
  * Operations -> Cleaners — the housekeeping roster master data.
@@ -214,7 +215,7 @@ function FormModal({ title, busy, draft, crew, takenUserIds, currentUserId, onCh
       <div ref={ref} className="relative w-full max-w-[460px] max-h-[88vh] overflow-y-auto bg-card rounded-card shadow-[var(--shadow-overlay)] animate-dialog">
         <div className="pt-5 px-5 pb-1 flex items-start justify-between gap-3">
           <h2 className="m-0 text-title leading-[1.3] font-semibold">{title}</h2>
-          <button onClick={onClose} aria-label="Close" disabled={busy} className="bg-transparent border-none p-1 cursor-pointer text-muted-ink flex"><Icon name="X" size="sm" /></button>
+          <CloseButton onClick={onClose} disabled={busy} />
         </div>
         <div className="pt-4 px-5 pb-1 flex flex-col gap-4">
           <div className="flex flex-col gap-[7px]">

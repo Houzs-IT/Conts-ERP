@@ -1,5 +1,6 @@
 /** Sales Invoices (AR), ported from 2990's SCM. Bills a delivery order. Money integer sen. */
 import { type Env, one, run, nowIso, mytToday } from './db';
+import { lineDiscountOf } from './scm-util';
 
 export const SI_STATUSES = ['SENT', 'PARTIALLY_PAID', 'PAID', 'OVERDUE', 'CANCELLED'] as const;
 
@@ -18,7 +19,7 @@ export function toSiHeaderPayload(r: SiHeaderRow) {
   };
 }
 export function toSiLinePayload(r: SiLineRow) {
-  return { id: r.id, lineNo: r.line_no, itemCode: r.item_code, description: r.description, uom: r.uom, qty: r.qty, unitPriceSen: r.unit_price_sen, lineTotalSen: r.line_total_sen };
+  return { id: r.id, lineNo: r.line_no, itemCode: r.item_code, description: r.description, uom: r.uom, qty: r.qty, unitPriceSen: r.unit_price_sen, discountSen: lineDiscountOf(r.qty, r.unit_price_sen, r.line_total_sen), lineTotalSen: r.line_total_sen };
 }
 
 export async function nextSiNumber(env: Env): Promise<string> {

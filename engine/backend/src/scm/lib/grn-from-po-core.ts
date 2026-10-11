@@ -18,6 +18,7 @@
    — the CREATE audit row is written there too, AFTER the post clears, so a bucket
    the post rolls back never leaves an orphan CREATE row. Callers of this core
    record their own CREATE at the moment their draft becomes final. */
+import { unknownProductCodeRefusal } from './validate-item-codes';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { Env, Variables } from '../env';
 import { getSupabaseService } from '../../db/supabase';
@@ -132,6 +133,10 @@ export async function createDraftGrnsFromPoItemsCore(
       return { ok: false, status: 409, body: { error: 'po_not_receivable', poItemId: p.poItemId, status: row.po.status, onHold: isDocumentHeld(row.po) } };
     }
   }
+
+  // Conts C6: a copied line's code must still be in Products.
+  const unknownCodes = await unknownProductCodeRefusal(sb, itemList.map((r) => ({ code: r.item_code, kind: r.material_kind })), activeCompanyId(c));
+  if (unknownCodes) return { ok: false, status: 409, body: unknownCodes as unknown as Record<string, unknown> };
 
   /* One probe for the whole batch, not one per bucket: every bucket below writes
      to the same sink, and a refusal here leaves the entire multi-GRN receive

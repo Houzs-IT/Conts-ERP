@@ -1,4 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
+import { refuseUnknownItemCodes } from '../../_lib/products';
 import { requireSession } from '../../_lib/auth';
 import { isSretStatus, nextSalesReturnNumber, toSretHeaderPayload, type SretHeaderRow } from '../../_lib/sales-returns';
 import { postStockMovement } from '../../_lib/stock-ops';
@@ -59,6 +60,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return { doLineId: strOrNull(l.deliveryOrderLineId), itemCode: String(l.itemCode ?? '').trim(), description: String(l.description ?? '').trim(), uom: String(l.uom ?? 'UNIT').trim() || 'UNIT', qty, unitPriceSen, lineTotalSen: qty * unitPriceSen, reason: strOrNull(l.reason) };
   }).filter(l => l.itemCode && l.description && l.qty > 0);
   if (!lines.length) return fail('VALIDATION', 'Return at least one line with a quantity.', 422, { lines: 'Enter a return quantity.' });
+  { const unknownCodes = await refuseUnknownItemCodes(env, lines.map(l => l.itemCode)); if (unknownCodes) return unknownCodes; } // every item code must be in Products
 
   const refund = lines.reduce((s, l) => s + l.lineTotalSen, 0);
   const id = genId('sret');

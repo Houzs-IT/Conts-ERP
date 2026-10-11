@@ -7,6 +7,7 @@
 import { call, check, done } from './harness.mjs';
 const tag = Date.now().toString().slice(-6);
 const ITEM = `NEG-${tag}`;
+await call('POST', '/api/products', { code: ITEM, name: `Neg item ${tag}`, category: 'ACCESSORY' }); // documents only take Products codes
 const onHand = async (wh) => ((await call('GET', `/api/stock?warehouseId=${wh}`)).json?.data ?? []).find(s => s.itemCode === ITEM)?.onHand ?? 0;
 const count = async (path) => ((await call('GET', path)).json?.data ?? []).length;
 

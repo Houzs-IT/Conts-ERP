@@ -171,3 +171,16 @@ body { margin: 0; }
 @supports not selector(::-webkit-scrollbar) {
   .ops-scroll { scrollbar-width: thin; scrollbar-color: rgba(21, 21, 21, 0.18) transparent; }
 }
+
+/* ---- Scrolling: one scroller per screen, the app fills the window ----
+   The shell's content area (.app-main) is the page's only vertical scroller; the window itself never scrolls (a
+   dropdown or a stray wide element used to drag the whole app up on a phone, leaving the top bar off screen). Sign-in
+   and the field and owner portals have no .app-main and scroll as normal pages. The scrollbar gutter is reserved, so
+   the page does not shift sideways when a list loads past the fold or an open dialog locks it. */
+html:has(.app-main) { overflow: hidden; }
+.app-main { scrollbar-gutter: stable; }
+.app-main:focus { outline: none; }
+/* An open dialog, drawer or the phone menu locks the page behind it; a scroll that reaches the dialog's end does not
+   carry on into the page. */
+body:has([aria-modal="true"]) .app-main { overflow: hidden !important; }
+[aria-modal="true"], [aria-modal="true"] * { overscroll-behavior: contain; }

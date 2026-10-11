@@ -17,10 +17,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!open) {
     const now = nowIso();
     const at = `${r.check_in}T${r.check_in_time}:00+08:00`;
+    const taskId = crypto.randomUUID();
     await run(env, `
       INSERT INTO tasks (id, unit_id, reservation_id, kind, state, title, next_guest_at, due_at, requires_photo, created_at, updated_at)
       VALUES (?, ?, ?, 'turnover', 'open', 'Prepare for arrival', ?, ?, 1, ?, ?)`,
-      crypto.randomUUID(), r.unit_id, id, at, at, now, now);
+      taskId, r.unit_id, id, at, at, now, now);
+    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.create', entityTable: 'tasks', entityId: taskId, after: { unitId: r.unit_id, reservationId: id, kind: 'turnover', via: 'prepare' } });
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.prepare', entityTable: 'reservations', entityId: id });
   return json({ id, preparedAt: nowIso(), taskCreated });

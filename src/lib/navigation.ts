@@ -146,6 +146,13 @@ const DENY: Partial<Record<UserRole, string[]>> = {
   owner: ['*'],
 };
 
+/** Supply chain modules Conts does not use (owner, 11 Oct 2026): consignment, here and in the engine. Switched off,
+ *  not deleted: off the menu for everyone, and their addresses open Home (App.tsx). */
+const SWITCHED_OFF_AREAS = ['scConsignment'];
+export function switchedOff(path: string): boolean {
+  return NAV.some(g => g.items.some(it => SWITCHED_OFF_AREAS.includes(areaOfItem(it)) && (it.path === path || !!it.children?.some(c => c.path === path))));
+}
+
 /** Menu areas (and single menu keys) whose screens exist only in the supply chain engine: hidden where it is not set up. */
 const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations'];
 const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'owner'];
@@ -180,7 +187,7 @@ export function screenClosed(path: string, access?: Record<string, AccessLevel>)
 }
 
 export function navFor(role: UserRole, engine = false, access?: Record<string, AccessLevel>): NavGroup[] {
-  const deny = [...denied(role, access), ...(engine ? [] : ENGINE_ONLY_AREAS)];
+  const deny = [...denied(role, access), ...SWITCHED_OFF_AREAS, ...(engine ? [] : ENGINE_ONLY_AREAS)];
   if (deny.includes('*')) return [];
   const open = (key: string, area: string) => !deny.includes(key) && !deny.includes(area);
   const enough = (i: NavItem) => !i.full || !access || FIXED_ROLES.includes(role) || access[areaOfItem(i)] === 'full';

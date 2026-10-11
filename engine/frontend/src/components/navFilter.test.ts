@@ -281,7 +281,8 @@ describe("nav — Finance / HR are top-level, not under Supply Chain", () => {
       { scm: "view", "scm.finance": "view", "scm.finance.accounting": "view" },
     );
     const paths = desktopPaths(ctx);
-    expect(paths).toContain("/scm/accounting");
+    // Conts: the ledger (/scm/accounting) is switched off (owner decision C7); Finance keeps its other screens.
+    expect(paths).toContain("/scm/credit-notes");
     expect(paths).not.toContain("/scm/purchase-orders");
     expect(paths).not.toContain("/scm/inventory");
   });
@@ -369,8 +370,10 @@ describe("nav — every sub-group hub groupId still resolves", () => {
     return undefined;
   };
 
+  /* scm-consignment is switched off for Conts (owner decision C7, conts/navOnly.ts):
+     its hub address opens the home page, so it has no menu group to resolve. */
   it.each([
-    "scm-sales", "scm-consignment", "scm-procurement",
+    "scm-sales", "scm-procurement",
     "scm-transportation", "scm-warehouse", "scm-finance",
   ])("%s exists and has children to render", (id) => {
     const g = findGroup(NAV_TABS, id);

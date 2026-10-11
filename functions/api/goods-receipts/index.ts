@@ -1,4 +1,5 @@
 import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
+import { refuseUnknownItemCodes } from '../../_lib/products';
 import { requireSession } from '../../_lib/auth';
 import { nextGrnNumber, recomputePoStatus, toGrnHeaderPayload, type GrnHeaderRow } from '../../_lib/goods-receipts';
 import { postStockMovement } from '../../_lib/stock-ops';
@@ -72,6 +73,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }).filter(l => l.itemCode && l.description && l.qtyReceived > 0);
 
   if (!lines.length) return fail('VALIDATION', 'Receive at least one line with a quantity.', 422, { lines: 'Enter a received quantity.' });
+  { const unknownCodes = await refuseUnknownItemCodes(env, lines.map(l => l.itemCode)); if (unknownCodes) return unknownCodes; } // every item code must be in Products
 
   const id = genId('grn');
   let grnNumber = '';

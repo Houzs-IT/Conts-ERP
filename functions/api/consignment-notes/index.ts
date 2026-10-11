@@ -1,4 +1,5 @@
 import { type Env, all, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
+import { refuseUnknownItemCodes } from '../../_lib/products';
 import { nextNumber } from '../../_lib/stock-ops';
 import { requireSession } from '../../_lib/auth';
 import { isCnStatus, normalizeCnLines, toCnHeaderPayload, type CnHeaderRow } from '../../_lib/consignment-notes';
@@ -37,6 +38,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const bad = invalid(fields); if (bad) return bad;
   const lines = normalizeCnLines(b.lines);
   if (!lines.length) return fail('VALIDATION', 'Add at least one line.', 422, { lines: 'Add at least one line.' });
+  { const unknownCodes = await refuseUnknownItemCodes(env, lines.map(l => l.itemCode)); if (unknownCodes) return unknownCodes; } // every item code must be in Products
 
   const total = lines.reduce((s, l) => s + l.lineTotalSen, 0);
   const id = genId('cn');
@@ -45,7 +47,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // Two notes made at once can pick the same next number; the second header insert then clashes before anything is
   // written and takes the next one (isNumberClash).
   for (let attempt = 1; ; attempt++) {
-    cnNumber = await nextNumber(env, 'consignment_notes', 'cn_number', 'CN');
+    cnNumber = await nextNumber(env, 'consignment_notes', 'cn_number', 'CSN');
     try {
       await run(env, `INSERT INTO consignment_notes (id, cn_number, consignee_name, consignee_phone, cn_date, status, notes, total_sen, created_by, created_at, updated_at)
                       VALUES (?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?)`,
