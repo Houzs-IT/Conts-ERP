@@ -135,7 +135,7 @@ export default function SystemHealthPage() {
   const feed = useApi<AuditFeed>(`/system/health/audit-feed?range=${range}${sensitiveOnly ? '&sensitive=1' : ''}&limit=${limit}`);
   const navigate = useNavigate();
   const reloadLive = live.reload, reloadFeed = feed.reload;
-  useEffect(() => { const t = setInterval(reloadLive, REFRESH_MS); return () => clearInterval(t); }, [reloadLive]);
+  useEffect(() => { const t = setInterval(() => { if (document.visibilityState === 'visible') reloadLive(); }, REFRESH_MS); return () => clearInterval(t); }, [reloadLive]);
 
   const d = live.data;
   const banner = useMemo<{ tone: BannerTone; label: string; detail: string }>(() => {

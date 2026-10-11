@@ -12,8 +12,10 @@ import { def as rawInputs } from './no-raw-inputs.mjs';
 import { def as mytDates } from './myt-dates.mjs';
 import { def as csvFormula } from './csv-formula.mjs';
 import { def as permission, extraSelfTest as permissionSelfTest } from './require-permission.mjs';
+import { def as queryLoops } from './no-query-in-loop.mjs';
+import { def as entryBundle } from './entry-bundle.mjs';
 
-const checks = [formatting, colours, dialogs, cjk, emoji, pills, session, audit, rawInputs, mytDates, csvFormula, permission];
+const checks = [formatting, colours, dialogs, cjk, emoji, pills, session, audit, rawInputs, mytDates, csvFormula, permission, queryLoops, entryBundle];
 let total = 0;
 for (const p of permissionSelfTest()) { console.log(`FAIL require-permission self-test: ${p}`); total++; }
 for (const c of checks) total += runCheck(c);

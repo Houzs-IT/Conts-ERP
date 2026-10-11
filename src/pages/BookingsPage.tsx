@@ -88,6 +88,9 @@ const countryName = (code: string | null) => {
 };
 const nationalityOf = (r: { guestNationality?: string | null; guestCountry?: string | null }) => r.guestNationality || countryName(r.guestCountry ?? null);
 
+/** Rows per import request (the server takes at most 100). */
+const IMPORT_PART = 50;
+
 export default function BookingsPage() {
   const UNITS = useUnitRoster();
   const toast = useToast();
@@ -226,16 +229,25 @@ export default function BookingsPage() {
     const valid = importRows.filter(p => p.row).map(p => p.row!);
     let created = 0, refused = 0, failedSync = 0, queued = 0;
     if (valid.length) {
-      try {
-        const r = await api.post<{ created: number; failed: unknown[]; effects?: { channels: { queued: number; not_linked: number; failed: number } } }>('/reservations/import', {
-          rows: valid.map(r => ({
-            unitNumber: r.unitNumber, channel: r.channel, guest: { fullName: r.guestName, phone: r.guestPhone },
-            checkIn: r.checkIn, checkOut: r.checkOut, guestsCount: r.guestsCount, grossBookingValue: r.grossBookingValue, externalRef: r.externalRef,
-          })),
-        });
-        created = r.created; refused = r.failed?.length ?? 0;
-        failedSync = r.effects?.channels.failed ?? 0; queued = r.effects?.channels.queued ?? 0;
-      } catch (e) { notifyFailure(e); return; }
+      // In parts of IMPORT_PART rows: each row is about eight queries, and 500 in one request took 70 seconds.
+      for (let i = 0; i < valid.length; i += IMPORT_PART) {
+        try {
+          const r = await api.post<{ created: number; failed: unknown[]; effects?: { channels: { queued: number; not_linked: number; failed: number } } }>('/reservations/import', {
+            rows: valid.slice(i, i + IMPORT_PART).map(r => ({
+              unitNumber: r.unitNumber, channel: r.channel, guest: { fullName: r.guestName, phone: r.guestPhone },
+              checkIn: r.checkIn, checkOut: r.checkOut, guestsCount: r.guestsCount, grossBookingValue: r.grossBookingValue, externalRef: r.externalRef,
+            })),
+          });
+          created += r.created; refused += r.failed?.length ?? 0;
+          failedSync += r.effects?.channels.failed ?? 0; queued += r.effects?.channels.queued ?? 0;
+        } catch (e) {
+          // Parts already sent stay imported; say how far it got so nothing is entered twice.
+          notifyFailure(e);
+          if (!created) return;
+          toast({ tone: 'warning', title: `Imported ${plural(created, 'reservation')} before it stopped.`, body: 'The rest were not imported. Remove the imported rows from the file before trying again.' });
+          setImportRows(null); reload(); return;
+        }
+      }
     }
     const rejected = importRows.length - valid.length + refused;
     toast({

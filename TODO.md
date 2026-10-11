@@ -47,6 +47,15 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Done (feat/s3-history-notify): closing a repair job gives back its calendar block at once (cancelled if not started, ends today if under way), also for blocks made before migration 0095 (matched by the note); the scheduled job sweeps any left.
 - Videos are capped at 50 MB per file (Workers request memory); longer clips need direct-to-R2 upload.
 
+## Performance (audit 11 Oct 2026, docs/audits/performance-from-sister-erps.md)
+- Owner decision: Workers Paid on the Conts ERP account. On the free plan, Send statements makes one email call per owner (~100 a month) against 50 outside calls per request; calls past 50 fail and are not retried while the cron is off. Until then send 40 at a time.
+- A bulk price update for all 139 units over a year builds 152,205 rate rows in one request (12.6 s locally); UNTESTED against the free plan's CPU limit on Cloudflare.
+- Not yet batched (allow-listed in scripts/checks/no-query-in-loop.mjs): reservations/mark-paid-out (3 queries per booking), expenses/utilities (~6 per bill), payouts/index (payout run), approvals bulk approve.
+- Reviews list and Channex call log stop at 500 rows without paging; add paging before 500 reviews.
+- GETs are not retried on 502/503/504 (a cold Hyperdrive pool after a quiet spell); a single retry for GETs in src/lib/api.ts.
+- Confirm the Hyperdrive origin is Supabase's session pooler (port 5432), not the transaction pooler.
+- libphonenumber (149 KB) is in the entry script because src/lib/format.ts formats phones; lazy-load it if the entry budget (scripts/checks/entry-bundle.mjs, 180 KB gzipped) gets tight.
+
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.

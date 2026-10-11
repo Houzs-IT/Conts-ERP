@@ -32,10 +32,13 @@ export function guestTags(stays: number, latestChannel: string | null, manual: s
 }
 
 /** Whether migration 0091's guest columns are on this database. */
+let guestColumnsSeen = false;
 export async function hasGuestColumns(env: Env): Promise<boolean> {
+  if (guestColumnsSeen) return true; // found once, there for good (see moneySchema)
   const r = await one<{ n: number }>(env, `SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_name = 'guests'
     AND table_schema = ANY(current_schemas(false)) AND column_name IN ('tags', 'id_type', 'id_number', 'date_of_birth', 'merged_into', 'notes', 'language')`);
-  return Number(r?.n ?? 0) === 7;
+  guestColumnsSeen = Number(r?.n ?? 0) === 7;
+  return guestColumnsSeen;
 }
 
 /** Registration details Malaysian short-stay rules ask for: an ID document, its number, date of birth, nationality. */
