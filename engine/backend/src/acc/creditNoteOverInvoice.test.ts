@@ -15,7 +15,7 @@ describe('a credit note larger than the invoice balance (C3)', () => {
       acc_credit_notes: [],
       acc_credit_note_lines: [],
     });
-    const r = await insertCreditNote(sb as never, {
+    const r = await insertCreditNote(sb as unknown as Parameters<typeof insertCreditNote>[0], {
       companyId: 1, docPrefix: 'TC-', kind: 'CN',
       party: { code: '300-C001', name: 'Customer' },
       salesInvoiceId: 'si-1', noteDate: '2026-10-11', createdBy: 'test',

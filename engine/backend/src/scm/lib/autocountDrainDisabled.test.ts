@@ -7,7 +7,7 @@ import { drainAutoCountOutbox } from './autocount-outbox';
 describe('AutoCount outbox drain under AUTOCOUNT_SYNC_DISABLED (C7)', () => {
   it('skips before reading the queue or calling the host', async () => {
     let fetched = false;
-    const env = { AUTOCOUNT_SYNC_DISABLED: 'true', AC_SYNC_URL: 'https://example.invalid', AC_SYNC_SECRET: 'x' } as never;
+    const env = { AUTOCOUNT_SYNC_DISABLED: 'true', AC_SYNC_URL: 'https://example.invalid', AC_SYNC_SECRET: 'x' } as unknown as Parameters<typeof drainAutoCountOutbox>[0];
     const r = await drainAutoCountOutbox(env, 10, (async () => { fetched = true; return new Response('{}'); }) as typeof fetch);
     expect(r).toEqual({ skipped: 'autocount_disabled', processed: 0, sent: 0, failed: 0, retried: 0, waiting: 0 });
     expect(fetched).toBe(false);

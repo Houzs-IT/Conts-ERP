@@ -128,7 +128,7 @@ describe('detailMissResponse', () => {
 describe('Conts document numbers (owner decision C1, 11 Oct 2026)', () => {
   test('new documents mint TC-<KIND>-YYMM-NNN, starting a fresh series beside the old HC- numbers', async () => {
     const { nextMonthlyDocNo } = await import('./doc-no');
-    const p = companyDocPrefix(ctx('HOUZS') as never);
+    const p = companyDocPrefix(ctx('HOUZS') as unknown as Parameters<typeof companyDocPrefix>[0]);
     // An HC- number already on file is in another series: it neither collides nor is renamed.
     expect(nextMonthlyDocNo(`${p}SO-2610`, ['HC-SO-2610-007'])).toBe('TC-SO-2610-001');
     expect(nextMonthlyDocNo(`${p}SO-2610`, ['TC-SO-2610-001', 'HC-SO-2610-007'])).toBe('TC-SO-2610-002');

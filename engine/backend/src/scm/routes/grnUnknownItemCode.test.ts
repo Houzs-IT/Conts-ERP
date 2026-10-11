@@ -22,7 +22,7 @@ const { grns } = await import('./grns');
 
 function post(itemCode: string) {
   const app = new Hono<{ Bindings: Env; Variables: Variables }>();
-  app.use('*', async (c, next) => { c.set('user', CALLER); c.set('companyId', 1); c.set('supabase', sb as never); await next(); });
+  app.use('*', async (c, next) => { c.set('user', CALLER); c.set('companyId', 1); c.set('supabase', sb as unknown as Variables['supabase']); await next(); });
   app.route('/', grns);
   return app.request('/', {
     method: 'POST', headers: { 'content-type': 'application/json' },

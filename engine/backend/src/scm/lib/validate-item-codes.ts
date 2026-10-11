@@ -203,7 +203,7 @@ export const freeTextSoLineResponse = (labels: string[]) => ({
  * still a real product.
  */
 export async function unknownProductCodeRefusal(
-  sb: any,
+  sb: Parameters<typeof validateItemCodes>[0],
   lines: Array<{ code: unknown; kind?: unknown }>,
   companyId: number | null | undefined,
 ): Promise<ReturnType<typeof unknownItemCodeResponse> | null> {
