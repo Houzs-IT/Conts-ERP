@@ -619,7 +619,7 @@ export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[], today 
   const acc = units.reduce((n, u) => n + u.utilityAccounts.length, 0);
   if (acc) notes.push(`${acc} utility account numbers (electricity, internet, Indah Water) are kept on their units.`);
   const debt = units.filter(u => u.debt);
-  if (debt.length) notes.push(`${debt.length} units carry a DEBT AMOUNT (RM ${(debt.reduce((n, u) => n + u.debt!, 0) / 100).toFixed(2)} in all). It is recorded against the owner but held: it is not deducted from a statement until someone releases it.`);
+  if (debt.length) notes.push(`${debt.length} units carry a DEBT AMOUNT (RM ${(debt.reduce((n, u) => n + u.debt!, 0) / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} in all). It is recorded against the owner but held: it is not deducted from a statement until someone releases it.`);
   const agents = units.filter(u => u.contract?.agentPct).length;
   if (agents) notes.push(`${agents} contracts have an agent share (分成 AGENT%).`);
   const noContract = units.filter(u => !u.contract);

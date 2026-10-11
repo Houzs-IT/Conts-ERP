@@ -38,7 +38,8 @@ function periods() {
   const last = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
   const q = Math.ceil(m / 3);
   return [
-    { key: t.slice(0, 7), label: 'This month', caption: `${monthLabel(t.slice(0, 7))} to date` },
+    // The month figures count every night booked in the whole month (functions/api/portfolio/performance.ts), not just the days so far.
+    { key: t.slice(0, 7), label: 'This month', caption: `${monthLabel(t.slice(0, 7))}, whole month as booked` },
     { key: last, label: 'Last month', caption: monthLabel(last) },
     { key: `${y}-q${q}`, label: 'Quarter to date', caption: `Q${q} ${y} to date` },
   ];
@@ -99,7 +100,7 @@ export default function PortfolioPage() {
   const withException = rows.some(r => !!r.exception);
 
   const columns = useMemo<Column<PortfolioRow>[]>(() => [
-    { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, exportValue: r => r.unitNumber,
+    { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, exportValue: r => `${r.propertyName} ${r.unitNumber}`,
       hideable: false, width: 180, sub: r => r.propertyName,
       render: r => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block" title={r.unitNumber}>{r.unitNumber}</span> },
     { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150 },
