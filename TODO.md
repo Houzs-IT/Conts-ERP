@@ -209,7 +209,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 ## Standards (docs/UI-STANDARDS.md, checked by npm run check and CI)
 - Done (s1-standards): one status vocabulary (src/lib/status.ts) and StatusBadge / StatusMenu everywhere; text-success / text-danger now render the text colour; ConfirmDialog for every confirm; dates, money, counts and phones through lib/format; plain-English API errors; no Change dates on OTA bookings.
 - Done: the 32 one-click Delete / Cancel buttons on the built-in supply chain screens now ask first (ConfirmButton).
-- Open: rejecting a sales order amendment asks no reason; the amendments API has no field to store one.
 - Open: make the CI workflow (.github/workflows/ci.yml) a required check on main (GitHub > Settings > Branches; owner, needs admin).
 
 ## Form inputs (feat/s6-inputs)
