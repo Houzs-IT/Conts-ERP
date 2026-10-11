@@ -168,7 +168,7 @@ export default function IntegrationsPage() {
 
   return (
     <>
-      <PageHeader title="Integrations" sub={`${count(connected)} connected · ${count(notConnected)} not connected · ${count(problems)} needing attention`}
+      <PageHeader title="Integrations" sub={data ? `${count(connected)} connected · ${count(notConnected)} not connected · ${count(problems)} needing attention` : 'Loading connections…'}
         actions={<Button size="sm" variant="secondary" icon={<Icon name="FileUp" size="sm" />} onClick={() => { window.location.hash = '#/system/integrations/hostplatform'; }}>Import from HostPlatform</Button>} />
 
       {error && <StaleBanner message={`Showing the last status we have. ${error}`} onRetry={reload} />}

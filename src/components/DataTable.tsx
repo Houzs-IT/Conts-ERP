@@ -5,7 +5,8 @@ import { Button } from './Button';
 import { Field } from './Field';
 import { DateField, MoneyInput, NumberInput, parseScaled, formatScaled } from './inputs';
 import { EmptyState } from './States';
-import { StaleBanner, TableSkeleton } from './DataState';
+import { StaleBanner } from './DataState';
+import { BusyLine, CardRowsSkeleton, RowsSkeleton } from './Loading';
 import { PageControls } from './PageControls';
 import { useToast } from './Toast';
 import { PhoneText } from './PhoneText';
@@ -604,7 +605,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
       <div className="max-md:hidden relative">
         <BusyLine on={refreshing} />
         <div className="overflow-auto" style={{ maxHeight: maxHeight ?? 'calc(100dvh - 300px)', minHeight: firstLoad || shown.length > 6 ? 240 : undefined }} aria-busy={!!loading}>
-          {firstLoad && !error ? <TableSkeleton rows={8} cols={Math.min(7, visible.length || 5)} /> : errorView ?? (
+          {firstLoad && !error ? <RowsSkeleton rows={8} cols={Math.min(7, visible.length || 5)} /> : errorView ?? (
             <table className="w-full border-collapse [table-layout:fixed]" style={{ minWidth }}>
               <colgroup>
                 {pickCol && <col style={{ width: 44 }} />}
@@ -692,7 +693,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
       {/* Phones: one card per row. */}
       <div className="md:hidden relative" aria-busy={!!loading}>
         <BusyLine on={refreshing} />
-        {firstLoad && !error ? <TableSkeleton rows={6} cols={2} /> : errorView ?? (shown.length === 0 ? emptyView : (
+        {firstLoad && !error ? <CardRowsSkeleton rows={6} /> : errorView ?? (shown.length === 0 ? emptyView : (
           <ul className={cx('list-none m-0 p-0 transition-opacity duration-150', refreshing && 'opacity-55')}>
             {pickCol && pickable.length > 0 && (
               <li className="flex items-center gap-3 px-4 py-2 [border-bottom:1px_solid_var(--color-line-soft)] bg-page">
@@ -808,15 +809,6 @@ export function DataTable<R>(props: DataTableProps<R>) {
 
   if (bare) return <div className="relative">{body}</div>;
   return <div className="relative bg-card border border-solid border-line rounded-card [overflow:clip] shrink-0">{body}</div>;
-}
-
-function BusyLine({ on }: { on: boolean }) {
-  return (
-    <div aria-hidden className={cx('absolute left-0 right-0 top-0 h-[2px] z-[3] overflow-hidden pointer-events-none transition-opacity duration-150', on ? 'opacity-100' : 'opacity-0')}>
-      <div className="h-full w-1/3 bg-gold [animation:dt-busy_1.1s_ease-in-out_infinite]" />
-      <style>{'@keyframes dt-busy{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}'}</style>
-    </div>
-  );
 }
 
 /** A phone card from the columns: title and amount on the first line, the rest as one muted line, status last. */

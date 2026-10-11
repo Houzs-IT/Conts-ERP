@@ -11,6 +11,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { refusalOf, renoSend, usePoSchedule, useRenoMutation, type PoSchedule } from '../../lib/renovation/api';
 import { Card, ErrorBanner, Field, fmtDate, inputCls, MoneyInput, pctLabel, rm, todayIso } from './shared';
 import { cn } from '../../lib/utils';
+import { useDialog } from '../../hooks/useDialog';
 
 const PAYABLE_LABEL: Record<string, string> = { ON_CONFIRM: 'on confirm', ON_RECEIPT: 'on receipt', ON_HANDOVER: 'after handover', MANUAL: 'on release' };
 
@@ -40,6 +41,7 @@ function PayDialog({ inst, onClose }: { inst: Inst | null; onClose: () => void }
 export function PoPaymentScheduleCard({ poId, offerDefault = false }: { poId: string; offerDefault?: boolean }) {
   const s = usePoSchedule(poId);
   const { can } = useAuth();
+  const dialog = useDialog();
   const [paying, setPaying] = useState<Inst | null>(null);
   const [error, setError] = useState<string | null>(null);
   const act = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
@@ -82,7 +84,7 @@ export function PoPaymentScheduleCard({ poId, offerDefault = false }: { poId: st
                 <td className="px-3 py-2 text-right">
                   <div className="flex justify-end gap-1.5">
                     {!i.payable && !i.releasedAt && (i.payableOn === 'MANUAL' || i.payableOn === 'ON_HANDOVER') && can('scm.renovation.bill') && (
-                      <Button variant="secondary" className="h-8" onClick={() => { const note = window.prompt(`Release ${i.label}: why (e.g. handover signed, snag list closed)?`); if (note) void run(() => renoSend(`/po-instalments/${i.id}/release`, 'POST', { note })); }}>Release</Button>
+                      <Button variant="secondary" className="h-8" onClick={async () => { const note = await dialog.prompt(`Release ${i.label}: why (e.g. handover signed, snag list closed)?`); if (note) void run(() => renoSend(`/po-instalments/${i.id}/release`, 'POST', { note })); }}>Release</Button>
                     )}
                     {i.payable && i.outstandingSen > 0 && can('scm.renovation.bill') && <Button className="h-8" onClick={() => setPaying(i)}>Record payment</Button>}
                   </div>

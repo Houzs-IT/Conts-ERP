@@ -2,6 +2,7 @@
 import { printPage, esc, ringgit, longDate } from './letterhead';
 import type { Snapshot } from './guestDocuments';
 import { parsePhone } from '../../src/lib/phone';
+import { phone } from '../../src/lib/format';
 
 const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
 const TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
@@ -66,8 +67,10 @@ ${voided ? `<div class="lh-void"><strong>Void.</strong> Voided on ${esc(longDate
 </table>
 ${paidBy}`;
 
+  // Guests are often abroad: the company phone prints in +60 form. The owner statement and Owner Income Report keep
+  // the number as saved in Settings.
   return printPage({
-    company: s.company, body, title: `${title} ${s.docNo}`, watermark: voided ? 'VOID' : undefined,
+    company: { ...s.company, phone: phone(s.company.phone) }, body, title: `${title} ${s.docNo}`, watermark: voided ? 'VOID' : undefined,
     footerNote: `Issued by ${esc(s.issuedBy)}`, filename: `${s.docNo}.html`,
   });
 }

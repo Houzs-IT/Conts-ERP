@@ -35,7 +35,7 @@ import { PhoneText } from '../components/PhoneText';
  * each deduction, To Operator, what comes off after the split, Net Payout to Owner), worked out by the statement
  * engine (GET /api/owners?id=&month=), the month's totals, and the Owner Income Report by owner (all units combined)
  * or by unit, generated here when the month has no owner statement yet. Below: expenses by unit (Cleaning,
- * Maintenance, each bill paid on behalf), payout details (edited here; they are the owner's, not a unit's) and the
+ * Maintenance repair, Utilities, Maintenance fee (condo), Other fees), payout details (edited here; they are the owner's, not a unit's) and the
  * statement history, each statement's make-up opening in place.
  */
 
@@ -65,9 +65,10 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
     return (
       <div className="flex flex-col gap-5">
         <PageHeader title={loading ? 'Owner' : 'Owner not found'} back={{ label: 'All owners', onClick: () => navigate('/owners') }} />
-        <EmptyState icon="UserX" title={loading ? 'Loading owner…' : 'Owner not found'}
-          body={loading ? undefined : (error ?? 'This owner is no longer on file.')}
-          action={loading ? undefined : { label: 'Back to owners', onClick: () => navigate('/owners') }} />
+        {loading ? <ProfileSkeleton /> : (
+          <EmptyState icon="UserX" title="Owner not found" body={error ?? 'This owner is no longer on file.'}
+            action={{ label: 'Back to owners', onClick: () => navigate('/owners') }} />
+        )}
       </div>
     );
   }
@@ -219,7 +220,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
           <StatTile label="Gross Income" value={figures.length ? rm(sum('income')) : undefined} />
           <StatTile label="Deductions" value={figures.length ? rm(sum('costs')) : undefined} hint="Before the split" />
           <StatTile label="To Operator" value={figures.length ? rm(sum('operatorShare')) : undefined} />
-          <StatTile label="Paid on behalf, after the split" value={figures.length ? rm(-sum('adjustments')) : undefined} />
+          <StatTile label="Owner Adjustments" hint="After the split" value={figures.length ? rm(-sum('adjustments')) : undefined} />
         </StatRow>
       )}
 
@@ -289,7 +290,7 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
       <MoneyText sen={sen} mode="exact" tone={muted ? 'muted' : undefined} className={cx('text-copy text-right whitespace-nowrap', sign && sen > 0 ? 'before:content-["+_"]' : '')} />
     </div>
   );
-  const after = (sen: number) => sen !== 0 && <Row label={sen < 0 ? 'Paid on behalf, after the split' : 'Credit to owner, after the split'} sen={sen} sign />;
+  const after = (sen: number) => sen !== 0 && <Row label={sen < 0 ? 'Owner Adjustments (charges), after the split' : 'Owner Adjustments (credits), after the split'} sen={sen} sign />;
   const operatorPct = u.feePct;
   return (
     <section className="bg-card border border-solid border-line rounded-card p-4 flex flex-col gap-2 min-w-0">
@@ -351,6 +352,32 @@ function DefaultFeeModal({ current, owner, onClose, onSubmit }: { current: numbe
             </Button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/** The profile before it arrives: the month bar, then a unit card per column with its statement lines. */
+function ProfileSkeleton() {
+  return (
+    <div aria-hidden className="flex flex-col gap-5">
+      <Card>
+        <div className="flex items-center gap-3 py-3 px-4">
+          <div className="skeleton h-9 w-[150px] rounded-control!" />
+          <div className="skeleton h-[11px] w-[180px] max-sm:hidden" />
+          <span className="flex-1" />
+          <div className="skeleton h-9 w-[130px] rounded-control!" />
+        </div>
+      </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {[0, 1].map(i => (
+          <div key={i} className={cx('bg-card border border-solid border-line rounded-card p-4 flex flex-col gap-3', i > 0 && 'max-lg:hidden')}>
+            <div className="flex justify-between"><div className="skeleton h-[16px] w-[45%]" /><div className="skeleton h-[20px] w-[90px] rounded-pill!" /></div>
+            {[70, 52, 60, 44, 58].map((w, r) => (
+              <div key={r} className="flex justify-between gap-4"><div className="skeleton h-[11px]" style={{ width: `${w}%` }} /><div className="skeleton h-[11px] w-[64px]" /></div>
+            ))}
+          </div>
+        ))}
       </div>
     </div>
   );

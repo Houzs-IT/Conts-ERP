@@ -430,7 +430,7 @@ export default function UsersPage() {
     <>
       <PageHeader
         title="Users and roles"
-        sub={`${plural(rows.length, 'account')} · ${count(invitedCount)} invited and not yet signed in`}
+        sub={data ? `${plural(rows.length, 'account')} · ${count(invitedCount)} invited and not yet signed in` : 'Loading accounts…'}
         primary={tab === 'users' && canManage && (
           <Button variant="primary" size="sm" onClick={() => { setLastTempPassword(null); setInviteOpen(true); }}>
             Invite user
@@ -519,7 +519,7 @@ export default function UsersPage() {
           footer={
             <>
               <Button variant="secondary" size="sm" onClick={resetInvite} disabled={busy}>Cancel</Button>
-              <Button variant="primary" size="sm" type="submit" form="invite-form" loading={busy}>{busy ? 'Sending…' : 'Send invitation'}</Button>
+              <Button variant="primary" size="sm" type="submit" form="invite-form" loading={busy}>Send invitation</Button>
             </>
           }
         >
@@ -555,7 +555,7 @@ export default function UsersPage() {
           footer={
             <>
               <Button variant="secondary" size="sm" onClick={() => setEditing(null)} disabled={busy}>Cancel</Button>
-              <Button variant="primary" size="sm" type="submit" form="edit-form" loading={busy}>{busy ? 'Saving…' : 'Save changes'}</Button>
+              <Button variant="primary" size="sm" type="submit" form="edit-form" loading={busy}>Save changes</Button>
             </>
           }
         >
@@ -643,7 +643,7 @@ export default function UsersPage() {
           footer={
             <>
               <Button variant="secondary" size="sm" onClick={() => setOrgOpen(false)} disabled={busy}>Cancel</Button>
-              <Button variant="primary" size="sm" type="submit" form="org-form" loading={busy}>{busy ? 'Saving…' : 'Save structure'}</Button>
+              <Button variant="primary" size="sm" type="submit" form="org-form" loading={busy}>Save structure</Button>
             </>
           }
         >

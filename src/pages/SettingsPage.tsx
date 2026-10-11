@@ -51,11 +51,11 @@ interface Settings {
 const FALLBACK: Settings = {
   generatedAt: '',
   company: {
-    legalName: 'The Conts Sdn Bhd',
+    legalName: 'The Conts Sdn. Bhd.',
     companyNumber: '202301027399 (1521322-V)',
-    address: 'C-41-06, Jaya One, Jalan Universiti, 46200 Petaling Jaya',
-    supportPhone: '+60 17-465 8868',
-    supportEmail: 'support@theconts.com',
+    address: 'E-28-02 & E-28-03, Menara Suezcap 2, KL Gateway,\nNo. 2, Jalan Kerinchi, Gerbang Kerinchi Lestari,\n59200 Kuala Lumpur, W.P. Kuala Lumpur.',
+    supportPhone: '+60 11-6133 3289',
+    supportEmail: 't.conts725@gmail.com',
   },
   locale: { default: 'en-MY', timezone: 'Asia/Kuala_Lumpur', currency: 'MYR', dateFormat: 'D MMM YYYY', managementFeePct: 25 },
   operations: { checkIn: '15:00', checkOut: '11:00', cleaningWindowHours: 4, linenSets: 2, photoRequiredToMarkReady: true },
@@ -177,7 +177,7 @@ function SectionCard({ title, description, dirty, busy, onSave, onDiscard, saveL
             disabled={!dirty}
             disabledReason="No changes to save."
           >
-            {busy ? 'Saving…' : saveLabel}
+            {saveLabel}
           </Button>
         </div>}
       </div>
@@ -349,10 +349,11 @@ export default function SettingsPage() {
                 onChange={e => patch('company', { companyNumber: e.target.value }, 'company.companyNumber')}
               />
             </Grid>
-            <Field
+            <TextArea
               label="Registered address"
               value={draft.company.address}
-              onChange={e => patch('company', { address: e.target.value })}
+              help="Printed on every letterhead line by line, as typed here."
+              onChange={v => patch('company', { address: v })}
             />
             <Grid>
               <PhoneInput

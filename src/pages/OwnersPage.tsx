@@ -11,13 +11,13 @@ import { api, errorMessage } from '../lib/api';
 import { rmShort, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
 import { MoneyText } from '../components/MoneyText';
 import { Select } from '../components/Select';
-import { cx } from '../lib/design-tokens';
 import {
   type Owner, type Payload,
   FALLBACK, netOf, grossOf, guaranteedOf, managedNetOf, managedGrossOf, terms,
   Roll, AddOwnerModal,
 } from './owners/shared';
-import { useUrlState, usePhone, SearchBox, Chip, MonthStepper, shiftMonth, useFinanceFilters } from './finance/listKit';
+import { FilterBar } from '../components/FilterBar';
+import { useUrlState, usePhone, SearchBox, MonthStepper, shiftMonth, useFinanceFilters } from './finance/listKit';
 import { MODELS, type RevenueModel } from '../lib/revenueModel';
 import { ModelChip } from './units/ContractTab';
 
@@ -152,21 +152,21 @@ export default function OwnersPage() {
 
   return (
     <>
-      <PageHeader title="Owners" sub={`${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')} under management`}
+      <PageHeader title="Owners" sub={data ? `${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')} under management` : 'Loading owners…'}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal(true)}>Add owner</Button>} />
 
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-5 pt-5 pb-4 px-5 sm:px-[22px]">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-5 flex-1 min-w-[min(100%,560px)] items-end">
-            <Roll label={`Owner payouts, ${monthText} (estimate)`} value={rmShort(portfolioNet)} strong />
-            <Roll label="from managed units" value={rmShort(portfolioManagedNet)} />
-            <Roll label="guaranteed rent (GRR units)" value={rmShort(portfolioGuaranteed)} />
-            <Roll label={`Gross Income, managed units`} value={rmShort(portfolioManagedGross)} />
+            <Roll label={`Owner payouts, ${monthText} (estimate)`} value={data ? rmShort(portfolioNet) : undefined} strong />
+            <Roll label="from managed units" value={data ? rmShort(portfolioManagedNet) : undefined} />
+            <Roll label="guaranteed rent (GRR units)" value={data ? rmShort(portfolioGuaranteed) : undefined} />
+            <Roll label={`Gross Income, managed units`} value={data ? rmShort(portfolioManagedGross) : undefined} />
           </div>
           <MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} />
         </div>
         <div className="px-5 sm:px-[22px] pt-4 pb-4 [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink text-pretty">
-          Each unit is worked out the way its owner statement is, by its payout model: income split by night into the month, less the costs the owner pays, then the share, minimum or fixed rent, and Owner Adjustments. Guaranteed rent is counted on its own, not as a share of income. Until the month's statement is final, these are estimates.
+          Each unit is worked out the way its owner statement is, by its payout model: income split by night into the month, less the costs the owner pays, then the share, minimum or fixed rent, and Owner Adjustments. Guaranteed rent is counted on its own, not as a share of earnings. Until the month's statement is final, these are estimates.
         </div>
       </Card>
 
@@ -177,12 +177,13 @@ export default function OwnersPage() {
         noun={['owner', 'owners']} exportName="owners"
         empty={{ title: 'No owners yet.', body: 'Add an owner, then link their units and set the fee or guaranteed rent.', action: { label: 'Add owner', onClick: () => setModal(true) } }}
         header={
-          <div className={cx('flex gap-2 py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]', phone ? 'overflow-x-auto' : 'flex-wrap')}>
-            <Chip on={!model} onClick={() => url.set({ model: null, page: null })} count={counts.all}>All owners</Chip>
-            {MODELS.filter(m => counts[m.key] > 0 || model === m.key).map(m => (
-              <Chip key={m.key} on={model === m.key} onClick={() => url.set({ model: m.key, page: null })} count={counts[m.key]}>{m.label}</Chip>
-            ))}
-            <Chip on={model === 'none'} onClick={() => url.set({ model: 'none', page: null })} count={counts.none}>No units</Chip>
+          <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
+            <FilterBar<ModelFilter> label="Owners by fee model" value={model} onChange={k => url.set({ model: k || null, page: null })}
+              views={[
+                { key: '', label: 'All owners', count: data ? counts.all : undefined },
+                ...MODELS.filter(m => counts[m.key] > 0 || model === m.key).map(m => ({ key: m.key as ModelFilter, label: m.label, count: counts[m.key] })),
+                { key: 'none', label: 'No units', count: data ? counts.none : undefined },
+              ]} />
           </div>
         }
         toolbar={<>

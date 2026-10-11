@@ -3,13 +3,14 @@ import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { StaleBanner } from '../components/DataState';
 import { EmptyState, Skeleton } from '../components/States';
+import { AttachmentLabel, MediaGallery } from '../components/Attachments';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useNow } from '../lib/useMedia';
 import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import {
-  TimeLeft, KIND_LABEL, MediaGrid, MediaDrop, uploadTo, Checklist, ReportDamageModal, Segmented, hm, dayLabel, mytDay, type ChecklistItem, type MediaItem,
+  TimeLeft, KIND_LABEL, uploadTo, Checklist, ReportDamageModal, Segmented, hm, dayLabel, mytDay, type ChecklistItem, type MediaItem,
 } from '../components/ops/OpsUi';
 import { StatusBadge } from '../components/StatusBadge';
 
@@ -116,9 +117,9 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
           )}
 
           <section className="flex flex-col gap-2">
-            <h3 className="m-0 text-copy font-semibold">Proof of work <span className="text-muted-ink font-normal">{files} {files === 1 ? 'file' : 'files'}{!j.done && ', at least 1 to complete'}</span></h3>
-            {detail.data && <MediaGrid items={detail.data.media} cols={3} />}
-            {!j.done && <MediaDrop upload={uploadTo(`/tasks/${j.id}/photos`)} onDone={() => { detail.reload(); onChanged(); }} label="Take or add photos and videos" />}
+            <AttachmentLabel title="Proof of work" count={files} hint={!j.done && files === 0 ? 'At least 1 photo or video to complete' : undefined} />
+            {detail.data ? <MediaGallery items={detail.data.media} upload={j.done ? undefined : uploadTo(`/tasks/${j.id}/photos`)} onDone={() => { detail.reload(); onChanged(); }} addLabel="Take or add photo" emptyText="No photos were added." />
+              : <Skeleton height={84} />}
           </section>
 
           <Button size="touch" variant="secondary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>

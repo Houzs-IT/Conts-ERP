@@ -11,7 +11,7 @@ import ChannelMark from '../components/ChannelMark';
 import { Field } from '../components/Field';
 import { DateField, TimeField, NumberInput, MoneyInput, PhoneInput } from '../components/inputs';
 import { Select } from '../components/Select';
-import { StatTile, StatRow } from '../components/Metric';
+import { StatTile, StatRow, Segmented } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import { fetchAllPages } from '../lib/export';
@@ -386,20 +386,8 @@ export default function BookingsPage() {
         </>}
         header={
           <div className="flex items-center gap-2 flex-wrap py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
-            <div role="tablist" aria-label="Reservation views" className="flex gap-2 overflow-x-auto [scrollbar-width:none] max-md:w-full">
-              {VIEWS.map(v => {
-                const on = !todo && view === v.key;
-                const n = counts?.[v.key];
-                return (
-                  <button key={v.key} role="tab" aria-selected={on} onClick={() => setView(v.key)}
-                    className={cx('flex-none h-8 inline-flex items-center gap-[6px] px-[13px] py-0 rounded-pill cursor-pointer [font-family:inherit] text-copy border border-solid whitespace-nowrap',
-                      on ? 'font-semibold border-transparent bg-black text-white' : 'font-medium border-line bg-page text-muted-ink')}>
-                    {v.label}
-                    <span className={cx('[font-variant-numeric:tabular-nums] min-w-[1ch]', on ? 'opacity-80' : 'opacity-70')}>{n === undefined ? '' : num(n)}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <Segmented<ViewKey> label="Reservation views" value={todo ? '' : view} onChange={setView}
+              options={VIEWS.map(v => ({ key: v.key, label: v.label, count: counts?.[v.key] }))} />
             <div className="flex items-center gap-2 flex-wrap ml-auto max-md:ml-0 max-md:w-full">
               <ChannelFilter value={params.get('ch') ?? ''} onChange={v => setParam('ch', v)} />
               <Select label="Building" value={params.get('building') ?? ''} onChange={v => setParam('building', v)} className="w-[170px] max-md:w-full max-md:order-last"
@@ -603,7 +591,7 @@ function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClo
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!receivedOn || !rows.length} disabledReason={!rows.length ? 'None of the ticked reservations is waiting for a host payout.' : 'Pick the date.'}>{busy ? 'Recording…' : 'Mark received'}</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!receivedOn || !rows.length} disabledReason={!rows.length ? 'None of the ticked reservations is waiting for a host payout.' : 'Pick the date.'}>Mark received</Button>
         </div>
       </form>
     </CentreModal>
@@ -773,7 +761,7 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
         </div>
         <div className="flex justify-end gap-[9px] pt-1">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Close</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={missing}>{busy ? 'Saving…' : owner ? 'Save owner stay' : 'Create reservation'}</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!valid} disabledReason={missing}>{owner ? 'Save owner stay' : 'Create reservation'}</Button>
         </div>
       </form>
     </CentreModal>

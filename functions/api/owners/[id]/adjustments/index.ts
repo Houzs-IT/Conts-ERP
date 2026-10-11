@@ -40,8 +40,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   });
 };
 
-/** POST /api/owners/:id/adjustments { kind: 'credit'|'charge', amount (sen, > 0), description, occurredOn, unitId? }
- *  A manual credit (adds to the payout) or charge (deducts). Created open at once (201), or staged for approval (202)
+/** POST /api/owners/:id/adjustments { kind: 'credit'|'charge', amount (sen, > 0), description, occurredOn, unitId?, reference? }
+ *  A manual credit (adds to the payout) or charge (deducts), e.g. the condo's maintenance fee added from the unit or
+ *  owner page ("Add a bill paid on behalf", Maintenance fee (condo)), which comes off after the operator's share. Created open at once (201), or staged for approval (202)
  *  when Settings > Approvals is on. Once open it is so the next statement generated for a
  *  month ending on or after occurredOn carries it. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -60,6 +61,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!isIsoDate(occurredOn)) fields.occurredOn = 'Enter the date.';
   const unitId = b?.unitId ? String(b.unitId) : null;
   if (unitId && !await one(env, 'SELECT 1 AS x FROM units WHERE id = ? AND owner_id = ?', unitId, ownerId)) fields.unitId = 'That unit is not this owner\'s.';
+  const reference = String(b?.reference ?? '').trim() || null;
+  if (reference && reference.length > 200) fields.reference = 'Keep the reference under 200 characters.';
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the highlighted fields.', 422, fields);
 
   // With approvals on, a credit or charge waits for a second person (functions/_lib/approvals.ts).
@@ -69,6 +72,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   return submit(env, session, {
     kind: 'owner_adjustment', entity: 'owners', entityId: ownerId, amount, reason,
     summary: `${kind === 'credit' ? 'Credit' : 'Charge'} RM ${(amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })} ${kind === 'credit' ? 'to' : 'against'} ${owner?.display_name ?? 'owner'}: ${description}`,
-    payload: { ownerId, unitId, kind, amount: signed, description, occurredOn },
+    payload: { ownerId, unitId, kind, amount: signed, description, occurredOn, reference },
   }, r => json({ id: r.adjustmentId, state: 'open' }, 201));
 };

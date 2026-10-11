@@ -7,6 +7,7 @@ import Icon from '../components/Icon';
 import { Select, SearchSelect, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { Skeleton } from '../components/States';
+import { AttachmentLabel, MediaGallery, FileList } from '../components/Attachments';
 import { DataTable, type Column } from '../components/DataTable';
 import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
@@ -20,7 +21,7 @@ import { cx } from '../lib/design-tokens';
 import { rm, plural, dateShort } from '../lib/format';
 import { runEach, skippedNote } from '../lib/bulk';
 import {
-  PillTabs, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, MediaGrid, MediaDrop, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem,
+  PillTabs, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem,
 } from '../components/ops/OpsUi';
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
@@ -41,7 +42,7 @@ interface Issue {
   quotedAmount: number | null; finalAmount: number | null; expensed: number | null; skuName: string | null;
 }
 interface Payload { threshold: number; data: Issue[] }
-interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploadedAt: string }
+interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploadedAt: string; byteSize?: number }
 
 type Tab = 'open' | 'approval' | 'done' | 'history' | 'catalog';
 const PAYER: Record<ChargeTo, string> = { owner: 'Owner (on the statement)', the_conts: 'Company', guest_deposit: 'Guest (from the deposit)', warranty: 'Warranty' };
@@ -152,8 +153,8 @@ export default function MaintenancePage() {
         <>
           <div className="flex items-center gap-2 flex-wrap">
             <PillTabs value={tab} onChange={t => { setTab(t); setSelected(null); }} tabs={[
-              { value: 'open', label: 'Open', count: open.length - approval.length },
-              { value: 'approval', label: 'Awaiting owner approval', count: approval.length },
+              { value: 'open', label: 'Open', count: data ? open.length - approval.length : undefined },
+              { value: 'approval', label: 'Awaiting owner approval', count: data ? approval.length : undefined },
               { value: 'done', label: 'Done' },
               { value: 'history', label: 'History' },
             ]} />
@@ -423,48 +424,70 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
           ))}
       </section>
 
-      <section className="flex flex-col gap-2">
-        <h3 className="m-0 text-copy font-semibold">Before and after <span className="text-muted-ink font-normal">{media.length} {media.length === 1 ? 'file' : 'files'}</span></h3>
-        {files.loading && !files.data ? <Skeleton height={80} /> : <MediaGrid items={media} cols={3} />}
-        {!done && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <MediaDrop compact label="Add before" upload={uploadTo(`/maintenance/issues/${i.id}/photos`, { kind: 'before' })} onDone={refresh} />
-            <MediaDrop compact label="Add after" upload={uploadTo(`/maintenance/issues/${i.id}/photos`, { kind: 'after' })} onDone={refresh} />
+      <section className="flex flex-col gap-3">
+        <AttachmentLabel title="Before and after" />
+        {files.loading && !files.data ? <Skeleton height={96} /> : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
+            {(['before', 'after'] as const).map(stage => {
+              const list = media.filter(m => (m.stage ?? 'before') === stage);
+              return (
+                <div key={stage} className="flex flex-col gap-2 min-w-0">
+                  <AttachmentLabel sub title={stage === 'before' ? 'Before' : 'After'} count={list.length} />
+                  <MediaGallery items={list} upload={done ? undefined : uploadTo(`/maintenance/issues/${i.id}/photos`, { kind: stage })} onDone={refresh}
+                    addLabel="Add photo" emptyText="None added." />
+                </div>
+              );
+            })}
           </div>
         )}
       </section>
 
       {money && (
         <section className="flex flex-col gap-2">
-          <h3 className="m-0 text-copy font-semibold">Invoice and receipts</h3>
-          {docs.map(d => <a key={d.id} href={d.url} target="_blank" rel="noreferrer" className="text-gold-ink truncate">{d.kind === 'invoice' ? 'Invoice' : d.kind === 'pod' ? 'Proof of work' : 'File'}: {d.fileName}</a>)}
-          <label className="self-start">
-            <span className="inline-flex items-center gap-2 h-8 px-3 rounded-control border border-solid border-line bg-card cursor-pointer text-copy hover:bg-muted"><Icon name="Upload" size="sm" />Upload invoice</span>
-            <input type="file" accept="image/*,application/pdf" className="hidden" onChange={e => {
-              const f = e.target.files?.[0]; e.target.value = '';
-              if (f) void act('invoice', () => uploadTo(`/maintenance/issues/${i.id}/documents`, { kind: 'invoice' })(f), 'Invoice attached.');
-            }} />
-          </label>
+          <AttachmentLabel title="Invoice and receipts" count={docs.length} />
+          <FileList files={docs.map(d => ({ id: d.id, name: d.fileName, href: d.url, size: d.byteSize ?? null, label: d.kind === 'invoice' ? 'Invoice' : d.kind === 'pod' ? 'Proof of work' : 'File' }))}
+            add={{ label: 'Add invoice', hint: 'Photo or PDF', accept: 'image/*,application/pdf', busy: busy === 'invoice',
+              onPick: fl => { const f = fl[0]; if (f) void act('invoice', () => uploadTo(`/maintenance/issues/${i.id}/documents`, { kind: 'invoice' })(f), 'Invoice attached.'); } }} />
         </section>
       )}
 
       {done ? (
-        <div className="flex flex-col gap-2">
+        <section className="flex flex-col gap-3 pt-4 [border-top:1px_solid_var(--color-line-soft)]">
           {money && i.finalAmount != null && <p className="m-0">Final cost {rm(i.finalAmount)}, {PAYER[i.chargeTo].toLowerCase()}{i.expensed ? '. Recorded as an expense on the unit.' : '.'}</p>}
           {money && <Button variant="secondary" loading={busy === 'reopen'} onClick={() => void act('reopen', () => api.patch(`/maintenance/issues/${i.id}`, { state: 'reopened' }), 'Job reopened.')}>Reopen</Button>}
-        </div>
+        </section>
       ) : (
-        <div className="flex flex-col gap-2">
-          <div className="flex gap-2 flex-wrap">
-            {!i.blocksUnit && <Button variant="secondary" className="flex-1" icon={<Icon name="Ban" size="sm" />} onClick={() => setBlockOpen(true)}>Block unit until fixed</Button>}
-            {skus.some(s => s.trackStock && s.active && s.stockOnHand > 0) && <Button variant="secondary" className="flex-1" icon={<Icon name="PackageMinus" size="sm" />} onClick={() => setExchange(true)}>Draw a part</Button>}
-          </div>
-          <div className="flex gap-2">
+        <>
+          {(!i.blocksUnit || skus.some(s => s.trackStock && s.active && s.stockOnHand > 0)) && (
+            <section className="flex flex-col rounded-card border border-solid border-line overflow-hidden">
+              {!i.blocksUnit && (
+                <div className="flex items-center gap-3 px-3.5 py-3">
+                  <span className="w-8 h-8 flex-none grid place-items-center rounded-full bg-muted text-muted-ink"><Icon name="Ban" size="sm" /></span>
+                  <span className="flex-1 min-w-0 flex flex-col">
+                    <span className="font-medium text-ink">Unit can still be booked</span>
+                    <span className="text-meta text-muted-ink">Block it if guests cannot stay until this is fixed.</span>
+                  </span>
+                  <Button size="sm" variant="secondary" onClick={() => setBlockOpen(true)}>Block unit</Button>
+                </div>
+              )}
+              {skus.some(s => s.trackStock && s.active && s.stockOnHand > 0) && (
+                <div className={cx('flex items-center gap-3 px-3.5 py-3', !i.blocksUnit && '[border-top:1px_solid_var(--color-line-soft)]')}>
+                  <span className="w-8 h-8 flex-none grid place-items-center rounded-full bg-muted text-muted-ink"><Icon name="PackageMinus" size="sm" /></span>
+                  <span className="flex-1 min-w-0 flex flex-col">
+                    <span className="font-medium text-ink">Parts from stock</span>
+                    <span className="text-meta text-muted-ink">Record a spare used on this job.</span>
+                  </span>
+                  <Button size="sm" variant="secondary" onClick={() => setExchange(true)}>Draw a part</Button>
+                </div>
+              )}
+            </section>
+          )}
+          {(!i.startedAt || money) && <section className="flex gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)]">
             {!i.startedAt && <Button variant="secondary" className="flex-1" loading={busy === 'start'} disabled={awaitingOwner(i)} disabledReason="Waiting for the owner's approval."
               onClick={() => void act('start', () => api.post(`/maintenance/issues/${i.id}/start`, {}), 'Repair started.')}>Start repair</Button>}
             {money && <Button variant="primary" className="flex-1" disabled={awaitingOwner(i)} disabledReason="Waiting for the owner's approval." onClick={() => setCompleteOpen(true)}>Mark done</Button>}
-          </div>
-        </div>
+          </section>}
+        </>
       )}
 
       <HistoryDisclosure entity="maintenance_issues" id={i.id} refreshKey={i} />

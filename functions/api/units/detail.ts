@@ -143,7 +143,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       ];
     // The owner's credits and charges (owner_adjustments, e.g. the building's maintenance fee from the workbook) come off
     // after the split, as on every statement already sent.
-    if (m.adjustmentsTotal) pnl.push({ label: m.adjustmentsTotal < 0 ? 'Paid on behalf, after the split' : 'Credit to owner, after the split', amount: m.adjustmentsTotal, type: 'adjustment' });
+    if (m.adjustmentsTotal) pnl.push({ label: m.adjustmentsTotal < 0 ? 'Owner Adjustments (charges), after the split' : 'Owner Adjustments (credits), after the split', amount: m.adjustmentsTotal, type: 'adjustment' });
     pnl.push({ label: 'Net Payout to Owner', amount: m.netPayout, type: 'net' });
   }
   // The company's side of the unit this month: what it keeps or pays under the contract, and the costs it (or a

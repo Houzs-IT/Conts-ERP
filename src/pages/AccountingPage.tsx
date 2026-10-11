@@ -58,7 +58,7 @@ export default function AccountingPage() {
   const tabsRow = (
     <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
       <Segmented<'ap' | 'ar'> label="Ledger" value={tab} onChange={setTab}
-        options={[{ key: 'ap', label: `Payables (${d.payables.length})` }, { key: 'ar', label: `Receivables (${d.receivables.length})` }]} />
+        options={[{ key: 'ap', label: data ? `Payables (${d.payables.length})` : 'Payables' }, { key: 'ar', label: data ? `Receivables (${d.receivables.length})` : 'Receivables' }]} />
     </div>
   );
 

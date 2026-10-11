@@ -310,7 +310,7 @@ export function useUpdateMfgProductCatalog() {
     mutationFn: ({ id, ...patch }: MfgProductCatalogPatch & { id: string }) =>
       authedFetch<{ ok: boolean }>(`/mfg-products/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['mfg-products'] });
+      void qc.invalidateQueries({ queryKey: ['mfg-products'] });
     },
   });
 }

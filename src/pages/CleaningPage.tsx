@@ -7,6 +7,7 @@ import Icon from '../components/Icon';
 import { Select, SearchSelect, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { EmptyState, Skeleton } from '../components/States';
+import { AttachmentLabel, MediaGallery } from '../components/Attachments';
 import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import SplitPane from '../components/SplitPane';
@@ -25,7 +26,7 @@ import { rm, plural, count } from '../lib/format';
 import type { Tone } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
 import {
-  KIND_LABEL, TimeLeft, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, MediaGrid, MediaDrop, uploadTo, Checklist, ReportDamageModal, dayLabel, hm, stamp, minutesLabel, mytDay, type CleanStatus, type ChecklistItem, type MediaItem,
+  KIND_LABEL, TimeLeft, Segmented, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, uploadTo, Checklist, ReportDamageModal, dayLabel, hm, stamp, minutesLabel, mytDay, type CleanStatus, type ChecklistItem, type MediaItem,
 } from '../components/ops/OpsUi';
 import { statusOf } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
@@ -418,9 +419,9 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft }: { row: Row; 
       </section>
 
       <section className="flex flex-col gap-2">
-        <h3 className="m-0 text-copy font-semibold">Proof of work <span className="text-muted-ink font-normal">{files} {files === 1 ? 'file' : 'files'}{!done && ', at least 1 to complete'}</span></h3>
-        {data && <MediaGrid items={data.media} />}
-        {!done && <MediaDrop upload={uploadTo(`/tasks/${row.id}/photos`)} onDone={refresh} />}
+        <AttachmentLabel title="Proof of work" count={files} hint={!done && files === 0 ? 'At least 1 photo or video to complete' : undefined} />
+        {data ? <MediaGallery items={data.media} upload={done ? undefined : uploadTo(`/tasks/${row.id}/photos`)} onDone={refresh} addLabel="Add photo" emptyText="No photos were added." />
+          : <Skeleton height={84} />}
       </section>
 
       {data && data.damage.length > 0 && (

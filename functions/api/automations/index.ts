@@ -2,6 +2,8 @@ import { mayRun } from '../../_lib/access';
 import { type Env, all, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { CATALOG, QUIET_HOURS, RUNNING, needsToRun } from '../../_lib/automationCatalog';
+import { companyDetails } from '../../_lib/letterhead';
+import { phone } from '../../../src/lib/format';
 
 const MANAGE = ['management', 'operations_manager'];
 
@@ -13,11 +15,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const saved = await all<{ id: string; is_active: number }>(env, 'SELECT id, is_active FROM automations');
   const state = new Map(saved.map(r => [r.id, !!r.is_active]));
+  const company = await companyDetails(env);
   return json({
     generatedAt: nowIso(), quietHours: QUIET_HOURS,
     // `running`: whether any code sends this message today. A switch alone sends nothing, so the screen must
     // never call a rule Live just because it is switched on.
     data: CATALOG.map(r => ({ ...r, isActive: state.get(r.id) ?? r.isActive, running: RUNNING.has(r.template), blockedBy: RUNNING.has(r.template) ? null : needsToRun(r) })),
+    // What {contact} becomes in every guest message (fillTemplate), so the preview shows the real number.
+    contact: phone(company.phone),
     mailConfigured: !!(env as unknown as { MAIL_API_KEY?: string }).MAIL_API_KEY,
   });
 };

@@ -8,7 +8,7 @@
  * three names it got wrong and that the answer IS the policy's, so a future
  * rename in the policy moves the audit with it.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -79,7 +79,8 @@ describe('classifyPosition answers with the enforcing code', () => {
     expect(audit).not.toMatch(/lower\(p\.name\) IN \(/);
   });
 
-  it('the workflow runs the script under tsx, which the TypeScript import needs', () => {
+  // Conts: Houzs's GitHub workflow diag-role-permissions.yml was not copied (no engine CI in Conts).
+  it.skipIf(!existsSync(resolve(HERE, '../../.github/workflows/diag-role-permissions.yml')))('the workflow runs the script under tsx, which the TypeScript import needs', () => {
     const wf = readFileSync(resolve(HERE, '../../.github/workflows/diag-role-permissions.yml'), 'utf8');
     expect(wf).toContain('npx tsx scripts/audit-permission-grants.mjs');
     expect(wf).not.toMatch(/run: node scripts\/audit-permission-grants\.mjs/);

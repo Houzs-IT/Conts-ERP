@@ -13,7 +13,8 @@ import { useApi } from '../lib/useApi';
 import { date, monthLabel, plural } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import type { BookingChannel } from '../lib/types';
-import { useUrlState, SearchBox, FilterSelect, Chip } from './finance/listKit';
+import { useUrlState, SearchBox, FilterSelect } from './finance/listKit';
+import { FilterBar } from '../components/FilterBar';
 
 interface Payload {
   total: number; page: number; pageSize: number;
@@ -87,12 +88,13 @@ export default function GuestDocumentsPage() {
       <PageHeader title="Guest documents"
         sub={data ? `${plural(data.counts.invoice, 'invoice')} · ${plural(data.counts.receipt, 'receipt')}${data.counts.void ? `, ${data.counts.void} of them void` : ''} · valid receipts ${moneyString(data.liveAmounts.receipt, 'exact')}` : 'Invoices and official receipts issued to guests'} />
 
-      <div className="flex gap-2 overflow-x-auto pb-[2px] shrink-0 [scrollbar-width:none]">
-        <Chip on={tab === 'all'} onClick={() => setTab('all')} count={data?.counts.all}>All</Chip>
-        <Chip on={tab === 'invoice'} onClick={() => setTab('invoice')} count={data?.counts.invoice}>Invoices</Chip>
-        <Chip on={tab === 'receipt'} onClick={() => setTab('receipt')} count={data?.counts.receipt}>Receipts</Chip>
-        <Chip on={tab === 'void'} onClick={() => setTab('void')} count={data?.counts.void}>Void</Chip>
-      </div>
+      <FilterBar label="Document type" className="shrink-0" value={tab} onChange={setTab}
+        views={[
+          { key: 'all', label: 'All', count: data?.counts.all },
+          { key: 'invoice', label: 'Invoices', count: data?.counts.invoice },
+          { key: 'receipt', label: 'Receipts', count: data?.counts.receipt },
+          { key: 'void', label: 'Void', count: data?.counts.void },
+        ]} />
       <div className="flex flex-wrap gap-2 shrink-0">
         <SearchBox className="flex-[2_1_240px]" label="Search documents" placeholder="Search number, guest, reservation or unit" value={q} onChange={v => url.set({ q: v || null, page: null })} />
         <FilterSelect className="flex-[1_1_180px]" label="Month issued" all="All months" value={month} onChange={v => url.set({ month: v || null, page: null })}

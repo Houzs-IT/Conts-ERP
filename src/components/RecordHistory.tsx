@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, errorMessage } from '../lib/api';
-import { rm, date, dateTime, relative, humanize, titleCase, monthLabel, count, plural } from '../lib/format';
-import { ROLE_LABEL, CHANNEL, stateLabel } from '../lib/vocabulary';
+import { rm, date, dateTime, time, humanize, titleCase, monthLabel, count, plural } from '../lib/format';
+import { ROLE_LABEL, CHANNEL } from '../lib/vocabulary';
 import { cx } from '../lib/design-tokens';
 import { Skeleton } from './States';
 import Icon from './Icon';
 import { Drawer } from './Dialog';
+import { CATEGORY as REPAIR_CATEGORY } from './ops/OpsUi';
+import { PAYER_LABEL, CATEGORY_LABEL, MODEL } from '../lib/revenueModel';
+import { statusLabel, type StatusEntity } from '../lib/status';
 
 /* ------------------------------------------------------------------ *
  * The History panel on every detail view: who changed what and when, field by field,
@@ -92,7 +95,24 @@ const REPORTED_BY: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner'
 
 const labelOf = (k: string) => FIELD[k]?.[0] ?? humanize(k.replace(/([a-z])([A-Z])/g, '$1_$2'));
 
-function show(k: string, v: unknown, names: Record<string, string>): string {
+/** Which status vocabulary a record's state reads from, so History says what that record's own screen says. */
+const STATE_OF: Record<string, StatusEntity> = {
+  reservations: 'booking', units: 'readiness', owner_statements: 'statement', payouts: 'payout', tasks: 'task', maintenance_issues: 'task',
+};
+const ASSIGNEE_KIND: Record<string, string> = { in_house: 'In-house', contractor: 'Contractor' };
+
+/** A stored code in the words the rest of the app uses for it; null when the field has no list of its own. */
+function known(k: string, v: string, table: string): string | null {
+  if (k === 'chargeTo') return PAYER_LABEL[v] ?? null;
+  if (k === 'category') return (table === 'expenses' ? CATEGORY_LABEL[v] : REPAIR_CATEGORY[v] ?? CATEGORY_LABEL[v]) ?? null;
+  if (k === 'assigneeKind') return ASSIGNEE_KIND[v] ?? null;
+  if (k === 'model') return MODEL[v as keyof typeof MODEL]?.label ?? null;
+  if (k === 'readiness') return statusLabel('readiness', v);
+  if (k === 'state' || k === 'status') return statusLabel(STATE_OF[table] ?? 'task', v);
+  return null;
+}
+
+function show(k: string, v: unknown, names: Record<string, string>, table = ''): string {
   if (v === null || v === undefined || v === '') return 'none';
   const kind = FIELD[k]?.[1] ?? (typeof v === 'number' && /(amount|total|payout|price|cost|deposit|rate)$/i.test(k) ? 'money' : 'text');
   if (k === 'countryCode' && typeof v === 'string' && /^[A-Z]{2}$/.test(v)) return countryLabel(v);
@@ -105,7 +125,8 @@ function show(k: string, v: unknown, names: Record<string, string>): string {
   if (kind === 'role' && typeof v === 'string') return ROLE_LABEL[v] ?? humanize(v);
   if (k === 'source' && typeof v === 'string' && REPORTED_BY[v]) return REPORTED_BY[v];
   if (kind === 'channel' && typeof v === 'string') return CHANNEL[v as keyof typeof CHANNEL]?.label ?? humanize(v);
-  if (kind === 'state' && typeof v === 'string') return k === 'state' || k === 'status' ? stateLabel('task', v) : humanize(v);
+  if (typeof v === 'string') { const word = known(k, v, table); if (word) return word; }
+  if (kind === 'state' && typeof v === 'string') return humanize(v);
   if (typeof v === 'string') {
     if (/^\d{4}-\d{2}$/.test(v)) return monthLabel(v);
     if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return date(v);
@@ -121,21 +142,22 @@ function show(k: string, v: unknown, names: Record<string, string>): string {
 type Line = { key: string; label: string; from?: string; to: string };
 
 /** Field-by-field lines: a changed field shows old -> new; a field only in "after" shows its value. */
-export function historyLines(e: Pick<HistoryEntry, 'before' | 'after'>, names: Record<string, string> = {}): Line[] {
+export function historyLines(e: Pick<HistoryEntry, 'before' | 'after'> & { entityTable?: string }, names: Record<string, string> = {}): Line[] {
   const b = (e.before && typeof e.before === 'object' && !Array.isArray(e.before) ? e.before : {}) as Record<string, unknown>;
   const a = (e.after && typeof e.after === 'object' && !Array.isArray(e.after) ? e.after : {}) as Record<string, unknown>;
+  const table = e.entityTable ?? '';
   const out: Line[] = [];
   for (const k of new Set([...Object.keys(b), ...Object.keys(a)])) {
     if (HIDDEN.has(k)) continue;
     const inBefore = k in b, inAfter = k in a;
     if (inBefore && inAfter) {
       if (JSON.stringify(b[k]) === JSON.stringify(a[k])) continue;
-      out.push({ key: k, label: labelOf(k), from: show(k, b[k], names), to: show(k, a[k], names) });
+      out.push({ key: k, label: labelOf(k), from: show(k, b[k], names, table), to: show(k, a[k], names, table) });
     } else if (inAfter) {
       if (a[k] === null || a[k] === undefined || a[k] === '' || a[k] === false) continue;
-      out.push({ key: k, label: labelOf(k), to: show(k, a[k], names) });
+      out.push({ key: k, label: labelOf(k), to: show(k, a[k], names, table) });
     } else {
-      out.push({ key: k, label: labelOf(k), from: show(k, b[k], names), to: 'removed' });
+      out.push({ key: k, label: labelOf(k), from: show(k, b[k], names, table), to: 'removed' });
     }
   }
   return out;
@@ -148,52 +170,110 @@ export function actionPhrase(action: string) {
 }
 
 const SOURCE: Record<string, string> = { field_app: 'Field app', owner_portal: 'Owner portal', import: 'Import', system: 'Automatic', cron: 'Automatic' };
+const tagOf = (e: HistoryEntry) => e.actorKind === 'import' ? 'Import' : e.actorKind === 'system' ? 'Automatic' : SOURCE[e.source ?? ''] ?? null;
 
-function Who({ e }: { e: HistoryEntry }) {
-  if (e.actorKind === 'person') {
-    const initials = e.actorLabel.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase() || '?';
-    return <span aria-hidden className="w-8 h-8 flex-none rounded-full bg-muted text-ink grid place-items-center text-caption font-semibold">{initials}</span>;
+/** One person's burst of saves on one record, oldest first: several quick edits read as one entry, not a stack of cards. */
+interface Run { key: number; entries: HistoryEntry[] }
+const RUN_WINDOW_MS = 2 * 60_000;
+const sameHand = (a: HistoryEntry, b: HistoryEntry) =>
+  a.actorKind === b.actorKind && (a.actorId ?? a.actorLabel) === (b.actorId ?? b.actorLabel)
+  && a.entityTable === b.entityTable && a.entityId === b.entityId && tagOf(a) === tagOf(b);
+
+/** Rows arrive newest first; each run is keyed by its newest row so it keeps its identity as older pages load. */
+export function groupRuns(rows: HistoryEntry[]): Run[] {
+  const out: Run[] = [];
+  for (const e of rows) {
+    const run = out[out.length - 1];
+    const oldest = run?.entries[0];
+    if (run && oldest && sameHand(oldest, e) && Date.parse(oldest.occurredAt) - Date.parse(e.occurredAt) <= RUN_WINDOW_MS) run.entries.unshift(e);
+    else out.push({ key: e.id, entries: [e] });
+  }
+  return out;
+}
+
+const joinPhrases = (p: string[]) => p.length <= 1 ? p.join('') : `${p.slice(0, -1).join(', ')} and ${p[p.length - 1]}`;
+const ROWS_SHOWN = 5;
+
+function Dot({ kind, label }: { kind: HistoryEntry['actorKind']; label: string }) {
+  if (kind === 'person') {
+    const initials = label.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase() || '?';
+    return <span aria-hidden className="relative z-[1] w-6 h-6 flex-none rounded-full bg-muted text-ink grid place-items-center text-caption leading-none font-semibold [box-shadow:0_0_0_3px_var(--color-card)]">{initials}</span>;
   }
   return (
-    <span aria-hidden className="w-8 h-8 flex-none rounded-full border border-dashed border-line text-muted-ink grid place-items-center">
-      <Icon name={e.actorKind === 'import' ? 'FileInput' : 'Cog'} size="sm" />
+    <span aria-hidden className="relative z-[1] w-6 h-6 flex-none rounded-full border border-dashed border-line bg-card text-muted-ink grid place-items-center [box-shadow:0_0_0_3px_var(--color-card)]">
+      <Icon name={kind === 'import' ? 'FileInput' : 'Cog'} size="sm" />
     </span>
   );
 }
 
-export function HistoryItem({ e, names }: { e: HistoryEntry; names: Record<string, string> }) {
-  const lines = historyLines(e, names);
-  const tag = e.actorKind === 'import' ? 'Import' : e.actorKind === 'system' ? 'Automatic' : SOURCE[e.source ?? ''] ?? null;
+/** A row of the timeline: the dot on the rail, then the sentence and its muted meta line underneath. */
+function Rail({ dot, last, children }: { dot: ReactNode; last: boolean; children: ReactNode }) {
   return (
-    <li className="flex gap-3 py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0 min-w-0">
-      <Who e={e} />
-      <div className="flex flex-col gap-1 min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-x-3 gap-y-1 flex-wrap">
-          <span className="text-copy text-ink min-w-0 [overflow-wrap:anywhere]">
-            <strong className="font-semibold">{e.actorKind === 'person' ? e.actorLabel : e.actorLabel || 'System'}</strong>{' '}
-            <span className={cx(e.actorKind !== 'person' && 'text-muted-ink')}>{actionPhrase(e.action)}</span>
-          </span>
-          <span className="flex items-center gap-2 flex-none">
-            {tag && <span className="inline-flex items-center text-caption font-medium leading-[1.35] whitespace-nowrap py-[2px] px-2 rounded-pill bg-muted text-muted-ink">{tag}</span>}
-            <time dateTime={e.occurredAt} title={dateTime(e.occurredAt)} className="text-meta text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]">{dateTime(e.occurredAt)}</time>
-          </span>
-        </div>
-        {e.actorKind === 'person' && e.actorRole && <span className="text-caption text-muted-ink">{ROLE_LABEL[e.actorRole] ?? humanize(e.actorRole)}</span>}
-        {lines.length > 0 && (
-          <dl className="m-0 mt-1 grid grid-cols-[minmax(96px,max-content)_1fr] gap-x-3 gap-y-1 text-meta">
-            {lines.map(l => (
-              <div key={l.key} className="contents">
-                <dt className="text-muted-ink">{l.label}</dt>
-                <dd className="m-0 text-ink min-w-0 [overflow-wrap:anywhere]">
-                  {l.from !== undefined && <><span className="text-muted-ink line-through decoration-1">{l.from}</span><span aria-label="changed to" className="text-faint px-1">→</span></>}
-                  <span className={cx(l.from !== undefined && 'font-medium')}>{l.to}</span>
-                </dd>
-              </div>
-            ))}
-          </dl>
-        )}
+    <li className="relative flex gap-3 px-5 min-w-0">
+      <div className="flex flex-col items-center flex-none pt-[1px]">
+        {dot}
+        {!last && <span aria-hidden className="w-px flex-1 bg-line-soft" />}
       </div>
+      <div className={cx('flex flex-col min-w-0 flex-1', last ? 'pb-1' : 'pb-4')}>{children}</div>
     </li>
+  );
+}
+
+function Changes({ lines }: { lines: Line[] }) {
+  return (
+    <dl className="m-0 grid grid-cols-[minmax(72px,max-content)_1fr] gap-x-3 gap-y-[2px] text-meta">
+      {lines.map((l, i) => (
+        <div key={`${l.key}-${i}`} className="contents">
+          <dt className="text-muted-ink">{l.label}</dt>
+          <dd className="m-0 text-ink min-w-0 [overflow-wrap:anywhere]">
+            {l.from !== undefined && <><span className="text-muted-ink">{l.from}</span><span aria-label="changed to" className="text-faint px-1">→</span></>}
+            <span>{l.to}</span>
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+export function HistoryRun({ run, names, last = false }: { run: Run; names: Record<string, string>; last?: boolean }) {
+  const [all, setAll] = useState(false);
+  const head = run.entries[run.entries.length - 1];
+  const first = run.entries[0];
+  const phrases = run.entries.map(e => actionPhrase(e.action)).filter((p, i, arr) => i === 0 || p !== arr[i - 1]);
+  const mixed = new Set(phrases).size > 1;
+  const blocks = run.entries.map(e => ({ e, phrase: actionPhrase(e.action), lines: historyLines(e, names) })).filter(b => b.lines.length > 0);
+  const hidden = blocks.reduce((n, b) => n + Math.max(0, b.lines.length - ROWS_SHOWN), 0);
+  const shown = all ? blocks : blocks.map(b => ({ ...b, lines: b.lines.slice(0, ROWS_SHOWN) }));
+  const tag = tagOf(head);
+  const role = head.actorKind === 'person' && head.actorRole ? ROLE_LABEL[head.actorRole] ?? humanize(head.actorRole) : null;
+  const span = first.occurredAt !== head.occurredAt ? `${dateTime(first.occurredAt)} to ${time(head.occurredAt)}` : dateTime(head.occurredAt);
+  return (
+    <Rail last={last} dot={<Dot kind={head.actorKind} label={head.actorLabel} />}>
+      <span className="text-copy text-ink [overflow-wrap:anywhere]">
+        <strong className="font-semibold">{head.actorKind === 'person' ? head.actorLabel : head.actorLabel || 'System'}</strong>{' '}
+        <span className={cx(head.actorKind !== 'person' && 'text-muted-ink')}>{joinPhrases(phrases)}</span>
+      </span>
+      <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">
+        {[role, tag].filter(Boolean).map(x => <span key={x}>{x} · </span>)}
+        <time dateTime={head.occurredAt} title={span}>{dateTime(head.occurredAt)}</time>
+      </span>
+      {shown.length > 0 && (
+        <div className="mt-[6px] flex flex-col gap-[6px]">
+          {shown.map((b, i) => (
+            <div key={b.e.id} className="flex flex-col gap-[2px]">
+              {mixed && b.phrase !== shown[i - 1]?.phrase && <span className="text-caption font-medium text-muted-ink">{b.phrase.replace(/^./, c => c.toUpperCase())}</span>}
+              <Changes lines={b.lines} />
+            </div>
+          ))}
+          {hidden > 0 && (
+            <button type="button" onClick={() => setAll(v => !v)}
+              className="self-start p-0 border-0 bg-transparent text-meta font-medium text-accent cursor-pointer hover:underline">
+              {all ? 'Show less' : `Show ${count(hidden)} more`}
+            </button>
+          )}
+        </div>
+      )}
+    </Rail>
   );
 }
 
@@ -232,10 +312,12 @@ export function RecordHistory({ entity, id, also, title = 'History', bare = fals
 
   const first = loading && page === 1 && rows.length === 0;
   const done = rows.length >= total;
+  const runs = useMemo(() => groupRuns(rows), [rows]);
+  const showOrigin = !!origin && done && !error && !first;
   const body = (
     <>
       {!bare && (
-        <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
+        <div className="py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
           <span className="text-heading font-semibold">{title}</span>
           {total > 0 && <span className="text-meta text-muted-ink">{plural(total, 'change')}</span>}
         </div>
@@ -243,17 +325,16 @@ export function RecordHistory({ entity, id, also, title = 'History', bare = fals
       {first && <div className="py-4 px-5 flex flex-col gap-3" aria-busy="true">{[0, 1, 2].map(i => <Skeleton key={i} height={34} />)}</div>}
       {error && <div className="py-4 px-5 text-copy text-danger" role="alert">{error}</div>}
       {!first && !error && rows.length === 0 && !origin && <div className="py-4 px-5 text-copy text-muted-ink">No changes recorded yet. Every edit from now on shows here, with who made it.</div>}
-      {rows.length > 0 && (
-        <ul className="list-none m-0 p-0">
-          {rows.map(e => <HistoryItem key={e.id} e={e} names={names} />)}
+      {(runs.length > 0 || showOrigin) && (
+        <ul className="list-none m-0 py-3 px-0">
+          {runs.map((r, i) => <HistoryRun key={r.key} run={r} names={names} last={i === runs.length - 1 && !showOrigin} />)}
+          {showOrigin && origin && (
+            <Rail last dot={<Dot kind="import" label="" />}>
+              <span className="text-copy text-muted-ink">{origin.label}</span>
+              <time dateTime={origin.at} title={dateTime(origin.at)} className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{dateTime(origin.at)}</time>
+            </Rail>
+          )}
         </ul>
-      )}
-      {origin && done && !error && !first && (
-        <div className="flex gap-3 py-3 px-5 items-center [border-top:1px_solid_var(--color-line-soft)]">
-          <span aria-hidden className="w-8 h-8 flex-none rounded-full border border-dashed border-line text-muted-ink grid place-items-center"><Icon name="FileInput" size="sm" /></span>
-          <span className="text-copy text-muted-ink flex-1 min-w-0">{origin.label}</span>
-          <span className="text-meta text-muted-ink whitespace-nowrap" title={dateTime(origin.at)}>{relative(origin.at)}</span>
-        </div>
       )}
       {!done && !error && (
         <div className="py-3 px-5 [border-top:1px_solid_var(--color-line-soft)] flex items-center justify-between gap-3">

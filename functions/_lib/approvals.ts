@@ -338,10 +338,10 @@ const EXECUTE: Record<ApprovalKind, Executor> = {
   async owner_adjustment(tx, p, c) {
     if (!await one(tx, 'SELECT 1 AS x FROM owners WHERE id = ?', p.ownerId)) throw new ApprovalRefused('NOT_FOUND', 'The owner no longer exists.', 404);
     const id = crypto.randomUUID(), now = nowIso();
-    await run(tx, `INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, state, source, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'open', 'manual', ?, ?, ?)`, id, p.ownerId, p.unitId ?? null, p.kind, Number(p.amount), p.description, p.occurredOn, c.requestedBy, now, now);
+    await run(tx, `INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', 'manual', ?, ?, ?)`, id, p.ownerId, p.unitId ?? null, p.kind, Number(p.amount), p.description, p.occurredOn, p.reference ?? null, c.requestedBy, now, now);
     await audit(tx, { ...actor(c), action: 'owner_adjustment.create', entityTable: 'owner_adjustments', entityId: id,
-      after: { ownerId: p.ownerId, kind: p.kind, amount: Number(p.amount), occurredOn: p.occurredOn, state: 'open', approvalId: c.approvalId } });
+      after: { ownerId: p.ownerId, unitId: p.unitId ?? null, kind: p.kind, amount: Number(p.amount), occurredOn: p.occurredOn, state: 'open', approvalId: c.approvalId } });
     return { adjustmentId: id };
   },
 

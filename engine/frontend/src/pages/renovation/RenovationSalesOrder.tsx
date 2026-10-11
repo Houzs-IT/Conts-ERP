@@ -358,7 +358,7 @@ export function RenovationSalesOrder() {
       <LinesCard c={k} canEdit={live && can('scm.renovation.po_split')} />
       <BillDialog c={k} inst={billing} onClose={() => setBilling(null)} />
       <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="sales order" docNo={k.docNo} defaultFormat={k.header.printFormat}
-        build={(format) => buildPrintDoc({ kind: 'SALES_ORDER', docNo: k.docNo, format, brand, header: { ...k.header, customerName: k.header.customerName || k.debtorName, docDate: k.header.docDate ?? k.soDate }, sections: k.sections, instalments: k.instalments })} />
+        build={(format) => buildPrintDoc({ kind: 'SALES_ORDER', docNo: k.docNo, format, brand, header: { ...k.header, customerName: k.header.customerName || k.debtorName, docDate: k.header.docDate ?? k.soDate /* eslint-disable-line @typescript-eslint/no-unnecessary-condition -- doc_date may be null on older SOs; fall back to the SO date */ }, sections: k.sections, instalments: k.instalments })} />
     </div>
   );
 }

@@ -4,7 +4,7 @@
 // the direct routes stay, so turning this off brings the Houzs screens back unchanged.
 
 /** The switch. Off restores the Houzs Products page exactly. */
-export const CONTS_RENOVATION_CATALOG = true;
+export const CONTS_RENOVATION_CATALOG = true as boolean;
 
 /** Products page tabs hidden in this instance (owner decision: Modular, Fabric Converter and
  *  the old Categories tab). Combo Pricing, Variants and Maintenance stay (owner default Q11). */

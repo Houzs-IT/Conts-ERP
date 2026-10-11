@@ -34,7 +34,7 @@ export const PAYERS: { value: string; label: string; help: string }[] = [
   { value: 'tenant', label: 'Tenant', help: 'The tenant pays. Not on the owner statement.' },
   { value: 'guest_deposit', label: 'Guest', help: 'Charged to the guest (deposit). Not on the owner statement.' },
 ];
-export const PAYER_LABEL: Record<string, string> = { owner: 'Owner', the_conts: 'The Conts', tenant: 'Tenant', guest_deposit: 'Guest', warranty: 'Warranty' };
+export const PAYER_LABEL: Record<string, string> = { owner: 'Owner', the_conts: 'The Conts', tenant: 'Tenant', guest_deposit: 'Guest deposit', warranty: 'Warranty' };
 
 /** The categories an expense is entered under, in the owner's words. Value = expenses.category. */
 export const ENTRY_CATEGORIES: { value: string; label: string }[] = [

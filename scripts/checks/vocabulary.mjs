@@ -126,6 +126,9 @@ export const RULES = [
     { re: /\btickets?\b/, to: 'maintenance job' },
     { re: /\bmaintenance issues?\b/, to: 'maintenance jobs' },
   ] },
+  { concept: 'A unit\'s costs on screen', term: 'Cleaning fees / Maintenance repair / Utilities / Maintenance fee', source: 'Owner (11 Oct)', side: 'rental', bad: [
+    { re: /\bpaid on behalf\b/, to: 'utilities / maintenance fee', how: 'reword', note: 'name the group: Utilities, Maintenance fee (condo), Other fees' },
+  ] },
   { concept: 'Work for one cleaner or technician', term: 'Job', source: 'Plain', side: 'rental', bad: [
     { re: /\bmy tasks\b/, to: 'My jobs' },
   ] },
@@ -177,6 +180,7 @@ export const isSupply = rel => SUPPLY.test(rel);
 const KEEP = [
   /Booking\.com/i, /\bOwner stay/i, /\bOwner Income Report\b/, /\bPayout Before O2 Adjustment\b/, /\bHotel ID\b/,
   /\bNet Income Before Deduct Management Fees\b/, /\bNet Payout to Owner\b/i, /\bNET PAYOUT TO OWNER\b/,
+  /\{(?:property|adr)\}/, // message template tokens, filled in when the message is sent
 ];
 
 /** Files whose strings are fixed by someone else: column headers of the HostPlatform and Airbnb export files
@@ -186,6 +190,7 @@ export const allow = {
   'scripts/checks/vocabulary.mjs': 'This check names the words it bans.',
   // The printed Owner Income Report copies the owner's own sample word for word (owner's rule), old words included.
   'src/pages/OwnerIncomeReportPage.tsx': 'The printed report copies the owner\'s sample word for word.',
+  'functions/_lib/ownerReport.ts': 'The printed report\'s default terms copy the owner\'s sample word for word.',
 };
 
 /** Files being reworked elsewhere that apply these words themselves when their rework lands: the check skips them

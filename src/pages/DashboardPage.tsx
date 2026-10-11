@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { TileSkeleton } from '../components/Loading';
 import { BarTrend, Eyebrow, Figure, Segmented, StatTile, TotalsRow } from '../components/Metric';
 import { Card, CardHeader, LinkAction } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -263,6 +264,7 @@ export default function DashboardPage() {
   // keeps the previous payload. Fall back to the local dataset for the active
   // range whenever the live read is not available, so the toggle visibly moves.
   const tp = (trend.error ? null : trend.data) ?? (import.meta.env.DEV ? TREND[range] : EMPTY_TREND);
+  const money = (sen: number) => tp === EMPTY_TREND ? '—' : rm(sen, { cents: false });
 
   const today = useApi<TodayPayload>('/dashboard/today', TODAY_FALLBACK);
   const exc = useApi<ExceptionPayload>('/dashboard/exceptions', EXCEPTION_FALLBACK);
@@ -347,7 +349,9 @@ export default function DashboardPage() {
     <>
       <PageHeader
         title="Dashboard"
-        sub={[period ? `${monthLabel(period)} to date` : '', lastUpdated ? `Last updated ${lastUpdated}` : ''].filter(Boolean).join(' · ')}
+        sub={[period ? `${monthLabel(period)} to date` : '', lastUpdated ? `Last updated ${lastUpdated}` : ''].filter(Boolean).join(' · ')
+          // Holds the subtitle's line while the figures load, so the page does not shift down when it arrives.
+          || (kpi.loading ? <span aria-hidden className="skeleton inline-block align-middle h-[11px] w-[200px]" /> : undefined)}
         actions={<Button variant="secondary" size="sm" onClick={() => go('#/properties/units')}>Add unit</Button>}
         primary={<Button variant="primary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => go('#/reservations/bookings?create=1')}>Create reservation</Button>}
       />
@@ -357,7 +361,8 @@ export default function DashboardPage() {
       {/* KPI row — revenue leads as the one dark statement tile; the rest follow at equal weight. */}
       <div className="grid grid-cols-2 xl:grid-cols-[minmax(0,1.35fr)_repeat(4,minmax(0,1fr))] gap-3 sm:gap-4">
         {kpi.loading && kpis.length === 0
-          ? Array.from({ length: 2 }).map((_, i) => <StatTile key={i} label={'\u00a0'} value="" loading />)
+          // The five tiles that arrive, revenue first as the dark one, so the row does not reflow when they land.
+          ? Array.from({ length: 5 }, (_, i) => <TileSkeleton key={i} hero={i === 0} hint={i === 0} className={i === 0 ? 'col-span-2 xl:col-span-1' : undefined} />)
           : kpis.map(k => {
               const hero = k.key === HERO_KPI;
               return (
@@ -376,7 +381,7 @@ export default function DashboardPage() {
               <div className="flex flex-col gap-1.5 min-w-0">
                 <Eyebrow>Earnings and occupancy</Eyebrow>
                 <div className="flex items-baseline gap-3 flex-wrap">
-                  <Figure value={rm(tp.totals.grossBookingValue, { cents: false })} className="text-[26px] sm:text-[30px] font-medium tracking-[-0.025em] leading-none" />
+                  <Figure value={money(tp.totals.grossBookingValue)} className="text-[26px] sm:text-[30px] font-medium tracking-[-0.025em] leading-none" />
                   {tp.delta.period && tp.delta.against && (
                     <span className={cx('text-meta font-semibold whitespace-nowrap', TONE[tp.delta.tone].text)}
                       title={`Earnings in ${monthLabel(tp.delta.period)} against ${monthLabel(tp.delta.against)}, the last two complete months`}>
@@ -408,10 +413,10 @@ export default function DashboardPage() {
 
             {/* The four totals are distinct definitions and are never merged. */}
             <TotalsRow items={[
-              { label: 'Guest total', value: rm(tp.totals.grossBookingValue, { cents: false }) },
-              { label: 'Earnings', value: rm(tp.totals.collectedRevenue, { cents: false }) },
-              { label: 'Operator share', value: rm(tp.totals.managementFees, { cents: false }) },
-              { label: 'Net Payout to Owner', value: rm(tp.totals.netOwnerPayout, { cents: false }) },
+              { label: 'Guest total', value: money(tp.totals.grossBookingValue) },
+              { label: 'Earnings', value: money(tp.totals.collectedRevenue) },
+              { label: 'Operator share', value: money(tp.totals.managementFees) },
+              { label: 'Net Payout to Owner', value: money(tp.totals.netOwnerPayout) },
             ]} />
           </div>
         </Card>

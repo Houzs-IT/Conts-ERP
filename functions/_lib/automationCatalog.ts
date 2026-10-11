@@ -1,5 +1,6 @@
 /** The automation rules the product ships with. Only on/off is stored (table automations, keyed by id); everything else is fixed here.
  *  Copy and triggers come from notifications.md. */
+import { phone } from '../../src/lib/format';
 export interface CatalogRule {
   id: string; name: string; template: string; group: string; trigger: string; timing: string; channels: string[];
   needs: string; preview: string; delivery: 'transactional' | 'opt_out'; quietHours: 'queue' | 'override' | 'always'; isActive: boolean;
@@ -18,8 +19,7 @@ export const CATALOG: CatalogRule[] = [
       "WhatsApp"
     ],
     "needs": "Guest name, building, unit, dates, nights, total, contact",
-    // vocab-ok: {property} and {adr} are template tokens the sender fills in
-    "preview": "Hi {guest}, your reservation at {property} {unit} is confirmed for {checkIn}–{checkOut} ({nights}). Total {total}. We are on WhatsApp if you need anything.",
+    "preview": "Hi {guest}, your reservation at {property} {unit} is confirmed for {checkIn}–{checkOut} ({nights}). Total {total}. Questions? Call or WhatsApp us on {contact}.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
@@ -35,8 +35,7 @@ export const CATALOG: CatalogRule[] = [
       "Email"
     ],
     "needs": "Refund position, reason, contact",
-    // vocab-ok: {property} and {adr} are template tokens the sender fills in
-    "preview": "Hi {guest}, your reservation at {property} {unit} for {dates} has been cancelled. {refundPosition} Reply here and we will help.",
+    "preview": "Hi {guest}, your reservation at {property} {unit} for {dates} has been cancelled. {refundPosition} Questions? Reply here or call us on {contact}.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
@@ -52,9 +51,8 @@ export const CATALOG: CatalogRule[] = [
       "Email",
       "WhatsApp"
     ],
-    "needs": "Check-in window, address, parking note",
-    // vocab-ok: {property} and {adr} are template tokens the sender fills in
-    "preview": "You check in at {property} {unit} on {checkIn}, from {checkInTime}. Address: {address}. Parking: {parkingNote}.",
+    "needs": "Check-in window, address, parking note, contact",
+    "preview": "Your reservation at {property} {unit} starts {checkIn}. Check-in from {checkInTime}. Address: {address}. Parking: {parkingNote}. Trouble checking in? Call or WhatsApp us on {contact}.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
@@ -69,9 +67,8 @@ export const CATALOG: CatalogRule[] = [
     "channels": [
       "WhatsApp"
     ],
-    "needs": "Access instruction, door code, wifi. Code changes after checkout",
-    // vocab-ok: {property} and {adr} are template tokens the sender fills in
-    "preview": "You are all set for {property} {unit}. Door code {doorCode}, wifi {wifiName} / {wifiPass}. {accessInstruction}",
+    "needs": "Access instruction, door code, wifi, contact. Code changes after checkout",
+    "preview": "You are all set for {property} {unit}. Door code {doorCode}, wifi {wifiName} / {wifiPass}. {accessInstruction} Trouble getting in? Call or WhatsApp us on {contact}.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
@@ -102,9 +99,8 @@ export const CATALOG: CatalogRule[] = [
     "channels": [
       "WhatsApp"
     ],
-    "needs": "Checkout time, key return, late checkout option",
-    // vocab-ok: {property} and {adr} are template tokens the sender fills in
-    "preview": "Checkout at {property} {unit} is tomorrow by {checkOutTime}. Leave keys in the lockbox. Need a late checkout? Just ask.",
+    "needs": "Checkout time, key return, late checkout option, contact",
+    "preview": "Checkout at {property} {unit} is tomorrow by {checkOutTime}. Leave keys in the lockbox. Need a late checkout? Call or WhatsApp us on {contact}.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
@@ -121,7 +117,6 @@ export const CATALOG: CatalogRule[] = [
       "Channel API"
     ],
     "needs": "Channel review link",
-    // vocab-ok: {property} and {adr} are template tokens the sender fills in
     "preview": "Thanks for staying at {property} {unit}, {guest}. If it felt like home, a quick review helps a lot: {reviewLink}",
     "delivery": "opt_out",
     "quietHours": "queue",
@@ -189,7 +184,6 @@ export const CATALOG: CatalogRule[] = [
       "Email"
     ],
     "needs": "Occupancy, avg nightly price, rating, upcoming reservations",
-    // vocab-ok: {property} and {adr} are template tokens the sender fills in
     "preview": "Your {period} summary for {unit}: occupancy {occupancy}, avg nightly price {adr}, rating {rating}. {upcomingCount} reservations ahead.",
     "delivery": "opt_out",
     "quietHours": "queue",
@@ -534,4 +528,12 @@ export function needsToRun(rule: CatalogRule): string {
     timed ? 'It needs the scheduled run (theconts-cron) to check the time.' : 'It needs the event to call the message sender.',
     toGuest ? 'Guest messages also need the email and WhatsApp keys.' : '',
   ].filter(Boolean).join(' ');
+}
+
+/** A template with its {placeholders} filled; one the caller has no value for stays as written. {contact} is always
+ *  the company phone in international form (+60 11-6133 3289), never a value the caller passed: guests are often
+ *  abroad, where a Malaysian local number does not dial. */
+export function fillTemplate(text: string, values: Record<string, string>, companyPhone: string): string {
+  const all: Record<string, string> = { ...values, contact: phone(companyPhone) };
+  return text.replace(/\{(\w+)\}/g, (m, k: string) => all[k] ?? m);
 }

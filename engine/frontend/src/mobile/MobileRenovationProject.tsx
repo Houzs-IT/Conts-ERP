@@ -12,6 +12,7 @@ import { Pill } from "../pages/projects/renovation/renovationUi";
 import { RenovationDetail } from "../pages/projects/renovation/RenovationDetail";
 import { useProjectsMode } from "../pages/projects/renovation/RenovationRoutes";
 import { MobileSiteReceipt } from "./MobileSiteReceipt";
+import { ProjectMonitor } from "../pages/projects/renovation/ProjectMonitor";
 
 function TopBar({ title, onBack }: { title: string; onBack: () => void }) {
   return (
@@ -22,18 +23,19 @@ function TopBar({ title, onBack }: { title: string; onBack: () => void }) {
   );
 }
 
-export function MobileProjectsEntry({ onBack, initialProjectId, exhibition }: { onBack: () => void; initialProjectId?: number; exhibition: () => ReactNode }) {
+export function MobileProjectsEntry({ onBack, initialProjectId, initialView, exhibition }: { onBack: () => void; initialProjectId?: number; initialView?: "monitor"; exhibition: () => ReactNode }) {
   const mode = useProjectsMode();
   if (mode === null) return <div className="p-6 text-center text-sm text-ink-secondary">Loading...</div>;
   if (mode !== "renovation") return <>{exhibition()}</>;
-  return <MobileRenovationProjects onBack={onBack} initialProjectId={initialProjectId} />;
+  return <MobileRenovationProjects onBack={onBack} initialProjectId={initialProjectId} initialView={initialView} />;
 }
 
-function MobileRenovationProjects({ onBack, initialProjectId }: { onBack: () => void; initialProjectId?: number }) {
+function MobileRenovationProjects({ onBack, initialProjectId, initialView }: { onBack: () => void; initialProjectId?: number; initialView?: "monitor" }) {
   const { can } = useAuth();
   const [projectId, setProjectId] = useState<number | null>(initialProjectId ?? null);
   const [receiving, setReceiving] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const [view, setView] = useState<"list" | "monitor">(initialView === "monitor" ? "monitor" : "list");
   const board = useQuery(["renovation", "board-rows"], () => simpleApi.boardRows());
   const rows = board.data?.data ?? [];
   const current = rows.find((r) => r.id === projectId);
@@ -70,7 +72,20 @@ function MobileRenovationProjects({ onBack, initialProjectId }: { onBack: () => 
 
   return (
     <div className="min-h-screen bg-surface-dim">
-      <TopBar title="Projects" onBack={onBack} />
+      <TopBar title={view === "monitor" ? "Project monitor" : "Projects"} onBack={onBack} />
+      <div role="tablist" aria-label="Projects view" className="grid grid-cols-2 gap-1 px-3 pt-3">
+        {(["list", "monitor"] as const).map((v) => (
+          <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)}
+            className={`rounded-md border py-2 text-sm font-medium ${view === v ? "border-primary bg-primary/10 text-primary" : "border-border bg-surface text-ink-secondary"}`}>
+            {v === "list" ? "Projects" : "Monitor"}
+          </button>
+        ))}
+      </div>
+      {view === "monitor" ? (
+        <div className="p-3">
+          <ProjectMonitor canWrite={can("projects.write")} embedded docLinks={false} onOpenProject={(id) => setProjectId(id)} />
+        </div>
+      ) : (
       <div className="p-3 space-y-2">
         {board.loading && <p className="text-sm text-ink-secondary text-center py-8">Loading projects...</p>}
         {board.error && <p role="alert" className="text-sm text-err">{board.error}</p>}
@@ -97,6 +112,7 @@ function MobileRenovationProjects({ onBack, initialProjectId }: { onBack: () => 
           </button>
         ))}
       </div>
+      )}
     </div>
   );
 }

@@ -102,7 +102,7 @@ export function layoutDocument(doc: PrintDoc, wrap: WrapFn = approxWrap, opts: {
 
   for (const r of rows) {
     const text = r.type === 'band' ? r.text : r.type === 'line' ? (r.cells.desc ?? '') : '';
-    const textLines = r.type === 'spacer' ? [] : wrap(text, r.type === 'band' ? width - 24 : width, r.type === 'band' || (r.type === 'line' && r.bold));
+    const textLines = r.type === 'spacer' ? [] : wrap(text, r.type === 'band' ? width - 24 : width, r.type === 'band' || r.bold);
     const laid: LaidRow = { ...r, textLines, heightMm: rowHeight(r, textLines.length, density) };
     if (laid.type === 'spacer' && !hasContent()) continue;
     const forced = laid.type !== 'spacer' && laid.pageBreakBefore && hasContent();

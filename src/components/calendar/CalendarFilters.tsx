@@ -13,9 +13,9 @@ type Off = Partial<Record<BookingChannel, boolean>>;
 
 /** One row: property, channel toggles, a status menu and Reset. `channels` is the toggles to offer
  *  (booking sites some shown unit is on, plus direct, block and owner stay); all six if omitted. */
-export function CalendarFilters({ channels = ALL_CHANNELS, properties, property, setProperty, off, setOff, statusOff, setStatusOff, onReset, dirty }: {
+export function CalendarFilters({ channels = ALL_CHANNELS, properties, counted = true, property, setProperty, off, setOff, statusOff, setStatusOff, onReset, dirty }: {
   channels?: BookingChannel[];
-  properties: { id: string; name: string; units: number }[]; property: string; setProperty: (p: string) => void;
+  properties: { id: string; name: string; units: number }[]; counted?: boolean; property: string; setProperty: (p: string) => void;
   off: Off; setOff: (fn: (o: Off) => Off) => void;
   statusOff: Record<string, boolean>; setStatusOff: (fn: (o: Record<string, boolean>) => Record<string, boolean>) => void;
   onReset: () => void; dirty: boolean;
@@ -26,7 +26,7 @@ export function CalendarFilters({ channels = ALL_CHANNELS, properties, property,
       <Select label="Building" value={property} onChange={setProperty} className="w-full sm:w-[240px]"
         options={[
           // vocab-ok: properties is the prop's name; the label itself says buildings
-          { value: 'all', label: `All buildings (${plural(properties.reduce((n, p) => n + p.units, 0), 'unit')})` },
+          { value: 'all', label: counted ? `All buildings (${plural(properties.reduce((n, p) => n + p.units, 0), 'unit')})` : 'All buildings' },
           ...properties.map(p => ({ value: p.id, label: `${p.name} (${p.units})` })),
         ]} />
 

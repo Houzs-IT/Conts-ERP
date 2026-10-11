@@ -7,7 +7,7 @@ import { ChevronDown, ChevronUp, Plus } from "lucide-react";
 import { Button } from "../../../components/Button";
 import { useQuery } from "../../../hooks/useQuery";
 import { cn } from "../../../lib/utils";
-import { PERSON_ROLES, PERSON_ROLE_LABEL, STAGE_LABEL, type PersonRole, type StageKey } from "../../../vendor/shared/renovation-stages";
+import { PERSON_ROLES, PERSON_ROLE_LABEL, STAGE_LABEL, type PersonRole } from "../../../vendor/shared/renovation-stages";
 import { simpleApi, type FlowStepRow, type Person, type TaskCategoryRow } from "./simpleApi";
 import { errorText } from "./renovationModel";
 import { inputClass } from "./renovationUi";
@@ -194,7 +194,7 @@ function CategoryRow({ c, onSave }: { c: TaskCategoryRow; onSave: (b: Partial<{ 
     <li className={cn("flex flex-wrap items-center gap-2 py-1.5", !c.active && "opacity-60")}>
       <input className={inputClass + " flex-1 min-w-[10rem]"} value={label} onChange={(e) => setLabel(e.target.value)} aria-label={`Label of ${c.code}`} />
       {label.trim() && label !== c.label && <Button variant="secondary" onClick={() => onSave({ label })}>Save</Button>}
-      <span className="text-[11px] text-ink-secondary">{STAGE_LABEL[c.stage_key as StageKey] ?? c.stage_key} · {kind}</span>
+      <span className="text-[11px] text-ink-secondary">{(STAGE_LABEL as Partial<Record<string, string>>)[c.stage_key] ?? c.stage_key} · {kind}</span>
       <label className="flex items-center gap-1 text-xs text-ink-secondary"><input type="checkbox" checked={c.active} onChange={(e) => onSave({ active: e.target.checked })} />On</label>
     </li>
   );

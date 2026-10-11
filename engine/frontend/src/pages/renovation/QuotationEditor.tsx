@@ -10,6 +10,7 @@ import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
 import { useAuth } from '../../auth/AuthContext';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
+import { useDialog } from '../../hooks/useDialog';
 import {
   instalmentsForSave, refusalOf, renoSend, sectionsForSave, useBrands, useQuotation, useRenoMutation, useTerms,
   type DocHeader, type DocSection, type Instalment,
@@ -29,6 +30,7 @@ export function QuotationEditor() {
   const terms = useTerms();
   const navigate = useNavigate();
   const { can } = useAuth();
+  const dialog = useDialog();
   const canQuote = can('scm.renovation.quote');
 
   const [header, setHeader] = useState<DocHeader | null>(null);
@@ -83,7 +85,7 @@ export function QuotationEditor() {
     } catch (e) { setError(refusalOf(e).message); }
   };
   const saveAsTemplate = async () => {
-    const name = window.prompt('Name for the package template (e.g. Skyline Embassy Type A Classic)');
+    const name = await dialog.prompt('Name for the package template (e.g. Skyline Embassy Type A Classic)');
     if (!name) return;
     await act(() => renoSend('/quotations/' + quotation.id + '/save-as-template', 'POST', { name, revNo: revision.revNo })).catch(() => undefined);
   };

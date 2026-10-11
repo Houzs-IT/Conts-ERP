@@ -613,7 +613,7 @@ function SalesOrderDetailV2ReadOnly() {
      variation order, money by instalment. Its RENO_* status is the tell; the
      generic routes refuse its writes anyway (backend renovation-write-fence). */
   useEffect(() => {
-    if (docNo && salesOrder && String(salesOrder.status ?? '').startsWith('RENO_')) {
+    if (docNo && salesOrder && String(salesOrder.status).startsWith('RENO_')) {
       navigate(`/scm/renovation/contracts/${encodeURIComponent(docNo)}`, { replace: true });
     }
   }, [docNo, salesOrder, navigate]);

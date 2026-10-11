@@ -166,7 +166,7 @@ export default function InboxPage() {
     <>
       <PageHeader
         title="Messages"
-        sub={`${count(unreadCount)} unread · Airbnb, Booking.com, Agoda and WhatsApp messages together`}
+        sub={data ? `${count(unreadCount)} unread · Airbnb, Booking.com, Agoda and WhatsApp messages together` : 'Airbnb, Booking.com, Agoda and WhatsApp messages together'}
       />
 
       {error && <StaleBanner message={`Showing the last messages we have. ${error}`} onRetry={reload} />}

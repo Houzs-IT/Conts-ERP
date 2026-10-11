@@ -6,6 +6,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { HistoryDisclosure } from '../components/RecordHistory';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
+import { FileRow, FileDropRow } from '../components/Attachments';
 import { Field } from '../components/Field';
 import { MoneyInput, PercentInput, DateField } from '../components/inputs';
 import { DataTable, type Column } from '../components/DataTable';
@@ -15,7 +16,8 @@ import { api, errorMessage } from '../lib/api';
 import { rm, date, todayMyt, titleCase, plural } from '../lib/format';
 import { Select } from '../components/Select';
 import { TONE, cx } from '../lib/design-tokens';
-import { useUrlState, usePhone, SearchBox, Chip } from './finance/listKit';
+import { useUrlState, usePhone, SearchBox } from './finance/listKit';
+import { FilterBar } from '../components/FilterBar';
 import { statusOf } from '../lib/status';
 
 type FeeModel = 'management' | 'grr';
@@ -212,7 +214,7 @@ export default function ContractsPage() {
     <>
       <PageHeader
         title="Contracts"
-        sub={`${plural(counts.all, 'management agreement')} · ${counts.soon} ending within ${ENDING_WINDOW_DAYS} days · ${counts.ended} ended`}
+        sub={data ? `${plural(counts.all, 'management agreement')} · ${counts.soon} ending within ${ENDING_WINDOW_DAYS} days · ${counts.ended} ended` : 'Loading contracts…'}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ mode: 'add' })}>Add contract</Button>}
       />
 
@@ -238,10 +240,9 @@ export default function ContractsPage() {
         noun={['contract', 'contracts']} exportName="contracts"
         empty={{ title: 'No contracts yet.', body: 'Add the first management agreement: owner, unit and how the owner is paid.', icon: 'FileSignature', action: { label: 'Add contract', onClick: () => setModal({ mode: 'add' }) } }}
         header={
-          <div className={cx('flex gap-2 py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]', phone ? 'overflow-x-auto' : 'flex-wrap')}>
-            {FILTERS.map(f => (
-              <Chip key={f.key} on={filter === f.key} onClick={() => url.set({ state: f.key === 'all' ? null : f.key, page: null })} count={counts[f.key]}>{f.label}</Chip>
-            ))}
+          <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
+            <FilterBar<FilterKey> label="Contract state" value={filter} onChange={k => url.set({ state: k === 'all' ? null : k, page: null })}
+              views={FILTERS.map(f => ({ ...f, count: data ? counts[f.key] : undefined }))} />
           </div>
         }
         toolbar={<>
@@ -312,24 +313,12 @@ function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, children
 
 /** Placeholder upload — records the chosen filename locally; the real upload lands with the backend. */
 function OfferLetterField({ value, onChange }: { value: string | null; onChange: (name: string | null) => void }) {
-  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="flex flex-col gap-[7px]">
-      <label className="text-meta font-medium text-muted-ink">Offer letter</label>
-      <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={e => onChange(e.target.files?.[0]?.name ?? null)} />
-      <div className="flex items-center gap-[10px]">
-        <Button size="sm" variant="secondary" type="button" icon={<Icon name="Upload" size="sm" />} onClick={() => inputRef.current?.click()}>
-          {value ? 'Replace file' : 'Upload offer letter'}
-        </Button>
-        <span className={cx('text-meta min-w-0 whitespace-nowrap overflow-hidden text-ellipsis', value ? 'text-ink' : 'text-faint')}>
-          {value ?? 'No file selected'}
-        </span>
-        {value && (
-          <button type="button" onClick={() => onChange(null)} aria-label="Remove offer letter" className="grid place-items-center bg-transparent border-none cursor-pointer text-muted-ink p-[2px]">
-            <Icon name="X" size="sm" />
-          </button>
-        )}
-      </div>
+      <span className="text-meta font-medium text-muted-ink">Offer letter</span>
+      {value
+        ? <FileRow file={{ id: 'offer-letter', name: value, onRemove: () => onChange(null), removeLabel: 'Remove offer letter' }} />
+        : <FileDropRow label="Add offer letter" hint="PDF, JPG or PNG" accept=".pdf,.jpg,.jpeg,.png" onPick={fl => onChange(fl[0]?.name ?? null)} />}
     </div>
   );
 }

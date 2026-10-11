@@ -1,9 +1,9 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
-import Icon from '../components/Icon';
+import { FileDropRow } from '../components/Attachments';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
@@ -160,7 +160,7 @@ export default function HostPlatformImportPage() {
       </Card>
 
       <Step no={1} title="HostPlatform listing" hint="The units export (listing.csv). Creates the buildings and units." run={runs.listing}
-        picker={<FilePick label={listing ? listing.name : 'Choose listing CSV'} accept=".csv,text/csv" onPick={pickListing} />}
+        picker={<FileDropRow label="Choose listing CSV" hint="listing.csv from HostPlatform" chosen={listing?.name} accept=".csv,text/csv" onPick={pickListing} />}
         preview={listingPlan && (
           <Stats items={[
             ['Buildings', n(listingPlan.properties.length)], ['Units', n(listingPlan.units.length)],
@@ -173,7 +173,7 @@ export default function HostPlatformImportPage() {
 
       <Step no={2} title="Owner workbook: units, owners and contracts" hint="The owner's operations workbook (.xlsx). Names the real owners, bank details, splits, packages (A to D), contract terms, utility account numbers, debts and the Package D guarantee pool. Also feeds steps 4 to 7." run={runs.workbook_units}
         waitFor={!done('listing') && !known.length ? 'Run step 1 first.' : null}
-        picker={<FilePick label={workbook ? workbook.name : 'Choose workbook (.xlsx)'} accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onPick={pickWorkbook} />}
+        picker={<FileDropRow label="Choose workbook (.xlsx)" hint="The owner operations workbook" chosen={workbook?.name} accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onPick={pickWorkbook} />}
         preview={wbUnits && match && (
           <Stats items={[
             ['Units in workbook', n(wbUnits.units.length)], ['Match a HostPlatform unit', n(match.matched)],
@@ -186,7 +186,7 @@ export default function HostPlatformImportPage() {
 
       <Step no={3} title="HostPlatform reservations" hint="One or more reservation exports (CSV). Pick them all at once." run={runs.reservations}
         waitFor={!done('listing') && !known.length ? 'Run step 1 first.' : null}
-        picker={<FilePick label={reservations ? reservations.names.join(', ') : 'Choose reservation CSVs'} accept=".csv,text/csv" multiple onPick={pickReservations} />}
+        picker={<FileDropRow label="Choose reservation CSVs" hint="Pick or drop them all at once" chosen={reservations?.names.join(', ')} accept=".csv,text/csv" multiple onPick={pickReservations} />}
         preview={resPlan && (
           <Stats items={[
             ['Reservations', n(resPlan.reservations.length)], ['Dates', range],
@@ -293,19 +293,6 @@ function Step({ no, title, hint, picker, preview, action, run, waitFor }: {
         </div>
       )}
     </Card>
-  );
-}
-
-function FilePick({ label, accept, multiple, onPick }: { label: string; accept: string; multiple?: boolean; onPick: (f: FileList | null) => void }) {
-  const ref = useRef<HTMLInputElement>(null);
-  return (
-    <div className="flex items-center gap-2 min-w-0">
-      <Button size="sm" variant="secondary" icon={<Icon name="FileUp" size="sm" />} onClick={() => ref.current?.click()}>
-        <span className="block max-w-[220px] sm:max-w-[260px] overflow-hidden text-ellipsis">{label}</span>
-      </Button>
-      <input ref={ref} type="file" accept={accept} multiple={multiple} className="hidden" aria-label={label}
-        onChange={e => { onPick(e.target.files); e.target.value = ''; }} />
-    </div>
   );
 }
 

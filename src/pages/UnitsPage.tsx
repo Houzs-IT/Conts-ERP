@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { color, channel as CH } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { Card } from '../components/Card';
+import { CoverPhotoDrop } from '../components/Attachments';
 import { Eyebrow, Figure, SectionTitle } from '../components/Metric';
 import PageHeader from '../components/PageHeader';
 import { EmptyState } from '../components/States';
@@ -13,7 +14,8 @@ import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
 import ChannexChannelsCard from '../components/ChannexChannelsCard';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
+import { StaleBanner } from '../components/DataState';
+import { RecordSkeleton, TreeSkeleton } from './units/UnitsSkeleton';
 import { DataTable, type Column } from '../components/DataTable';
 import { UnitList } from './units/UnitList';
 import { useApi } from '../lib/useApi';
@@ -194,7 +196,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   const listMode = params.get('view') === 'list';
   const setListMode = (on: boolean) => setParams(p => { const n = new URLSearchParams(on ? '' : p); if (on) n.set('view', 'list'); else n.delete('view'); return n; }, { replace: true });
   const header = (
-    <PageHeader title="Units" sub={`${plural(units.length, 'unit')} · ${plural(buildings.length, 'building')}`}
+    <PageHeader title="Units" sub={props.data ? `${plural(units.length, 'unit')} · ${plural(buildings.length, 'building')}` : 'Loading units…'}
       actions={<Button size="sm" variant="secondary" icon={<Icon name={listMode ? 'FolderTree' : 'Table2'} size="sm" />} onClick={() => setListMode(!listMode)}>{listMode ? 'Tree and record' : 'List of all units'}</Button>}
       primary={canEdit ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button> : undefined} />
   );
@@ -222,7 +224,22 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     );
   }
   if (props.loading && units.length === 0) {
-    return <div className="flex flex-col gap-5">{header}<Card><TableSkeleton rows={6} cols={3} /></Card></div>;
+    // The tree and the record as they will stand, so the page does not rearrange itself when the units arrive.
+    return (
+      <div className="flex flex-col gap-5 min-w-0">
+        {header}
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,300px)_minmax(0,1fr)] gap-5 items-start min-w-0">
+          <div className="min-w-0 xl:h-[calc(100vh-100px)]">
+            <div className="max-xl:hidden h-full"><TreeSkeleton fill /></div>
+            <div aria-hidden className="xl:hidden h-[58px] bg-card border border-solid border-line rounded-card flex items-center gap-3 px-[14px]">
+              <div className="skeleton h-[16px] w-[16px]" /><div className="flex flex-col gap-[6px] flex-1"><div className="skeleton h-[9px] w-[30%]" /><div className="skeleton h-[12px] w-[45%]" /></div>
+            </div>
+            {treeOpen && <div className="xl:hidden mt-2"><TreeSkeleton /></div>}
+          </div>
+          <RecordSkeleton />
+        </div>
+      </div>
+    );
   }
   if (units.length === 0 && props.data) {
     return (
@@ -271,7 +288,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
 
         <div className="flex flex-col gap-5 min-w-0">
           {!d ? (
-            <Card><div className="p-10 text-center text-muted-ink text-copy">{detail.error ?? 'Loading unit…'}</div></Card>
+            detail.error ? <Card><div className="p-10 text-center text-muted-ink text-copy">{detail.error}</div></Card> : <RecordSkeleton />
           ) : (
             <UnitRecord d={d} form={form} buildings={buildings} building={building} unitLabel={unitLabel}
               tab={tab} setTab={setTab} canEdit={canEdit} dirty={dirty} saving={saving} onSave={() => void save()}
@@ -298,10 +315,9 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   const { user } = useSession();
   // Matches MASTER_ROLES on the server's channex-setup / channex-connect.
   const canManageChannels = !!user && MASTER_ROLES.includes(user.role);
-  const fileRef = useRef<HTMLInputElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [photo, setPhoto] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
   useEffect(() => { setPhoto(null); }, [d.unit.id]);
 
   const u = d.unit;
@@ -332,9 +348,11 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   function takeFile(file: File) {
     const fd = new FormData();
     fd.append('file', file); fd.append('unitId', u.id); fd.append('kind', 'photo');
+    setUploading(true);
     api.post('/documents', fd)
       .then(() => { setPhoto(URL.createObjectURL(file)); toast({ tone: 'success', title: 'Photo added to this unit.', body: 'It will appear on the owner statement and channel listings.' }); reloadDetail(); })
-      .catch(notifyFailure);
+      .catch(notifyFailure)
+      .finally(() => setUploading(false));
   }
   function expensesReport() {
     if (!form) return;
@@ -350,22 +368,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
     <>
       <Card>
         <div className="pt-[14px] px-[14px] pb-0">
-          <div
-            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files.item(0); if (f) takeFile(f); }}
-            className={cx('h-[84px] sm:h-[112px] rounded-control grid place-items-center overflow-hidden bg-muted', dragOver ? '[border:1px_dashed_var(--color-gold)]' : '[border:1px_solid_var(--color-line-soft)]')}
-            style={photo ? { background: `center / cover no-repeat url(${photo})` } : undefined}>
-            {!photo && (
-              <div className="flex items-center gap-[10px] text-center px-4">
-                <Icon name="Image" size="base" color={color.faint} />
-                <span className="text-meta text-muted-ink">
-                  <span className="font-medium text-ink">Drop a photo of this unit</span> or <button onClick={() => fileRef.current?.click()} className="[font-family:inherit] text-meta bg-transparent [border:none] p-0 cursor-pointer text-gold-ink underline">browse files</button>
-                </span>
-              </div>
-            )}
-          </div>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.currentTarget.files?.item(0); if (f) takeFile(f); e.currentTarget.value = ''; }} />
+          <CoverPhotoDrop photo={photo} onPick={takeFile} busy={uploading} className="h-[96px] sm:h-[128px]"
+            label="Add a photo of this unit" hint="Drop an image here, or click to browse" />
         </div>
 
         <div className="pt-[18px] px-5 sm:px-6 pb-4 flex items-start justify-between gap-6 flex-wrap">

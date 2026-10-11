@@ -40,15 +40,21 @@ export function Button({
   variant = 'secondary', size = 'md', loading, icon, children, disabled, disabledReason, style, ...rest
 }: Props) {
   const isDisabled = disabled || loading;
+  // Busy keeps the button's own colours and label, with a spinner in front: the person sees which action is running.
+  // Only a truly disabled button greys out.
+  const busy = !!loading && !disabled;
   return (
     <button
       {...rest}
       disabled={isDisabled}
+      aria-busy={busy || undefined}
       title={disabled ? disabledReason : rest.title}
       aria-describedby={disabled && disabledReason ? undefined : rest['aria-describedby']}
       style={{
         ...base, ...sizes[size], ...variants[variant],
-        ...(isDisabled
+        ...(busy
+          ? { cursor: 'progress', opacity: 0.88 }
+          : isDisabled
           ? { background: 'var(--color-surface-muted)', color: 'var(--color-text-faint)', borderColor: 'transparent', cursor: 'not-allowed' }
           : {}),
         ...style,
@@ -66,7 +72,8 @@ function Spinner() {
       aria-hidden
       style={{
         width: 14, height: 14, flex: 'none', borderRadius: 'var(--radius-full)',
-        border: '2px solid rgba(255,255,255,0.35)', borderTopColor: 'currentColor',
+        // A ring in the label's colour with one quarter open, so it reads on dark, light and gold buttons alike.
+        borderWidth: 2, borderStyle: 'solid', borderColor: 'currentColor', borderRightColor: 'transparent', opacity: 0.85,
         animation: 'spin 700ms linear infinite',
       }}
     />

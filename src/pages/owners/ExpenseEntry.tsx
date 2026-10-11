@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Card } from '../../components/Card';
+import { FileRow, FileDropRow } from '../../components/Attachments';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { Select } from '../../components/Select';
@@ -53,7 +54,6 @@ function Sheet({ title, sub, onClose, footer, children, wide }: { title: string;
 /** One expense: unit, category, amount, date, who pays, and the receipt. */
 export function ExpenseEntryModal({ units, defaultUnitId, month, onClose, onSaved }: { units: UnitChoice[]; defaultUnitId?: string; month: string; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
-  const fileRef = useRef<HTMLInputElement>(null);
   const today = todayMyt();
   const [f, setF] = useState({
     unitId: defaultUnitId ?? units[0]?.id ?? '', category: 'electricity', incurredOn: today.startsWith(month) ? today : lastDayOf(month),
@@ -106,12 +106,10 @@ export function ExpenseEntryModal({ units, defaultUnitId, month, onClose, onSave
       <Field label="Description (optional)" placeholder="e.g. TNB bill September" value={f.description} onChange={e => set('description')(e.target.value)} />
       <div className="flex flex-col gap-1.5">
         <span className="text-meta font-medium text-muted-ink">Receipt (optional)</span>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button size="sm" variant="secondary" icon={<Icon name="Upload" size="sm" />} onClick={() => fileRef.current?.click()}>{receipt ? 'Change file' : 'Attach photo or PDF'}</Button>
-          {receipt && <span className="text-meta text-ink [overflow-wrap:anywhere]">{receipt.name}</span>}
-          {fields.receipt && <span className="text-meta text-critical">{fields.receipt}</span>}
-        </div>
-        <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={e => { setReceipt(e.currentTarget.files?.item(0) ?? null); e.currentTarget.value = ''; }} />
+        {receipt
+          ? <FileRow file={{ id: 'receipt', name: receipt.name, size: receipt.size, onRemove: () => setReceipt(null), removeLabel: 'Remove receipt' }} />
+          : <FileDropRow label="Add receipt" hint="Photo or PDF" accept="image/*,application/pdf" onPick={fl => setReceipt(fl.item(0))} />}
+        {fields.receipt && <span className="text-meta text-critical">{fields.receipt}</span>}
       </div>
     </Sheet>
   );
