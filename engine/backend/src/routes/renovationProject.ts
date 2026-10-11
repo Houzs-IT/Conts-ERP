@@ -1,0 +1,536 @@
+/* The simplified renovation project (owner decisions 11 Oct 2026,
+   docs/superpowers/specs/2026-10-11-renovation-simplified-project.md).
+   Mounted inside routes/renovation.ts at /api/renovation, before its /:id routes.
+
+   Read APIs for the Project Monitor and the Notion importer:
+     GET /board-rows                 board rows (decision 7 columns)
+     GET /people?role=&active=       people master
+     GET /key-log?projectId=         unit key moves
+     GET /design-records?projectId=  site measures and design files
+     GET /:id/step                   current step, derived step, manual step, hold, steps, history
+   Writes: people, flow steps, task categories (Project Maintenance); manual step,
+   hold flag, people on a project, key moves, site measures, design files, SO
+   link / unlink / project from SO, site tasks by category, crew and fulfilment.
+   Every read and write is scoped to the active company. */
+
+import { Hono, type Context } from "hono";
+import type { Env } from "../types";
+import { requirePageAccess, requirePermission } from "../middleware/auth";
+import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
+import { financeHiddenForUser } from "../services/pmsAccess";
+import { todayMyt } from "../scm/lib/my-time";
+import { FLOW_STEP_KEYS, PERSON_ROLES, isFlowStepKey, taskCategoryDef } from "../scm/shared/renovation-stages";
+import { BOARD_CHECKLIST_KEYS, loadProjectRows, loadRenovationFacts, type Db } from "../services/renovation/load";
+import { computeProjectView } from "../services/renovation/view";
+import { boardRowOf } from "../services/renovation/boardRow";
+import { cleanDesignKind, cleanHold, cleanKeyMove, cleanManualStep, cleanPerson, cleanSiteMeasure, DESIGN_FILE_MAX, DESIGN_FILE_TYPES } from "../services/renovation/records";
+import { createProjectFromSo, linkSoToProject, unlinkSoFromProject } from "../services/renovation/soLink";
+import { manualTaskRow, plannedDatesRefusal } from "../services/renovation/tradeTasks";
+import { writeCachedStage } from "../services/renovation/contractSync";
+import { SUPPLY_CONDITION_LABEL } from "../services/renovation/conditions";
+
+type Ctx = Context<{ Bindings: Env }>;
+const app = new Hono<{ Bindings: Env }>();
+
+const db = (c: Ctx) => c.env.DB as unknown as Db;
+const userId = (c: Ctx): number => Number(c.get("user")?.id ?? 0);
+const coSql = (c: Ctx, col = "company_id") => activeCompanySql(c, col);
+const body = async (c: Ctx): Promise<Record<string, unknown>> => (await c.req.json<Record<string, unknown>>().catch(() => ({}))) ?? {};
+
+function parseId(x: string | undefined | null): number | null {
+  const n = Number(x);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function failClosed(handler: (c: Ctx) => Promise<Response>) {
+  return async (c: Ctx) => {
+    try {
+      return await handler(c);
+    } catch (e) {
+      console.error("[renovation] request failed", e);
+      return c.json({ error: "renovation_read_failed", message: "Project facts could not be read, so nothing was changed. Try again." }, 409);
+    }
+  };
+}
+
+async function projectCompany(c: Ctx, id: number): Promise<number | null> {
+  const r = await db(c).prepare(`SELECT company_id::int AS company_id FROM projects WHERE id = ? AND project_kind = 'renovation'${coSql(c)}`).bind(id).first<{ company_id: number }>();
+  return r ? Number(r.company_id) : null;
+}
+
+/** Every person id must be a person of this company (active or not). */
+async function peopleRefusal(c: Ctx, companyId: number, ids: Array<number | null | undefined>): Promise<string | null> {
+  const list = [...new Set(ids.filter((x): x is number => x != null))];
+  if (list.length === 0) return null;
+  const r = await db(c).prepare(
+    `SELECT count(*)::int AS n FROM project_people WHERE company_id = ? AND id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)`,
+  ).bind(companyId, JSON.stringify(list.map(String))).first<{ n: number }>();
+  return Number(r?.n ?? 0) === list.length ? null : "person_not_found";
+}
+
+async function loadViews(c: Ctx, opts: { projectId?: number; includeArchived?: boolean }) {
+  const rows = await loadProjectRows(db(c), coSql(c, "p.company_id"), opts);
+  const facts = await loadRenovationFacts(db(c), rows, { checklistKeys: BOARD_CHECKLIST_KEYS });
+  const today = todayMyt();
+  return rows.map((p) => {
+    const f = facts.get(p.id)!;
+    return { f, v: computeProjectView(f, today) };
+  });
+}
+
+// ── Board rows (read API) ───────────────────────────────────────────────
+
+app.get("/board-rows", requirePageAccess("projects.list"), failClosed(async (c) => {
+  const hideMoney = financeHiddenForUser(c.get("user"));
+  const list = await loadViews(c, { includeArchived: c.req.query("archived") === "1" });
+  return c.json({ data: list.map(({ f, v }) => boardRowOf(f, v, { hideMoney })), arrivalLabels: SUPPLY_CONDITION_LABEL });
+}));
+
+// ── People master ────────────────────────────────────────────────────────
+
+const PERSON_COLS = `id::int AS id, name, roles, active, user_id::int AS user_id, phone, notes, source, source_ref, created_at, updated_at`;
+
+app.get("/people", requirePageAccess("projects.list"), async (c) => {
+  const role = c.req.query("role") ?? "";
+  if (role && !(PERSON_ROLES as readonly string[]).includes(role)) return c.json({ error: "role_invalid" }, 400);
+  const active = c.req.query("active");
+  const res = await db(c).prepare(
+    `SELECT ${PERSON_COLS} FROM project_people
+      WHERE true${coSql(c)} AND (? = '' OR ? = ANY(roles)) AND (?::boolean IS NULL OR active = ?::boolean)
+      ORDER BY active DESC, lower(name)`,
+  ).bind(role, role, active === "1" ? true : active === "0" ? false : null, active === "1" ? true : active === "0" ? false : null).all();
+  return c.json({ data: res.results ?? [], roles: PERSON_ROLES });
+});
+
+app.post("/people", requirePermission("projects.manage"), async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const v = cleanPerson(await body(c));
+  if (!v.ok) return c.json(v, 400);
+  const p = v.value;
+  const row = await db(c).prepare(
+    `INSERT INTO project_people (company_id, name, roles, active, user_id, phone, notes) VALUES (?, ?, ?::text[], ?, ?, ?, ?) RETURNING id::int AS id`,
+  ).bind(co.companyId, p.name, `{${(p.roles ?? []).join(",")}}`, p.active ?? true, p.userId ?? null, p.phone ?? null, p.notes ?? null).first<{ id: number }>();
+  return c.json({ id: row?.id }, 201);
+});
+
+app.patch("/people/:personId", requirePermission("projects.manage"), async (c) => {
+  const id = parseId(c.req.param("personId"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const v = cleanPerson(await body(c), true);
+  if (!v.ok) return c.json(v, 400);
+  const p = v.value;
+  const res = await db(c).prepare(
+    `UPDATE project_people SET name = CASE WHEN ? THEN ? ELSE name END, roles = CASE WHEN ? THEN ?::text[] ELSE roles END,
+            active = CASE WHEN ? THEN ? ELSE active END, user_id = CASE WHEN ? THEN ?::bigint ELSE user_id END,
+            phone = CASE WHEN ? THEN ? ELSE phone END, notes = CASE WHEN ? THEN ? ELSE notes END, updated_at = now()
+      WHERE id = ?${coSql(c)}`,
+  ).bind("name" in p, p.name ?? null, "roles" in p, `{${(p.roles ?? []).join(",")}}`, "active" in p, p.active ?? true,
+    "userId" in p, p.userId ?? null, "phone" in p, p.phone ?? null, "notes" in p, p.notes ?? null, id).run() as { meta?: { changes?: number } };
+  if (!res.meta?.changes) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true });
+});
+
+// ── Flow steps and task categories (Project Maintenance) ────────────────
+
+app.get("/flow-steps", requirePageAccess("projects.list"), async (c) => {
+  const res = await db(c).prepare(`SELECT step_key, label, sort_order, active FROM project_flow_steps WHERE true${coSql(c)} ORDER BY sort_order, step_key`).bind().all();
+  return c.json({ data: res.results ?? [], keys: FLOW_STEP_KEYS });
+});
+
+app.patch("/flow-steps/:key", requirePermission("projects.manage"), async (c) => {
+  const key = c.req.param("key");
+  if (!isFlowStepKey(key)) return c.json({ error: "step_invalid" }, 400);
+  const b = await body(c);
+  const label = b.label === undefined ? null : String(b.label ?? "").trim();
+  if (label === "") return c.json({ error: "label_required", message: "A step needs a label." }, 400);
+  if (key === "design" && b.active === false) return c.json({ error: "design_always_on", message: "Design is where every project starts, so it cannot be switched off." }, 409);
+  const sort = b.sortOrder === undefined ? null : Number(b.sortOrder);
+  if (sort !== null && !Number.isInteger(sort)) return c.json({ error: "sort_invalid" }, 400);
+  const res = await db(c).prepare(
+    `UPDATE project_flow_steps SET label = coalesce(?, label), sort_order = coalesce(?, sort_order), active = coalesce(?, active), updated_at = now()
+      WHERE step_key = ?${coSql(c)}`,
+  ).bind(label, sort, typeof b.active === "boolean" ? b.active : null, key).run() as { meta?: { changes?: number } };
+  if (!res.meta?.changes) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true });
+});
+
+app.get("/task-categories", requirePageAccess("projects.list"), async (c) => {
+  const res = await db(c).prepare(
+    `SELECT code, label, stage_key, trade_code, fix_phase, internal_key, trade_default, sort_order, active, notion
+       FROM project_task_categories WHERE true${coSql(c)} ORDER BY sort_order, code`,
+  ).bind().all();
+  return c.json({ data: res.results ?? [] });
+});
+
+app.patch("/task-categories/:code", requirePermission("projects.manage"), async (c) => {
+  const code = c.req.param("code").toUpperCase();
+  if (!taskCategoryDef(code)) return c.json({ error: "category_invalid" }, 400);
+  const b = await body(c);
+  const label = b.label === undefined ? null : String(b.label ?? "").trim();
+  if (label === "") return c.json({ error: "label_required" }, 400);
+  const sort = b.sortOrder === undefined ? null : Number(b.sortOrder);
+  if (sort !== null && !Number.isInteger(sort)) return c.json({ error: "sort_invalid" }, 400);
+  const res = await db(c).prepare(
+    `UPDATE project_task_categories SET label = coalesce(?, label), sort_order = coalesce(?, sort_order), active = coalesce(?, active), updated_at = now()
+      WHERE code = ?${coSql(c)}`,
+  ).bind(label, sort, typeof b.active === "boolean" ? b.active : null, code).run() as { meta?: { changes?: number } };
+  if (!res.meta?.changes) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true });
+});
+
+// ── Key log and design records (read APIs) ──────────────────────────────
+
+app.get("/key-log", requirePageAccess("projects.list"), async (c) => {
+  const pid = c.req.query("projectId") ? parseId(c.req.query("projectId")) : null;
+  if (c.req.query("projectId") && !pid) return c.json({ error: "invalid_id" }, 400);
+  const res = await db(c).prepare(
+    `SELECT km.id::int AS id, km.project_id::int AS project_id, p.code AS project_code, p.name AS project_name, km.moved_on::text AS moved_on,
+            km.from_person_id::int AS from_person_id, fp.name AS from_person_name, km.to_person_id::int AS to_person_id, tp.name AS to_person_name,
+            km.note, km.recorded_by::int AS recorded_by, u.name AS recorded_by_name, km.created_at, km.source, km.source_ref
+       FROM project_key_moves km
+       JOIN projects p ON p.id = km.project_id
+       LEFT JOIN project_people fp ON fp.id = km.from_person_id
+       LEFT JOIN project_people tp ON tp.id = km.to_person_id
+       LEFT JOIN users u ON u.id = km.recorded_by
+      WHERE (?::bigint IS NULL OR km.project_id = ?::bigint)${coSql(c, "p.company_id")}
+      ORDER BY km.moved_on DESC, km.id DESC LIMIT 2000`,
+  ).bind(pid, pid).all();
+  return c.json({ data: res.results ?? [] });
+});
+
+app.get("/design-records", requirePageAccess("projects.list"), async (c) => {
+  const pid = c.req.query("projectId") ? parseId(c.req.query("projectId")) : null;
+  if (c.req.query("projectId") && !pid) return c.json({ error: "invalid_id" }, 400);
+  const measures = await db(c).prepare(
+    `SELECT r.id::int AS id, r.project_id::int AS project_id, r.kind, r.done_on::text AS done_on, r.person_id::int AS person_id, pp.name AS person_name,
+            r.note, r.recorded_by::int AS recorded_by, r.created_at, r.source, r.source_ref
+       FROM project_design_records r JOIN projects p ON p.id = r.project_id LEFT JOIN project_people pp ON pp.id = r.person_id
+      WHERE (?::bigint IS NULL OR r.project_id = ?::bigint)${coSql(c, "p.company_id")}
+      ORDER BY r.done_on DESC NULLS LAST, r.id DESC LIMIT 2000`,
+  ).bind(pid, pid).all();
+  const files = await db(c).prepare(
+    `SELECT f.id::int AS id, f.project_id::int AS project_id, f.kind, f.version, f.file_name, f.content_type, f.size_bytes, f.r2_key, f.external_url,
+            f.person_id::int AS person_id, pp.name AS person_name, f.uploaded_by::int AS uploaded_by, u.name AS uploaded_by_name, f.uploaded_at, f.note,
+            f.source, f.source_ref
+       FROM project_design_files f JOIN projects p ON p.id = f.project_id
+       LEFT JOIN project_people pp ON pp.id = f.person_id LEFT JOIN users u ON u.id = f.uploaded_by
+      WHERE (?::bigint IS NULL OR f.project_id = ?::bigint)${coSql(c, "p.company_id")}
+      ORDER BY f.project_id, f.kind, f.version DESC LIMIT 5000`,
+  ).bind(pid, pid).all();
+  return c.json({ measures: measures.results ?? [], files: files.results ?? [] });
+});
+
+// ── SO side: projects an SO can link to, SOs a project can link ─────────
+
+app.get("/linkable-sos", requirePageAccess("projects.list"), async (c) => {
+  const q = (c.req.query("q") ?? "").trim();
+  const res = await db(c).prepare(
+    `SELECT o.doc_no, o.so_date::text AS so_date, o.debtor_name, o.status::text AS status, o.local_total_sen, c.building, c.unit_no
+       FROM scm.mfg_sales_orders o LEFT JOIN scm.reno_so_contracts c ON c.so_doc_no = o.doc_no
+      WHERE o.so_kind = 'RENOVATION' AND o.status::text <> 'CANCELLED' AND o.project_id IS NULL${coSql(c, "o.company_id")}
+        AND (? = '' OR o.doc_no ILIKE '%' || ? || '%' OR coalesce(o.debtor_name, '') ILIKE '%' || ? || '%' OR coalesce(c.building, '') ILIKE '%' || ? || '%')
+      ORDER BY o.so_date DESC NULLS LAST, o.doc_no DESC LIMIT 50`,
+  ).bind(q, q, q, q).all();
+  return c.json({ data: res.results ?? [] });
+});
+
+app.post("/from-so", requirePermission("projects.write"), failClosed(async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const b = await body(c);
+  const docNo = String(b.docNo ?? "").trim();
+  const typeId = parseId(String(b.projectTypeId ?? ""));
+  if (!docNo || !typeId) return c.json({ error: "doc_and_type_required", message: "Pick the sales order and the project type." }, 400);
+  const salesPersonId = b.salesPersonId == null || b.salesPersonId === "" ? null : parseId(String(b.salesPersonId));
+  if (await peopleRefusal(c, co.companyId, [salesPersonId])) return c.json({ error: "person_not_found" }, 400);
+  const r = await createProjectFromSo(db(c), docNo, { projectTypeId: typeId, name: b.name ? String(b.name) : null, salesPersonId }, userId(c), co.companyId, coSql(c, "p.company_id"));
+  if (!r.ok) return c.json({ error: r.error, message: r.message }, r.status);
+  return c.json({ id: r.projectId, code: r.code, docNo: r.docNo }, 201);
+}));
+
+app.post("/link-so", requirePermission("projects.write"), failClosed(async (c) => {
+  const b = await body(c);
+  const pid = parseId(String(b.projectId ?? ""));
+  const docNo = String(b.docNo ?? "").trim();
+  if (!pid || !docNo) return c.json({ error: "project_and_doc_required" }, 400);
+  const r = await linkSoToProject(db(c), pid, docNo, userId(c), coSql(c, "p.company_id"));
+  if (!r.ok) return c.json({ error: r.error, message: r.message }, r.status);
+  return c.json({ ok: true, docNo: r.docNo });
+}));
+
+// ── One project ─────────────────────────────────────────────────────────
+
+app.get("/:id/step", requirePageAccess("projects.list"), failClosed(async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const [one] = await loadViews(c, { projectId: id, includeArchived: true });
+  if (!one) return c.json({ error: "not_found" }, 404);
+  const { f, v } = one;
+  const history = await db(c).prepare(
+    `SELECT l.id::int AS id, l.kind, l.from_value, l.to_value, l.reason, l.user_id::int AS user_id, u.name AS user_name,
+            l.person_id::int AS person_id, pp.name AS person_name, l.at, l.source, l.source_ref
+       FROM project_flow_log l LEFT JOIN users u ON u.id = l.user_id LEFT JOIN project_people pp ON pp.id = l.person_id
+      WHERE l.project_id = ? ORDER BY l.at DESC, l.id DESC LIMIT 200`,
+  ).bind(id).all();
+  return c.json({
+    projectId: id,
+    ...v.flow,
+    manual: v.flow.manualStep ? { step: v.flow.manualStep, base: f.project.flow_manual_base_step ?? null, reason: f.project.flow_manual_reason ?? null,
+      by: f.project.flow_manual_by ?? null, at: f.project.flow_manual_at ?? null, inEffect: v.flow.manualInEffect } : null,
+    hold: v.hold,
+    history: history.results ?? [],
+  });
+}));
+
+app.post("/:id/step", requirePermission("projects.write"), failClosed(async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const v = cleanManualStep(await body(c));
+  if (!v.ok) return c.json(v, 400);
+  const [one] = await loadViews(c, { projectId: id, includeArchived: true });
+  if (!one) return c.json({ error: "not_found" }, 404);
+  if (!one.v.flow.steps.some((s) => s.key === v.value.step)) return c.json({ error: "step_inactive", message: "That step is switched off in Project Maintenance." }, 409);
+  const co = Number(one.f.project.company_id);
+  await db(c).batch!([
+    db(c).prepare(
+      `UPDATE projects SET flow_manual_step = ?, flow_manual_base_step = ?, flow_manual_reason = ?, flow_manual_by = ?, flow_manual_at = now(),
+              updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') WHERE id = ?`,
+    ).bind(v.value.step, one.v.flow.derived, v.value.reason, userId(c), id),
+    db(c).prepare(`INSERT INTO project_flow_log (project_id, company_id, kind, from_value, to_value, reason, user_id) VALUES (?, ?, 'manual_step', ?, ?, ?, ?)`)
+      .bind(id, co, one.v.flow.current, v.value.step, v.value.reason, userId(c)),
+  ]);
+  return c.json({ ok: true });
+}));
+
+app.post("/:id/step/follow-data", requirePermission("projects.write"), failClosed(async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const [one] = await loadViews(c, { projectId: id, includeArchived: true });
+  if (!one) return c.json({ error: "not_found" }, 404);
+  if (!one.f.project.flow_manual_step) return c.json({ ok: true, unchanged: true });
+  await db(c).batch!([
+    db(c).prepare(
+      `UPDATE projects SET flow_manual_step = NULL, flow_manual_base_step = NULL, flow_manual_reason = NULL, flow_manual_by = NULL, flow_manual_at = NULL,
+              updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') WHERE id = ?`,
+    ).bind(id),
+    db(c).prepare(`INSERT INTO project_flow_log (project_id, company_id, kind, from_value, to_value, user_id) VALUES (?, ?, 'follow_data', ?, ?, ?)`)
+      .bind(id, Number(one.f.project.company_id), one.v.flow.current, one.v.flow.derived, userId(c)),
+  ]);
+  return c.json({ ok: true });
+}));
+
+app.post("/:id/hold", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const v = cleanHold(await body(c));
+  if (!v.ok) return c.json(v, 400);
+  await db(c).batch!([
+    db(c).prepare(`UPDATE projects SET hold_flag = ?, hold_note = ?, hold_by = ?, hold_at = now() WHERE id = ?`).bind(v.value.flag, v.value.note, userId(c), id),
+    db(c).prepare(`INSERT INTO project_flow_log (project_id, company_id, kind, to_value, reason, user_id) VALUES (?, ?, 'hold_set', ?, ?, ?)`)
+      .bind(id, co, v.value.flag, v.value.note, userId(c)),
+  ]);
+  return c.json({ ok: true });
+});
+
+app.post("/:id/hold/clear", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const cur = await db(c).prepare(`SELECT hold_flag FROM projects WHERE id = ?`).bind(id).first<{ hold_flag: string | null }>();
+  if (!cur?.hold_flag) return c.json({ ok: true, unchanged: true });
+  const note = String((await body(c)).note ?? "").trim() || null;
+  await db(c).batch!([
+    db(c).prepare(`UPDATE projects SET hold_flag = NULL, hold_note = NULL, hold_by = NULL, hold_at = NULL WHERE id = ?`).bind(id),
+    db(c).prepare(`INSERT INTO project_flow_log (project_id, company_id, kind, from_value, reason, user_id) VALUES (?, ?, 'hold_cleared', ?, ?, ?)`)
+      .bind(id, co, cur.hold_flag, note, userId(c)),
+  ]);
+  return c.json({ ok: true });
+});
+
+app.patch("/:id/people", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const b = await body(c);
+  const cols: Record<string, string> = { salesPersonId: "sales_person_id", designerPersonId: "designer_person_id", renoPicPersonId: "reno_pic_person_id" };
+  const sets: string[] = [];
+  const args: unknown[] = [];
+  const ids: Array<number | null> = [];
+  for (const [k, col] of Object.entries(cols)) {
+    if (!(k in b)) continue;
+    const val = b[k] == null || b[k] === "" ? null : parseId(String(b[k]));
+    if (b[k] != null && b[k] !== "" && val === null) return c.json({ error: "person_invalid" }, 400);
+    sets.push(`${col} = ?`);
+    args.push(val);
+    ids.push(val);
+  }
+  if (sets.length === 0) return c.json({ ok: true });
+  if (await peopleRefusal(c, co, ids)) return c.json({ error: "person_not_found", message: "Pick the people from the list." }, 400);
+  await db(c).prepare(`UPDATE projects SET ${sets.join(", ")}, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') WHERE id = ?`)
+    .bind(...args, id).run();
+  return c.json({ ok: true });
+});
+
+app.post("/:id/key-moves", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const v = cleanKeyMove(await body(c), todayMyt());
+  if (!v.ok) return c.json(v, 400);
+  if (await peopleRefusal(c, co, [v.value.fromPersonId, v.value.toPersonId])) return c.json({ error: "person_not_found", message: "Pick the people from the list." }, 400);
+  const row = await db(c).prepare(
+    `INSERT INTO project_key_moves (project_id, company_id, moved_on, from_person_id, to_person_id, note, recorded_by)
+     VALUES (?, ?, ?::date, ?, ?, ?, ?) RETURNING id::int AS id`,
+  ).bind(id, co, v.value.movedOn, v.value.fromPersonId, v.value.toPersonId, v.value.note, userId(c)).first<{ id: number }>();
+  return c.json({ id: row?.id }, 201);
+});
+
+app.post("/:id/site-measures", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const v = cleanSiteMeasure(await body(c));
+  if (!v.ok) return c.json(v, 400);
+  if (await peopleRefusal(c, co, [v.value.personId])) return c.json({ error: "person_not_found" }, 400);
+  const row = await db(c).prepare(
+    `INSERT INTO project_design_records (project_id, company_id, kind, done_on, person_id, note, recorded_by)
+     VALUES (?, ?, 'site_measure', ?::date, ?, ?, ?) RETURNING id::int AS id`,
+  ).bind(id, co, v.value.doneOn, v.value.personId, v.value.note, userId(c)).first<{ id: number }>();
+  return c.json({ id: row?.id }, 201);
+});
+
+/* Upload one design file: raw body, ?kind=2d|3d|other&fileName=&personId=&note=. Versions count up per kind. */
+app.post("/:id/design-files", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const kind = cleanDesignKind(c.req.query("kind"));
+  if (!kind) return c.json({ error: "kind_invalid", message: "Say whether this is a 2D, 3D or other file." }, 400);
+  const type = (c.req.header("content-type") || "").split(";")[0]!.trim().toLowerCase();
+  const ext = DESIGN_FILE_TYPES[type];
+  if (!ext) return c.json({ error: "unsupported_type", message: "PDF, image, DWG or ZIP files only." }, 415);
+  const personId = c.req.query("personId") ? parseId(c.req.query("personId")) : null;
+  if (c.req.query("personId") && !personId) return c.json({ error: "person_invalid" }, 400);
+  if (await peopleRefusal(c, co, [personId])) return c.json({ error: "person_not_found" }, 400);
+  const buf = await c.req.arrayBuffer();
+  if (!buf.byteLength) return c.json({ error: "empty" }, 400);
+  if (buf.byteLength > DESIGN_FILE_MAX) return c.json({ error: "too_large", message: "A design file can be up to 25 MB." }, 413);
+  const fileName = (c.req.query("fileName") ?? "").trim().slice(0, 200) || `${kind}.${ext}`;
+  const key = `renovation/${id}/design-${kind}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
+  await c.env.POD_BUCKET.put(key, buf, { httpMetadata: { contentType: type } });
+  const row = await db(c).prepare(
+    `INSERT INTO project_design_files (project_id, company_id, kind, version, file_name, content_type, size_bytes, r2_key, person_id, uploaded_by, note)
+     SELECT ?, ?, ?, coalesce(max(version), 0) + 1, ?, ?, ?, ?, ?, ?, ? FROM project_design_files WHERE project_id = ? AND kind = ?
+     RETURNING id::int AS id, version`,
+  ).bind(id, co, kind, fileName, type, buf.byteLength, key, personId, userId(c), (c.req.query("note") ?? "").trim() || null, id, kind)
+    .first<{ id: number; version: number }>();
+  return c.json({ id: row?.id, version: row?.version, key }, 201);
+});
+
+app.post("/:id/unlink-so", requirePermission("projects.write"), failClosed(async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const r = await unlinkSoFromProject(db(c), id, userId(c), coSql(c, "p.company_id"));
+  if (!r.ok) return c.json({ error: r.error, message: r.message }, r.status);
+  return c.json({ ok: true, docNo: r.docNo });
+}));
+
+// ── Site tasks: add by category, crew, fulfilment ───────────────────────
+
+app.post("/:id/tasks", requirePermission("projects.write"), failClosed(async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const b = await body(c);
+  const cat = taskCategoryDef(String(b.categoryCode ?? ""));
+  if (!cat) return c.json({ error: "category_invalid", message: "Pick a task category." }, 400);
+  const fulfilment = b.fulfilment === "po" ? "po" : "internal";
+  const start = (b.plannedStart as string) || null;
+  const end = (b.plannedEnd as string) || null;
+  const dates = plannedDatesRefusal(start, end);
+  if (dates) return c.json({ error: dates }, 400);
+  const assignees = Array.isArray(b.assigneeIds) ? [...new Set(b.assigneeIds.map((x) => parseId(String(x))))] : [];
+  if (assignees.some((x) => x === null)) return c.json({ error: "person_invalid" }, 400);
+  if (await peopleRefusal(c, co, assignees)) return c.json({ error: "person_not_found", message: "Pick the crew from the people list." }, 400);
+  const existing = await db(c).prepare(`SELECT trade_code, fix_phase, occurrence::int AS occurrence FROM project_trade_tasks WHERE project_id = ?`)
+    .bind(id).all<{ trade_code: string; fix_phase: string; occurrence: number }>();
+  const row = manualTaskRow(cat, existing.results ?? [], { fulfilment });
+  const ins = await db(c).prepare(
+    `INSERT INTO project_trade_tasks (project_id, stage_key, trade_code, fix_phase, label, seq, fulfilment_kind, company_id, category_code, occurrence,
+                                      planned_start, planned_end, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::date, ?::date, ?) RETURNING id::int AS id`,
+  ).bind(id, row.stageKey, row.tradeCode, row.fixPhase, row.label, row.seq, row.fulfilmentKind, co, row.categoryCode, row.occurrence,
+    start, end, String(b.notes ?? "").trim() || null).first<{ id: number }>();
+  if (assignees.length) {
+    await db(c).prepare(
+      `INSERT INTO project_trade_task_assignees (task_id, person_id, company_id)
+       SELECT ?, (x)::bigint, ? FROM jsonb_array_elements_text(?::text::jsonb) AS x ON CONFLICT (task_id, person_id) DO NOTHING`,
+    ).bind(ins?.id, co, JSON.stringify(assignees.map(String))).run();
+  }
+  await db(c).prepare(`INSERT INTO project_activity (project_id, action, to_value, user_id, company_id) VALUES (?, 'task_added', ?, ?, ?)`)
+    .bind(id, row.label, userId(c), co).run();
+  return c.json({ id: ins?.id, occurrence: row.occurrence }, 201);
+}));
+
+async function taskOf(c: Ctx, taskId: number) {
+  return db(c).prepare(
+    `SELECT t.id::int AS id, t.project_id::int AS project_id, t.company_id::int AS company_id, t.trade_code, t.fulfilment_kind, t.state, t.label,
+            EXISTS (SELECT 1 FROM project_trade_task_lines l JOIN scm.purchase_order_items poi ON poi.id = l.purchase_order_item_id
+                     WHERE l.task_id = t.id AND poi.received_qty > 0) AS po_received
+       FROM project_trade_tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = ?${coSql(c, "p.company_id")}`,
+  ).bind(taskId).first<{ id: number; project_id: number; company_id: number; trade_code: string; fulfilment_kind: string; state: string; label: string; po_received: boolean }>();
+}
+
+app.put("/trade-tasks/:taskId/assignees", requirePermission("projects.write"), async (c) => {
+  const taskId = parseId(c.req.param("taskId"));
+  if (!taskId) return c.json({ error: "invalid_id" }, 400);
+  const t = await taskOf(c, taskId);
+  if (!t) return c.json({ error: "not_found" }, 404);
+  const b = await body(c);
+  const ids = Array.isArray(b.personIds) ? [...new Set(b.personIds.map((x) => parseId(String(x))))] : null;
+  if (!ids || ids.some((x) => x === null)) return c.json({ error: "person_invalid" }, 400);
+  if (await peopleRefusal(c, Number(t.company_id), ids)) return c.json({ error: "person_not_found", message: "Pick the crew from the people list." }, 400);
+  const list = JSON.stringify(ids.map(String));
+  await db(c).batch!([
+    db(c).prepare(`DELETE FROM project_trade_task_assignees WHERE task_id = ? AND person_id::text NOT IN (SELECT jsonb_array_elements_text(?::text::jsonb))`).bind(taskId, list),
+    db(c).prepare(
+      `INSERT INTO project_trade_task_assignees (task_id, person_id, company_id)
+       SELECT ?, (x)::bigint, ? FROM jsonb_array_elements_text(?::text::jsonb) AS x ON CONFLICT (task_id, person_id) DO NOTHING`,
+    ).bind(taskId, Number(t.company_id), list),
+  ]);
+  return c.json({ ok: true });
+});
+
+/* po <-> in-house crew. In-house: no PO, no supplier; refused once a PO line of the task was received (the receipt completes it). */
+app.post("/trade-tasks/:taskId/fulfilment", requirePermission("projects.write"), async (c) => {
+  const taskId = parseId(c.req.param("taskId"));
+  if (!taskId) return c.json({ error: "invalid_id" }, 400);
+  const t = await taskOf(c, taskId);
+  if (!t) return c.json({ error: "not_found" }, 404);
+  const kind = (await body(c)).kind;
+  if (kind !== "inhouse" && kind !== "po") return c.json({ error: "kind_invalid", message: "Choose in-house crew or purchase order." }, 400);
+  if (t.state === "done" || t.state === "skipped") return c.json({ error: `task_${t.state}` }, 409);
+  if (kind === "po") {
+    if (String(t.trade_code).startsWith("INTERNAL:")) return c.json({ error: "template_task_inhouse", message: "This is our own team's task; it has no purchase order." }, 409);
+    await db(c).prepare(`UPDATE project_trade_tasks SET fulfilment_kind = 'po', updated_at = now() WHERE id = ?`).bind(taskId).run();
+  } else {
+    if (t.po_received) return c.json({ error: "po_received", message: "Goods or work on this task's purchase order were already received, so it stays on the PO." }, 409);
+    await db(c).prepare(`UPDATE project_trade_tasks SET fulfilment_kind = 'internal', purchase_order_id = NULL, supplier_id = NULL, updated_at = now() WHERE id = ?`).bind(taskId).run();
+  }
+  await db(c).prepare(`INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id) VALUES (?, 'task_fulfilment', ?, ?, ?, ?, ?)`)
+    .bind(t.project_id, t.fulfilment_kind, kind === "po" ? "po" : "internal", t.label, userId(c), Number(t.company_id)).run();
+  const rows = await loadProjectRows(db(c), "", { projectId: t.project_id, includeArchived: true });
+  if (rows.length) await writeCachedStage(db(c), t.project_id, (await loadRenovationFacts(db(c), rows)).get(t.project_id)!);
+  return c.json({ ok: true });
+});
+
+export default app;
