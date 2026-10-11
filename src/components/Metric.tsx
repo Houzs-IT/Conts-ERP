@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react';
-import { cx } from '../lib/design-tokens';
+import { TONE, cx } from '../lib/design-tokens';
+import type { Tone } from '../lib/types';
 
 /* Shared figure pieces for Dashboard, Portfolio and Performance, so the three read as one set. */
 
@@ -22,26 +23,55 @@ export function Figure({ value, className }: { value: string; className?: string
   );
 }
 
-/** One KPI. `hero` is the dark statement card used once per page for the figure that matters most. */
-export function StatTile({ label, value, hint, loading, hero, className }: {
-  label: string; value: string; hint?: ReactNode; loading?: boolean; hero?: boolean; className?: string;
+/** One KPI, the single summary tile every page uses.
+ *  `hero` is the dark statement card, once per page, for the figure that matters most.
+ *  `tone` colours the figure (and tints a warning/critical tile) when the number itself is the alert.
+ *  `onClick` makes it a filter or a link; `active` marks the filter that is on. `value` undefined shows a skeleton. */
+export function StatTile({ label, value, hint, hintTone, tone, loading, hero, onClick, active, className }: {
+  label: string; value: string | undefined; hint?: ReactNode; hintTone?: Tone; tone?: Tone;
+  loading?: boolean; hero?: boolean; onClick?: () => void; active?: boolean; className?: string;
 }) {
+  const Tag = onClick ? 'button' : 'div';
+  const alert = !hero && (tone === 'warning' || tone === 'critical');
   return (
-    <div className={cx(
-      '@container relative rounded-card p-4 sm:p-5 flex flex-col gap-3 min-w-0 overflow-hidden',
-      hero ? 'bg-black text-white' : 'bg-card border border-solid border-line',
-      className,
-    )}>
+    <Tag type={onClick ? 'button' : undefined} onClick={onClick} aria-pressed={onClick && active !== undefined ? active : undefined}
+      className={cx(
+        '@container relative rounded-card p-4 sm:p-5 flex flex-col gap-3 min-w-0 overflow-hidden text-left',
+        hero ? 'bg-black text-white' : cx('border border-solid', alert ? TONE[tone].bg : 'bg-card',
+          active ? 'border-black shadow-[0_0_0_1px_var(--color-black)]' : alert ? 'border-[var(--color-warning-line)]' : 'border-line'),
+        onClick && 'cursor-pointer transition-[border-color,box-shadow] duration-[var(--motion-fast)] hover:border-line-strong hover:shadow-[var(--shadow-raised)]',
+        className,
+      )}>
       {hero && <span aria-hidden className="absolute left-4 sm:left-5 top-0 h-[2px] w-8 bg-gold" />}
-      <Eyebrow className={hero ? 'text-gold' : undefined}>{label}</Eyebrow>
-      {loading
+      <Eyebrow className={hero ? 'text-gold' : alert ? TONE[tone].text : undefined}>{label}</Eyebrow>
+      {loading || value === undefined
         ? <div className={cx('skeleton h-8 w-3/4', hero && 'opacity-20')} />
         : <Figure value={value} className={cx(
             'leading-none font-medium tracking-[-0.025em]',
             // Sized to the tile, so five across on a laptop never clips "RM 121,900".
-            hero ? 'text-[clamp(20px,13cqi,40px)]' : 'text-[clamp(16px,12cqi,30px)] text-ink',
+            hero ? 'text-[clamp(20px,13cqi,40px)]' : 'text-[clamp(16px,12cqi,30px)]',
+            hero ? '' : tone && tone !== 'neutral' ? TONE[tone].text : 'text-ink',
           )} />}
-      {hint && <div className={cx('text-meta', hero ? 'text-faint' : 'text-muted-ink')}>{hint}</div>}
+      {hint && <div className={cx('text-meta', hero ? 'text-faint' : hintTone ? TONE[hintTone].text : 'text-muted-ink')}>{hint}</div>}
+    </Tag>
+  );
+}
+
+/** A row of StatTiles: two across on phones, up to `cols` across on wide screens. */
+export function StatRow({ children, cols = 4 }: { children: ReactNode; cols?: 2 | 3 | 4 | 5 }) {
+  const wide = { 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'xl:grid-cols-4', 5: 'xl:grid-cols-5' }[cols];
+  return <div className={cx('grid grid-cols-2 gap-3 sm:gap-4', wide)}>{children}</div>;
+}
+
+/** Section heading inside a page: an eyebrow-sized title, an optional count and a right-hand action. */
+export function SectionTitle({ title, count, right }: { title: string; count?: number; right?: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
+      <div className="flex items-baseline gap-2 min-w-0">
+        <span className="text-[16px] font-semibold tracking-[-0.01em] truncate">{title}</span>
+        {count !== undefined && <span className="text-meta text-muted-ink tabular-nums">{count}</span>}
+      </div>
+      {right}
     </div>
   );
 }
