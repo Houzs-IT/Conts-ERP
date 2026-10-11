@@ -57,8 +57,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     outstanding: byState.failed.amount + byState.pending.amount + byState.processing.amount,
     periods: periods.map(p => p.period),
     data: (rows as any[]).map(r => ({
-      id: r.id, // Imported ids end in the statement month, which would give every owner that month the same reference.
-      ref: refOf('PAY', String(r.id).replace(/-\d{6}$/, '')), statementId: r.statement_id, period: r.period ?? null,
+      id: r.id,
+      ref: payoutRef(String(r.id)), statementId: r.statement_id, period: r.period ?? null,
       ownerName: r.display_name, amount: Number(r.amount), currency: r.currency,
       state: r.state, method: METHOD_LABEL[r.method] ?? r.method,
       // Never the full account number, only the tail.
@@ -67,6 +67,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     })),
   });
 };
+
+/** Imported ids are "wb-payout-<owner hash>-<yyyymm>": the plain tail would give every owner that month the same
+ *  reference, so those read PAY-2608-B24C (month, then the owner). Other ids keep their usual tail. */
+function payoutRef(id: string) {
+  const m = /^(.*)-(\d{4})(\d{2})$/.exec(id);
+  if (!m) return refOf('PAY', id);
+  return `PAY-${m[2].slice(2)}${m[3]}-${m[1].replace(/[^A-Za-z0-9]/g, '').slice(-4).toUpperCase()}`;
+}
 
 /** POST /api/payouts { statementIds } — creates a payout run from sent statements. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {

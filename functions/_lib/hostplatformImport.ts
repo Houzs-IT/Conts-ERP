@@ -870,7 +870,8 @@ export function mapPayoutHistory(rows: Row[], report: Row[], today: string): { m
       const v = (c: string) => sen(x.r[c]) ?? 0;
       breakdown.set(x.id, { revenue: v('TOTAL REVENUE'), cleaning: v('ALL CLEANING TOTAL'), utilities: v('UTILITIES'), additional: v('ADDITIONAL DEDUCTION'), misc: v('MISCELLANEOUS CHARGES'), payout: x.payout! });
     }
-    notes.push(`整体报告 is the ${reportMonth} report: ${breakdown.size} units get its revenue and deductions on their ${reportMonth} statement; every other month shows the payout only.`);
+    const monthWords = /^\d{4}-\d{2}$/.test(String(reportMonth)) ? `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(String(reportMonth).slice(5, 7)) - 1]} ${String(reportMonth).slice(0, 4)}` : reportMonth;
+    notes.push(`整体报告 is the ${monthWords} report: ${breakdown.size} units get its revenue and deductions on their ${monthWords} statement; every other month shows the payout only.`);
   } else if (rep.length) notes.push('整体报告 could not be tied to a month of OWNER PAYOUT, so no statement shows its breakdown.');
 
   const months: PayoutMonthIn[] = [];
