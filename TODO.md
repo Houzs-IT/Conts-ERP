@@ -269,3 +269,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Generate owner report on the owner page builds only that owner's draft statement (POST /api/statements/generate ownerIds); it is refused only when that owner's statement is already sent, not when other owners' are. Owner to confirm that rule.
 - The old "Recurring monthly costs" rows other than cleaning (never deducted) are listed once on the unit as "never deducted"; owner to decide whether any should become bills paid on behalf.
 
+
+## Owner details (feat/owner-details, migration 0110)
+- Migration 0110 (owner mailing address and alternate contact) must be applied by hand: staging, check the owner page there, then production. Until then the Owner details card works without the address and alternate contact, and saves ignore them.
+- Production: 116 owners, none with phone or email yet (the source workbooks had none); they are entered on each owner's page (Owner details, Edit).
+- Changing an invited owner's email on the owner page does not change their portal sign-in email; owner to decide whether it should.
