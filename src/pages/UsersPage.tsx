@@ -104,9 +104,9 @@ function Modal({ title, sub, onClose, children, footer, width = 460 }: {
   }, [onClose]);
   return (
     <div role="dialog" aria-modal="true" aria-label={title}
-      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[rgba(21,21,21,0.44)] animate-[fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      className="phone-sheet fixed inset-0 z-[60] grid place-items-center p-6 bg-[rgba(21,21,21,0.44)] animate-[fade-in_var(--motion-standard)_var(--ease-out)_both]">
       <div onClick={onClose} className="absolute inset-0" />
-      <div className="relative w-full max-h-[calc(100vh-48px)] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]" style={{ maxWidth: width }}>
+      <div className="phone-sheet-panel relative w-full max-h-[calc(100dvh-48px)] overflow-y-auto overscroll-contain bg-card rounded-card [box-shadow:var(--shadow-overlay)]" style={{ maxWidth: width }}>
         <div className="pt-5 px-[22px] pb-1 flex flex-col gap-1">
           <h2 className="m-0 text-title leading-[1.3] font-semibold">{title}</h2>
           {sub && <p className="m-0 text-copy leading-[1.5] text-muted-ink">{sub}</p>}

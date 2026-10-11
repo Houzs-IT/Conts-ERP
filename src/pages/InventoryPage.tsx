@@ -298,9 +298,9 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Add inventory item"
-      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      className="phone-sheet fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
       <div onClick={onClose} className="absolute inset-0" />
-      <div ref={ref} className="relative w-full max-w-[500px] max-h-[88vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
+      <div ref={ref} className="phone-sheet-panel relative w-full max-w-[500px] max-h-[88dvh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
         <form onSubmit={e => { e.preventDefault(); if (canSubmit) submit(); }}>
           <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[5px]">
             <h2 className="m-0 text-title font-semibold">Add fit-out item</h2>
@@ -330,7 +330,7 @@ function AddItemModal({ units, onClose, onSubmit }: { units: UnitOption[]; onClo
 
             <Field label="Notes" placeholder="Optional — condition detail, warranty, supplier" value={f.notes} onChange={set('notes')} />
           </div>
-          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
+          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page sticky bottom-0 flex justify-end gap-[9px]">
             <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
             <Button size="sm" variant="primary" type="submit" disabled={!canSubmit} disabledReason="Add an item name and pick a unit first">Add item</Button>
           </div>

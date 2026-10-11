@@ -176,7 +176,7 @@ function Routed() {
   // Management requires two-step sign-in for this role and it is not set up: nothing else answers until it is.
   if (user.twoStepSetupRequired) {
     return (
-      <div className="flex-1 min-h-screen bg-page box-border px-4 py-6 sm:px-10 sm:py-10">
+      <div className="flex-1 min-h-dvh bg-page box-border px-4 py-6 sm:px-10 sm:py-10">
         <div className="max-w-[760px] mx-auto"><Suspense fallback={<Fallback />}><AccountPage gate /></Suspense></div>
       </div>
     );

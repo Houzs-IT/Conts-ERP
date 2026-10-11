@@ -147,3 +147,24 @@ body { margin: 0; }
 @supports not selector(::-webkit-scrollbar) {
   .ops-scroll { scrollbar-width: thin; scrollbar-color: rgba(21, 21, 21, 0.18) transparent; }
 }
+
+/* ---- Scrolling (owner request 11 Oct 2026: one scroller per screen, the app fills the window) ----
+   The shell's content area (.app-main) is the page's only vertical scroller; the window itself never scrolls.
+   Its scrollbar gutter is always reserved, so the page does not shift sideways when a list loads past the fold or
+   when an open dialog locks it. It takes focus for the keyboard, without a ring: it is not a control. */
+.app-main { scrollbar-gutter: stable; }
+.app-main:focus { outline: none; }
+/* An open dialog, drawer or the phone menu locks the page behind it; the dialog scrolls inside itself and a scroll
+   that reaches its end does not carry on into the page. */
+body:has([aria-modal="true"]) .app-main { overflow: hidden !important; }
+[aria-modal="true"], [aria-modal="true"] * { overscroll-behavior: contain; }
+
+/* A form dialog becomes a full-screen sheet on a phone: put .phone-sheet on the dimmed backdrop and
+   .phone-sheet-panel on the box. The box's own scroll area and sticky footer keep working. */
+@media (max-width: 767.98px) {
+  .phone-sheet { padding: 0 !important; place-items: stretch !important; align-items: stretch !important; }
+  .phone-sheet-panel {
+    width: 100% !important; max-width: none !important; height: 100dvh; max-height: 100dvh !important;
+    border-radius: 0 !important; padding-bottom: env(safe-area-inset-bottom);
+  }
+}

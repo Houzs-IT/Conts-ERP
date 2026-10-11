@@ -14,7 +14,7 @@ export default function FieldShell({ children }: { children: ReactNode }) {
   const { user, logout } = useSession();
   const atAccount = useLocation().pathname === '/account';
   return (
-    <div style={{ flex: 1, minHeight: '100vh', display: 'flex', flexDirection: 'column', background: color.page }}>
+    <div style={{ flex: 1, minHeight: '100dvh', display: 'flex', flexDirection: 'column', background: color.page }}>
       <header style={{
         flex: 'none', background: color.black, color: 'var(--color-text-inverse)',
         padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
@@ -35,7 +35,7 @@ export default function FieldShell({ children }: { children: ReactNode }) {
         </button>
       </header>
 
-      <main style={{ flex: 1, padding: '16px 16px 32px', display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560, width: '100%', boxSizing: 'border-box', margin: '0 auto' }}>
+      <main style={{ flex: 1, padding: '16px 16px calc(32px + env(safe-area-inset-bottom))', display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560, width: '100%', boxSizing: 'border-box', margin: '0 auto' }}>
         {children}
       </main>
     </div>

@@ -27,7 +27,8 @@ export function Drawer({ open, onClose, children, width = 480 }: { open: boolean
         role="dialog"
         aria-modal="true"
         style={{
-          width: `min(${width}px, 100%)`, height: '100%', overflowY: 'auto',
+          width: `min(${width}px, 100%)`, height: '100%', overflowY: 'auto', overscrollBehavior: 'contain',
+          paddingBottom: 'env(safe-area-inset-bottom)', boxSizing: 'border-box',
           background: 'var(--color-surface-card)', boxShadow: '-12px 0 40px rgba(21,21,21,0.18)',
           display: 'flex', flexDirection: 'column', animation: 'rise var(--motion-slow) var(--ease-out) both',
         }}

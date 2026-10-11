@@ -94,14 +94,14 @@ export function DecisionDialog({ a, decision, onClose, onDone }: { a: Approval; 
 
   return createPortal(
     <div role="dialog" aria-modal="true" aria-label={c.title(a)}
-      className="fixed inset-0 z-[80] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)]">
+      className="phone-sheet fixed inset-0 z-[80] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)]">
       <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
-      <form onSubmit={submit} className="relative w-full max-w-[480px] bg-card rounded-card shadow-[var(--shadow-overlay)] flex flex-col max-h-[90vh]">
+      <form onSubmit={submit} className="phone-sheet-panel relative w-full max-w-[480px] bg-card rounded-card shadow-[var(--shadow-overlay)] flex flex-col max-h-[90dvh]">
         <div className="px-[22px] pt-[22px] pb-2 flex flex-col gap-[6px]">
           <h2 className="m-0 text-title font-semibold">{c.title(a)}</h2>
           <p className="m-0 text-copy text-muted-ink text-pretty">{body}</p>
         </div>
-        <div className="px-[22px] py-3 flex flex-col gap-3 overflow-y-auto">
+        <div className="px-[22px] py-3 flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto">
           <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-meta flex flex-col gap-[2px]">
             <span className="text-ink">{a.summary}</span>
             <span className="text-muted-ink">Asked by {a.requestedBy.name}, {dateTime(a.requestedAt)} · Reason: {a.reason}</span>

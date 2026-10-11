@@ -94,7 +94,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
   const newPassword = screen === 'change' || screen === 'reset';
 
   return (
-    <div className="flex-1 min-h-screen lg:min-h-[980px] grid grid-cols-1 lg:grid-cols-[minmax(0,1.55fr)_minmax(420px,0.62fr)]">
+    <div className="flex-1 min-h-dvh grid grid-cols-1 lg:grid-cols-[minmax(0,1.55fr)_minmax(420px,0.62fr)]">
       {/* Brand stage. The photograph is the hero; type sits on a scrim, never on bare image. */}
       {/* The photograph is optional. Drop one at public/brand/login-hero.jpg and it
           appears; without it the blueprint grid carries the panel on its own, so a

@@ -22,7 +22,7 @@ export class CrashScreen extends Component<Props, State> {
     if (!this.state.error) return this.props.children;
     const stale = isStaleBuildError(this.state.error);
     return (
-      <div className={this.props.inline ? 'p-10 max-md:p-6' : 'min-h-screen grid place-items-center p-6 bg-page'}>
+      <div className={this.props.inline ? 'p-10 max-md:p-6' : 'min-h-dvh grid place-items-center p-6 bg-page'}>
         <div className="max-w-[440px] mx-auto text-center flex flex-col items-center gap-3">
           <h1 className="m-0 text-[18px] font-semibold text-ink">
             {stale ? 'A newer version of Conts ERP is available' : 'This screen could not be shown'}

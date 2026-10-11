@@ -592,14 +592,14 @@ function Modal({ title, sub, onClose, children, footer }: {
 
   return (
     <div role="dialog" aria-modal="true" aria-label={title}
-      className="fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
+      className="phone-sheet fixed inset-0 z-[60] grid place-items-center p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
       <div onClick={onClose} className="absolute inset-0" />
-      <div ref={ref} className="relative w-full max-w-[460px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden animate-dialog">
+      <div ref={ref} className="phone-sheet-panel relative w-full max-w-[460px] max-h-[calc(100dvh-48px)] flex flex-col bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden animate-dialog">
         <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[9px]">
           <h2 className="m-0 text-title leading-[1.3] font-semibold text-pretty">{title}</h2>
           {sub && <p className="m-0 text-copy leading-[1.55] text-muted-ink text-pretty">{sub}</p>}
         </div>
-        <div className="pt-[14px] px-[22px] pb-[18px] flex flex-col gap-3">{children}</div>
+        <div className="pt-[14px] px-[22px] pb-[18px] flex-1 min-h-0 overflow-y-auto flex flex-col gap-3">{children}</div>
         <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
           {footer}
         </div>
