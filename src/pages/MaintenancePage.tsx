@@ -353,6 +353,8 @@ function BulkAssignModal({ rows, onClose, onDone }: { rows: Issue[]; onClose: ()
 function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { issue: Issue; billing: boolean; money: boolean; skus: Sku[]; onClose: () => void; onChanged: () => void }) {
   const toast = useToast();
   const files = useApi<{ data: FileItem[] }>(`/maintenance/issues/${i.id}/documents`);
+  // What the technician wrote from the phone (kept in History; the field app's job read returns them as a list).
+  const fieldNotes = useApi<{ notes: { note: string; by: string; at: string; done: boolean }[] }>(`/field/repairs/${i.id}`);
   const techs = useTechnicians();
   const [busy, setBusy] = useState<string | null>(null);
   const [assignee, setAssignee] = useState(i.vendorName ?? '');
@@ -374,7 +376,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const charge = i.finalAmount ?? i.quotedAmount;
   const collectFrom = COLLECT_FROM[i.chargeTo];
 
-  const refresh = useCallback(() => { files.reload(); onChanged(); }, [files, onChanged]);
+  const refresh = useCallback(() => { files.reload(); fieldNotes.reload(); onChanged(); }, [files, fieldNotes, onChanged]);
   async function act(key: string, fn: () => Promise<unknown>, ok: string, body?: string) {
     setBusy(key);
     try { await fn(); toast({ tone: 'success', title: ok, body }); refresh(); return true; }
@@ -402,6 +404,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
     { label: 'Quote', at: null, on: i.quotedAmount != null, note: money && i.quotedAmount != null ? `${rm(i.quotedAmount)}${i.billingDate ? `, billed ${date(i.billingDate)}` : ''}` : undefined },
     { label: i.ownerApprovalRequired ? 'Owner approved' : 'Approval', at: i.ownerApprovedAt, on: !!i.ownerApprovedAt || (i.quotedAmount != null && !awaitingOwner(i)), note: awaitingOwner(i) ? 'Waiting for the owner' : !i.ownerApprovalRequired && i.quotedAmount != null ? 'Not needed' : undefined },
     { label: 'In progress', at: i.startedAt, on: !!i.startedAt },
+    { label: 'Repair finished', at: i.endedAt, on: !!i.endedAt || done },
     { label: 'Done', at: i.resolvedAt, on: done, note: done && money && i.finalAmount != null ? `${rm(i.finalAmount)}, ${PAYER_SHORT[i.chargeTo]}` : undefined },
   ];
   const current = steps.findIndex(s => !s.on);
@@ -425,6 +428,17 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
           : <StatusBadge tone="warning">Not collected</StatusBadge>)}
       </div>
       {i.detail && <p className="m-0 text-ink whitespace-pre-wrap">{i.detail}</p>}
+      {(fieldNotes.data?.notes.length ?? 0) > 0 && (
+        <section className="flex flex-col gap-1.5">
+          <h3 className="m-0 text-copy font-semibold">Notes from the technician</h3>
+          {fieldNotes.data!.notes.map((n, k) => (
+            <div key={k} className="rounded-control bg-muted px-3 py-2">
+              <span className="whitespace-pre-wrap [overflow-wrap:anywhere]">{n.note}</span>
+              <span className="block text-meta text-muted-ink">{n.by} · {stamp(n.at)}{n.done ? ' · when finishing' : ''}</span>
+            </div>
+          ))}
+        </section>
+      )}
 
       <ol className="m-0 p-0 list-none flex flex-col">
         {steps.map((s, n) => (

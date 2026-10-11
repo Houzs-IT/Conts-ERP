@@ -128,7 +128,9 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
   const closed = j?.state === 'resolved';
   const working = mine && !closed;
 
-  useEffect(() => { if (j && (j.startedAt || j.endedAt)) setStage('after'); }, [j?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Once the repair has started, the photos being taken are of the finished work.
+  const started = !!j?.startedAt;
+  useEffect(() => { if (started) setStage('after'); }, [started]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
@@ -154,7 +156,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
 
   const media = d.data?.media ?? [];
   const counts = { before: media.filter(m => m.stage === 'before').length, after: media.filter(m => m.stage === 'after').length };
-  const next = j?.windows.filter(w => Date.parse(w.endsAt) > Date.now()) ?? [];
+  const windows = j?.windows ?? [];
 
   let footer: ReactNode = null;
   if (j && d.data?.mayPick) {
@@ -221,10 +223,11 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
                 )) : <InfoRow icon="KeyRound" label="Getting in"><span className="text-muted-ink">No access instruction on this unit. Ask the office.</span></InfoRow>
               ) : d.data!.mayPick && <InfoRow icon="KeyRound" label="Getting in"><span className="text-muted-ink">Shown once you pick up the job.</span></InfoRow>}
               <InfoRow icon="CalendarClock" label="When you may go in">
-                {next.length ? next.map(w => (
-                  <span key={w.id} className="block">
+                {windows.length ? windows.map(w => (
+                  <span key={w.id} className={cx('block', Date.parse(w.endsAt) < Date.now() && 'text-muted-ink')}>
                     <b className="tabular-nums">{stamp(w.startsAt)} to {w.startsAt.slice(0, 10) === w.endsAt.slice(0, 10) ? hm(w.endsAt) : stamp(w.endsAt)}</b>
                     {w.note && <span className="text-muted-ink"> · {w.note}</span>}
+                    {Date.parse(w.endsAt) < Date.now() && <span className="text-muted-ink"> (over)</span>}
                     {w.guestStaying && <span className="block text-meta text-warning">A guest is staying then. Knock first.</span>}
                   </span>
                 )) : <span className="text-muted-ink">No time set yet. Ask the office before going in.</span>}

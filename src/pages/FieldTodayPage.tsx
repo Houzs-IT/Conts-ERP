@@ -95,8 +95,8 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
         </div>
         {!j.done && (
           <div className="flex items-center gap-2 flex-wrap text-copy">
-            {j.next ? <><span>Finish by <b className="tabular-nums">{j.next.checkInTime}</b></span><span className="text-muted-ink">·</span><span><TimeLeft at={j.next.checkInAt} now={now} />{Date.parse(j.next.checkInAt) > now ? ' left' : ''}</span></>
-              : <span className="text-muted-ink">No guest arriving today. Finish any time today.</span>}
+            {j.next ? <><span>Finish by <b className="tabular-nums">{j.next.checkInTime}</b></span><span className="text-muted-ink">Â·</span><span><TimeLeft at={j.next.checkInAt} now={now} />{Date.parse(j.next.checkInAt) > now ? ' left' : ''}</span></>
+              : <span className="text-muted-ink">No guest arriving after this clean.</span>}
             {j.day < mytDay(0) && <StatusBadge tone="warning">From {dayLabel(j.day)}</StatusBadge>}
           </div>
         )}

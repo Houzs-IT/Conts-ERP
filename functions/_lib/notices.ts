@@ -118,10 +118,10 @@ export async function repairNotice(env: Env, id: string, event: RepairEvent, by:
       await notifyUsers(env, { roles: ['ops_managers'], userIds: tech }, { ...base, kind: 'maintenance.assigned', title: `Maintenance job assigned: ${m.unit}`, body: `${m.title}${m.vendor_name ? ` â€“ ${m.vendor_name}` : ''}.`, dedupeKey: `repair-assigned-${id}-${(m.vendor_name ?? '').toLowerCase()}` });
       break;
     case 'picked':
-      await notifyUsers(env, { roles: ['ops_managers'] }, { ...base, kind: 'maintenance.assigned', title: `Maintenance job picked up: ${m.unit}`, body: `${m.title} – ${m.vendor_name ?? 'a technician'} took it on the phone.`, dedupeKey: `repair-picked-${id}` });
+      await notifyUsers(env, { roles: ['ops_managers'] }, { ...base, kind: 'maintenance.assigned', title: `Maintenance job picked up: ${m.unit}`, body: `${m.title} â€“ ${m.vendor_name ?? 'a technician'} took it on the phone.`, dedupeKey: `repair-picked-${id}` });
       break;
     case 'ended':
-      await notifyUsers(env, { roles: ['ops_managers'], userIds: [m.reported_by] }, { ...base, kind: 'maintenance.done', title: `Repair finished, ready to close: ${m.unit}`, body: `${m.title}${m.vendor_name ? ` – ${m.vendor_name}` : ''}.`, dedupeKey: `repair-ended-${id}` });
+      await notifyUsers(env, { roles: ['ops_managers'], userIds: [m.reported_by] }, { ...base, kind: 'maintenance.done', title: `Repair finished, ready to close: ${m.unit}`, body: `${m.title}${m.vendor_name ? ` â€“ ${m.vendor_name}` : ''}.`, dedupeKey: `repair-ended-${id}` });
       break;
     case 'window':
       await notifyUsers(env, { roles: ['ops'], userIds: tech }, { ...base, kind: 'maintenance.window', title: `Maintenance visit scheduled: ${m.unit}`, body: `${m.title}${detail ? `. ${detail}` : ''}.` });
