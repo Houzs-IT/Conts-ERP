@@ -269,3 +269,11 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Generate owner report on the owner page builds only that owner's draft statement (POST /api/statements/generate ownerIds); it is refused only when that owner's statement is already sent, not when other owners' are. Owner to confirm that rule.
 - The old "Recurring monthly costs" rows other than cleaning (never deducted) are listed once on the unit as "never deducted"; owner to decide whether any should become bills paid on behalf.
 
+
+## Operations > Today (feat/ops-today, no migration)
+- Every check-in and checkout opens its reservation; "Guest arrived" uses the booking's Check in move (applyMove), "Guest left" as before; the times recorded come from the audit trail and the clean's guest_left_at. Expected times change through PATCH /reservations/:id/details (same as the drawer). Tested: scripts/api-checks/ops-today.mjs (local PGlite).
+- Maintenance on Today: visits booked that day, open urgent or unit-blocking jobs, and overdue ones (marked overdue, a visit over with the repair not finished, or a repair block ending by that day). There is no due date on a job; owner to decide whether jobs need one.
+- Available units: no live stay that night (owner stays count as taken); ready / needs cleaning / cleaning now / blocked for repair. Tomorrow's readiness is today's unit state plus tomorrow's checkouts, so it is a forecast.
+- Owner to decide: housekeepers and technicians still cannot open Today (they have their own field job list); "field staff" in the request may mean operations staff, who can.
+- "Guest arrived" is allowed while the unit still needs cleaning (the booking drawer allows it too); owner to decide whether to block it.
+- Not done: no test on staging data; scripts/dev-pglite.mjs is not on main (copied locally from another worktree for the browser check).

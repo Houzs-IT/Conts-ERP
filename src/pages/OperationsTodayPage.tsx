@@ -13,7 +13,7 @@ import { refreshNavCounts } from '../lib/navBadges';
 import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import type { BookingChannel } from '../lib/types';
-import { Segmented, PillTabs, OpsModal, dayLabel, hm, mytDay, CATEGORY } from '../components/ops/OpsUi';
+import { Segmented, OpsModal, dayLabel, hm, mytDay, CATEGORY } from '../components/ops/OpsUi';
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
 import { StatRow, StatTile, SectionTitle } from '../components/Metric';
@@ -50,12 +50,14 @@ const unitReady: Record<string, { label: string; tone: AnyTone }> = {
 };
 const PROGRESS: Record<Progress, { label: string; tone: AnyTone }> = {
   reported: { label: 'Reported', tone: 'neutral' }, assigned: { label: 'Assigned', tone: 'neutral' }, in_progress: { label: 'In progress', tone: 'info' },
-  repair_finished: { label: 'Repair finished', tone: 'info' }, awaiting_owner: { label: 'Waiting owner approval', tone: 'warning' }, done: { label: 'Done', tone: 'success' },
+  repair_finished: { label: 'Repair finished', tone: 'info' }, awaiting_owner: { label: 'Awaiting owner approval', tone: 'warning' }, done: { label: 'Done', tone: 'success' },
 };
 const FREE: Record<Free, { label: string; tone: AnyTone }> = {
   ready: { label: 'Ready', tone: 'success' }, needs_cleaning: { label: 'Needs cleaning', tone: 'warning' },
   cleaning: { label: 'Cleaning now', tone: 'info' }, blocked: { label: 'Blocked for repair', tone: 'critical' },
 };
+const count = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+const units = (n: number) => count(n, 'unit');
 const reservationLink = (id: string) => `/reservations/bookings?open=${encodeURIComponent(id)}`;
 
 /** Today: the same day the Cleaning board shows, from the front desk's side. Who arrives and leaves (each opens its
@@ -104,7 +106,7 @@ export default function OperationsTodayPage() {
     <div className="flex flex-col gap-4">
       <PageHeader title="Today"
         // vocab-ok: data.arrivals and data.departures are API field names, not words on screen
-        sub={data ? `${dayLabel(date)} · ${data.arrivals.length} check-ins · ${data.departures.length} checkouts · ${c!.done} of ${c!.total} cleaning jobs done` : dayLabel(date)}
+        sub={data ? `${dayLabel(date)} · ${count(data.arrivals.length, 'check-in')} · ${count(data.departures.length, 'checkout')} · ${c!.done} of ${count(c!.total, 'cleaning job')} done` : dayLabel(date)}
         actions={<Segmented label="Day" value={pick} onChange={setPick} options={[{ value: 'today', label: 'Today' }, { value: 'tomorrow', label: 'Tomorrow' }]} />}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Sparkles" size="sm" />} onClick={() => navigate('/operations/cleaning')}>Open Cleaning</Button>} />
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
@@ -112,8 +114,8 @@ export default function OperationsTodayPage() {
       <StatRow cols={5}>
         <StatTile label="Check-ins" value={data ? String(data.arrivals.length) : undefined}
           // vocab-ok: data.arrivals is an API field name, not a word on screen
-          hint={data ? (isToday ? `${arrived} arrived · ${data.arrivals.filter(a => a.state !== 'checked_in' && a.readiness === 'ready' && (!a.cleanState || a.cleanState === 'resolved')).length} units ready` : `${data.arrivals.filter(a => a.readiness === 'ready').length} units ready now`) : undefined} />
-        <StatTile label="Checkouts" value={data ? String(data.departures.length) : undefined} hint={data ? `${out} out so far` : undefined} />
+          hint={data ? (isToday ? `${arrived} arrived · ${units(data.arrivals.filter(a => a.state === 'confirmed' && a.readiness === 'ready' && (!a.cleanState || a.cleanState === 'resolved')).length)} ready` : `${units(data.arrivals.filter(a => a.readiness === 'ready').length)} ready now`) : undefined} />
+        <StatTile label="Checkouts" value={data ? String(data.departures.length) : undefined} hint={isToday ? `${out} out so far` : undefined} />
         <StatTile label="Cleaning jobs done" value={c ? `${c.done} / ${c.total}` : undefined} hint={c ? `${c.ready} ready to clean · ${c.cleaning} in progress${c.unassigned ? ` · ${c.unassigned} unassigned` : ''}` : undefined} hintTone={c?.unassigned ? 'critical' : undefined} onClick={() => navigate('/operations/cleaning')} />
         <StatTile label={pick === 'today' ? 'Maintenance today' : 'Maintenance tomorrow'} value={data ? String(openJobs.length) : undefined}
           hint={data ? `${urgent} urgent · ${late} overdue` : undefined} hintTone={urgent || late ? 'critical' : undefined} onClick={() => navigate('/operations/maintenance')} />
@@ -197,7 +199,7 @@ function StayLine({ id, channel, time, done, unit, guest, sub, subTone, actions 
     <div className={cx(ROW, 'flex flex-wrap items-center gap-x-3 gap-y-2 text-copy')}>
       <Link to={reservationLink(id)} aria-label={`Open reservation: ${unit}, ${guest}`}
         className="flex-1 min-w-[220px] flex items-center gap-3 text-ink no-underline rounded-control -m-1 p-1 hover:bg-page">
-        <span className="w-[64px] flex-none flex flex-col">
+        <span className="min-w-[52px] sm:w-[88px] flex-none flex flex-col whitespace-nowrap">
           <span className="font-semibold [font-variant-numeric:tabular-nums]">{time}</span>
           {done && <span className="text-meta text-success [font-variant-numeric:tabular-nums]">{done}</span>}
         </span>
@@ -205,7 +207,7 @@ function StayLine({ id, channel, time, done, unit, guest, sub, subTone, actions 
         <span className="flex-1 min-w-0">
           {/* The unit wraps rather than cuts: on a phone the cut-off part is the unit number. */}
           <b className="block [overflow-wrap:anywhere]">{unit}</b>
-          <span className="block truncate text-muted-ink">{guest}</span>
+          <span className="block text-muted-ink [overflow-wrap:anywhere]">{guest}</span>
           {sub && <span className={cx('block text-meta', subTone === 'critical' ? 'text-danger' : 'text-warning')}>{sub}</span>}
         </span>
         <Icon name="ChevronRight" size="sm" color="var(--color-faint)" />
@@ -248,11 +250,11 @@ function TimeDialog({ edit, onClose, onSaved }: { edit: { id: string; which: 'in
 /** One maintenance job: when and why it is on today's list, how far it has got, who has it. Opens the job. */
 function JobLine({ m }: { m: Job }) {
   const p = PROGRESS[m.progress] ?? { label: m.progress, tone: 'neutral' as AnyTone };
-  const when = m.visit ? `${hm(m.visit.startsAt)}–${hm(m.visit.endsAt)}` : m.why === 'overdue' ? 'Overdue' : m.urgent ? 'Urgent' : 'Open';
+  const when = m.visit ? `${hm(m.visit.startsAt)}–${hm(m.visit.endsAt)}` : 'No visit booked';
   return (
     <Link to={`/operations/maintenance?id=${encodeURIComponent(m.id)}`}
       className={cx(ROW, 'flex flex-wrap items-center gap-x-3 gap-y-2 text-copy text-ink no-underline hover:bg-page')}>
-      <span className={cx('w-[96px] flex-none font-semibold [font-variant-numeric:tabular-nums]', !m.visit && m.why !== 'visit' && m.progress !== 'done' && (m.why === 'overdue' || m.urgent) && 'text-danger')}>{when}</span>
+      <span className={cx('w-[96px] flex-none [font-variant-numeric:tabular-nums]', m.visit ? 'font-semibold' : 'text-meta text-muted-ink')}>{when}</span>
       <span className="flex-1 min-w-[180px]">
         <b className="[overflow-wrap:anywhere]">{m.propertyName} {m.unitNumber}</b> · {m.title}
         <span className="block text-meta text-muted-ink">{CATEGORY[m.category] ?? m.category} · {m.assigneeName ?? 'nobody assigned'}{m.dueBy ? ` · available again ${dayLabel(m.dueBy)}` : ''}</span>
@@ -281,18 +283,22 @@ function FreeUnits({ units, loading, night }: { units: FreeUnit[] | undefined; l
   return (
     <Panel title={`Available units ${night}`} count={units?.length} loading={loading} empty={`Every unit has a guest ${night}.`}>
       <div className="px-4 sm:px-5 pt-3">
-        <PillTabs value={show} onChange={setShow} tabs={[
-          { value: 'all', label: 'All', count: units?.length },
-          { value: 'ready', label: 'Ready', count: n('ready') },
-          { value: 'needs_cleaning', label: 'Needs cleaning', count: n('needs_cleaning') },
-          { value: 'blocked', label: 'Blocked for repair', count: n('blocked') },
-        ]} />
+        {/* Wraps instead of scrolling sideways, so no choice is hidden off the edge of a phone. */}
+        <div role="tablist" aria-label="Show" className="flex flex-wrap gap-2">
+          {([['all', 'All', units?.length], ['ready', 'Ready', n('ready')], ['needs_cleaning', 'Needs cleaning', n('needs_cleaning')], ['blocked', 'Blocked for repair', n('blocked')]] as const).map(([v, label, k]) => (
+            <button key={v} type="button" role="tab" aria-selected={show === v} onClick={() => setShow(v)}
+              className={cx('h-9 px-3.5 rounded-pill text-copy font-medium cursor-pointer whitespace-nowrap border border-solid',
+                show === v ? 'bg-black text-white border-black' : 'bg-card text-ink border-line hover:bg-muted')}>
+              {label}<span className={cx('ml-1.5 [font-variant-numeric:tabular-nums]', show === v ? 'text-gold' : 'text-muted-ink')}>{k}</span>
+            </button>
+          ))}
+        </div>
       </div>
       {buildings.length === 0 && <p className="m-0 px-5 py-5 text-copy text-muted-ink">No unit in this group.</p>}
       {buildings.map(b => (
         <div key={b.name} className="px-4 sm:px-5 py-3">
           <div className="text-meta font-semibold text-muted-ink mb-2">{b.name} <span className="font-normal">· {b.units.length}</span></div>
-          <div className="grid grid-cols-1 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2">
             {b.units.map(u => {
               const s = FREE[u.status];
               return (
@@ -302,8 +308,8 @@ function FreeUnits({ units, loading, night }: { units: FreeUnit[] | undefined; l
                     <StatusBadge tone={s.tone}>{s.label}</StatusBadge>
                   </div>
                   <span className="text-meta text-muted-ink">
-                    {u.bedrooms} {u.bedrooms === 1 ? 'bedroom' : 'bedrooms'} · up to {u.maxGuests}
-                    {u.nextCheckIn ? ` · next guest ${dayLabel(u.nextCheckIn)}` : ' · no guest booked'}
+                    {u.bedrooms ? `${count(u.bedrooms, 'bedroom')} · ` : ''}up to {count(u.maxGuests, 'guest')}
+                    {u.nextCheckIn ? ` · next check-in ${dayLabel(u.nextCheckIn)}` : ' · no check-in booked'}
                   </span>
                   {u.note && <span className={cx('text-meta [overflow-wrap:anywhere]', u.status === 'blocked' ? 'text-danger' : 'text-warning')}>{u.note}</span>}
                 </div>
