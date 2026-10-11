@@ -60,13 +60,13 @@ export async function cleanPrice(env: Env, unitId: string, kind: string): Promis
   return { amount: Number.isInteger(def) && def >= 0 ? def : deep ? 13800 : 8000, source: 'default' };
 }
 
-/** Charges a finished clean to its unit once (category cleaning, owner pays). Skipped when the clean already has an
- *  expense, when the unit already carries a cleaning expense that day (the owner workbook import records cleans
- *  too), or when that month's statement is final. Never throws: the clean is already finished. */
-export async function chargeClean(env: Env, session: Session, task: { id: string; unit_id: string; kind: string; title: string }):
+/** Charges a finished clean to its unit once (category cleaning, owner pays), dated the day it was finished (today,
+ *  unless `day` says otherwise): that date decides the month and the owner statement it lands on. Skipped when the
+ *  clean already has an expense, when the unit already carries a cleaning expense that day (the owner workbook import
+ *  records cleans too), or when that month's statement is final. Never throws: the clean is already finished. */
+export async function chargeClean(env: Env, session: Session, task: { id: string; unit_id: string; kind: string; title: string }, day = mytToday()):
   Promise<{ amount: number; created: boolean; reason: string | null }> {
   try {
-    const day = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
     const existing = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE task_id = ? LIMIT 1`, task.id);
     if (existing) return { amount: Number(existing.amount), created: false, reason: 'already charged' };
     const sameDay = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE unit_id = ? AND category = 'cleaning' AND incurred_on = ? LIMIT 1`, task.unit_id, day);

@@ -10,6 +10,8 @@ import { StatusBadge } from '../../components/StatusBadge';
 import Icon from '../../components/Icon';
 import { DataTable, type Column } from '../../components/DataTable';
 import { StatTile, StatRow, Segmented, Eyebrow } from '../../components/Metric';
+import { ConfirmButton } from '../../components/ConfirmDialog';
+import { MonthStepper, shiftMonth } from '../finance/listKit';
 import ApprovalBanner from '../../components/ApprovalBanner';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
@@ -18,8 +20,8 @@ import { isStaged, stagedToast, type Approval } from '../../lib/approvals';
 import { refreshNavCounts } from '../../lib/navBadges';
 import { rm, monthLabel, date as fmtDate, todayMyt, titleCase, plural } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
-import { PAYER_LABEL } from '../../lib/revenueModel';
-import { ExpenseEntryModal, UtilitiesModal, type UnitChoice } from './ExpenseEntry';
+import { PAYER_LABEL, PAYERS } from '../../lib/revenueModel';
+import { UtilitiesModal, type UnitChoice } from './ExpenseEntry';
 import { AdjustmentActions, ADJUSTMENT_KIND, ADJUSTMENT_STATE } from './Adjustments';
 
 /** A month's costs the way the owner reads them (GET /api/expenses/breakdown, functions/_lib/unitCosts.ts):
@@ -39,20 +41,27 @@ interface UnitCosts extends Breakdown { unitId: string; unitLabel: string; reven
 export interface CostItem {
   id: string; unitId: string; unitLabel: string; kind: string; kindLabel: string; group: Group; category: string; description: string;
   amount: number; chargeTo: string; incurredOn: string; reference: string | null; receiptDocumentId: string | null; locked: boolean;
+  source: string; taskId: string | null; maintenanceId: string | null;
 }
 export interface AdjustmentItem {
-  id: string; unitId: string; unitLabel: string; placedOnFirstUnit: boolean; kind: string; amount: number; description: string;
+  id: string; unitId: string; unitLabel: string; placedOnFirstUnit: boolean; kind: string; amount: number; description: string; isMaintenanceFee: boolean;
   occurredOn: string; reference: string | null; state: string; source: string; inMonth: boolean;
   statement: { id: string; period: string; state: string } | null;
 }
-interface Payload { month: string; canChangeAdjustments: boolean; units: UnitCosts[]; total: Breakdown; items: CostItem[]; adjustments: AdjustmentItem[] }
+interface UnchargedClean { taskId: string; unitId: string; unitLabel: string; kind: string; title: string; doneOn: string; sameDayCost: boolean }
+interface Payload { month: string; canChangeAdjustments: boolean; units: UnitCosts[]; total: Breakdown; items: CostItem[]; adjustments: AdjustmentItem[]; unchargedCleans: UnchargedClean[] }
 
-/** The kinds of bill The Conts pays for the owner. Value = expenses.category, except building_fee: the condo's
- *  maintenance fee, an owner charge after the split (not an expense). */
+/** The kinds of cost "Add a bill" records. Value = expenses.category, except building_fee: the condo's maintenance
+ *  fee, an owner charge after the split (not an expense). Cleaning and repairs normally arrive from their jobs; they are
+ *  here for one that has no job (an extra clean, a repair paid directly). */
 export const BILL_KINDS = [
   { value: 'water', label: 'Water' }, { value: 'electricity', label: 'Electricity' }, { value: 'internet', label: 'Wi-Fi' },
-  { value: 'sewerage', label: 'IndahWater' }, { value: 'building_fee', label: 'Maintenance fee (condo)' }, { value: 'other', label: 'Other fees' },
+  { value: 'sewerage', label: 'IndahWater' }, { value: 'building_fee', label: 'Maintenance fee (condo)' },
+  { value: 'cleaning', label: 'Cleaning fee (no cleaning job)' }, { value: 'maintenance', label: 'Maintenance repair (no maintenance job)' },
+  { value: 'other', label: 'Other fees' },
 ];
+const UTILITY = new Set(['water', 'electricity', 'internet', 'sewerage']);
+const shortKind = (label: string) => label.replace(/ \(no .*\)$/, '');
 
 /** The owner workbook's month words on its O2 lines ("MAINTENANCE FEE SEPT 26"). */
 const FEE_MONTH = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEPT', 'OCT', 'NOV', 'DEC'];
@@ -64,12 +73,18 @@ export const maintenanceFeeText = (typed: string, isoDate: string) => {
 };
 
 const lastDayOf = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); };
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
-/** "Add a bill": a bill The Conts paid for the owner, recorded to the unit with the owner paying, so the
- *  statement deducts it before the operator's share. The condo's maintenance fee is the exception: it comes off after
- *  the operator's share (the owner's report lists it below "Payout Before O2 Adjustment"), so it is recorded as an
- *  owner charge on the unit (POST /api/owners/:id/adjustments, the same rules, approval and audit as any owner charge),
- *  offered only to those who may add owner charges. */
+interface UtilityAccount { accountId: string; unitId: string; kind: string; accountNo: string; provider: string | null; expenseId: string | null; amount: number | null; recordedElsewhere: boolean }
+
+/** "Add a bill": one form for every bill and cost entered by hand (water, electricity, Wi-Fi, IndahWater, the condo's
+ *  maintenance fee, a clean or repair with no job, other fees), the same flow whoever paid it. The bill date is
+ *  required: it decides the month and the owner statement the cost lands on. A utility bill takes the unit's account
+ *  number (Details tab) as its reference, as the monthly utility bills screen does, so both read as the same bill.
+ *  Recorded to the unit (POST /api/expenses); only what the owner pays is deducted. The condo's maintenance fee comes
+ *  off after the operator's share (the owner's report lists it below "Payout Before O2 Adjustment"), so it is an owner
+ *  charge (POST /api/owners/:id/adjustments, with the approval and audit of any owner charge), offered only to those
+ *  who may add owner charges. */
 export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onClose, onSaved }: {
   units: UnitChoice[]; defaultUnitId?: string; ownerId: string; canAdjust: boolean; month: string; onClose: () => void; onSaved: () => void;
 }) {
@@ -79,15 +94,24 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
   const [category, setCategory] = useState('water');
   const [amount, setAmount] = useState<number | null>(null);
   const [incurredOn, setIncurredOn] = useState(today.startsWith(month) ? today : lastDayOf(month));
+  const [chargeTo, setChargeTo] = useState('owner');
+  const [account, setAccount] = useState<string | null>(null);
   const [reference, setReference] = useState('');
   const [description, setDescription] = useState('');
   const [receipt, setReceipt] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
-  const ok = !!unitId && amount != null && amount > 0 && /^\d{4}-\d{2}-\d{2}$/.test(incurredOn);
+  const validDay = ISO_DAY.test(incurredOn);
+  const billMonth = validDay ? incurredOn.slice(0, 7) : month;
+  const accountsApi = useApi<{ data: UtilityAccount[] }>(`/expenses/utilities?month=${billMonth}&unitId=${encodeURIComponent(unitId)}`);
+  const accounts = (accountsApi.data?.data ?? []).filter(a => a.kind === category);
+  // The first account is picked until someone chooses; '' means "another account", typed by hand.
+  const picked = UTILITY.has(category) && account !== '' ? accounts.find(a => a.accountId === account) ?? accounts[0] : undefined;
+  const ok = !!unitId && amount != null && amount > 0 && validDay;
   const kinds = canAdjust ? BILL_KINDS : BILL_KINDS.filter(k => k.value !== 'building_fee');
-  const kind = BILL_KINDS.find(k => k.value === category)?.label ?? category;
+  const kind = shortKind(BILL_KINDS.find(k => k.value === category)?.label ?? category);
   const fee = category === 'building_fee';
+  const payer = PAYERS.find(p => p.value === chargeTo);
 
   async function save() {
     if (!ok || busy) return;
@@ -98,7 +122,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
           kind: 'charge', amount, occurredOn: incurredOn, unitId, reference: reference.trim() || null, description: maintenanceFeeText(description, incurredOn),
         });
         if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); onSaved(); onClose(); return; }
-        toast({ tone: 'success', title: 'Maintenance fee recorded.', body: 'The owner statement deducts it after the operator\'s share.' });
+        toast({ tone: 'success', title: 'Maintenance fee recorded.', body: `On the ${monthLabel(billMonth)} costs. The owner statement deducts it after the operator's share.` });
         onSaved(); onClose(); return;
       }
       let receiptDocumentId: string | null = null;
@@ -107,12 +131,12 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
         fd.append('file', receipt); fd.append('unitId', unitId); fd.append('kind', 'receipt');
         receiptDocumentId = (await api.post<{ id: string }>('/documents', fd)).id;
       }
-      const text = description.trim() || `${kind} ${monthLabel(incurredOn.slice(0, 7))}`;
+      const text = description.trim() || `${kind} ${monthLabel(billMonth)}${picked?.provider ? ` (${picked.provider})` : ''}`;
       const res = await api.post<unknown>('/expenses', {
-        unitId, category, amount, incurredOn, chargeTo: 'owner', reference: reference.trim() || null, description: text, receiptDocumentId,
+        unitId, category, amount, incurredOn, chargeTo, reference: picked?.accountNo || reference.trim() || null, description: text, receiptDocumentId,
       });
       if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); onSaved(); onClose(); return; }
-      toast({ tone: 'success', title: 'Bill recorded.', body: `${kind}, paid for the owner. The owner statement deducts it before the operator's share.` });
+      toast({ tone: 'success', title: 'Bill recorded.', body: `${kind}, ${monthLabel(billMonth)}. ${chargeTo === 'owner' ? 'The owner statement deducts it before the operator\'s share.' : `${PAYER_LABEL[chargeTo] ?? chargeTo} pays: not on the owner statement.`}` });
       onSaved(); onClose();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFields(e.fields);
@@ -120,25 +144,39 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
     } finally { setBusy(false); }
   }
 
+  const already = picked?.expenseId && picked.amount != null ? picked : null;
   return (
     <div role="dialog" aria-modal="true" aria-label="Add a bill" className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)]">
       <div onClick={onClose} className="absolute inset-0" />
-      <div className="relative w-full max-w-[500px] max-h-[calc(100vh-32px)] flex flex-col bg-card rounded-card shadow-[var(--shadow-overlay)]">
+      <div className="relative w-full max-w-[520px] max-h-[calc(100vh-32px)] flex flex-col bg-card rounded-card shadow-[var(--shadow-overlay)]">
         <div className="pt-[22px] px-[22px] pb-1 flex-none">
           <h2 className="m-0 text-title font-semibold">Add a bill</h2>
           <p className="mt-[5px] mb-0 text-copy text-muted-ink">{fee
             ? 'The condo\'s maintenance fee, paid for the owner. The owner statement deducts it after the operator\'s share.'
-            : 'A bill The Conts paid for the owner. The owner statement deducts it before the operator\'s share.'}</p>
+            : 'A bill or cost on the unit. The bill date decides the month and the owner statement it goes on.'}</p>
         </div>
         <div className="py-4 px-[22px] flex flex-col gap-[14px] overflow-y-auto min-h-0">
-          {units.length > 1 && <Select showLabel size="md" label="Unit" value={unitId} onChange={setUnitId} options={units.map(u => ({ value: u.id, label: titleCase(u.label) }))} />}
+          {units.length > 1 && <Select showLabel size="md" label="Unit" value={unitId} onChange={v => { setUnitId(v); setAccount(null); }} options={units.map(u => ({ value: u.id, label: titleCase(u.label) }))} />}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Select showLabel size="md" label="Bill" value={category} onChange={setCategory} options={kinds} />
+            <Select showLabel size="md" label="Bill" value={category} onChange={v => { setCategory(v); setAccount(null); }} options={kinds} />
             <MoneyInput label="Amount (RM)" placeholder="e.g. 120.50" minSen={1} valueSen={amount} onChangeSen={setAmount} error={fields.amount} />
-            <DateField label="Date" value={incurredOn} onChange={setIncurredOn} error={fields.incurredOn} />
-            <Field label="Reference (optional)" placeholder="Bill or account number" maxLength={80} value={reference} onChange={e => setReference(e.target.value)} />
+            <DateField label="Bill date" value={incurredOn} onChange={setIncurredOn}
+              error={fields.incurredOn ?? (validDay ? undefined : 'A bill date is required.')}
+              help={validDay ? `Goes on ${monthLabel(billMonth, { long: true })}.` : undefined} />
+            {fee
+              ? <Field label="Reference (optional)" placeholder="Bill number" maxLength={80} value={reference} onChange={e => setReference(e.target.value)} />
+              : <Select showLabel size="md" label="Paid by" value={chargeTo} onChange={setChargeTo} options={PAYERS.map(p => ({ value: p.value, label: p.label }))} />}
           </div>
-          <Field label="Description (optional)" placeholder={fee ? `e.g. ${maintenanceFeeText('', incurredOn)}` : `e.g. ${kind} ${monthLabel(month)}`} maxLength={fee ? 200 : 300}
+          {!fee && payer && <p className="m-0 -mt-1 text-meta text-muted-ink">{payer.help}</p>}
+          {UTILITY.has(category) && accounts.length > 0 && (
+            <Select showLabel size="md" label="Account" value={picked?.accountId ?? ''} onChange={v => setAccount(v)}
+              options={[...accounts.map(a => ({ value: a.accountId, label: `${a.accountNo}${a.provider ? ` · ${a.provider}` : ''}` })), { value: '', label: 'Another account (type the reference)' }]} />
+          )}
+          {!fee && !picked && <Field label="Reference (optional)" placeholder="Bill or account number" maxLength={80} value={reference} onChange={e => setReference(e.target.value)} />}
+          {already && (
+            <p className="m-0 text-meta text-warning">Already recorded for {monthLabel(billMonth)} on this account: {rm(already.amount ?? 0)}. Adding this records a second bill.</p>
+          )}
+          <Field label="Description (optional)" placeholder={fee ? `e.g. ${maintenanceFeeText('', validDay ? incurredOn : lastDayOf(month))}` : `e.g. ${kind} ${monthLabel(billMonth)}`} maxLength={fee ? 200 : 300}
             value={description} onChange={e => setDescription(e.target.value)} error={fields.description} />
           {!fee && <div className="flex flex-col gap-1.5">
             <span className="text-meta font-medium text-muted-ink">Receipt (optional)</span>
@@ -150,7 +188,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
         </div>
         <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end flex-wrap gap-[9px] flex-none">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason="Pick the bill and enter the amount and date" onClick={() => void save()}>Add bill</Button>
+          <Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason="Pick the bill and enter the amount and bill date" onClick={() => void save()}>Add bill</Button>
         </div>
       </div>
     </div>
@@ -248,53 +286,182 @@ function PaidOnBehalfList({ items, adjustments, ownerId, showUnit, canChange, on
   );
 }
 
-/** Unit Financials: "Costs this month", the add-a-bill form, and the unit's standard cleaning price. */
+/** How a cost reached the unit, in the owner's words. */
+export const HOW: Record<string, string> = {
+  cleaning_job: 'Cleaning job', maintenance_job: 'Maintenance job', bill: 'Bill', manual: 'Manual', import: 'Imported',
+};
+
+/** One line of the unit's cost table: an expense, or an owner credit or charge dated in the month. */
+export interface CostLine {
+  id: string; unitLabel: string; date: string; description: string; kindLabel: string; how: string; amount: number;
+  /** before: the owner pays, deducted before the operator's share; after: an owner charge after it; credit: money to the
+   *  owner; others: The Conts, a tenant or a guest paid, not deducted. */
+  effect: 'before' | 'after' | 'credit' | 'others'; payer: string; receiptDocumentId: string | null;
+}
+const EFFECT: Record<CostLine['effect'], string> = { before: 'Owner, before the split', after: 'Owner, after the split', credit: 'Credit to owner', others: 'not deducted' };
+const effectText = (l: CostLine) => (l.effect === 'others' ? `${l.payer}, not deducted` : EFFECT[l.effect]);
+
+/** The month's expenses and its own owner credits and charges, as one dated list (oldest first). Held ones, and open
+ *  ones from earlier months still waiting for a statement, are not costs of this month: they are listed apart. */
+export function costLines(items: CostItem[], adjustments: AdjustmentItem[]): CostLine[] {
+  const lines: CostLine[] = items.map(i => ({
+    id: i.id, unitLabel: i.unitLabel, date: i.incurredOn, description: i.description || i.kindLabel, kindLabel: i.kindLabel, how: HOW[i.source] ?? 'Manual',
+    amount: i.amount, effect: i.chargeTo === 'owner' ? 'before' : 'others', payer: PAYER_LABEL[i.chargeTo] ?? i.chargeTo, receiptDocumentId: i.receiptDocumentId,
+  }));
+  for (const a of adjustments) {
+    if (!a.inMonth || a.state === 'held') continue;
+    lines.push({
+      id: a.id, unitLabel: a.unitLabel, date: a.occurredOn, description: a.description,
+      kindLabel: a.isMaintenanceFee ? 'Maintenance fee (condo)' : ADJUSTMENT_KIND[a.kind] ?? a.kind,
+      how: a.source === 'owner_workbook' ? 'Imported' : a.isMaintenanceFee ? 'Bill' : 'Manual',
+      amount: Math.abs(a.amount), effect: a.amount < 0 ? 'after' : 'credit', payer: 'Owner', receiptDocumentId: null,
+    });
+  }
+  return lines.sort((x, y) => x.date.localeCompare(y.date));
+}
+
+const receiptCell = (id: string | null) => id
+  ? <button type="button" onClick={() => downloadFile(`/documents/${id}/download`).catch(notifyFailure)} className="p-0 bg-transparent border-none cursor-pointer text-meta text-gold-ink underline [font-family:inherit]">Receipt</button>
+  : <span className="text-muted-ink">—</span>;
+
+/** The columns of a cost table; `unit` adds the unit when it lists several. */
+export function costColumns(unit: boolean): Column<CostLine>[] {
+  return [
+    { key: 'date', label: 'Date', type: 'date', value: r => r.date, width: 110 },
+    ...(unit ? [{ key: 'unit', label: 'Unit', value: (r: CostLine) => r.unitLabel, width: 170, filter: { kind: 'select' as const } }] : []),
+    { key: 'description', label: 'Cost', value: r => r.description, hideable: false, width: 220, sub: r => r.kindLabel },
+    { key: 'kind', label: 'Kind', value: r => r.kindLabel, hidden: true, width: 150, filter: { kind: 'select' } },
+    { key: 'how', label: 'How it arrived', value: r => r.how, width: 130, filter: { kind: 'select' } },
+    { key: 'payer', label: 'Paid by', value: effectText, width: 170, filter: { kind: 'select' },
+      render: r => <span className={cx('text-meta', r.effect === 'others' ? 'text-muted-ink' : 'text-ink font-medium')}>{effectText(r)}</span> },
+    { key: 'amount', label: 'Amount', type: 'money', value: r => (r.effect === 'credit' ? -r.amount : r.amount), width: 110,
+      render: r => <MoneyText sen={r.amount} mode="exact" className={cx('text-copy font-medium', r.effect === 'credit' && 'before:content-["+_"]')} /> },
+    { key: 'receipt', label: 'Receipt', width: 80, noExport: true, sortable: false, filter: false, render: r => receiptCell(r.receiptDocumentId) },
+  ];
+}
+
+export function CostCard({ r, unit }: { r: CostLine; unit: boolean }) {
+  return (
+    <span className="flex items-start justify-between gap-3 min-w-0">
+      <span className="flex flex-col min-w-0">
+        {unit && <span className="text-meta text-muted-ink truncate">{titleCase(r.unitLabel)}</span>}
+        <span className="text-copy truncate" title={r.description}>{r.description}</span>
+        <span className="text-meta text-muted-ink">{fmtDate(r.date)} · {r.kindLabel} · {r.how}</span>
+      </span>
+      <span className="flex flex-col items-end shrink-0">
+        <MoneyText sen={r.amount} mode="exact" className={cx('text-copy font-medium', r.effect === 'credit' && 'before:content-["+_"]')} />
+        <span className="text-caption text-muted-ink">{effectText(r)}</span>
+      </span>
+    </span>
+  );
+}
+
+/** What the table adds up to, in the cards' terms: before the split (the "Deducted before the split" card), after
+ *  it, credits, and what others paid. */
+export function CostTotals({ lines }: { lines: CostLine[] }) {
+  const sum = (e: CostLine['effect']) => lines.filter(l => l.effect === e).reduce((n, l) => n + l.amount, 0);
+  const parts: [string, number][] = [['owner pays before the split', sum('before')], ['after the split', sum('after')], ['credit to owner', sum('credit')], ['others paid, not deducted', sum('others')]];
+  return (
+    <div className="px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink flex flex-wrap gap-x-4 gap-y-1">
+      <span className="text-ink font-medium">{plural(lines.length, 'cost')}</span>
+      {parts.filter(([, n], i) => n || i === 0).map(([label, n]) => (
+        <span key={label}>{label} <MoneyText sen={n} mode="exact" className="text-ink font-medium" /></span>
+      ))}
+    </div>
+  );
+}
+
+/** Unit Financials, "Costs": every cost on the unit in a month, from one source (GET /api/expenses/breakdown,
+ *  functions/_lib/unitCosts.ts, the rows and month rule the owner statement uses). Costs arrive three ways: a finished
+ *  cleaning job, a maintenance job on its billing date, and Add a bill (utilities, the condo fee, anything else). The
+ *  cards total the table. Finished cleans that carry no cost are offered to charge. */
 export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPrice, legacyCosts, onChanged }: {
   unitId: string; ownerId: string; unitLabel: string; canEdit: boolean; cleaningPrice: number | null | undefined;
   legacyCosts: { category: string; amount: number }[]; onChanged: () => void;
 }) {
-  const month = todayMyt().slice(0, 7);
+  const toast = useToast();
+  const thisMonth = todayMyt().slice(0, 7);
+  const [month, setMonth] = useState(thisMonth);
   const { data, loading, error, reload } = useApi<Payload>(`/expenses/breakdown?month=${month}&unitId=${encodeURIComponent(unitId)}`);
   const [modal, setModal] = useState<null | 'bill'>(null);
+  const [charging, setCharging] = useState(false);
   const u = data?.units[0];
   const t = u?.totals;
   const value = (sen: number | undefined) => (sen === undefined ? undefined : rm(sen));
   const changed = () => { reload(); onChanged(); };
-  const pob = (data?.items ?? []).filter(i => isBill(i.group));
+  const lines = useMemo(() => (data ? costLines(data.items, data.adjustments) : null), [data]);
+  const waiting = (data?.adjustments ?? []).filter(a => !a.inMonth || a.state === 'held');
+  const uncharged = data?.unchargedCleans ?? [];
+  const columns = useMemo(() => costColumns(false), []);
+
+  async function chargeCleans() {
+    setCharging(true);
+    try {
+      const r = await api.post<{ charged: { amount: number }[]; skipped: { reason: string }[] }>('/expenses/clean-charges', { unitId, month });
+      const sum = r.charged.reduce((n, c) => n + c.amount, 0);
+      toast({ tone: r.skipped.length ? 'warning' : 'success', title: `${plural(r.charged.length, 'clean')} charged, ${rm(sum)}.`,
+        body: r.skipped.length ? `${plural(r.skipped.length, 'clean')} not charged: ${[...new Set(r.skipped.map(s => s.reason))].join('; ')}.` : `On the ${monthLabel(month)} costs, dated the day each clean was finished.` });
+      changed();
+    } catch (e) { notifyFailure(e); } finally { setCharging(false); }
+  }
+
   return (
     <Card>
       <div className="flex items-start justify-between gap-3 flex-wrap py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
-        <div className="flex flex-col gap-1 min-w-0">
-          <span className="text-[16px] font-semibold tracking-[-0.01em]">Costs this month</span>
-          <span className="text-meta text-muted-ink">{monthLabel(month, { long: true })} so far, totalled from what is recorded to {unitLabel}. The owner's share is deducted before the operator's.</span>
+        <div className="flex flex-col gap-1 min-w-0 flex-[1_1_260px]">
+          <span className="text-[16px] font-semibold tracking-[-0.01em]">Costs</span>
+          <span className="text-meta text-muted-ink [text-wrap:pretty]">Every cost recorded to {unitLabel}, by its date: cleaning jobs when finished, maintenance jobs on their billing date, and bills. The date decides the month and the owner statement. The cards total the table.</span>
         </div>
-        {canEdit && <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal('bill')}>Add a bill</Button>}
+        <div className="flex gap-2 flex-wrap items-center">
+          <MonthStepper label={monthLabel(month)} note={month === thisMonth ? 'so far' : undefined} onStep={by => setMonth(m => shiftMonth(m, by))} />
+          {canEdit && <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal('bill')}>Add a bill</Button>}
+        </div>
       </div>
       {error && !data ? <div className="p-5 text-copy text-critical">{error}</div> : (
-        <div className="p-5 flex flex-col gap-5">
+        <div className="p-5 flex flex-col gap-4">
+          {uncharged.length > 0 && (
+            <div className="rounded-control border border-solid border-warning-line bg-warning-bg px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+              <span className="text-copy text-ink min-w-0 flex-[1_1_260px] [text-wrap:pretty]">
+                {plural(uncharged.length, 'finished clean')} in {monthLabel(month)} {uncharged.length === 1 ? 'has' : 'have'} no cost yet
+                ({uncharged.map(c => fmtDate(c.doneOn)).join(', ')}). Imported as done without a price, or finished on a day that already had a cleaning cost.
+              </span>
+              {canEdit && (
+                <ConfirmButton variant="secondary" size="sm" onConfirm={chargeCleans} disabled={charging}
+                  confirm={{ title: `Charge ${plural(uncharged.length, 'clean')} to ${unitLabel}?`, danger: false, confirmLabel: 'Charge cleans',
+                    body: `Each is charged at the unit's cleaning price${cleaningPrice ? ` (${rm(cleaningPrice)} for a standard clean)` : ''}, owner pays, dated the day it was finished. A day that already has a cleaning cost is skipped.` }}>
+                  Charge {plural(uncharged.length, 'clean')}
+                </ConfirmButton>
+              )}
+            </div>
+          )}
           <StatRow cols={5}>
             <StatTile label="Cleaning fees" value={value(t?.cleaning)} loading={loading && !data} />
             <StatTile label="Maintenance repair" value={value(t?.maintenance)} loading={loading && !data} />
             <StatTile label="Utilities" value={value(t?.utilities)} loading={loading && !data} />
             <StatTile label="Maintenance fee (condo)" value={value(t?.maintenanceFee)} loading={loading && !data} hint="After the operator's share" />
             <StatTile label={u && !u.deductsFromOwner ? 'Owner-paid costs' : 'Deducted before the split'} value={value(t?.deducted)} loading={loading && !data}
-              hint={t && t.notCharged ? `${rm(t.notCharged)} more paid by The Conts or a guest, not deducted` : undefined} />
+              hint={t && t.notCharged ? `${rm(t.notCharged)} more paid by The Conts, a tenant or a guest, not deducted` : undefined} />
           </StatRow>
           {u && !u.deductsFromOwner && <p className="m-0 text-meta text-muted-ink">On this unit's contract the owner gets a fixed rent, so these costs do not change what the owner is paid.</p>}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-5">
-            <div className="flex flex-col gap-2 min-w-0">
-              <Eyebrow>By kind</Eyebrow>
-              {u ? <KindBreakdown b={u} deducts={u.deductsFromOwner} /> : <div className="skeleton h-40" />}
-            </div>
-            <div className="flex flex-col gap-2 min-w-0">
-              <Eyebrow>Bills and after-split charges</Eyebrow>
-              {data ? <PaidOnBehalfList items={pob} adjustments={data.adjustments} ownerId={ownerId} showUnit={false} canChange={canEdit && data.canChangeAdjustments} onChanged={changed} />
-                : <div className="skeleton h-24" />}
-            </div>
-          </div>
-          <CleaningPrice unitId={unitId} price={cleaningPrice} legacy={legacyCosts} canEdit={canEdit} onSaved={onChanged} />
         </div>
       )}
+      <div className="[border-top:1px_solid_var(--color-line-soft)]">
+        <DataTable<CostLine> id="unit.costs" urlPrefix="cost." bare noViews pageSize={0} maxHeight="520px"
+          columns={columns} rows={lines} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
+          noun={['cost', 'costs']} exportName={`${unitLabel} costs ${month}`}
+          empty={{ title: `No costs recorded for ${monthLabel(month)}.`, icon: 'Receipt' }}
+          renderCard={r => <CostCard r={r} unit={false} />}
+          footer={lines && lines.length > 0 ? <CostTotals lines={lines} /> : undefined} />
+      </div>
+      {data && waiting.length > 0 && (
+        <div className="px-5 py-4 [border-top:1px_solid_var(--color-line-soft)] flex flex-col gap-2">
+          <Eyebrow>Owner credits and charges waiting for a statement</Eyebrow>
+          <PaidOnBehalfList items={[]} adjustments={waiting} ownerId={ownerId} showUnit={false} canChange={canEdit && data.canChangeAdjustments} onChanged={changed} />
+        </div>
+      )}
+      <div className="px-5 pb-5">
+        <CleaningPrice unitId={unitId} price={cleaningPrice} legacy={legacyCosts} canEdit={canEdit} onSaved={onChanged} />
+      </div>
       {modal === 'bill' && <BillModal units={[{ id: unitId, label: unitLabel }]} defaultUnitId={unitId} ownerId={ownerId} canAdjust={!!data?.canChangeAdjustments}
         month={month} onClose={() => setModal(null)} onSaved={changed} />}
     </Card>
@@ -348,24 +515,12 @@ export function OwnerCostsCard({ ownerId, ownerName, month, units, canEdit, onCh
   const { data, loading, error, reload } = useApi<Payload>(`/expenses/breakdown?month=${month}&ownerId=${encodeURIComponent(ownerId)}`);
   const pending = useApi<{ data: Approval[] }>(`/approvals?entity=owners&entityId=${encodeURIComponent(ownerId)}`);
   const [view, setView] = useState<View>('unit');
-  const [modal, setModal] = useState<null | 'bill' | 'expense' | 'utilities'>(null);
+  const [modal, setModal] = useState<null | 'bill' | 'utilities'>(null);
   const changed = () => { reload(); pending.reload(); onChanged(); };
   const many = units.length > 1;
   const items = data?.items ?? [];
-  const columns = useMemo<Column<CostItem>[]>(() => [
-    ...(many ? [{ key: 'unit', label: 'Unit', value: (r: CostItem) => r.unitLabel, width: 170, filter: { kind: 'select' as const } }] : []),
-    { key: 'description', label: 'Expense', value: r => r.description || r.kindLabel, hideable: false, width: 220, sub: r => r.kindLabel },
-    { key: 'kind', label: 'Kind', value: r => r.kindLabel, hidden: true, width: 140, filter: { kind: 'select' } },
-    { key: 'date', label: 'Date', type: 'date', value: r => r.incurredOn, width: 110 },
-    { key: 'payer', label: 'Paid by', value: r => PAYER_LABEL[r.chargeTo] ?? r.chargeTo, width: 120, filter: { kind: 'select' },
-      render: r => <span className={cx('text-meta', r.chargeTo === 'owner' ? 'text-ink font-medium' : 'text-muted-ink')}>{r.chargeTo === 'owner' ? 'Owner, deducted' : `${PAYER_LABEL[r.chargeTo] ?? r.chargeTo}, not deducted`}</span> },
-    { key: 'reference', label: 'Reference', value: r => r.reference, hidden: true, width: 130 },
-    { key: 'amount', label: 'Amount', type: 'money', value: r => r.amount, width: 110, render: r => <MoneyText sen={r.amount} mode="exact" className="text-copy font-medium" /> },
-    { key: 'receipt', label: 'Receipt', width: 80, noExport: true, sortable: false, filter: false,
-      render: r => r.receiptDocumentId
-        ? <button type="button" onClick={() => downloadFile(`/documents/${r.receiptDocumentId}/download`).catch(notifyFailure)} className="p-0 bg-transparent border-none cursor-pointer text-meta text-gold-ink underline [font-family:inherit]">Receipt</button>
-        : <span className="text-muted-ink">—</span> },
-  ], [many]);
+  const columns = useMemo(() => costColumns(many), [many]);
+  const lines = useMemo(() => (data ? costLines(items, data.adjustments) : null), [data, items]);
   const t = data?.total.totals;
   const value = (sen: number | undefined) => (sen === undefined ? undefined : rm(sen));
 
@@ -425,34 +580,21 @@ export function OwnerCostsCard({ ownerId, ownerName, month, units, canEdit, onCh
       )}
       <div className="[border-top:1px_solid_var(--color-line-soft)]">
         <div className="flex items-center justify-between gap-3 flex-wrap px-5 pt-4 pb-2">
-          <span className="text-copy font-semibold">Every expense, {monthLabel(month)}</span>
+          <span className="text-copy font-semibold">Every cost, {monthLabel(month)}</span>
           {canEdit && units.length > 0 && (
             <span className="flex gap-2 flex-wrap">
-              <Button size="sm" variant="secondary" icon={<Icon name="Zap" size="sm" />} onClick={() => setModal('utilities')}>Utility bills</Button>
-              <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal('expense')}>Record expense</Button>
+              <Button size="sm" variant="secondary" icon={<Icon name="Zap" size="sm" />} onClick={() => setModal('utilities')}>Utility bills, all units</Button>
             </span>
           )}
         </div>
-        <DataTable<CostItem> id="owner.costs" urlPrefix="cost." bare noViews pageSize={0} maxHeight="480px"
-          columns={columns} rows={data ? items : null} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
-          noun={['expense', 'expenses']} exportName={`${ownerName} expenses ${month}`}
-          empty={{ title: `No expenses recorded for ${monthLabel(month)}.`, icon: 'Receipt' }}
-          renderCard={r => (
-            <span className="flex items-start justify-between gap-3 min-w-0">
-              <span className="flex flex-col min-w-0">
-                {many && <span className="text-meta text-muted-ink truncate">{titleCase(r.unitLabel)}</span>}
-                <span className="text-copy truncate" title={r.description}>{r.description || r.kindLabel}</span>
-                <span className="text-meta text-muted-ink">{r.kindLabel} · {fmtDate(r.incurredOn)}</span>
-              </span>
-              <span className="flex flex-col items-end shrink-0">
-                <MoneyText sen={r.amount} mode="exact" className="text-copy font-medium" />
-                <span className="text-caption text-muted-ink">{r.chargeTo === 'owner' ? 'Deducted' : `${PAYER_LABEL[r.chargeTo] ?? r.chargeTo} pays`}</span>
-              </span>
-            </span>
-          )} />
+        <DataTable<CostLine> id="owner.costs" urlPrefix="cost." bare noViews pageSize={0} maxHeight="480px"
+          columns={columns} rows={lines} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
+          noun={['cost', 'costs']} exportName={`${ownerName} costs ${month}`}
+          empty={{ title: `No costs recorded for ${monthLabel(month)}.`, icon: 'Receipt' }}
+          renderCard={r => <CostCard r={r} unit={many} />}
+          footer={lines && lines.length > 0 ? <CostTotals lines={lines} /> : undefined} />
       </div>
       {modal === 'bill' && <BillModal units={units} ownerId={ownerId} canAdjust={!!data?.canChangeAdjustments} month={month} onClose={() => setModal(null)} onSaved={changed} />}
-      {modal === 'expense' && <ExpenseEntryModal units={units} month={month} onClose={() => setModal(null)} onSaved={changed} />}
       {modal === 'utilities' && <UtilitiesModal ownerId={ownerId} month={month} onClose={() => setModal(null)} onSaved={changed} />}
     </Card>
   );

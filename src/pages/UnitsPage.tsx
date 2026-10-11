@@ -30,7 +30,6 @@ import BookingsTab from './units/BookingsTab';
 import { SaveBar, DetailsForm, DocumentsCard, BuildingModal, ConfirmAdd } from './units/UnitForms';
 import { UnitCostsCard } from './owners/Costs';
 import ContractTab, { ModelChip } from './units/ContractTab';
-import { ExpensesCard } from './owners/ExpenseEntry';
 import { todayMyt } from '../lib/format';
 import { PROPERTIES_FALLBACK, DETAIL_FALLBACK, mkUnit } from './units/fallback';
 import { RecordHistory } from '../components/RecordHistory';
@@ -555,7 +554,6 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 
       {shown === 'financials' && d.pnl && (
         <>
-          <ExpensesCard title="Every expense this month" unitId={u.id} month={todayMyt().slice(0, 7)} units={[{ id: u.id, label: unitLabel }]} canEdit={canEdit} onChanged={reloadDetail} />
           {form && <div className="flex justify-end -mt-2"><Button size="sm" variant="tertiary" icon={<Icon name="Download" size="sm" />} onClick={expensesReport}>Expenses report</Button></div>}
         </>
       )}
