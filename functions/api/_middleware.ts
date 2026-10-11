@@ -3,6 +3,7 @@ import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimit
 import { doorFor, doorRefusal } from '../_lib/door';
 import { accessFor, refusalFor } from '../_lib/access';
 import { flushWhenQuiet, FLUSH_DELAY_MS } from '../_lib/channexQueue';
+import { closePastStaysSometimes } from '../_lib/autoCheckout';
 import { twoStepSetupDue } from '../_lib/signIn';
 import { overLimit } from '../_lib/textLimits';
 
@@ -131,6 +132,7 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   }
 
   const response = await next(forward);
+  closePastStaysSometimes(env, waitUntil);
   // Any write may have queued Channex updates; send them once the burst of edits has gone quiet.
   if (request.method !== 'GET' && response.status < 400) {
     waitUntil(new Promise(r => setTimeout(r, FLUSH_DELAY_MS)).then(() => flushWhenQuiet(env)).catch(() => {}));

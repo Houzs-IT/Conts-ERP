@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Button } from '../../components/Button';
 import { ConfirmButton } from '../../components/ConfirmDialog';
@@ -6,6 +6,7 @@ import { Field } from '../../components/Field';
 import { MoneyInput, NumberInput } from '../../components/inputs';
 import Icon from '../../components/Icon';
 import { Card } from '../../components/Card';
+import { FileDropRow } from '../../components/Attachments';
 import { useToast } from '../../components/Toast';
 import { color } from '../../theme';
 import { api, notifyFailure, downloadFile } from '../../lib/api';
@@ -95,7 +96,6 @@ const UPLOAD_KINDS = [{ value: 'contract', label: 'Contract' }, { value: 'inspec
 /** Every file stored against the unit: contracts, statements (money roles only), inspection reports, photos. */
 export function DocumentsCard({ unitId, unitLabel, documents, onUploaded }: { unitId: string; unitLabel: string; documents: UnitDetail['documents']; onUploaded: () => void }) {
   const toast = useToast();
-  const fileRef = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState('contract');
   const [busy, setBusy] = useState(false);
   function download(d: { id: string; name: string }) {
@@ -136,10 +136,10 @@ export function DocumentsCard({ unitId, unitLabel, documents, onUploaded }: { un
       <DataTable<Doc> id="unit.documents" urlPrefix="doc." bare noViews noToolbar pageSize={0} maxHeight="none"
         columns={docColumns} rows={documents} rowKey={doc => doc.id} noun={['document', 'documents']}
         empty={{ title: 'No documents on this unit yet.', icon: 'FileText' }} />
-      <div className="flex flex-wrap items-center gap-2 py-3 px-5 [border-top:1px_solid_var(--color-line-soft)]">
-        <div className="w-[180px] max-w-full"><Select label="Kind of document" value={kind} onChange={setKind} options={UPLOAD_KINDS} /></div>
-        <Button size="sm" variant="secondary" loading={busy} icon={<Icon name="Upload" size="sm" />} onClick={() => fileRef.current?.click()}>Upload a document</Button>
-        <input ref={fileRef} type="file" className="hidden" onChange={e => { const f = e.currentTarget.files?.item(0); if (f) void upload(f); e.currentTarget.value = ''; }} />
+      <div className="grid grid-cols-1 sm:grid-cols-[180px_minmax(0,1fr)] items-center gap-2 py-3 px-5 [border-top:1px_solid_var(--color-line-soft)]">
+        <Select label="Kind of document" value={kind} onChange={setKind} options={UPLOAD_KINDS} />
+        <FileDropRow label={`Add ${UPLOAD_KINDS.find(k => k.value === kind)?.label.toLowerCase() ?? 'document'}`} hint="Drop a file here, or click to browse" busy={busy}
+          onPick={fl => { const f = fl.item(0); if (f) void upload(f); }} />
       </div>
     </Card>
   );
