@@ -18,6 +18,8 @@ import { rm, dateRange, todayMyt, plural } from '../lib/format';
 import { Select, SearchSelect } from '../components/Select';
 import { usePhone, SearchBox } from './finance/listKit';
 import { EmptyState } from '../components/States';
+import { useFillHeight } from '../lib/useFillHeight';
+import { useMedia } from '../lib/useMedia';
 import { SYNC } from '../lib/vocabulary';
 import { TONE, cx } from '../lib/design-tokens';
 import type { BookingChannel, SyncState, Tone } from '../lib/types';
@@ -178,6 +180,7 @@ export default function PricingPage() {
   const [from, setFrom] = useState(TODAY);
   const [to, setTo] = useState(DEFAULT_TO);
   const phone = usePhone();
+  const unitList = useFillHeight({ column: true, enabled: useMedia('(min-width: 1024px)'), fallback: '70vh' });
   const [q, setQ] = useState('');
   const [building, setBuilding] = useState('');
   const [dialog, setDialog] = useState<ConfirmSpec | null>(null);
@@ -307,13 +310,14 @@ export default function PricingPage() {
             <SearchSelect label="Unit" showLabel className="w-full" placeholder="Search unit or building" value={selected?.unitId ?? ''} onChange={v => v && setSelectedId(v)}
               options={rows.map(u => ({ value: u.unitId, label: u.unitNumber, group: u.propertyName, hint: u.baseRate > 0 ? rm(u.baseRate, { cents: false }) : 'No base rate' }))} />
           ) : (
-          <Card style={{ flex: '0 1 280px', minWidth: 240, maxWidth: 320 }}>
+          // Beside the editor the unit list stays in view and runs to the bottom of the window (useFillHeight).
+          <Card className="lg:sticky lg:top-0 lg:z-[1]" style={{ flex: '0 1 280px', minWidth: 240, maxWidth: 320 }}>
             <div className="py-3 px-3 [border-bottom:1px_solid_var(--color-line)] flex flex-col gap-2">
               <SearchBox label="Search units" placeholder="Search unit or building" value={q} onChange={setQ} />
               <Select label="Building" value={building} onChange={setBuilding} placeholder={`All buildings · ${buildings.length}`} options={buildings.map(b => ({ value: b, label: b }))} />
               <span className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink px-1">Units · {listed.length === rows.length ? rows.length : `${listed.length} of ${rows.length}`}</span>
             </div>
-            <div className="max-h-[70vh] overflow-y-auto [scrollbar-width:thin]">
+            <div ref={unitList} data-keep-scroll="pricing.units" className="overflow-y-auto overscroll-contain [scrollbar-width:thin]">
             {listed.length === 0 && <EmptyState bare kind="filtered" title="No units match." action={{ label: 'Clear filters', onClick: () => { setQ(''); setBuilding(''); } }} />}
             {listed.map(u => {
               const on = selected?.unitId === u.unitId;

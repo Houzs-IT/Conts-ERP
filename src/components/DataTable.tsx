@@ -502,8 +502,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const filtersBtn = useRef<HTMLButtonElement>(null), bulkExportBtn = useRef<HTMLButtonElement>(null);
   const headAnchor = useRef<HTMLElement | null>(null);
   // With no height given, the table's scroll box runs to the bottom of the screen (see useFillHeight).
-  const scrollBox = useRef<HTMLDivElement>(null);
-  useFillHeight(scrollBox, { enabled: maxHeight === undefined, fallback: maxHeight ?? 'calc(100dvh - 300px)' });
+  const scrollBox = useFillHeight({ enabled: maxHeight === undefined, fallback: maxHeight ?? 'calc(100dvh - 300px)' });
   const [saving, setSaving] = useState<null | { name: string; scope: 'mine' | 'company'; isDefault: boolean }>(null);
 
   /* ---- states ---- */

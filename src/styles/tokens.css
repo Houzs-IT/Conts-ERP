@@ -152,6 +152,10 @@ body { margin: 0; }
    The shell's content area (.app-main) is the page's only vertical scroller; the window itself never scrolls.
    Its scrollbar gutter is always reserved, so the page does not shift sideways when a list loads past the fold or
    when an open dialog locks it. It takes focus for the keyboard, without a ring: it is not a control. */
+/* Inside the shell nothing may scroll the window itself (a dropdown or a stray wide element used to drag the whole
+   app up on a phone, leaving the top bar off screen). Sign-in and the field and owner portals have no .app-main
+   and scroll as normal pages. */
+html:has(.app-main) { overflow: hidden; }
 .app-main { scrollbar-gutter: stable; }
 .app-main:focus { outline: none; }
 /* An open dialog, drawer or the phone menu locks the page behind it; the dialog scrolls inside itself and a scroll
