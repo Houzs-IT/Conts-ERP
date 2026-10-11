@@ -1,10 +1,8 @@
 import { useMemo } from 'react';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { TONE, cx } from '../lib/design-tokens';
-import type { Tone } from '../lib/types';
+import { SectionTitle, StatRow, StatTile } from '../components/Metric';
 import { statusOf, statusLabel } from '../lib/status';
 
 /** Coverage & Fleet — ported from 2990's SCM (Coverage & Fleet), drawn in Conts. A read-only
@@ -35,6 +33,7 @@ const FALLBACK: Payload = {
 export default function CoverageFleetPage() {
   const { data, loading, error, reload } = useApi<Payload>('/coverage-fleet', FALLBACK);
   const s = data?.summary;
+  const blank = loading ? undefined : '—';
 
   const vehicleColumns = useMemo<Column<Veh>[]>(() => [
     { key: 'vehicle', label: 'Vehicle', value: v => v.code, text: v => `${v.code} ${v.plate}`, hideable: false, render: v => <span className="[font-family:var(--font-mono,ui-monospace,monospace)] text-[13px] font-semibold">{v.code}</span>, sub: v => v.plate || null },
@@ -50,12 +49,12 @@ export default function CoverageFleetPage() {
   return (
     <>
       <PageHeader title="Coverage & fleet" sub="Who and what is available for delivery today" />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-        <Tile label="Vehicles available" value={s ? `${s.vehiclesAvailable}/${s.vehiclesTotal}` : '—'} tone="success" />
-        <Tile label="In maintenance" value={s ? String(s.vehiclesMaintenance) : '—'} tone="warning" />
-        <Tile label="Drivers available" value={s ? `${s.driversAvailable}/${s.driversTotal}` : '—'} tone="success" />
-        <Tile label="On leave today" value={s ? String(s.driversOnLeave) : '—'} tone="warning" />
-      </div>
+      <StatRow cols={4}>
+        <StatTile label="Vehicles available" value={s ? `${s.vehiclesAvailable}/${s.vehiclesTotal}` : blank} tone="success" />
+        <StatTile label="In maintenance" value={s ? String(s.vehiclesMaintenance) : blank} tone={s?.vehiclesMaintenance ? 'warning' : undefined} />
+        <StatTile label="Drivers available" value={s ? `${s.driversAvailable}/${s.driversTotal}` : blank} tone="success" />
+        <StatTile label="On leave today" value={s ? String(s.driversOnLeave) : blank} tone={s?.driversOnLeave ? 'warning' : undefined} />
+      </StatRow>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 min-w-0">
         <div className="min-w-0">
@@ -63,7 +62,7 @@ export default function CoverageFleetPage() {
             id="scm.coverage-fleet.vehicles" urlPrefix="v." columns={vehicleColumns} rows={data ? data.vehicles : null} rowKey={v => v.id}
             loading={loading} error={error} onRetry={reload} pageSize={0}
             noun={['vehicle', 'vehicles']} exportName="coverage-vehicles"
-            header={<div className="px-5 pt-4 pb-2 text-[13px] font-semibold uppercase tracking-[0.1em] text-muted-ink">Vehicles</div>}
+            header={<SectionTitle title="Vehicles" count={data?.vehicles.length} />}
             empty={{ title: 'No vehicles.' }} />
         </div>
         <div className="min-w-0">
@@ -71,21 +70,10 @@ export default function CoverageFleetPage() {
             id="scm.coverage-fleet.drivers" urlPrefix="d." columns={driverColumns} rows={data ? data.drivers : null} rowKey={d => d.id}
             loading={loading} error={error} onRetry={reload} pageSize={0}
             noun={['driver', 'drivers']} exportName="coverage-drivers"
-            header={<div className="px-5 pt-4 pb-2 text-[13px] font-semibold uppercase tracking-[0.1em] text-muted-ink">Drivers</div>}
+            header={<SectionTitle title="Drivers" count={data?.drivers.length} />}
             empty={{ title: 'No drivers.' }} />
         </div>
       </div>
     </>
-  );
-}
-
-function Tile({ label, value, tone }: { label: string; value: string; tone: Tone }) {
-  return (
-    <Card>
-      <div className="px-4 py-3.5 flex flex-col gap-1">
-        <span className="text-[11.5px] uppercase tracking-[0.08em] text-muted-ink">{label}</span>
-        <span className={cx('text-[24px] font-semibold tabular-nums', TONE[tone].text)}>{value}</span>
-      </div>
-    </Card>
   );
 }

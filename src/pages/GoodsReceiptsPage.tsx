@@ -6,6 +6,7 @@ import { ConfirmButton } from '../components/ConfirmDialog';
 import { Field } from '../components/Field';
 import { NumberInput, DateField } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
+import { Segmented } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
@@ -109,9 +110,7 @@ export default function GoodsReceiptsPage() {
         onRowClick={g => setDrawer({ mode: 'view', grn: g })}
         noun={['goods receipt', 'goods receipts']} exportName="goods-receipts"
         toolbar={<>
-          <div className="flex gap-2 flex-wrap">
-            {FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('goods_receipt', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}
-          </div>
+          <Segmented label="Status" options={FILTERS.map(f => ({ key: f, label: f === 'all' ? 'All' : statusLabel('goods_receipt', f) }))} value={statusFilter} onChange={setStatusFilter} />
           <div className="relative">
             <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
             <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search GRN, PO or supplier..." aria-label="Search goods receipts"
@@ -125,11 +124,6 @@ export default function GoodsReceiptsPage() {
       {drawer?.mode === 'view' && <ViewDrawer grn={drawer.grn} canWrite={canWrite} onClose={() => setDrawer(null)} onCancel={cancel} />}
     </>
   );
-}
-
-function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return <button onClick={onClick} aria-pressed={active}
-    className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
 }
 
 /* ---------- receive (create) drawer ---------- */

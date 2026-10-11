@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
+import { Segmented } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -13,7 +14,6 @@ import { api } from '../lib/api';
 import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { cx } from '../lib/design-tokens';
 import { SLOT_LABEL, DRIVERS_FALLBACK, VEHICLES_FALLBACK, SO_FALLBACK, schedFallback, type Sched, type SchedPayload, type SchedStatus, type TimeSlot } from '../lib/schedule';
 import { statusLabel } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
@@ -65,7 +65,7 @@ export default function DpOrdersPage() {
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>Schedule a sales order</Button> : undefined} />
       {error && <StaleBanner message={`Showing the last schedule we have. ${error}`} onRetry={reload} />}
       <div className="flex items-center justify-between gap-5 flex-wrap">
-        <div className="flex gap-2 flex-wrap">{FILTERS.map(f => <Chip key={f} label={f === 'all' ? 'All' : statusLabel('delivery_schedule', f)} active={statusFilter === f} onClick={() => setStatusFilter(f)} />)}</div>
+        <Segmented label="Status" options={FILTERS.map(f => ({ key: f, label: f === 'all' ? 'All' : statusLabel('delivery_schedule', f) }))} value={statusFilter} onChange={setStatusFilter} />
         <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search SO or customer..." aria-label="Search DP orders"
           className="h-9 box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
       </div>
@@ -78,10 +78,6 @@ export default function DpOrdersPage() {
       {drawer?.mode === 'edit' && <EditDrawer row={drawer.row} onClose={() => setDrawer(null)} onSaved={saved} onDelete={() => remove(drawer.row)} />}
     </>
   );
-}
-
-function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
 }
 
 function NewDrawer({ openSos, onClose, onCreated }: { openSos: { id: string; docNo: string; customerName: string }[]; onClose: () => void; onCreated: (r: Sched, req: Promise<unknown>) => void }) {

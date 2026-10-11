@@ -6,6 +6,7 @@ import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
+import { Segmented } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { api } from '../lib/api';
@@ -74,9 +75,8 @@ export default function StockPage() {
   ], []);
 
   const tabs = (
-    <div className="flex gap-2 flex-wrap">
-      <Chip label="On hand" active={tab === 'onhand'} onClick={() => setTab('onhand')} />
-      <Chip label="Movements" active={tab === 'moves'} onClick={() => setTab('moves')} />
+    <div className="px-[22px] max-md:px-4 pt-4">
+      <Segmented label="View" options={[{ key: 'onhand', label: 'On hand' }, { key: 'moves', label: 'Movements' }]} value={tab} onChange={setTab} />
     </div>
   );
   const whSelect = (
@@ -126,9 +126,6 @@ export default function StockPage() {
   );
 }
 
-function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
 
 function AdjustDrawer({ warehouses, canWrite, onClose, onDone }: { warehouses: Opt[]; canWrite: boolean; onClose: () => void; onDone: (m: Movement, req: Promise<unknown>) => void }) {
   const [itemCode, setItemCode] = useState('');

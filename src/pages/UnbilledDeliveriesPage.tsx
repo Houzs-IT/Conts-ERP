@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import { StatRow, StatTile } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { rm } from '../lib/format';
@@ -47,6 +48,9 @@ export default function UnbilledDeliveriesPage() {
   return (
     <>
       <PageHeader title="Unbilled deliveries" sub={data ? `${all.length} ${all.length === 1 ? 'delivery order' : 'delivery orders'} awaiting a sales invoice` : '\u00a0'} />
+      <StatRow cols={4}>
+        <StatTile hero label="Uninvoiced value" value={data ? rm(shownTotal) : undefined} />
+      </StatRow>
       <DataTable<Row>
         id="scm.unbilled-deliveries" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
         loading={loading} error={error} onRetry={reload} pageSize={0}
@@ -55,10 +59,6 @@ export default function UnbilledDeliveriesPage() {
           <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
           <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search DO, SO or customer..." aria-label="Search unbilled deliveries"
             className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
-        </div>}
-        above={<div className="flex items-baseline gap-2.5 px-4 py-2">
-          <span className="text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-ink">Uninvoiced value</span>
-          <span className="text-[22px] font-semibold tabular-nums">{rm(shownTotal)}</span>
         </div>}
         filtered={!!q} onClearFilters={() => setSearch('')}
         empty={{ title: 'Everything delivered has been billed.', body: 'Delivery orders show here until a sales invoice is raised against them.' }} />
