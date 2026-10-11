@@ -115,9 +115,14 @@ if (created) {
     check(`a booking typed with ${typed} joins the guest stored as ${known.guestPhone}`, got && got.guestId === src.guestId, `${got?.guestId} vs ${src.guestId}`);
     r = await call('GET', `/api/reservations?view=all&q=${encodeURIComponent(typed)}&size=5`);
     check('the bookings search finds that guest by the number typed another way', r.json.data.some(x => x.guestPhone === known.guestPhone), r.text.slice(0, 200));
+    r = await call('GET', `/api/search?q=${encodeURIComponent(typed)}`);
+    check('the / search finds the guest by that number too, live bookings before cancelled ones', r.json.some(h => h.kind === 'guest' && h.id === src.guestId)
+      && r.json.filter(h => h.kind === 'reservation').every((h, i, a) => i === 0 || !(['cancelled', 'no_show'].includes(a[i - 1].state) && !['cancelled', 'no_show'].includes(h.state))), r.text.slice(0, 300));
     if (made) await call('PATCH', `/api/reservations/${made.id}`, { state: 'cancelled', reason: 'api check clean-up' });
   }
 }
+r = await call('GET', '/api/search?q=Skyline%20D25');
+check('the / search matches every word: "Skyline D25" finds Skyline units D25-..', r.json.some(h => h.kind === 'unit' && /Skyline.*D25/.test(h.label)), r.text.slice(0, 200));
 
 /* ---------- duplicate keeps the price breakdown ---------- */
 {
