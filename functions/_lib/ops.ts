@@ -67,6 +67,11 @@ export async function assignTask(env: Env, session: Session, taskId: string, ass
   }
 
   await run(env, "UPDATE tasks SET assignee_id = ?, state = 'assigned', updated_at = ? WHERE id = ?", assigneeId, nowIso(), taskId);
+  // The crew list follows: the roster cleaner behind this login replaces it, or the crew empties if there is none.
+  const rostered = await one<{ id: string }>(env, 'SELECT id FROM cleaners WHERE user_id = ?', assigneeId);
+  await run(env, 'DELETE FROM task_cleaners WHERE task_id = ?', taskId);
+  if (rostered) await run(env, 'INSERT INTO task_cleaners (task_id, cleaner_id, assigned_at, assigned_by) VALUES (?, ?, ?, ?)', taskId, rostered.id, nowIso(), session.userId);
+  await run(env, 'UPDATE tasks SET cleaner_id = ? WHERE id = ?', rostered?.id ?? null, taskId);
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: 'task.assign', entityTable: 'tasks', entityId: taskId,
     before: { assigneeId: task.assignee_id, state: task.state }, after: { assigneeId, state: 'assigned' },
@@ -122,24 +127,71 @@ export async function assignCleaner(env: Env, session: Session, taskId: string, 
     }
   }
 
-  await run(env, "UPDATE tasks SET cleaner_id = ?, assignee_id = ?, state = 'assigned', updated_at = ? WHERE id = ?",
-    cleaner.id, cleaner.user_id, nowIso(), taskId);
+  // One cleaner given: they become the job's whole crew, as the single-cleaner screens always meant.
+  return setCleaners(env, session, taskId, [cleaner], 'replace', quiet);
+}
+
+/** The cleaners on a cleaning job, as a JSON array [{id, name}] in the order they were added. */
+export const TASK_CLEANERS_JSON = (alias: string) => `COALESCE((SELECT json_agg(json_build_object('id', c.id, 'name', c.full_name) ORDER BY tc.assigned_at, c.full_name)
+  FROM task_cleaners tc JOIN cleaners c ON c.id = tc.cleaner_id WHERE tc.task_id = ${alias}.id), '[]'::json)`;
+
+/** SQL: the signed-in person is on this job (its assignee, or the login behind any of its cleaners). Takes the user id twice. */
+export const ON_TASK_SQL = (alias: string) => `(${alias}.assignee_id = ? OR EXISTS (SELECT 1 FROM task_cleaners tc JOIN cleaners c ON c.id = tc.cleaner_id WHERE tc.task_id = ${alias}.id AND c.user_id = ?))`;
+
+/** Whether this person is on the job: its assignee, or the login of any cleaner on it. */
+export async function onTask(env: Env, taskId: string, userId: string): Promise<boolean> {
+  const r = await one<{ ok: number }>(env, `SELECT 1 AS ok FROM tasks t WHERE t.id = ? AND ${ON_TASK_SQL('t')}`, taskId, userId, userId);
+  return !!r;
+}
+
+/**
+ * Put cleaners on a cleaning job: `replace` makes them the whole crew (an empty list takes everyone off), `add` keeps
+ * whoever is on it. tasks.cleaner_id and assignee_id follow the crew (first cleaner, first cleaner with a login) so
+ * everything that reads the single columns keeps working. Audited with the crew before and after; each newly added
+ * internal cleaner with a phone gets a push unless `quiet`.
+ */
+export async function setCleaners(env: Env, session: Session, taskId: string, cleaners: RosterCleaner[], mode: 'replace' | 'add', quiet = false): Promise<Response> {
+  const task = await one<any>(env, 'SELECT id, state, cleaner_id, assignee_id, due_at, unit_id FROM tasks WHERE id = ?', taskId);
+  if (!task) return fail('NOT_FOUND', 'That cleaning job no longer exists. Refresh the list.', 404);
+  if (task.state === 'resolved') return fail('CONFLICT', 'That cleaning job is already finished.', 409);
+  const before = await all<{ cleaner_id: string; full_name: string }>(env, `
+    SELECT tc.cleaner_id, c.full_name FROM task_cleaners tc JOIN cleaners c ON c.id = tc.cleaner_id WHERE tc.task_id = ? ORDER BY tc.assigned_at, c.full_name`, taskId);
+  const had = new Set(before.map(b => b.cleaner_id));
+  const want = new Set(cleaners.map(c => c.id));
+  const now = nowIso();
+  if (mode === 'replace') {
+    const gone = before.filter(b => !want.has(b.cleaner_id)).map(b => b.cleaner_id);
+    if (gone.length) await run(env, `DELETE FROM task_cleaners WHERE task_id = ? AND cleaner_id IN (${gone.map(() => '?').join(',')})`, taskId, ...gone);
+  }
+  const added = cleaners.filter(c => !had.has(c.id));
+  for (const c of added) {
+    await run(env, 'INSERT INTO task_cleaners (task_id, cleaner_id, assigned_at, assigned_by) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', taskId, c.id, now, session.userId);
+  }
+  const crewNow = await all<{ id: string; full_name: string; user_id: string | null }>(env, `
+    SELECT c.id, c.full_name, c.user_id FROM task_cleaners tc JOIN cleaners c ON c.id = tc.cleaner_id WHERE tc.task_id = ? ORDER BY tc.assigned_at, c.full_name`, taskId);
+  const first = crewNow[0] ?? null;
+  const login = crewNow.find(c => c.user_id)?.user_id ?? null;
+  const state = crewNow.length ? (['open', 'reopened'].includes(task.state) ? 'assigned' : task.state) : (task.state === 'assigned' ? 'open' : task.state);
+  await run(env, 'UPDATE tasks SET cleaner_id = ?, assignee_id = ?, state = ?, updated_at = ? WHERE id = ?', first?.id ?? null, login, state, now, taskId);
   await audit(env, {
-    actorId: session.userId, actorLabel: session.fullName, action: 'task.assign_cleaner', entityTable: 'tasks', entityId: taskId,
-    before: { cleanerId: task.cleaner_id, assigneeId: task.assignee_id, state: task.state },
-    after: { cleanerId: cleaner.id, assigneeId: cleaner.user_id, employment: cleaner.employment_type, state: 'assigned' },
+    actorId: session.userId, actorLabel: session.fullName, action: 'task.cleaners', entityTable: 'tasks', entityId: taskId,
+    before: { cleaners: before.map(b => b.full_name).join(', ') || null, state: task.state },
+    after: { cleaners: crewNow.map(c => c.full_name).join(', ') || null, state },
   });
-  if (cleaner.employment_type === 'internal' && cleaner.phone) {
+  if (added.length) {
     const unit = await one<{ unit_number: string; property_name: string }>(env, `
       SELECT u.unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, task.unit_id);
-    await notify(env, {
-      template: 'field.task_assigned', recipient: cleaner.phone, channel: 'push',
-      body: `New clean: ${unit?.property_name} ${unit?.unit_number}${task.due_at ? `, due ${hhmm(task.due_at)}` : ''}.`,
-      entityTable: 'tasks', entityId: taskId, urgent: true,
-    });
+    for (const c of added) {
+      if (quiet || c.employment_type !== 'internal' || !c.phone) continue;
+      await notify(env, {
+        template: 'field.task_assigned', recipient: c.phone, channel: 'push',
+        body: `New cleaning job: ${unit?.property_name} ${unit?.unit_number}${task.due_at ? `, due ${hhmm(task.due_at)}` : ''}.`,
+        entityTable: 'tasks', entityId: taskId, urgent: true,
+      });
+    }
+    if (!quiet) await cleaningNotice(env, taskId, 'assigned', session.userId);
   }
-  if (!quiet) await cleaningNotice(env, taskId, 'assigned', session.userId);
-  return json({ ok: true, assigneeName: cleaner.full_name });
+  return json({ ok: true, cleaners: crewNow.map(c => ({ id: c.id, name: c.full_name })), assigneeName: crewNow.map(c => c.full_name).join(', ') });
 }
 
 /** A unit given as an id or as its display number (the screens send either). Property name narrows a number shared by two buildings. */

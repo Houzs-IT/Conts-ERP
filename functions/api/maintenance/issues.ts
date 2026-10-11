@@ -1,7 +1,7 @@
 import { type Env, all, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
-import { resolveUnit } from '../../_lib/ops';
+import { resolveUnit, onTask } from '../../_lib/ops';
 import { windowsFor } from '../../_lib/cleaning';
 import { CATEGORIES, URGENCIES, SOURCES, ASSIGNEE_KINDS, CHARGE_TO, approvalThreshold, needsApproval } from '../../_lib/maintenance';
 import { repairNotice } from '../../_lib/notices';
@@ -88,7 +88,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (typeof b.sourceTaskId === 'string' && b.sourceTaskId) {
     const t = await one<{ id: string; unit_id: string; assignee_id: string | null }>(env, 'SELECT id, unit_id, assignee_id FROM tasks WHERE id = ?', b.sourceTaskId);
     if (!t || t.unit_id !== unit.id) return fail('VALIDATION', 'That clean is not on this unit.', 422);
-    if (field && t.assignee_id !== session.userId) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
+    if (field && t.assignee_id !== session.userId && !(await onTask(env, t.id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
     sourceTaskId = t.id;
   }
 

@@ -1,6 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { MYT_DATE } from '../../_lib/ops';
+import { MYT_DATE, onTask } from '../../_lib/ops';
 import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, mytToday } from '../../_lib/cleaning';
 import { bookingNotice } from '../../_lib/notices';
 
@@ -36,7 +36,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (b?.undo !== true && leaves && leaves > mytToday()) {
     return fail('NOT_YET', `This guest checks out on ${Number(leaves.slice(8, 10))} ${MONTHS[Number(leaves.slice(5, 7)) - 1]}. Mark them out on the day, or change the booking's dates if they left early.`, 409);
   }
-  if (field && (!task || task.assignee_id !== session.userId)) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
+  if (field && (!task || task.assignee_id !== session.userId && !(await onTask(env, task.id, session.userId)))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
 
   if (b?.undo === true) {
     if (!task) return fail('VALIDATION', 'Say which clean.', 422);

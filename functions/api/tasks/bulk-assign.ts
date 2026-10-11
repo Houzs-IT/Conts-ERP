@@ -1,14 +1,14 @@
-import { type Env, all, one, json, fail, audit } from '../../_lib/db';
+import { type Env, all, json, fail, audit } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { assignCleaner, type RosterCleaner } from '../../_lib/ops';
+import { setCleaners, type RosterCleaner } from '../../_lib/ops';
 
 const MAX = 200;
 
-/** POST /api/tasks/bulk-assign { taskIds?: string[], reservationIds?: string[], cleanerId, force? }
- *  Gives one cleaner many cleans at once, from the Cleaning list's ticked rows or from ticked bookings (their open
- *  turnover cleans). Each task goes through the same assignCleaner as one at a time, so each is audited and the
- *  cleaner notified the same way; a clean that clashes with the cleaner's other work (or is finished) is skipped
- *  with the reason unless force. */
+/** POST /api/tasks/bulk-assign { taskIds?: string[], reservationIds?: string[], cleanerId | cleanerIds, mode?, force? }
+ *  `cleanerIds` puts several cleaners on every ticked job; `mode` 'add' keeps whoever is already on it, 'replace' (the
+ *  default, and what a single `cleanerId` always did) makes them the whole crew. Gives cleaners many cleans at once, from the Cleaning list's ticked rows or from ticked bookings (their open
+ *  turnover cleans). Each job goes through the same setCleaners as one at a time, so each is audited and new
+ *  cleaners notified the same way; a finished job is skipped with the reason. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -19,10 +19,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const taskIds = ids(b?.taskIds), reservationIds = ids(b?.reservationIds);
   if (!taskIds.length && !reservationIds.length) return fail('VALIDATION', 'Tick at least one row.', 422);
   if (taskIds.length + reservationIds.length > MAX) return fail('VALIDATION', `At most ${MAX} at a time.`, 422);
-  const cleanerId = typeof b?.cleanerId === 'string' ? b.cleanerId.trim() : '';
-  const cleaner = cleanerId ? await one<RosterCleaner>(env,
-    'SELECT id, full_name, employment_type, user_id, phone FROM cleaners WHERE id = ? AND is_active = 1', cleanerId) : null;
-  if (!cleaner) return fail('VALIDATION', 'Pick a cleaner from the active roster.', 422, { cleanerId: 'Pick a cleaner.' });
+  const wanted = [...new Set([...(typeof b?.cleanerId === 'string' && b.cleanerId.trim() ? [b.cleanerId.trim()] : []), ...ids(b?.cleanerIds)])];
+  const found = wanted.length ? await all<RosterCleaner>(env, `
+    SELECT id, full_name, employment_type, user_id, phone, 0 AS busy FROM cleaners WHERE is_active = 1 AND id IN (${wanted.map(() => '?').join(',')})`, ...wanted) : [];
+  if (!wanted.length || found.length !== wanted.length) return fail('VALIDATION', 'Pick cleaners from the active roster.', 422, { cleanerId: 'Pick a cleaner.' });
+  const crew = wanted.map(id => found.find(c => c.id === id)!);
+  const mode: 'add' | 'replace' = b?.mode === 'add' ? 'add' : 'replace';
+  const names = crew.map(c => c.full_name).join(', ');
 
   // A booking's clean is its open turnover (or other clean) linked to it.
   const fromBookings = reservationIds.length ? await all<{ id: string; reservation_id: string }>(env, `
@@ -35,14 +38,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   let assigned = 0;
   const skipped: { id: string; reason: string }[] = reservationIds.filter(r => !withClean.has(r)).map(id => ({ id, reason: 'No open clean is linked to this booking.' }));
   for (const id of targets) {
-    const res = await assignCleaner(env, session, id, { ...cleaner, busy: 0 }, b?.force === true);
+    const res = await setCleaners(env, session, id, crew, mode);
     if (res.ok) { assigned++; continue; }
     const body = await res.json<any>().catch(() => null);
     skipped.push({ id, reason: body?.error?.message ?? 'Not assigned.' });
   }
   await audit(env, {
-    actorId: session.userId, actorLabel: session.fullName, action: 'task.bulk_assign', entityTable: 'cleaners', entityId: cleaner.id,
-    after: { cleaner: cleaner.full_name, assigned, skipped: skipped.length, tasks: targets.length, fromBookings: reservationIds.length },
+    actorId: session.userId, actorLabel: session.fullName, action: 'task.bulk_assign', entityTable: 'cleaners', entityId: crew[0].id,
+    after: { cleaners: names, mode, assigned, skipped: skipped.length, tasks: targets.length, fromBookings: reservationIds.length },
   });
-  return json({ assigned, skipped, cleaner: cleaner.full_name });
+  return json({ assigned, skipped, cleaner: names });
 };

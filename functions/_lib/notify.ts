@@ -229,12 +229,13 @@ export async function notifyUsers(env: Env, target: NotifyTarget, n: UserNotice)
   }
 }
 
-/** The people a clean is for: the assigned user, or the user behind the assigned cleaner on the roster. */
+/** The people a cleaning job is for: the assigned user, and the user behind each cleaner on it. */
 export async function taskPeople(env: Env, taskId: string): Promise<string[]> {
   try {
     const r = await all<{ id: string | null }>(env, `
       SELECT t.assignee_id AS id FROM tasks t WHERE t.id = ? AND t.assignee_id IS NOT NULL
-      UNION SELECT c.user_id FROM tasks t JOIN cleaners c ON c.id = t.cleaner_id WHERE t.id = ? AND c.user_id IS NOT NULL`, taskId, taskId);
+      UNION SELECT c.user_id FROM tasks t JOIN cleaners c ON c.id = t.cleaner_id WHERE t.id = ? AND c.user_id IS NOT NULL
+      UNION SELECT c.user_id FROM task_cleaners tc JOIN cleaners c ON c.id = tc.cleaner_id WHERE tc.task_id = ? AND c.user_id IS NOT NULL`, taskId, taskId, taskId);
     return r.map(x => x.id).filter((x): x is string => !!x);
   } catch { return []; }
 }

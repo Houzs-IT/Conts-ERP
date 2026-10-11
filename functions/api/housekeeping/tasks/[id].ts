@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, audit, nowIso } from '../../../_li
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { checklistOf, cleanPrice } from '../../../_lib/cleaning';
 import { mayEditCredentials } from '../../../_lib/credentials';
+import { onTask } from '../../../_lib/ops';
 
 /** GET /api/housekeeping/tasks/:id — what the clean's detail panel needs in one answer: the checklist, the proof
  *  photos and videos, the unit's access (masked; the code itself is a separate audited reveal, for the roles that
@@ -16,7 +17,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     FROM tasks t JOIN units u ON u.id = t.unit_id JOIN properties p ON p.id = u.property_id WHERE t.id = ?`, id);
   if (!t) return fail('NOT_FOUND', 'That clean no longer exists. Refresh the list.', 404);
   const field = isFieldRole(session.role);
-  if (field && t.assignee_id !== session.userId) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
+  if (field && t.assignee_id !== session.userId && !(await onTask(env, String(params.id), session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
 
   const media = await all<any>(env, `
     SELECT d.id, d.kind, d.file_name, d.mime_type, d.byte_size, d.created_at, u.full_name AS uploader

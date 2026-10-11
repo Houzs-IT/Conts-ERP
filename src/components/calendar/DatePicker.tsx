@@ -134,13 +134,13 @@ export function CalendarRangeControl({ start, days, today, phone, onChange, isDe
         <button type="button" data-popover-trigger onClick={() => setOpen(v => !v)} aria-expanded={open} aria-haspopup="dialog"
           title="Pick dates"
           className="flex-1 md:flex-none min-w-0 px-2 md:px-3 inline-flex items-center justify-center gap-1.5 bg-transparent hover:bg-muted border-none [border-left:1px_solid_var(--color-line)] [border-right:1px_solid_var(--color-line)] cursor-pointer font-sans text-copy font-medium text-ink whitespace-nowrap [font-variant-numeric:tabular-nums] md:min-w-[176px]">
-          <Icon name="CalendarDays" size="sm" color="var(--color-text-muted)" />
+          {!phone && <Icon name="CalendarDays" size="sm" color="var(--color-text-muted)" />}
           <span className="min-w-0 overflow-hidden">{rangeLabel(start, last, !phone)}</span>
           <Icon name="ChevronDown" size="sm" color="var(--color-text-muted)" />
         </button>
         <button type="button" onClick={() => go(addDaysIso(start, step))} className={seg} aria-label={`Forward ${plural(step, 'day')}`} title={`Forward ${plural(step, 'day')}`}><Icon name="ChevronRight" size="sm" /></button>
         <button type="button" onClick={() => go(null)} disabled={isDefault}
-          className={`${seg} [border-left:1px_solid_var(--color-line)]! px-3 font-medium disabled:text-faint disabled:cursor-default disabled:hover:bg-transparent`}>Today</button>
+          className={`${seg} [border-left:1px_solid_var(--color-line)]! px-2 md:px-3 font-medium disabled:text-faint disabled:cursor-default disabled:hover:bg-transparent`}>Today</button>
       </div>
       <Popover open={open} onClose={() => setOpen(false)} phone={phone} label="Pick dates">
         <div className="flex flex-col md:flex-row gap-3 md:gap-4">

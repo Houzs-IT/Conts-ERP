@@ -29,7 +29,8 @@ async function fieldOwns(env: Env, userId: string, table: string, id: string) {
   if (table === 'tasks') {
     return !!(await one(env, `
       SELECT 1 AS x FROM tasks t LEFT JOIN cleaners c ON c.id = t.cleaner_id
-      WHERE t.id = ? AND (t.assignee_id = ? OR t.completed_by = ? OR c.user_id = ?)`, id, userId, userId, userId));
+      WHERE t.id = ? AND (t.assignee_id = ? OR t.completed_by = ? OR c.user_id = ?
+        OR EXISTS (SELECT 1 FROM task_cleaners tc JOIN cleaners tcc ON tcc.id = tc.cleaner_id WHERE tc.task_id = t.id AND tcc.user_id = ?))`, id, userId, userId, userId, userId));
   }
   if (table === 'maintenance_issues') {
     return !!(await one(env, `

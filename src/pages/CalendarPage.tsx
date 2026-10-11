@@ -485,7 +485,7 @@ export default function CalendarPage() {
 
         {/* Grid: scrolls inside the card both ways; the date header and unit column stay put. */}
         <div ref={gridRef} tabIndex={0} aria-label="Reservation calendar. Arrow keys scroll."
-          className="max-h-[calc(100dvh-230px)] md:max-h-[74vh] min-h-[320px] overflow-auto overscroll-contain rounded-none md:rounded-b-card [scrollbar-width:thin] outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)] [--unit-col:96px] md:[--unit-col:208px]">
+          className="max-h-[calc(100dvh-230px)] md:max-h-[74vh] min-h-[320px] overflow-auto overscroll-contain rounded-none md:rounded-b-card [scrollbar-width:thin] outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)] [--unit-col:104px] md:[--unit-col:208px]">
           <div style={{ minWidth: `calc(var(--unit-col) + ${span * COL}px)` }} aria-busy={loading}
             className={`transition-opacity duration-150 ${loading && data ? 'opacity-70' : ''}`}>
             <div className="sticky top-0 z-20 flex bg-muted [border-bottom:1px_solid_var(--color-line)]">

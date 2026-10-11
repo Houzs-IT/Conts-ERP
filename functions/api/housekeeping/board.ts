@@ -1,6 +1,6 @@
 import { type Env, all, one, json, fail, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { MYT_DATE, SHEET_CLEANER } from '../../_lib/ops';
+import { MYT_DATE, SHEET_CLEANER, TASK_CLEANERS_JSON } from '../../_lib/ops';
 import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, standardItems, windowsOnDay, mytToday, isDay } from '../../_lib/cleaning';
 
 /** GET /api/housekeeping/board?date=YYYY-MM-DD — the Cleaning screen for one day, one row per clean.
@@ -27,13 +27,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const rows = await all<any>(env, `
     SELECT t.id, t.kind, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.started_at, t.completed_at, t.guest_left_at,
            t.assignee_id, t.cleaner_id, t.unit_id, t.reservation_id, ${when} AS day,
-           u.unit_number, u.readiness, p.id AS property_id, p.name AS property_name,
+           u.unit_number, u.readiness, u.bedrooms, u.bathrooms, to_jsonb(u) ->> 'layout_type' AS layout_type, p.id AS property_id, p.name AS property_name,
+           ${TASK_CLEANERS_JSON('t')} AS cleaners,
+           (SELECT COALESCE(json_agg(json_build_object('id', m.id, 'title', m.title, 'state', m.state) ORDER BY m.reported_at DESC), '[]'::json)
+              FROM maintenance_issues m WHERE m.source_task_id = t.id) AS damage,
            COALESCE(cl.full_name, a.full_name) AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner,
            prev.id AS prev_id, prev.state AS prev_state, prev.check_out_time AS prev_time, prev.channel AS prev_channel,
            COALESCE(NULLIF(pg.full_name, ''), CASE WHEN prev.id IS NOT NULL THEN 'Guest' END) AS prev_guest,
            (SELECT l.occurred_at FROM audit_log l WHERE prev.state = 'checked_out' AND l.entity_table = 'reservations' AND l.entity_id = prev.id
               AND l.action = 'reservation.status' AND l.after_state LIKE '%"checked_out"%' ORDER BY l.occurred_at DESC LIMIT 1) AS prev_out_at,
-           nxt.id AS next_id, nxt.check_in_time AS next_time, nxt.guests_count AS next_guests, nxt.channel AS next_channel,
+           nxt.id AS next_id, nxt.check_in_time AS next_time, nxt.expected_arrival AS next_eta, nxt.guests_count AS next_guests, nxt.channel AS next_channel,
            COALESCE(NULLIF(ng.full_name, ''), CASE WHEN nxt.id IS NOT NULL THEN 'Guest' END) AS next_guest,
            (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id AND d.kind = 'photo') AS photos,
            (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id AND d.kind = 'video') AS videos,
@@ -62,7 +65,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   // Guests leaving that day with no clean on the unit: the gap the board must not hide.
   const departures = await all<any>(env, `
-    SELECT r.id, r.state, r.check_out_time, r.channel, u.id AS unit_id, u.unit_number, p.id AS property_id, p.name AS property_name,
+    SELECT r.id, r.state, r.check_out_time, r.channel, u.id AS unit_id, u.unit_number, u.bedrooms, u.bathrooms, to_jsonb(u) ->> 'layout_type' AS layout_type,
+           p.id AS property_id, p.name AS property_name,
+           (SELECT n.id FROM reservations n WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_id,
+           (SELECT n.expected_arrival FROM reservations n WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_eta,
            COALESCE(NULLIF(g.full_name, ''), 'Guest') AS guest_name,
            (SELECT n.check_in_time FROM reservations n WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_time,
            (SELECT COALESCE(NULLIF(ng.full_name, ''), 'Guest') FROM reservations n LEFT JOIN guests ng ON ng.id = n.guest_id
@@ -76,6 +82,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const prices = await one<{ std: string | null; deep: string | null }>(env, `
     SELECT (SELECT value FROM settings WHERE key = 'operations.cleaningPriceStandard') AS std, (SELECT value FROM settings WHERE key = 'operations.cleaningPriceDeep') AS deep`);
 
+  // The unit's layout as people say it: the layout type when the unit has one ("2 bedroom"), else bedrooms and baths.
+  const layoutOf = (r: { layout_type?: string | null; bedrooms?: number | null; bathrooms?: number | null }) => {
+    const bath = r.bathrooms ? `${r.bathrooms} bath` : '';
+    const base = r.layout_type?.trim() || (r.bedrooms === 0 ? 'Studio' : r.bedrooms ? `${r.bedrooms} bed` : '');
+    return [base, bath].filter(Boolean).join(' · ') || null;
+  };
   const at = (day: string, hm: string | null, d: string) => `${day}T${hm && /^\d{2}:\d{2}$/.test(hm) ? hm : d}:00+08:00`;
   return json({
     generatedAt: nowIso(), date, today, defaults: { checkIn: stdIn, checkOut: stdOut },
@@ -94,6 +106,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         id: r.id, kind: r.kind, state: r.state, status, title: r.title, instructions: r.instructions ?? null,
         day: r.day, carriedOver: r.day < date,
         unitId: r.unit_id, unitNumber: r.unit_number, readiness: r.readiness, buildingId: r.property_id, propertyName: r.property_name,
+        layout: layoutOf(r), cleaners: r.cleaners ?? [], damage: r.damage ?? [],
         assigneeId: r.assignee_id, cleanerId: r.cleaner_id ?? null, assigneeName: r.assignee_name ?? r.sheet_cleaner ?? null,
         previous: r.prev_id ? {
           reservationId: r.prev_id, guestName: r.prev_guest, state: r.prev_state, channel: r.prev_channel,
@@ -102,7 +115,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         next: r.next_id ? {
           reservationId: r.next_id, guestName: r.next_guest, guests: Number(r.next_guests ?? 0), channel: r.next_channel,
           checkInTime: r.next_time || stdIn, earlyCheckIn: !!r.next_time && r.next_time < stdIn,
-          checkInAt: at(r.day, r.next_time, stdIn),
+          expectedArrival: r.next_eta ?? null,
+          // Clean by: the guest's own arrival time when staff recorded one, else the agreed check-in.
+          checkInAt: at(r.day, r.next_eta ?? r.next_time, stdIn),
         } : null,
         guestOut, guestLeftAt: leftAt,
         startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,
@@ -113,8 +128,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     departures: departures.map(d => ({
       reservationId: d.id, state: d.state, channel: d.channel, guestName: d.guest_name,
       checkOutTime: d.check_out_time || stdOut, lateCheckOut: !!d.check_out_time && d.check_out_time > stdOut,
-      unitId: d.unit_id, unitNumber: d.unit_number, buildingId: d.property_id, propertyName: d.property_name,
-      next: d.next_time ? { guestName: d.next_guest, checkInTime: d.next_time, checkInAt: at(date, d.next_time, stdIn), earlyCheckIn: d.next_time < stdIn } : null,
+      unitId: d.unit_id, unitNumber: d.unit_number, buildingId: d.property_id, propertyName: d.property_name, layout: layoutOf(d),
+      next: d.next_time ? {
+        reservationId: d.next_id, guestName: d.next_guest, checkInTime: d.next_time, expectedArrival: d.next_eta ?? null,
+        checkInAt: at(date, d.next_eta ?? d.next_time, stdIn), earlyCheckIn: d.next_time < stdIn,
+      } : null,
     })),
     repairs,
   });

@@ -1,6 +1,6 @@
 import { type Env, all, json, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { MYT_DATE } from '../../_lib/ops';
+import { MYT_DATE, ON_TASK_SQL } from '../../_lib/ops';
 import { LIVE_STAY_SQL, mytToday, isDay, standardItems } from '../../_lib/cleaning';
 
 /** GET /api/field/tasks?date=today — the signed-in person's own jobs for the day (plus anything left over from earlier),
@@ -37,9 +37,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       ORDER BY r.check_in_time LIMIT 1
     ) nxt ON TRUE
     LEFT JOIN guests ng ON ng.id = nxt.guest_id
-    WHERE t.assignee_id = ?
+    WHERE ${ON_TASK_SQL('t')}
       AND (${when} = ? OR (t.state != 'resolved' AND ${when} < ?))
-    ORDER BY p.name, u.unit_number`, session.userId, date, date);
+    ORDER BY p.name, u.unit_number`, session.userId, session.userId, date, date);
 
   return json({
     generatedAt: nowIso(), date,

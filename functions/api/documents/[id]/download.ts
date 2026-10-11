@@ -21,7 +21,8 @@ async function mayOpen(env: Env, s: { userId: string; role: string }, d: Doc): P
     if (d.task_id) {
       return !!(await one(env, `
         SELECT 1 AS x FROM tasks t LEFT JOIN cleaners c ON c.id = t.cleaner_id
-        WHERE t.id = ? AND (t.assignee_id = ? OR t.completed_by = ? OR c.user_id = ?)`, d.task_id, s.userId, s.userId, s.userId));
+        WHERE t.id = ? AND (t.assignee_id = ? OR t.completed_by = ? OR c.user_id = ?
+          OR EXISTS (SELECT 1 FROM task_cleaners tc JOIN cleaners tcc ON tcc.id = tc.cleaner_id WHERE tc.task_id = t.id AND tcc.user_id = ?))`, d.task_id, s.userId, s.userId, s.userId, s.userId));
     }
     if (d.maintenance_id) return !!(await one(env, 'SELECT 1 AS x FROM maintenance_issues WHERE id = ? AND reported_by = ?', d.maintenance_id, s.userId));
     return false;

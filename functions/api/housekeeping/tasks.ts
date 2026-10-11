@@ -1,6 +1,6 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { MYT_DATE, SHEET_CLEANER, hhmm, linenSet, resolveUnit } from '../../_lib/ops';
+import { MYT_DATE, SHEET_CLEANER, hhmm, linenSet, resolveUnit, ON_TASK_SQL } from '../../_lib/ops';
 import { checkDate, invalid, type Fields } from '../../_lib/validate';
 import { cleaningNotice } from '../../_lib/notices';
 
@@ -48,9 +48,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     LEFT JOIN reservations r ON r.id = t.reservation_id
     WHERE t.kind IN ('turnover','deep_clean','light_clean')
       AND ((${when} BETWEEN ? AND ?) OR (? = ? AND ${when} < ? AND t.state != 'resolved'))
-      ${mine ? 'AND t.assignee_id = ?' : ''}
+      ${mine ? `AND ${ON_TASK_SQL('t')}` : ''}
     ORDER BY COALESCE(t.scheduled_for, t.due_at, t.created_at)`,
-    ...[from, to, from, today, from, ...(mine ? [session.userId] : [])]);
+    ...[from, to, from, today, from, ...(mine ? [session.userId, session.userId] : [])]);
 
   // Stays leaving in the range with no clean on that unit that day. Cancelled stays and
   // maintenance blocks leave no guest mess behind.
