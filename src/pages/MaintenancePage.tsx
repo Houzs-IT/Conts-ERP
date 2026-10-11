@@ -391,7 +391,7 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
       {(stepItems?.length || !done) && (
         <section className="flex flex-col gap-1">
           <h3 className="m-0 text-copy font-semibold">Checklist {stepItems && stepItems.length > 0 && <span className="text-muted-ink font-normal">{stepItems.filter(c => c.done).length} of {stepItems.length}</span>}</h3>
-          {stepItems ? <Checklist taskId={i.id} endpoint={`/maintenance/issues/${i.id}/checklist`} items={stepItems} readOnly={done} onChange={setTicks} /> : <Skeleton height={60} />}
+          {stepItems ? <Checklist taskId={i.id} endpoint={`/maintenance/issues/${i.id}/checklist`} items={stepItems} readOnly={done} onChange={setTicks} placeholder="Add a step" /> : <Skeleton height={60} />}
         </section>
       )}
 

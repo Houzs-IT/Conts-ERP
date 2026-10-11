@@ -229,7 +229,7 @@ export function uploadTo(path: string, extra: Record<string, string> = {}) {
 export interface ChecklistItem { key: string; label: string; done: boolean; doneBy: string | null; custom: boolean }
 
 /** `endpoint`: where ticks and new items go; a clean's checklist by default, a repair's when given. */
-export function Checklist({ taskId, items, readOnly, onChange, endpoint }: { taskId: string; items: ChecklistItem[]; readOnly?: boolean; onChange: (items: ChecklistItem[]) => void; endpoint?: string }) {
+export function Checklist({ taskId, items, readOnly, onChange, endpoint, placeholder = 'Add an item, e.g. Replace kettle' }: { taskId: string; items: ChecklistItem[]; readOnly?: boolean; onChange: (items: ChecklistItem[]) => void; endpoint?: string; placeholder?: string }) {
   const url = endpoint ?? `/housekeeping/tasks/${taskId}/checklist`;
   const [adding, setAdding] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -260,7 +260,7 @@ export function Checklist({ taskId, items, readOnly, onChange, endpoint }: { tas
       {!readOnly && (
         <div className="flex gap-2 mt-1.5">
           <input value={adding} onChange={e => setAdding(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void add(); } }}
-            placeholder="Add an item, e.g. Replace kettle" aria-label="Add a checklist item" className={cx(INPUT, 'h-9')} />
+            placeholder={placeholder} aria-label="Add a checklist item" className={cx(INPUT, 'h-9')} />
           <Button size="sm" variant="secondary" type="button" loading={saving} onClick={() => void add()} disabled={!adding.trim()} disabledReason="Write the item first.">Add</Button>
         </div>
       )}

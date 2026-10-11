@@ -174,7 +174,7 @@ function RepairCard({ r, open, onToggle, onChanged }: { r: Repair; open: boolean
           {(items === null || items.length > 0 || !finished) && (
             <section className="flex flex-col gap-1">
               <h3 className="m-0 text-copy font-semibold">Checklist {items && items.length > 0 && <span className="text-muted-ink font-normal">{items.filter(c => c.done).length} of {items.length}</span>}</h3>
-              {items ? <Checklist taskId={r.id} endpoint={`/maintenance/issues/${r.id}/checklist`} items={items} readOnly={finished} onChange={setTicks} /> : <Skeleton height={100} />}
+              {items ? <Checklist taskId={r.id} endpoint={`/maintenance/issues/${r.id}/checklist`} items={items} readOnly={finished} onChange={setTicks} placeholder="Add a step, e.g. Replaced the hose" /> : <Skeleton height={100} />}
             </section>
           )}
 
@@ -189,7 +189,7 @@ function RepairCard({ r, open, onToggle, onChanged }: { r: Repair; open: boolean
             <section className="flex flex-col gap-2">
               <h3 className="m-0 text-copy font-semibold">Parts used</h3>
               {partList.map(p => (
-                <div key={p.skuId} className="flex items-center gap-2">
+                <div key={p.skuId} className="flex items-center gap-2 text-copy">
                   <span className="flex-1 min-w-0">
                     <span className="block truncate">{p.name}</span>
                     <span className="block text-meta text-muted-ink">{p.plannedQty > 0 ? `Usually ${p.plannedQty}` : p.code}{p.stockOnHand != null ? ` · ${p.stockOnHand} in the store` : ''}</span>
@@ -227,7 +227,6 @@ function RepairCard({ r, open, onToggle, onChanged }: { r: Repair; open: boolean
               <span className="text-meta text-muted-ink">The office then closes the job with its cost.</span>
             </section>
           )}
-          {finished && r.doneNote && <div className="text-copy"><span className="block text-meta text-muted-ink">Your note</span>{r.doneNote}</div>}
         </div>
       )}
     </article>
