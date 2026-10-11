@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, errorMessage } from '../lib/api';
-import { rm, date, dateTime, relative, humanize, titleCase, monthLabel, count, plural } from '../lib/format';
+import { rm, date, dateTime, relative, humanize, titleCase, monthLabel, count, plural, time, weekdayDate, year } from '../lib/format';
 import { ROLE_LABEL, CHANNEL, stateLabel } from '../lib/vocabulary';
 import { cx } from '../lib/design-tokens';
 import { Skeleton } from './States';
@@ -40,10 +40,12 @@ const ACTION: Record<string, string> = {
   'statement.generate': 'generated the statement', 'statement.finalise': 'finalised the statement', 'statement.send': 'sent the statement', 'statement.adjust': 'adjusted the statement',
   'payout.create': 'created the payout', 'payout.run': 'started a payout run', 'payout.processing': 'marked it processing', 'payout.paid': 'marked it paid', 'payout.failed': 'marked it failed',
   'expense.create': 'recorded the expense', 'expense.update': 'edited the expense', 'expense.delete': 'deleted the expense',
-  'task.assign': 'assigned the clean', 'task.assign_cleaner': 'assigned the clean', 'task.start': 'started the clean', 'task.complete': 'finished the clean',
-  'task.edit': 'edited the clean', 'task.reschedule': 'moved the clean', 'task.photo': 'added a photo', 'task.checklist_add': 'added a checklist item',
-  'task.guest_left': 'marked the guest as left', 'task.guest_left_undo': 'undid "guest left"', 'task.remove': 'removed the clean', 'task.overdue': 'marked it overdue',
-  'housekeeping.create': 'created the clean', 'expense.clean_charge_failed': 'could not charge the clean',
+  'task.assign': 'assigned the cleaning job', 'task.assign_cleaner': 'assigned the cleaning job', 'task.cleaners': 'changed the cleaners',
+  'task.start': 'started cleaning', 'task.complete': 'finished the cleaning job',
+  'task.edit': 'edited the cleaning job', 'task.reschedule': 'moved the cleaning job', 'task.photo': 'added a photo', 'task.checklist_add': 'added a checklist item',
+  'task.guest_left': 'marked the guest as left', 'task.guest_left_undo': 'undid "guest left"', 'task.remove': 'removed the cleaning job', 'task.overdue': 'marked it overdue',
+  'housekeeping.create': 'created the cleaning job', 'expense.clean_charge_failed': 'could not charge the cleaning job',
+  'reservation.expected_arrival': 'recorded the expected arrival',
   'maintenance.create': 'reported the problem', 'maintenance.assign': 'assigned the job', 'maintenance.edit': 'edited the job', 'maintenance.start': 'started the job',
   'maintenance.end': 'finished the work', 'maintenance.complete': 'closed the job', 'maintenance.reopen': 'reopened the job',
   'maintenance.request_approval': "asked for the owner's approval", 'maintenance.approve': 'approved the quote', 'maintenance.decline': 'declined the quote',
@@ -67,7 +69,7 @@ const FIELD: Record<string, [string, Kind?]> = {
   contractStartsOn: ['Contract starts', 'date'], contractRenewsOn: ['Contract renews', 'date'],
   startsAt: ['From', 'when'], endsAt: ['Until', 'when'], scheduledFor: ['Scheduled for', 'when'], dueAt: ['Due', 'when'], guestLeftAt: ['Guest left', 'when'], endedAt: ['Work finished', 'when'], startedAt: ['Started', 'when'],
   role: ['Role', 'role'], channel: ['Channel', 'channel'], isActive: ['Active', 'bool'], photoWaived: ['Photo waived', 'bool'], blocksUnit: ['Blocks the unit', 'bool'],
-  assigneeId: ['Assigned to', 'name'], cleanerId: ['Cleaner', 'name'], managerId: ['Reports to', 'name'], unitId: ['Unit', 'name'], ownerId: ['Owner', 'name'], buildingId: ['Building', 'name'],
+  assigneeId: ['Assigned to', 'name'], cleanerId: ['Cleaner', 'name'], cleaners: ['Cleaners'], expectedArrival: ['Expected arrival'], cleaner: ['Cleaner'], mode: ['How', 'state'], managerId: ['Reports to', 'name'], unitId: ['Unit', 'name'], ownerId: ['Owner', 'name'], buildingId: ['Building', 'name'],
   movedFrom: ['Moved from', 'name'], movedTo: ['Moved to', 'name'],
   assignee: ['Assigned to'], assigneeKind: ['In-house or contractor', 'state'], chargeTo: ['Paid by', 'state'], category: ['Category', 'state'], urgency: ['Urgency', 'state'],
   fullName: ['Name'], displayName: ['Name'], email: ['Email'], phone: ['Phone'], title: ['Title'], detail: ['Details'], note: ['Note'], notes: ['Notes'], staffNotes: ['Staff notes'],
@@ -148,51 +150,85 @@ export function actionPhrase(action: string) {
 
 const SOURCE: Record<string, string> = { field_app: 'Field app', owner_portal: 'Owner portal', import: 'Import', system: 'Automatic', cron: 'Automatic' };
 
-function Who({ e }: { e: HistoryEntry }) {
-  if (e.actorKind === 'person') {
-    const initials = e.actorLabel.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase() || '?';
-    return <span aria-hidden className="w-8 h-8 flex-none rounded-full bg-muted text-ink grid place-items-center text-caption font-semibold">{initials}</span>;
-  }
+/** A record being created (or first brought in): its field values are its starting point, not changes. */
+const isCreation = (e: Pick<HistoryEntry, 'action' | 'before'>) =>
+  /\.(create|invite|duplicate|block|booking_created)$/.test(e.action) || e.before == null;
+
+const capital = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+/**
+ * One event on one line: "14:04 · Lim Wei Siang · Marked the guest as left", then only what changed, inline
+ * ("Status: Guest still in -> Guest out"). A creation is one line; its starting values open on a click.
+ * Borrowed from Hookka (diff only the fields that changed, skip noise) and Houzs (old value struck, new value plain,
+ * no "from" on creation, details folded until asked for).
+ */
+export function HistoryItem({ e, names }: { e: HistoryEntry; names: Record<string, string> }) {
+  const [open, setOpen] = useState(false);
+  const lines = historyLines(e, names);
+  const created = isCreation(e);
+  const changes = created ? [] : lines.filter(l => l.from !== undefined);
+  const extra = created ? lines : lines.filter(l => l.from === undefined);
+  const tag = e.actorKind === 'import' ? 'Import' : e.actorKind === 'system' ? 'Automatic' : SOURCE[e.source ?? ''] ?? null;
+  const who = e.actorKind === 'person' ? e.actorLabel : e.actorLabel || 'System';
   return (
-    <span aria-hidden className="w-8 h-8 flex-none rounded-full border border-dashed border-line text-muted-ink grid place-items-center">
-      <Icon name={e.actorKind === 'import' ? 'FileInput' : 'Cog'} size="sm" />
-    </span>
+    <li className="py-1.5 px-4 min-w-0 text-meta leading-[18px]">
+      <div className="flex items-baseline gap-x-1.5 gap-y-0.5 flex-wrap min-w-0">
+        <time dateTime={e.occurredAt} title={dateTime(e.occurredAt)} className="flex-none w-10 text-muted-ink [font-variant-numeric:tabular-nums]">{time(e.occurredAt)}</time>
+        <span className={cx('font-semibold [overflow-wrap:anywhere]', e.actorKind !== 'person' ? 'text-muted-ink' : 'text-ink')}
+          title={e.actorKind === 'person' && e.actorRole ? ROLE_LABEL[e.actorRole] ?? humanize(e.actorRole) : undefined}>{who}</span>
+        <span aria-hidden className="text-faint">·</span>
+        <span className="text-ink [overflow-wrap:anywhere]">{capital(actionPhrase(e.action))}</span>
+        {tag && <span className="text-caption font-medium leading-[16px] whitespace-nowrap px-1.5 rounded-pill bg-muted text-muted-ink">{tag}</span>}
+        {extra.length > 0 && (
+          <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open}
+            className="p-0 border-none bg-transparent cursor-pointer font-sans text-meta text-[var(--color-text-accent)] hover:underline underline-offset-2">
+            {open ? 'Hide details' : created ? 'Details' : plural(extra.length, 'more detail')}
+          </button>
+        )}
+      </div>
+      {changes.length > 0 && (
+        <div className="pl-[46px] flex flex-col">
+          {changes.map(l => (
+            <span key={l.key} className="min-w-0 [overflow-wrap:anywhere]">
+              <span className="text-muted-ink">{l.label}: </span>
+              <span className="text-muted-ink line-through decoration-1">{l.from}</span>
+              <span aria-label="changed to" className="text-faint px-1">-&gt;</span>
+              <span className="text-ink font-medium">{l.to}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {open && extra.length > 0 && (
+        <dl className="m-0 mt-0.5 ml-[46px] grid grid-cols-[minmax(80px,max-content)_1fr] gap-x-3 gap-y-0.5 text-meta">
+          {extra.map(l => (
+            <div key={l.key} className="contents">
+              <dt className="text-muted-ink">{l.label}</dt>
+              <dd className="m-0 text-ink min-w-0 [overflow-wrap:anywhere]">{l.to}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </li>
   );
 }
 
-export function HistoryItem({ e, names }: { e: HistoryEntry; names: Record<string, string> }) {
-  const lines = historyLines(e, names);
-  const tag = e.actorKind === 'import' ? 'Import' : e.actorKind === 'system' ? 'Automatic' : SOURCE[e.source ?? ''] ?? null;
+/** Events grouped under one heading per day, newest first. */
+function Timeline({ rows, names }: { rows: HistoryEntry[]; names: Record<string, string> }) {
+  const days: { day: string; items: HistoryEntry[] }[] = [];
+  for (const e of rows) {
+    const d = date(e.occurredAt);
+    if (days.length && days[days.length - 1].day === d) days[days.length - 1].items.push(e);
+    else days.push({ day: d, items: [e] });
+  }
   return (
-    <li className="flex gap-3 py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0 min-w-0">
-      <Who e={e} />
-      <div className="flex flex-col gap-1 min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-x-3 gap-y-1 flex-wrap">
-          <span className="text-copy text-ink min-w-0 [overflow-wrap:anywhere]">
-            <strong className="font-semibold">{e.actorKind === 'person' ? e.actorLabel : e.actorLabel || 'System'}</strong>{' '}
-            <span className={cx(e.actorKind !== 'person' && 'text-muted-ink')}>{actionPhrase(e.action)}</span>
-          </span>
-          <span className="flex items-center gap-2 flex-none">
-            {tag && <span className="inline-flex items-center text-caption font-medium leading-[1.35] whitespace-nowrap py-[2px] px-2 rounded-pill bg-muted text-muted-ink">{tag}</span>}
-            <time dateTime={e.occurredAt} title={dateTime(e.occurredAt)} className="text-meta text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]">{dateTime(e.occurredAt)}</time>
-          </span>
-        </div>
-        {e.actorKind === 'person' && e.actorRole && <span className="text-caption text-muted-ink">{ROLE_LABEL[e.actorRole] ?? humanize(e.actorRole)}</span>}
-        {lines.length > 0 && (
-          <dl className="m-0 mt-1 grid grid-cols-[minmax(96px,max-content)_1fr] gap-x-3 gap-y-1 text-meta">
-            {lines.map(l => (
-              <div key={l.key} className="contents">
-                <dt className="text-muted-ink">{l.label}</dt>
-                <dd className="m-0 text-ink min-w-0 [overflow-wrap:anywhere]">
-                  {l.from !== undefined && <><span className="text-muted-ink line-through decoration-1">{l.from}</span><span aria-label="changed to" className="text-faint px-1">→</span></>}
-                  <span className={cx(l.from !== undefined && 'font-medium')}>{l.to}</span>
-                </dd>
-              </div>
-            ))}
-          </dl>
-        )}
-      </div>
-    </li>
+    <div className="flex flex-col py-1">
+      {days.map(g => (
+        <section key={g.day} aria-label={g.day}>
+          <h4 className="m-0 px-4 pt-2 pb-0.5 text-caption font-semibold uppercase tracking-[0.05em] text-muted-ink">{weekdayDate(g.items[0].occurredAt)} {year(g.items[0].occurredAt)}</h4>
+          <ul className="list-none m-0 p-0">{g.items.map(e => <HistoryItem key={e.id} e={e} names={names} />)}</ul>
+        </section>
+      ))}
+    </div>
   );
 }
 
@@ -234,31 +270,29 @@ export function RecordHistory({ entity, id, also, title = 'History', bare = fals
   const body = (
     <>
       {!bare && (
-        <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
+        <div className="py-3 px-4 [border-bottom:1px_solid_var(--color-line-soft)] flex items-baseline justify-between gap-3 flex-wrap">
           <span className="text-heading font-semibold">{title}</span>
           {total > 0 && <span className="text-meta text-muted-ink">{plural(total, 'change')}</span>}
         </div>
       )}
-      {first && <div className="py-4 px-5 flex flex-col gap-3" aria-busy="true">{[0, 1, 2].map(i => <Skeleton key={i} height={34} />)}</div>}
-      {error && <div className="py-4 px-5 text-copy text-danger" role="alert">{error}</div>}
-      {!first && !error && rows.length === 0 && !origin && <div className="py-4 px-5 text-copy text-muted-ink">No changes recorded yet. Every edit from now on shows here, with who made it.</div>}
+      {first && <div className="py-3 px-4 flex flex-col gap-2" aria-busy="true">{[0, 1, 2].map(i => <Skeleton key={i} height={18} />)}</div>}
+      {error && <div className="py-3 px-4 text-copy text-danger" role="alert">{error} This does not mean nothing changed.</div>}
+      {!first && !error && rows.length === 0 && !origin && <div className="py-3 px-4 text-meta text-muted-ink">No changes recorded yet. Every edit from now on shows here, with who made it.</div>}
       {rows.length > 0 && (
-        <ul className="list-none m-0 p-0">
-          {rows.map(e => <HistoryItem key={e.id} e={e} names={names} />)}
-        </ul>
+        <Timeline rows={rows} names={names} />
       )}
       {origin && done && !error && !first && (
-        <div className="flex gap-3 py-3 px-5 items-center [border-top:1px_solid_var(--color-line-soft)]">
-          <span aria-hidden className="w-8 h-8 flex-none rounded-full border border-dashed border-line text-muted-ink grid place-items-center"><Icon name="FileInput" size="sm" /></span>
-          <span className="text-copy text-muted-ink flex-1 min-w-0">{origin.label}</span>
+        <div className="flex gap-2 py-2 px-4 items-center text-meta [border-top:1px_solid_var(--color-line-soft)]">
+          <Icon name="FileInput" size="sm" color="var(--color-text-muted)" />
+          <span className="text-muted-ink flex-1 min-w-0">{origin.label}</span>
           <span className="text-meta text-muted-ink whitespace-nowrap" title={dateTime(origin.at)}>{relative(origin.at)}</span>
         </div>
       )}
       {!done && !error && (
-        <div className="py-3 px-5 [border-top:1px_solid_var(--color-line-soft)] flex items-center justify-between gap-3">
+        <div className="py-2 px-4 [border-top:1px_solid_var(--color-line-soft)] flex items-center justify-between gap-3">
           <span className="text-meta text-muted-ink">Showing {count(rows.length)} of {count(total)}</span>
           <button type="button" onClick={() => setPage(p => p + 1)} disabled={loading}
-            className="h-9 px-3 rounded-control border border-solid border-line bg-card text-copy text-ink cursor-pointer hover:bg-muted disabled:opacity-60 disabled:cursor-default">
+            className="h-8 px-3 rounded-control border border-solid border-line bg-card text-meta text-ink cursor-pointer hover:bg-muted disabled:opacity-60 disabled:cursor-default">
             {loading ? 'Loading...' : 'Show older'}
           </button>
         </div>
@@ -276,7 +310,7 @@ export function HistoryDisclosure({ entity, id, also, refreshKey, label = 'Histo
   const [open, setOpen] = useState(false);
   return (
     <details onToggle={e => setOpen((e.currentTarget as HTMLDetailsElement).open)} className="rounded-card border border-solid border-line bg-card overflow-hidden group">
-      <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none py-3 px-4 flex items-center justify-between gap-3 text-copy font-medium text-ink hover:bg-muted">
+      <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none py-2.5 px-4 flex items-center justify-between gap-3 text-copy font-medium text-ink hover:bg-muted">
         <span className="flex items-center gap-2"><Icon name="History" size="sm" />{label}</span>
         <Icon name="ChevronDown" size="sm" style={{ transition: 'transform 120ms ease-out' }} />
       </summary>

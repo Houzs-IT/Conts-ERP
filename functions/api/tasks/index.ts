@@ -68,7 +68,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const rows = await all<any>(env, `
     SELECT t.id, t.unit_id, t.kind, t.state, t.title, t.instructions, t.assignee_id, t.cleaner_id, t.scheduled_for, t.due_at, t.next_guest_at,
            t.requires_photo, t.sync, t.started_at, t.completed_at, u.unit_number, p.id AS property_id, p.name AS property_name, ${day} AS day,
-           COALESCE(cl.full_name, a.full_name) AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner,
+           COALESCE((SELECT string_agg(c2.full_name, ', ' ORDER BY tc.assigned_at, c2.full_name) FROM task_cleaners tc JOIN cleaners c2 ON c2.id = tc.cleaner_id WHERE tc.task_id = t.id),
+             cl.full_name, a.full_name) AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner,
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind IN ('photo','video')) AS photo_count
     ${base}
     LEFT JOIN users a ON a.id = t.assignee_id
