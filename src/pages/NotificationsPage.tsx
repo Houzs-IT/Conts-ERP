@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ListPager } from '../components/ListPager';
-import { Segmented } from '../components/ops/OpsUi';
+import { Segmented } from '../components/Metric';
 import { SkeletonRows } from '../components/States';
 import { NoticeRow, announceNoticesChanged, type Notice, type NoticePage } from '../components/NotificationBell';
 import { api, errorMessage } from '../lib/api';
@@ -51,7 +51,7 @@ export default function NotificationsPage() {
         sub={data ? (unread ? `${plural(unread, 'unread notice')}` : 'Everything is read.') : ' '}
         primary={<Button onClick={markAll} disabled={!unread} disabledReason="Nothing unread">Mark all read</Button>} />
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <Segmented label="Show" value={show} onChange={setShow} options={[{ value: 'all', label: 'All' }, { value: 'unread', label: unread ? `Unread (${unread})` : 'Unread' }]} />
+        <Segmented label="Show" value={show} onChange={setShow} options={[{ key: 'all', label: 'All' }, { key: 'unread', label: unread ? `Unread (${unread})` : 'Unread' }]} />
         <span className="text-meta text-muted-ink">Kept for you only. Opening one takes you to the record and marks it read.</span>
       </div>
       <section aria-label="Notifications" className="bg-card border border-solid border-line rounded-card overflow-hidden flex-none">

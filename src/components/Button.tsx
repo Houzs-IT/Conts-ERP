@@ -16,7 +16,9 @@ interface Props extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'
 const base: CSSProperties = {
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
   fontFamily: 'var(--font-sans)', fontWeight: 500, whiteSpace: 'nowrap',
-  borderRadius: 'var(--radius-control)', border: '1px solid transparent',
+  // Longhands only: the variants and the disabled state set borderColor, and React warns when a
+  // `border` shorthand and a borderColor longhand change between renders.
+  borderRadius: 'var(--radius-control)', borderWidth: 1, borderStyle: 'solid', borderColor: 'transparent',
   cursor: 'pointer', transition: 'background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out)',
 };
 

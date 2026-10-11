@@ -4,7 +4,8 @@ import PageHeader from '../components/PageHeader';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { rm } from '../lib/format';
-import { TONE, cx } from '../lib/design-tokens';
+import { cx } from '../lib/design-tokens';
+import { StatRow, StatTile, Segmented } from '../components/Metric';
 
 /** Accounting — AP (owed to suppliers, from purchase invoices) + AR (owed by customers,
  *  from sales invoices), ported from 2990's SCM. Read-only, finance-gated. Ties the two
@@ -32,6 +33,8 @@ export default function AccountingPage() {
   // Never the sample figures: until the real ones arrive (or if they are refused) the cards show a dash.
   const d: Payload = data ?? { generatedAt: '', payables: [], receivables: [], apTotalSen: 0, arTotalSen: 0 };
   const net = d.arTotalSen - d.apTotalSen;
+  // A skeleton while loading, a dash if the figures never came.
+  const fig = (v: string) => (data ? v : loading ? undefined : '—');
 
   const overdueCell = (n: number): ReactNode => <span className={cx('tabular-nums', n ? 'text-danger font-semibold' : 'text-muted-ink')}>{n || '—'}</span>;
   const apColumns = useMemo<Column<Payable>[]>(() => [
@@ -53,9 +56,9 @@ export default function AccountingPage() {
   if (d.restricted) return (<><PageHeader title="Accounting" sub="Payables and receivables" /><Card><div className="py-[38px] px-[22px] text-center text-[13px] text-muted-ink">Accounting figures are visible to finance roles only.</div></Card></>);
 
   const tabsRow = (
-    <div className="flex gap-2 py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
-      <Chip label={`Payables (${d.payables.length})`} active={tab === 'ap'} onClick={() => setTab('ap')} />
-      <Chip label={`Receivables (${d.receivables.length})`} active={tab === 'ar'} onClick={() => setTab('ar')} />
+    <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
+      <Segmented<'ap' | 'ar'> label="Ledger" value={tab} onChange={setTab}
+        options={[{ key: 'ap', label: `Payables (${d.payables.length})` }, { key: 'ar', label: `Receivables (${d.receivables.length})` }]} />
     </div>
   );
 
@@ -63,11 +66,13 @@ export default function AccountingPage() {
     <>
       <PageHeader title="Accounting" sub="Payables and receivables · outstanding" />
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3">
-        <Stat label="Payables (AP)" value={data ? rm(d.apTotalSen, { cents: false }) : '—'} hint="Owed to suppliers" tone="warning" />
-        <Stat label="Receivables (AR)" value={data ? rm(d.arTotalSen, { cents: false }) : '—'} hint="Owed by customers" tone="info" />
-        <Stat label="Net position" value={data ? rm(net, { cents: false }) : '—'} hint={!data ? 'Receivables less payables' : net >= 0 ? 'Receivables exceed payables' : 'Payables exceed receivables'} tone={!data || net >= 0 ? 'success' : 'critical'} />
-      </div>
+      <StatRow cols={3}>
+        <StatTile label="Payables (AP)" value={fig(rm(d.apTotalSen, { cents: false }))} hint="Owed to suppliers" hintTone="warning" />
+        <StatTile label="Receivables (AR)" value={fig(rm(d.arTotalSen, { cents: false }))} hint="Owed by customers" hintTone="info" />
+        <StatTile className="col-span-2 sm:col-span-1" label="Net position" value={fig(rm(net, { cents: false }))}
+          hint={!data ? 'Receivables less payables' : net >= 0 ? 'Receivables exceed payables' : 'Payables exceed receivables'}
+          tone={!data || net >= 0 ? 'success' : 'critical'} />
+      </StatRow>
 
       {tab === 'ap' ? (
         <DataTable<Payable>
@@ -85,18 +90,5 @@ export default function AccountingPage() {
         />
       )}
     </>
-  );
-}
-
-function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return <button onClick={onClick} aria-pressed={active} className={cx('h-8 flex items-center px-4 py-0 rounded-full cursor-pointer font-sans text-[13px] font-semibold border border-solid', active ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>{label}</button>;
-}
-function Stat({ label, value, hint, tone }: { label: string; value: string; hint: string; tone: 'warning' | 'info' | 'success' | 'critical' }) {
-  return (
-    <div className="flex flex-col gap-[3px] py-[13px] px-[15px] rounded-card bg-card border border-solid border-line">
-      <span className={cx('text-[19px] font-semibold tabular-nums', TONE[tone].text)}>{value}</span>
-      <span className="text-[12px] font-medium">{label}</span>
-      <span className="text-[11px] text-muted-ink">{hint}</span>
-    </div>
   );
 }

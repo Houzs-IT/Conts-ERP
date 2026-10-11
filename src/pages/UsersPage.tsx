@@ -701,7 +701,7 @@ function RowActions({ name, items }: { name: string; items: RowAction[] }) {
           className="fixed z-[55] w-[240px] p-1 bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)]">
           {items.map(a => (
             <button key={a.key} type="button" role="menuitem" onClick={() => { setAt(null); a.run(); }}
-              className={cx('w-full text-left flex gap-2.5 items-center px-2.5 py-2 rounded-[8px] border-none bg-transparent [font:inherit] text-copy cursor-pointer hover:bg-muted',
+              className={cx('w-full text-left flex gap-2.5 items-center px-2.5 py-2 rounded-[8px] border-none bg-transparent [font-family:inherit] text-copy cursor-pointer hover:bg-muted',
                 a.danger ? 'text-danger' : 'text-ink')}>
               <Icon name={a.icon} size="sm" />{a.label}
             </button>

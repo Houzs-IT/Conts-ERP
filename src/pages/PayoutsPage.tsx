@@ -25,6 +25,7 @@ import { useUrlState, SearchBox, FilterSelect } from './finance/listKit';
 import ApprovalBanner from '../components/ApprovalBanner';
 import { isStaged, stagedToast, useApprovalsOn, type Approval, type Staged } from '../lib/approvals';
 import { statusLabel } from '../lib/status';
+import { StatRow, StatTile } from '../components/Metric';
 
 interface Payout {
   id: string; ref?: string; period?: string | null; ownerName: string; amount: number; state: PayoutState; method: string;
@@ -213,11 +214,17 @@ export default function PayoutsPage() {
           disabled={!sum || sum.counts.pending === 0} disabledReason="No payouts are waiting. Payouts appear here when statements are sent.">Start payout run</Button>}
       />
 
+      <StatRow cols={3}>
+        <StatTile className="col-span-2 sm:col-span-1" label="Not yet paid" value={sum ? moneyString(sum.due, 'exact') : overall.loading ? undefined : '—'} hero />
+        <StatTile label="Waiting for a run" value={sum ? count(sum.counts.pending) : overall.loading ? undefined : '—'} />
+        <StatTile label={statusLabel('payout', 'failed')} value={sum ? count(sum.counts.failed) : overall.loading ? undefined : '—'} tone={sum?.counts.failed ? 'critical' : undefined} />
+      </StatRow>
+
       <ApprovalBanner items={runs.data?.data ?? []} onChanged={() => { runs.reload(); reload(); overall.reload(); void refreshNavCounts(); }} />
 
       {/* Failed payouts are surfaced first, with the reason and the fix. */}
       {(filter === 'all' || filter === 'failed') && failed.map(p => (
-        <Card key={p.id} style={{ borderLeft: '3px solid var(--color-critical-line)' }}>
+        <Card key={p.id} style={{ borderColor: 'var(--color-critical-line)' }}>
           <div className="px-5 py-[15px] flex items-center gap-4 flex-wrap">
             <div className="flex flex-col gap-1 flex-1 min-w-[220px]">
               <div className="flex items-center gap-[9px]">
@@ -267,7 +274,7 @@ export default function PayoutsPage() {
           </span>
         )}
         footer={
-          <div className="flex items-center justify-between gap-3 flex-wrap px-[22px] max-md:px-4 py-[11px] [border-top:1px_solid_var(--color-line)] bg-page text-meta text-muted-ink">
+          <div className="flex items-center justify-between gap-3 flex-wrap px-[22px] max-md:px-4 py-3 [border-top:1px_solid_var(--color-line-soft)] text-meta text-muted-ink">
             <span>{count(total)} of {count(allCount)} payouts</span>
             <span>Only the last four digits of any account are shown. Nothing here sends money: transfers are made at the bank.</span>
           </div>

@@ -15,6 +15,7 @@ import { api, errorMessage } from '../lib/api';
 import { rm, date, monthLabel } from '../lib/format';
 import type { StatementState } from '../lib/types';
 import { RecordHistory } from '../components/RecordHistory';
+import { StatRow, StatTile } from '../components/Metric';
 
 /** `#/finance/statements/:id` — one owner's statement on screen: each unit's month the way the Owner Income
  *  Report prints it (income, deductions, split, owner adjustments, payout), every line behind it with a link to
@@ -106,42 +107,40 @@ export default function StatementDetailPage() {
 
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
 
-      <Card>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-x-[18px] gap-y-[14px] px-[22px] py-[18px]">
-          <Figure label="Hospitality income" value={rm(s.totals.grossIncome)} />
-          <Figure label="Expense deduction" value={signed(-s.totals.deductions)} />
-          <Figure label="To operator" value={signed(-s.totals.operatorShare)} />
-          <Figure label="Owner credits &amp; charges" value={signed(s.totals.adjustments)} />
-          <Figure label="Net payout to owner" value={rm(s.totals.netPayout)} strong />
-        </div>
-        <div className="flex flex-wrap gap-x-[18px] gap-y-1 px-[22px] py-[10px] [border-top:1px_solid_var(--color-line)] bg-page text-[12px] text-muted-ink">
-          <span>Generated {date(s.generatedAt)}</span>
-          {s.finalisedAt && <span>Finalised {date(s.finalisedAt)}</span>}
-          {s.sentAt && <span>Sent {date(s.sentAt)}</span>}
-          {s.payout && <span>Payout {s.payout.state}{s.payout.paidAt ? ` ${date(s.payout.paidAt)}` : ''}{s.payout.failureReason ? ` · ${s.payout.failureReason}` : ''}</span>}
-          {s.owner.bankLast4 && <span>{s.owner.bankName ?? 'Bank'} ending {s.owner.bankLast4}</span>}
-        </div>
-      </Card>
+      <StatRow cols={5}>
+        <StatTile className="col-span-2 xl:col-span-1" label="Net payout to owner" value={rm(s.totals.netPayout)} hero />
+        <StatTile label="Hospitality income" value={rm(s.totals.grossIncome)} />
+        <StatTile label="Expense deduction" value={signed(-s.totals.deductions)} />
+        <StatTile label="To operator" value={signed(-s.totals.operatorShare)} />
+        <StatTile label="Owner credits & charges" value={signed(s.totals.adjustments)} />
+      </StatRow>
+      <div className="flex flex-wrap gap-x-[18px] gap-y-1 px-1 -mt-1 text-meta text-muted-ink">
+        <span>Generated {date(s.generatedAt)}</span>
+        {s.finalisedAt && <span>Finalised {date(s.finalisedAt)}</span>}
+        {s.sentAt && <span>Sent {date(s.sentAt)}</span>}
+        {s.payout && <span>Payout {s.payout.state}{s.payout.paidAt ? ` ${date(s.payout.paidAt)}` : ''}{s.payout.failureReason ? ` · ${s.payout.failureReason}` : ''}</span>}
+        {s.owner.bankLast4 && <span>{s.owner.bankName ?? 'Bank'} ending {s.owner.bankLast4}</span>}
+      </div>
 
       {warnings.length > 0 && s.state === 'provisional' && (
-        <div role="status" className="mt-4 rounded-card border border-solid border-line bg-card px-[18px] py-[14px] text-[13px]">
-          <div className="font-semibold mb-[6px]">Check before finalising</div>
+        <div role="status" className="rounded-card border border-solid border-warning-line bg-card px-5 py-4 text-copy">
+          <div className="text-[16px] font-semibold tracking-[-0.01em] mb-2">Check before finalising</div>
           <ul className="m-0 pl-[18px] flex flex-col gap-1 text-muted-ink">{warnings.map(w => <li key={w}>{w}</li>)}</ul>
         </div>
       )}
 
       {s.units.length === 0 && (
-        <div className="mt-4"><Card><div className="px-[22px] py-[18px] text-[13px] text-muted-ink">
+        <div><Card><div className="px-5 py-4 text-copy text-muted-ink">
           {s.source === 'owner_workbook' ? 'This month was paid from the owner workbook before Property OS. The workbook gives the payout, not every line behind it.' : 'No unit figures on this statement.'}
         </div><LineList id="all" lines={s.lines} /></Card></div>
       )}
 
       {s.units.map(u => (
-        <div key={u.unitId} className="mt-4">
+        <div key={u.unitId}>
           <Card>
-            <div className="flex items-start justify-between gap-3 flex-wrap px-[22px] pt-[16px] pb-[12px] [border-bottom:1px_solid_var(--color-line)]">
+            <div className="flex items-start justify-between gap-3 flex-wrap px-5 pt-5 pb-3 [border-bottom:1px_solid_var(--color-line-soft)]">
               <div className="flex flex-col gap-[2px] min-w-0">
-                <span className="text-[15px] font-semibold">{u.label}</span>
+                <span className="text-[16px] font-semibold tracking-[-0.01em]">{u.label}</span>
                 <span className="text-[12px] text-muted-ink">
                   {u.code} · {u.basis === 'fixed_rent' ? 'Fixed monthly rent' : `Owner ${pct(u.ownerPct ?? 0)} · operator ${pct(100 - (u.ownerPct ?? 0))}`}
                   {u.package ? ` · ${u.package}` : ''}{u.termsSource !== 'contract' ? ` · split from the ${u.termsSource === 'unit' ? "unit's own record" : 'default fee'}` : ''}
@@ -149,7 +148,7 @@ export default function StatementDetailPage() {
               </div>
               <a href={reportHref(u.unitId)} className="text-[12.5px] font-medium text-ink underline underline-offset-2">Report for this unit</a>
             </div>
-            <div className="px-[22px] py-[12px] text-[13px]">
+            <div className="px-5 py-3 text-copy">
               {u.basis === 'share' ? (
                 <>
                   <Row label={`Hospitality income · ${u.nights} of ${u.days} nights (${(u.nights / u.days * 100).toFixed(2)}%)`} value={rm(u.grossIncome)} />
@@ -169,7 +168,7 @@ export default function StatementDetailPage() {
         </div>
       ))}
 
-      <div className="mt-4">
+      <div>
         <RecordHistory entity="owner_statements" id={s.id ?? id} also={s.payout ? [['payouts', s.payout.id]] : undefined} refreshKey={s} />
       </div>
 
@@ -203,15 +202,6 @@ function groupDeductions(lines: Line[], unitId: string) {
   const order = Object.keys(DEDUCTION_LABEL);
   const rank = (k: string) => { const i = order.indexOf(k); return i < 0 ? order.length : i; };
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => rank(a) - rank(b)));
-}
-
-function Figure({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
-  return (
-    <div className="flex flex-col gap-[3px] min-w-0">
-      <span className="text-[12px] text-muted-ink">{label}</span>
-      <span className={`tabular-nums ${strong ? 'text-[18px] font-semibold' : 'text-[15px] font-medium'}`}>{value}</span>
-    </div>
-  );
 }
 
 function Row({ label, value, muted, strong, line }: { label: string; value: string; muted?: boolean; strong?: boolean; line?: boolean }) {
@@ -248,9 +238,9 @@ function LineList({ id, lines }: { id: string; lines: Line[] }) {
   ], []);
   if (!lines.length) return null;
   return (
-    <div className="[border-top:1px_solid_var(--color-line)]">
+    <div className="[border-top:1px_solid_var(--color-line-soft)]">
       <button onClick={() => setOpen(o => !o)} aria-expanded={open}
-        className="w-full flex items-center justify-between px-[22px] py-[10px] bg-page text-[12.5px] font-medium text-ink border-none cursor-pointer [font:inherit]">
+        className="w-full flex items-center justify-between px-5 py-3 bg-card hover:bg-page text-meta font-medium text-ink border-none cursor-pointer [font-family:inherit] text-left">
         <span>{open ? 'Hide' : 'Show'} the {lines.length} {lines.length === 1 ? 'line' : 'lines'} behind these figures</span>
         <Icon name={open ? 'ChevronUp' : 'ChevronDown'} size="sm" />
       </button>
