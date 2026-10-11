@@ -81,13 +81,10 @@ export function SectionHead({ children, noMargin }: { children: ReactNode; noMar
 export function Grid3({ children }: { children: ReactNode }) {
   return <div className="grid grid-cols-1 sm:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4 mb-[22px]">{children}</div>;
 }
-export function Labeled({ label, hint, help, span2, children }: { label: string; hint: string; help?: string; span2?: boolean; children: ReactNode }) {
+export function Labeled({ label, help, span2, children }: { label: string; help?: string; span2?: boolean; children: ReactNode }) {
   return (
     <div className={cx('flex flex-col gap-1.5 min-w-0', span2 && 'sm:[grid-column:span_2]')}>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-meta font-medium text-muted-ink">{label}</span>
-        <span className="text-caption font-semibold uppercase tracking-[0.06em] text-faint">{hint}</span>
-      </div>
+      <span className="text-meta font-medium text-muted-ink">{label}</span>
       {children}
       {help && <span className="text-caption text-muted-ink">{help}</span>}
     </div>

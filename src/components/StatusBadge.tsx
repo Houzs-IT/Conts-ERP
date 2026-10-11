@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import Icon from './Icon';
 import { Button } from './Button';
 import { cx } from '../lib/design-tokens';
@@ -91,10 +91,12 @@ export function StatusMenu({ entity, value, options, busy, onPick, align = 'righ
       {open && options && (
         <div role="menu" aria-label={label}
           className={cx('absolute z-[60] top-full mt-1 w-[300px] max-w-[calc(100vw-48px)] p-1 bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)]', align === 'right' ? 'right-0' : 'left-0')}>
-          {options.map(o => {
+          {options.map((o, i) => {
             const target = statusOf(entity, o.value);
             return (
-              <button key={o.value + (o.label ?? '')} type="button" role="menuitem" disabled={o.disabled}
+              <Fragment key={o.value + (o.label ?? '')}>
+              {o.danger && i > 0 && !options[i - 1].danger && <div role="separator" className="my-1 mx-1 h-px bg-line-soft" />}
+              <button type="button" role="menuitem" disabled={o.disabled}
                 onClick={() => { setOpen(false); onPick(o); }}
                 className={cx('w-full text-left flex gap-[10px] items-start px-[10px] py-[9px] rounded-control border-none bg-transparent [font:inherit]',
                   o.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-muted')}>
@@ -104,6 +106,7 @@ export function StatusMenu({ entity, value, options, busy, onPick, align = 'righ
                   {o.hint && <span className="text-meta text-muted-ink leading-[1.4]">{o.hint}</span>}
                 </span>
               </button>
+              </Fragment>
             );
           })}
         </div>
