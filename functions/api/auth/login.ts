@@ -1,7 +1,7 @@
 import { type Env, one, json, fail } from '../../_lib/db';
 import { verifyPassword, securitySettings } from '../../_lib/auth';
 import { doorFor, doorRefusal } from '../../_lib/door';
-import { logLogin, signChallenge, twoFactorAvailable, twoFactorTables } from '../../_lib/twoFactor';
+import { addressRefusal, logLogin, signChallenge, twoFactorAvailable, twoFactorTables } from '../../_lib/twoFactor';
 import { completeSignIn, countFailure, lockedMessage, type SignInUser } from '../../_lib/signIn';
 
 /**
@@ -10,6 +10,8 @@ import { completeSignIn, countFailure, lockedMessage, type SignInUser } from '..
  * POST /api/auth/login-2fa with a code. Every attempt is recorded in login_events.
  */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  const busy = await addressRefusal(env, request);
+  if (busy) return fail('TOO_MANY_ATTEMPTS', busy, 429);
   const settings = await securitySettings(env);
 
   const { email, password } = await request.json<{ email: string; password: string }>();

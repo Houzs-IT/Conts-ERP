@@ -2,6 +2,7 @@ import { type Env, json } from '../../_lib/db';
 import { processChannexBookingFeed } from '../../_lib/channexBookingSync';
 import { processChannexMessagesAndReviews } from '../../_lib/channexMessageSync';
 import { flushChannexQueue } from '../../_lib/channexQueue';
+import { timingSafeEqualStr } from '../../_lib/auth';
 
 /** POST /api/integrations/channex-webhook — Channex calls this whenever a booking, message or
  *  review changes (registered by channex-webhook-setup.ts). There is no session: the caller is
@@ -14,7 +15,7 @@ import { flushChannexQueue } from '../../_lib/channexQueue';
  *  button runs. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const secret = env.CHANNEX_WEBHOOK_SECRET;
-  if (!secret || request.headers.get('x-channex-webhook-secret') !== secret) {
+  if (!secret || !timingSafeEqualStr(request.headers.get('x-channex-webhook-secret') ?? '', secret)) {
     return json({ ok: false, reason: 'unauthorized' }, 401);
   }
   const bookings = await processChannexBookingFeed(env).catch(() => ({ processed: 0, skipped: 0 }));

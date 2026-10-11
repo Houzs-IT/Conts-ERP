@@ -1,6 +1,6 @@
 import { type Env, one, run, fail } from '../../_lib/db';
 import { securitySettings } from '../../_lib/auth';
-import { decryptSecret, logLogin, matchTotp, readChallenge, twoFactorTables, useBackupCode } from '../../_lib/twoFactor';
+import { addressRefusal, decryptSecret, logLogin, matchTotp, readChallenge, twoFactorTables, useBackupCode } from '../../_lib/twoFactor';
 import { completeSignIn, countFailure, lockedMessage, type SignInUser } from '../../_lib/signIn';
 
 /**
@@ -10,6 +10,8 @@ import { completeSignIn, countFailure, lockedMessage, type SignInUser } from '..
  * same lock as a wrong password.
  */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  const busy = await addressRefusal(env, request);
+  if (busy) return fail('TOO_MANY_ATTEMPTS', busy, 429);
   const body = await request.json<{ challenge?: string; code?: string }>().catch(() => null);
   const userId = await readChallenge(env, body?.challenge);
   if (!userId || !(await twoFactorTables(env))) return fail('CHALLENGE_EXPIRED', 'This sign-in took too long. Enter your email and password again.', 401);
