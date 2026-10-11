@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { BarTrend, Eyebrow, Figure, Segmented, StatTile, TotalsRow } from '../components/Metric';
 import { Card, CardHeader, LinkAction } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import Icon from '../components/Icon';
@@ -288,7 +289,6 @@ export default function DashboardPage() {
   const [notify, setNotify] = useState<Exception | null>(null);
 
   const kpis = kpi.data?.kpis ?? [];
-  const maxRev = Math.max(1, ...tp.points.map(s => s.revenue));
   const allExceptions = (exc.data?.exceptions ?? []).filter(e => !handled.has(e.id));
   const exceptions = allExceptions.slice(0, 5);
   const allRows = portfolio.data?.rows ?? [];
@@ -350,31 +350,28 @@ export default function DashboardPage() {
 
       {failure && <StaleBanner message={`Showing the last figures we have. ${failure}`} onRetry={() => { kpi.reload(); trend.reload(); today.reload(); exc.reload(); portfolio.reload(); }} />}
 
-      {/* KPI row — kept as the existing read-only summary. */}
-      <div className="grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-[10px] sm:gap-[14px]">
+      {/* KPI row — revenue leads as the one dark statement tile; the rest follow at equal weight. */}
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-[minmax(0,1.35fr)_repeat(4,minmax(0,1fr))] gap-3 sm:gap-4">
         {kpi.loading && kpis.length === 0
-          ? Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="bg-card border border-solid border-line rounded-card p-[18px] flex flex-col gap-2.5">
-                <div className="skeleton h-3 w-1/2" />
-                <div className="skeleton h-6 w-3/4" />
-              </div>
+          ? Array.from({ length: 5 }).map((_, i) => (
+              <StatTile key={i} label="\u00a0" value="" loading hero={i === 0} className={i === 0 ? 'col-span-2 md:col-span-4 xl:col-span-1' : undefined} />
             ))
-          : kpis.map(k => (
-              <div key={k.key} className="bg-card border border-solid border-line rounded-card p-[14px] sm:p-[18px] flex flex-col gap-2 min-w-0">
-                <div className="text-meta text-muted-ink">{KPI_LABEL[k.key] ?? humanize(k.key)}</div>
-                <div className="text-title sm:text-headline leading-[1.15] font-semibold tracking-[-0.01em] [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis" title={kpiValue(k)}>{kpiValue(k)}</div>
-              </div>
+          : kpis.map((k, i) => (
+              <StatTile key={k.key} label={KPI_LABEL[k.key] ?? humanize(k.key)} value={kpiValue(k)}
+                hero={i === 0} className={i === 0 ? 'col-span-2 md:col-span-4 xl:col-span-1' : undefined}
+                hint={i === 0 && period ? `${monthLabel(period)} to date` : undefined} />
             ))}
       </div>
 
       {/* Trend chart + exceptions */}
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-5 items-start">
-        <Card style={{ padding: 20 }}>
-          <div className="flex flex-col gap-4">
+        <Card style={{ padding: 0 }}>
+          <div className="flex flex-col gap-5 p-4 sm:p-6">
             <div className="flex items-start justify-between gap-[14px] flex-wrap">
-              <div className="flex flex-col gap-[3px] min-w-0">
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <span className="text-heading font-semibold">Revenue and occupancy trend</span>
+              <div className="flex flex-col gap-1.5 min-w-0">
+                <Eyebrow>Revenue and occupancy</Eyebrow>
+                <div className="flex items-baseline gap-3 flex-wrap">
+                  <Figure value={rm(tp.totals.grossBookingValue, { cents: false })} className="text-[26px] sm:text-[30px] font-medium tracking-[-0.025em] leading-none" />
                   {tp.delta.period && tp.delta.against && (
                     <span className={cx('text-meta font-semibold whitespace-nowrap', TONE[tp.delta.tone].text)}
                       title={`Revenue in ${monthLabel(tp.delta.period)} against ${monthLabel(tp.delta.against)}, the last two complete months`}>
@@ -383,70 +380,33 @@ export default function DashboardPage() {
                     </span>
                   )}
                 </div>
-                <span className="text-meta text-muted-ink">Gross booking value, stays split by night · occupancy under each month</span>
+                <span className="text-meta text-muted-ink">Gross booking value for the range, stays split by night</span>
               </div>
 
               {/* 3M / 12M / YTD — re-reads the chart from /dashboard/trend?range= */}
-              <div role="group" aria-label="Trend range" className="inline-flex border border-solid border-line rounded-control overflow-hidden flex-none">
-                {RANGES.map((r, i) => {
-                  const on = r.key === range;
-                  return (
-                    <button
-                      key={r.key}
-                      onClick={() => setRange(r.key)}
-                      aria-pressed={on}
-                      className={cx(
-                        'h-8 px-3 py-0 cursor-pointer [font-family:inherit] text-copy whitespace-nowrap',
-                        '[border-top:0] [border-right:0] [border-bottom:0]',
-                        i === 0 ? '[border-left:0]' : '[border-left:1px_solid_var(--color-line)]',
-                        on ? 'bg-black text-white' : 'bg-card text-muted-ink',
-                      )}
-                    >
-                      {r.label}
-                    </button>
-                  );
-                })}
-              </div>
+              <Segmented label="Trend range" options={RANGES} value={range} onChange={setRange} />
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <div className={cx('flex items-end h-[176px] [border-bottom:1px_solid_var(--color-line)]', tp.points.length > 6 ? 'gap-1 sm:gap-1.5' : 'gap-3')}>
-                {tp.points.map(s => {
-                  // With twelve bars there is room for every figure from a small tablet up; a phone keeps the
-                  // current month and the peak, the rest are in each bar's tooltip.
-                  const keyBar = s.isCurrent || s.revenue === maxRev;
-                  return (
-                    <div key={s.period} className="flex-1 min-w-0 flex flex-col justify-end items-center gap-[6px] h-full">
-                      <span className={cx('text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]',
-                        !keyBar && tp.points.length > 6 && 'hidden sm:block')}>
-                        {s.revenue > 0 ? rmCompact(s.revenue).replace('RM ', '') : ''}
-                      </span>
-                      <div title={`${monthLabel(s.period)} · ${rm(s.revenue, { cents: false })} · ${percent(s.occupancy)} occupancy`}
-                        className={cx('w-full max-w-[44px] rounded-t-[5px]', s.isCurrent ? 'bg-gold' : 'bg-charcoal')}
-                        style={{ height: s.revenue > 0 ? Math.max(3, Math.round((s.revenue / maxRev) * 132)) : 1 }} />
-                    </div>
-                  );
-                })}
-              </div>
-              <div className={cx('flex', tp.points.length > 6 ? 'gap-1 sm:gap-1.5' : 'gap-3')}>
-                {tp.points.map((s, i) => (
-                  <div key={s.period} className="flex-1 min-w-0 flex flex-col items-center gap-px">
-                    <span className={cx('text-caption whitespace-nowrap', s.isCurrent ? 'font-semibold text-ink' : 'text-muted-ink')}>{shortMonth(s.period)}</span>
-                    {/* The year only where it changes, so twelve labels do not repeat it twelve times. */}
-                    <span className="text-caption text-faint whitespace-nowrap h-4">{i === 0 || s.period.endsWith('-01') ? s.period.slice(0, 4) : ''}</span>
-                    <span className="hidden sm:block text-caption text-faint whitespace-nowrap [font-variant-numeric:tabular-nums]">{s.occupancy.toFixed(0)}%</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <BarTrend height={190} lineLabel="Occupancy under each month"
+              bars={tp.points.map((s, i) => ({
+                key: s.period,
+                label: shortMonth(s.period),
+                // The year only where it changes, so twelve labels do not repeat it twelve times.
+                sub: i === 0 || s.period.endsWith('-01') ? s.period.slice(0, 4) : undefined,
+                value: s.revenue,
+                display: s.revenue > 0 ? rmCompact(s.revenue).replace('RM ', '') : '',
+                title: `${monthLabel(s.period)} · ${rm(s.revenue, { cents: false })} · ${percent(s.occupancy)} occupancy`,
+                current: s.isCurrent,
+                lineDisplay: `${s.occupancy.toFixed(0)}%`,
+              }))} />
 
-            {/* The three totals are distinct definitions and are never merged. */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-[14px] [border-top:1px_solid_var(--color-line-soft)]">
-              <Total label="Gross booking value" value={rm(tp.totals.grossBookingValue, { cents: false })} />
-              <Total label="Collected revenue" value={rm(tp.totals.collectedRevenue, { cents: false })} />
-              <Total label="Management fees" value={rm(tp.totals.managementFees, { cents: false })} />
-              <Total label="Net owner payout" value={rm(tp.totals.netOwnerPayout, { cents: false })} />
-            </div>
+            {/* The four totals are distinct definitions and are never merged. */}
+            <TotalsRow items={[
+              { label: 'Gross booking value', value: rm(tp.totals.grossBookingValue, { cents: false }) },
+              { label: 'Collected revenue', value: rm(tp.totals.collectedRevenue, { cents: false }) },
+              { label: 'Management fees', value: rm(tp.totals.managementFees, { cents: false }) },
+              { label: 'Net owner payout', value: rm(tp.totals.netOwnerPayout, { cents: false }) },
+            ]} />
           </div>
         </Card>
 
@@ -487,12 +447,12 @@ export default function DashboardPage() {
         <div className="[border-top:1px_solid_var(--color-line)]">
          <div className="-ml-px -mt-px grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
           {(today.data?.rows ?? []).map(r => (
-            <div key={r.key} className="flex flex-col gap-1.5 py-[15px] px-4 sm:px-5 [border-left:1px_solid_var(--color-line-soft)] [border-top:1px_solid_var(--color-line-soft)]">
+            <div key={r.key} className="flex flex-col gap-3 py-4 sm:py-5 px-4 sm:px-5 [border-left:1px_solid_var(--color-line-soft)] [border-top:1px_solid_var(--color-line-soft)]">
               <div className="flex items-center gap-2">
                 <span className={cx('w-[7px] h-[7px] rounded-full flex-none', TONE[r.tone].dot)} aria-hidden />
-                <span className="text-meta text-muted-ink">{TODAY_LABEL[r.key] ?? humanize(r.key)}</span>
+                <Eyebrow>{TODAY_LABEL[r.key] ?? humanize(r.key)}</Eyebrow>
               </div>
-              <span className="text-headline font-semibold tracking-[-0.01em] [font-variant-numeric:tabular-nums]">{count(r.count)}</span>
+              <span className="text-[26px] sm:text-[30px] leading-none font-medium tracking-[-0.025em] tabular-nums">{count(r.count)}</span>
             </div>
           ))}
          </div>
@@ -565,15 +525,6 @@ export default function DashboardPage() {
         }}
       />
     </>
-  );
-}
-
-function Total({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-[3px]">
-      <span className="text-caption text-muted-ink">{label}</span>
-      <span className="text-heading font-semibold tracking-[-0.01em]">{value}</span>
-    </div>
   );
 }
 

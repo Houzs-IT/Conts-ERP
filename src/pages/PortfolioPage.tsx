@@ -7,6 +7,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { rm, percent, rating as fmtRating, todayMyt, monthLabel, plural, count, titleCase } from '../lib/format';
 import { Button } from '../components/Button';
+import { StatTile } from '../components/Metric';
 import { Select } from '../components/Select';
 import { Chip, SearchBox } from './finance/listKit';
 import type { Tone } from '../lib/types';
@@ -141,13 +142,10 @@ export default function PortfolioPage() {
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-[10px] sm:gap-[14px]">
-        {/* Until the figures arrive the tiles show a dash, not a zero that then jumps. */}
-        {tiles.map(t => (
-          <div key={t.label} className="bg-card border border-solid border-line rounded-card p-[14px] sm:p-[18px] flex flex-col gap-2 min-w-0">
-            <div className="text-meta text-muted-ink">{t.label}</div>
-            <div className="text-title sm:text-headline leading-[1.15] font-semibold tracking-[-0.01em] [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">{data ? t.value : '—'}</div>
-          </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        {/* Until the figures arrive the tiles show a skeleton, not a zero that then jumps. Revenue leads as the dark tile. */}
+        {[tiles[3], tiles[0], tiles[1], tiles[2]].map((t, i) => (
+          <StatTile key={t.label} label={t.label} value={t.value} loading={!data} hero={i === 0} />
         ))}
       </div>
 

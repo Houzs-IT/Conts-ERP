@@ -626,20 +626,24 @@ export function DataTable<R>(props: DataTableProps<R>) {
                     const fOn = !!filterValue(c);
                     return (
                       <th key={c.key} scope="col" aria-sort={on ? (sortDir === 'desc' ? 'descending' : 'ascending') : undefined}
-                        className={cx('sticky top-0 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] py-[9px] text-meta font-semibold text-muted-ink',
+                        className={cx('group/th sticky top-0 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] py-[9px] text-meta font-semibold text-muted-ink',
                           i === 0 && !pickCol ? 'pl-[22px] pr-[7px]' : 'px-[7px]', i === visible.length - 1 && 'pr-[22px]', right ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left')}>
                         <span className={cx('inline-flex items-center gap-[2px] max-w-full', right && 'flex-row-reverse')}>
                           {k ? (
                             <button type="button" onClick={() => toggleSort(c)} title={c.title ?? `Sort by ${c.label}`}
                               className={cx('inline-flex items-center gap-1 min-w-0 font-sans text-meta font-semibold bg-transparent border-none cursor-pointer p-0', on ? 'text-ink' : 'text-muted-ink', right && 'flex-row-reverse')}>
-                              <span className={cx('line-clamp-2 leading-[1.25] [overflow-wrap:anywhere]', right ? 'text-right' : 'text-left')}>{c.label}</span>
+                              <span className={cx('line-clamp-2 leading-[1.25] [overflow-wrap:normal]', right ? 'text-right' : 'text-left')}>{c.label}</span>
                               <Icon name={on ? (sortDir === 'desc' ? 'ArrowDown' : 'ArrowUp') : 'ChevronsUpDown'} size="sm" color={on ? 'var(--color-ink)' : 'var(--color-line-strong)'} />
                             </button>
-                          ) : <span className="line-clamp-2 leading-[1.25] [overflow-wrap:anywhere]" title={c.title}>{c.label}</span>}
+                          ) : <span className="line-clamp-2 leading-[1.25] [overflow-wrap:normal]" title={c.title}>{c.label}</span>}
                           {f && (
                             <button type="button" aria-label={`Filter ${c.label}`} title={`Filter ${c.label}`}
                               onClick={e => { headAnchor.current = e.currentTarget; setPanel(p => (p === `col:${c.key}` ? null : `col:${c.key}`)); }}
-                              className={cx('w-6 h-6 grid place-items-center shrink-0 rounded-[6px] border-none cursor-pointer', fOn ? 'bg-black text-white' : 'bg-transparent text-[var(--color-line-strong)] hover:text-ink hover:bg-card')}>
+                              className={cx('w-6 h-6 grid place-items-center shrink-0 rounded-[6px] border-none cursor-pointer', fOn ? 'bg-black text-white' : 'bg-transparent text-[var(--color-line-strong)] hover:text-ink hover:bg-card',
+                                // With a mouse the idle filter button floats over the cell edge and shows on hover, so the label gets
+                                // its width back and "Occupancy" no longer breaks mid-word. Touch screens keep it in place and visible.
+                                !fOn && cx('[@media(hover:hover)]:absolute [@media(hover:hover)]:top-1/2 [@media(hover:hover)]:-translate-y-1/2 [@media(hover:hover)]:bg-muted [@media(hover:hover)]:opacity-0 group-hover/th:opacity-100 focus-visible:opacity-100',
+                                  right ? 'left-1' : 'right-1'))}>
                               <Icon name="ListFilter" size="sm" />
                             </button>
                           )}

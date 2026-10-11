@@ -1,7 +1,8 @@
 /* Layer order is declared first so the base layer below sits under the utilities. */
 @layer theme, base, utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+/* The Plex font sheet is linked from index.html, not @imported here: an @import only starts once this whole
+   stylesheet has downloaded, which put one extra round trip in front of every first paint. */
 
 /* Tailwind v4 (the ERP convention) — utilities + theme only, NO preflight, so the
    existing inline-styled pages are untouched while new/converted code uses classes. */
