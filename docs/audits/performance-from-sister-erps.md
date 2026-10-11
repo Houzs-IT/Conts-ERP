@@ -136,5 +136,7 @@ Verdicts: **present** = found in Conts and fixed in this PR; **present, open** =
   105 payouts (1 failed for missing bank details, as designed), 105 emails logged and 315 history rows, 3 per
   statement in both halves.
 - `npm run check`: 14 checks pass. `entry-bundle` failed on the old build (277 KB) while it was still in `dist/`.
-  `tsc --noEmit` and `vite build` are clean. `scripts/api-checks/performance.mjs`: 22 of 22 passed on the first full
-  run. A rerun skips the statement part, because that month is already sent.
+  `tsc --noEmit` and `vite build` are clean. `scripts/api-checks/performance.mjs`: the first full run passed 21 of 22.
+  The miss was in the check itself, which read sent statements with a wrong filter. After the fix, the API showed
+  both statements as sent. Reruns pass 13 of 13 and skip the statement part, because that month is now sent on
+  this database.
