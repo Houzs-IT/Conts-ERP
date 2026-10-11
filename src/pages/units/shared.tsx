@@ -21,7 +21,8 @@ export type GuaranteePeriod = 'month' | 'year';
 export interface Unit {
   id: string; buildingId: string; parentUnitId: string | null;
   listingName: string; unitCode: string; state: string; address: string;
-  ownerName: string; ic: string; bankName: string; bankAccount: string; accountHolder: string;
+  /** The owner is picked from Owners and only linked here; their identity and bank details are edited on the owner profile. */
+  ownerId?: string; ownerName: string; ic: string; bankName: string; bankAccount: string; accountHolder: string;
   pkg: string; term: string; split: string; splitValue: number | null; guaranteePeriod: GuaranteePeriod;
   /** The revenue model (0093) and its short terms ("Share 75/20/5"); terms only for roles that see money. Read-only here. */
   revenueModel?: RevenueModel; termsLabel?: string | null;

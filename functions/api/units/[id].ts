@@ -14,6 +14,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const id = String(params.id);
   const b = await request.json<UnitInput>().catch(() => null);
   if (!b) return fail('VALIDATION', 'Nothing to save.', 422);
+  const ownerFields = (['ownerName', 'ic', 'bankName', 'bankAccount', 'accountHolder'] as const).filter(k => (b as Record<string, unknown>)[k] !== undefined);
+  if (ownerFields.length) return fail('VALIDATION', 'Owner name, IC and bank details are changed on the owner profile, not on the unit.', 422, Object.fromEntries(ownerFields.map(k => [k, 'Edit this on the owner profile.'])));
   const bad = invalidUnit(b);
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
 

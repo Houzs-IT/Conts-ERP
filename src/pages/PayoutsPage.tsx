@@ -27,7 +27,7 @@ import { isStaged, stagedToast, useApprovalsOn, type Approval, type Staged } fro
 import { statusLabel, statusOf } from '../lib/status';
 
 interface Payout {
-  id: string; ref?: string; period?: string | null; ownerName: string; amount: number; state: PayoutState; method: string;
+  id: string; ref?: string; period?: string | null; ownerId?: string; ownerName: string; amount: number; state: PayoutState; method: string;
   bankName: string | null; bankLast4: string | null; paidAt: string | null; failureReason: string | null;
 }
 interface Payload {
@@ -164,7 +164,10 @@ export default function PayoutsPage() {
     { key: 'ref', label: 'Reference', type: 'ref', value: r => r.ref ?? r.id, hidden: true, width: 140 },
     { key: 'period', label: 'Statement month', value: r => r.period ?? null, text: r => (r.period ? monthLabel(r.period) : ''), hidden: true, width: 130 },
     { key: 'method', label: 'Method', value: r => r.method, width: 110 },
-    { key: 'destination', label: 'Destination', value: r => destination(r), width: 170 },
+    // Payout details are changed on the owner profile only; this opens its editor.
+    { key: 'destination', label: 'Destination', value: r => destination(r), width: 190,
+      render: r => <span className="flex flex-col min-w-0"><span className="truncate">{destination(r)}</span>
+        {r.ownerId && <a href={`#/owners/${encodeURIComponent(r.ownerId)}?edit=payout`} onClick={e => e.stopPropagation()} className="text-caption text-gold-ink no-underline">Change payout details</a>}</span> },
     { key: 'amount', label: 'Amount', type: 'money', value: r => r.amount, width: 130,
       render: r => <MoneyText sen={r.amount} mode="exact" strong className="text-copy" /> },
     { key: 'status', label: 'Status', value: r => payoutStatus(r), width: 170, filter: { kind: 'select' },

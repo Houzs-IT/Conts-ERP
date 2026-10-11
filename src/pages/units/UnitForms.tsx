@@ -13,11 +13,15 @@ import { rm } from '../../lib/format';
 import { bankName } from '../../lib/vocabulary';
 import { MODEL } from '../../lib/revenueModel';
 import {
-  BANKS, STATES, cap,
+  STATES, cap,
   SectionHead, Grid3, Labeled, Select, ReadOnly, CentreModal,
   type Unit, type Building, type UnitDetail,
 } from './shared';
 import { LAYOUTS, layoutFromBedrooms } from '../../lib/unitLayout';
+import { SearchSelect } from '../../components/Select';
+import { useApi } from '../../lib/useApi';
+import { masked } from '../../lib/format';
+import { AddOwnerModal } from '../owners/shared';
 
 type Change = (p: Partial<Unit>) => void;
 type Doc = UnitDetail['documents'][number];
@@ -37,6 +41,54 @@ export function SaveBar({ title, sub, dirty, saving, canEdit, onSave, extra }: {
           <Button variant="primary" size="sm" loading={saving} disabled={!dirty} disabledReason="Nothing has changed" onClick={onSave}>Save changes</Button>
         </>}
       </div>
+    </div>
+  );
+}
+
+interface OwnerLite { id: string; displayName: string; icLast4?: string | null; bankName?: string | null; bankAccountLast4?: string | null; accountHolder?: string | null }
+
+/** The unit's owner: picked from the owner profiles and linked, never typed. Their IC and payout details show here
+ *  read-only (last four only) and are changed on the owner profile, which every unit of theirs shares. */
+function OwnerLink({ u, money, canEdit, onChange }: { u: Unit; money: boolean; canEdit: boolean; onChange: Change }) {
+  const toast = useToast();
+  const { data, reload } = useApi<{ data: OwnerLite[] }>('/owners?lite=1');
+  const [adding, setAdding] = useState(false);
+  const owners = data?.data ?? [];
+  const o = owners.find(x => x.id === u.ownerId) ?? null;
+  async function addOwner(n: Parameters<Parameters<typeof AddOwnerModal>[0]['onSubmit']>[0]) {
+    try {
+      const made = await api.post<{ id: string }>('/owners', n);
+      setAdding(false); reload();
+      onChange({ ownerId: made.id, ownerName: n.displayName });
+      toast({ tone: 'success', title: 'Owner added.', body: 'Linked to this unit. Save changes to keep it.' });
+    } catch (e) { notifyFailure(e); }
+  }
+  const profile = u.ownerId ? `#/owners/${encodeURIComponent(u.ownerId)}` : null;
+  return (
+    <div className="mb-[22px] flex flex-col gap-3">
+      <div className="flex items-end gap-3 flex-wrap">
+        <div className="flex-[1_1_280px] min-w-0">
+          <SearchSelect showLabel label="Owner" allLabel="Choose an owner" placeholder="Search owners" size="md"
+            value={u.ownerId ?? ''} onChange={v => { const x = owners.find(y => y.id === v); if (x) onChange({ ownerId: x.id, ownerName: x.displayName }); }}
+            options={owners.map(x => ({ value: x.id, label: x.displayName }))} />
+        </div>
+        {canEdit && <Button size="md" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>New owner</Button>}
+      </div>
+      {money && (
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(200px,100%),1fr))] gap-x-5 gap-y-2 py-3 px-4 rounded-control bg-page border border-solid border-line">
+          {([['IC or passport', o?.icLast4 ? masked(o.icLast4) : null], ['Bank', bankName(o?.bankName) ?? null], ['Account', o?.bankAccountLast4 ? masked(o.bankAccountLast4) : null], ['Account holder', o?.accountHolder ?? null]] as const).map(([k, v]) => (
+            <div key={k} className="flex flex-col gap-0.5 min-w-0">
+              <span className="text-caption text-muted-ink">{k}</span>
+              <span className={v ? 'text-copy text-ink truncate' : 'text-copy text-muted-ink'}>{v ?? 'Not on file'}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="m-0 text-meta text-muted-ink">
+        Identity and payout details belong to the owner and are the same on all their units.
+        {profile && <> <a href={profile} className="text-gold-ink">Open owner profile</a> · <a href={`${profile}?edit=payout`} className="text-gold-ink">Edit payout details</a></>}
+      </p>
+      {adding && <AddOwnerModal onClose={() => setAdding(false)} onSubmit={addOwner} />}
     </div>
   );
 }
@@ -92,14 +144,7 @@ export function DetailsForm({ u, buildings, money, canEdit, onChange, onOpenCont
       </Grid3>
 
       <SectionHead>Owner</SectionHead>
-      <Grid3>
-        <Labeled label="Owner name"><Field label="" aria-label="Owner name" value={u.ownerName} onChange={e => onChange({ ownerName: e.target.value })} /></Labeled>
-        <Labeled label="IC or passport" help="Accepts both formats"><Field label="" aria-label="IC or passport" value={u.ic} onChange={e => onChange({ ic: e.target.value })} /></Labeled>
-        <Labeled label="Bank name"><Select label="Bank name" value={u.bankName} onChange={v => onChange({ bankName: v })} options={BANKS.map(b => ({ value: b, label: bankName(b) ?? b }))} /></Labeled>
-        <Labeled label="Bank account"><Field label="" aria-label="Bank account" value={u.bankAccount} onChange={e => onChange({ bankAccount: e.target.value })} /></Labeled>
-        <Labeled label="Account holder" span2><Field label="" aria-label="Account holder" value={u.accountHolder} onChange={e => onChange({ accountHolder: e.target.value })} /></Labeled>
-      </Grid3>
-      <p className="-mt-3 mb-[22px] text-meta text-muted-ink">Owner and bank details belong to the owner, so a change here applies to every unit they own.</p>
+      <OwnerLink u={u} money={money} canEdit={canEdit} onChange={onChange} />
 
       <SectionHead>Revenue model</SectionHead>
       <div className="flex flex-wrap items-center gap-3 mb-[6px]">

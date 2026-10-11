@@ -59,7 +59,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     data: (rows as any[]).map(r => ({
       id: r.id,
       ref: payoutRef(String(r.id)), statementId: r.statement_id, period: r.period ?? null,
-      ownerName: r.display_name, amount: Number(r.amount), currency: r.currency,
+      ownerId: r.owner_id, ownerName: r.display_name, amount: Number(r.amount), currency: r.currency,
       state: r.state, method: METHOD_LABEL[r.method] ?? r.method,
       // Never the full account number, only the tail.
       bankName: r.bank_name, bankLast4: r.bank_account_last4,

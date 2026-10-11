@@ -23,6 +23,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const banking = session.manage;
 
   const url = new URL(request.url);
+  // ?lite=1: just who the owners are, for the Units screen's owner picker (no month figures).
+  if (url.searchParams.get('lite') === '1') {
+    const rows = await all<any>(env, 'SELECT id, display_name, ic_number, bank_name, bank_account_last4, bank_account_number, bank_account_holder FROM owners ORDER BY display_name');
+    return json({ generatedAt: nowIso(), data: rows.map(o => ({
+      id: o.id, displayName: o.display_name,
+      ...(banking ? { icLast4: o.ic_number ? tail(o.ic_number) : null, bankName: o.bank_name ?? null,
+        bankAccountLast4: o.bank_account_last4 ?? (o.bank_account_number ? tail(o.bank_account_number) : null), accountHolder: o.bank_account_holder ?? o.display_name } : {}),
+    })) });
+  }
   const month = url.searchParams.get('month') || todayMyt().slice(0, 7);
   if (!/^\d{4}-\d{2}$/.test(month)) return fail('VALIDATION', 'Month must look like 2026-08.', 422);
   const id = url.searchParams.get('id');

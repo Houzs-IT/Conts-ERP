@@ -129,7 +129,9 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     const before = original.find(u => u.id === form.id);
     // The contract is saved on its own tab (PUT /units/:id/contract); never sent from here, so an older copy in
     // this form cannot overwrite it.
-    const { baseRate, contract: _contract, revenueModel: _model, termsLabel: _terms, ...body } = form;
+    // Owner identity and bank details belong to the owner profile; the unit only says which owner it is linked to.
+    const { baseRate, contract: _contract, revenueModel: _model, termsLabel: _terms, ownerName: _on, ic: _ic, bankName: _bn, bankAccount: _ba, accountHolder: _ah, ...rest } = form;
+    const body = { ...rest, ...(before && before.ownerId === form.ownerId ? { ownerId: undefined } : {}) };
     setSaving(true);
     try {
       await api.patch(`/units/${form.id}`, body);

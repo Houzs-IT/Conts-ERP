@@ -16,7 +16,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const buildings = await all<any>(env, 'SELECT id, name, city, state, postcode FROM properties ORDER BY state, name');
   const units = await all<any>(env, `
-    SELECT u.id, u.property_id, u.parent_unit_id, u.unit_number, u.bedrooms, u.bathrooms, u.size_sqft, u.layout_type, u.base_rate, u.listing_name, u.unit_code, u.address, u.package, u.term, u.split_kind, u.split_value, u.guarantee_period,
+    SELECT u.id, u.owner_id, u.property_id, u.parent_unit_id, u.unit_number, u.bedrooms, u.bathrooms, u.size_sqft, u.layout_type, u.base_rate, u.listing_name, u.unit_code, u.address, u.package, u.term, u.split_kind, u.split_value, u.guarantee_period,
            p.state, p.address_line, o.display_name AS owner_name, o.ic_number, o.bank_name, o.bank_account_number, o.bank_account_holder,
            c.management_fee_pct, c.starts_on, c.renews_on, c.minimum_guarantee, c.minimum_guarantee_annual, c.guarantee_starts_on, c.guarantee_ends_on,
            c.id AS c_id, c.revenue_model, c.model, c.grr_amount, c.agent_fee_pct, u.misc_charges,
@@ -35,7 +35,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       id: u.id, buildingId: u.property_id, parentUnitId: u.parent_unit_id ?? null,
       listingName: u.listing_name ?? '', unitCode: u.unit_code ?? u.unit_number, state: u.state,
       address: u.address ?? `${u.unit_number}, ${u.address_line}`,
-      ownerName: u.owner_name,
+      ownerId: u.owner_id, ownerName: u.owner_name,
       // Last four only, as on the owner profile; the full numbers are revealed there (audited), not here.
       ic: banking ? masked(u.ic_number) : '', bankName: banking ? (u.bank_name ?? '') : '',
       bankAccount: banking ? masked(u.bank_account_number) : '', accountHolder: banking ? (u.bank_account_holder ?? u.owner_name) : '',
