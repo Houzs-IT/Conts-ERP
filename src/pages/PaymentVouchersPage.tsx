@@ -11,7 +11,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 
@@ -119,7 +119,7 @@ function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { supp
   const [supplierId, setSupplierId] = useState('');
   const [method, setMethod] = useState<string>('TRANSFER');
   const [reference, setReference] = useState('');
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState(todayMyt());
   const [notes, setNotes] = useState('');
   const [pays, setPays] = useState<Record<string, number | null>>({});
 
@@ -141,7 +141,7 @@ function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { supp
       .filter(a => a.amountSen > 0);
     api.post('/payment-vouchers', { supplierId, paymentDate, method, reference, notes, allocations: allocations.map(({ purchaseInvoiceId, amountSen }) => ({ purchaseInvoiceId, amountSen })) }).catch(notifyFailure);
     onCreated({
-      id: `pv-new-${crypto.randomUUID().slice(0, 8)}`, voucherNumber: `PV-${new Date().getFullYear()}-NEW`, supplierName: supplier?.name ?? '', supplierCode: supplier?.code ?? '', supplierId,
+      id: `pv-new-${crypto.randomUUID().slice(0, 8)}`, voucherNumber: `PV-${todayMyt().slice(0, 4)}-NEW`, supplierName: supplier?.name ?? '', supplierCode: supplier?.code ?? '', supplierId,
       paymentDate, method, reference, amountSen: amount, status: 'POSTED', notes, allocations: allocations.map(a => ({ invoiceNumber: a.invoiceNumber, amountSen: a.amountSen })),
     });
   }

@@ -1,5 +1,5 @@
 /** Payment Vouchers (AP), ported from 2990's SCM. Pays purchase invoices. */
-import { type Env, one, nowIso } from './db';
+import { type Env, one, nowIso, mytToday } from './db';
 
 export const PV_METHODS = ['TRANSFER', 'CASH', 'CHEQUE', 'CARD', 'OTHER'] as const;
 
@@ -22,7 +22,7 @@ export function toPvAllocPayload(r: PvAllocRow) {
 }
 
 export async function nextVoucherNumber(env: Env): Promise<string> {
-  const year = nowIso().slice(0, 4);
+  const year = mytToday().slice(0, 4);
   const row = await one<{ mx: string | null }>(env, 'SELECT MAX(voucher_number) AS mx FROM payment_vouchers WHERE voucher_number LIKE ?', `PV-${year}-%`);
   const last = row?.mx ? Number(row.mx.split('-')[2]) : 0;
   return `PV-${year}-${String((Number.isFinite(last) ? last : 0) + 1).padStart(4, '0')}`;

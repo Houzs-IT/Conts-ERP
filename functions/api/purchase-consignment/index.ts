@@ -1,10 +1,10 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isPcStatus, normalizeLines, computeTotals, toPcHeaderPayload, checkPricedBody, type PcHeaderRow } from '../../_lib/purchase-consignment';
 import { invalid, type Fields } from '../../_lib/validate';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
-const today = () => nowIso().slice(0, 10);
+const today = () => mytToday();
 const LIST_SQL = `
   SELECT pc.id, pc.pc_number, pc.supplier_id, pc.status, pc.pc_date, pc.expected_at, pc.warehouse_id, pc.currency,
          pc.subtotal_sen, pc.tax_sen, pc.total_sen, pc.notes, pc.submitted_at, pc.cancelled_at, pc.created_at, pc.updated_at,

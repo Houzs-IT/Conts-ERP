@@ -12,7 +12,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm } from '../lib/format';
+import { rm, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 
 /** Products & Maintenance — the product/item master, ported from Houzs ERP's SKU master.
@@ -204,7 +204,7 @@ export default function ProductsPage() {
     const csv = [head.join(','), ...body].join('\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     const a = document.createElement('a');
-    a.href = url; a.download = `products-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+    a.href = url; a.download = `products-${todayMyt()}.csv`; a.click();
     URL.revokeObjectURL(url);
   }
 

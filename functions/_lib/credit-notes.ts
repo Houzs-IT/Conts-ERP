@@ -1,7 +1,7 @@
 /** Credit and debit notes, copied from Houzs ERP (backend/src/scm/routes/credit-notes.ts,
  *  backend/src/acc/credit-notes.ts). See migrations-pg/0037_credit_notes.sql for what each kind
  *  does to a balance. */
-import { type Env, one, nowIso } from './db';
+import { type Env, one, nowIso, mytToday } from './db';
 
 export const NOTE_KINDS = ['CN', 'DN', 'SCN'] as const;
 export type NoteKind = typeof NOTE_KINDS[number];
@@ -55,7 +55,7 @@ export function buildLines(raw: unknown): { lines: CleanLine[]; total: number } 
 
 /** Separate number series per kind, as in Houzs: CN-2026-0001, DN-2026-0001, SCN-2026-0001. */
 export async function nextNoteNumber(env: Env, kind: NoteKind): Promise<string> {
-  const year = nowIso().slice(0, 4);
+  const year = mytToday().slice(0, 4);
   const row = await one<{ mx: string | null }>(env, 'SELECT MAX(note_number) AS mx FROM credit_notes WHERE note_number LIKE ?', `${kind}-${year}-%`);
   const last = row?.mx ? Number(row.mx.split('-')[2]) : 0;
   return `${kind}-${year}-${String((Number.isFinite(last) ? last : 0) + 1).padStart(4, '0')}`;

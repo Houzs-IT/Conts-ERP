@@ -11,7 +11,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
@@ -104,7 +104,7 @@ const CELL_NUM = 'h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-car
 function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onClose: () => void; onCreated: (c: Cn) => void }) {
   const [consigneeName, setConsigneeName] = useState('');
   const [consigneePhone, setConsigneePhone] = useState('');
-  const [cnDate, setCnDate] = useState(new Date().toISOString().slice(0, 10));
+  const [cnDate, setCnDate] = useState(todayMyt());
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([blankLine()]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -126,7 +126,7 @@ function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onC
     if (Object.keys(e).length) return;
     const b = built();
     api.post('/consignment-notes', { consigneeName, consigneePhone, cnDate, notes, lines: b }).catch(notifyFailure);
-    onCreated({ id: `cn-new-${crypto.randomUUID().slice(0, 8)}`, cnNumber: `CN-${new Date().getFullYear()}-NEW`, consigneeName, consigneePhone, cnDate, status: 'OPEN', totalSen: total, notes,
+    onCreated({ id: `cn-new-${crypto.randomUUID().slice(0, 8)}`, cnNumber: `CN-${todayMyt().slice(0, 4)}-NEW`, consigneeName, consigneePhone, cnDate, status: 'OPEN', totalSen: total, notes,
       lines: b.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qtyConsigned: l.qtyConsigned, qtySold: 0, qtyReturned: 0, unitPriceSen: l.unitPriceSen, lineTotalSen: l.qtyConsigned * l.unitPriceSen })) });
   }
 

@@ -11,7 +11,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm } from '../lib/format';
+import { rm, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { statusLabel } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
@@ -70,11 +70,11 @@ export default function SalesOrdersPage() {
   function totalsOf(lines: Line[], taxSen: number) { const subtotalSen = lines.reduce((s, l) => s + l.lineTotalSen, 0); return { subtotalSen, taxSen: Math.max(0, taxSen), totalSen: subtotalSen + Math.max(0, taxSen) }; }
   function body(so: So, lines: Line[]) { return { customerName: so.customerName, customerPhone: so.customerPhone, customerPo: so.customerPo, soDate: so.soDate, targetDate: so.targetDate || null, notes: so.notes, taxSen: so.taxSen, depositSen: so.depositSen, lines: lines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qty: l.qty, unitPriceSen: l.unitPriceSen, discountSen: l.discountSen })) }; }
 
-  function openNew() { setIsNew(true); setDrawer({ id: '', docNo: '', customerName: '', customerPhone: '', customerPo: '', soDate: new Date().toISOString().slice(0, 10), targetDate: '', status: 'CONFIRMED', subtotalSen: 0, taxSen: 0, totalSen: 0, depositSen: 0, paidSen: 0, outstandingSen: 0, notes: '', lines: [] }); }
+  function openNew() { setIsNew(true); setDrawer({ id: '', docNo: '', customerName: '', customerPhone: '', customerPo: '', soDate: todayMyt(), targetDate: '', status: 'CONFIRMED', subtotalSen: 0, taxSen: 0, totalSen: 0, depositSen: 0, paidSen: 0, outstandingSen: 0, notes: '', lines: [] }); }
   function save(so: So, lines: Line[]) {
     const t = totalsOf(lines, so.taxSen);
     if (isNew) {
-      setAdded(a => [{ ...so, ...t, id: `so-new-${crypto.randomUUID().slice(0, 8)}`, docNo: `SO-${new Date().getFullYear()}-NEW`, outstandingSen: t.totalSen - so.paidSen, lines }, ...a]);
+      setAdded(a => [{ ...so, ...t, id: `so-new-${crypto.randomUUID().slice(0, 8)}`, docNo: `SO-${todayMyt().slice(0, 4)}-NEW`, outstandingSen: t.totalSen - so.paidSen, lines }, ...a]);
       api.post('/sales-orders', body(so, lines)).catch(notifyFailure);
       toast({ tone: 'success', title: 'Sales order raised.', body: so.customerName });
     } else {

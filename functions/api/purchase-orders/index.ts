@@ -1,10 +1,10 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isPoStatus, normalizeLines, computeTotals, toPoHeaderPayload, checkPricedBody, type PoHeaderRow } from '../../_lib/purchase-orders';
 import { invalid, type Fields } from '../../_lib/validate';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 
-const today = () => nowIso().slice(0, 10);
+const today = () => mytToday();
 
 const LIST_SQL = `
   SELECT po.id, po.po_number, po.supplier_id, po.status, po.po_date, po.expected_at, po.warehouse_id, po.currency,

@@ -1,5 +1,5 @@
 /** Stock Transfers + Stock Takes, ported from 2990's SCM. Post to the stock_movements ledger. */
-import { type Env, one, run, nowIso } from './db';
+import { type Env, one, run, nowIso, mytToday } from './db';
 import { genId } from './scm-util';
 
 export type MovementType = 'RECEIPT' | 'ISSUE' | 'ADJUSTMENT' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'RETURN' | 'STOCK_TAKE';
@@ -36,7 +36,7 @@ export function toTakePayload(r: TakeHeaderRow) {
 export function toTakeLinePayload(r: TakeLineRow) { return { id: r.id, lineNo: r.line_no, itemCode: r.item_code, description: r.description ?? '', systemQty: r.system_qty, countedQty: r.counted_qty, variance: r.variance }; }
 
 export async function nextNumber(env: Env, table: string, col: string, prefix: string): Promise<string> {
-  const year = nowIso().slice(0, 4);
+  const year = mytToday().slice(0, 4);
   const row = await one<{ mx: string | null }>(env, `SELECT MAX(${col}) AS mx FROM ${table} WHERE ${col} LIKE ?`, `${prefix}-${year}-%`);
   const last = row?.mx ? Number(row.mx.split('-')[2]) : 0;
   return `${prefix}-${year}-${String((Number.isFinite(last) ? last : 0) + 1).padStart(4, '0')}`;

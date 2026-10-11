@@ -1,10 +1,10 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isSoStatus, normalizeLines, computeTotals, toSoHeaderPayload, type SoHeaderRow } from '../../_lib/sales-orders';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
 import { checkSen, checkInt, checkDate, checkPhone, invalid, type Fields } from '../../_lib/validate';
 
-const today = () => nowIso().slice(0, 10);
+const today = () => mytToday();
 const COLS = `id, doc_no, customer_name, customer_phone, customer_po, so_date, target_date, status, currency,
               subtotal_sen, tax_sen, total_sen, deposit_sen, paid_sen, notes, created_at, updated_at`;
 

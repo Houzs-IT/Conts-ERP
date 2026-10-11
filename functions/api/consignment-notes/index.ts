@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isCnStatus, normalizeCnLines, toCnHeaderPayload, type CnHeaderRow } from '../../_lib/consignment-notes';
 import { strOrNull, genId } from '../../_lib/scm-util';
@@ -39,7 +39,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const total = lines.reduce((s, l) => s + l.lineTotalSen, 0);
   const id = genId('cn');
-  const year = nowIso().slice(0, 4);
+  const year = mytToday().slice(0, 4);
   const mx = await one<{ mx: string | null }>(env, 'SELECT MAX(cn_number) AS mx FROM consignment_notes WHERE cn_number LIKE ?', `CN-${year}-%`);
   const cnNumber = `CN-${year}-${String((mx?.mx ? Number(mx.mx.split('-')[2]) : 0) + 1).padStart(4, '0')}`;
   const now = nowIso();
