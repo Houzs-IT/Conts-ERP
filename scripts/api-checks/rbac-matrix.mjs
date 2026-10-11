@@ -34,7 +34,7 @@ const ONLY = process.argv.find(a => a.startsWith('--only='))?.slice(7);
 
 // PGlite serves one wire connection at a time: open and close one per query so the server's own query never waits.
 export const db = async (text, ...values) => {
-  const c = postgres(`postgres://postgres@127.0.0.1:${PORT}/postgres`, { max: 1, onnotice: () => {}, connection: { search_path: 'pos' } });
+  const c = postgres(`postgres://postgres@127.0.0.1:${PORT}/${process.env.BIGDATA_DB ?? 'postgres'}`, { max: 1, onnotice: () => {}, connection: { search_path: 'pos' } });
   try { return await c.unsafe(text, values); } finally { await c.end({ timeout: 5 }); }
 };
 

@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { MoneyInput, PercentInput, PhoneInput, DateField, phoneProblem } from '../../components/inputs';
@@ -7,7 +6,8 @@ import { useApi } from '../../lib/useApi';
 import type { RosterUnit } from '../../lib/useUnitRoster';
 import { rm, monthLabel, titleCase } from '../../lib/format';
 import { MoneyText } from '../../components/MoneyText';
-import { DataTable, type Column } from '../../components/DataTable';
+import { StatusBadge } from '../../components/StatusBadge';
+import Icon from '../../components/Icon';
 import { Select, SearchSelect } from '../../components/Select';
 import { cx } from '../../lib/design-tokens';
 import { Eyebrow, Figure } from '../../components/Metric';
@@ -47,7 +47,7 @@ export interface Owner {
   defaultManagementFeePct: number | null;
   contract: { feePct: number; startedOn: string; renewsOn: string | null; endsOn?: string | null } | null;
   /** The owner's statement for the month asked for, if generated. */
-  statement?: { id: string; state: StatementState } | null;
+  statement?: { id: string; state: StatementState; hasUnits?: boolean } | null;
   units: UnitLine[];
 }
 export interface Payload { data: Owner[]; generatedAt: string; month?: string }
@@ -82,7 +82,7 @@ export const managedNetOf = (o: Owner) => o.units.reduce((s, u) => s + (u.model 
 export const terms = (u: UnitLine) => u.termsLabel ?? (u.model === 'grr' ? `GRR ${rm(u.grrAmount ?? 0)}/mo` : `${u.feePct ?? 0}% fee`);
 
 // One statement per past period, combined across all of an owner's units.
-export interface OwnerStatement { id: string; period: string; grossBookingValue: number; netPayout: number; state: StatementState }
+export interface OwnerStatement { id: string; period: string; grossBookingValue: number; netPayout: number; state: StatementState; hasUnits?: boolean }
 export interface StatementsPayload { data: OwnerStatement[]; generatedAt: string }
 
 export const periodLabel = (p: string) => monthLabel(p);
@@ -123,28 +123,95 @@ export function Section({ title, action, children }: { title: string; action?: R
   );
 }
 
+/** Deduction lines of a statement, in the order the report prints them, in the owner's words. */
+const DEDUCTION_LABEL: Record<string, string> = {
+  cleaning_basic: 'Cleaning', cleaning_deep: 'Deep cleaning', electricity: 'Electricity (paid on behalf)', water: 'Water (paid on behalf)',
+  internet: 'Wi-Fi (paid on behalf)', sewerage: 'IndahWater (paid on behalf)', additional: 'Maintenance job and other paid on behalf', misc: 'Miscellaneous charges',
+};
+interface StatementDetail {
+  id: string; period: string; state: StatementState; source: string;
+  totals: { grossIncome: number; operatorShare: number; deductions: number; adjustments: number; netPayout: number };
+  units: { unitId: string; label: string; ownerPct: number | null; basis: string; fixedRent: number; topUp: number; nights: number }[];
+  lines: { id: string; unitId: string | null; type: string; category: string | null; description: string; amount: number }[];
+}
+
+/** One statement's make-up, opened in place: income, each deduction, To Operator, what comes off after the split, and
+ *  the Net Payout to Owner, with links to the full statement and the Owner Income Report. */
+function StatementMakeUp({ s }: { s: OwnerStatement }) {
+  const { data, loading, error } = useApi<{ data: StatementDetail }>(`/statements/${encodeURIComponent(s.id)}`);
+  const d = data?.data;
+  if (!d) return <div className="px-4 pb-4 text-meta text-muted-ink">{loading ? 'Loading the make-up...' : error ?? 'Could not open this statement.'}</div>;
+  const ded = new Map<string, number>();
+  for (const l of d.lines) if (l.type === 'expense') ded.set(l.category ?? 'additional', (ded.get(l.category ?? 'additional') ?? 0) - l.amount);
+  const order = Object.keys(DEDUCTION_LABEL);
+  const rank = (k: string) => { const i = order.indexOf(k); return i < 0 ? order.length : i; };
+  const deductions = [...ded.entries()].sort(([a], [b]) => rank(a) - rank(b));
+  const pcts = [...new Set(d.units.filter(u => u.basis === 'share').map(u => 100 - (u.ownerPct ?? 0)))];
+  const toOperator = pcts.length === 1 ? `${Number(pcts[0].toFixed(2))}% To Operator` : 'To Operator';
+  const fixed = d.units.filter(u => u.basis !== 'share').reduce((n, u) => n + u.fixedRent, 0);
+  const after = d.lines.filter(l => l.type === 'adjustment' && !['guarantee_top_up', 'fixed_rent'].includes(l.category ?? ''));
+  const topUp = d.units.reduce((n, u) => n + u.topUp, 0);
+  const Row = ({ label, sen, strong, muted }: { label: string; sen: number; strong?: boolean; muted?: boolean }) => (
+    <div className={cx('flex items-baseline justify-between gap-3 py-[5px]', strong && 'pt-2 mt-1 [border-top:1px_solid_var(--color-line-soft)]')}>
+      <span className={cx('text-meta min-w-0', strong ? 'font-semibold text-ink' : muted ? 'text-muted-ink' : 'text-ink')}>{label}</span>
+      <MoneyText sen={sen} mode="exact" strong={strong} className="text-meta text-right whitespace-nowrap" />
+    </div>
+  );
+  const hasUnits = d.units.length > 0;
+  return (
+    <div className="px-4 pb-4 flex flex-col">
+      {!hasUnits ? (
+        <span className="text-meta text-muted-ink pb-1">{d.source === 'owner_workbook' ? 'Paid from the owner workbook before Property OS: the payout only, not the lines behind it.' : 'No unit figures on this statement.'}</span>
+      ) : <>
+        <Row label="Gross Income (reservations)" sen={d.totals.grossIncome} />
+        {deductions.map(([k, v]) => <Row key={k} label={DEDUCTION_LABEL[k] ?? k} sen={-v} muted />)}
+        {d.totals.operatorShare !== 0 && <Row label={toOperator} sen={-d.totals.operatorShare} muted />}
+        {fixed > 0 && <Row label="Fixed monthly rent" sen={fixed} />}
+        {topUp > 0 && <Row label="Minimum guarantee top-up" sen={topUp} muted />}
+        {after.map(l => <Row key={l.id} label={`${l.description} (after the split)`} sen={l.amount} muted />)}
+      </>}
+      <Row label="Net Payout to Owner" sen={d.totals.netPayout} strong />
+      <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 text-meta">
+        <a href={`#/finance/statements/${encodeURIComponent(s.id)}`} className="text-gold-ink no-underline font-medium">Open the full owner statement</a>
+        {hasUnits
+          ? <a href={`#/finance/statements/${encodeURIComponent(s.id)}/report?view=owner`} className="text-gold-ink no-underline font-medium">Owner Income Report</a>
+          : <a href={`/api/statements/${encodeURIComponent(s.id)}/pdf?format=legacy`} target="_blank" rel="noreferrer" className="text-gold-ink no-underline font-medium">Owner statement as paid</a>}
+      </div>
+    </div>
+  );
+}
+
 export function StatementHistory({ o }: { o: Owner }) {
   // Combined statement history across the owner's units. Hydrates from the live
   // endpoint when present; the computed fallback keeps the section rendering in dev.
   const { data, loading, error, reload } = useApi<StatementsPayload>(`/owners/${o.id}/statements`, statementsFallback(o));
-  const navigate = useNavigate();
-  const columns = useMemo<Column<OwnerStatement>[]>(() => [
-    { key: 'period', label: 'Month', value: s => s.period, render: s => <span className="text-copy font-medium whitespace-nowrap">{periodLabel(s.period)}</span>,
-      exportValue: s => periodLabel(s.period), hideable: false, width: 110, filter: false },
-    { key: 'gross', label: 'Booking revenue', type: 'money', value: s => s.grossBookingValue, width: 120,
-      render: s => <MoneyText sen={s.grossBookingValue} mode="exact" tone="muted" className="text-meta" /> },
-    { key: 'net', label: 'Owner payout', type: 'money', value: s => s.netPayout, width: 120,
-      render: s => <MoneyText sen={s.netPayout} mode="exact" strong className="text-copy" /> },
-    { key: 'state', label: 'Status', type: 'status', value: s => s.state, width: 110, entity: 'statement' },
-  ], []);
+  const [open, setOpen] = useState<string | null>(null);
+  const rows = data?.data ?? [];
   return (
     <Section title="Statement history">
       <div className="border border-solid border-line rounded-card overflow-hidden">
-        <DataTable<OwnerStatement> id="owner.statements" urlPrefix="stmt." bare noViews pageSize={0} maxHeight="420px"
-          columns={columns} rows={data ? data.data : null} rowKey={s => s.id} loading={loading} error={error} onRetry={reload}
-          onRowClick={s => navigate(`/finance/statements/${encodeURIComponent(s.id)}`)}
-          noun={['statement', 'statements']} exportName={`${o.displayName} statements`}
-          empty={{ title: 'No statements yet.', body: 'History appears here once a period is generated for this owner.', icon: 'FileText' }} />
+        {error && !data ? (
+          <div className="p-4 text-copy text-critical flex items-center gap-3">{error}<button type="button" onClick={reload} className="bg-transparent border-none p-0 text-gold-ink cursor-pointer [font-family:inherit] text-copy">Retry</button></div>
+        ) : loading && !data ? <div className="p-4"><div className="skeleton h-16" /></div>
+        : rows.length === 0 ? <div className="p-4 text-copy text-muted-ink">No owner statements yet. History appears here once a month is generated for this owner.</div>
+        : rows.map(s => {
+          const on = open === s.id;
+          return (
+            <div key={s.id} className="[border-top:1px_solid_var(--color-line-soft)] first:border-t-0">
+              <button type="button" aria-expanded={on} onClick={() => setOpen(on ? null : s.id)}
+                className={cx('w-full grid grid-cols-[minmax(0,1fr)_auto_auto] sm:grid-cols-[110px_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-0.5 px-4 py-3 bg-transparent border-none cursor-pointer text-left [font-family:inherit]', on ? 'bg-page' : 'hover:bg-page')}>
+                <span className="text-copy font-medium whitespace-nowrap">{periodLabel(s.period)}</span>
+                <span className="hidden sm:block text-meta text-muted-ink truncate">Gross Income <MoneyText sen={s.grossBookingValue} mode="exact" className="text-meta" /></span>
+                <MoneyText sen={s.netPayout} mode="exact" strong className="text-copy text-right" />
+                <span className="flex items-center gap-2">
+                  <StatusBadge entity="statement" value={s.state} size="sm" />
+                  <Icon name={on ? 'ChevronUp' : 'ChevronDown'} size="sm" />
+                </span>
+              </button>
+              {on && <div className="bg-page"><StatementMakeUp s={s} /></div>}
+            </div>
+          );
+        })}
       </div>
     </Section>
   );
