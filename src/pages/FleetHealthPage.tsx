@@ -12,7 +12,7 @@ import { api } from '../lib/api';
 import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 
 /** Fleet Health — ported from 2990's SCM fleet-maintenance (core), drawn in Conts. Per-vehicle
@@ -35,7 +35,7 @@ const FALLBACK: Payload = { generatedAt: '', data: [
   { id: 'f2', vehicleId: 'v2', recordType: 'ROAD_TAX', serviceDate: '2026-08-01', odometerKm: null, costSen: 120000, nextDueDate: '2026-09-25', nextDueKm: null, status: 'DONE', vendor: 'JPJ', notes: 'Renewal', vehicleCode: 'LRY-02', vehiclePlate: 'VBA 5678' },
 ] };
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayMyt();
 
 export default function FleetHealthPage() {
   const { data, loading, error, reload } = useApi<Payload>('/fleet-health', FALLBACK);

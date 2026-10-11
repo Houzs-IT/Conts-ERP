@@ -90,6 +90,16 @@ export function fail(code: string, message: string, status = 400, fields?: Recor
 
 export function nowIso() { return new Date().toISOString(); }
 
+/** Today's date in Kuala Lumpur, yyyy-mm-dd. The Worker's clock is UTC, so nowIso().slice(0, 10) is yesterday until 08:00. */
+export function mytToday() { return new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10); }
+
+/** A unique-number clash (Postgres 23505 on a ..._number_key / ..._no_key constraint): two documents picked the same
+ *  next number at the same moment. The caller takes the next number and tries again. */
+export function isNumberClash(e: unknown) {
+  const x = e as { code?: string; constraint_name?: string } | null;
+  return x?.code === '23505' && /_(?:number|no)_key$/.test(x.constraint_name ?? '');
+}
+
 /** Audit is not optional on financial or destructive actions — see schema.sql. */
 export async function audit(env: Env, e: {
   actorId: string | null; actorLabel: string; action: string;

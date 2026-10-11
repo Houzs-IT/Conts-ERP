@@ -12,7 +12,7 @@ import { api } from '../lib/api';
 import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 
@@ -123,7 +123,7 @@ function PayDrawer({ suppliers, invoices, canWrite, onClose, onCreated }: { supp
   const [supplierId, setSupplierId] = useState('');
   const [method, setMethod] = useState<string>('TRANSFER');
   const [reference, setReference] = useState('');
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState(todayMyt());
   const [notes, setNotes] = useState('');
   const [pays, setPays] = useState<Record<string, number | null>>({});
 

@@ -1,5 +1,5 @@
 /** Purchase Invoices, ported from 2990's SCM. Bills a GRN; paid via Payment Vouchers. */
-import { type Env, one, run, nowIso } from './db';
+import { type Env, one, run, nowIso, mytToday } from './db';
 
 export const PI_STATUSES = ['POSTED', 'PARTIALLY_PAID', 'PAID', 'CANCELLED'] as const;
 export type PiStatus = typeof PI_STATUSES[number];
@@ -27,7 +27,7 @@ export function toPiLinePayload(r: PiLineRow) {
 }
 
 export async function nextInvoiceNumber(env: Env): Promise<string> {
-  const year = nowIso().slice(0, 4);
+  const year = mytToday().slice(0, 4);
   const row = await one<{ mx: string | null }>(env, 'SELECT MAX(invoice_number) AS mx FROM purchase_invoices WHERE invoice_number LIKE ?', `PINV-${year}-%`);
   const last = row?.mx ? Number(row.mx.split('-')[2]) : 0;
   return `PINV-${year}-${String((Number.isFinite(last) ? last : 0) + 1).padStart(4, '0')}`;

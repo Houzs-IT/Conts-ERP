@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { normalizeLines, toPcHeaderPayload, toPcLinePayload, checkPricedBody, type PcHeaderRow, type PcLineRow } from '../../_lib/purchase-consignment';
 import { invalid, type Fields } from '../../_lib/validate';
@@ -48,7 +48,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const sets: string[] = [];
   const args: unknown[] = [];
   if (b.supplierId !== undefined) { const sup = String(b.supplierId).trim(); if (!sup || !await one(env, 'SELECT 1 AS x FROM suppliers WHERE id = ?', sup)) return fail('VALIDATION', 'Unknown supplier.', 422, { supplierId: 'Unknown supplier.' }); sets.push('supplier_id = ?'); args.push(sup); }
-  if (b.pcDate !== undefined) { sets.push('pc_date = ?'); args.push(strOrNull(b.pcDate) ?? now.slice(0, 10)); }
+  if (b.pcDate !== undefined) { sets.push('pc_date = ?'); args.push(strOrNull(b.pcDate) ?? mytToday()); }
   if (b.expectedAt !== undefined) { sets.push('expected_at = ?'); args.push(strOrNull(b.expectedAt)); }
   if (b.warehouseId !== undefined) { sets.push('warehouse_id = ?'); args.push(strOrNull(b.warehouseId)); }
   if (b.notes !== undefined) { sets.push('notes = ?'); args.push(strOrNull(b.notes)); }

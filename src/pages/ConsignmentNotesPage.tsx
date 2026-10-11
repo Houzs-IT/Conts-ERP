@@ -12,7 +12,7 @@ import { api } from '../lib/api';
 import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
@@ -108,7 +108,7 @@ const CELL_NUM = 'h-8 box-border px-2 py-0 font-sans text-[13px] text-ink bg-car
 function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onClose: () => void; onCreated: (c: Cn, req: Promise<unknown>) => void }) {
   const [consigneeName, setConsigneeName] = useState('');
   const [consigneePhone, setConsigneePhone] = useState('');
-  const [cnDate, setCnDate] = useState(new Date().toISOString().slice(0, 10));
+  const [cnDate, setCnDate] = useState(todayMyt());
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([blankLine()]);
   const [errors, setErrors] = useState<Record<string, string>>({});

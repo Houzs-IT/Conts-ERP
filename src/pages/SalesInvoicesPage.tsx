@@ -12,7 +12,7 @@ import { api } from '../lib/api';
 import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
@@ -120,7 +120,7 @@ const lineColumns: Column<SiLine>[] = [
 function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo[]; canWrite: boolean; onClose: () => void; onCreated: (s: Si, req: Promise<unknown>) => void }) {
   const [doId, setDoId] = useState('');
   const [lines, setLines] = useState<DoLine[]>([]);
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
+  const [invoiceDate, setInvoiceDate] = useState(todayMyt());
   const [dueDate, setDueDate] = useState('');
   const [taxSen, setTaxSen] = useState<number | null>(null);
   const [notes, setNotes] = useState('');

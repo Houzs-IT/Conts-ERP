@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { toOnHandPayload, type OnHandRow } from '../../_lib/stock';
 import { onHandOf } from '../../_lib/stock-ops';
@@ -57,7 +57,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const now = nowIso();
   await run(env, `INSERT INTO stock_movements (id, item_code, warehouse_id, qty_delta, movement_type, ref_type, ref_id, note, moved_at, created_by, created_at)
                   VALUES (?, ?, ?, ?, 'ADJUSTMENT', 'ADJ', ?, ?, ?, ?, ?)`,
-    id, itemCode, warehouseId, qtyDelta, id, strOrNull(b.note), now.slice(0, 10), session.userId, now);
+    id, itemCode, warehouseId, qtyDelta, id, strOrNull(b.note), mytToday(), session.userId, now);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'stock.adjust', entityTable: 'stock_movements', entityId: id, after: { itemCode, warehouseId, qtyDelta } });
   return json({ id }, 201);
 };

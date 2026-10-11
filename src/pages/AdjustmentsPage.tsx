@@ -1,3 +1,4 @@
+import { todayMyt } from '../lib/format';
 import { useMemo, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -107,7 +108,7 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onCreate }: { warehouses:
     const fullNote = note.trim() ? `${reason} — ${note.trim()}` : reason;
     setBusy(true);
     setFields({});
-    const refused = await onCreate({ id: '', itemCode: itemCode.trim(), warehouseId, warehouseCode: wh?.code ?? '', warehouseName: wh?.name ?? '', qtyDelta: delta, note: fullNote, movedAt: new Date().toISOString().slice(0, 10) });
+    const refused = await onCreate({ id: '', itemCode: itemCode.trim(), warehouseId, warehouseCode: wh?.code ?? '', warehouseName: wh?.name ?? '', qtyDelta: delta, note: fullNote, movedAt: todayMyt() });
     setFields(refused ?? {});
     setBusy(false);
   }

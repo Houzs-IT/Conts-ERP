@@ -334,7 +334,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   function expensesReport() {
     if (!form) return;
     toast({ tone: 'info', title: 'Preparing report', body: `Expenses for ${unitLabel} — served as a download.` });
-    downloadFile('/expenses/report', { unitId: form.id, period: new Date().toISOString().slice(0, 7) }).catch(notifyFailure);
+    downloadFile('/expenses/report', { unitId: form.id, period: todayMyt().slice(0, 7) }).catch(notifyFailure);
   }
   const needsForm = <Card><div className="p-8 text-center text-copy text-muted-ink">This unit's master data is not available to your role.</div></Card>;
   const title = form?.listingName || `${u.propertyName} ${u.unitNumber}`;

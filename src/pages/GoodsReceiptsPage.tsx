@@ -12,7 +12,7 @@ import { api, notifyFailure } from '../lib/api';
 import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
@@ -139,7 +139,7 @@ interface RcvLine { poLineId: string; itemCode: string; description: string; uom
 function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: OpenPo[]; canWrite: boolean; onClose: () => void; onCreated: (g: Grn, req: Promise<unknown>) => void }) {
   const [poId, setPoId] = useState('');
   const [lines, setLines] = useState<RcvLine[]>([]);
-  const [receivedAt, setReceivedAt] = useState(new Date().toISOString().slice(0, 10));
+  const [receivedAt, setReceivedAt] = useState(todayMyt());
   const [dnRef, setDnRef] = useState('');
   const [notes, setNotes] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
@@ -162,7 +162,7 @@ function ReceiveDrawer({ openPos, canWrite, onClose, onCreated }: { openPos: Ope
   const total = willReceive.reduce((s, l) => s + (l.accepted ?? 0) * l.unitPriceSen, 0);
   const canSave = canWrite && poId !== '' && willReceive.length > 0;
   const [tried, setTried] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayMyt();
   const dateError = tried && !receivedAt ? 'Required.' : undefined;
   const acceptError = (l: RcvLine) => (tried && (l.receive ?? 0) > 0 && l.accepted == null ? 'Required.' : undefined);
 

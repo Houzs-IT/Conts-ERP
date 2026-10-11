@@ -13,7 +13,7 @@ import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { ShortStockPrompt } from '../components/ShortStockPrompt';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { date } from '../lib/format';
+import { date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { statusLabel } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
@@ -122,7 +122,7 @@ interface DelLine { soLineId: string; itemCode: string; description: string; uom
 function DeliverDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[]; canWrite: boolean; onClose: () => void; onCreated: (d: Do) => void }) {
   const [soId, setSoId] = useState('');
   const [lines, setLines] = useState<DelLine[]>([]);
-  const [doDate, setDoDate] = useState(new Date().toISOString().slice(0, 10));
+  const [doDate, setDoDate] = useState(todayMyt());
   const [expected, setExpected] = useState('');
   const [driverName, setDriverName] = useState('');
   const [vehicle, setVehicle] = useState('');

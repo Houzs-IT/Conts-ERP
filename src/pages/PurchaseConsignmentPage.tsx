@@ -12,7 +12,7 @@ import { api } from '../lib/api';
 import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm } from '../lib/format';
+import { rm, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { statusLabel } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
@@ -69,7 +69,7 @@ export default function PurchaseConsignmentPage() {
     { key: 'total', label: 'Total', type: 'money', value: p => p.totalSen },
   ], []);
 
-  function openNew() { setIsNew(true); setDrawer({ id: '', pcNumber: '', supplierId: suppliers[0]?.id ?? '', supplierCode: '', supplierName: '', status: 'SUBMITTED', pcDate: new Date().toISOString().slice(0, 10), expectedAt: '', warehouseId: warehouses[0]?.id ?? '', subtotalSen: 0, taxSen: 0, totalSen: 0, notes: '', lines: [] }); }
+  function openNew() { setIsNew(true); setDrawer({ id: '', pcNumber: '', supplierId: suppliers[0]?.id ?? '', supplierCode: '', supplierName: '', status: 'SUBMITTED', pcDate: todayMyt(), expectedAt: '', warehouseId: warehouses[0]?.id ?? '', subtotalSen: 0, taxSen: 0, totalSen: 0, notes: '', lines: [] }); }
   function totalsOf(lines: Line[], taxSen: number) { const subtotalSen = lines.reduce((s, l) => s + l.lineTotalSen, 0); return { subtotalSen, taxSen: Math.max(0, taxSen), totalSen: subtotalSen + Math.max(0, taxSen) }; }
   function body(pc: Pc, lines: Line[]) { return { supplierId: pc.supplierId, pcDate: pc.pcDate, expectedAt: pc.expectedAt || null, warehouseId: pc.warehouseId || null, notes: pc.notes, taxSen: pc.taxSen, lines: lines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qty: l.qty, unitPriceSen: l.unitPriceSen, discountSen: l.discountSen })) }; }
 

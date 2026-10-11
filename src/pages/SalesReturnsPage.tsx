@@ -12,7 +12,7 @@ import { api } from '../lib/api';
 import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
@@ -120,7 +120,7 @@ interface RetLine { doLineId: string; itemCode: string; description: string; uom
 function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo[]; canWrite: boolean; onClose: () => void; onCreated: (p: Sret, req: Promise<unknown>) => void }) {
   const [doId, setDoId] = useState('');
   const [lines, setLines] = useState<RetLine[]>([]);
-  const [returnDate, setReturnDate] = useState(new Date().toISOString().slice(0, 10));
+  const [returnDate, setReturnDate] = useState(todayMyt());
   const [reason, setReason] = useState('');
   const [creditNoteRef, setCreditNoteRef] = useState('');
   const [notes, setNotes] = useState('');
@@ -139,7 +139,7 @@ function ReturnDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: Open
   const refund = willReturn.reduce((s, l) => s + Math.min(l.qty ?? 0, l.returnable) * l.unitPriceSen, 0);
   const canSave = canWrite && doId !== '' && willReturn.length > 0;
   const qtyError = (l: RetLine) => (l.qty ?? 0) > l.returnable ? `Only ${l.returnable} can be returned.` : undefined;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayMyt();
   const dateError = submitted && !returnDate ? 'Enter the return date.' : undefined;
 
   function submit() {

@@ -1,4 +1,4 @@
-import { type Env, all, json, nowIso } from '../../_lib/db';
+import { type Env, all, json, nowIso, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 
 /** GET /api/coverage-fleet — a read-only fleet coverage overview (2990's SCM Coverage & Fleet),
@@ -10,7 +10,7 @@ interface DRow { id: string; driver_code: string; name: string; phone: string | 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  const today = nowIso().slice(0, 10);
+  const today = mytToday();
 
   const vehicles = await all<VRow>(env, `
     SELECT v.id, v.code, v.plate, v.vehicle_type, v.active,

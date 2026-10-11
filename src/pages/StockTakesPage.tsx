@@ -12,7 +12,7 @@ import { api } from '../lib/api';
 import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { date } from '../lib/format';
+import { date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 
@@ -77,7 +77,7 @@ export default function StockTakesPage() {
 
 function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses: Opt[]; canWrite: boolean; onClose: () => void; onCreated: (k: Take, req: Promise<unknown>) => void }) {
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
-  const [takeDate, setTakeDate] = useState(new Date().toISOString().slice(0, 10));
+  const [takeDate, setTakeDate] = useState(todayMyt());
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<{ itemCode: string; description: string }[]>([{ itemCode: '', description: '' }]);
   const setItem = (i: number, k: 'itemCode' | 'description', v: string) => setItems(is => is.map((x, j) => j === i ? { ...x, [k]: v } : x));

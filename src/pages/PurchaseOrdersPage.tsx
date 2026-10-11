@@ -12,7 +12,7 @@ import { api } from '../lib/api';
 import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm } from '../lib/format';
+import { rm, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { statusLabel } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
@@ -92,7 +92,7 @@ export default function PurchaseOrdersPage() {
 
   function openNew() {
     setIsNew(true);
-    setDrawer({ id: '', poNumber: '', supplierId: suppliers[0]?.id ?? '', supplierCode: '', supplierName: '', status: 'SUBMITTED', poDate: new Date().toISOString().slice(0, 10), expectedAt: '', warehouseId: warehouses[0]?.id ?? '', currency: 'MYR', subtotalSen: 0, taxSen: 0, totalSen: 0, notes: '', lines: [] });
+    setDrawer({ id: '', poNumber: '', supplierId: suppliers[0]?.id ?? '', supplierCode: '', supplierName: '', status: 'SUBMITTED', poDate: todayMyt(), expectedAt: '', warehouseId: warehouses[0]?.id ?? '', currency: 'MYR', subtotalSen: 0, taxSen: 0, totalSen: 0, notes: '', lines: [] });
   }
   function openExisting(p: Po) { setIsNew(false); setDrawer({ ...p, lines: p.lines ?? [] }); }
 

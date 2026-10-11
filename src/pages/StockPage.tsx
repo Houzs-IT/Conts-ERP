@@ -1,3 +1,4 @@
+import { todayMyt } from '../lib/format';
 import { useMemo, useState } from 'react';
 import { Search, Plus, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -140,7 +141,7 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onDone }: { warehouses: O
   function submit() {
     const req = api.post('/stock', { itemCode: itemCode.trim(), warehouseId, qtyDelta, note });
     const wh = warehouses.find(w => w.id === warehouseId);
-    onDone({ id: `mv-new-${crypto.randomUUID().slice(0, 8)}`, itemCode: itemCode.trim(), warehouseName: wh?.name ?? '', qtyDelta, movementType: 'ADJUSTMENT', refType: 'ADJ', note, movedAt: new Date().toISOString().slice(0, 10) }, req);
+    onDone({ id: `mv-new-${crypto.randomUUID().slice(0, 8)}`, itemCode: itemCode.trim(), warehouseName: wh?.name ?? '', qtyDelta, movementType: 'ADJUSTMENT', refType: 'ADJ', note, movedAt: todayMyt() }, req);
   }
 
   return (

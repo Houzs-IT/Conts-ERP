@@ -12,7 +12,7 @@ import { api, notifyFailure, ApiFailure } from '../lib/api';
 import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { date } from '../lib/format';
+import { date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 
 /** Stock Transfers — move stock between warehouses; posts TRANSFER_OUT/IN movements. */
@@ -72,7 +72,7 @@ export default function StockTransfersPage() {
 function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses: Opt[]; canWrite: boolean; onClose: () => void; onCreated: (t: Transfer) => void }) {
   const [from, setFrom] = useState(warehouses[0]?.id ?? '');
   const [to, setTo] = useState(warehouses[1]?.id ?? '');
-  const [tdate, setTdate] = useState(new Date().toISOString().slice(0, 10));
+  const [tdate, setTdate] = useState(todayMyt());
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<{ itemCode: string; description: string; qty: number | null }[]>([{ itemCode: '', description: '', qty: 1 }]);
   const setLine = (i: number, k: 'itemCode' | 'description', v: string) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));

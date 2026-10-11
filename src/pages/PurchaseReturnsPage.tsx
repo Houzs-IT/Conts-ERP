@@ -13,7 +13,7 @@ import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { ShortStockPrompt } from '../components/ShortStockPrompt';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
@@ -121,7 +121,7 @@ interface RetLine { grnLineId: string; itemCode: string; description: string; uo
 function ReturnDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: OpenGrn[]; canWrite: boolean; onClose: () => void; onCreated: (p: Pret) => void }) {
   const [grnId, setGrnId] = useState('');
   const [lines, setLines] = useState<RetLine[]>([]);
-  const [returnDate, setReturnDate] = useState(new Date().toISOString().slice(0, 10));
+  const [returnDate, setReturnDate] = useState(todayMyt());
   const [reason, setReason] = useState('');
   const [creditNoteRef, setCreditNoteRef] = useState('');
   const [notes, setNotes] = useState('');
@@ -182,7 +182,7 @@ function ReturnDrawer({ openGrns, canWrite, onClose, onCreated }: { openGrns: Op
               {openGrns.map(g => <option key={g.id} value={g.id}>{g.grnNumber} · {g.supplierName}</option>)}
             </select>
           </div>
-          <DateField label="Return date" required max={new Date().toISOString().slice(0, 10)} value={returnDate} onChange={setReturnDate} error={dateError} />
+          <DateField label="Return date" required max={todayMyt()} value={returnDate} onChange={setReturnDate} error={dateError} />
           <Field label="Reason" placeholder="e.g. Damaged" value={reason} onChange={e => setReason(e.target.value)} />
           <Field label="Credit note ref" placeholder="Optional" value={creditNoteRef} onChange={e => setCreditNoteRef(e.target.value)} />
         </div>
