@@ -1,4 +1,5 @@
 import { ProjectTypeManager } from "./projects/renovation/ProjectTypeManager";
+import { FlowStepsManager, PeopleManager, TaskCategoriesManager } from "./projects/renovation/RenovationMaintenance";
 import { useProjectsMode } from "./projects/renovation/RenovationRoutes";
 import { SectionStageSelect } from "./projects/renovation/SectionStageSelect";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -116,9 +117,16 @@ export function ProjectMaintenanceView() {
         <PageHeader
           eyebrow="Operations · Projects"
           title="Project Maintenance"
-          description="Project types and their stages, brands, and the stage checklist that clones into every new project."
+          description="People, the main steps and site task categories; project types, brands, and the stage checklist that clones into every new project."
         />
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <PeopleManager />
+          <div className="space-y-6 min-w-0">
+            <FlowStepsManager />
+            <TaskCategoriesManager />
+          </div>
+        </div>
+        <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
           <ProjectTypeManager />
           <BrandManager />
         </div>

@@ -8,6 +8,7 @@ import { StaleBanner } from '../components/DataState';
 import { Skeleton } from '../components/States';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
+import { refreshNavCounts } from '../lib/navBadges';
 import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import type { BookingChannel } from '../lib/types';
@@ -44,7 +45,9 @@ export default function OperationsTodayPage() {
   const toast = useToast();
   const [pick, setPick] = useState<'today' | 'tomorrow'>('today');
   const date = pick === 'today' ? mytDay(0) : mytDay(1);
-  const { data, loading, error, reload } = useApi<Day>(`/operations/day?date=${date}`);
+  const { data, loading, error, reload: reloadData } = useApi<Day>(`/operations/day?date=${date}`);
+  // The side menu's counts (open jobs, today's work) follow what was just done here.
+  const reload = () => { reloadData(); void refreshNavCounts(); };
   const [busy, setBusy] = useState<string | null>(null);
 
   async function guestLeft(d: Departure) {
@@ -67,10 +70,10 @@ export default function OperationsTodayPage() {
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Stat label="Arriving" value={data?.arrivals.length} hint={data ? `${data.arrivals.filter(a => a.readiness === 'ready').length} units ready` : undefined} />
+        <Stat label="Arriving" value={data?.arrivals.length} hint={data ? `${data.arrivals.filter(a => a.state === 'checked_in' || (a.readiness === 'ready' && (!a.cleanState || a.cleanState === 'resolved'))).length} units ready` : undefined} />
         <Stat label="Leaving" value={data?.departures.length} hint={data ? `${out} out so far` : undefined} />
         <Stat label="Cleans done" value={c ? `${c.done} / ${c.total}` : undefined} hint={c ? `${c.ready} ready to clean · ${c.cleaning} in progress${c.unassigned ? ` · ${c.unassigned} unassigned` : ''}` : undefined} warn={!!c?.unassigned} onClick={() => navigate('/operations/cleaning')} />
-        <Stat label="Repairs today" value={data?.repairs.length} hint={data ? `${data.urgent.length} urgent open` : undefined} warn={!!data?.urgent.length} onClick={() => navigate('/operations/maintenance')} />
+        <Stat label={pick === 'today' ? 'Repairs today' : 'Repairs tomorrow'} value={data?.repairs.length} hint={data ? `${data.urgent.length} urgent open` : undefined} warn={!!data?.urgent.length} onClick={() => navigate('/operations/maintenance')} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
@@ -79,6 +82,7 @@ export default function OperationsTodayPage() {
             <Line key={d.reservationId} channel={d.channel} time={d.checkOutTime} unit={`${d.propertyName} ${d.unitNumber}`} guest={d.guestName}
               right={d.guestOut ? <StatusBadge tone="gold">Guest out{d.taskState === 'resolved' ? ', cleaned' : ''}</StatusBadge>
                 : d.channel === 'owner_stay' ? <StatusBadge tone="neutral">Owner stay</StatusBadge>
+                : data!.date > data!.today ? <StatusBadge tone="neutral">Leaves {d.checkOutTime}</StatusBadge>
                 : <Button size="sm" variant="secondary" loading={busy === d.reservationId} onClick={() => void guestLeft(d)}>Guest out</Button>}
               sub={d.taskId ? undefined : 'No clean planned yet'} subTone="critical" />
           ))}
@@ -146,7 +150,8 @@ function Line({ channel, time, unit, guest, right, sub, subTone }: { channel: st
       <span className="w-[46px] flex-none font-semibold [font-variant-numeric:tabular-nums]">{time}</span>
       {CHANNELS.includes(channel) && <ChannelMark ch={channel as BookingChannel} size={20} />}
       <span className="flex-1 min-w-0">
-        <b className="block truncate">{unit}</b>
+        {/* The unit wraps rather than cuts: on a phone the cut-off part is the unit number. */}
+        <b className="block [overflow-wrap:anywhere]">{unit}</b>
         <span className="block truncate text-muted-ink">{guest}</span>
         {sub && <span className={cx('block text-meta', subTone === 'critical' ? 'text-danger' : 'text-warning')}>{sub}</span>}
       </span>

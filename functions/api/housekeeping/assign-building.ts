@@ -35,7 +35,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (res.ok) assigned++;
   }
   if (assigned && cleaner.user_id) {
-    await notifyUsers(env, [cleaner.user_id], { kind: 'cleaning.assigned', title: `${assigned} ${assigned === 1 ? 'clean' : 'cleans'} assigned to you`, body: `For ${day(b.date)}. Open Cleaning to see the units and times.`, link: '/operations/cleaning', entityTable: 'properties', entityId: b.buildingId, dedupeKey: `building-${b.buildingId}-${b.date}-${cleaner.id}`, except: session.userId });
+    await notifyUsers(env, [cleaner.user_id], { kind: 'cleaning.assigned', title: `${assigned} ${assigned === 1 ? 'clean' : 'cleans'} assigned to you`, body: `For ${day(b.date)}. Open My jobs to see the units and times.`, link: '/operations/cleaning', entityTable: 'properties', entityId: b.buildingId, dedupeKey: `building-${b.buildingId}-${b.date}-${cleaner.id}`, except: session.userId });
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.assign_building', entityTable: 'properties', entityId: b.buildingId, after: { date: b.date, cleanerId: cleaner.id, assigned } });
   return json({ ok: true, assigned, assigneeName: cleaner.full_name });

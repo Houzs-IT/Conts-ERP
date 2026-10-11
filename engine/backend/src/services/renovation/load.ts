@@ -21,6 +21,7 @@ import type { LinePod } from "./pod";
 import type { ContractLine, StoredStage } from "./stages";
 import { billingViews, type BillingView } from "../../scm/lib/renovation-billing";
 import { renoDbFromD1 } from "./dbBridge";
+import type { FlowStepRow } from "./flow";
 
 export interface DbStmt {
   bind(...args: unknown[]): DbStmt;
@@ -72,13 +73,39 @@ export interface ProjectRow {
   notes: string | null;
   created_at: string | null;
   archived_at: string | null;
+  /* simplified project (migration 0083); optional so older fixtures still type */
+  sales_person_id?: number | null;
+  sales_person_name?: string | null;
+  designer_person_id?: number | null;
+  designer_person_name?: string | null;
+  reno_pic_person_id?: number | null;
+  reno_pic_person_name?: string | null;
+  flow_manual_step?: string | null;
+  flow_manual_base_step?: string | null;
+  flow_manual_reason?: string | null;
+  flow_manual_by?: number | null;
+  flow_manual_at?: string | null;
+  hold_flag?: string | null;
+  hold_note?: string | null;
+  hold_at?: string | null;
+  source?: string | null;
+  source_ref?: string | null;
 }
 
 export const PROJECT_COLS =
   "p.id, p.code, p.name, p.company_id, p.project_kind, p.project_type_id, p.customer_kind, p.customer_id::text AS customer_id, " +
   "p.customer_name, p.customer_phone, p.customer_email, p.pos_owner_id, p.pos_unit_id, p.building, p.unit_no, p.site_address, " +
   "p.reno_stage, p.signed_at, p.planned_handover_date::text AS planned_handover_date, p.handed_over_at, p.closed_at, " +
-  "p.salesperson_name, p.pic_id, p.notes, p.created_at, p.archived_at";
+  "p.salesperson_name, p.pic_id, p.notes, p.created_at, p.archived_at, " +
+  "p.sales_person_id::int AS sales_person_id, sp.name AS sales_person_name, p.designer_person_id::int AS designer_person_id, " +
+  "dp.name AS designer_person_name, p.reno_pic_person_id::int AS reno_pic_person_id, rp.name AS reno_pic_person_name, " +
+  "p.flow_manual_step, p.flow_manual_base_step, p.flow_manual_reason, p.flow_manual_by::int AS flow_manual_by, p.flow_manual_at, " +
+  "p.hold_flag, p.hold_note, p.hold_at, p.source, p.source_ref";
+
+export const PROJECT_PEOPLE_JOINS =
+  "LEFT JOIN project_people sp ON sp.id = p.sales_person_id " +
+  "LEFT JOIN project_people dp ON dp.id = p.designer_person_id " +
+  "LEFT JOIN project_people rp ON rp.id = p.reno_pic_person_id";
 
 export interface TypeRow { id: number; slug: string; name: string; stage_keys: string[]; checklist_template_id: number | null }
 
@@ -154,7 +181,16 @@ export interface TaskRow {
   done_at: string | null;
   completed_by_grn_id: string | null;
   notes: string | null;
+  /* migration 0084; optional so older fixtures still type */
+  category_code?: string | null;
+  occurrence?: number;
+  source?: string | null;
+  source_ref?: string | null;
+  assignees?: Array<{ id: number; name: string }>;
 }
+
+export interface KeyHolder { personId: number | null; name: string | null; movedOn: string }
+export interface VoSummary { count: number; approved: number }
 
 export interface TaskLineRow { task_id: number; so_item_id: string; purchase_order_item_id: string | null }
 export interface HandoverRow { project_id: number; customer_signer_name: string; signed_at: string; keys_returned: number | null; access_cards_returned: number | null; deposit_refund_note: string | null }
@@ -179,6 +215,10 @@ export interface ProjectFacts {
   taskLines: TaskLineRow[];
   handover: HandoverRow | null;
   defects: DefectRow[];
+  /* simplified project; optional so older fixtures still type */
+  flowSteps?: FlowStepRow[];
+  keyHolder?: KeyHolder | null;
+  vo?: VoSummary | null;
 }
 
 export interface LoadOptions {
@@ -193,7 +233,7 @@ export async function loadProjectRows(db: Db, companySql: string, opts: { projec
   const args: unknown[] = [];
   if (opts.projectId != null) { where.push("p.id = ?"); args.push(opts.projectId); }
   if (!opts.includeArchived) where.push("p.archived_at IS NULL");
-  const list = await rows<ProjectRow>(db, `SELECT ${PROJECT_COLS} FROM projects p WHERE ${where.join(" AND ")}${companySql} ORDER BY p.id DESC`, ...args);
+  const list = await rows<ProjectRow>(db, `SELECT ${PROJECT_COLS} FROM projects p ${PROJECT_PEOPLE_JOINS} WHERE ${where.join(" AND ")}${companySql} ORDER BY p.id DESC`, ...args);
   /* bigint columns arrive as strings from postgres.js; every map below keys on numbers. */
   const num = (x: unknown) => (x == null ? null : Number(x));
   return list.map((p) => ({ ...p, id: Number(p.id), company_id: Number(p.company_id), project_type_id: num(p.project_type_id), pic_id: num(p.pic_id) }));
@@ -206,7 +246,8 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
   const typeIds = [...new Set(projects.map((p) => p.project_type_id).filter((x): x is number => x != null))];
   const keys = opts.checklistKeys ?? null;
 
-  const [types, stages, checklist, sos, tasks, taskLines, handovers, defects] = await Promise.all([
+  const companyIds = [...new Set(projects.map((p) => Number(p.company_id)))];
+  const [types, stages, checklist, sos, tasks, taskLines, handovers, defects, flowSteps, keyHolders, assignees] = await Promise.all([
     typeIds.length
       ? rows<TypeRow>(db, `SELECT id::int AS id, slug, name, to_json(stage_keys) AS stage_keys, checklist_template_id::int AS checklist_template_id FROM project_types WHERE id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)`, ids(typeIds))
       : Promise.resolve([] as TypeRow[]),
@@ -233,7 +274,8 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
       `SELECT t.id::int AS id, t.project_id::int AS project_id, t.stage_key, t.trade_code, t.fix_phase, t.label, t.seq, t.fulfilment_kind,
               t.supplier_id::text AS supplier_id, sup.name AS supplier_name, t.purchase_order_id::text AS purchase_order_id, po.po_number,
               t.state, t.skip_reason, t.skip_source, t.skipped_at, t.planned_start::text AS planned_start, t.planned_end::text AS planned_end,
-              t.actual_start::text AS actual_start, t.actual_end::text AS actual_end, t.done_at, t.completed_by_grn_id::text AS completed_by_grn_id, t.notes
+              t.actual_start::text AS actual_start, t.actual_end::text AS actual_end, t.done_at, t.completed_by_grn_id::text AS completed_by_grn_id, t.notes,
+              t.category_code, t.occurrence::int AS occurrence, t.source, t.source_ref
          FROM project_trade_tasks t
          LEFT JOIN scm.suppliers sup ON sup.id = t.supplier_id
          LEFT JOIN scm.purchase_orders po ON po.id = t.purchase_order_id
@@ -251,7 +293,27 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
          FROM project_defects
         WHERE project_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint) AND archived_at IS NULL
         ORDER BY id`, ids(pids)),
+    rows<FlowStepRow & { company_id: number }>(db,
+      `SELECT company_id::int AS company_id, step_key, label, sort_order, active FROM project_flow_steps
+        WHERE company_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)`, ids(companyIds)),
+    rows<{ project_id: number; person_id: number | null; name: string | null; moved_on: string }>(db,
+      `SELECT DISTINCT ON (km.project_id) km.project_id::int AS project_id, km.to_person_id::int AS person_id, pp.name, km.moved_on::text AS moved_on
+         FROM project_key_moves km LEFT JOIN project_people pp ON pp.id = km.to_person_id
+        WHERE km.project_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)
+        ORDER BY km.project_id, km.moved_on DESC, km.id DESC`, ids(pids)),
+    rows<{ task_id: number; id: number; name: string }>(db,
+      `SELECT a.task_id::int AS task_id, pp.id::int AS id, pp.name
+         FROM project_trade_task_assignees a JOIN project_people pp ON pp.id = a.person_id JOIN project_trade_tasks t ON t.id = a.task_id
+        WHERE t.project_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)
+        ORDER BY a.task_id, pp.name`, ids(pids)),
   ]);
+  const assigneesByTask = new Map<number, Array<{ id: number; name: string }>>();
+  for (const a of assignees) {
+    const list = assigneesByTask.get(Number(a.task_id)) ?? [];
+    list.push({ id: Number(a.id), name: a.name });
+    assigneesByTask.set(Number(a.task_id), list);
+  }
+  for (const t of tasks) t.assignees = assigneesByTask.get(Number(t.id)) ?? [];
 
   /* One live renovation SO per project (phase 2's uq_mfg_so_reno_project). An SO
      without so_kind = RENOVATION is a furniture order and never drives stages. */
@@ -259,7 +321,7 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
   for (const so of sos) if (so.so_kind === "RENOVATION") soByProject.set(Number(so.project_id), so);
   const docNos = [...soByProject.values()].map((s) => s.doc_no);
 
-  const [lineRes, poLines, doRows, siteRows, billingByDoc] = await Promise.all([
+  const [lineRes, poLines, doRows, siteRows, billingByDoc, voRows] = await Promise.all([
     loadContractLines(db, docNos),
     docNos.length
       ? rows<PoLineRow>(db,
@@ -289,6 +351,7 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
           AND g.received_at_site AND g.status::text NOT IN ('CANCELLED', 'DRAFT') AND poi.so_item_id IS NOT NULL
         GROUP BY poi.so_item_id`, ids(pids)),
     loadBilling(db, [...soByProject.values()]),
+    loadVoCounts(db, docNos),
   ]);
 
   const supply = new Map<string, LineSupply>();
@@ -336,9 +399,32 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
       taskLines: taskLines.filter((tl) => tasks.some((t) => Number(t.id) === Number(tl.task_id) && Number(t.project_id) === project.id)),
       handover: handovers.find((h) => Number(h.project_id) === project.id) ?? null,
       defects: defects.filter((d) => Number(d.project_id) === project.id),
+      flowSteps: flowSteps.filter((s) => Number(s.company_id) === Number(project.company_id))
+        .map((s) => ({ step_key: s.step_key, label: s.label, sort_order: Number(s.sort_order), active: s.active === true || String(s.active) === "true" })),
+      keyHolder: (() => {
+        const k = keyHolders.find((r) => Number(r.project_id) === project.id);
+        return k ? { personId: k.person_id == null ? null : Number(k.person_id), name: k.name, movedOn: k.moved_on } : null;
+      })(),
+      vo: so && voRows ? (voRows.get(so.doc_no) ?? { count: 0, approved: 0 }) : null,
     });
   }
   return out;
+}
+
+/** Variation orders per contract (phase 2's scm.reno_variation_orders), not counting cancelled ones. Null when the table is missing. */
+export async function loadVoCounts(db: Db, docNos: readonly string[]): Promise<Map<string, VoSummary> | null> {
+  const out = new Map<string, VoSummary>();
+  if (docNos.length === 0) return out;
+  try {
+    const res = await rows<{ so_doc_no: string; live: number; approved: number }>(db,
+      `SELECT so_doc_no, count(*) FILTER (WHERE status <> 'CANCELLED')::int AS live, count(*) FILTER (WHERE status = 'APPROVED')::int AS approved
+         FROM scm.reno_variation_orders WHERE so_doc_no IN (SELECT jsonb_array_elements_text(?::text::jsonb)) GROUP BY so_doc_no`, ids(docNos));
+    for (const r of res) out.set(r.so_doc_no, { count: Number(r.live), approved: Number(r.approved) });
+    return out;
+  } catch (e) {
+    if (isMissingRelation(e)) return null;
+    throw e;
+  }
 }
 
 export { BOARD_CHECKLIST_KEYS };
@@ -437,6 +523,8 @@ export function billingFactsOf(v: BillingView): BillingFacts {
   return {
     available: true,
     contractSen: v.revisedContractSen,
+    receivedTotalSen: v.receivedSen,
+    voTotalSen: v.voTotalSen,
     instalments: v.instalments.map((i): InstalmentFact => ({
       id: i.id,
       seq: i.seq,

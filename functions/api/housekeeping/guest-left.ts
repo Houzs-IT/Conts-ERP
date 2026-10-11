@@ -1,8 +1,10 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
-import { CLEAN_KINDS_SQL, LIVE_STAY_SQL } from '../../_lib/cleaning';
+import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, mytToday } from '../../_lib/cleaning';
 import { bookingNotice } from '../../_lib/notices';
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** POST /api/housekeeping/guest-left { taskId } | { reservationId } | { taskId, undo: true }
  *  The departing guest has gone: the clean shows "Guest out, ready to clean" at once. A booking still Checked in
@@ -29,6 +31,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!reservation) return fail('NOT_FOUND', 'That booking does not exist or was cancelled.', 404);
   }
   if (!task && !reservation) return fail('VALIDATION', 'Say which clean or booking.', 422);
+  // Nobody can have left a stay that ends on a later day: that would check the booking out early and dirty the unit.
+  const leaves = reservation?.check_out ?? task?.day;
+  if (b?.undo !== true && leaves && leaves > mytToday()) {
+    return fail('NOT_YET', `This guest checks out on ${Number(leaves.slice(8, 10))} ${MONTHS[Number(leaves.slice(5, 7)) - 1]}. Mark them out on the day, or change the booking's dates if they left early.`, 409);
+  }
   if (field && (!task || task.assignee_id !== session.userId)) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
 
   if (b?.undo === true) {

@@ -1,9 +1,10 @@
 // Renovation quotations: every quotation (newest first) with its current
 // revision, customer, building / unit, total and status; filter by status or
-// search; "New quotation" picks the project (and optionally a package template).
+// search; "New quotation" picks the project, or none yet (link it later), and optionally a package template.
+// ?newFor=<projectId> opens it for that project (the project page's "Create quotation").
 
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { FileText, Plus } from 'lucide-react';
 import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
@@ -18,13 +19,15 @@ const FILTERS = [
   { value: 'ACCEPTED', label: 'Accepted' }, { value: 'REJECTED', label: 'Rejected' }, { value: 'EXPIRED', label: 'Expired' },
 ];
 
-function NewQuotationDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function NewQuotationDialog({ open, onClose, initialProjectId = null }: { open: boolean; onClose: () => void; initialProjectId?: number | null }) {
   const navigate = useNavigate();
   const brands = useBrands();
   const templates = useTemplates();
   const [q, setQ] = useState('');
   const [projects, setProjects] = useState<Array<{ id: number; code: string | null; name: string; contractDocNo: string | null }>>([]);
-  const [projectId, setProjectId] = useState<number | null>(null);
+  const [projectId, setProjectId] = useState<number | null>(initialProjectId);
+  const [noProject, setNoProject] = useState(false);
+  useEffect(() => { if (initialProjectId) { setProjectId(initialProjectId); setNoProject(false); } }, [initialProjectId]);
   const [brandId, setBrandId] = useState<number | null>(null);
   const [templateId, setTemplateId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -39,11 +42,11 @@ function NewQuotationDialog({ open, onClose }: { open: boolean; onClose: () => v
     if (brandId === null && brands.data?.brands.length) setBrandId(brands.data.brands.find((b) => b.hasProfile)?.brandId ?? null);
   }, [brands.data, brandId]);
   const create = async () => {
-    if (!projectId) { setError('Pick the project this quotation is for.'); return; }
+    if (!projectId && !noProject) { setError('Pick the project this quotation is for, or choose "No project yet".'); return; }
     setBusy(true);
     setError(null);
     try {
-      const r = await renoSend<{ id: string }>('/quotations', 'POST', { projectId, brandId, templateId: templateId || null });
+      const r = await renoSend<{ id: string }>('/quotations', 'POST', { projectId: noProject ? null : projectId, brandId, templateId: templateId || null });
       onClose();
       navigate(`/scm/renovation/quotations/${r.id}`);
     } catch (e) {
@@ -54,15 +57,20 @@ function NewQuotationDialog({ open, onClose }: { open: boolean; onClose: () => v
   };
   return (
     <ModalOverlay open={open} onClose={onClose} title="New quotation" icon={<FileText size={16} />}
-      footer={<div className="flex w-full justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={busy || !projectId} onClick={create}>{busy ? 'Creating…' : 'Create quotation'}</Button></div>}>
+      footer={<div className="flex w-full justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={busy || (!projectId && !noProject)} onClick={create}>{busy ? 'Creating…' : 'Create quotation'}</Button></div>}>
       <div className="space-y-3">
         <Field label="Project">
           <input className={inputCls} placeholder="Search projects" value={q} onChange={(e) => setQ(e.target.value)} />
         </Field>
         <div className="max-h-56 space-y-1 overflow-auto">
-          {projects.length === 0 && <div className="px-1 py-2 text-[12.5px] text-ink-muted">No project matches. Projects are opened in Projects when design starts.</div>}
+          <button type="button" onClick={() => { setNoProject(true); setProjectId(null); }}
+            className={cn('flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-[13px]', noProject ? 'border-primary bg-primary-soft' : 'border-border hover:border-border-strong')}>
+            <span className="font-semibold text-ink">No project yet</span>
+            <span className="text-[11.5px] text-ink-muted">link it from the sales order later</span>
+          </button>
+          {projects.length === 0 && <div className="px-1 py-2 text-[12.5px] text-ink-muted">No project matches.</div>}
           {projects.map((p) => (
-            <button key={p.id} type="button" onClick={() => setProjectId(p.id)}
+            <button key={p.id} type="button" onClick={() => { setProjectId(p.id); setNoProject(false); }}
               className={cn('flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-[13px]', projectId === p.id ? 'border-primary bg-primary-soft' : 'border-border hover:border-border-strong')}>
               <span className="font-semibold text-ink">{p.name}{p.code ? <span className="ml-1 font-normal text-ink-muted">{p.code}</span> : null}</span>
               {p.contractDocNo && <span className="text-[11.5px] text-ink-muted">contract {p.contractDocNo}</span>}
@@ -92,7 +100,9 @@ function NewQuotationDialog({ open, onClose }: { open: boolean; onClose: () => v
 export function QuotationsList() {
   const [status, setStatus] = useState('');
   const [q, setQ] = useState('');
-  const [newOpen, setNewOpen] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const newFor = Number(params.get('newFor')) || null;
+  const [newOpen, setNewOpen] = useState(!!newFor);
   const list = useQuotations({ status: status || null, q: q || null });
   const { can } = useAuth();
   const canQuote = can('scm.renovation.quote');
@@ -152,7 +162,7 @@ export function QuotationsList() {
         {!list.isLoading && rows.length === 0 && <div className="p-8 text-center text-[13px] text-ink-muted">No quotations{status ? ' with this status' : ''} yet.</div>}
         {list.isLoading && <div className="p-8 text-center text-[13px] text-ink-muted">Loading quotations…</div>}
       </div>
-      <NewQuotationDialog open={newOpen} onClose={() => setNewOpen(false)} />
+      <NewQuotationDialog open={newOpen} initialProjectId={newFor} onClose={() => { setNewOpen(false); if (newFor) setParams({}, { replace: true }); }} />
     </div>
   );
 }

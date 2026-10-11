@@ -51,7 +51,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   for (const [cid, ids] of given) {
     const c = people.find(p => p.id === cid);
-    if (c?.user_id) await notifyUsers(env, [c.user_id], { kind: 'cleaning.assigned', title: `${ids.length} ${ids.length === 1 ? 'clean' : 'cleans'} assigned to you`, body: 'Open Cleaning to see the units and times.', link: '/operations/cleaning', entityTable: 'tasks', entityId: ids[0], except: session.userId });
+    if (c?.user_id) await notifyUsers(env, [c.user_id], { kind: 'cleaning.assigned', title: `${ids.length} ${ids.length === 1 ? 'clean' : 'cleans'} assigned to you`, body: 'Open My jobs to see the units and times.', link: '/operations/cleaning', entityTable: 'tasks', entityId: ids[0], except: session.userId });
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.auto_assign', entityTable: 'tasks', entityId: 'auto', after: { rule, prefer, strategy, assigned } });
   return json({ ok: true, assigned });

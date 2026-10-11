@@ -16,7 +16,7 @@ import { StatusBadge } from '../components/StatusBadge';
 /* GET /api/field/tasks (functions/api/field/tasks.ts) */
 interface Job {
   id: string; unitId: string; kind: string; state: string; unit: { unitNumber: string; propertyName: string }; buildingId: string;
-  addressLine: string; accessInstruction: string | null; work: string; startedAt: string | null; readiness: string; done: boolean;
+  addressLine: string; accessInstruction: string | null; work: string; startedAt: string | null; completedAt: string | null; readiness: string; done: boolean;
   photoCount: number; checklist: { done: number; total: number }; guestOut: boolean;
   previous: { guestName: string; checkOutTime: string; state: string } | null;
   next: { guestName: string; checkInTime: string; checkInAt: string } | null;
@@ -128,7 +128,7 @@ function JobCard({ job: j, now, open, onToggle, onChanged }: { job: Job; now: nu
               Mark complete
             </Button>
           )}
-          {j.done && <span className="text-copy text-success">Finished{j.startedAt ? `, started ${hm(j.startedAt)}` : ''}.</span>}
+          {j.done && <span className="text-copy text-success">Finished{j.completedAt ? ` at ${hm(j.completedAt)}` : ''}{j.startedAt ? ` (started ${hm(j.startedAt)})` : ''}.</span>}
         </div>
       )}
       {damage && <ReportDamageModal unitId={j.unitId} unitLabel={`${j.unit.propertyName} ${j.unit.unitNumber}`} taskId={j.id} onClose={() => setDamage(false)}

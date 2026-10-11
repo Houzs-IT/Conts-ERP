@@ -170,6 +170,8 @@ export interface CalendarTask {
   planned_start: string | null;
   planned_end: string | null;
   status: TaskStatus;
+  /** in-house crew from the people list (migration 0084) */
+  assignees?: Array<{ id: number; name: string }>;
 }
 
 export interface ProjectType { id: number; slug: string; name: string; stage_keys: string[]; active: boolean; sort_order: number }
@@ -213,11 +215,12 @@ export const renovationApi = {
   completeTask: (taskId: number, note?: string) => api.post<{ ok: true }>(`${R}/trade-tasks/${taskId}/complete`, note ? { note } : {}),
   skipTask: (taskId: number, reason: string) => api.post<{ ok: true }>(`${R}/trade-tasks/${taskId}/skip`, { reason }),
   unskipTask: (taskId: number) => api.post<{ ok: true }>(`${R}/trade-tasks/${taskId}/unskip`),
-  calendar: (q: { from: string; to: string; supplierId?: string; projectId?: number }) => {
+  calendar: (q: { from: string; to: string; supplierId?: string; projectId?: number; personId?: number }) => {
     const p = new URLSearchParams({ from: q.from, to: q.to });
     if (q.supplierId) p.set("supplierId", q.supplierId);
+    if (q.personId) p.set("personId", String(q.personId));
     if (q.projectId) p.set("projectId", String(q.projectId));
-    return api.get<{ data: CalendarTask[]; contractors: Array<{ id: string; name: string }> }>(`${R}/calendar?${p.toString()}`);
+    return api.get<{ data: CalendarTask[]; contractors: Array<{ id: string; name: string }>; crew?: Array<{ id: number; name: string }> }>(`${R}/calendar?${p.toString()}`);
   },
   addSnag: (id: number, b: { location?: string; description: string; photoR2Key?: string | null }) => api.post<{ id: number }>(`${R}/${id}/snags`, b),
   closeSnag: (defectId: number) => api.post<{ ok: true }>(`${R}/snags/${defectId}/close`),

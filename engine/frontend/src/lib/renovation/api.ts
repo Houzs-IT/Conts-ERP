@@ -99,7 +99,7 @@ export interface DocHeader {
 export type QuotationStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
 
 export interface QuotationHead {
-  id: string; quoteNo: string; projectId: number; brandId: number | null; status: QuotationStatus; currentRev: number;
+  id: string; quoteNo: string; projectId: number | null; brandId: number | null; status: QuotationStatus; currentRev: number;
   acceptedRev: number | null; convertedSoDocNo: string | null; lockedAt: string | null; templateId: string | null; version: number;
   createdAt: string; projectName?: string | null;
 }

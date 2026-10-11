@@ -3,9 +3,10 @@ import {
   activeOn, addDays, barPlacement, blockerText, dateRange, daysBetween, errorText, money, shiftRange, supplyLabel, supplyTone, weekStart,
 } from "./renovationModel";
 import { toggleStage } from "./ProjectTypeManager";
-import { groupByContractor } from "./RenovationCalendar";
+import { doerText, groupByContractor } from "./RenovationCalendar";
 import { matchesBoardFilter } from "./RenovationBoard";
-import type { BoardRow, CalendarTask } from "./renovationApi";
+import type { CalendarTask } from "./renovationApi";
+import type { BoardRowV2 } from "./simpleApi";
 
 describe("renovation model", () => {
   it("labels and tones for the derived supply conditions", () => {
@@ -71,15 +72,25 @@ describe("calendar grouping and board filter", () => {
     label: "X", fulfilment_kind: kind, state: "open", supplier_id: supplier, supplier_name: supplier ? `S-${supplier}` : null, po_number: null,
     planned_start: "2026-10-10", planned_end: "2026-10-11", status: "planned",
   });
-  it("groups tasks by contractor, our team separately", () => {
-    const g = groupByContractor([task(1, "po", "b"), task(2, "internal", null), task(3, "po", "a"), task(4, "po", "a"), task(5, "po", null)]);
-    expect(g.map((x) => [x.name, x.tasks.length])).toEqual([["No subcontractor yet", 1], ["Our team", 1], ["S-a", 2], ["S-b", 1]]);
+  it("groups tasks by contractor, in-house crew by who is on it", () => {
+    const crew = (t: CalendarTask, names: Array<[number, string]>) => ({ ...t, assignees: names.map(([id, name]) => ({ id, name })) });
+    const g = groupByContractor([task(1, "po", "b"), task(2, "internal", null), task(3, "po", "a"), task(4, "po", "a"), task(5, "po", null),
+      crew(task(6, "internal", null), [[7, "INHOUSE - ZAINAL"]]), crew(task(7, "internal", null), [[7, "INHOUSE - ZAINAL"]])]);
+    expect(g.map((x) => [x.name, x.tasks.length])).toEqual([["In-house (no crew yet)", 1], ["In-house: INHOUSE - ZAINAL", 2], ["No subcontractor yet", 1], ["S-a", 2], ["S-b", 1]]);
+  });
+  it("names who does a task", () => {
+    expect(doerText({ fulfilment_kind: "internal", supplier_name: null, assignees: [{ id: 1, name: "MONIR" }, { id: 2, name: "SEY" }] })).toBe("In-house: MONIR, SEY");
+    expect(doerText({ fulfilment_kind: "po", supplier_name: "YILLON", assignees: [] })).toBe("YILLON");
   });
   it("board search matches every word across building, unit, customer, SO", () => {
-    const r = { code: "RN-2610-001", name: "Skyline A-12-3", building: "Skyline", unitNo: "A-12-3", customerName: "Ms Lim", soDocNo: "SO-1", salesperson: "Ali", renoCondition: "hardware" } as BoardRow;
+    const r = { code: "RN-2610-001", name: "Skyline A-12-3", building: "Skyline", unitNo: "A-12-3", customerName: "Ms Lim", soDocNo: "SO-1",
+      sales: { personId: 1, name: "Ali" }, step: { key: "renovation" }, hold: null } as unknown as BoardRowV2;
     expect(matchesBoardFilter(r, "skyline lim", "")).toBe(true);
+    expect(matchesBoardFilter(r, "skyline ali", "")).toBe(true);
     expect(matchesBoardFilter(r, "skyline tan", "")).toBe(false);
-    expect(matchesBoardFilter(r, "", "furniture")).toBe(false);
-    expect(matchesBoardFilter(r, "", "hardware")).toBe(true);
+    expect(matchesBoardFilter(r, "", "signed")).toBe(false);
+    expect(matchesBoardFilter(r, "", "renovation")).toBe(true);
+    expect(matchesBoardFilter(r, "", "hold")).toBe(false);
+    expect(matchesBoardFilter({ ...r, hold: { flag: "in_defect", label: "IN DEFECT", note: null } }, "", "hold")).toBe(true);
   });
 });
