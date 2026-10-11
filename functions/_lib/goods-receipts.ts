@@ -1,5 +1,5 @@
 /** Goods Received Notes (GRN), ported from 2990's SCM. Receives against a PO. */
-import { type Env, all, one, run, nowIso } from './db';
+import { type Env, all, one, run, nowIso, mytToday } from './db';
 
 export const GRN_STATUSES = ['POSTED', 'CLOSED', 'CANCELLED'] as const;
 export type GrnStatus = typeof GRN_STATUSES[number];
@@ -37,7 +37,7 @@ export function toGrnLinePayload(r: GrnLineRow) {
 
 /** Next GRN number: GRN-<year>-<seq4>. */
 export async function nextGrnNumber(env: Env): Promise<string> {
-  const year = nowIso().slice(0, 4);
+  const year = mytToday().slice(0, 4);
   const row = await one<{ mx: string | null }>(env, 'SELECT MAX(grn_number) AS mx FROM goods_receipts WHERE grn_number LIKE ?', `GRN-${year}-%`);
   const last = row?.mx ? Number(row.mx.split('-')[2]) : 0;
   return `GRN-${year}-${String((Number.isFinite(last) ? last : 0) + 1).padStart(4, '0')}`;

@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { toTransferPayload, toTransferLinePayload, type TransferHeaderRow, type TransferLineRow } from '../../_lib/stock-ops';
 import { genId } from '../../_lib/scm-util';
@@ -34,9 +34,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const now = nowIso();
   for (const l of lines) {
     await run(env, `INSERT INTO stock_movements (id, item_code, warehouse_id, qty_delta, movement_type, ref_type, ref_id, note, moved_at, created_by, created_at)
-                    VALUES (?, ?, ?, ?, 'TRANSFER_IN', 'TRF-REV', ?, 'transfer cancelled', ?, ?, ?)`, genId('mv'), l.item_code, cur.from_warehouse_id, l.qty, id, now.slice(0, 10), session.userId, now);
+                    VALUES (?, ?, ?, ?, 'TRANSFER_IN', 'TRF-REV', ?, 'transfer cancelled', ?, ?, ?)`, genId('mv'), l.item_code, cur.from_warehouse_id, l.qty, id, mytToday(), session.userId, now);
     await run(env, `INSERT INTO stock_movements (id, item_code, warehouse_id, qty_delta, movement_type, ref_type, ref_id, note, moved_at, created_by, created_at)
-                    VALUES (?, ?, ?, ?, 'TRANSFER_OUT', 'TRF-REV', ?, 'transfer cancelled', ?, ?, ?)`, genId('mv'), l.item_code, cur.to_warehouse_id, -l.qty, id, now.slice(0, 10), session.userId, now);
+                    VALUES (?, ?, ?, ?, 'TRANSFER_OUT', 'TRF-REV', ?, 'transfer cancelled', ?, ?, ?)`, genId('mv'), l.item_code, cur.to_warehouse_id, -l.qty, id, mytToday(), session.userId, now);
   }
   await run(env, 'UPDATE stock_transfers SET status = ?, updated_at = ? WHERE id = ?', 'CANCELLED', now, id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'stock_transfer.cancel', entityTable: 'stock_transfers', entityId: id });

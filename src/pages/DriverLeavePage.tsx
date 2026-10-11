@@ -10,7 +10,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { date } from '../lib/format';
+import { date, todayMyt } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 
 /** Driver Leave — ported from 2990's SCM, drawn in Conts. Dated leave periods per driver so
@@ -34,7 +34,7 @@ function spanDays(a: string, b: string): number {
   if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return 1;
   return Math.max(1, Math.round((e.getTime() - s.getTime()) / 86400000) + 1);
 }
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayMyt();
 
 export default function DriverLeavePage() {
   const { data, loading, error, reload } = useApi<Payload>('/driver-leave', FALLBACK);

@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, isNumberClash } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isAmendStatus, isAmendAction, nextAmendmentNumber, toAmendHeaderPayload, type AmendHeaderRow } from '../../_lib/so-amendments';
 import { strOrNull, intOrNull, genId } from '../../_lib/scm-util';
@@ -52,11 +52,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!lines.length) return fail('VALIDATION', 'Add at least one line change.', 422, { lines: 'Add a line change.' });
 
   const id = genId('amd');
-  const amendmentNo = await nextAmendmentNumber(env);
+  let amendmentNo = '';
   const now = nowIso();
-  await run(env, `INSERT INTO so_amendments (id, amendment_no, sales_order_id, so_doc_no, status, reason, requested_by, created_at, updated_at)
-                  VALUES (?, ?, ?, ?, 'REQUESTED', ?, ?, ?, ?)`,
-    id, amendmentNo, soId, so.doc_no, strOrNull(b.reason), session.userId, now, now);
+  // The number is the highest so far plus one, so two made at once can pick the same one: the second header insert
+  // then hits the unique number before anything is written, and simply takes the next number (isNumberClash).
+  for (let attempt = 1; ; attempt++) {
+    amendmentNo = await nextAmendmentNumber(env);
+    try {
+      await run(env, `INSERT INTO so_amendments (id, amendment_no, sales_order_id, so_doc_no, status, reason, requested_by, created_at, updated_at)
+                      VALUES (?, ?, ?, ?, 'REQUESTED', ?, ?, ?, ?)`,
+        id, amendmentNo, soId, so.doc_no, strOrNull(b.reason), session.userId, now, now);
+      break;
+    } catch (e) { if (attempt >= 5 || !isNumberClash(e)) throw e; }
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];

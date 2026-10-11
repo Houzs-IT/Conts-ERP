@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { toSretHeaderPayload, toSretLinePayload, type SretHeaderRow, type SretLineRow } from '../../_lib/sales-returns';
 import { postStockMovement } from '../../_lib/stock-ops';
@@ -54,7 +54,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
         if (dl?.sales_order_line_id) await run(env, 'UPDATE sales_order_lines SET delivered_qty = delivered_qty + ? WHERE id = ?', l.qty_returned, dl.sales_order_line_id);
       }
       // Take the returned goods back out of the warehouse (reverses the RETURN movement).
-      if (cur.warehouse_id && l.qty_returned > 0) await postStockMovement(env, { itemCode: l.item_code, warehouseId: cur.warehouse_id, qtyDelta: -l.qty_returned, movementType: 'RETURN', refType: 'SRET-REV', refId: id, note: `${cur.return_number} cancelled`, movedAt: now.slice(0, 10), createdBy: session.userId });
+      if (cur.warehouse_id && l.qty_returned > 0) await postStockMovement(env, { itemCode: l.item_code, warehouseId: cur.warehouse_id, qtyDelta: -l.qty_returned, movementType: 'RETURN', refType: 'SRET-REV', refId: id, note: `${cur.return_number} cancelled`, movedAt: mytToday(), createdBy: session.userId });
     }
     await run(env, 'UPDATE sales_returns SET status = ?, updated_at = ? WHERE id = ?', 'CANCELLED', now, id);
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'sales_return.cancel', entityTable: 'sales_returns', entityId: id });

@@ -269,7 +269,7 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
 /* Workbook: units, owners, contracts                                  */
 /* ------------------------------------------------------------------ */
 
-export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: string, today = now.slice(0, 10)): Promise<ImportResult> {
+export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: string, today = new Date(Date.parse(now) + 8 * 3600e3).toISOString().slice(0, 10)): Promise<ImportResult> {
   const res = empty();
   const snap = await snapshot(db);
   const placeholder = await placeholderOwner(db, snap.owners, now);

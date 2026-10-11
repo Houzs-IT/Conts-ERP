@@ -11,7 +11,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm } from '../lib/format';
+import { rm, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { statusLabel } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
@@ -67,14 +67,14 @@ export default function PurchaseConsignmentPage() {
     { key: 'total', label: 'Total', type: 'money', value: p => p.totalSen },
   ], []);
 
-  function openNew() { setIsNew(true); setDrawer({ id: '', pcNumber: '', supplierId: suppliers[0]?.id ?? '', supplierCode: '', supplierName: '', status: 'SUBMITTED', pcDate: new Date().toISOString().slice(0, 10), expectedAt: '', warehouseId: warehouses[0]?.id ?? '', subtotalSen: 0, taxSen: 0, totalSen: 0, notes: '', lines: [] }); }
+  function openNew() { setIsNew(true); setDrawer({ id: '', pcNumber: '', supplierId: suppliers[0]?.id ?? '', supplierCode: '', supplierName: '', status: 'SUBMITTED', pcDate: todayMyt(), expectedAt: '', warehouseId: warehouses[0]?.id ?? '', subtotalSen: 0, taxSen: 0, totalSen: 0, notes: '', lines: [] }); }
   function totalsOf(lines: Line[], taxSen: number) { const subtotalSen = lines.reduce((s, l) => s + l.lineTotalSen, 0); return { subtotalSen, taxSen: Math.max(0, taxSen), totalSen: subtotalSen + Math.max(0, taxSen) }; }
   function body(pc: Pc, lines: Line[]) { return { supplierId: pc.supplierId, pcDate: pc.pcDate, expectedAt: pc.expectedAt || null, warehouseId: pc.warehouseId || null, notes: pc.notes, taxSen: pc.taxSen, lines: lines.map(l => ({ itemCode: l.itemCode, description: l.description, uom: l.uom, qty: l.qty, unitPriceSen: l.unitPriceSen, discountSen: l.discountSen })) }; }
 
   function save(pc: Pc, lines: Line[]) {
     const supplier = suppliers.find(s => s.id === pc.supplierId);
     if (isNew) {
-      setAdded(a => [{ ...pc, id: `pc-new-${crypto.randomUUID().slice(0, 8)}`, pcNumber: `PC-${new Date().getFullYear()}-NEW`, supplierCode: supplier?.code ?? '', supplierName: supplier?.name ?? '', lines }, ...a]);
+      setAdded(a => [{ ...pc, id: `pc-new-${crypto.randomUUID().slice(0, 8)}`, pcNumber: `PC-${todayMyt().slice(0, 4)}-NEW`, supplierCode: supplier?.code ?? '', supplierName: supplier?.name ?? '', lines }, ...a]);
       api.post('/purchase-consignment', body(pc, lines)).catch(notifyFailure);
       toast({ tone: 'success', title: 'Consignment order raised.', body: supplier?.name ?? '' });
     } else {

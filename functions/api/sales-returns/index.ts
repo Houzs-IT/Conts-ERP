@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, nowIso, audit } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, nowIso, audit, mytToday, isNumberClash } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { isSretStatus, nextSalesReturnNumber, toSretHeaderPayload, type SretHeaderRow } from '../../_lib/sales-returns';
 import { postStockMovement } from '../../_lib/stock-ops';
@@ -62,13 +62,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const refund = lines.reduce((s, l) => s + l.lineTotalSen, 0);
   const id = genId('sret');
-  const returnNumber = await nextSalesReturnNumber(env);
+  let returnNumber = '';
   const now = nowIso();
-  const returnDate = strOrNull(b.returnDate) ?? now.slice(0, 10);
+  const returnDate = strOrNull(b.returnDate) ?? mytToday();
 
-  await run(env, `INSERT INTO sales_returns (id, return_number, sales_order_id, delivery_order_id, customer_name, return_date, reason, status, credit_note_ref, refund_sen, notes, posted_at, created_by, created_at, updated_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?, ?, ?, ?)`,
-    id, returnNumber, dord.sales_order_id, doId, dord.customer_name, returnDate, strOrNull(b.reason), strOrNull(b.creditNoteRef), refund, strOrNull(b.notes), now, session.userId, now, now);
+  // The number is the highest so far plus one, so two made at once can pick the same one: the second header insert
+  // then hits the unique number before anything is written, and simply takes the next number (isNumberClash).
+  for (let attempt = 1; ; attempt++) {
+    returnNumber = await nextSalesReturnNumber(env);
+    try {
+      await run(env, `INSERT INTO sales_returns (id, return_number, sales_order_id, delivery_order_id, customer_name, return_date, reason, status, credit_note_ref, refund_sen, notes, posted_at, created_by, created_at, updated_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?, ?, ?, ?)`,
+        id, returnNumber, dord.sales_order_id, doId, dord.customer_name, returnDate, strOrNull(b.reason), strOrNull(b.creditNoteRef), refund, strOrNull(b.notes), now, session.userId, now, now);
+      break;
+    } catch (e) { if (attempt >= 5 || !isNumberClash(e)) throw e; }
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];

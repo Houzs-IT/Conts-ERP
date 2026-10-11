@@ -2,6 +2,8 @@ import { type Env, one, json, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
 import { waitingCount, approvalsEnabled } from '../../_lib/approvals';
+import { levelsFor } from '../../_lib/access';
+import { MASTER_ROLES } from '../../_lib/properties';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-MY')} ${n === 1 ? one : many}`;
 
@@ -14,7 +16,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (isFieldRole(session.role)) return json({ today: 0, maintenance: 0, inbox: 0, statements: 0, channels: { units: 0, lastSentAt: null, failed: 0 }, alerts: [] });
 
   // Every menu load and every open tab once a minute asks this: the four reads go out together, not one after another.
-  const [c, ch, approvals, approvalsOn] = await Promise.all([one<{ today: number; overdue: number; maintenance: number; inbox: number; statements: number; payouts_failed: number; payouts_pending: number; mail_failed: number }>(env, `
+  const [c, ch, approvals, approvalsOn, lv] = await Promise.all([one<{ today: number; overdue: number; maintenance: number; inbox: number; statements: number; payouts_failed: number; payouts_pending: number; mail_failed: number }>(env, `
     SELECT
       (SELECT count(*)::int FROM tasks WHERE state != 'resolved'
          AND ${MYT_DATE('COALESCE(scheduled_for, due_at, created_at)')} <= to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')) AS today,
@@ -31,26 +33,30 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     SELECT (SELECT count(DISTINCT unit_id)::int FROM channex_channels) AS units,
            (SELECT max(called_at) FROM channex_calls WHERE status BETWEEN 200 AND 299) AS last_sent,
            (SELECT count(*)::int FROM channex_outbox o WHERE o.status = 'failed' AND o.unit_id IN (SELECT unit_id FROM channex_channels)) AS failed`),
-    waitingCount(env, session), approvalsEnabled(env)]);
+    waitingCount(env, session), approvalsEnabled(env), levelsFor(env, session.role)]);
   const channels = { units: ch?.units ?? 0, lastSentAt: ch?.last_sent ?? null, failed: ch?.failed ?? 0 };
   const n = c!;
-  const money = session.manage;
+  // Each count and alert follows the role's level for the area it points into, so nobody is shown a count of
+  // records they cannot open or an alert whose link answers "no access".
+  const sees = (area: string) => session.role === 'management' || lv[area] !== 'none';
+  const money = MASTER_ROLES.includes(session.role) && sees('finance');
+  const ops = sees('operations'), inbox = sees('comms') ? n.inbox : 0, sync = sees('integrations');
 
   type Alert = { key: string; title: string; body: string; target: string; tone: 'critical' | 'warning' | 'info'; count: number };
   const alerts: Alert[] = [];
   const add = (cond: boolean, a: Alert) => { if (cond) alerts.push(a); };
   add(approvals > 0, { key: 'approvals', tone: 'warning', count: approvals, title: `${plural(approvals, 'money request')} waiting for your approval`, body: 'Refunds, payout runs, owner credits and charges, large expenses and write-offs.', target: '/finance/approvals' });
-  add(n.overdue > 0, { key: 'overdue', tone: 'critical', count: n.overdue, title: `${plural(n.overdue, 'task')} overdue`, body: 'Past the time they were due and not finished.', target: '/operations/today' });
+  add(ops && n.overdue > 0, { key: 'overdue', tone: 'critical', count: n.overdue, title: `${plural(n.overdue, 'task')} overdue`, body: 'Past the time they were due and not finished.', target: '/operations/today' });
   add(money && n.payouts_failed > 0, { key: 'payouts_failed', tone: 'critical', count: n.payouts_failed, title: `${plural(n.payouts_failed, 'payout')} failed`, body: 'Check the bank details, then retry.', target: '/finance/payouts?state=failed' });
-  add(channels.failed > 0, { key: 'channels', tone: 'critical', count: channels.failed, title: 'Channel sync needs attention', body: `${plural(channels.failed, 'update')} refused by Channex.`, target: '/system/integrations' });
+  add(sync && channels.failed > 0, { key: 'channels', tone: 'critical', count: channels.failed, title: 'Channel sync needs attention', body: `${plural(channels.failed, 'update')} refused by Channex.`, target: '/system/integrations' });
   add(money && n.mail_failed > 0, { key: 'mail_failed', tone: 'warning', count: n.mail_failed, title: `${plural(n.mail_failed, 'message')} failed to send this week`, body: 'Emails or WhatsApp messages the provider refused.', target: '/system/health' });
   add(money && n.statements > 0, { key: 'statements', tone: 'warning', count: n.statements, title: `${plural(n.statements, 'statement')} finalised, not sent`, body: 'Owners cannot see them until they are sent.', target: '/finance/statements?state=finalised' });
   add(money && n.payouts_pending > 0, { key: 'payouts_pending', tone: 'info', count: n.payouts_pending, title: `${plural(n.payouts_pending, 'payout')} waiting for a payout run`, body: 'Start a run once the transfers are made at the bank.', target: '/finance/payouts?state=pending' });
-  add(n.inbox > 0, { key: 'inbox', tone: 'info', count: n.inbox, title: `${plural(n.inbox, 'unread conversation')}`, body: 'Guest messages waiting for a reply.', target: '/communication/inbox' });
+  add(inbox > 0, { key: 'inbox', tone: 'info', count: inbox, title: `${plural(inbox, 'unread conversation')}`, body: 'Guest messages waiting for a reply.', target: '/communication/inbox' });
 
   // Today lists open maintenance alongside the day's tasks (operations/today.ts), so its count does too.
   return json({
-    channels, today: n.today + n.maintenance, maintenance: n.maintenance, inbox: n.inbox,
+    channels, today: ops ? n.today + n.maintenance : 0, maintenance: ops ? n.maintenance : 0, inbox,
     statements: money ? n.statements : 0, approvals, approvalsOn, alerts,
   });
 };

@@ -11,7 +11,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, date } from '../lib/format';
+import { rm, date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
@@ -116,7 +116,7 @@ const lineColumns: Column<SiLine>[] = [
 function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo[]; canWrite: boolean; onClose: () => void; onCreated: (s: Si) => void }) {
   const [doId, setDoId] = useState('');
   const [lines, setLines] = useState<DoLine[]>([]);
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
+  const [invoiceDate, setInvoiceDate] = useState(todayMyt());
   const [dueDate, setDueDate] = useState('');
   const [taxSen, setTaxSen] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
@@ -137,7 +137,7 @@ function BillDrawer({ openDos, canWrite, onClose, onCreated }: { openDos: OpenDo
 
   function submit() {
     api.post('/sales-invoices', { deliveryOrderId: doId, invoiceDate, dueDate: dueDate || null, taxSen: taxSen ?? 0, notes }).catch(notifyFailure);
-    onCreated({ id: `si-new-${crypto.randomUUID().slice(0, 8)}`, invoiceNumber: `SINV-${new Date().getFullYear()}-NEW`, doNumber: dord?.doNumber ?? '', soDocNo: '', customerName: dord?.customerName ?? '', invoiceDate, dueDate, status: 'SENT', totalSen: total, paidSen: 0, outstandingSen: total, notes, lines });
+    onCreated({ id: `si-new-${crypto.randomUUID().slice(0, 8)}`, invoiceNumber: `SINV-${todayMyt().slice(0, 4)}-NEW`, doNumber: dord?.doNumber ?? '', soDocNo: '', customerName: dord?.customerName ?? '', invoiceDate, dueDate, status: 'SENT', totalSen: total, paidSen: 0, outstandingSen: total, notes, lines });
   }
 
   return (

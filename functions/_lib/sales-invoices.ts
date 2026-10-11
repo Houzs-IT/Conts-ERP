@@ -1,5 +1,5 @@
 /** Sales Invoices (AR), ported from 2990's SCM. Bills a delivery order. Money integer sen. */
-import { type Env, one, run, nowIso } from './db';
+import { type Env, one, run, nowIso, mytToday } from './db';
 
 export const SI_STATUSES = ['SENT', 'PARTIALLY_PAID', 'PAID', 'OVERDUE', 'CANCELLED'] as const;
 
@@ -22,7 +22,7 @@ export function toSiLinePayload(r: SiLineRow) {
 }
 
 export async function nextSiNumber(env: Env): Promise<string> {
-  const year = nowIso().slice(0, 4);
+  const year = mytToday().slice(0, 4);
   const row = await one<{ mx: string | null }>(env, 'SELECT MAX(invoice_number) AS mx FROM sales_invoices WHERE invoice_number LIKE ?', `SINV-${year}-%`);
   const last = row?.mx ? Number(row.mx.split('-')[2]) : 0;
   return `SINV-${year}-${String((Number.isFinite(last) ? last : 0) + 1).padStart(4, '0')}`;

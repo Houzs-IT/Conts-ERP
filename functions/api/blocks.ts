@@ -1,6 +1,6 @@
-import { type Env, run, json, fail, audit, nowIso } from '../_lib/db';
+import { type Env, run, json, fail, audit, nowIso, mytToday } from '../_lib/db';
 import { requireSession, isFieldRole } from '../_lib/auth';
-import { findClash, clashResponseBody } from '../_lib/reservations';
+import { findClash, clashResponseBody, withUnitLock } from '../_lib/reservations';
 import { resolveUnit } from '../_lib/ops';
 import { syncAvailabilityIfLinked, channexMappingFor } from '../_lib/channexSync';
 import { channexConfigured } from '../_lib/channex';
@@ -38,13 +38,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     checkDate(fields, 'to', b.to, { label: 'To', required: true });
     const bad = invalid(fields); if (bad) return bad;
     if (b.to <= b.from) return fail('VALIDATION', 'The end date must be after the start date.', 422, { to: 'Pick a later end date.' });
-    const clash = await findClash(env, unit.id, b.from, b.to, null);
+    const newId = crypto.randomUUID();
+    const clash = await withUnitLock(env, unit.id, async tx => {
+      const c = await findClash(tx, unit.id, b.from, b.to, null);
+      if (c) return c;
+      await run(tx, `
+        INSERT INTO reservations (id, unit_id, channel, state, check_in, check_out, guests_count, gross_booking_value, currency, notes, block_reason, created_at, updated_at)
+        VALUES (?, ?, ?, 'confirmed', ?, ?, 0, 0, 'MYR', ?, ?, ?, ?)`,
+        newId, unit.id, kind === 'owner_stay' ? 'owner_stay' : 'maintenance_block', b.from, b.to, note || KIND_LABEL[kind], kind, now, now);
+      return null;
+    });
     if (clash) return json(clashResponseBody(clash), 409);
-    id = crypto.randomUUID();
-    await run(env, `
-      INSERT INTO reservations (id, unit_id, channel, state, check_in, check_out, guests_count, gross_booking_value, currency, notes, block_reason, created_at, updated_at)
-      VALUES (?, ?, ?, 'confirmed', ?, ?, 0, 0, 'MYR', ?, ?, ?, ?)`,
-      id, unit.id, kind === 'owner_stay' ? 'owner_stay' : 'maintenance_block', b.from, b.to, note || KIND_LABEL[kind], kind, now, now);
+    id = newId;
     // The repair job this block is for, so closing the job gives the nights back (migration 0095; skipped without it).
     if (b.issueId) await run(env, 'UPDATE reservations SET maintenance_issue_id = ? WHERE id = ? AND EXISTS (SELECT 1 FROM maintenance_issues WHERE id = ? AND unit_id = ?)', String(b.issueId), id, String(b.issueId), unit.id).catch(() => {});
   } else if (!b.issueId) {
@@ -52,7 +57,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   if (b.issueId) {
-    await run(env, `UPDATE maintenance_issues SET blocks_unit = 1, blocked_from = COALESCE(blocked_from, ?), updated_at = ? WHERE id = ? AND unit_id = ?`, b.from ?? now.slice(0, 10), now, String(b.issueId), unit.id);
+    await run(env, `UPDATE maintenance_issues SET blocks_unit = 1, blocked_from = COALESCE(blocked_from, ?), updated_at = ? WHERE id = ? AND unit_id = ?`, b.from ?? mytToday(), now, String(b.issueId), unit.id);
     await run(env, `UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?`, now, unit.id);
   }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'unit.block', entityTable: 'units', entityId: unit.id, after: { from: b.from ?? null, to: b.to ?? null, kind, reason: note || null, issueId: b.issueId ?? null } });
