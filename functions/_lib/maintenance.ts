@@ -1,4 +1,4 @@
-import { type Env } from './db';
+import { type Env, one } from './db';
 import { hasColumn } from './auth';
 import { technicianFor } from './notify';
 
@@ -41,3 +41,21 @@ export const DAY = /^\d{4}-\d{2}-\d{2}$/;
 export async function assigneeKindFor(env: Env, name: string): Promise<'in_house' | 'contractor'> {
   return (await technicianFor(env, name)).length ? 'in_house' : 'contractor';
 }
+
+/** SQL that is true when the job on alias `m` is the given user's: since migration 0105 by account, older jobs (and a
+ *  database without the column) by the technician's name. Pass the user id twice when `byId`, once otherwise. */
+export function mineSql(byId: boolean) {
+  const named = 'lower(trim(m.vendor_name)) = (SELECT lower(trim(full_name)) FROM users WHERE id = ?)';
+  return byId ? `(m.assignee_user_id = ? OR (m.assignee_user_id IS NULL AND ${named}))` : named;
+}
+
+export const hasAssigneeUser = (env: Env) => hasColumn(env, 'maintenance_issues', 'assignee_user_id').catch(() => false);
+
+/** Whether a repair job is the signed-in field user's: the rule every field write on a repair checks. */
+export async function isAssignee(env: Env, id: string, userId: string): Promise<boolean> {
+  const byId = await hasAssigneeUser(env);
+  return !!(await one(env, `SELECT 1 AS x FROM maintenance_issues m WHERE m.id = ? AND ${mineSql(byId)}`, id, ...(byId ? [userId, userId] : [userId])));
+}
+
+/** A job nobody has: no technician or contractor named and no account linked. Only these can be picked up on the phone. */
+export const UNASSIGNED_SQL = "(m.vendor_name IS NULL OR trim(m.vendor_name) = '')";
