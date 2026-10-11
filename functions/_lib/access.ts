@@ -43,7 +43,8 @@ export const AREAS: Area[] = [
   { key: 'owners', label: 'Owners', group: 'Finance', api: ['owners', 'contracts'], defaults: OPS_NONE },
   { key: 'performance', label: 'Performance', group: 'Growth', api: ['analytics', 'pricing', 'rates', 'reviews'] },
   { key: 'comms', label: 'Communication', group: 'Growth', api: ['messages', 'automations'], defaults: { finance_admin: 'none' } },
-  { key: 'users', label: 'Users and roles', group: 'System', api: ['users'], managed: true, defaults: OPS_NONE },
+  // The user list is read by management and operations managers only (functions/api/users), so finance admins start at none.
+  { key: 'users', label: 'Users and roles', group: 'System', api: ['users'], managed: true, defaults: { ...OPS_NONE, finance_admin: 'none' } },
   { key: 'integrations', label: 'Integrations', group: 'System', api: ['integrations'], managed: true, defaults: OPS_NONE },
   { key: 'settings', label: 'Settings', group: 'System', api: ['settings'], managed: true, defaults: OPS_NONE },
   { key: 'health', label: 'System health', group: 'System', api: ['system', 'audit'], managed: true, defaults: OPS_NONE },

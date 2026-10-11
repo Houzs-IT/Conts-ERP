@@ -667,9 +667,12 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
 
 function ReportModal({ units, periods, defaultUnit, defaultPeriod, filterNote, onClose, onGenerate }: {
   units: SelectOption[]; periods: string[]; defaultUnit: string; defaultPeriod: string; filterNote: string;
-  onClose: () => void; onGenerate: (unit: string, period: string) => void;
+  onClose: () => void; onGenerate: (unit: string, period: string) => Promise<void>;
 }) {
   const [unit, setUnit] = useState(defaultUnit);
+  const [busy, setBusy] = useState(false);
+  // A month of a big portfolio takes a few seconds to build; without this the button looks dead.
+  const generate = async () => { setBusy(true); try { await onGenerate(unit, period); } finally { setBusy(false); } };
   const [period, setPeriod] = useState(defaultPeriod);
   const picked = units.find(u => u.value === unit);
   const unitLabel = unit ? (picked ? `${picked.group ?? ''} ${picked.label}`.trim() : unit) : 'All units';
@@ -681,8 +684,8 @@ function ReportModal({ units, periods, defaultUnit, defaultPeriod, filterNote, o
   return (
     <Modal title="Generate expenses report" sub="Exports a CSV whose header prints the filters applied and the time it was generated." onClose={onClose} width={480}
       footer={<>
-        <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={() => onGenerate(unit, period)}>Download CSV</Button>
+        <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button size="sm" variant="primary" onClick={generate} loading={busy}>Download CSV</Button>
       </>}>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-[14px]">
         <SearchSelect showLabel label="Unit" allLabel="All units" placeholder="Search units" value={unit} onChange={setUnit} options={units} />

@@ -85,7 +85,7 @@ export default function GuestDocumentsPage() {
   return (
     <>
       <PageHeader title="Guest documents"
-        sub={data ? `${plural(data.counts.invoice, 'invoice')} · ${plural(data.counts.receipt, 'receipt')} · ${data.counts.void} void · receipts ${moneyString(data.liveAmounts.receipt, 'exact')}` : 'Invoices and official receipts issued to guests'} />
+        sub={data ? `${plural(data.counts.invoice, 'invoice')} · ${plural(data.counts.receipt, 'receipt')}${data.counts.void ? `, ${data.counts.void} of them void` : ''} · valid receipts ${moneyString(data.liveAmounts.receipt, 'exact')}` : 'Invoices and official receipts issued to guests'} />
 
       <div className="flex gap-2 overflow-x-auto pb-[2px] shrink-0 [scrollbar-width:none]">
         <Chip on={tab === 'all'} onClick={() => setTab('all')} count={data?.counts.all}>All</Chip>
