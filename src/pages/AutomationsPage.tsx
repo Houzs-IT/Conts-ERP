@@ -87,7 +87,7 @@ const SAMPLE: Record<string, string> = {
   guest: 'Aisyah', property: 'Skyline KL', unit: 'A12-06', checkIn: '12 Oct', checkOut: '14 Oct', nights: '2 nights', total: 'RM 480.00',
   dates: '12 Oct – 14 Oct', refundPosition: 'Your full payment will be refunded.', checkInTime: '15:00', checkOutTime: '11:00',
   address: '12 Jalan Sultan Ismail, KL', parkingNote: 'Level P2, bay 41', doorCode: '4471', wifiName: 'Skyline-A12', wifiPass: 'stay4471',
-  accessInstruction: 'Lockbox by the lift lobby.', newTime: '16:30', contact: '+60 17-465 8868', reviewLink: 'airbnb.com/r/...',
+  accessInstruction: 'Lockbox by the lift lobby.', newTime: '16:30', reviewLink: 'airbnb.com/r/...',
   period: 'Sep 2026', netPayout: 'RM 4,364.86', portalLink: 'owner.theconts.com', amount: 'RM 4,364.86', bank: 'Maybank', last4: '8212',
   valueDate: '3 Oct 2026', reason: 'the account name does not match', occupancy: '78%', adr: 'RM 240', rating: '4.8', upcomingCount: '9',
   title: 'an aircon repair', consequence: 'the unit stays off sale', revenueAtRisk: 'RM 1,200', expectedReturn: '20 Oct',
@@ -96,12 +96,16 @@ const SAMPLE: Record<string, string> = {
   tempPassword: '(temporary password)', resetLink: '(reset link)', device: 'Chrome on Windows', securityLink: '(security link)',
   unlockTime: '14:21', location: 'Kuala Lumpur',
 };
-const sample = (text: string) => text.replace(/\{(\w+)\}/g, (_, k: string) => SAMPLE[k] ?? '...');
+/** {contact} is the company phone as the server fills it (fillTemplate in automationCatalog.ts): +60 form. */
+const sample = (text: string, contact: string) =>
+  text.replace(/\{(\w+)\}/g, (_, k: string) => (k === 'contact' ? contact : SAMPLE[k]) ?? '...');
 
 interface Payload {
   data: Rule[];
   quietHours: { from: string; to: string; timezone: string; note: string };
   generatedAt: string;
+  /** The company phone as guests see it (+60 form): what {contact} becomes. */
+  contact?: string;
 }
 
 const GROUPS: { key: GroupKey; label: string; icon: string; audience: Audience; desc: string }[] = [
@@ -134,6 +138,7 @@ const DELIVERY_LABEL: Record<Delivery, string> = {
 
 const FALLBACK: Payload = {
   generatedAt: '',
+  contact: '+60 11-6133 3289',
   quietHours: {
     from: '22:00', to: '08:00', timezone: 'Asia/Kuala_Lumpur',
     note: 'Non-urgent guest and owner messages queue until 08:00. Check-in risk and payout failure override.',
@@ -143,24 +148,24 @@ const FALLBACK: Payload = {
     { id: 'guest.booking_confirmed', name: 'Booking confirmed', template: 'guest.booking_confirmed', group: 'new_booking',
       trigger: 'reservation.state → confirmed', timing: 'Immediate', channels: ['Email', 'WhatsApp'],
       needs: 'Guest name, property, unit, dates, nights, total, contact',
-      preview: 'Hi {guest}, your booking at {property} {unit} is confirmed for {checkIn}–{checkOut} ({nights}). Total {total}. We are on WhatsApp if you need anything.',
+      preview: 'Hi {guest}, your booking at {property} {unit} is confirmed for {checkIn}–{checkOut} ({nights}). Total {total}. Questions? Call or WhatsApp us on {contact}.',
       delivery: 'transactional', quietHours: 'queue', isActive: true },
     { id: 'guest.cancellation', name: 'Booking cancelled', template: 'guest.cancellation', group: 'new_booking',
       trigger: 'reservation.state → cancelled', timing: 'Immediate', channels: ['Email'],
       needs: 'Refund position, reason, contact',
-      preview: 'Hi {guest}, your booking at {property} {unit} for {dates} has been cancelled. {refundPosition} Reply here and we will help.',
+      preview: 'Hi {guest}, your booking at {property} {unit} for {dates} has been cancelled. {refundPosition} Questions? Reply here or call us on {contact}.',
       delivery: 'transactional', quietHours: 'queue', isActive: true },
 
     // Before arrival
     { id: 'guest.pre_arrival', name: 'Pre-arrival details', template: 'guest.pre_arrival', group: 'before_arrival',
       trigger: 'reservation.check_in approaching', timing: '48 hours before check-in', channels: ['Email', 'WhatsApp'],
-      needs: 'Check-in window, address, parking note',
-      preview: 'Your stay at {property} {unit} starts {checkIn}. Check-in from {checkInTime}. Address: {address}. Parking: {parkingNote}.',
+      needs: 'Check-in window, address, parking note, contact',
+      preview: 'Your stay at {property} {unit} starts {checkIn}. Check-in from {checkInTime}. Address: {address}. Parking: {parkingNote}. Trouble checking in? Call or WhatsApp us on {contact}.',
       delivery: 'transactional', quietHours: 'queue', isActive: true },
     { id: 'guest.access_details', name: 'Access details', template: 'guest.access_details', group: 'before_arrival',
       trigger: 'unit.readiness = ready AND check-in approaching', timing: '2 hours before check-in, never earlier', channels: ['WhatsApp'],
-      needs: 'Access instruction, door code, wifi. Code rotates after the stay',
-      preview: 'You are all set for {property} {unit}. Door code {doorCode}, wifi {wifiName} / {wifiPass}. {accessInstruction}',
+      needs: 'Access instruction, door code, wifi, contact. Code rotates after the stay',
+      preview: 'You are all set for {property} {unit}. Door code {doorCode}, wifi {wifiName} / {wifiPass}. {accessInstruction} Trouble getting in? Call or WhatsApp us on {contact}.',
       delivery: 'transactional', quietHours: 'queue', isActive: true },
     { id: 'guest.checkin_delayed', name: 'Check-in delayed', template: 'guest.checkin_delayed', group: 'before_arrival',
       trigger: 'turnover task overdue past check-in time', timing: 'On breach', channels: ['WhatsApp'],
@@ -171,8 +176,8 @@ const FALLBACK: Payload = {
     // Stay and departure
     { id: 'guest.checkout_reminder', name: 'Check-out reminder', template: 'guest.checkout_reminder', group: 'stay_departure',
       trigger: 'reservation.check_out approaching', timing: '12 hours before check-out', channels: ['WhatsApp'],
-      needs: 'Check-out time, key return, late check-out option',
-      preview: 'Check-out at {property} {unit} is tomorrow by {checkOutTime}. Leave keys in the lockbox. Need a late check-out? Just ask.',
+      needs: 'Check-out time, key return, late check-out option, contact',
+      preview: 'Check-out at {property} {unit} is tomorrow by {checkOutTime}. Leave keys in the lockbox. Need a late check-out? Call or WhatsApp us on {contact}.',
       delivery: 'transactional', quietHours: 'queue', isActive: true },
     { id: 'guest.review_request', name: 'Review request', template: 'guest.review_request', group: 'stay_departure',
       trigger: 'reservation.state → checked_out', timing: '24 hours after check-out', channels: ['Email', 'Channel API'],
@@ -335,6 +340,7 @@ export default function AutomationsPage() {
   const total = rules.length;
   const running = rules.filter(r => r.running).length;
   const qh = data?.quietHours;
+  const contact = data?.contact ?? FALLBACK.contact!;
   const open = rules.find(r => r.id === openId) ?? null;
 
   async function toggle(r: Rule) {
@@ -398,7 +404,7 @@ export default function AutomationsPage() {
               </div>
 
               {groupRules.map(r => (
-                <RuleRow key={r.id} r={r} onOpen={() => setOpenId(r.id)} onToggle={() => toggle(r)} />
+                <RuleRow key={r.id} r={r} contact={contact} onOpen={() => setOpenId(r.id)} onToggle={() => toggle(r)} />
               ))}
             </Card>
           );
@@ -410,7 +416,7 @@ export default function AutomationsPage() {
       </div>
 
       <Drawer open={!!open} onClose={() => setOpenId(null)} width={460}>
-        {open && <RulePanel r={open} onClose={() => setOpenId(null)} onToggle={() => toggle(open)} />}
+        {open && <RulePanel r={open} contact={contact} onClose={() => setOpenId(null)} onToggle={() => toggle(open)} />}
       </Drawer>
     </>
   );
@@ -442,7 +448,7 @@ function RuleStatus({ r }: { r: Rule }) {
   return <StatusBadge entity="automation" value={r.running ? "running" : "not_running"} size="sm" />;
 }
 
-function RuleRow({ r, onOpen, onToggle }: { r: Rule; onOpen: () => void; onToggle: () => void }) {
+function RuleRow({ r, contact, onOpen, onToggle }: { r: Rule; contact: string; onOpen: () => void; onToggle: () => void }) {
   return (
     <div
       role="button" tabIndex={0}
@@ -464,12 +470,12 @@ function RuleRow({ r, onOpen, onToggle }: { r: Rule; onOpen: () => void; onToggl
         <span className="text-meta text-faint">&middot;</span>
         {r.channels.map(c => <ChannelChip key={c} label={c} />)}
       </div>
-      <span className="text-meta text-muted-ink text-pretty line-clamp-2">{sample(r.preview)}</span>
+      <span className="text-meta text-muted-ink text-pretty line-clamp-2">{sample(r.preview, contact)}</span>
     </div>
   );
 }
 
-function RulePanel({ r, onClose, onToggle }: { r: Rule; onClose: () => void; onToggle: () => void }) {
+function RulePanel({ r, contact, onClose, onToggle }: { r: Rule; contact: string; onClose: () => void; onToggle: () => void }) {
   const groupMeta = GROUPS.find(g => g.key === r.group)!;
   const qh = QH_LABEL[r.quietHours];
   const rows: { label: string; value: string; mono?: boolean }[] = [
@@ -520,7 +526,7 @@ function RulePanel({ r, onClose, onToggle }: { r: Rule; onClose: () => void; onT
         <div>
           <div className="text-meta font-semibold text-muted-ink mb-2">Template preview</div>
           <div className="py-3 px-4 rounded-card bg-page border border-solid border-line text-copy leading-[1.55] text-ink text-pretty">
-            {sample(r.preview)}
+            {sample(r.preview, contact)}
           </div>
           <span className="block mt-2 text-meta text-faint text-pretty">
             Example with sample details. Each real message uses the booking's or owner's own details.

@@ -1,5 +1,6 @@
 /** The automation rules the product ships with. Only on/off is stored (table automations, keyed by id); everything else is fixed here.
  *  Copy and triggers come from notifications.md. */
+import { phone } from '../../src/lib/format';
 export interface CatalogRule {
   id: string; name: string; template: string; group: string; trigger: string; timing: string; channels: string[];
   needs: string; preview: string; delivery: 'transactional' | 'opt_out'; quietHours: 'queue' | 'override' | 'always'; isActive: boolean;
@@ -18,7 +19,7 @@ export const CATALOG: CatalogRule[] = [
       "WhatsApp"
     ],
     "needs": "Guest name, property, unit, dates, nights, total, contact",
-    "preview": "Hi {guest}, your booking at {property} {unit} is confirmed for {checkIn}–{checkOut} ({nights}). Total {total}. We are on WhatsApp if you need anything.",
+    "preview": "Hi {guest}, your booking at {property} {unit} is confirmed for {checkIn}–{checkOut} ({nights}). Total {total}. Questions? Call or WhatsApp us on {contact}.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
@@ -34,7 +35,7 @@ export const CATALOG: CatalogRule[] = [
       "Email"
     ],
     "needs": "Refund position, reason, contact",
-    "preview": "Hi {guest}, your booking at {property} {unit} for {dates} has been cancelled. {refundPosition} Reply here and we will help.",
+    "preview": "Hi {guest}, your booking at {property} {unit} for {dates} has been cancelled. {refundPosition} Questions? Reply here or call us on {contact}.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
@@ -50,8 +51,8 @@ export const CATALOG: CatalogRule[] = [
       "Email",
       "WhatsApp"
     ],
-    "needs": "Check-in window, address, parking note",
-    "preview": "Your stay at {property} {unit} starts {checkIn}. Check-in from {checkInTime}. Address: {address}. Parking: {parkingNote}.",
+    "needs": "Check-in window, address, parking note, contact",
+    "preview": "Your stay at {property} {unit} starts {checkIn}. Check-in from {checkInTime}. Address: {address}. Parking: {parkingNote}. Trouble checking in? Call or WhatsApp us on {contact}.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
@@ -66,8 +67,8 @@ export const CATALOG: CatalogRule[] = [
     "channels": [
       "WhatsApp"
     ],
-    "needs": "Access instruction, door code, wifi. Code rotates after the stay",
-    "preview": "You are all set for {property} {unit}. Door code {doorCode}, wifi {wifiName} / {wifiPass}. {accessInstruction}",
+    "needs": "Access instruction, door code, wifi, contact. Code rotates after the stay",
+    "preview": "You are all set for {property} {unit}. Door code {doorCode}, wifi {wifiName} / {wifiPass}. {accessInstruction} Trouble getting in? Call or WhatsApp us on {contact}.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
@@ -98,8 +99,8 @@ export const CATALOG: CatalogRule[] = [
     "channels": [
       "WhatsApp"
     ],
-    "needs": "Check-out time, key return, late check-out option",
-    "preview": "Check-out at {property} {unit} is tomorrow by {checkOutTime}. Leave keys in the lockbox. Need a late check-out? Just ask.",
+    "needs": "Check-out time, key return, late check-out option, contact",
+    "preview": "Check-out at {property} {unit} is tomorrow by {checkOutTime}. Leave keys in the lockbox. Need a late check-out? Call or WhatsApp us on {contact}.",
     "delivery": "transactional",
     "quietHours": "queue",
     "isActive": true
@@ -527,4 +528,12 @@ export function needsToRun(rule: CatalogRule): string {
     timed ? 'It needs the timed background job (theconts-cron) to check the time.' : 'It needs the event to call the message sender.',
     toGuest ? 'Guest messages also need the email and WhatsApp keys.' : '',
   ].filter(Boolean).join(' ');
+}
+
+/** A template with its {placeholders} filled; one the caller has no value for stays as written. {contact} is always
+ *  the company phone in international form (+60 11-6133 3289), never a value the caller passed: guests are often
+ *  abroad, where a Malaysian local number does not dial. */
+export function fillTemplate(text: string, values: Record<string, string>, companyPhone: string): string {
+  const all: Record<string, string> = { ...values, contact: phone(companyPhone) };
+  return text.replace(/\{(\w+)\}/g, (m, k: string) => all[k] ?? m);
 }
