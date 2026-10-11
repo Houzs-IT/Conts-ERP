@@ -11,9 +11,13 @@ import { useToast } from './Toast';
 import { PhoneText } from './PhoneText';
 import { Floating, ToolButton, PanelItem, PanelHeading, StatusCell, ChannelCell, PersonCell, channelLabel } from './DataTableParts';
 import { useTableViews, type TableLayout, type SavedView } from './DataTableViews';
-import { rm, date as fmtDate, dateTime as fmtDateTime, count as fmtCount, plural, phone as fmtPhone } from '../lib/format';
+import { rm, date as fmtDate, dateTime as fmtDateTime, count as fmtCount, plural, phone as fmtPhone, todayMyt as fmtToday } from '../lib/format';
+import ChannelMark from './ChannelMark';
+import type { BookingChannel } from '../lib/types';
 import { downloadTable, type ExportColumn, type ExportCell, type ExportKind } from '../lib/export';
-import { cx } from '../lib/design-tokens';
+import { CHANNEL_META, cx } from '../lib/design-tokens';
+
+const CHANNEL_KEYS = new Set(Object.keys(CHANNEL_META));
 import { statusOf, type AnyTone, type StatusEntity } from '../lib/status';
 import { errorMessage } from '../lib/api';
 
@@ -39,8 +43,12 @@ export type Raw = string | number | boolean | null | undefined;
 
 export interface FilterSpec {
   kind: FilterKind;
-  /** Choices for `select`. Left out in client mode, they are the distinct values in the rows. */
-  options?: { value: string; label: string }[];
+  /** Choices for `select`, with how many rows each would show when the server counted them. Left out in client
+   *  mode, they are the distinct values in the rows, counted there. */
+  options?: { value: string; label: string; count?: number }[];
+  /** Quick picks above a date or number range ("Today", "28+ nights"), as "from~to". Dates get Today, Next 7 days,
+   *  Last 7 days, This month and Last month unless this says otherwise. */
+  presets?: { label: string; value: string }[] | false;
   /** Server mode: the URL parameter the list endpoint reads for this filter (text and select). */
   param?: string;
   /** Server mode: the two URL parameters of a range (date and number), e.g. ['from', 'to']. */
@@ -49,6 +57,16 @@ export interface FilterSpec {
   multi?: boolean;
   /** Label above the inputs, e.g. "Stays that touch these dates". */
   hint?: string;
+}
+
+/** A ready-made view: a name for a set of filters a team uses every day, offered under Views from day one. */
+export interface ViewPreset {
+  id: string;
+  name: string;
+  hint?: string;
+  /** URL parameters it sets (worked out when picked, so "this month" is this month). Everything else is cleared. */
+  params: () => Record<string, string>;
+  sort?: string;
 }
 
 export interface Column<R> {
@@ -157,6 +175,10 @@ export interface DataTableProps<R> {
   phoneSort?: boolean;
   /** No saved views (tiny tables). */
   noViews?: boolean;
+  /** Ready-made views listed first under Views. Their parameters must be filter keys or `viewParams`. */
+  presets?: ViewPreset[];
+  /** Fill the height it is given (a flex parent) and scroll the rows inside, instead of a fixed window height. */
+  fill?: boolean;
   footer?: ReactNode;
 }
 
@@ -289,6 +311,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
     id, columns, rows, rowKey, loading, error, onRetry, onRowClick, rowTone, urlPrefix = '', pageSize: clientSize = 50,
     server, header, toolbar, actions, above, viewParams = [], filtered, onClearFilters, empty, selectable, bulkActions, selectionKey,
     exportName, noun = ['row', 'rows'], renderCard, maxHeight, bare, noToolbar, noViews, footer, defaultSort, phoneSort = true,
+    presets = [], fill,
   } = props;
   const toast = useToast();
   const [params, setParams] = useSearchParams();
@@ -493,6 +516,23 @@ export function DataTable<R>(props: DataTableProps<R>) {
     applyLayout(def.layout);
   }, [views.data]); // eslint-disable-line react-hooks/exhaustive-deps
   const active = activeView ? [...(views.data?.mine ?? []), ...(views.data?.company ?? [])].find(v => v.id === activeView) ?? null : null;
+  // A ready-made view is on while the address holds exactly its parameters.
+  const presetKeys = useMemo(() => [...new Set([...managedKeys, ...presets.flatMap(p => Object.keys(p.params()))])], [managedKeys, presets]);
+  const activePreset = presets.find(p => {
+    const want = p.params();
+    return presetKeys.every(k => (params.get(k) ?? '') === (want[k] ?? '')) && (params.get(SORT) ?? '') === (p.sort ?? '');
+  }) ?? null;
+  const applyPreset = (p: ViewPreset) => {
+    const want = p.params();
+    setActiveView(null);
+    setParams(prev => {
+      const next = new URLSearchParams(prev);
+      for (const k of [...presetKeys, SORT, PAGE]) next.delete(k);
+      for (const [k, v] of Object.entries(want)) if (v) next.set(k, v);
+      if (p.sort) next.set(SORT, p.sort);
+      return next;
+    }, { replace: true });
+  };
 
   /* ---- toolbar popovers ---- */
   const [panel, setPanel] = useState<null | 'columns' | 'views' | 'export' | 'filters' | 'bulkExport' | `col:${string}`>(null);
@@ -556,7 +596,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
                 onClick={() => setPanel(p => (p === 'filters' ? null : 'filters'))} />
             )}
             {!noViews && (
-              <ToolButton icon="Bookmark" label={active ? active.name : 'Views'} btnRef={viewsBtn} active={panel === 'views'}
+              <ToolButton icon="Bookmark" label={active ? active.name : activePreset ? activePreset.name : 'Views'} btnRef={viewsBtn} active={panel === 'views'}
                 onClick={() => setPanel(p => (p === 'views' ? null : 'views'))} title="Saved views" />
             )}
             <ToolButton icon="Columns3" label="Columns" btnRef={colsBtn} active={panel === 'columns'} onClick={() => setPanel(p => (p === 'columns' ? null : 'columns'))} />
@@ -601,9 +641,10 @@ export function DataTable<R>(props: DataTableProps<R>) {
       {error && !firstLoad && <div className="px-[22px] pt-3 max-md:px-4"><StaleBanner message={`Showing the last list we have. ${error}`} onRetry={onRetry ?? (() => {})} /></div>}
 
       {/* Wide screens: the table. Its own scroll box keeps the header in view and scrolls sideways when narrow. */}
-      <div className="max-md:hidden relative">
+      <div className={cx('max-md:hidden relative', fill && 'md:flex-1 md:min-h-0 md:flex md:flex-col')}>
         <BusyLine on={refreshing} />
-        <div className="overflow-auto" style={{ maxHeight: maxHeight ?? 'calc(100dvh - 300px)', minHeight: firstLoad || shown.length > 6 ? 240 : undefined }} aria-busy={!!loading}>
+        <div className={cx('overflow-auto', fill && 'md:flex-1 md:min-h-0')} aria-busy={!!loading}
+          style={fill ? { minHeight: 240 } : { maxHeight: maxHeight ?? 'calc(100dvh - 300px)', minHeight: firstLoad || shown.length > 6 ? 240 : undefined }}>
           {firstLoad && !error ? <TableSkeleton rows={8} cols={Math.min(7, visible.length || 5)} /> : errorView ?? (
             <table className="w-full border-collapse [table-layout:fixed]" style={{ minWidth }}>
               <colgroup>
@@ -726,23 +767,9 @@ export function DataTable<R>(props: DataTableProps<R>) {
       {footer}
 
       {/* Panels */}
-      <Floating anchor={filtersBtn} open={panel === 'filters'} onClose={closePanel} width={340} align="right" label="Filters">
-        <div className="p-2 flex flex-col gap-1">
-          {filterable.map(c => (
-            <details key={c.key} open={!!filterValue(c)} className="rounded-[8px] [&[open]]:bg-page">
-              <summary className="list-none flex items-center justify-between gap-2 px-2.5 py-2 cursor-pointer text-copy font-medium">
-                <span>{c.label}</span>
-                <span className="text-meta text-muted-ink font-normal whitespace-nowrap overflow-hidden text-ellipsis max-w-[55%]">
-                  {filterValue(c) ? describeFilter(c, filterOf(c)!, filterValue(c), rows ?? []) : 'Any'}
-                </span>
-              </summary>
-              <div className="px-2 pb-2">
-                <FilterEditor col={c} spec={filterOf(c)!} value={filterValue(c)} rows={rows ?? []} onChange={v => setFilter(c, v)} />
-              </div>
-            </details>
-          ))}
-          {activeFilters.length > 0 && <div className="px-1 pt-1"><Button size="sm" variant="tertiary" onClick={clearColumnFilters}>Clear column filters</Button></div>}
-        </div>
+      <Floating anchor={filtersBtn} open={panel === 'filters'} onClose={closePanel} width={400} align="right" label="Filters">
+        <FilterPanel cols={filterable} specOf={c => filterOf(c)!} valueOf={filterValue} onChange={setFilter} rows={rows ?? []}
+          shown={total} noun={noun} anyOn={activeFilters.length > 0} onClear={clearColumnFilters} onDone={closePanel} />
       </Floating>
 
       {panel?.startsWith('col:') && (() => {
@@ -781,7 +808,9 @@ export function DataTable<R>(props: DataTableProps<R>) {
 
       {!noViews && (
         <Floating anchor={viewsBtn} open={panel === 'views'} onClose={closePanel} width={320} align="right" label="Saved views">
-          <ViewsPanel views={views} activeId={activeView} onApply={v => { setActiveView(v.id); applyLayout(v.layout); closePanel(); }}
+          <ViewsPanel views={views} activeId={activeView} presets={presets} activePreset={activePreset?.id ?? null}
+            onPreset={p => { applyPreset(p); closePanel(); }}
+            onApply={v => { setActiveView(v.id); applyLayout(v.layout); closePanel(); }}
             onSaveNew={() => { closePanel(); setSaving({ name: '', scope: 'mine', isDefault: false }); }}
             onUpdate={async v => {
               closePanel();
@@ -802,8 +831,8 @@ export function DataTable<R>(props: DataTableProps<R>) {
     </>
   );
 
-  if (bare) return <div className="relative">{body}</div>;
-  return <div className="relative bg-card border border-solid border-line rounded-card [overflow:clip] shrink-0">{body}</div>;
+  if (bare) return <div className={cx('relative', fill && 'md:flex md:flex-col md:flex-1 md:min-h-0')}>{body}</div>;
+  return <div className={cx('relative bg-card border border-solid border-line rounded-card [overflow:clip]', fill ? 'md:flex md:flex-col md:flex-1 md:min-h-0' : 'shrink-0')}>{body}</div>;
 }
 
 function BusyLine({ on }: { on: boolean }) {
@@ -848,19 +877,165 @@ function DefaultCard<R>({ columns, r }: { columns: Column<R>[]; r: R }) {
 /* filters                                                             */
 /* ------------------------------------------------------------------ */
 
-function optionsFor<R>(c: Column<R>, spec: FilterSpec, rows: R[]): { value: string; label: string }[] {
+function optionsFor<R>(c: Column<R>, spec: FilterSpec, rows: R[]): { value: string; label: string; count?: number }[] {
   if (spec.options) return spec.options;
-  const seen = new Map<string, string>();
+  const seen = new Map<string, { label: string; count: number }>();
   for (const r of rows) {
     const t = typeOf(c);
     const v = t === 'status' && !c.value ? textOf(c, r) : String(rawOf(c, r) ?? '');
-    if (!v || seen.has(v)) continue;
-    seen.set(v, t === 'status' ? (statusFor(c, r)?.label ?? v) : t === 'channel' ? channelLabel(v) : textOf(c, r) || v);
+    if (!v) continue;
+    const had = seen.get(v);
+    if (had) { had.count++; continue; }
+    seen.set(v, { label: t === 'status' ? (statusFor(c, r)?.label ?? v) : t === 'channel' ? channelLabel(v) : textOf(c, r) || v, count: 1 });
   }
-  return [...seen].map(([value, label]) => ({ value, label })).sort((a, b) => collator.compare(a.label, b.label));
+  return [...seen].map(([value, x]) => ({ value, label: x.label, count: x.count })).sort((a, b) => collator.compare(a.label, b.label));
+}
+
+const shiftDay = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 864e5).toISOString().slice(0, 10);
+const monthStart = (iso: string, add = 0) => { const d = new Date(Date.parse(`${iso.slice(0, 7)}-01T00:00:00Z`)); d.setUTCMonth(d.getUTCMonth() + add); return d.toISOString().slice(0, 10); };
+/** The usual date picks, in Kuala Lumpur days. */
+export function datePresets(today = fmtToday()): { label: string; value: string }[] {
+  return [
+    { label: 'Today', value: `${today}~${today}` },
+    { label: 'Tomorrow', value: `${shiftDay(today, 1)}~${shiftDay(today, 1)}` },
+    { label: 'Next 7 days', value: `${today}~${shiftDay(today, 6)}` },
+    { label: 'Last 7 days', value: `${shiftDay(today, -6)}~${today}` },
+    { label: 'This month', value: `${monthStart(today)}~${shiftDay(monthStart(today, 1), -1)}` },
+    { label: 'Last month', value: `${monthStart(today, -1)}~${shiftDay(monthStart(today), -1)}` },
+  ];
+}
+
+/** The Filter panel: every filter as a real control with the data's own values (and how many rows each would show),
+ *  date quick picks, ranges; text "contains" filters folded away under More filters. Phones get it as a bottom sheet. */
+function FilterPanel<R>({ cols, specOf, valueOf, onChange, rows, shown, noun, anyOn, onClear, onDone }: {
+  cols: Column<R>[]; specOf: (c: Column<R>) => FilterSpec; valueOf: (c: Column<R>) => string; onChange: (c: Column<R>, v: string) => void;
+  rows: R[]; shown: number; noun: [string, string]; anyOn: boolean; onClear: () => void; onDone: () => void;
+}) {
+  const rank: Record<FilterKind, number> = { select: 0, date: 1, number: 2, text: 3 };
+  const main = cols.filter(c => specOf(c).kind !== 'text').sort((a, b) => rank[specOf(a).kind] - rank[specOf(b).kind]);
+  const text = cols.filter(c => specOf(c).kind === 'text');
+  const section = (c: Column<R>) => {
+    const spec = specOf(c), v = valueOf(c);
+    return (
+      <section key={c.key} className="flex flex-col gap-2" aria-label={c.label}>
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-copy font-semibold text-ink">{c.label}</span>
+          {v && <button type="button" onClick={() => onChange(c, '')} className="text-meta text-muted-ink bg-transparent border-none cursor-pointer underline p-0 font-sans">Clear</button>}
+        </div>
+        {spec.kind === 'select' ? <ChoiceFilter col={c} spec={spec} value={v} rows={rows} onChange={x => onChange(c, x)} />
+          : spec.kind === 'text' ? <TextFilter value={v} onChange={x => onChange(c, x)} label={c.label} />
+          : <RangeWithPresets col={c} spec={spec} value={v} onChange={x => onChange(c, x)} />}
+      </section>
+    );
+  };
+  return (
+    <div className="flex flex-col">
+      <div className="p-4 flex flex-col gap-5">
+        {main.map(section)}
+        {text.length > 0 && (
+          <details open={text.some(c => valueOf(c))} className="group">
+            <summary className="list-none cursor-pointer text-copy font-semibold text-ink flex items-center gap-1">
+              <Icon name="ChevronRight" size="sm" /><span>More filters</span>
+              <span className="text-meta font-normal text-muted-ink">({text.map(c => c.label.toLowerCase()).join(', ')} contains)</span>
+            </summary>
+            <div className="pt-3 flex flex-col gap-4">{text.map(section)}</div>
+          </details>
+        )}
+      </div>
+      <div className="sticky bottom-0 flex items-center justify-between gap-2 px-4 py-3 bg-card [border-top:1px_solid_var(--color-line)]">
+        <Button size="sm" variant="tertiary" onClick={onClear} disabled={!anyOn} disabledReason="No filter is on.">Clear all</Button>
+        <Button size="sm" variant="primary" onClick={onDone}>Show {plural(shown, noun[0], noun[1])}</Button>
+      </div>
+    </div>
+  );
+}
+
+/** Pick one or more values as pills with their counts; a long list shows the biggest first and a search. */
+function ChoiceFilter<R>({ col, spec, value, rows, onChange }: { col: Column<R>; spec: FilterSpec; value: string; rows: R[]; onChange: (v: string) => void }) {
+  const opts = optionsFor(col, spec, rows);
+  const multi = spec.multi ?? !spec.param;
+  const on = new Set(value ? value.split(',') : []);
+  const [all, setAll] = useState(false);
+  const [find, setFind] = useState('');
+  const LIMIT = 8;
+  const counted = opts.some(o => o.count !== undefined);
+  const ordered = counted && opts.length > LIMIT ? [...opts].sort((a, b) => (b.count ?? 0) - (a.count ?? 0)) : opts;
+  const needle = find.trim().toLowerCase();
+  const list = all ? ordered.filter(o => !needle || o.label.toLowerCase().includes(needle))
+    : [...ordered.slice(0, LIMIT), ...ordered.slice(LIMIT).filter(o => on.has(o.value))];
+  const toggle = (v: string) => {
+    if (!multi) { onChange(on.has(v) ? '' : v); return; }
+    const next = new Set(on);
+    if (next.has(v)) next.delete(v); else next.add(v);
+    onChange([...next].join(','));
+  };
+  if (!opts.length) return <span className="text-meta text-muted-ink">Nothing to pick from in this list.</span>;
+  return (
+    <div className="flex flex-col gap-2">
+      {spec.hint && <span className="text-caption text-muted-ink">{spec.hint}</span>}
+      {all && opts.length > LIMIT && (
+        <input type="search" value={find} onChange={e => setFind(e.target.value)} placeholder={`Find ${col.label.toLowerCase()}`} aria-label={`Find ${col.label.toLowerCase()}`}
+          className="block w-full box-border h-9 px-3 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy" />
+      )}
+      <div role="group" aria-label={col.label} className={cx('flex flex-wrap gap-1.5', all && 'max-h-[240px] overflow-y-auto')}>
+        {list.map(o => {
+          const picked = on.has(o.value);
+          return (
+            <button key={o.value} type="button" aria-pressed={picked} onClick={() => toggle(o.value)}
+              className={cx('h-9 max-w-full inline-flex items-center gap-1.5 px-3 rounded-full border border-solid font-sans text-copy cursor-pointer',
+                picked ? 'bg-black border-black text-white' : 'bg-card border-line text-ink hover:border-muted-ink')}>
+              {typeOf(col) === 'channel' && CHANNEL_KEYS.has(o.value) && <ChannelMark ch={o.value as BookingChannel} size={16} />}
+              <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{o.label}</span>
+              {o.count !== undefined && <span className={cx('text-meta tabular-nums', picked ? 'text-[rgba(255,255,255,0.75)]' : 'text-muted-ink')}>{fmtCount(o.count)}</span>}
+            </button>
+          );
+        })}
+        {all && !list.length && <span className="text-meta text-muted-ink py-2">No {col.label.toLowerCase()} matches.</span>}
+      </div>
+      {opts.length > LIMIT && (
+        <button type="button" onClick={() => { setAll(a => !a); setFind(''); }} className="self-start text-meta text-ink bg-transparent border-none cursor-pointer underline p-0 font-sans">
+          {all ? 'Show fewer' : `Show all ${fmtCount(opts.length)}`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** A date or number range with its quick picks. */
+function RangeWithPresets<R>({ col, spec, value, onChange }: { col: Column<R>; spec: FilterSpec; value: string; onChange: (v: string) => void }) {
+  const kind = spec.kind === 'date' ? 'date' : 'number';
+  const picks = spec.presets === false ? [] : spec.presets ?? (kind === 'date' ? datePresets() : []);
+  const isPick = picks.some(p => p.value === value);
+  const [custom, setCustom] = useState(!!value && !isPick);
+  return (
+    <div className="flex flex-col gap-2">
+      {spec.hint && <span className="text-caption text-muted-ink">{spec.hint}</span>}
+      {picks.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {picks.map(p => (
+            <button key={p.label} type="button" aria-pressed={value === p.value} onClick={() => { setCustom(false); onChange(value === p.value ? '' : p.value); }}
+              className={cx('h-9 inline-flex items-center px-3 rounded-full border border-solid font-sans text-copy cursor-pointer whitespace-nowrap',
+                value === p.value ? 'bg-black border-black text-white' : 'bg-card border-line text-ink hover:border-muted-ink')}>{p.label}</button>
+          ))}
+          <button type="button" aria-pressed={custom} onClick={() => setCustom(c => !c)}
+            className={cx('h-9 inline-flex items-center gap-1 px-3 rounded-full border border-solid font-sans text-copy cursor-pointer whitespace-nowrap',
+              custom || (value && !isPick) ? 'bg-muted border-ink text-ink' : 'bg-card border-dashed border-line text-ink')}>
+            {kind === 'date' ? 'Pick dates' : 'Custom'}
+          </button>
+        </div>
+      )}
+      {(custom || !picks.length) && <RangeFilter kind={kind} money={typeOf(col) === 'money'} value={value} onChange={onChange} />}
+    </div>
+  );
 }
 
 function describeFilter<R>(c: Column<R>, spec: FilterSpec, v: string, rows: R[]): string {
+  const pick = (spec.presets === false ? [] : spec.presets ?? (spec.kind === 'date' ? datePresets() : [])).find(p => p.value === v);
+  if (pick) return pick.label;
+  return describeRaw(c, spec, v, rows);
+}
+
+function describeRaw<R>(c: Column<R>, spec: FilterSpec, v: string, rows: R[]): string {
   if (spec.kind === 'text') return `contains "${v}"`;
   if (spec.kind === 'select') {
     const opts = optionsFor(c, spec, rows);
@@ -882,31 +1057,8 @@ function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus }
   col: Column<R>; spec: FilterSpec; value: string; rows: R[]; onChange: (v: string) => void; onDone?: () => void; autoFocus?: boolean;
 }) {
   if (spec.kind === 'text') return <TextFilter value={value} onChange={onChange} onDone={onDone} autoFocus={autoFocus} label={col.label} />;
-  if (spec.kind === 'select') {
-    const opts = optionsFor(col, spec, rows);
-    const multi = spec.multi ?? !spec.param;
-    const on = new Set(value ? value.split(',') : []);
-    return (
-      <div className="flex flex-col gap-px max-h-[280px] overflow-y-auto" role="group" aria-label={col.label}>
-        {spec.hint && <span className="text-caption text-muted-ink px-1 pb-1">{spec.hint}</span>}
-        {!opts.length && <span className="text-meta text-muted-ink px-1 py-2">Nothing to pick from in this list.</span>}
-        {opts.map(o => (
-          <label key={o.value} className="flex items-center gap-2 px-2 py-[7px] rounded-[8px] cursor-pointer hover:bg-muted text-copy">
-            <input type={multi ? 'checkbox' : 'radio'} name={`dt-${col.key}`} checked={on.has(o.value)} className="w-4 h-4 cursor-pointer"
-              onChange={() => {
-                if (!multi) { onChange(on.has(o.value) ? '' : o.value); onDone?.(); return; }
-                const next = new Set(on);
-                if (next.has(o.value)) next.delete(o.value); else next.add(o.value);
-                onChange([...next].join(','));
-              }} />
-            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{typeOf(col) === 'channel' ? <ChannelCell channel={o.value} /> : o.label}</span>
-          </label>
-        ))}
-        {on.size > 0 && <button type="button" onClick={() => onChange('')} className="self-start mt-1 text-meta text-muted-ink bg-transparent border-none cursor-pointer underline px-2">Any {col.label.toLowerCase()}</button>}
-      </div>
-    );
-  }
-  return <RangeFilter kind={spec.kind} money={typeOf(col) === 'money'} hint={spec.hint} value={value} onChange={onChange} onDone={onDone} />;
+  if (spec.kind === 'select') return <ChoiceFilter col={col} spec={spec} value={value} rows={rows} onChange={v => { onChange(v); if (!(spec.multi ?? !spec.param)) onDone?.(); }} />;
+  return <RangeWithPresets col={col} spec={spec} value={value} onChange={v => { onChange(v); onDone?.(); }} />;
 }
 
 function TextFilter({ value, onChange, onDone, autoFocus, label }: { value: string; onChange: (v: string) => void; onDone?: () => void; autoFocus?: boolean; label: string }) {
@@ -997,8 +1149,9 @@ function ColumnsPanel<R>({ defs, layout, onChange, onReset }: {
   );
 }
 
-function ViewsPanel({ views, activeId, onApply, onSaveNew, onUpdate, onReset }: {
-  views: ReturnType<typeof useTableViews>; activeId: string | null;
+function ViewsPanel({ views, activeId, presets, activePreset, onPreset, onApply, onSaveNew, onUpdate, onReset }: {
+  views: ReturnType<typeof useTableViews>; activeId: string | null; presets: ViewPreset[]; activePreset: string | null;
+  onPreset: (p: ViewPreset) => void;
   onApply: (v: SavedView) => void; onSaveNew: () => void; onUpdate: (v: SavedView) => void; onReset: () => void;
 }) {
   const d = views.data;
@@ -1037,12 +1190,29 @@ function ViewsPanel({ views, activeId, onApply, onSaveNew, onUpdate, onReset }: 
   );
   return (
     <div className="py-1">
+      {presets.length > 0 && <>
+        <PanelHeading>Ready-made</PanelHeading>
+        <ul className="list-none m-0 px-1 py-0">
+          {presets.map(p => (
+            <li key={p.id}>
+              <button type="button" onClick={() => onPreset(p)} aria-pressed={p.id === activePreset}
+                className={cx('w-full flex items-start gap-2 px-2 py-2 min-h-[40px] rounded-[8px] border-none cursor-pointer text-left font-sans', p.id === activePreset ? 'bg-muted' : 'bg-transparent hover:bg-muted')}>
+                <span className="mt-px"><Icon name={p.id === activePreset ? 'Check' : 'Sparkles'} size="sm" color={p.id === activePreset ? 'var(--color-ink)' : 'var(--color-muted-ink)'} /></span>
+                <span className="flex flex-col gap-px min-w-0">
+                  <span className="text-copy font-medium text-ink">{p.name}</span>
+                  {p.hint && <span className="text-meta text-muted-ink">{p.hint}</span>}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </>}
       {!d && views.loading && <div className="px-3 py-3 text-meta text-muted-ink">Loading views…</div>}
       {views.error && !d && <div className="px-3 py-3 text-meta text-danger">{views.error}</div>}
       {d && (
         <>
           <PanelHeading>My views</PanelHeading>
-          {d.mine.length ? <ul className="list-none m-0 px-1 py-0">{d.mine.map(row)}</ul> : <div className="px-3 pb-2 text-meta text-muted-ink">None saved yet.</div>}
+          {d.mine.length ? <ul className="list-none m-0 px-1 py-0">{d.mine.map(row)}</ul> : <div className="px-3 pb-2 text-meta text-muted-ink">None yet. Set the filters and columns you want, then Save current view.</div>}
           <PanelHeading>Company views</PanelHeading>
           {d.company.length ? <ul className="list-none m-0 px-1 py-0">{d.company.map(row)}</ul>
             : <div className="px-3 pb-2 text-meta text-muted-ink">{canShare ? 'None yet. Save one and share it with the company.' : 'Management has not shared any.'}</div>}

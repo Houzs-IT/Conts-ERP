@@ -14,6 +14,7 @@ import { rm, date, dateRange, dateTime, time, nights as fmtNights, guests as fmt
 import { CHANNEL_META, cx } from '../../lib/design-tokens';
 import { channelNote, deliveryToast, type ChannelSync } from '../../lib/bookingStatus';
 import { statusLabel } from '../../lib/status';
+import { payoutStatus } from '../../lib/payoutStatus';
 import { StatusMenu } from '../StatusBadge';
 import { ConfirmDialog } from '../ConfirmDialog';
 import type { BookingChannel, ReservationState } from '../../lib/types';
@@ -56,6 +57,7 @@ interface Ledger {
 }
 interface Detail extends Required<Omit<BookingSummary, 'guestPhone'>> {
   guestPhone: string | null; guestEmail: string | null; guestId: string | null; nationality: string | null;
+  country: { code: string; name: string; from: 'nationality' | 'phone' } | null;
   unitId: string; notes: string | null; staffNotes: string | null; createdAt: string;
   money: Money; ledger: Ledger; timeline: TimelineEvent[]; moves: Move[];
   documents?: GuestDocument[]; approvals?: Approval[];
@@ -80,115 +82,159 @@ const MOVE_ICON: Partial<Record<ReservationState, string>> = {
 /* Money                                                               */
 /* ------------------------------------------------------------------ */
 
-function Line({ label, value, sub, strong, minus, muted }: { label: ReactNode; value: ReactNode; sub?: string; strong?: boolean; minus?: boolean; muted?: boolean }) {
+function Line({ label, value, sub, total, muted, warn }: { label: ReactNode; value: ReactNode; sub?: ReactNode; total?: boolean; muted?: boolean; warn?: boolean }) {
   return (
-    <div className={cx('flex justify-between items-baseline gap-3 py-[8px] px-[14px]', strong && 'bg-muted')}>
+    <div className={cx('flex justify-between items-baseline gap-3 py-[7px]', total && 'mt-1 pt-[10px] [border-top:1px_solid_var(--color-line)]')}>
       <span className="flex flex-col min-w-0">
-        <span className={cx(strong ? 'text-copy font-semibold text-ink' : 'text-copy text-muted-ink')}>{label}</span>
+        <span className={cx('text-copy', total ? 'font-semibold text-ink' : muted ? 'text-muted-ink' : 'text-ink')}>{label}</span>
         {sub && <span className="text-caption text-muted-ink">{sub}</span>}
       </span>
-      <span className={cx('[font-variant-numeric:tabular-nums] whitespace-nowrap', strong ? 'text-copy font-semibold' : 'text-copy', muted && 'text-muted-ink')}>
-        {minus && typeof value === 'string' ? `− ${value}` : value}
-      </span>
+      <span className={cx('[font-variant-numeric:tabular-nums] whitespace-nowrap text-copy', total && 'font-semibold', muted && 'text-muted-ink', warn && 'text-warning font-semibold')}>{value}</span>
     </div>
   );
 }
-const Group = ({ title, children }: { title: string; children: ReactNode }) => (
-  <div className="[border-top:1px_solid_var(--color-line-soft)] first:border-t-0 py-1">
-    <div className="px-[14px] pt-[6px] pb-[2px] text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">{title}</div>
+const Block = ({ title, children }: { title: string; children: ReactNode }) => (
+  <section className="flex flex-col" aria-label={title}>
+    <h3 className="m-0 mb-1 text-heading font-semibold">{title}</h3>
     {children}
-  </div>
+  </section>
 );
 
 const KIND_LABEL: Record<Payment['kind'], string> = { guest_payment: 'Guest payment', ota_payout: 'Payout', refund: 'Refund' };
+const pctText = (x: number) => `${(Math.round(x * 10) / 10).toString()}%`;
 
-/** The money in three parts that add up: what the guest paid, what the platform took, what we receive. The server
- *  works the figures out (functions/_lib/bookingMoney.ts); where its sources disagree it says so, and the figures
- *  behind it are one click away instead of being shown side by side as if they agreed. */
+/** The money laid out the way Airbnb shows a host a reservation: what the guest paid, what the host is paid, and one line
+ *  saying where the payout is. Direct reservations show what the guest paid and what is still due. The figures are the
+ *  server's (functions/_lib/bookingMoney.ts), unchanged; where its sources disagree, and the audit detail, sit behind
+ *  Details instead of in the main view. */
 function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void; onRemove: (p: Payment) => void }) {
   const L = d.ledger;
-  const [sources, setSources] = useState(false);
+  const [details, setDetails] = useState(false);
   const dead = d.state === 'cancelled' || d.state === 'no_show';
   const site = CHANNEL_META[d.channel].label;
-  const ota = d.channel === 'airbnb' || d.channel === 'booking_com' || d.channel === 'agoda';
+  const ota = OTA.includes(d.channel);
+  const n = d.nights;
+  const room = L.guestLines.find(l => l.key === 'room');
+  const extras = L.guestLines.filter(l => l.key !== 'room');
+  const even = !!room && n > 0 && room.amount % n === 0;
+  const roomLabel = room ? (even ? `${rm(room.amount / n)} x ${fmtNights(n)}` : fmtNights(n)) : null;
+  const roomSub = room && !even && n > 1 ? `About ${rm(Math.round(room.amount / n))} a night` : undefined;
+
+  // Host payout: what the guest paid less the channel's share. A payout the channel reported that differs from that
+  // arithmetic is shown as its own line, so the block still adds up to the payout used everywhere else.
+  const base = L.guestTotal - (d.money.sstAmount ?? 0) - (d.money.tourismTax ?? 0);
+  const feeLabel = (l: LedgerLine) => l.key === 'commission'
+    ? `${d.channel === 'airbnb' ? 'Host service fee' : `${site} service fee`}${base > 0 ? ` (${pctText(l.amount / base * 100)})` : ''}`
+    : 'Payment processing fee';
+  const adjust = L.expected - (L.guestTotal - L.platformTotal);
+  const paidOn = [...L.payments.filter(p => p.status === 'received' && p.kind !== 'refund' && p.receivedOn).map(p => p.receivedOn!), ...(d.money.payoutDate ? [d.money.payoutDate.slice(0, 10)] : [])].sort().pop() ?? null;
+  const status = payoutStatus({ channel: d.channel, state: d.state, checkIn: d.checkIn, checkOut: d.checkOut, expected: L.expected, received: L.received, outstanding: L.outstanding, paidOn });
+  const guestPayments = L.payments.filter(p => p.status === 'received');
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="border border-solid border-line rounded-card overflow-hidden">
-        <Group title="1 · What the guest paid">
-          {L.guestLines.map(l => <Line key={l.key} label={l.label} sub={l.sub} value={rm(l.amount)} />)}
-          <Line strong label={dead ? `Guest total before it was ${d.state === 'cancelled' ? 'cancelled' : 'marked no-show'}` : 'Guest total'}
-            value={L.guestTotal > 0 ? rm(L.guestTotal) : 'Not recorded'} muted={L.guestTotal <= 0}
-            sub={!L.guestLines.length && L.guestTotal > 0 ? 'No breakdown recorded for this booking.' : undefined} />
-          {L.otaTax ? <Line label={`Tax collected by ${site}`} sub="Paid by the guest to the site and kept by it. Not ours." value={rm(L.otaTax)} muted /> : null}
-        </Group>
-        {L.platformLines.length > 0 && (
-          <Group title="2 · Taken by the platform">
-            {L.platformLines.map(l => <Line key={l.key} label={l.label} sub={l.sub} value={rm(l.amount)} minus />)}
-          </Group>
-        )}
-        <Group title={`${L.platformLines.length ? 3 : 2} · What we receive`}>
-          {dead ? (
-            <Line strong label={d.state === 'cancelled' ? 'Kept after cancellation' : 'Kept after no-show'} value={rm(L.received)}
-              sub={L.received ? undefined : 'No money is recorded on this booking.'} />
-          ) : <>
-            <Line strong label="Expected" value={rm(L.expected)} sub={L.platformTotal ? `Guest total less ${ota ? site : 'the platform'}'s share` : undefined} />
-            {L.receivedBefore > 0 && <Line label="Received before payments were recorded here" sub="From the HostPlatform or workbook import" value={rm(L.receivedBefore)} />}
-            {L.payments.map(p => (
-              <div key={p.id} className="flex justify-between items-baseline gap-3 py-[7px] px-[14px]">
-                <span className="flex flex-col min-w-0">
-                  <span className="text-copy text-muted-ink">
-                    {p.status === 'expected' ? `${KIND_LABEL[p.kind]} expected` : `${KIND_LABEL[p.kind]}${p.receivedOn ? ` · ${date(p.receivedOn)}` : ''}`}
-                  </span>
-                  <span className="text-caption text-muted-ink">
-                    {[p.note, p.method, p.reference ? `Ref ${p.reference}` : null,
-                      p.source === 'owner_workbook' ? (p.status === 'received' && !p.receivedOn ? 'Paid out (owner workbook; no date given)' : 'From the owner workbook') : p.createdBy ? `Recorded by ${p.createdBy}` : null,
-                    ].filter(Boolean).join(' · ')}
-                  </span>
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className={cx('text-copy [font-variant-numeric:tabular-nums] whitespace-nowrap', p.status === 'expected' && 'text-warning')}>
-                    {p.kind === 'refund' ? `− ${rm(p.amount)}` : rm(p.amount)}{p.status === 'expected' ? ' not received' : ''}
-                  </span>
-                  {p.source === 'manual' && d.can.recordPayment && (
-                    <button type="button" onClick={() => onRemove(p)} aria-label="Remove this payment" title="Remove this payment"
-                      className="w-7 h-7 grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted"><Icon name="Trash2" size="sm" /></button>
-                  )}
-                </span>
-              </div>
-            ))}
-            <Line strong label="Received" value={rm(L.received)} />
-            <Line strong label="Outstanding" value={L.outstanding > 0 ? rm(L.outstanding) : 'Nothing'}
-              sub={L.outstanding > 0 ? (ota ? `${site} has not paid this out yet.` : 'Still owed by the guest.') : undefined} />
-            {L.paymentMethod && <Line label="Payment method" value={L.paymentMethod} />}
-          </>}
-        </Group>
+    <div className="flex flex-col gap-5">
+      <Block title="Guest paid">
+        {room && <Line label={roomLabel} sub={roomSub} value={rm(room.amount)} />}
+        {extras.map(l => <Line key={l.key} label={l.label} value={rm(l.amount)} />)}
+        <Line total label="Total (MYR)" value={L.guestTotal > 0 ? rm(L.guestTotal) : 'Not recorded'} muted={L.guestTotal <= 0}
+          sub={!L.guestLines.length && L.guestTotal > 0 ? 'No breakdown recorded for this reservation.' : undefined} />
+      </Block>
+
+      {ota ? (
+        <Block title="Host payout">
+          {room && <Line label={`Room fee for ${fmtNights(n)}`} value={rm(room.amount)} />}
+          {extras.map(l => <Line key={l.key} label={l.label} value={rm(l.amount)} />)}
+          {!L.guestLines.length && <Line label="Guest total" value={rm(L.guestTotal)} />}
+          {L.platformLines.map(l => <Line key={l.key} label={feeLabel(l)} value={`− ${rm(l.amount)}`} />)}
+          {!dead && Math.abs(adjust) > 2 && <Line label={`Adjustment by ${site}`} sub="The payout it reported differs. See Details." value={adjust < 0 ? `− ${rm(-adjust)}` : rm(adjust)} />}
+          <Line total label="Total (MYR)" value={rm(dead ? L.received : L.expected)} />
+        </Block>
+      ) : !dead && (
+        <Block title="Payments">
+          {guestPayments.length === 0 && L.receivedBefore <= 0 && <Line label="No payment recorded yet" value="" muted />}
+          {L.receivedBefore > 0 && <Line label="Paid before payments were recorded here" value={rm(L.receivedBefore)} />}
+          {guestPayments.map(p => (
+            <Line key={p.id} label={`${p.kind === 'refund' ? 'Refund' : 'Paid'}${p.receivedOn ? ` ${date(p.receivedOn)}` : ''}`} sub={[p.method, p.reference ? `Ref ${p.reference}` : null].filter(Boolean).join(' · ') || undefined}
+              value={p.kind === 'refund' ? `− ${rm(p.amount)}` : rm(p.amount)} />
+          ))}
+          <Line total label={L.outstanding > 0 ? 'Balance due' : 'Balance'} value={L.outstanding > 0 ? rm(L.outstanding) : 'Paid in full'} warn={L.outstanding > 0} />
+        </Block>
+      )}
+
+      <div className={cx('flex items-center gap-2 rounded-control px-3 py-[10px] text-copy font-medium',
+        status.tone === 'success' ? 'bg-success-bg text-success' : status.tone === 'warning' ? 'bg-warning-bg text-warning' : status.tone === 'info' ? 'bg-info-bg text-info' : 'bg-muted text-ink')}>
+        <Icon name={status.tone === 'success' ? 'CheckCircle2' : status.tone === 'warning' ? 'Clock' : 'Info'} size="sm" />
+        <span>{status.text}</span>
       </div>
 
-      {L.disagree && (
-        <div role="note" className="rounded-control border border-solid border-warning-line bg-warning-bg px-3 py-[10px] text-meta flex flex-col gap-1">
-          <span className="font-semibold text-warning flex items-center gap-[6px]"><Icon name="AlertTriangle" size="sm" />Sources disagree</span>
-          <span className="text-ink leading-[1.45]">{L.disagree}</span>
-        </div>
-      )}
-      {L.sources.length > 1 && (
-        <button type="button" onClick={() => setSources(v => !v)} aria-expanded={sources}
-          className={cx('self-start p-0 border-none bg-transparent [font-family:inherit] text-meta underline cursor-pointer', L.disagree ? 'font-semibold text-ink' : 'text-muted-ink')}>
-          {sources ? 'Hide sources' : 'View sources'}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <button type="button" onClick={() => setDetails(v => !v)} aria-expanded={details}
+          className="inline-flex items-center gap-1 p-0 border-none bg-transparent [font-family:inherit] text-meta text-ink underline cursor-pointer min-h-[32px]">
+          {L.disagree && <Icon name="AlertTriangle" size="sm" color="var(--color-warning-fg)" />}
+          {details ? 'Hide details' : 'Details'}
         </button>
-      )}
-      {sources && (
-        <div className="border border-solid border-line rounded-card overflow-hidden">
-          {L.sources.map((x, i) => (
-            <div key={i} className="flex justify-between gap-3 px-[14px] py-[7px] text-meta [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
-              <span className="flex flex-col min-w-0"><span className="text-ink">{x.label}</span><span className="text-caption text-muted-ink">{x.from}</span></span>
-              <span className="[font-variant-numeric:tabular-nums] whitespace-nowrap">{x.amount == null ? '—' : rm(x.amount)}</span>
+        {d.can.recordPayment && !dead && (
+          <Button size="sm" variant="secondary" icon={<Icon name="Banknote" size="sm" />} onClick={onRecord}>Record payment</Button>
+        )}
+      </div>
+
+      {details && (
+        <div className="flex flex-col gap-3 rounded-card border border-solid border-line p-3">
+          <div className="grid grid-cols-3 gap-2 text-center">
+            {([['Expected', L.expected], ['Received', L.received], ['Outstanding', L.outstanding]] as const).map(([k, v]) => (
+              <div key={k} className="flex flex-col gap-px rounded-control bg-page py-2">
+                <span className="text-caption text-muted-ink">{k}</span>
+                <span className="text-copy font-semibold [font-variant-numeric:tabular-nums]">{rm(v)}</span>
+              </div>
+            ))}
+          </div>
+          {L.disagree && (
+            <div role="note" className="rounded-control border border-solid border-warning-line bg-warning-bg px-3 py-[10px] text-meta flex flex-col gap-1">
+              <span className="font-semibold text-warning flex items-center gap-[6px]"><Icon name="AlertTriangle" size="sm" />Sources disagree</span>
+              <span className="text-ink leading-[1.45]">{L.disagree}</span>
             </div>
-          ))}
+          )}
+          {(L.payments.length > 0 || L.receivedBefore > 0) && (
+            <div className="flex flex-col">
+              <span className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink pb-1">Money recorded</span>
+              {L.receivedBefore > 0 && <Line label="Received before payments were recorded here" sub="From the HostPlatform or workbook import" value={rm(L.receivedBefore)} />}
+              {L.payments.map(p => (
+                <div key={p.id} className="flex justify-between items-baseline gap-3 py-[7px]">
+                  <span className="flex flex-col min-w-0">
+                    <span className="text-copy text-ink">{p.status === 'expected' ? `${KIND_LABEL[p.kind]} expected` : `${KIND_LABEL[p.kind]}${p.receivedOn ? ` · ${date(p.receivedOn)}` : ''}`}</span>
+                    <span className="text-caption text-muted-ink">
+                      {[p.note, p.method, p.reference ? `Ref ${p.reference}` : null,
+                        p.source === 'owner_workbook' ? (p.status === 'received' && !p.receivedOn ? 'Paid out (owner workbook; no date given)' : 'From the owner workbook') : p.createdBy ? `Recorded by ${p.createdBy}` : null,
+                      ].filter(Boolean).join(' · ')}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className={cx('text-copy [font-variant-numeric:tabular-nums] whitespace-nowrap', p.status === 'expected' && 'text-warning')}>
+                      {p.kind === 'refund' ? `− ${rm(p.amount)}` : rm(p.amount)}{p.status === 'expected' ? ' not received' : ''}
+                    </span>
+                    {p.source === 'manual' && d.can.recordPayment && (
+                      <button type="button" onClick={() => onRemove(p)} aria-label="Remove this payment" title="Remove this payment"
+                        className="w-8 h-8 grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted"><Icon name="Trash2" size="sm" /></button>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {L.paymentMethod && <Line label="Payment method" value={L.paymentMethod} />}
+          {L.otaTax ? <Line label={`Tax collected by ${site}`} sub="Paid by the guest to the channel and kept by it. Not in the totals." value={rm(L.otaTax)} muted /> : null}
+          {L.sources.length > 0 && (
+            <div className="flex flex-col">
+              <span className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink pb-1">Where the figures come from</span>
+              {L.sources.map((x, i) => (
+                <div key={i} className="flex justify-between gap-3 py-[6px] text-meta [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
+                  <span className="flex flex-col min-w-0"><span className="text-ink">{x.label}</span><span className="text-caption text-muted-ink">{x.from}</span></span>
+                  <span className="[font-variant-numeric:tabular-nums] whitespace-nowrap">{x.amount == null ? '—' : rm(x.amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
-      {d.can.recordPayment && !dead && (
-        <Button size="sm" variant="secondary" icon={<Icon name="Banknote" size="sm" />} onClick={onRecord}>Record payment</Button>
       )}
     </div>
   );
@@ -323,7 +369,7 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
   }
 
   return (
-    <CentreModal title="Change dates" sub="Checked against the unit's other bookings before it is saved. The guest is not messaged." onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal title="Change dates" sub="Checked against the unit's other reservations before it is saved. The guest is not messaged." onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
         <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-meta text-muted-ink">
           Now: {dateRange(d.checkIn, d.checkOut)} · {fmtNights(d.nights)}{d.money.gross > 0 ? ` · ${rm(d.money.gross)}` : ''}
@@ -331,8 +377,8 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
         <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3">
           <DateField label="Check-in" value={checkIn} onChange={setCheckIn} required disabled={inHouse} error={fieldErrors.checkIn}
             help={inHouse ? 'The guest is already in.' : undefined} />
-          <DateField label="Check-out" value={checkOut} min={checkIn || undefined} onChange={setCheckOut} required
-            error={checkIn && checkOut && n < 1 ? 'Check-out must be after check-in.' : fieldErrors.checkOut}
+          <DateField label="Checkout" value={checkOut} min={checkIn || undefined} onChange={setCheckOut} required
+            error={checkIn && checkOut && n < 1 ? 'Checkout must be after check-in.' : fieldErrors.checkOut}
             help={n >= 1 && (checkIn !== d.checkIn || checkOut !== d.checkOut) ? `New stay: ${dateRange(checkIn, checkOut)} · ${fmtNights(n)}` : undefined} />
         </div>
         {priced ? (
@@ -342,7 +388,7 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
               ? `At the current ${rm(Math.round(perNight))} a night${fixedSen > 0 ? ` plus ${rm(fixedSen)} in fees` : ''}, ${fmtNights(n)} would be ${rm(Math.round(perNight * n) + fixedSen)}. Change the total if the price changes.`
               : 'Stays the same unless you change it.'} />
         ) : !isBlock(d.channel) && (
-          <p className="m-0 text-meta text-muted-ink">The price is set by {CHANNEL_META[d.channel].label}, so it stays as recorded. Change the booking on the site too.</p>
+          <p className="m-0 text-meta text-muted-ink">The price is set by {CHANNEL_META[d.channel].label}, so it stays as recorded. Change the reservation on {CHANNEL_META[d.channel].label} too.</p>
         )}
         {error && <p role="alert" className="m-0 text-meta text-danger">{error}</p>}
         <div className="flex justify-end gap-[9px]">
@@ -451,7 +497,7 @@ function TimesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => void; o
     setBusy(true); setErrors({});
     try {
       await api.patch(`/reservations/${d.id}/details`, { checkInTime: inTime, checkOutTime: outTime });
-      onSaved(`Check-in from ${inTime} on ${date(d.checkIn)}, check-out by ${outTime} on ${date(d.checkOut)}. Cleaning plans with the new times.`);
+      onSaved(`Check-in from ${inTime} on ${date(d.checkIn)}, checkout by ${outTime} on ${date(d.checkOut)}. Cleaning plans with the new times.`);
     } catch (err) {
       if (err instanceof ApiFailure && err.fields) setErrors(err.fields);
       toast({ tone: 'critical', title: 'Times not changed.', body: failMessage(err) });
@@ -459,12 +505,12 @@ function TimesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => void; o
     setBusy(false);
   }
   return (
-    <CentreModal title="Check-in and check-out times" sub="For an early check-in or a late check-out. The dates do not change, and the guest is not messaged." onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal title="Check-in and checkout times" sub="For an early check-in or a late checkout. The dates do not change, and the guest is not messaged." onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <TimeField label={`Check-in from (${date(d.checkIn)})`} value={inTime} onChange={setInTime} required disabled={d.state === 'checked_in'}
             help={d.state === 'checked_in' ? 'The guest is already in.' : 'Standard 15:00'} error={errors.checkInTime} />
-          <TimeField label={`Check-out by (${date(d.checkOut)})`} value={outTime} onChange={setOutTime} required help="Standard 11:00" error={errors.checkOutTime} />
+          <TimeField label={`Checkout by (${date(d.checkOut)})`} value={outTime} onChange={setOutTime} required help="Standard 11:00" error={errors.checkOutTime} />
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -528,11 +574,6 @@ export function BookingDrawer({ id, summary, onClose, onChanged, onDuplicated }:
   );
 }
 
-const countryName = (code: string | null) => {
-  if (!code) return null;
-  if (!/^[A-Z]{2}$/.test(code)) return code;
-  try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code; } catch { return code; }
-};
 
 function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
   id: string; summary: BookingSummary | null; onClose: () => void; onChanged?: (id: string) => void; onDuplicated?: (newId: string) => void;
@@ -553,7 +594,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
     return (
       <div className="p-5 flex flex-col gap-3">
         <div className="flex justify-end"><CloseButton onClose={onClose} /></div>
-        <div className="text-copy text-muted-ink">{error ?? 'Loading the booking…'}</div>
+        <div className="text-copy text-muted-ink">{error ?? 'Loading the reservation…'}</div>
       </div>
     );
   }
@@ -575,7 +616,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
         e.tasksKept ? `${e.tasksKept} ${e.tasksKept === 1 ? 'task is' : 'tasks are'} already being worked on and ${e.tasksKept === 1 ? 'was' : 'were'} kept.` : '',
         channelNote(e.channel, m.to === 'cancelled' || m.to === 'no_show' ? 'released' : 'held'),
       ].filter(Boolean);
-      toast({ tone: m.to === 'cancelled' || m.to === 'no_show' ? 'neutral' : 'success', title: `${s!.externalRef ?? 'Booking'} is now ${statusLabel('booking', res.state)}.`, body: bits.join(' ') || undefined });
+      toast({ tone: m.to === 'cancelled' || m.to === 'no_show' ? 'neutral' : 'success', title: `${s!.externalRef ?? 'The reservation'} is now ${statusLabel('booking', res.state)}.`, body: bits.join(' ') || undefined });
       setAsking(null);
       reload(); onChanged?.(id);
     } catch (err) {
@@ -613,22 +654,22 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
         toast({
           tone: res.effects?.channel === 'failed' ? 'warning' : 'success',
           title: `Copy ${res.externalRef} created as Pending.`,
-          body: [`${s!.guestName || 'The copy'} starts on ${date(res.checkIn)}.`, res.channel !== s!.channel ? 'It is a direct booking: it is not on the original booking site.' : '', channelNote(res.effects?.channel, 'held')].filter(Boolean).join(' '),
+          body: [`${s!.guestName || 'The copy'} starts on ${date(res.checkIn)}.`, res.channel !== s!.channel ? 'It is a direct reservation: it is not on the original channel.' : '', channelNote(res.effects?.channel, 'held')].filter(Boolean).join(' '),
         });
         onChanged?.(id); onDuplicated?.(res.id);
       })
-      .catch(err => toast({ tone: 'critical', title: 'Booking not duplicated.', body: failMessage(err) }));
+      .catch(err => toast({ tone: 'critical', title: 'Reservation not duplicated.', body: failMessage(err) }));
   }
 
   const pick = (m: Move) => { if (m.needsReason) setAsking(m); else void move(m); };
   const cancelMove = d?.moves.find(m => m.to === 'cancelled' && m.allowed);
   const metaLine = `${s.guestName || ch.label} · ${s.propertyName} ${s.unitNumber} · ${dateRange(s.checkIn, s.checkOut)}`;
   const saved = (msg: string) => { toast({ tone: 'success', title: msg }); reload(); onChanged?.(id); };
-  const nationality = d ? countryName(d.nationality) : null;
+  const country = d?.country ?? null;
 
   return (
     <>
-      <div className="relative z-[1] flex-none bg-black text-white px-[18px] pt-[14px] pb-[16px] flex flex-col gap-[10px]">
+      <div className="sticky top-0 z-[2] flex-none bg-black text-white px-[18px] pt-[14px] pb-[16px] flex flex-col gap-[10px]">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-[10px] min-w-0">
             <ChannelMark ch={s.channel} size={24} />
@@ -658,7 +699,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
         <div className="grid grid-cols-2 gap-px bg-line border border-solid border-line rounded-card overflow-hidden">
           {([
             [date(s.checkIn), block ? 'From' : `Check-in${s.checkInTime ? ` · from ${s.checkInTime}` : ''}`],
-            [date(s.checkOut), block ? 'Until (the day it frees up)' : `Check-out${s.checkOutTime ? ` · by ${s.checkOutTime}` : ''}`],
+            [date(s.checkOut), block ? 'Until (the day it frees up)' : `Checkout${s.checkOutTime ? ` · by ${s.checkOutTime}` : ''}`],
             [fmtNights(nights), 'Length'],
             [s.guestsCount > 0 ? fmtGuests(s.guestsCount) : '—', 'Guests'],
           ] as const).map(([v, l]) => (
@@ -670,7 +711,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
         </div>
         {d && live && !block && (
           <button type="button" onClick={() => setTimesOpen(true)}
-            className="self-start -mt-3 p-0 border-none bg-transparent [font-family:inherit] text-meta text-ink underline cursor-pointer">Change check-in or check-out time</button>
+            className="self-start -mt-3 p-0 border-none bg-transparent [font-family:inherit] text-meta text-ink underline cursor-pointer">Change check-in or checkout time</button>
         )}
 
         {!block && d && (
@@ -678,8 +719,9 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
             <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink mb-1">Guest</div>
             <div className="flex justify-between gap-3"><span className="text-muted-ink">Phone</span><span className="text-right break-all"><PhoneText value={d.guestPhone} className="text-ink" /></span></div>
             {d.guestEmail && <div className="flex justify-between gap-3"><span className="text-muted-ink">Email</span><span className="text-right break-all">{d.guestEmail}</span></div>}
-            <div className="flex justify-between gap-3"><span className="text-muted-ink">Nationality</span>
-              <span className="text-right">{nationality ?? '—'}{nationality && !/malaysia/i.test(nationality) ? <span className="text-muted-ink"> · tourism tax applies</span> : null}</span></div>
+            <div className="flex justify-between gap-3"><span className="text-muted-ink">Country</span>
+              <span className="text-right">{country ? country.name : '—'}
+                {country && <span className="text-muted-ink">{country.from === 'phone' ? ' · from phone number' : ''}{country.code !== 'MY' ? ' · tourism tax applies' : ''}</span>}</span></div>
             {d.guestId && <a href={`#/reservations/guests?g=${encodeURIComponent(d.guestId)}`} className="self-start mt-1 text-meta text-ink underline">Open guest profile</a>}
           </div>
         )}
@@ -731,7 +773,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
                   disabledReason={d?.can.changeDatesReason ?? 'Loading…'}>Change dates</Button>
               )}
               <Button variant="danger" style={{ flex: 1 }} onClick={() => cancelMove && setAsking(cancelMove)} disabled={!cancelMove}
-                disabledReason={d ? 'A guest who is already in cannot be cancelled. Check them out instead.' : 'Loading…'}>Cancel booking</Button>
+                disabledReason={d ? 'A guest who is already in cannot be cancelled. Check them out instead.' : 'Loading…'}>Cancel reservation</Button>
             </div>
           )}
           {live && d && !d.can.changeDates && d.can.changeDatesReason && (
@@ -743,18 +785,18 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
       <ConfirmDialog busy={busy} onClose={() => { if (!busy) setAsking(null); }}
         spec={asking === 'remove_block' ? {
           title: s.channel === 'owner_stay' ? 'Remove this owner stay?' : 'Remove this block?',
-          body: 'The nights go back on sale. A unit linked to Channex has them reopened on the booking sites.',
+          body: 'The nights go back on sale. A unit linked to Channex has them reopened on the channels.',
           meta: metaLine, danger: true, cancelLabel: 'Keep it', busyLabel: 'Saving…',
           confirmLabel: s.channel === 'owner_stay' ? 'Remove owner stay' : 'Remove block',
           reason: { placeholder: 'e.g. Owner no longer needs the unit those nights' },
           onConfirm: removeBlock,
         } : asking ? {
-          title: asking.to === 'cancelled' ? `Cancel ${s.externalRef ?? 'this booking'}?` : `Mark ${s.guestName || 'this guest'} as a no-show?`,
+          title: asking.to === 'cancelled' ? `Cancel ${s.externalRef ?? 'this reservation'}?` : `Mark ${s.guestName || 'this guest'} as a no-show?`,
           body: asking.to === 'cancelled'
-            ? 'The dates go back on sale. The guest is not messaged and no refund is made from here: do those on the booking site or by message.'
+            ? 'The dates go back on sale. The guest is not messaged and no refund is made from here: do those on the channel or by message.'
             : 'The nights from today on go back on sale. The guest is not messaged.',
-          meta: metaLine, danger: true, cancelLabel: 'Keep booking', busyLabel: 'Saving…',
-          confirmLabel: asking.to === 'cancelled' ? 'Cancel booking' : 'Mark no-show',
+          meta: metaLine, danger: true, cancelLabel: 'Keep reservation', busyLabel: 'Saving…',
+          confirmLabel: asking.to === 'cancelled' ? 'Cancel reservation' : 'Mark no-show',
           reason: { placeholder: 'e.g. Guest asked to cancel by WhatsApp' },
           onConfirm: reason => move(asking, reason),
         } : null} />

@@ -52,6 +52,24 @@ export function Floating({ anchor, open, onClose, width = 260, align = 'left', c
     return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
   }, [open, onClose, anchor]);
   if (!open || !pos) return null;
+  // Phones: a bottom sheet within thumb reach, over a scrim, instead of a panel hanging off a small button.
+  if (window.matchMedia('(max-width: 767.98px)').matches) {
+    return createPortal(
+      <div className="fixed inset-0 z-[70] flex flex-col justify-end bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]"
+        onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div ref={panel} role="dialog" aria-modal="true" aria-label={label}
+          className="w-full max-h-[85dvh] flex flex-col bg-card rounded-t-[16px] shadow-[var(--shadow-overlay)] text-ink font-sans [animation:rise_var(--motion-slow)_var(--ease-out)_both]">
+          <div className="flex-none flex items-center justify-between gap-2 pl-4 pr-2 pt-2 pb-1 [border-bottom:1px_solid_var(--color-line-soft)]">
+            <span className="text-copy font-semibold">{label}</span>
+            <button type="button" onClick={onClose} aria-label="Close"
+              className="w-10 h-10 grid place-items-center rounded-full border-none bg-transparent text-muted-ink cursor-pointer"><Icon name="X" size="sm" /></button>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]">{children}</div>
+        </div>
+      </div>,
+      document.body,
+    );
+  }
   return createPortal(
     <div ref={panel} role="dialog" aria-label={label}
       style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.w, maxHeight: pos.maxH, zIndex: 70 }}

@@ -51,7 +51,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const reviews = every.length ? await all<any>(env, `SELECT reservation_id, rating, comment, reply, replied_at, reviewed_at FROM reviews
     WHERE reservation_id IN (${every.map(() => '?').join(', ')}) ORDER BY reviewed_at DESC`, ...every.map(s => s.id)) : [];
   const where = await one<{ iso: string | null; src: string | null }>(env, `SELECT gc.iso, gc.src FROM guests g
-    ${countryJoin('gc', { phone: 'g.phone', stored: 'g.country_code' })} WHERE g.id = ?`, g.id);
+    ${countryJoin('gc', { guest: 'g' })} WHERE g.id = ?`, g.id);
   // The stay that matters now: the one under way, else the next one coming.
   const current = mine.find(s => s.state === 'checked_in')
     ?? mine.filter(s => ['confirmed', 'pending'].includes(s.state) && s.check_out >= today).sort((a, b) => a.check_in.localeCompare(b.check_in))[0]

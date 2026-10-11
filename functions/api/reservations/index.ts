@@ -39,12 +39,23 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // What each filter can pick from, with how many bookings each choice would show under everything else on screen
   // (the tab, the card, the search and the other filters), so the Filter panel offers the data's own values.
   const FACET_SQL: Record<typeof FACETS[number], string> = { ch: 'r.channel', building: 'u.property_id', st: 'r.state', country: 'gc.iso' };
-  const facetRows = await Promise.all(FACETS.map(f => {
+  // Filters that leave out the same conditions share one query (usually all four: one GROUPING SETS pass), and the
+  // money join is only read when the to-do card needs it.
+  const needsMoney = q.todo === 'unpaid' || q.todo === 'payout';
+  const groups = new Map<string, { w: { where: string; args: unknown[] }; keys: (typeof FACETS[number])[] }>();
+  for (const f of FACETS) {
     const w = q.whereExcept(f);
-    return all<{ v: string | null; n: number }>(env, `SELECT ${FACET_SQL[f]} AS v, COUNT(*) AS n ${fromSql(schema)}
-      WHERE ${w.where} AND ${current} GROUP BY 1 ORDER BY 2 DESC LIMIT 300`, ...w.args);
+    const k = `${w.where}|${JSON.stringify(w.args)}`;
+    groups.set(k, { w, keys: [...(groups.get(k)?.keys ?? []), f] });
+  }
+  const facetMap = Object.fromEntries(FACETS.map(f => [f, [] as { value: string; count: number; label?: string }[]]));
+  await Promise.all([...groups.values()].map(async ({ w, keys }) => {
+    const rows = await all<Record<string, unknown>>(env, `SELECT ${keys.map(k => `${FACET_SQL[k]} AS "v_${k}", GROUPING(${FACET_SQL[k]}) AS "g_${k}"`).join(', ')}, COUNT(*) AS n
+      ${fromSql(schema, needsMoney)} WHERE ${w.where} AND ${current}
+      GROUP BY GROUPING SETS (${keys.map(k => `(${FACET_SQL[k]})`).join(', ')})`, ...w.args);
+    for (const r of rows) for (const k of keys) if (Number(r[`g_${k}`]) === 0) facetMap[k].push({ value: (r[`v_${k}`] as string | null) ?? 'none', count: Number(r.n) });
   }));
-  const facets = Object.fromEntries(FACETS.map((f, i) => [f, facetRows[i].map(r => ({ value: r.v ?? 'none', count: Number(r.n) }))]));
+  const facets = Object.fromEntries(FACETS.map(f => [f, facetMap[f].sort((a, b) => b.count - a.count).slice(0, 300)]));
   facets.country = facets.country.map(c => ({ ...c, label: c.value === 'none' ? 'Not known' : countryName(c.value) ?? c.value }));
   const buildings = await all<{ id: string; name: string }>(env, 'SELECT id, name FROM properties ORDER BY name');
   return json({

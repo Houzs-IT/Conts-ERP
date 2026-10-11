@@ -41,10 +41,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const countries = parseCountries(sp.get('country'));
   const baseWhere = conds.length ? conds.join(' AND ') : 'TRUE';
   const baseArgs = [...args];
-  const cw = countryWhere('gc', countries);
+  const cw = countryWhere('gc.iso', countries);
   if (cw) { conds.push(cw.sql); args.push(...cw.args); }
   const where = conds.length ? conds.join(' AND ') : 'TRUE';
-  const GC = countryJoin('gc', { phone: 'g.phone', stored: 'g.country_code' });
+  const GC = countryJoin('gc', { guest: 'g' });
   const { today, tomorrow } = todayAndTomorrow();
   const cte = statsCte(today, tomorrow);
 

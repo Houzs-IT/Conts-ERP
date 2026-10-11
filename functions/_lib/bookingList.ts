@@ -1,5 +1,5 @@
 import { moneySql } from './bookingMoney';
-import { countryJoin, countryWhere, parseCountries, countryName } from './guestCountry';
+import { countryJoin, countryWhere, parseCountries, countryName, countryNameSql, countriesNamed } from './guestCountry';
 
 /** The Bookings list: one place that turns the screen's URL (tab, to-do card, filters, searches, sort)
  *  into SQL, shared by the paged list, its CSV export and the single-booking read.
@@ -27,7 +27,7 @@ const SORTS: Record<string, string> = {
   reference: 'r.external_ref', guest: 'lower(COALESCE(g.full_name, \'\'))', unit: 'lower(u.unit_number)',
   channel: 'r.channel', stay: 'r.check_in', gross: 'r.gross_booking_value', status: 'r.state',
   nights: '(r.check_out::date - r.check_in::date)', guests: 'r.guests_count', fee: 'r.channel_fee', created: 'r.created_at',
-  country: 'gc.name',
+  country: countryNameSql('gc.iso'),
 };
 
 export const BLOCK = `r.channel IN ('maintenance_block','owner_stay')`;
@@ -43,13 +43,13 @@ export const STATES = ['inquiry', 'pending', 'confirmed', 'checked_in', 'checked
 
 export interface Schema { payoutCols: boolean; payments: boolean }
 
-/** FROM with the money join. Every list query reads money, so the join is always there. */
-export const fromSql = (s: Schema) => `FROM reservations r
+/** FROM with the money join (left out only for counts that read no money) and the guest's country. */
+export const fromSql = (s: Schema, money = true) => `FROM reservations r
   LEFT JOIN guests g ON g.id = r.guest_id
   JOIN units u ON u.id = r.unit_id
   JOIN properties p ON p.id = u.property_id
-  ${moneySql(s).join}
-  ${countryJoin('gc', { phone: 'g.phone', stored: 'g.country_code', nationalityName: s.payoutCols ? 'r.guest_nationality' : null })}`;
+  ${money ? moneySql(s).join : ''}
+  ${countryJoin('gc', { guest: 'g', nationalityName: s.payoutCols ? 'r.guest_nationality' : null })}`;
 
 export const columnsSql = (s: Schema) => {
   const m = moneySql(s);
@@ -132,9 +132,10 @@ export function quickSearch(v: string, country = true): { sql: string; args: unk
   }
   return v.split(/\s+/).filter(Boolean).slice(0, 6).map(w => {
     const wp = like(w);
+    const named = country ? countriesNamed(w) : [];
     return {
-      sql: `(r.external_ref ILIKE ? OR g.full_name ILIKE ? OR g.phone ILIKE ? OR g.email ILIKE ? OR u.unit_number ILIKE ? OR p.name ILIKE ?${country ? ' OR gc.name ILIKE ?' : ''})`,
-      args: [wp, wp, wp, wp, wp, wp, ...(country ? [wp] : [])],
+      sql: `(r.external_ref ILIKE ? OR g.full_name ILIKE ? OR g.phone ILIKE ? OR g.email ILIKE ? OR u.unit_number ILIKE ? OR p.name ILIKE ?${named.length ? ` OR gc.iso IN (${named.map(() => '?').join(', ')})` : ''})`,
+      args: [wp, wp, wp, wp, wp, wp, ...named],
     };
   });
 }
@@ -210,7 +211,7 @@ export function parseListQuery(url: URL): ListQuery {
   const states = list('st').filter(x => (STATES as readonly string[]).includes(x));
   if (states.length) add('st', `r.state IN (${states.map(() => '?').join(', ')})`, states);
   const countries = parseCountries(sp.get('country'));
-  const cw = countryWhere('gc', countries);
+  const cw = countryWhere('gc.iso', countries);
   if (cw) add('country', cw.sql, cw.args);
   const from = ISO_DAY.test(sp.get('from') ?? '') ? sp.get('from')! : null;
   const to = ISO_DAY.test(sp.get('to') ?? '') ? sp.get('to')! : null;

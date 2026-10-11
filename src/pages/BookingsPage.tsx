@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
@@ -11,7 +11,7 @@ import ChannelMark from '../components/ChannelMark';
 import { Field } from '../components/Field';
 import { DateField, TimeField, NumberInput, MoneyInput, PhoneInput } from '../components/inputs';
 import { Select } from '../components/Select';
-import { DataTable, type Column } from '../components/DataTable';
+import { DataTable, type Column, type ViewPreset } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import { fetchAllPages } from '../lib/export';
 import { useApi } from '../lib/useApi';
@@ -19,7 +19,7 @@ import { useSession } from '../lib/session';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
 import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../lib/api';
-import { rm, date, dateRange, nights as fmtNights, guests as fmtGuests, todayMyt, plural, count as countLabel } from '../lib/format';
+import { rm, dateRange, nights as fmtNights, guests as fmtGuests, todayMyt, plural, count as countLabel } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { BookingChannel, ReservationState } from '../lib/types';
 import { statusOptions } from '../lib/status';
@@ -31,26 +31,31 @@ interface Row {
   state: ReservationState; checkIn: string; checkOut: string; checkInTime: string; checkOutTime: string;
   nights: number; grossBookingValue: number; channelFee: number; collectedRevenue: number;
   expectedPayout: number; received: number; outstanding: number; createdAt: string;
+  /** Where the guest is from: their nationality, else their phone's country. */
+  country: { code: string; name: string; from: 'nationality' | 'phone' } | null;
 }
 
-/** Five tabs, no overlap: every booking is in exactly one of the first four, and All is their sum. */
+/** Five tabs, no overlap: every reservation is in exactly one of the first four, and All is their sum. The words are
+ *  Airbnb's host statuses, as the owner decided (docs/VOCABULARY.md). */
 const VIEWS = [
-  { key: 'upcoming', label: 'Upcoming', empty: 'No upcoming bookings.' },
-  { key: 'inhouse', label: 'In house', empty: 'Nobody is in house right now.' },
-  { key: 'past', label: 'Checked out', empty: 'No finished stays yet.' },
-  { key: 'cancelled', label: 'Cancelled', empty: 'No cancelled bookings.' },
-  { key: 'all', label: 'All', empty: 'No bookings yet.' },
+  { key: 'upcoming', label: 'Upcoming', empty: 'No upcoming reservations.' },
+  { key: 'inhouse', label: 'Currently hosting', empty: 'Nobody is staying right now.' },
+  { key: 'past', label: 'Past', empty: 'No past reservations yet.' },
+  { key: 'cancelled', label: 'Cancelled', empty: 'No cancelled reservations.' },
+  { key: 'all', label: 'All', empty: 'No reservations yet.' },
 ] as const;
 type ViewKey = typeof VIEWS[number]['key'];
 
-/** Things to do today. A card filters the list; it is not another tab. */
+/** Things to do. A card filters the list; it is not another tab. "Arriving today" is a ready-made view, not a card. */
 const TODOS = [
-  { key: 'arriving', label: 'Arriving today', empty: 'Nobody arrives today.', money: false },
-  { key: 'departing', label: 'Departing today', empty: 'Nobody leaves today.', money: false },
-  { key: 'unpaid', label: 'Direct, not fully paid', empty: 'Every direct booking is paid.', money: true },
-  { key: 'payout', label: 'Booking-site payout pending', empty: 'Every finished booking-site stay is paid out.', money: true },
+  { key: 'soon', label: 'Arriving soon', hint: 'Check-in today or tomorrow', empty: 'Nobody arrives today or tomorrow.', money: false, card: true },
+  { key: 'departing', label: 'Checking out', hint: 'Checkout today', empty: 'Nobody checks out today.', money: false, card: true },
+  { key: 'unpaid', label: 'Unpaid direct', hint: 'Direct guests who still owe', empty: 'Every direct reservation is paid.', money: true, card: true },
+  { key: 'payout', label: 'Channel payout pending', hint: 'Finished stays not paid out yet', empty: 'Every finished channel stay is paid out.', money: true, card: true },
+  { key: 'arriving', label: 'Arriving today', hint: 'Check-in today', empty: 'Nobody arrives today.', money: false, card: false },
 ] as const;
 type TodoKey = typeof TODOS[number]['key'];
+type Facet = { value: string; count: number; label?: string };
 
 interface Payload {
   data: Row[]; total: number; page: number; pageSize: number; generatedAt: string; today: string; view: ViewKey; todo: TodoKey | null;
@@ -59,21 +64,23 @@ interface Payload {
   totals: { bookings: number; nights: number; gross: number; fees: number; outstanding: number };
   buildings: { id: string; name: string }[];
   paymentsReady: boolean;
+  /** Each filter's values with how many reservations each would show. */
+  facets?: { ch: Facet[]; building: Facet[]; st: Facet[]; country: Facet[] };
 }
 
 const SAMPLE: Row[] = [
-  { id: 'b1', externalRef: 'HMF4323EHS', guestName: 'Nadia Abdullah', guestsCount: 2, guestPhone: null, guestCountry: 'MY', guestNationality: null, unitNumber: 'A-12-03', propertyName: 'Vista Jaya One', channel: 'airbnb', state: 'checked_in', checkIn: '2026-09-16', checkOut: '2026-09-19', checkInTime: '15:00', checkOutTime: '11:00', nights: 3, grossBookingValue: 85200, channelFee: 12780, collectedRevenue: 0, expectedPayout: 72420, received: 0, outstanding: 72420, createdAt: '2026-09-12T02:02:00Z' },
+  { id: 'b1', externalRef: 'HMF4323EHS', guestName: 'Nadia Abdullah', guestsCount: 2, guestPhone: null, guestCountry: 'MY', guestNationality: null, unitNumber: 'A-12-03', propertyName: 'Vista Jaya One', channel: 'airbnb', state: 'checked_in', checkIn: '2026-09-16', checkOut: '2026-09-19', checkInTime: '15:00', checkOutTime: '11:00', nights: 3, grossBookingValue: 85200, channelFee: 12780, collectedRevenue: 0, expectedPayout: 72420, received: 0, outstanding: 72420, createdAt: '2026-09-12T02:02:00Z', country: { code: 'MY', name: 'Malaysia', from: 'nationality' } },
 ];
 const FALLBACK: Payload = {
   total: 1, page: 1, pageSize: 50, generatedAt: '', today: '2026-09-16', view: 'upcoming', todo: null, data: SAMPLE,
   counts: { upcoming: 0, inhouse: 1, past: 0, cancelled: 0, all: 1 },
-  todos: { arriving: { count: 0, outstanding: 0 }, departing: { count: 0, outstanding: 0 }, unpaid: { count: 0, outstanding: 0 }, payout: { count: 0, outstanding: 0 } },
+  todos: { arriving: { count: 0, outstanding: 0 }, soon: { count: 0, outstanding: 0 }, departing: { count: 0, outstanding: 0 }, unpaid: { count: 0, outstanding: 0 }, payout: { count: 0, outstanding: 0 } },
   totals: { bookings: 1, nights: 3, gross: 85200, fees: 12780, outstanding: 72420 }, buildings: [], paymentsReady: true,
 };
 
 /** Searches the server reads. The column searches are kept for links from global search (?ref=, ?guest=). */
 const SEARCH_PARAMS = ['q', 'ref', 'guest', 'unit', 'channel', 'stay', 'gross', 'status'];
-const FILTER_PARAMS = ['ch', 'building', 'from', 'to', 'grossMin', 'grossMax'];
+const FILTER_PARAMS = ['ch', 'building', 'st', 'country', 'from', 'to', 'nightsMin', 'nightsMax', 'grossMin', 'grossMax'];
 /** URL parameters the server reads. The drawer's `open` stays out so opening a booking does not refetch the list. */
 const API_PARAMS = ['view', 'todo', 'sort', 'page', 'size', ...SEARCH_PARAMS, ...FILTER_PARAMS];
 const CHANNEL_CHOICES: BookingChannel[] = ['airbnb', 'booking_com', 'agoda', 'direct'];
@@ -82,11 +89,20 @@ const OPS_ROLES = ['management', 'operations_manager', 'operations_staff'];
 
 const nightsBetween = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 864e5);
 const num = (v: number) => countLabel(v);
-const countryName = (code: string | null) => {
-  if (!code) return null;
-  try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code; } catch { return code; }
-};
-const nationalityOf = (r: { guestNationality?: string | null; guestCountry?: string | null }) => r.guestNationality || countryName(r.guestCountry ?? null);
+const shiftDay = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 864e5).toISOString().slice(0, 10);
+const monthStart = (iso: string) => `${iso.slice(0, 7)}-01`;
+const monthEnd = (iso: string) => { const d = new Date(Date.parse(`${monthStart(iso)}T00:00:00Z`)); d.setUTCMonth(d.getUTCMonth() + 1); return shiftDay(d.toISOString().slice(0, 10), -1); };
+
+/** Ready-made views under Views: the lists the front desk opens every day. */
+const PRESETS: ViewPreset[] = [
+  { id: 'arriving-today', name: 'Arriving today', hint: 'Check-in today', params: () => ({ view: 'all', todo: 'arriving' }) },
+  { id: 'checking-out-today', name: 'Checking out today', hint: 'Checkout today', params: () => ({ view: 'all', todo: 'departing' }) },
+  { id: 'currently-hosting', name: 'Currently hosting', hint: 'Guests staying now', params: () => ({ view: 'inhouse' }) },
+  { id: 'unpaid-direct', name: 'Unpaid direct reservations', hint: 'Direct guests who still owe money', params: () => ({ view: 'all', todo: 'unpaid' }) },
+  { id: 'payout-pending', name: 'Channel payout pending', hint: 'Finished Airbnb, Booking.com and Agoda stays not paid out yet', params: () => ({ view: 'all', todo: 'payout' }) },
+  { id: 'cancelled-month', name: 'Cancelled this month', hint: 'Cancelled stays with nights this month', params: () => ({ view: 'cancelled', from: monthStart(todayMyt()), to: monthEnd(todayMyt()) }) },
+  { id: 'long-stays', name: 'Long stays (28+ nights)', hint: 'Every status', params: () => ({ view: 'all', nightsMin: '28' }) },
+];
 
 /** Rows per import request (the server takes at most 100). */
 const IMPORT_PART = 50;
@@ -185,7 +201,6 @@ export default function BookingsPage() {
       p.delete('page');
     });
   }
-  function setParam(k: string, v: string) { updateParams(p => { if (v) p.set(k, v); else p.delete(k); p.delete('page'); }); }
 
   async function createReservation(input: CreateInput): Promise<Record<string, string> | undefined> {
     const unit = UNITS.find(u => u.id === input.unitId);
@@ -254,8 +269,8 @@ export default function BookingsPage() {
       tone: created && !failedSync ? 'success' : 'warning',
       title: created ? `Imported ${plural(created, 'reservation')}.` : 'Nothing imported.',
       body: [rejected ? `${plural(rejected, 'row')} ${rejected === 1 ? 'was' : 'were'} rejected and left out.` : 'Every row was accepted.',
-        queued ? `${plural(queued, 'stay')} closed on the booking sites.` : '',
-        failedSync ? `${plural(failedSync, 'stay')} could not be closed on the booking sites; check Integrations.` : ''].filter(Boolean).join(' '),
+        queued ? `${plural(queued, 'stay')} closed on the channels.` : '',
+        failedSync ? `${plural(failedSync, 'stay')} could not be closed on the channels; check Integrations.` : ''].filter(Boolean).join(' '),
     });
     setImportRows(null);
     reload();
@@ -266,7 +281,7 @@ export default function BookingsPage() {
     setExporting(true);
     try {
       await downloadFile('/reservations/export', Object.fromEntries(API_PARAMS.filter(k => k !== 'page' && k !== 'size').map(k => [k, params.get(k)])));
-      toast({ tone: 'success', title: 'Export ready.', body: `${plural(total, 'booking')} with the money breakdown and payments. The first lines name the filters and totals.` });
+      toast({ tone: 'success', title: 'Export ready.', body: `${plural(total, 'reservation')} with the money breakdown and payments. The first lines name the filters and totals.` });
     } catch (e) { notifyFailure(e); }
     setExporting(false);
   }
@@ -283,87 +298,99 @@ export default function BookingsPage() {
   }
 
   const moneyTodo = !!TODOS.find(t => t.key === todo)?.money;
-  const columns = useMemo<Column<Row>[]>(() => [
-    { key: 'reference', label: 'Reference', type: 'ref', value: r => r.externalRef, sortKey: 'reference', width: 150, hideable: false,
-      filter: { kind: 'text', param: 'ref' },
-      render: b => (
-        <span className="flex items-center gap-[9px] min-w-0">
-          <ChannelMark ch={b.channel} size={20} />
-          <span className="font-mono text-meta whitespace-nowrap overflow-hidden text-ellipsis" title={`${CHANNEL_META[b.channel].label} · ${b.externalRef ?? ''}`}>{b.externalRef ?? '—'}</span>
-        </span>
-      ) },
-    { key: 'guest', label: 'Guest', value: r => r.guestName, sortKey: 'guest', width: 170, filter: { kind: 'text', param: 'guest' },
-      render: b => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block" title={b.guestName}>{b.guestName || '—'}</span>,
-      sub: b => [b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, nationalityOf(b)].filter(Boolean).join(' · ') || '—' },
-    { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, sortKey: 'unit', width: 140,
-      filter: { kind: 'text', param: 'unit' }, exportValue: r => r.unitNumber, sub: b => b.propertyName },
-    { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150, filter: false },
-    { key: 'channel', label: 'Channel', type: 'channel', value: r => r.channel, sortKey: 'channel', hidden: true, width: 130,
-      filter: { kind: 'select', param: 'ch', multi: false, options: CHANNEL_CHOICES.map(c => ({ value: c, label: CHANNEL_META[c].label })) } },
-    { key: 'stay', label: 'Check-in to check-out', type: 'date', value: r => r.checkIn, sortKey: 'stay', width: 160,
-      filter: { kind: 'date', params: ['from', 'to'], hint: 'Stays that touch these dates' },
-      render: b => <span className="whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span>, sub: b => fmtNights(b.nights),
-      exportKind: 'text', exportValue: r => `${r.checkIn} to ${r.checkOut}` },
-    { key: 'checkIn', label: 'Check-in', type: 'date', value: r => r.checkIn, hidden: true, filter: false, sortKey: 'stay' },
-    { key: 'checkOut', label: 'Check-out', type: 'date', value: r => r.checkOut, hidden: true, filter: false },
-    { key: 'nights', label: 'Nights', type: 'number', value: r => r.nights, hidden: true, sortKey: 'nights', filter: false, width: 80 },
-    { key: 'guests', label: 'Guests', type: 'number', value: r => r.guestsCount, hidden: true, sortKey: 'guests', filter: false, width: 80 },
-    { key: 'phone', label: 'Phone', type: 'phone', value: r => r.guestPhone, hidden: true, filter: false, width: 140 },
-    { key: 'nationality', label: 'Nationality', value: r => nationalityOf(r), hidden: true, filter: false, width: 130 },
-    { key: 'gross', label: 'Guest total', type: 'money', value: r => (r.grossBookingValue > 0 ? r.grossBookingValue : null), sortKey: 'gross', width: 120,
-      title: 'What the guest paid for the stay: room, fees and the taxes we collect. Tax a booking site keeps is not included.',
-      filter: { kind: 'number', params: ['grossMin', 'grossMax'] },
-      render: b => <span className="font-medium tabular-nums whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>,
-      sub: b => (moneyTodo && b.outstanding > 0 ? <span className="text-warning tabular-nums">{rm(b.outstanding, { cents: false })} owed</span> : null) },
-    { key: 'fee', label: 'Commission', type: 'money', value: r => r.channelFee, hidden: true, sortKey: 'fee', filter: false },
-    { key: 'expected', label: 'Expected to receive', type: 'money', value: r => r.expectedPayout, hidden: true, filter: false },
-    { key: 'received', label: 'Received', type: 'money', value: r => r.received, hidden: true, filter: false },
-    { key: 'outstanding', label: 'Outstanding', type: 'money', value: r => (['cancelled', 'no_show'].includes(r.state) ? 0 : r.outstanding), hidden: true, filter: false },
-    { key: 'status', label: 'Status', type: 'status', value: r => r.state, text: r => STATUS[r.state]?.label ?? r.state, sortKey: 'status', width: 130,
-      filter: { kind: 'select', param: 'status', multi: false, options: statusOptions('booking').map(o => ({ value: o.label, label: o.label })) },
-      render: b => <StatusBadge entity="booking" value={b.state} size="sm" /> },
-    { key: 'created', label: 'Booked on', type: 'datetime', value: r => r.createdAt, hidden: true, sortKey: 'created', filter: false },
-    { key: 'chat', label: 'Chat', width: 56, align: 'center', noExport: true, sortable: false, filter: false,
-      render: b => (
-        <button type="button" title="Message guest" aria-label={`Message ${b.guestName}`}
-          onClick={e => { e.stopPropagation(); setMessageRow(b); }}
-          className="w-8 h-8 grid place-items-center rounded-control text-muted-ink bg-transparent border-none cursor-pointer hover:bg-muted">
-          <Icon name="MessageSquare" size="sm" />
-        </button>
-      ) },
-  ], [moneyTodo]);
+  const facets = data?.facets;
+  const buildingName = useMemo(() => new Map((data?.buildings ?? []).map(b => [b.id, b.name])), [data?.buildings]);
+  const columns = useMemo<Column<Row>[]>(() => {
+    const opts = (list: Facet[] | undefined, label: (v: string) => string) => list?.map(f => ({ value: f.value, label: f.label ?? label(f.value), count: f.count }));
+    return [
+      { key: 'reference', label: 'Reference', type: 'ref', value: r => r.externalRef, sortKey: 'reference', width: 150, hideable: false,
+        filter: { kind: 'text', param: 'ref' },
+        render: b => (
+          <span className="flex items-center gap-[9px] min-w-0">
+            <ChannelMark ch={b.channel} size={20} />
+            <span className="font-mono text-meta whitespace-nowrap overflow-hidden text-ellipsis" title={`${CHANNEL_META[b.channel].label} · ${b.externalRef ?? ''}`}>{b.externalRef ?? '—'}</span>
+          </span>
+        ) },
+      { key: 'guest', label: 'Guest', value: r => r.guestName, sortKey: 'guest', width: 170, filter: { kind: 'text', param: 'guest' },
+        render: b => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block" title={b.guestName}>{b.guestName || '—'}</span>,
+        sub: b => (b.guestsCount > 0 ? fmtGuests(b.guestsCount) : '—') },
+      { key: 'country', label: 'Country', value: r => r.country?.name ?? null, sortKey: 'country', width: 130,
+        title: "The guest's nationality when we have it, otherwise the country of their phone number.",
+        filter: { kind: 'select', param: 'country', multi: true, options: opts(facets?.country, v => v) },
+        render: b => b.country
+          ? <span className="block whitespace-nowrap overflow-hidden text-ellipsis" title={b.country.from === 'phone' ? `${b.country.name}, from the phone number` : `${b.country.name}, nationality`}>{b.country.name}</span>
+          : <span className="text-muted-ink">—</span> },
+      { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, sortKey: 'unit', width: 140,
+        filter: { kind: 'text', param: 'unit' }, exportValue: r => r.unitNumber, sub: b => b.propertyName },
+      { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150,
+        filter: { kind: 'select', param: 'building', multi: true, options: opts(facets?.building, v => buildingName.get(v) ?? v) } },
+      { key: 'channel', label: 'Channel', type: 'channel', value: r => r.channel, sortKey: 'channel', hidden: true, width: 130,
+        filter: { kind: 'select', param: 'ch', multi: true, options: opts(facets?.ch, v => CHANNEL_META[v as BookingChannel]?.label ?? v) ?? CHANNEL_CHOICES.map(c => ({ value: c, label: CHANNEL_META[c].label })) } },
+      { key: 'stay', label: 'Check-in to checkout', type: 'date', value: r => r.checkIn, sortKey: 'stay', width: 160,
+        filter: { kind: 'date', params: ['from', 'to'], hint: 'Stays with nights in these dates' },
+        render: b => <span className="whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span>, sub: b => fmtNights(b.nights),
+        exportKind: 'text', exportValue: r => `${r.checkIn} to ${r.checkOut}` },
+      { key: 'checkIn', label: 'Check-in', type: 'date', value: r => r.checkIn, hidden: true, filter: false, sortKey: 'stay' },
+      { key: 'checkOut', label: 'Checkout', type: 'date', value: r => r.checkOut, hidden: true, filter: false },
+      { key: 'nights', label: 'Nights', type: 'number', value: r => r.nights, hidden: true, sortKey: 'nights', width: 80,
+        filter: { kind: 'number', params: ['nightsMin', 'nightsMax'], presets: [{ label: '1 night', value: '1~1' }, { label: '7+ nights', value: '7~' }, { label: '28+ nights', value: '28~' }] } },
+      { key: 'guests', label: 'Guests', type: 'number', value: r => r.guestsCount, hidden: true, sortKey: 'guests', filter: false, width: 80 },
+      { key: 'phone', label: 'Phone', type: 'phone', value: r => r.guestPhone, hidden: true, filter: false, width: 140 },
+      { key: 'gross', label: 'Guest total', type: 'money', value: r => (r.grossBookingValue > 0 ? r.grossBookingValue : null), sortKey: 'gross', width: 120,
+        title: 'What the guest paid for the stay: room, fees and the taxes we collect. Tax a channel keeps is not included.',
+        filter: { kind: 'number', params: ['grossMin', 'grossMax'], presets: false },
+        render: b => <span className="font-medium tabular-nums whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>,
+        sub: b => (moneyTodo && b.outstanding > 0 ? <span className="text-warning tabular-nums">{rm(b.outstanding, { cents: false })} owed</span> : null) },
+      { key: 'fee', label: 'Service fee', type: 'money', value: r => r.channelFee, hidden: true, sortKey: 'fee', filter: false },
+      { key: 'expected', label: 'Host payout', type: 'money', value: r => r.expectedPayout, hidden: true, filter: false },
+      { key: 'received', label: 'Received', type: 'money', value: r => r.received, hidden: true, filter: false },
+      { key: 'outstanding', label: 'Outstanding', type: 'money', value: r => (['cancelled', 'no_show'].includes(r.state) ? 0 : r.outstanding), hidden: true, filter: false },
+      { key: 'status', label: 'Status', type: 'status', value: r => r.state, text: r => STATUS[r.state]?.label ?? r.state, sortKey: 'status', width: 150,
+        filter: { kind: 'select', param: 'st', multi: true, options: opts(facets?.st, v => STATUS[v as ReservationState]?.label ?? v) ?? statusOptions('booking').map(o => ({ value: o.value, label: o.label })) },
+        render: b => <StatusBadge entity="booking" value={b.state} size="sm" /> },
+      { key: 'created', label: 'Booked on', type: 'datetime', value: r => r.createdAt, hidden: true, sortKey: 'created', filter: false },
+      { key: 'chat', label: 'Chat', width: 56, align: 'center', noExport: true, sortable: false, filter: false,
+        render: b => (
+          <button type="button" title="Message guest" aria-label={`Message ${b.guestName}`}
+            onClick={e => { e.stopPropagation(); setMessageRow(b); }}
+            className="w-8 h-8 grid place-items-center rounded-control text-muted-ink bg-transparent border-none cursor-pointer hover:bg-muted">
+            <Icon name="MessageSquare" size="sm" />
+          </button>
+        ) },
+    ];
+  }, [moneyTodo, facets, buildingName]);
 
   const viewMeta = VIEWS.find(v => v.key === view)!;
   const todoMeta = todo ? TODOS.find(t => t.key === todo)! : null;
-  const sub = counts && todoMeta ? `${todoMeta.label}: ${plural(counts.all, 'booking')}${searching ? ' matching the filters' : ''}`
+  const sub = counts && todoMeta ? `${todoMeta.label}: ${plural(counts.all, 'reservation')}${searching ? ' matching the filters' : ''}`
   : counts
-    ? `${num(counts.upcoming)} upcoming · ${num(counts.inhouse)} in house · ${plural(counts.all, 'booking')} in total${searching ? ' matching the filters' : ''}`
-    : 'Loading bookings';
+    ? `${num(counts.upcoming)} upcoming · ${num(counts.inhouse)} currently hosting · ${plural(counts.all, 'reservation')} in total${searching ? ' matching the filters' : ''}`
+    : 'Loading reservations';
 
   return (
     <>
-      <PageHeader title="Bookings" sub={sub}
+      <PageHeader title="Reservations" sub={sub}
         actions={<>
           <Button size="sm" variant="secondary" icon={<Icon name="Upload" size="sm" />} onClick={pickImportFile}>Import</Button>
           <Button size="sm" variant="secondary" icon={<Icon name="FileText" size="sm" />} onClick={exportCsv} loading={exporting}
-            title="Every booking under these filters with the full money breakdown and each payment, as CSV."
+            title="Every reservation under these filters with the full money breakdown and each payment, as CSV."
             disabled={!data || total === 0} disabledReason="Nothing to export for this tab and these filters.">Money CSV</Button>
         </>}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => { setPrefill(null); setCreating(true); }}>Create reservation</Button>} />
 
       <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onImportFile} className="hidden" aria-hidden />
 
-      {/* To do: four cards that filter the list */}
-      <div className="grid grid-cols-4 gap-3 mb-4 max-lg:grid-cols-2" role="group" aria-label="To do">
-        {TODOS.map(t => {
+      {/* To do: cards that filter the list. One swipeable row on a phone. */}
+      <div className="grid grid-cols-4 gap-3 max-lg:grid-cols-2 max-md:flex max-md:overflow-x-auto max-md:[scrollbar-width:none] max-md:-mx-4 max-md:px-4 max-md:snap-x shrink-0" role="group" aria-label="To do">
+        {TODOS.filter(t => t.card).map(t => {
           const c = data?.todos?.[t.key];
           const on = todo === t.key;
           const warn = t.money && (c?.count ?? 0) > 0;
           return (
-            <button key={t.key} type="button" onClick={() => setTodo(t.key)} aria-pressed={on}
-              className={cx('text-left [font:inherit] rounded-card border border-solid px-4 py-3 cursor-pointer flex flex-col gap-1 min-w-0 transition-colors',
+            <button key={t.key} type="button" onClick={() => setTodo(t.key)} aria-pressed={on} title={t.hint}
+              className={cx('text-left [font:inherit] rounded-card border border-solid px-4 py-3 max-md:py-2.5 cursor-pointer flex flex-col gap-1 min-w-0 transition-colors max-md:flex-[0_0_auto] max-md:min-w-[150px] max-md:snap-start',
                 on ? 'bg-black text-white border-black' : warn ? 'bg-warning-bg border-warning-line text-ink hover:border-warning' : 'bg-card border-line text-ink hover:border-muted-ink')}>
-              <span className={cx('text-meta', on ? 'text-[rgba(255,255,255,0.75)]' : warn ? 'text-warning' : 'text-muted-ink')}>{t.label}</span>
+              <span className={cx('text-meta whitespace-nowrap', on ? 'text-[rgba(255,255,255,0.75)]' : warn ? 'text-warning' : 'text-muted-ink')}>{t.label}</span>
               <span className="text-heading font-semibold [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">
                 {c ? num(c.count) : '–'}{t.money && c && c.count > 0 ? <span className="font-medium"> · {rm(c.outstanding, { cents: false })}</span> : null}
               </span>
@@ -373,11 +400,12 @@ export default function BookingsPage() {
       </div>
 
       <DataTable<Row>
-        id="bookings" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
+        id="bookings" columns={columns} rows={data ? rows : null} rowKey={r => r.id} fill presets={PRESETS}
         loading={loading} error={error} onRetry={reload} onRowClick={b => setOpenId(b.id)}
+        rowTone={b => (b.id === openId ? 'gold' : null)}
         server={{ total, page: data?.page ?? 1, pageSize: data?.pageSize ?? 50, sizes: [25, 50, 100, 200], defaultPageSize: 50, fetchAll }}
-        viewParams={['view', 'todo', 'building', 'q']} filtered={searching || !!todo} onClearFilters={clearAll}
-        noun={['booking', 'bookings']} exportName="bookings" selectionKey={`${view}|${todo ?? ''}`}
+        viewParams={['view', 'todo', 'q']} filtered={searching || !!todo} onClearFilters={clearAll}
+        noun={['reservation', 'reservations']} exportName="reservations" selectionKey={`${view}|${todo ?? ''}`}
         empty={{ title: todoMeta?.empty ?? viewMeta.empty, icon: 'CalendarDays' }}
         selectable={canMoney || canOps}
         bulkActions={(picked, clear) => <>
@@ -389,14 +417,14 @@ export default function BookingsPage() {
           )}
         </>}
         header={
-          <div className="flex items-center gap-2 flex-wrap py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
-            <div role="tablist" aria-label="Booking views" className="flex gap-2 overflow-x-auto [scrollbar-width:none] max-md:w-full">
+          <div className="flex items-center gap-2 py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
+            <div role="tablist" aria-label="Reservation status" className="flex gap-2 overflow-x-auto [scrollbar-width:none] max-md:-mx-4 max-md:px-4 min-w-0">
               {VIEWS.map(v => {
                 const on = !todo && view === v.key;
                 const n = counts?.[v.key];
                 return (
                   <button key={v.key} role="tab" aria-selected={on} onClick={() => setView(v.key)}
-                    className={cx('flex-none h-8 inline-flex items-center gap-[6px] px-[13px] py-0 rounded-pill cursor-pointer [font-family:inherit] text-copy border border-solid whitespace-nowrap',
+                    className={cx('flex-none h-9 inline-flex items-center gap-[6px] px-[13px] py-0 rounded-pill cursor-pointer [font-family:inherit] text-copy border border-solid whitespace-nowrap',
                       on ? 'font-semibold border-transparent bg-black text-white' : 'font-medium border-line bg-page text-muted-ink')}>
                     {v.label}
                     <span className={cx('[font-variant-numeric:tabular-nums] min-w-[1ch]', on ? 'opacity-80' : 'opacity-70')}>{n === undefined ? '' : num(n)}</span>
@@ -404,34 +432,34 @@ export default function BookingsPage() {
                 );
               })}
             </div>
-            <div className="flex items-center gap-2 flex-wrap ml-auto max-md:ml-0 max-md:w-full">
-              <ChannelFilter value={params.get('ch') ?? ''} onChange={v => setParam('ch', v)} />
-              <Select label="Building" value={params.get('building') ?? ''} onChange={v => setParam('building', v)} className="w-[170px] max-md:w-full max-md:order-last"
-                options={[{ value: '', label: 'All buildings' }, ...(data?.buildings ?? []).map(b => ({ value: b.id, label: b.name }))]} />
-              <DateFilter from={params.get('from') ?? ''} to={params.get('to') ?? ''}
-                onChange={(f, t) => updateParams(p => { if (f) p.set('from', f); else p.delete('from'); if (t) p.set('to', t); else p.delete('to'); p.delete('page'); })} />
-            </div>
+            {todoMeta && (
+              <span className="ml-auto max-md:hidden inline-flex items-center gap-1 h-8 pl-3 pr-1 rounded-full bg-black text-white text-meta whitespace-nowrap">
+                {todoMeta.label}
+                <button type="button" aria-label={`Remove ${todoMeta.label}`} onClick={() => setTodo(todoMeta.key)}
+                  className="w-6 h-6 grid place-items-center rounded-full border-none bg-transparent text-white cursor-pointer hover:bg-[rgba(255,255,255,0.15)]"><Icon name="X" size="sm" /></button>
+              </span>
+            )}
           </div>
         }
         toolbar={<>
-          <label className="relative flex-[1_1_260px] min-w-[200px] max-w-[420px]">
+          <label className="relative flex-[1_1_260px] min-w-[200px] max-w-[460px] max-md:max-w-none">
             <span className="absolute left-[11px] top-1/2 -translate-y-1/2 text-muted-ink grid pointer-events-none"><Icon name="Search" size="sm" /></span>
-            <input value={draft} onChange={e => setSearch(e.target.value)} placeholder="Guest, phone, reference, unit or building"
-              aria-label="Search bookings"
-              className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink font-sans text-copy pl-[33px] pr-3 py-0 outline-none" />
+            <input value={draft} onChange={e => setSearch(e.target.value)} placeholder="Name, phone, reference, unit or country" type="search"
+              aria-label="Search reservations" title="A name in any order, any reference, a phone number in any format or its last 4 digits"
+              className="h-10 md:h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink font-sans text-copy pl-[33px] pr-3 py-0 outline-none" />
           </label>
           {(searching || todo) && <Button variant="tertiary" size="sm" icon={<Icon name="X" size="sm" />} onClick={clearAll}>Clear filters</Button>}
         </>}
         above={totals && (
           <dl className="m-0 flex items-center gap-x-5 gap-y-1 flex-wrap text-meta min-h-[20px] py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
-            {todoMeta && <span className="font-semibold text-ink">{todoMeta.label}</span>}
-            <Total label="Bookings" value={num(totals.bookings)} />
+            {todoMeta && <span className="font-semibold text-ink md:hidden">{todoMeta.label}</span>}
+            <Total label="Reservations" value={num(totals.bookings)} />
             <Total label="Nights" value={num(totals.nights)} />
             <Total label="Guest total" value={rm(totals.gross, { cents: false })} />
-            <Total label="Commission" value={rm(totals.fees, { cents: false })} />
-            {todoMeta?.money && <Total label={todo === 'unpaid' ? 'Owed by guests' : 'Owed by booking sites'} value={rm(totals.outstanding, { cents: false })}
-              title={todo === 'unpaid' ? 'Guest total less what has been received, for these direct bookings.' : 'The payout expected less what has arrived, for these finished stays.'} />}
-            {todo === 'payout' && canMoney && <span className="text-muted-ink">Tick the stays the booking site has paid out, then mark them received.</span>}
+            <Total label="Service fees" value={rm(totals.fees, { cents: false })} />
+            {todoMeta?.money && <Total label={todo === 'unpaid' ? 'Owed by guests' : 'Owed by channels'} value={rm(totals.outstanding, { cents: false })}
+              title={todo === 'unpaid' ? 'Guest total less what has been received, for these direct reservations.' : 'The host payout expected less what has arrived, for these finished stays.'} />}
+            {todo === 'payout' && canMoney && <span className="text-muted-ink">Tick the stays the channel has paid out, then mark them received.</span>}
           </dl>
         )}
         renderCard={b => (
@@ -442,7 +470,7 @@ export default function BookingsPage() {
                 <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{b.guestName || '—'}</span>
                 <span className="text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>
               </span>
-              <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? '—'} · {b.unitNumber} · {b.propertyName}</span>
+              <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{[b.unitNumber, b.propertyName, b.country?.name].filter(Boolean).join(' · ')}</span>
               <span className="flex items-center justify-between gap-2 pt-[2px]">
                 <span className="text-meta whitespace-nowrap min-w-0 overflow-hidden text-ellipsis">{dateRange(b.checkIn, b.checkOut)} · {fmtNights(b.nights)}</span>
                 <StatusBadge entity="booking" value={b.state} size="sm" />
@@ -476,94 +504,6 @@ function Total({ label, value, title }: { label: string; value: string; title?: 
 }
 
 /* ------------------------------------------------------------------ */
-/* Filters                                                             */
-/* ------------------------------------------------------------------ */
-
-function Popover({ label, active, children, width = 240 }: { label: ReactNode; active: boolean; children: (close: () => void) => ReactNode; width?: number }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', onDoc); document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
-  }, [open]);
-  return (
-    <div ref={ref} className="relative max-md:flex-1">
-      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
-        className={cx('h-9 w-full inline-flex items-center gap-2 pl-3 pr-2 rounded-control border border-solid bg-card [font-family:inherit] text-copy cursor-pointer whitespace-nowrap',
-          active ? 'border-ink text-ink font-medium' : 'border-line text-ink')}>
-        {label}<Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" style={{ marginLeft: 'auto' }} />
-      </button>
-      {open && (
-        <div style={{ width }} className="absolute z-[30] right-0 max-md:left-0 max-md:right-auto top-full mt-1 max-w-[calc(100vw-32px)] p-1 bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)]">
-          {children(() => setOpen(false))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ChannelFilter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const cur = value ? CHANNEL_META[value as BookingChannel] : null;
-  return (
-    <Popover active={!!cur} width={210} label={cur ? <span className="inline-flex items-center gap-2"><ChannelMark ch={value as BookingChannel} size={16} />{cur.label}</span> : 'All channels'}>
-      {close => (
-        <div role="menu" aria-label="Channel">
-          {(['', ...CHANNEL_CHOICES] as const).map(c => (
-            <button key={c || 'all'} type="button" role="menuitemradio" aria-checked={value === c} onClick={() => { onChange(c); close(); }}
-              className={cx('w-full flex items-center gap-2 px-[10px] py-2 rounded-[8px] border-none [font-family:inherit] text-copy text-left cursor-pointer hover:bg-muted', value === c ? 'bg-muted font-semibold' : 'bg-transparent')}>
-              {c ? <ChannelMark ch={c} size={18} /> : <span className="w-[18px]" />}
-              {c ? CHANNEL_META[c].label : 'All channels'}
-            </button>
-          ))}
-        </div>
-      )}
-    </Popover>
-  );
-}
-
-const shift = (iso: string, days: number) => new Date(Date.parse(iso) + days * 864e5).toISOString().slice(0, 10);
-const monthStart = (iso: string, add = 0) => { const d = new Date(Date.parse(iso.slice(0, 7) + '-01T00:00:00Z')); d.setUTCMonth(d.getUTCMonth() + add); return d.toISOString().slice(0, 10); };
-
-function DateFilter({ from, to, onChange }: { from: string; to: string; onChange: (from: string, to: string) => void }) {
-  const today = todayMyt();
-  const presets: { label: string; from: string; to: string }[] = [
-    { label: 'Today', from: today, to: today },
-    { label: 'Next 7 days', from: today, to: shift(today, 6) },
-    { label: 'This month', from: monthStart(today), to: shift(monthStart(today, 1), -1) },
-    { label: 'Last month', from: monthStart(today, -1), to: shift(monthStart(today), -1) },
-  ];
-  const [f, setF] = useState(from), [t, setT] = useState(to);
-  useEffect(() => { setF(from); setT(to); }, [from, to]);
-  const label = from || to ? (from && to ? (from === to ? dateRange(from, shift(from, 1)).split(' –')[0] : dateRange(from, to)) : from ? `From ${date(from)}` : `Until ${date(to)}`) : 'Any dates';
-  return (
-    <Popover active={!!(from || to)} width={280} label={label}>
-      {close => (
-        <div className="p-2 flex flex-col gap-2">
-          <span className="text-caption text-muted-ink px-1">Stays that touch these dates</span>
-          <div className="grid grid-cols-2 gap-1">
-            {presets.map(p => (
-              <button key={p.label} type="button" onClick={() => { onChange(p.from, p.to); close(); }}
-                className={cx('h-8 rounded-control border border-solid [font-family:inherit] text-meta cursor-pointer', from === p.from && to === p.to ? 'bg-black text-white border-black' : 'bg-card border-line text-ink hover:bg-muted')}>{p.label}</button>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <DateField label="From" value={f} onChange={setF} />
-            <DateField label="To" value={t} min={f || undefined} onChange={setT} />
-          </div>
-          <div className="flex justify-between gap-2">
-            <Button size="sm" variant="tertiary" onClick={() => { onChange('', ''); close(); }}>Any dates</Button>
-            <Button size="sm" variant="primary" onClick={() => { onChange(f, t); close(); }} disabled={!!(f && t && t < f)} disabledReason="The end is before the start.">Apply</Button>
-          </div>
-        </div>
-      )}
-    </Popover>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /* Bulk: mark booking-site payouts received                            */
 /* ------------------------------------------------------------------ */
 
@@ -584,14 +524,14 @@ function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClo
       toast({
         tone: r.skipped.length ? 'warning' : 'success',
         title: r.recorded ? `${plural(r.recorded, 'payout')} recorded, ${rm(r.total)}.` : 'No payout recorded.',
-        body: r.skipped.length ? `${plural(r.skipped.length, 'booking')} left alone: ${r.skipped.slice(0, 3).map(s => `${s.ref ?? 'one'} (${s.reason.replace(/\.$/, '').toLowerCase()})`).join(', ')}${r.skipped.length > 3 ? ' …' : ''}.` : 'They have left Booking-site payout pending.',
+        body: r.skipped.length ? `${plural(r.skipped.length, 'reservation')} left alone: ${r.skipped.slice(0, 3).map(s => `${s.ref ?? 'one'} (${s.reason.replace(/\.$/, '').toLowerCase()})`).join(', ')}${r.skipped.length > 3 ? ' …' : ''}.` : 'They have left Channel payout pending.',
       });
       onDone();
     } catch (err) { toast({ tone: 'critical', title: 'Payouts not recorded.', body: errorMessage(err, 'Try again in a moment.') }); }
     setBusy(false);
   }
   return (
-    <CentreModal title="Mark payouts received" sub={`Records one payout per booking for what it still has outstanding: ${plural(rows.length, 'booking')}, ${rm(owed)} in all.${left ? ` ${plural(left, 'ticked booking')} ${left === 1 ? 'is' : 'are'} left out: not a booking-site stay, cancelled, or nothing owed.` : ''}`} onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal title="Mark payouts received" sub={`Records one payout per reservation for what it still has outstanding: ${plural(rows.length, 'reservation')}, ${rm(owed)} in all.${left ? ` ${plural(left, 'ticked reservation')} ${left === 1 ? 'is' : 'are'} left out: not a channel stay, cancelled, or nothing owed.` : ''}`} onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px]">
         <div className="max-h-[180px] overflow-y-auto border border-solid border-line rounded-control">
           {rows.map(r => (
@@ -607,7 +547,7 @@ function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClo
         </div>
         <div className="flex justify-end gap-[9px]">
           <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!receivedOn || !rows.length} disabledReason={!rows.length ? 'None of the ticked bookings is waiting for a booking-site payout.' : 'Pick the date.'}>{busy ? 'Recording…' : 'Mark received'}</Button>
+          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!receivedOn || !rows.length} disabledReason={!rows.length ? 'None of the ticked reservations is waiting for a channel payout.' : 'Pick the date.'}>{busy ? 'Recording…' : 'Mark received'}</Button>
         </div>
       </form>
     </CentreModal>
@@ -661,7 +601,7 @@ function buildImport(text: string, UNITS: RosterUnit[]): ParsedRow[] {
     if (!guest) return { line, label, error: 'Guest name is required.' };
     if (!['airbnb', 'booking_com', 'agoda', 'direct'].includes(channelRaw)) return { line, label, error: `Unknown channel "${channelRaw}". Use airbnb, booking_com, agoda or direct.` };
     if (!ISO_DATE.test(checkIn) || !ISO_DATE.test(checkOut)) return { line, label, error: 'Dates must be YYYY-MM-DD.' };
-    if (nightsBetween(checkIn, checkOut) < 1) return { line, label, error: 'Check-out must be after check-in.' };
+    if (nightsBetween(checkIn, checkOut) < 1) return { line, label, error: 'Checkout must be after check-in.' };
     const guestsCount = guestsRaw ? Number(guestsRaw) : 2;
     if (!Number.isFinite(guestsCount) || guestsCount < 0) return { line, label, error: 'Guests must be a number.' };
     const rateNum = rateRaw ? Number(rateRaw.replace(/[^0-9.]/g, '')) : 0;
@@ -728,10 +668,10 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
   }
 
   return (
-    <CentreModal title={owner ? 'Owner stay' : 'Create reservation'} sub="Checked against the unit's other bookings before it is saved, then closed on the booking sites the unit is sold on." onClose={() => { if (!busy) onClose(); }} maxWidth={520}>
+    <CentreModal title={owner ? 'Owner stay' : 'Create reservation'} sub="Checked against the unit's other reservations before it is saved, then closed on the channels the unit is sold on." onClose={() => { if (!busy) onClose(); }} maxWidth={520}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto">
         <div role="radiogroup" aria-label="What is this" className="grid grid-cols-3 gap-1 p-1 rounded-control bg-muted">
-          {([['direct', 'Direct booking'], ['ota', 'Booking site'], ['owner_stay', 'Owner stay']] as const).map(([k, l]) => (
+          {([['direct', 'Direct'], ['ota', 'Airbnb, Booking.com, Agoda'], ['owner_stay', 'Owner stay']] as const).map(([k, l]) => (
             <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
               className={cx('h-9 rounded-[8px] border-none [font-family:inherit] text-meta cursor-pointer', kind === k ? 'bg-card font-semibold text-ink shadow-sm' : 'bg-transparent text-muted-ink')}>{l}</button>
           ))}
@@ -739,10 +679,10 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
         <UnitPicker units={UNITS} value={unitId} onChange={setUnitId} />
         {kind === 'ota' && (
           <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
-            <Select label="Booking site" showLabel size="md" value={site} onChange={v => setSite(v as BookingChannel)}
+            <Select label="Channel" showLabel size="md" value={site} onChange={v => setSite(v as BookingChannel)}
               options={(['airbnb', 'booking_com', 'agoda'] as const).map(c => ({ value: c, label: CHANNEL_META[c].label }))} />
             <Field label="The site's reference" placeholder="e.g. HMF4323EHS" value={ref} onChange={e => setRef(e.target.value)}
-              help="Bookings normally arrive by themselves through Channex. Type one in only if it did not." />
+              help="Channel reservations normally arrive by themselves through Channex. Type one in only if it did not." />
           </div>
         )}
         <Field label={owner ? 'Who is staying (optional)' : 'Guest name'} placeholder={owner ? unitOwner ?? 'The owner' : 'Jane Tan'} value={guestName} onChange={e => setGuestName(e.target.value)} required={!owner} />
@@ -754,12 +694,12 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
         )}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <DateField label="Check-in" value={checkIn} min={todayMyt(-1)} onChange={setCheckIn} required error={fieldErrors.checkIn} />
-          <DateField label="Check-out" value={checkOut} min={checkIn || undefined} onChange={setCheckOut} required
-            error={checkIn && checkOut && nights < 1 ? 'Check-out must be after check-in.' : fieldErrors.checkOut} />
+          <DateField label="Checkout" value={checkOut} min={checkIn || undefined} onChange={setCheckOut} required
+            error={checkIn && checkOut && nights < 1 ? 'Checkout must be after check-in.' : fieldErrors.checkOut} />
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <TimeField label="Check-in from" value={inTime} onChange={setInTime} help="Earlier for an early check-in." error={fieldErrors.checkInTime} />
-          <TimeField label="Check-out by" value={outTime} onChange={setOutTime} help="Later for a late check-out." error={fieldErrors.checkOutTime} />
+          <TimeField label="Checkout by" value={outTime} onChange={setOutTime} help="Later for a late checkout." error={fieldErrors.checkOutTime} />
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <NumberInput label="Guests" min={1} max={16} value={guestsCount} onChange={setGuestsCount} required
@@ -788,7 +728,7 @@ function ImportPreviewModal({ rows, onClose, onConfirm }: { rows: ParsedRow[]; o
   const ok = rows.filter(r => r.row).length;
   const bad = rows.length - ok;
   return (
-    <CentreModal title="Import reservations" sub="Review the rows before importing. Rejected rows are left out. Each booking is closed on the booking sites its unit is sold on." onClose={onClose} maxWidth={620}>
+    <CentreModal title="Import reservations" sub="Review the rows before importing. Rejected rows are left out. Each reservation is closed on the channels its unit is sold on." onClose={onClose} maxWidth={620}>
       <div className="px-[22px] pt-1 pb-3 flex items-center gap-2 flex-wrap flex-none">
         <span className="text-meta text-muted-ink">{plural(rows.length, 'row')} read</span>
         <StatusBadge tone="success" label={`${num(ok)} ready`} size="sm" />
