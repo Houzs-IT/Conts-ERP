@@ -180,7 +180,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Migration 0093 (revenue_model, contract history, receipts, Indah Water category) is not applied to staging or production yet; apply after the PR merges, dry-run first.
 - Long-term let units still show on the calendar and stay on channels: hiding them is the calendar's job (batch 3), not done here.
 - The sidebar still says "Adjustments" where it means owner credits and charges, if anywhere: navigation belongs to batch 1.
-- Expense receipt upload checked through the API only (document kind 'receipt', expenses.receipt_document_id); the file picker in the Record expense form was not clicked through in a browser.
+- Expense receipt upload: clicked through in a browser on 11 Oct (fix/sweep-money-system): Record expense with a PNG receipt, then the Receipt link downloads the same file.
 - 26 units with no contract record still run on their own split (units.split_kind); saving their Contract tab creates the contract.
 ## Calendar and rates (b3, 10 Oct)
 - Migration 0092 (units.weekend_rate, reservations.block_reason) is not yet applied to staging or production. It backfills weekend_rate = round(base_rate x 1.22) for every priced unit so live Fri/Sat prices do not move; units created later sell the weekend at the base rate until a weekend rate is set (Pricing page).
@@ -223,3 +223,13 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Open: built-in supply chain create screens add a placeholder row before the save answers and keep it if the save fails; only matters if the engine is switched off.
 - Open: field edits are last-write-wins (no version column); status and dates are already protected.
 - Note: booking-lifecycle.mjs signs an operations_staff cookie for the dev user, but the middleware now reads the live role from users, so its three non-management checks fail on any database where that user is management; give the check a real non-management user.
+
+## Open from the money-and-system sweep (fix/sweep-money-system, 11 Oct 2026)
+- Owner to decide: expenses can be added and edited but never deleted (no button, no endpoint). A wrong expense today can only be edited to RM 0.00.
+- Owner to decide: Portfolio "This month" counts every night booked in the whole month, while "Quarter to date" stops at today; the caption now says so. Pick one rule for both.
+- Owner to decide: should finance admins see Users and roles? The list refuses them (functions/api/users), so their built-in access is now none; management can still raise it, and then the page shows "could not load".
+- Imported paid payouts have no paid date (the workbook has none), so Payouts shows "Date not recorded" for 531 of 536.
+- Performance "Management fees" over 12 months only counts Aug 2026: the workbook's 整体报告 breakdown exists for that month alone.
+- The sign-in footer phone (+60 17-465 8868) is fixed in LoginPage.tsx; Settings > Support phone is not read there before sign-in.
+- Integrations header counts "2 not connected" from the provider cards only; the Channex panel above it is not counted.
+- A new password equal to the current one is accepted on My account.
