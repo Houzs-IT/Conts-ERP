@@ -80,7 +80,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 <div class="lh-sub">${esc(s.display_name)}${!multi && units[0] ? ` &middot; ${esc(units[0])}` : ''} &middot; issued ${esc(longDate(s.generated_at))}</div>
 ${provisional ? '<div class="lh-flag">Provisional figures. This statement is not final and may change before it is issued.</div>' : ''}
 <table class="lh-table">
-  <thead><tr><th style="width:66%">Description</th><th style="width:18%">Date</th><th class="num" style="width:16%">Amount (RM)</th></tr></thead>
+  <thead><tr><th style="width:66%">Description</th><th style="width:18%">Date</th><th class="num" style="width:16%">Amount</th></tr></thead>
   <tbody>
     ${lines.length === 0 ? `
       <tr><td>${TERMS.grossIncome}</td><td>${esc(longDate(s.period_end))}</td><td class="num">${ringgit(s.gross_booking_value)}</td></tr>

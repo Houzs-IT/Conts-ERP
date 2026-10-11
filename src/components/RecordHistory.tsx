@@ -58,9 +58,9 @@ type Kind = 'money' | 'pct' | 'date' | 'when' | 'state' | 'role' | 'channel' | '
 const FIELD: Record<string, [string, Kind?]> = {
   state: ['Status', 'state'], status: ['Status', 'state'], readiness: ['Readiness', 'state'], reason: ['Reason'],
   checkIn: ['Check-in', 'date'], checkOut: ['Check-out', 'date'], checkInTime: ['Check-in time'], checkOutTime: ['Check-out time'],
-  grossBookingValue: ['Booking total', 'money'], amount: ['Amount', 'money'], finalAmount: ['Final amount', 'money'], quotedAmount: ['Quote', 'money'],
-  netPayout: ['Net payout', 'money'], grossSen: ['Booking total', 'money'], feeSen: ['Site fee', 'money'], managementFee: ['Management fee', 'money'],
-  expensesTotal: ['Costs', 'money'], adjustmentsTotal: ['Adjustments', 'money'],
+  grossBookingValue: ['Gross Income', 'money'], amount: ['Amount', 'money'], finalAmount: ['Final amount', 'money'], quotedAmount: ['Quote', 'money'],
+  netPayout: ['Net Payout to Owner', 'money'], grossSen: ['Booking total', 'money'], feeSen: ['Site fee', 'money'], managementFee: ['To Operator', 'money'],
+  expensesTotal: ['Expense Deduction', 'money'], adjustmentsTotal: ['Adjustments', 'money'],
   fee: ['Management fee', 'pct'], managementFeePct: ['Management fee', 'pct'], defaultManagementFeePct: ['Default management fee', 'pct'],
   receivedOn: ['Received on', 'date'], incurredOn: ['Date', 'date'], renewsOn: ['Renews on', 'date'], startsOn: ['Starts on', 'date'],
   contractStartsOn: ['Contract starts', 'date'], contractRenewsOn: ['Contract renews', 'date'],

@@ -272,7 +272,7 @@ export default function OwnerPortalPage() {
         <section className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-1.5">
           <span className="text-heading font-semibold">Earnings over time</span>
           <span className="text-meta text-muted-ink">
-            Net payout, RM · last {trend.data?.months ?? points.length} months · {trend.data?.unitLabel ?? st.unitsLabel}
+            {TERMS.netPayout}, RM · last {trend.data?.months ?? points.length} months · {trend.data?.unitLabel ?? st.unitsLabel}
           </span>
           {points.length ? <TrendChart points={points} /> : (
             <EmptyState bare icon="ChartLine" title="No earnings yet" body="Earnings appear after your first statement." />
@@ -377,7 +377,6 @@ function StatementBreakdown({ statementId }: { statementId: string }) {
 
             {open && (
               <div className={multi ? 'px-5 pb-4 pt-0' : 'px-5 py-4'}>
-                {!multi && <div className="text-copy font-medium mb-2.5">{u.label}</div>}
                 <div className="flex flex-col">
                   {u.lines.map((l, i) => (
                     <div key={i} className="py-2 [border-bottom:1px_solid_var(--color-line-soft)]">
@@ -459,7 +458,7 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
 
   return (
     <div ref={box} className="mt-1.5 min-w-0">
-    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="block max-w-full" role="img" aria-label={`Net payout by month: ${desc}`}>
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="block max-w-full" role="img" aria-label={`${TERMS.netPayout} by month: ${desc}`}>
       <defs>
         <linearGradient id="owner-trend-fill" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color.gold} stopOpacity="0.24" />

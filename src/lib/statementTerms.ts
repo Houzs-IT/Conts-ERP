@@ -47,6 +47,14 @@ const OTHER_DEDUCTIONS: Record<string, string> = {
   cleaning: 'Cleaning Fee', housekeeping: 'Cleaning Fee', utilities: 'Utilities', other: 'Additional Deduction', maintenance: 'Additional Deduction',
 };
 
+/** Where a deduction sits on the report: its row order, then anything else (workbook cleaning, utilities). */
+export function deductionRank(label: string): number {
+  const i = DEDUCTION_TERMS.findIndex(d => d[1] === label);
+  if (i >= 0) return i;
+  const extra = ['Cleaning Fee', 'Utilities'].indexOf(label);
+  return extra >= 0 ? extra + 0.5 : DEDUCTION_TERMS.length;
+}
+
 const pctText = (p: number) => `${Number(p.toFixed(2))}%`;
 
 /** "15% To Operator"; just "To Operator" when the percentage is not known or differs between units. */
@@ -121,7 +129,7 @@ export function summaryRows(lines: (TermLine & { amount: number | string })[], n
   const rows: SummaryRow[] = [];
   const grossTotal = sum(gross), costTotal = sum(costs);
   if (gross.length) rows.push({ label: TERMS.grossIncome, amount: grossTotal, type: 'gross' });
-  for (const [label, amount] of grouped(costs)) rows.push({ label, amount, type: 'expense' });
+  for (const [label, amount] of grouped(costs).sort((a, b) => deductionRank(a[0]) - deductionRank(b[0]))) rows.push({ label, amount, type: 'expense' });
   if (gross.length && costs.length) rows.push({ label: TERMS.netIncome, amount: grossTotal + costTotal, type: 'subtotal' });
   if (fees.length) {
     const terms = [...new Set(fees.map(lineTerm))];

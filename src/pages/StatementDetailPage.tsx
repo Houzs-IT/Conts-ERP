@@ -82,6 +82,8 @@ export default function StatementDetailPage() {
     : s.state === 'sent' && s.payout && s.payout.state !== 'paid' ? { label: 'Mark paid', run: () => setConfirm('paid') }
     : null;
   const warnings = s.units.flatMap(u => u.warnings.map(w => `${u.label}: ${w}`));
+  // Stored adjustments include what the contract pays (fixed rent, minimum guarantee top-ups); the owner's own credits and charges are the rest.
+  const contractPaid = s.lines.filter(l => l.type === 'adjustment' && ['guarantee_top_up', 'fixed_rent', 'workbook_payout'].includes(l.category ?? '')).reduce((n, l) => n + l.amount, 0);
   const reportHref = (unitId?: string) => `#/finance/statements/${encodeURIComponent(s.id)}/report${unitId ? `?unit=${encodeURIComponent(unitId)}` : ''}`;
 
   return (
@@ -104,11 +106,12 @@ export default function StatementDetailPage() {
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
 
       <Card>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-x-[18px] gap-y-[14px] px-[22px] py-[18px]">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-[18px] gap-y-[14px] px-[22px] py-[18px]">
           <Figure label={TERMS.grossIncome} value={rm(s.totals.grossIncome)} />
           <Figure label={TERMS.expenseDeduction} value={signed(-s.totals.deductions)} />
           <Figure label={TERMS.toOperator} value={signed(-s.totals.operatorShare)} />
-          <Figure label={TERMS.adjustments} value={signed(s.totals.adjustments)} />
+          <Figure label={`${TERMS.fixedRent} & top-ups`} value={signed(contractPaid)} />
+          <Figure label={TERMS.adjustments} value={signed(s.totals.adjustments - contractPaid)} />
           <Figure label={TERMS.netPayout} value={rm(s.totals.netPayout)} strong />
         </div>
         <div className="flex flex-wrap gap-x-[18px] gap-y-1 px-[22px] py-[10px] [border-top:1px_solid_var(--color-line)] bg-page text-[12px] text-muted-ink">

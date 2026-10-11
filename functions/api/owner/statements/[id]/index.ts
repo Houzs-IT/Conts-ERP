@@ -1,9 +1,9 @@
 import { type Env, one, all, json, fail } from '../../../../_lib/db';
 import { requireSession } from '../../../../_lib/auth';
 import { ownerFor, VISIBLE } from '../../../../_lib/ownerScope';
-import { TERMS, lineTerm, lineDetail, isSourceReference } from '../../../../../src/lib/statementTerms';
+import { TERMS, deductionRank, lineTerm, lineDetail, isSourceReference } from '../../../../../src/lib/statementTerms';
 
-interface DetailLine { label: string; detail?: string; amount: number; type: string; category?: string; reference?: string; occurredOn?: string; items?: { label: string; amount: number; reference?: string }[] }
+interface DetailLine { label: string; detail?: string; amount: number; type: string; category?: string; reference?: string; occurredOn?: string; items?: { label: string; amount: number; reference?: string; count?: number }[] }
 interface UnitBreak { id: string; label: string; gross: number; fee: number; expenses: number; adjustments: number; net: number; lines: DetailLine[] }
 
 /** GET /api/owner/statements/:id — one statement drilled to per-unit, per-line detail.
@@ -95,12 +95,22 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     const rows: DetailLine[] = [];
     for (const l of u.lines) {
       const same = l.type !== 'adjustment' && rows.find(r => r.type === l.type && r.label === l.label);
-      const item = { label: l.detail ?? l.label, amount: l.amount, ...(l.reference ? { reference: l.reference } : {}) };
-      if (same) { same.amount += l.amount; same.items!.push(item); }
-      else rows.push({ label: l.label, amount: l.amount, type: l.type, ...(l.category ? { category: l.category } : {}), items: [item] });
+      // A stay is told by its guest and dates; the booking site's code means nothing to the owner.
+      const item = { label: l.detail ?? l.label, amount: l.amount, ...(l.reference && l.type !== 'gross' ? { reference: l.reference } : {}) };
+      // Eight cleans at the same price read as one item: "Basic cleaning x 8".
+      const twin = same && !item.reference && same.items!.find(i => !i.reference && i.count && i.label === item.label && i.amount / i.count === item.amount);
+      if (twin) { twin.count = twin.count! + 1; twin.amount += item.amount; same!.amount += l.amount; continue; }
+      if (same) { same.amount += l.amount; same.items!.push({ ...item, count: 1 }); }
+      else rows.push({ label: l.label, amount: l.amount, type: l.type, ...(l.category ? { category: l.category } : {}), items: [{ ...item, count: 1 }] });
     }
+    // In the report's order: income, each deduction by its row, the operator's share, then credits and charges.
+    const typeRank: Record<string, number> = { gross: 0, expense: 1, fee: 2, adjustment: 3 };
+    rows.sort((a, b) => (typeRank[a.type] - typeRank[b.type]) || (a.type === 'expense' ? deductionRank(a.label) - deductionRank(b.label) : 0));
     // Items only where they say more than the row itself.
-    for (const r of rows) if (!r.items!.some(i => i.label !== r.label || i.reference)) delete r.items;
+    for (const r of rows) {
+      if (!r.items!.some(i => i.label !== r.label || i.reference)) { delete r.items; continue; }
+      r.items = r.items!.map(({ count, ...i }) => (count! > 1 ? { ...i, label: `${i.label} x ${count}` } : i));
+    }
     u.lines = rows;
   }
 
