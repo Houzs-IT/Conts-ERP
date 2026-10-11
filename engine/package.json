@@ -4,6 +4,8 @@
   "private": true,
   "description": "Conts's copy of the Houzs supply chain engine. backend/ and frontend/ each have their own package.json.",
   "scripts": {
-    "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck"
+    "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
+    "lint": "npm --prefix backend run lint -- --advisory && npm --prefix frontend run lint",
+    "lint:update": "npm --prefix backend run lint:update && npm --prefix frontend run lint:update"
   }
 }

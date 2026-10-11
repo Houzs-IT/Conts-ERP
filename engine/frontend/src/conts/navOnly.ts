@@ -17,4 +17,4 @@ export const CONTS_HOME = "/scm/sales-orders";
 
 /** The floating quick-add button and the AI assistant: off. Quick-add offers service cases and projects,
  *  and the assistant needs a key this instance does not have. */
-export const CONTS_EXTRAS = false;
+export const CONTS_EXTRAS: boolean = false;

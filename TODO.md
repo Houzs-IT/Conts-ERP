@@ -113,7 +113,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Saved for real on staging: stock adjustment, stock transfer HC-ST-2610-001, stock take HC-STK-2610-001 (counted and posted), service case ASSR/2610-001, consignment order HC-CS-2610-001.
 - Delivery return from a DO: the save froze for 30s on staging then reported "already being processed": the free-plan 50-call limit again (third save type after delivery orders and goods receipts). Re-test after the plan upgrade.
 - Fixed (fix/engine-project-create): nobody at Conts could create a project, Houzs's rule names its own staff (BD role, Owner title, one email). Now Full on Projects in the Permissions chart may create (engine/backend/src/routes/projects.ts, engine/frontend/src/auth/salesAccess.ts). Needs the engine worker and screens redeployed.
-- Projects cannot be created until Project Maintenance has at least a Brand and an Event Type (both lists are empty on staging; the Create button stays disabled). One more Houzs-only rule remains: only BD or one Houzs email may edit a project's schedule reference (frontend/src/pages/Projects.tsx, canEditSchedule); full-access accounts are unaffected.
+- Projects cannot be created until Project Maintenance has at least a Brand and an Event Type (both lists are empty on staging; the Create button stays disabled). Done (fix/engine-left): editing a project's schedule reference now needs projects.manage (Roles), not the BD role or one Houzs email.
 - Not yet saved for real: sales order amendment, PO amendment, cancellation request, purchase invoice, purchase return, consignment note and return, the three purchase consignment screens, delivery planning and trips, racks, a project.
 
 ## Airbnb live test (8 Oct, production, test host account)
@@ -173,7 +173,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## Revenue metrics (fix/revenue-metrics)
 - Dashboard, trend, portfolio, analytics and the unit header use functions/_lib/revenue.ts: gross booking value and nights split by night into each month; occupancy = booked nights / nights available on listed units. Management fees and owner payout on the dashboard stay RM 0 until statements exist for the month (generation by the workbook rules is in feat/owner-statements, which needs migrations 0052/0054).
-- Engine backend light suite: 29 test files fail in Conts because they read Houzs data, CI workflows or repo-level scripts that were never copied (list: run `npx vitest run --config vitest.light.config.mts` in engine/backend); decide per file to port or skip.
+- Done (fix/engine-left): engine backend light suite green (938 files). 15 files that need Houzs-only data, docs or CI are excluded in engine/backend/vitest.light.config.mts with the missing input named; 9 files skip only their few tests that read such inputs.
 
 ## Renovation (catalog, sales documents, project; 9-10 Oct)
 - Production database has migrations 0060-0082 (10 Oct, Supabase connector, each with its pos_migrations row). The production engine worker and screens still run the pre-renovation code until redeployed: `node scripts/engine-production.mjs deploy` then `screens`, on the machine holding C:/dev/Conts-ERP-deploy and logged in to the Conts ERP Cloudflare account. Staging engine: `npx wrangler deploy` in engine/backend plus its screens build, same account.
@@ -181,7 +181,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner questions, contract defaults in use: typed amount allowed when it differs from measure x rate (flagged *); rounding per line to the sen; QT-YYMM-NNN; PO split 30/65/5; credit note to the sales-return account; supply-by-owner goods get no PO; promotion column = unit price.
 - Observed on a local engine (10 Oct, scratch Postgres + PostgREST): SKU photo upload, site receipts, the whole project flow (scripts/api-checks/renovation-project.mjs all passed, scripts/demo seed + cleanup). Not observed: revenue and credit-note journals (the local database has no chart of accounts), the PO payment-schedule card.
 - Demo data for the live site: scripts/demo (seed + cleanup, browser snippet or terminal). Cleanup archives and cancels; billed contracts, cancelled documents and inactive DEMO SKUs/suppliers stay.
-- Site receipt POST goes through the REST goods-receipt core and counts toward the free plan's 50 outside calls per request. Engine ESLint cannot run in Conts (engine/scripts/eslint and lint-ratchet.mjs were not copied).
+- Site receipt POST goes through the REST goods-receipt core and counts toward the free plan's 50 outside calls per request. Done (fix/engine-left): `npm run lint` in engine/ runs (Houzs's lint-ratchet.mjs and lint rules copied). Frontend is a gate and passes; backend is advisory as in Houzs's own CI: 334 file/rule pairs over Houzs's inherited ceilings, 27 of those files touched by Conts (renovation code), not fixed yet.
 
 ## Owners and revenue models (batch 4, 10 Oct)
 - Migration 0093 (revenue_model, contract history, receipts, Indah Water category) is not applied to staging or production yet; apply after the PR merges, dry-run first.

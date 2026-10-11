@@ -116,7 +116,7 @@ export function matchesSelection(r: Pick<MonitorRow, "queues" | "flags" | "step"
 export function matchesSearch(r: Pick<MonitorRow, "code" | "name" | "building" | "unitNo" | "customerName" | "soDocNo" | "sales" | "designer" | "renoPic">, q: string): boolean {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return true;
-  const hay = [r.code, r.name, r.building, r.unitNo, r.customerName, r.soDocNo, r.sales.name, r.designer?.name, r.renoPic?.name]
+  const hay = [r.code, r.name, r.building, r.unitNo, r.customerName, r.soDocNo, r.sales.name, r.designer.name, r.renoPic.name]
     .filter(Boolean).join(" ").toLowerCase();
   return words.every((w) => hay.includes(w));
 }

@@ -22,7 +22,7 @@ function hexToRgb(hex: string | null | undefined): [number, number, number] | nu
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-const HIGHLIGHT: Record<string, [number, number, number]> = { GREY: [217, 217, 217], PINK: [251, 225, 214] };
+const HIGHLIGHT: Partial<Record<string, [number, number, number]>> = { GREY: [217, 217, 217], PINK: [251, 225, 214] };
 
 /** d/m/yy as on the samples ("5/9/26", "4/11/2025" for the doc date). */
 function dmy(iso: string | null | undefined, longYear = false): string {

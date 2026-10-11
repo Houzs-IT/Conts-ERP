@@ -11,7 +11,7 @@ export function toPrintLine(l: DocLine): PrintLineInput {
   const m = l.measureMilli ?? (l.measure ? parseMeasureMilli(l.measure) : null);
   return {
     kind: l.kind, description: l.description, room: l.room, qty: l.qty,
-    measureMilli: m !== null && m !== undefined && !Number.isNaN(m) ? m : null, measureUom: l.measureUom, uom: l.uom,
+    measureMilli: m !== null && !Number.isNaN(m) ? m : null, measureUom: l.measureUom, uom: l.uom,
     unitPriceSen: l.unitPriceSen, listPriceSen: l.listPriceSen, discountBp: l.discountBp, amountOverrideSen: l.amountOverrideSen,
     isFoc: l.isFoc, highlight: l.highlight, pageBreakBefore: l.pageBreakBefore, parentId: l.parentId ?? null,
     voChange: l.voChange ?? null, netSenOverride: l.voChange === 'OMIT' && typeof l.netSen === 'number' ? l.netSen : null,

@@ -17,7 +17,7 @@ import { fmtSen } from '../../../vendor/shared/format';
 
 export const groupLabel = (row: Pick<MfgProductRow, 'category' | 'category_group'>): string => {
   const g = row.category_group ?? categoryGroupOf(row.category);
-  return RENOVATION_GROUPS.find((d) => d.code === g)?.label ?? String(row.category ?? '');
+  return RENOVATION_GROUPS.find((d) => d.code === g)?.label ?? String((row.category as string | null | undefined) ?? '');
 };
 
 export const subLabel = (code: string | null | undefined): string =>

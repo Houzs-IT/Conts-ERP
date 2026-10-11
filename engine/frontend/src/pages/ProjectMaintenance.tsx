@@ -268,8 +268,8 @@ function OrganizerManager() {
       setName("");
       q.reload();
       toast.success(`Added ${trimmed}`);
-    } catch (e: any) {
-      toast.error(e?.message || "Something went wrong. Please try again.");
+    } catch (e: unknown) {
+      toast.error((e as { message?: string } | null)?.message || "Something went wrong. Please try again.");
     } finally {
       setAdding(false);
     }
@@ -2281,8 +2281,8 @@ function CostRateRowEditor({
         boost_min_sales: numOrNull(minSales),
       });
       onSaved();
-    } catch (e: any) {
-      onError(e?.message || "Something went wrong. Please try again.");
+    } catch (e: unknown) {
+      onError((e as { message?: string } | null)?.message || "Something went wrong. Please try again.");
     } finally {
       setSaving(false);
     }

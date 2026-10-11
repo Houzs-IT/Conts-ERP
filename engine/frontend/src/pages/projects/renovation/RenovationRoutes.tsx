@@ -51,7 +51,7 @@ export function RenovationProjectRoute({ id, fallback }: { id: number; fallback:
     setKind("checking");
     renovationApi.detail(id)
       .then(() => { if (live) setKind("renovation"); })
-      .catch((e: unknown) => { if (live) setKind((e as { status?: number })?.status === 404 ? "other" : "renovation"); });
+      .catch((e: unknown) => { if (live) setKind((e as { status?: number } | null)?.status === 404 ? "other" : "renovation"); });
     return () => { live = false; };
   }, [id]);
   if (kind === "checking") return <p className="py-10 text-center text-sm text-ink-secondary">Loading project...</p>;
