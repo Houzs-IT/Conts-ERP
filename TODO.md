@@ -250,7 +250,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Owner to decide: should finance admins see Users and roles? The list refuses them (functions/api/users), so their built-in access is now none; management can still raise it, and then the page shows "could not load".
 - Imported paid payouts have no paid date (the workbook has none), so Payouts shows "Date not recorded" for 531 of 536.
 - Performance "Management fees" over 12 months only counts Aug 2026: the workbook's 整体报告 breakdown exists for that month alone.
-- The sign-in footer phone (+60 17-465 8868) is fixed in LoginPage.tsx; Settings > Support phone is not read there before sign-in.
 - Integrations header counts "2 not connected" from the provider cards only; the Channex panel above it is not counted.
 
 ## Reservations click sweep (fix/sweep-reservations, 11 Oct 2026)

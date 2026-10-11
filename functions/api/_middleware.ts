@@ -61,7 +61,7 @@ const MONEY_ONLY = /^\/api\/(payment-vouchers|purchase-invoices|sales-invoices|u
 
 const PUBLIC = new Set([
   'POST /api/auth/login', 'POST /api/auth/login-2fa', 'POST /api/auth/forgot-password',
-  'GET /api/auth/reset-password', 'POST /api/auth/reset-password',
+  'GET /api/auth/reset-password', 'POST /api/auth/reset-password', 'GET /api/settings/public',
 ]);
 
 /** What someone who must still set up two-step sign-in can reach. */
