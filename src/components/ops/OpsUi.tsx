@@ -4,6 +4,7 @@ import Icon from '../Icon';
 import { cx } from '../../lib/design-tokens';
 import { api, errorMessage } from '../../lib/api';
 import { time, weekdayDate, dateTimeShort } from '../../lib/format';
+import { TemplatePicker, useTemplates, type RepairTemplate } from './RepairTemplates';
 
 /* ---------- small pieces shared by Cleaning, Maintenance, Today and the field app ---------- */
 
@@ -227,13 +228,15 @@ export function uploadTo(path: string, extra: Record<string, string> = {}) {
 
 export interface ChecklistItem { key: string; label: string; done: boolean; doneBy: string | null; custom: boolean }
 
-export function Checklist({ taskId, items, readOnly, onChange }: { taskId: string; items: ChecklistItem[]; readOnly?: boolean; onChange: (items: ChecklistItem[]) => void }) {
+/** `endpoint`: where ticks and new items go; a clean's checklist by default, a repair's when given. */
+export function Checklist({ taskId, items, readOnly, onChange, endpoint }: { taskId: string; items: ChecklistItem[]; readOnly?: boolean; onChange: (items: ChecklistItem[]) => void; endpoint?: string }) {
+  const url = endpoint ?? `/housekeeping/tasks/${taskId}/checklist`;
   const [adding, setAdding] = useState('');
   const [error, setError] = useState<string | null>(null);
   async function toggle(it: ChecklistItem) {
     const optimistic = items.map(x => x.key === it.key ? { ...x, done: !x.done } : x);
     onChange(optimistic);
-    try { const r = await api.post<{ data: ChecklistItem[] }>(`/housekeeping/tasks/${taskId}/checklist`, { key: it.key, done: !it.done }); onChange(r.data); setError(null); }
+    try { const r = await api.post<{ data: ChecklistItem[] }>(url, { key: it.key, done: !it.done }); onChange(r.data); setError(null); }
     catch (e) { onChange(items); setError(errorMessage(e, 'Not saved. Try again.')); }
   }
   const [saving, setSaving] = useState(false);
@@ -242,7 +245,7 @@ export function Checklist({ taskId, items, readOnly, onChange }: { taskId: strin
     if (!label || saving) return;
     if (items.some(x => x.label.trim().toLowerCase() === label.toLowerCase())) { setError('That item is already on the list.'); return; }
     setSaving(true);
-    try { const r = await api.post<{ data: ChecklistItem[] }>(`/housekeeping/tasks/${taskId}/checklist`, { label }); onChange(r.data); setAdding(''); setError(null); }
+    try { const r = await api.post<{ data: ChecklistItem[] }>(url, { label }); onChange(r.data); setAdding(''); setError(null); }
     catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); }
     finally { setSaving(false); }
   }
@@ -277,15 +280,21 @@ export function ReportDamageModal({ unitId, unitLabel, taskId, onClose, onDone }
   const [category, setCategory] = useState('other');
   const [urgency, setUrgency] = useState<'normal' | 'urgent'>('normal');
   const [detail, setDetail] = useState('');
+  const [templateId, setTemplateId] = useState('');
+  const templates = useTemplates();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  function pick(t: RepairTemplate | null) {
+    setTemplateId(t?.id ?? '');
+    if (t) { setTitle(t.name); setCategory(t.category); setUrgency(t.urgency); setError(null); }
+  }
   async function submit() {
     if (!title.trim()) { setError('Say what is broken.'); return; }
     setBusy(true); setError(null);
     try {
       const r = await api.post<{ id: string }>('/maintenance/issues', {
         unitId, title: title.trim(), detail: detail.trim() || undefined, category, urgency,
-        reportSource: taskId ? 'cleaner' : 'staff', sourceTaskId: taskId, source: 'web',
+        reportSource: taskId ? 'cleaner' : 'staff', sourceTaskId: taskId, source: 'web', templateId: templateId || undefined,
       });
       onDone(r.id);
     } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); setBusy(false); }
@@ -293,6 +302,7 @@ export function ReportDamageModal({ unitId, unitLabel, taskId, onClose, onDone }
   return (
     <OpsModal title="Report damage" sub={`${unitLabel}. Opens a Maintenance job on this unit.`} onClose={onClose} busy={busy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void submit()}>Report damage</Button></>}>
+      <TemplatePicker templates={templates.data?.data ?? null} value={templateId} onPick={pick} />
       <FormRow label="What is broken" error={error}>
         <input className={INPUT} value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Shower head leaking" maxLength={160} />
       </FormRow>

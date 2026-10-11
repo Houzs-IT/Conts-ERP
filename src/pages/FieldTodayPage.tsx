@@ -12,6 +12,8 @@ import {
   TimeLeft, KIND_LABEL, MediaGrid, MediaDrop, uploadTo, Checklist, ReportDamageModal, Segmented, hm, dayLabel, mytDay, type ChecklistItem, type MediaItem,
 } from '../components/ops/OpsUi';
 import { StatusBadge } from '../components/StatusBadge';
+import { useSession } from '../lib/session';
+import FieldRepairsPage from './FieldRepairsPage';
 
 /* GET /api/field/tasks (functions/api/field/tasks.ts) */
 interface Job {
@@ -23,9 +25,15 @@ interface Job {
 }
 interface Detail { checklist: ChecklistItem[]; media: MediaItem[]; access: { id: string; label: string; instruction: string }[] }
 
+/** The field app's home: a technician gets the repairs given to their account, a cleaner the cleans. */
+export default function FieldTodayPage() {
+  const { user } = useSession();
+  return user?.role === 'technician' ? <FieldRepairsPage /> : <CleaningToday />;
+}
+
 /** The cleaner's phone: today's jobs grouped by building, each with the guest leaving and arriving, the time left,
  *  and the steps: guest left, start, checklist, photos and videos, complete. One column, 44px targets. */
-export default function FieldTodayPage() {
+function CleaningToday() {
   const now = useNow(30000);
   const [pick, setPick] = useState<'today' | 'tomorrow'>('today');
   const date = pick === 'today' ? mytDay(0) : mytDay(1);

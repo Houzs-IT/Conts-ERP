@@ -20,8 +20,10 @@ import { cx } from '../lib/design-tokens';
 import { rm, plural, dateShort } from '../lib/format';
 import { runEach, skippedNote } from '../lib/bulk';
 import {
-  PillTabs, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, MediaGrid, MediaDrop, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem,
+  PillTabs, OpsModal, FormRow, INPUT, TEXTAREA, CloseButton, MediaGrid, MediaDrop, uploadTo, CATEGORY, stamp, hm, mytDay, Checklist, type MediaItem, type ChecklistItem,
 } from '../components/ops/OpsUi';
+import { TemplatePicker, AssigneeFields, assigneeOf, assigneeBody, useTemplates, useTechnicians, type Assignee } from '../components/ops/RepairTemplates';
+import { TemplatesPanel } from './MaintenanceTemplates';
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
@@ -35,7 +37,8 @@ type ChargeTo = 'owner' | 'the_conts' | 'guest_deposit' | 'warranty';
 interface Issue {
   id: string; unitId: string; unitNumber: string; propertyName: string; buildingId: string; title: string; detail: string | null; state: string;
   category: string; urgency: 'normal' | 'urgent'; source: string; sourceTaskId: string | null;
-  vendorName: string | null; assigneeKind: 'in_house' | 'contractor' | null; reportedAt: string; resolvedAt: string | null;
+  vendorName: string | null; assigneeKind: 'in_house' | 'contractor' | null; assigneeId: string | null; reportedAt: string; resolvedAt: string | null;
+  templateId: string | null; templateName: string | null; doneNote: string | null; checklist: { done: number; total: number };
   blocksUnit: boolean; ownerApprovalRequired: boolean; ownerApprovedAt: string | null; chargeTo: ChargeTo; reporter: string | null;
   startedAt: string | null; endedAt: string | null; photoCount: number; documentCount: number; windows: RepairWin[];
   quotedAmount: number | null; finalAmount: number | null; expensed: number | null; skuName: string | null;
@@ -43,7 +46,7 @@ interface Issue {
 interface Payload { threshold: number; data: Issue[] }
 interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploadedAt: string }
 
-type Tab = 'open' | 'approval' | 'done' | 'history' | 'catalog';
+type Tab = 'open' | 'approval' | 'done' | 'history' | 'catalog' | 'templates';
 const PAYER: Record<ChargeTo, string> = { owner: 'Owner (on the statement)', the_conts: 'Company', guest_deposit: 'Guest (from the deposit)', warranty: 'Warranty' };
 const PAYER_SHORT: Record<ChargeTo, string> = { owner: 'owner pays', the_conts: 'company pays', guest_deposit: 'guest pays', warranty: 'warranty' };
 const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office' };
@@ -77,12 +80,12 @@ export default function MaintenancePage() {
   // The side menu's counts (open jobs, today's work) follow what was just done here.
   const reload = () => { reloadData(); void refreshNavCounts(); };
   const issues = data?.data ?? [];
-  const sku = useApi<SkuPayload>(tab === 'catalog' || selected ? '/maintenance/skus' : null);
+  const sku = useApi<SkuPayload>(tab === 'catalog' || tab === 'templates' || selected ? '/maintenance/skus' : null);
 
   // A link from a clean (?id=) opens the right tab.
   useEffect(() => {
     const it = issues.find(i => i.id === selected);
-    if (it && tab !== 'history' && tab !== 'catalog') setTab(it.state === 'resolved' ? 'done' : awaitingOwner(it) ? 'approval' : 'open');
+    if (it && tab !== 'history' && tab !== 'catalog' && tab !== 'templates') setTab(it.state === 'resolved' ? 'done' : awaitingOwner(it) ? 'approval' : 'open');
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const monthStart = mytDay(0).slice(0, 7);
@@ -142,11 +145,14 @@ export default function MaintenancePage() {
           {data && <Button size="sm" variant="secondary" onClick={() => user!.role === 'management' ? setThreshold(true) : toast({ tone: 'info', title: `Owner approval is needed above ${rm(data.threshold)}.`, body: 'Management can change this.' })}>
             Owner approval above {rm(data.threshold, { cents: false })}
           </Button>}
+          <Button size="sm" variant={tab === 'templates' ? 'primary' : 'secondary'} icon={<Icon name="ClipboardList" size="sm" />} onClick={() => setTab(tab === 'templates' ? 'open' : 'templates')}>Templates</Button>
           <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Parts catalog</Button>
         </>}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>New job</Button>} />
 
-      {tab === 'catalog' ? (
+      {tab === 'templates' ? (
+        <TemplatesPanel money={money} skus={sku.data?.data ?? []} />
+      ) : tab === 'catalog' ? (
         <CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={['management', 'operations_manager', 'operations_staff'].includes(user!.role)} onCreate={createSku} onUpdate={updateSku} />
       ) : (
         <>
@@ -262,20 +268,22 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
 /** One technician or contractor for every ticked job (PATCH each job, as the detail panel does). */
 function BulkAssignModal({ rows, onClose, onDone }: { rows: Issue[]; onClose: () => void; onDone: () => void }) {
   const toast = useToast();
-  const [name, setName] = useState('');
-  const [kind, setKind] = useState<'in_house' | 'contractor'>('contractor');
+  const techs = useTechnicians();
+  const [who, setWho] = useState<Assignee>({ kind: 'in_house', technicianId: '', contractor: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function save() {
-    if (!name.trim()) { setError('Enter a name.'); return; }
+    const { body, error: bad } = assigneeBody(who);
+    if (bad) { setError(bad); return; }
+    const name = who.kind === 'in_house' ? techs.data?.data.find(t => t.id === who.technicianId)?.name ?? 'the technician' : who.contractor.trim();
     setBusy(true); setError(null);
     const todo = rows.filter(i => i.state !== 'resolved');
     const left = rows.filter(i => i.state === 'resolved').map(i => ({ label: jobLabel(i), reason: 'Finished, reopen it first' }));
-    const res = await runEach(todo, i => api.patch(`/maintenance/issues/${i.id}`, { assigneeName: name.trim(), assigneeKind: kind }), jobLabel);
+    const res = await runEach(todo, i => api.patch(`/maintenance/issues/${i.id}`, body), jobLabel);
     const failed = [...res.failed, ...left];
     toast({
       tone: res.ok === 0 ? 'critical' : failed.length ? 'warning' : 'success',
-      title: res.ok ? `${plural(res.ok, 'job')} assigned to ${name.trim()}.` : 'No job assigned.',
+      title: res.ok ? `${plural(res.ok, 'job')} assigned to ${name}.` : 'No job assigned.',
       body: skippedNote(failed) || undefined,
     });
     onDone();
@@ -283,10 +291,7 @@ function BulkAssignModal({ rows, onClose, onDone }: { rows: Issue[]; onClose: ()
   return (
     <OpsModal title="Assign jobs" sub={`${plural(rows.length, 'job')} ticked. Each goes to the same technician or contractor.`} onClose={onClose} busy={busy}
       footer={footer(onClose, busy, 'Assign', () => void save())}>
-      <div className="grid grid-cols-[1fr_130px] gap-3">
-        <FormRow label="Assign to" error={error}><input className={INPUT} value={name} onChange={e => setName(e.target.value)} placeholder="Technician or contractor" maxLength={80} autoFocus /></FormRow>
-        <FormRow label="Kind"><select className={INPUT} value={kind} onChange={e => setKind(e.target.value as 'in_house' | 'contractor')}><option value="in_house">In-house</option><option value="contractor">Contractor</option></select></FormRow>
-      </div>
+      <AssigneeFields value={who} onChange={v => { setWho(v); setError(null); }} technicians={techs.data} allowNone={false} error={error} />
     </OpsModal>
   );
 }
@@ -297,8 +302,15 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
   const toast = useToast();
   const files = useApi<{ data: FileItem[] }>(`/maintenance/issues/${i.id}/documents`);
   const [busy, setBusy] = useState<string | null>(null);
-  const [assignee, setAssignee] = useState(i.vendorName ?? '');
-  const [assigneeKind, setAssigneeKind] = useState<'in_house' | 'contractor'>(i.assigneeKind ?? 'contractor');
+  const techs = useTechnicians(i.state !== 'resolved');
+  const startWho: Assignee = i.assigneeId ? { kind: 'in_house', technicianId: i.assigneeId, contractor: '' }
+    : i.vendorName ? { kind: 'contractor', technicianId: '', contractor: i.vendorName } : { kind: 'in_house', technicianId: '', contractor: '' };
+  const [who, setWho] = useState<Assignee>(startWho);
+  const whoChanged = who.kind !== startWho.kind || who.technicianId !== startWho.technicianId || who.contractor.trim() !== startWho.contractor;
+  const checklist = useApi<{ data: ChecklistItem[] }>(`/maintenance/issues/${i.id}/checklist`);
+  const [ticks, setTicks] = useState<ChecklistItem[] | null>(null);
+  const stepItems = ticks ?? checklist.data?.data ?? null;
+  const parts = useApi<{ data: { skuId: string; name: string; code: string; unitLabel: string; plannedQty: number; usedQty: number }[] }>(`/maintenance/issues/${i.id}/parts`);
   const [quoteSen, setQuoteSen] = useState<number | null>(i.quotedAmount);
   const [windowOpen, setWindowOpen] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
@@ -308,7 +320,7 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
   const media = (files.data?.data ?? []).filter(f => f.kind === 'photo' || f.kind === 'video');
   const docs = (files.data?.data ?? []).filter(f => f.kind !== 'photo' && f.kind !== 'video');
 
-  const refresh = useCallback(() => { files.reload(); onChanged(); }, [files, onChanged]);
+  const refresh = useCallback(() => { files.reload(); parts.reload(); onChanged(); }, [files, parts, onChanged]);
   async function act(key: string, fn: () => Promise<unknown>, ok: string, body?: string) {
     setBusy(key);
     try { await fn(); toast({ tone: 'success', title: ok, body }); refresh(); return true; }
@@ -342,6 +354,8 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
         {i.blocksUnit && <StatusBadge tone="critical">Unit blocked</StatusBadge>}
       </div>
       {i.detail && <p className="m-0 text-ink whitespace-pre-wrap">{i.detail}</p>}
+      {i.templateName && <span className="text-meta text-muted-ink">From the template {i.templateName}</span>}
+      {i.doneNote && <div className="rounded-control bg-muted p-2.5"><span className="block text-meta text-muted-ink">Technician's note{i.endedAt ? `, ${stamp(i.endedAt)}` : ''}</span>{i.doneNote}</div>}
 
       <ol className="m-0 p-0 list-none flex flex-col">
         {steps.map((s, n) => (
@@ -367,15 +381,29 @@ function IssueDetail({ issue: i, threshold, money, skus, onClose, onChanged }: {
 
       {!done && (
         <section className="flex flex-col gap-2">
-          <h3 className="m-0 text-copy font-semibold">Assigned to</h3>
-          <div className="flex gap-2 flex-wrap">
-            <input className={cx(INPUT, 'flex-1 min-w-[140px]')} value={assignee} onChange={e => setAssignee(e.target.value)} placeholder="Technician or contractor name" aria-label="Assigned to" maxLength={80} />
-            <select className={cx(INPUT, 'w-[130px]')} value={assigneeKind} onChange={e => setAssigneeKind(e.target.value as 'in_house' | 'contractor')} aria-label="In-house or contractor">
-              <option value="in_house">In-house</option><option value="contractor">Contractor</option>
-            </select>
-            <Button size="sm" variant="secondary" className="h-10" disabled={!assignee.trim() || (assignee.trim() === (i.vendorName ?? '') && assigneeKind === (i.assigneeKind ?? 'contractor'))} disabledReason="Enter a different name."
-              loading={busy === 'assign'} onClick={() => void act('assign', () => api.patch(`/maintenance/issues/${i.id}`, { assigneeName: assignee.trim(), assigneeKind }), 'Job assigned.')}>Save</Button>
-          </div>
+          <h3 className="m-0 text-copy font-semibold">Assigned to {i.vendorName && <span className="text-muted-ink font-normal">· now {i.vendorName}{i.assigneeId ? ' (on their phone)' : i.assigneeKind === 'in_house' ? ' (no account: not on any phone)' : ''}</span>}</h3>
+          <AssigneeFields label="Who" value={who} onChange={setWho} technicians={techs.data} allowNone={false} />
+          <Button size="sm" variant="secondary" className="self-start" disabled={!whoChanged || !!assigneeBody(who).error} disabledReason={assigneeBody(who).error ?? 'Pick someone else first.'}
+            loading={busy === 'assign'} onClick={() => void act('assign', () => api.patch(`/maintenance/issues/${i.id}`, assigneeBody(who).body), 'Job assigned.')}>Save</Button>
+        </section>
+      )}
+
+      {(stepItems?.length || !done) && (
+        <section className="flex flex-col gap-1">
+          <h3 className="m-0 text-copy font-semibold">Checklist {stepItems && stepItems.length > 0 && <span className="text-muted-ink font-normal">{stepItems.filter(c => c.done).length} of {stepItems.length}</span>}</h3>
+          {stepItems ? <Checklist taskId={i.id} endpoint={`/maintenance/issues/${i.id}/checklist`} items={stepItems} readOnly={done} onChange={setTicks} /> : <Skeleton height={60} />}
+        </section>
+      )}
+
+      {(parts.data?.data.length ?? 0) > 0 && (
+        <section className="flex flex-col gap-1">
+          <h3 className="m-0 text-copy font-semibold">Parts</h3>
+          {parts.data!.data.map(p => (
+            <div key={p.skuId} className="flex items-center gap-2 min-h-8">
+              <span className="flex-1 min-w-0 truncate">{p.name} <span className="text-muted-ink">{p.code}</span></span>
+              <span className="tabular-nums text-muted-ink whitespace-nowrap">{p.plannedQty > 0 && `planned ${p.plannedQty} · `}used <b className="text-ink">{p.usedQty}</b></span>
+            </div>
+          ))}
         </section>
       )}
 
@@ -487,29 +515,53 @@ const errText = (e: unknown) => errorMessage(e, 'Not saved. Try again.');
 
 function NewJobModal({ onClose, onDone, money, threshold }: { onClose: () => void; onDone: (id: string) => void; money: boolean; threshold: number }) {
   const units = useUnitRoster();
-  const [f, setF] = useState({ unitId: '', title: '', category: 'other', urgency: 'normal', reportSource: 'staff', detail: '', assigneeName: '', assigneeKind: 'contractor', chargeTo: 'owner' });
+  const templates = useTemplates();
+  const techs = useTechnicians();
+  const [f, setF] = useState({ unitId: '', title: '', category: 'other', urgency: 'normal', reportSource: 'staff', detail: '', chargeTo: 'owner' });
+  const [who, setWho] = useState<Assignee>({ kind: '', technicianId: '', contractor: '' });
+  const [templateId, setTemplateId] = useState('');
+  const [blocksUnit, setBlocksUnit] = useState(false);
   const [quoteSen, setQuoteSen] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ unitId?: string; title?: string; form?: string }>({});
+  const [error, setError] = useState<{ unitId?: string; title?: string; assignee?: string; form?: string }>({});
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(x => ({ ...x, [k]: e.target.value }));
+  const tpl = templates.data?.data.find(t => t.id === templateId) ?? null;
+  function pickTemplate(t: typeof tpl) {
+    setTemplateId(t?.id ?? '');
+    if (!t) return;
+    setF(x => ({ ...x, title: t.name, category: t.category, urgency: t.urgency }));
+    setWho(assigneeOf(t));
+    setBlocksUnit(t.blocksUnit);
+    if (money) setQuoteSen(t.estimatedCost);
+    setError({});
+  }
   async function save() {
-    const bad = { unitId: f.unitId ? undefined : 'Pick the unit.', title: f.title.trim() ? undefined : 'Say what is wrong.' };
-    if (bad.unitId || bad.title) { setError(bad); return; }
+    const who_ = assigneeBody(who);
+    const bad = { unitId: f.unitId ? undefined : 'Pick the unit.', title: f.title.trim() ? undefined : 'Say what is wrong.', assignee: who_.error ?? undefined };
+    if (bad.unitId || bad.title || bad.assignee) { setError(bad); return; }
     setBusy(true); setError({});
     try {
       const r = await api.post<{ id: string }>('/maintenance/issues', {
         unitId: f.unitId, title: f.title.trim(), detail: f.detail.trim() || undefined, category: f.category, urgency: f.urgency, reportSource: f.reportSource,
-        assigneeName: f.assigneeName.trim() || undefined, assigneeKind: f.assigneeName.trim() ? f.assigneeKind : undefined,
+        ...who_.body, templateId: templateId || undefined, blocksUnit,
         quotedAmount: money && quoteSen != null ? quoteSen : undefined, chargeTo: f.chargeTo,
       });
       onDone(r.id);
     } catch (e) {
       const fields = e instanceof ApiFailure ? e.fields ?? {} : {};
-      setError({ unitId: fields.unitId, title: fields.title, form: fields.unitId || fields.title ? undefined : errText(e) }); setBusy(false);
+      const assignee = fields.assigneeUserId ?? fields.assigneeName;
+      setError({ unitId: fields.unitId, title: fields.title, assignee, form: fields.unitId || fields.title || assignee ? undefined : errText(e) }); setBusy(false);
     }
   }
   return (
-    <OpsModal title="New job" sub="A repair on one unit." onClose={onClose} busy={busy} width={540} footer={footer(onClose, busy, 'Open job', () => void save())}>
+    <OpsModal title="New job" sub="A repair on one unit." onClose={onClose} busy={busy} width={560} footer={footer(onClose, busy, 'Open job', () => void save())}>
+      <TemplatePicker templates={templates.data?.data ?? null} value={templateId} onPick={pickTemplate} />
+      {tpl && (
+        <div className="rounded-control bg-muted p-2.5 text-meta text-muted-ink flex flex-col gap-0.5">
+          <span>{tpl.steps.length ? `Checklist of ${plural(tpl.steps.length, 'step')}` : 'No checklist'}{tpl.parts.length ? ` · parts: ${tpl.parts.map(p => `${p.qty} x ${p.name}`).join(', ')}` : ''}</span>
+          {tpl.instructions && <span className="text-ink">{tpl.instructions}</span>}
+        </div>
+      )}
       <FormRow label="Unit" error={error.unitId}><SearchSelect label="Unit" value={f.unitId} onChange={v => { setF(x => ({ ...x, unitId: v })); setError(x => ({ ...x, unitId: undefined })); }} options={units.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName }))} placeholder="Search units" size="md" /></FormRow>
       <FormRow label="What is wrong" error={error.title}><input className={INPUT} value={f.title} onChange={e => { set('title')(e); setError(x => ({ ...x, title: undefined })); }} placeholder="e.g. Aircon not cooling, guest complained" maxLength={160} /></FormRow>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -518,10 +570,11 @@ function NewJobModal({ onClose, onDone, money, threshold }: { onClose: () => voi
         <FormRow label="Reported by"><select className={INPUT} value={f.reportSource} onChange={set('reportSource')}>{Object.entries(SOURCE).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></FormRow>
       </div>
       <FormRow label="Details (optional)"><textarea className={TEXTAREA} value={f.detail} onChange={set('detail')} maxLength={2000} /></FormRow>
-      <div className="grid grid-cols-[1fr_130px] gap-3">
-        <FormRow label="Assign to (optional)"><input className={INPUT} value={f.assigneeName} onChange={set('assigneeName')} placeholder="Technician or contractor" maxLength={80} /></FormRow>
-        <FormRow label="Kind"><select className={INPUT} value={f.assigneeKind} onChange={set('assigneeKind')}><option value="in_house">In-house</option><option value="contractor">Contractor</option></select></FormRow>
-      </div>
+      <AssigneeFields label="Assign to (optional)" value={who} onChange={v => { setWho(v); setError(x => ({ ...x, assignee: undefined })); }} technicians={techs.data} error={error.assignee} />
+      <label className="flex items-center gap-2 text-copy min-h-8 cursor-pointer">
+        <input type="checkbox" className="w-4 h-4 accent-black" checked={blocksUnit} onChange={e => setBlocksUnit(e.target.checked)} />
+        Take the unit out of service until fixed
+      </label>
       <div className="grid grid-cols-2 gap-3">
         {money && <FormRow label="Quote, RM (optional)" hint={quoteSen != null && quoteSen > threshold && f.chargeTo === 'owner' ? 'Above the threshold: the owner approves first.' : undefined}>
           <MoneyInput className={INPUT} valueSen={quoteSen} onChangeSen={setQuoteSen} aria-label="Quote in RM" /></FormRow>}
