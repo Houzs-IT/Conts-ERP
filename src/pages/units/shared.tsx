@@ -28,6 +28,9 @@ export interface Unit {
   bedrooms?: number;
   /** Sen. Present only for roles that see money; saved through PUT /api/rates, not the unit PATCH. */
   baseRate?: number;
+  /** Sen. The standard clean's price (0 or null: not set). Money roles only; saved from the Financials tab. */
+  cleaningPrice?: number | null;
+  /** The old "Recurring monthly costs" list. Only its cleaning row was ever used (as the cleaning price); kept for reference. */
   expenses: Expense[];
   contract: {
     feePct: number; startedOn: string; renewsOn: string; documents: { id: string; name: string }[];

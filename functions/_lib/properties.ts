@@ -13,6 +13,9 @@ export interface UnitInput {
   ownerName?: string; ic?: string; bankName?: string; bankAccount?: string; accountHolder?: string;
   pkg?: string; term?: string; split?: string; splitValue?: number | null; guaranteePeriod?: string;
   bedrooms?: number;
+  /** The standard clean's price on this unit (sen): the unit's one 'cleaning' row in unit_expenses, which cleanPrice()
+   *  reads. null clears it (amount 0, so cleans charge the last price used or the default). */
+  cleaningPrice?: number | null;
   expenses?: { id?: string; category: string; amount: number; note?: string }[];
   contract?: { feePct: number; startedOn: string; renewsOn: string };
 }
@@ -35,6 +38,7 @@ export function invalidUnit(b: UnitInput): { field: string; message: string } | 
   if (b.splitValue != null && (!Number.isInteger(b.splitValue) || b.splitValue < 0)) return { field: 'splitValue', message: 'Enter a whole number.' };
   if (b.guaranteePeriod !== undefined && !GUARANTEE_PERIODS.includes(b.guaranteePeriod)) return { field: 'guaranteePeriod', message: 'Pick month or year.' };
   if (b.bedrooms !== undefined && (!Number.isInteger(b.bedrooms) || b.bedrooms < 0 || b.bedrooms > 20)) return { field: 'bedrooms', message: 'Bedrooms must be a whole number from 0 to 20.' };
+  if (b.cleaningPrice != null && (!Number.isInteger(b.cleaningPrice) || b.cleaningPrice < 0 || b.cleaningPrice > 10_000_000)) return { field: 'cleaningPrice', message: 'Enter the cleaning price in ringgit, RM 0.00 or more.' };
   if (b.contract) {
     if (!(b.contract.feePct >= 0 && b.contract.feePct <= 100)) return { field: 'feePct', message: 'The fee must be between 0 and 100.' };
     if (!b.contract.startedOn) return { field: 'startedOn', message: 'Enter the start date.' };
@@ -62,6 +66,15 @@ export async function ownerFor(env: Env, b: UnitInput): Promise<string> {
     VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?)`,
     id, name, ic, b.bankName ?? null, b.accountHolder ?? null, bankAccount ?? null, (bankAccount ?? '').slice(-4) || null, now, now);
   return id;
+}
+
+/** Sets the unit's standard cleaning price: updates its first 'cleaning' row in unit_expenses (the row cleanPrice() in
+ *  functions/_lib/cleaning.ts reads), or adds one after the others. Every other row is left as it is. */
+export async function saveCleaningPrice(env: Env, unitId: string, amount: number) {
+  const row = await one<{ id: string }>(env, `SELECT id FROM unit_expenses WHERE unit_id = ? AND category = 'cleaning' ORDER BY sort_order LIMIT 1`, unitId);
+  if (row) { await run(env, 'UPDATE unit_expenses SET amount = ? WHERE id = ?', amount, row.id); return; }
+  await run(env, `INSERT INTO unit_expenses (id, unit_id, category, amount, note, sort_order)
+    SELECT ?, ?, 'cleaning', ?, '', COALESCE(MAX(sort_order) + 1, 0) FROM unit_expenses WHERE unit_id = ?`, crypto.randomUUID(), unitId, amount, unitId);
 }
 
 export async function saveExpenses(env: Env, unitId: string, list: NonNullable<UnitInput['expenses']>) {
