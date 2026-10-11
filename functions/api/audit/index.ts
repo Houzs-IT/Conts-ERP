@@ -47,6 +47,7 @@ async function fieldOwns(env: Env, userId: string, table: string, id: string) {
 /** GET /api/audit — who did what, when, before and after.
  *    ?entityTable=reservations&entityId=..   one record's history (the History panel on every detail view)
  *    &also=units:abc,owners:def              more records shown in the same history (optional)
+ *    &alsoActions=reservation.status         only these actions from the `also` records (optional)
  *    &page=1&pageSize=25                     newest first
  *  Without a record it is the whole trail, for management and finance only. One record's history follows the
  *  role's access to that kind of record; housekeepers and technicians see only their own cleans and repairs. */
@@ -84,10 +85,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const entities: [string, string][] = main ? [main] : [];
   for (const e of extra) if (main && await mayRead(e[0], e[1])) entities.push(e);
 
+  const alsoActions = (url.searchParams.get('alsoActions') ?? '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 20);
   const where: string[] = [], args: unknown[] = [];
   if (entities.length) {
-    where.push(`(${entities.map(() => '(a.entity_table = ? AND a.entity_id = ?)').join(' OR ')})`);
-    for (const [t, id] of entities) args.push(t, id);
+    // The record itself shows everything; an `also` record only the actions asked for, when a list is given.
+    const filter = alsoActions.length ? ` AND a.action IN (${alsoActions.map(() => '?').join(', ')})` : '';
+    where.push(`(${entities.map((_, i) => `(a.entity_table = ? AND a.entity_id = ?${i > 0 ? filter : ''})`).join(' OR ')})`);
+    entities.forEach(([t, id], i) => { args.push(t, id); if (i > 0) args.push(...alsoActions); });
   } else if (entityTable) { where.push('a.entity_table = ?'); args.push(entityTable); }
   if (actorId) { where.push('a.actor_id = ?'); args.push(actorId); }
   const cond = where.length ? `WHERE ${where.join(' AND ')}` : '';

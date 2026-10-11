@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Plus, Trash2, X, Check } from 'lucide-react';
+import { Plus, Trash2, Check } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
@@ -12,6 +12,7 @@ import { api } from '../lib/api';
 import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
+import { CloseButton } from '../components/CloseButton';
 
 /** Delivery Residence Rules — ported from 2990's SCM, drawn in Conts. Per-building-type
  *  delivery config the TMS scheduler reads (service duration, time window, lift/registration). */
@@ -97,7 +98,7 @@ function RuleDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Rule; 
   );
   return (
     <Drawer open onClose={onClose} width={560}>
-      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New residence rule' : 'Edit residence rule'}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New residence rule' : 'Edit residence rule'}</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <Field label="Building type" placeholder="e.g. High-rise condo" value={f.buildingType} onChange={e => setF(s => ({ ...s, buildingType: e.target.value }))} />
         <NumberInput label="Service duration (minutes)" required min={0} suffix="min" value={minutes} onChange={setMinutes} error={minutes == null ? 'Enter the service duration.' : undefined} />

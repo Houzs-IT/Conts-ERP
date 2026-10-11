@@ -200,10 +200,12 @@ export async function applyMove(env: Env, session: Session & { manage?: boolean 
       effects.readiness = 'dirty';
       const open = await one(env, `SELECT 1 AS x FROM tasks WHERE reservation_id = ? AND kind = 'turnover' AND state != 'resolved' AND title = 'Turnover after check-out'`, id);
       if (!open) {
+        const taskId = crypto.randomUUID();
         await run(env, `
           INSERT INTO tasks (id, unit_id, reservation_id, kind, state, title, due_at, requires_photo, created_at, updated_at)
           VALUES (?, ?, ?, 'turnover', 'open', 'Turnover after check-out', ?, 1, ?, ?)`,
-          crypto.randomUUID(), cur.unit_id, id, now, now, now);
+          taskId, cur.unit_id, id, now, now, now);
+        await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.create', entityTable: 'tasks', entityId: taskId, after: { unitId: cur.unit_id, reservationId: id, kind: 'turnover', via: 'checked_out' } });
         effects.turnoverCreated = true;
       }
     }

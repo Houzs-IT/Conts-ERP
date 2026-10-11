@@ -60,6 +60,8 @@ because the supply chain cannot be separated from the rest of that code). Rules 
 ## Working fast
 - One feature = one branch (`feat/...`) = one PR into `main`. Keep `staging` fast-forwarded
   level with `main` (`git merge --ff-only origin/main`), never let it diverge.
+- Local dev without any database password: `node scripts/dev-pglite.mjs` (in-memory Postgres, every migration, demo data)
+  and point `WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` at the URL it prints.
 - Local dev: `npm run dev` (builds + `wrangler pages dev`). For real backend logic against
   real staging data without needing a staging login, point
   `WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` at the staging DB and mint a

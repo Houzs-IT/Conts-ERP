@@ -17,6 +17,7 @@ import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, todayMyt } from '../lib/format';
 import { csvSafe } from '../lib/export';
+import { CloseButton } from '../components/CloseButton';
 
 /** Products & Maintenance — the product/item master, ported from Houzs ERP's SKU master.
  *  Browsed by category. Money is integer sen; the form takes RM and converts at the edge. */
@@ -323,7 +324,7 @@ function ProductDrawer({ draft, onClose, onSubmit, onDelete }: { draft: Draft; o
     <Drawer open onClose={onClose} width={640}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <h2 className="m-0 text-[19px] font-semibold">{f.id ? 'Edit product' : 'New SKU'}</h2>
-        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button>
+        <CloseButton onClick={onClose} />
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">

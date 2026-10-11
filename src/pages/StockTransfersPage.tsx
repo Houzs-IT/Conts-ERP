@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
@@ -14,6 +14,7 @@ import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { date, todayMyt } from '../lib/format';
 import { cx } from '../lib/design-tokens';
+import { CloseButton } from '../components/CloseButton';
 
 /** Stock Transfers — move stock between warehouses; posts TRANSFER_OUT/IN movements. */
 
@@ -113,7 +114,7 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
 
   return (
     <Drawer open onClose={onClose} width={720}>
-      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">New stock transfer</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">New stock transfer</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
           <Sel label="From warehouse" value={from} onChange={setFrom} options={warehouses} />
@@ -159,7 +160,7 @@ function ViewDrawer({ t, canWrite, onClose, onCancel }: { t: Transfer; canWrite:
   const { record, loading: linesLoading, error: linesError } = useRecord<Transfer>('stock-transfers', t.id);
   return (
     <Drawer open onClose={onClose} width={620}>
-      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{t.transferNumber}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{t.transferNumber}</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="text-[13px]"><span className="text-muted-ink">{t.fromName}</span> → <span className="text-muted-ink">{t.toName}</span> · {t.transferDate ? date(t.transferDate) : ''}</div>
         <div className="border border-solid border-line rounded-card overflow-hidden">

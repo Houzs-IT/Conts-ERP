@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Search, Plus, X } from 'lucide-react';
+import { Search, Plus } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
@@ -17,6 +17,7 @@ import { rm, date } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
+import { CloseButton } from '../components/CloseButton';
 
 /** Sales Order Amendment — ported from 2990's SCM (core workflow), drawn in Conts. Amend a
  *  confirmed SO through REQUESTED -> APPROVED -> APPLIED (or REJECTED / CANCELLED); applying
@@ -141,7 +142,7 @@ function NewDrawer({ openSos, canWrite, onClose, onCreated }: { openSos: OpenSo[
 
   return (
     <Drawer open onClose={onClose} width={860}>
-      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">New amendment</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">New amendment</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div className="flex flex-col gap-[7px]"><label className="text-[12px] font-medium text-muted-ink">Sales order</label>
@@ -200,7 +201,7 @@ function ViewDrawer({ amd, canWrite, onClose, onAct }: { amd: Amd; canWrite: boo
     <Drawer open onClose={onClose} width={760}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{full.amendmentNo}</h2><StatusBadge entity="so_amendment" value={full.status} /></div>
-        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button>
+        <CloseButton onClick={onClose} />
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-[13px]">

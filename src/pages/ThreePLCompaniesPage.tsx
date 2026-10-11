@@ -13,6 +13,7 @@ import { api } from '../lib/api';
 import { persist, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
+import { CloseButton } from '../components/CloseButton';
 
 /** 3PL Companies — ported from 2990's SCM, drawn in Conts. Third-party logistics providers
  *  that drivers/vehicles can belong to. A master. */
@@ -97,7 +98,7 @@ function ThreePlDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Thr
   const canSave = f.code.trim() !== '' && f.name.trim() !== '' && !phoneBad && !emailBad(f.email);
   return (
     <Drawer open onClose={onClose} width={620}>
-      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New 3PL company' : 'Edit 3PL company'}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button></div>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New 3PL company' : 'Edit 3PL company'}</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <Section title="Identity">
           <Field label="Code" placeholder="e.g. 3PL-GDEX" value={f.code} onChange={set('code')} />

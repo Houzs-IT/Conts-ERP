@@ -1,6 +1,6 @@
 import { todayMyt } from '../lib/format';
 import { useMemo, useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
@@ -12,6 +12,7 @@ import { api, notifyFailure, ApiFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { TONE, cx } from '../lib/design-tokens';
+import { CloseButton } from '../components/CloseButton';
 
 /** Stock Adjustments — ported from 2990's SCM inventory adjustments, drawn in Conts. A manual
  *  stock ADJUSTMENT posts a signed movement to the ledger (the write the "Adjustments" tab
@@ -115,7 +116,7 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onCreate }: { warehouses:
 
   return (
     <Drawer open onClose={onClose} width={520}>
-      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">New stock adjustment</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted"><X size={18} /></button></div>
+      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">New stock adjustment</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <Field label="Item code" placeholder="e.g. SF-3S-GRY" value={itemCode} onChange={e => setItemCode(e.target.value)} />
         <div className="flex flex-col gap-[7px]"><label className="text-[12px] font-medium text-muted-ink">Warehouse</label>

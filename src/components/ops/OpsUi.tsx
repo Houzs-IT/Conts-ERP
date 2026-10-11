@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../Button';
-import Icon from '../Icon';
 import { cx } from '../../lib/design-tokens';
 import { api, errorMessage } from '../../lib/api';
 import { time, weekdayDate, dateTimeShort } from '../../lib/format';
@@ -112,15 +111,8 @@ export function FormRow({ label, children, error, hint }: { label: string; child
 export const INPUT = 'h-10 w-full box-border px-3 rounded-control border border-solid border-line bg-card text-copy text-ink';
 export const TEXTAREA = 'w-full box-border px-3 py-2 rounded-control border border-solid border-line bg-card text-copy text-ink min-h-[76px] resize-y';
 
-/** The X at the top of a detail panel (shown as a drawer on narrow screens). */
-export function CloseButton({ onClick, label = 'Close details' }: { onClick: () => void; label?: string }) {
-  return (
-    <button type="button" onClick={onClick} aria-label={label}
-      className="w-9 h-9 flex-none grid place-items-center rounded-control border border-solid border-line bg-card text-muted-ink cursor-pointer hover:bg-muted">
-      <Icon name="X" size="sm" />
-    </button>
-  );
-}
+/** The X at the top of a detail panel (shown as a drawer on narrow screens): the shared drawer close button. */
+export { CloseButton } from '../CloseButton';
 
 /* ---------- proof photos and videos: drawn by components/Attachments ---------- */
 

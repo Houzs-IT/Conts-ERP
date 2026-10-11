@@ -15,6 +15,7 @@ import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm } from '../lib/format';
 import { statusLabel } from '../lib/status';
+import { CloseButton } from '../components/CloseButton';
 
 /** Suppliers — supplier master, ported from 2990's SCM (logic) and drawn in Conts.
  *  Money is integer sen; the form takes RM. Bindings/scorecard deferred to later slices. */
@@ -168,7 +169,7 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
     <Drawer open onClose={onClose} width={680}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New supplier' : 'Edit supplier'}</h2>
-        <button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button>
+        <CloseButton onClick={onClose} />
       </div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <Section title="Identity">

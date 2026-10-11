@@ -396,7 +396,7 @@ function IssueDetail({ issue: i, threshold, billing, money, skus, onClose, onCha
 
   return (
     <div className="flex flex-col gap-4 p-5 text-copy">
-      <div className="flex items-start gap-3">
+      <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-5 pb-3 bg-card [border-bottom:1px_solid_var(--color-line-soft)] flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="text-meta text-muted-ink">{i.propertyName} · {i.unitNumber}</div>
           <div className="text-title font-semibold">{i.title}</div>
