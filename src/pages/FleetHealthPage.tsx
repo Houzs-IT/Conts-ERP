@@ -54,7 +54,9 @@ export default function FleetHealthPage() {
   const all = useMemo(() => [...added, ...(data?.data ?? [])].filter(r => !removed.has(r.id)).map(r => ({ ...r, ...edits[r.id] })), [added, data, edits, removed]);
   const q = search.trim().toLowerCase();
   const rows = all.filter(r => (vehFilter === 'all' || r.vehicleId === vehFilter) && (!q || `${r.vehicleCode} ${r.vehiclePlate} ${r.vendor}`.toLowerCase().includes(q)));
-  const overdue = all.filter(r => r.nextDueDate && r.nextDueDate < today()).length;
+  // A due date stops counting once a later record of the same kind is logged for that vehicle.
+  const isOverdue = (r: Rec) => !!r.nextDueDate && r.nextDueDate < today() && !all.some(g => g.vehicleId === r.vehicleId && g.recordType === r.recordType && g.serviceDate > r.serviceDate);
+  const overdue = all.filter(isOverdue).length;
 
   const columns = useMemo<Column<Rec>[]>(() => [
     { key: 'date', label: 'Date', type: 'date', value: r => r.serviceDate },
@@ -63,11 +65,11 @@ export default function FleetHealthPage() {
     { key: 'cost', label: 'Cost', type: 'money', value: r => r.costSen, render: r => r.costSen ? <span className="tabular-nums whitespace-nowrap">{rm(r.costSen)}</span> : <span className="text-muted-ink">—</span> },
     { key: 'due', label: 'Next due', type: 'date', value: r => r.nextDueDate, render: r => {
       if (!r.nextDueDate) return <span className="text-muted-ink">—</span>;
-      const isOverdue = r.nextDueDate < today();
-      return <span className={cx('whitespace-nowrap tabular-nums', isOverdue ? cx(TONE.critical.text, 'font-semibold') : 'text-muted-ink')}>{date(r.nextDueDate)}{isOverdue ? ' · overdue' : ''}</span>;
+      const late = isOverdue(r);
+      return <span className={cx('whitespace-nowrap tabular-nums', late ? cx(TONE.critical.text, 'font-semibold') : 'text-muted-ink')}>{date(r.nextDueDate)}{late ? ' · overdue' : ''}</span>;
     } },
     { key: 'status', label: 'Status', type: 'status', value: r => r.status, status: r => (r.status === 'DONE' ? { label: 'Done', tone: 'success' } : { label: 'Scheduled', tone: 'info' }) },
-  ], []);
+  ], [all]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function save(draft: Rec, isNew: boolean) {
     const v = vehicles.find(x => x.id === draft.vehicleId);

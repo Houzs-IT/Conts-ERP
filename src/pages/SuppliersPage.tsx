@@ -53,6 +53,8 @@ type Draft = Omit<Supplier, 'creditLimitSen' | 'rating'> & { creditLimitSen: num
 const toDraft = (s: Supplier): Draft => s;
 const emptyDraft = (): Draft => toDraft(S({ id: '', code: '', name: '' }));
 
+const emailBad = (v: string) => v.trim() !== '' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim());
+
 export default function SuppliersPage() {
   const { data, loading, error, reload } = useApi<Payload>('/suppliers', FALLBACK);
   const toast = useToast();
@@ -162,7 +164,7 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
   const [f, setF] = useState<Draft>(draft);
   const set = <K extends keyof Draft>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value as Draft[K] }));
   const setPhone = (k: 'phone' | 'mobile' | 'whatsappNumber') => (v: string) => setF(s => ({ ...s, [k]: v }));
-  const canSave = f.code.trim() !== '' && f.name.trim() !== '';
+  const canSave = f.code.trim() !== '' && f.name.trim() !== '' && !emailBad(f.email);
   const [tried, setTried] = useState(false);
   const ratingError = tried && f.rating != null && (f.rating < 0 || f.rating > 5) ? 'Must be 0 to 5.' : undefined;
   const phoneError = (v: string) => (tried ? phoneProblem(v) : undefined);
@@ -196,7 +198,7 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
           <PhoneInput label="Mobile" value={f.mobile} onChange={setPhone('mobile')} error={phoneError(f.mobile)} />
           <PhoneInput label="WhatsApp" value={f.whatsappNumber} onChange={setPhone('whatsappNumber')} error={phoneError(f.whatsappNumber)} />
           <Field label="Fax" value={f.fax} onChange={set('fax')} />
-          <Field label="Email" type="email" value={f.email} onChange={set('email')} />
+          <Field label="Email" type="email" value={f.email} onChange={set('email')} error={emailBad(f.email) ? 'Check the email, or leave it blank.' : undefined} />
           <Field label="Website" value={f.website} onChange={set('website')} />
         </Section>
         <Section title="Address">
@@ -222,7 +224,7 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
         <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete supplier ${draft.name}?`, body: 'It is deleted for good and drops off the supplier list.', confirmLabel: 'Delete supplier', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name first" onClick={submit}>{isNew ? 'Create supplier' : 'Save'}</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason={emailBad(f.email) ? 'Check the email first' : 'Enter a code and a name first'} onClick={submit}>{isNew ? 'Create supplier' : 'Save'}</Button>
         </div>
       </div>
     </Drawer>

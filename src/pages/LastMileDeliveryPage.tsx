@@ -15,7 +15,7 @@ import { SLOT_LABEL, schedFallback, type Sched, type SchedPayload, type SchedSta
  *  over delivery_schedule; ported from 2990's SCM (manual). */
 
 const FILTERS: ('active' | 'SCHEDULED' | 'DISPATCHED' | 'DELIVERED')[] = ['active', 'SCHEDULED', 'DISPATCHED', 'DELIVERED'];
-const FILTER_LABEL: Record<(typeof FILTERS)[number], string> = { active: 'Out today', SCHEDULED: 'Scheduled', DISPATCHED: 'In transit', DELIVERED: 'Delivered' };
+const FILTER_LABEL: Record<(typeof FILTERS)[number], string> = { active: 'All open', SCHEDULED: 'Scheduled', DISPATCHED: 'In transit', DELIVERED: 'Delivered' };
 const FALLBACK = schedFallback([
   { id: 's1', soDocNo: 'SO-2026-0004', customerName: 'Arcoris Owner', plannedDate: '2026-09-25', timeSlot: 'MORNING', driverName: 'Ahmad Zaki', vehicleCode: 'LRY-01', status: 'SCHEDULED' },
   { id: 's2', soDocNo: 'SO-2026-0003', customerName: 'Emporium Suites', plannedDate: '2026-09-25', timeSlot: 'AFTERNOON', driverName: 'Ravi Kumar', vehicleCode: 'LRY-02', status: 'DISPATCHED' },

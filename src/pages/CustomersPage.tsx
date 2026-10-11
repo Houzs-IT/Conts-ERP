@@ -41,6 +41,8 @@ type Draft = Omit<Customer, 'creditLimitSen'> & { creditLimitSen: number | null 
 const toDraft = (c: Customer): Draft => ({ ...c });
 const emptyDraft = (): Draft => toDraft(C({ id: '', code: '', name: '' }));
 
+const emailBad = (v: string) => v.trim() !== '' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim());
+
 export default function CustomersPage() {
   const { data, loading, error, reload } = useApi<Payload>('/customers', FALLBACK);
   const toast = useToast();
@@ -108,7 +110,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Draft; isNew: boolean; onClose: () => void; onSave: (d: Draft, isNew: boolean) => void; onDelete?: () => void }) {
   const [f, setF] = useState<Draft>(draft);
   const set = <K extends keyof Draft>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value as Draft[K] }));
-  const canSave = f.code.trim() !== '' && f.name.trim() !== '';
+  const canSave = f.code.trim() !== '' && f.name.trim() !== '' && !emailBad(f.email);
   return (
     <Drawer open onClose={onClose} width={640}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New customer' : 'Edit customer'}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button></div>
@@ -122,7 +124,7 @@ function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
         <Section title="Contact">
           <Field label="Contact person" value={f.contactPerson} onChange={set('contactPerson')} />
           <PhoneInput label="Phone" value={f.phone} onChange={v => setF(s => ({ ...s, phone: v }))} />
-          <Field label="Email" type="email" value={f.email} onChange={set('email')} />
+          <Field label="Email" type="email" value={f.email} onChange={set('email')} error={emailBad(f.email) ? 'Check the email, or leave it blank.' : undefined} />
           <div className="col-span-2"><Field label="Address" value={f.address} onChange={set('address')} /></div>
           <Field label="Postcode" value={f.postcode} onChange={set('postcode')} />
           <Field label="State" value={f.state} onChange={set('state')} />
@@ -139,7 +141,7 @@ function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
         <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete customer ${draft.name}?`, body: 'It is deleted for good and drops off the customer list.', confirmLabel: 'Delete customer', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a code and a name first" onClick={() => onSave(f, isNew)}>{isNew ? 'Create customer' : 'Save'}</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason={emailBad(f.email) ? 'Check the email first' : 'Enter a code and a name first'} onClick={() => onSave(f, isNew)}>{isNew ? 'Create customer' : 'Save'}</Button>
         </div>
       </div>
     </Drawer>

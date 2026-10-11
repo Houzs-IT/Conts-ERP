@@ -31,6 +31,8 @@ const FALLBACK: Payload = { generatedAt: '', data: [
   T({ id: 't2', code: '3PL-GDEX', name: 'GDEX Logistics', contactName: 'Mr Lim', contactPhone: '+60312345678', officePhone: '03-1234 5678', isActive: true }),
 ] };
 
+const emailBad = (v: string) => v.trim() !== '' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim());
+
 export default function ThreePLCompaniesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/threepl-companies', FALLBACK);
   const toast = useToast();
@@ -98,7 +100,7 @@ function ThreePlDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Thr
   const [f, setF] = useState<ThreePl>(draft);
   const set = <K extends keyof ThreePl>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value as ThreePl[K] }));
   const phoneBad = !!(phoneProblem(f.contactPhone) || phoneProblem(f.officePhone));
-  const canSave = f.code.trim() !== '' && f.name.trim() !== '' && !phoneBad;
+  const canSave = f.code.trim() !== '' && f.name.trim() !== '' && !phoneBad && !emailBad(f.email);
   return (
     <Drawer open onClose={onClose} width={620}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New 3PL company' : 'Edit 3PL company'}</h2><button onClick={onClose} aria-label="Close" className="bg-transparent border-none cursor-pointer text-muted-ink p-1.5 rounded-[8px] hover:bg-muted">✕</button></div>
@@ -117,7 +119,7 @@ function ThreePlDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Thr
           <Field label="Contact person" value={f.contactName} onChange={set('contactName')} />
           <PhoneInput label="Contact phone" value={f.contactPhone} onChange={v => setF(s => ({ ...s, contactPhone: v }))} />
           <PhoneInput label="Office phone" value={f.officePhone} onChange={v => setF(s => ({ ...s, officePhone: v }))} />
-          <Field label="Email" type="email" value={f.email} onChange={set('email')} />
+          <Field label="Email" type="email" value={f.email} onChange={set('email')} error={emailBad(f.email) ? 'Check the email, or leave it blank.' : undefined} />
           <div className="col-span-2"><Field label="Address" value={f.address} onChange={set('address')} /></div>
           <div className="col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
         </Section>
@@ -126,7 +128,7 @@ function ThreePlDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Thr
         <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete 3PL company ${draft.name}?`, body: 'It is deleted for good and drops off the 3PL company list.', confirmLabel: 'Delete company', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" disabled={!canSave} disabledReason={phoneBad ? 'Fix the phone numbers first' : 'Enter a code and a name first'} onClick={() => onSave(f, isNew)}>{isNew ? 'Create company' : 'Save'}</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason={phoneBad ? 'Fix the phone numbers first' : emailBad(f.email) ? 'Check the email first' : 'Enter a code and a name first'} onClick={() => onSave(f, isNew)}>{isNew ? 'Create company' : 'Save'}</Button>
         </div>
       </div>
     </Drawer>

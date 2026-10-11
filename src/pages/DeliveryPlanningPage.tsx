@@ -68,7 +68,7 @@ export default function DeliveryPlanningPage() {
         toolbar={<div className="flex items-center gap-2.5 flex-wrap">
           <label className="text-[12px] font-medium text-muted-ink">Delivery day</label>
           <DateField aria-label="Delivery day" value={activeDay} onChange={setDay} className="h-9 box-border px-3 py-0 font-sans text-[13px] text-ink bg-card border border-solid border-line rounded-control outline-none" />
-          <span className="text-[12.5px] text-muted-ink">{rows.length} deliveries</span>
+          <span className="text-[12.5px] text-muted-ink">{rows.length} {rows.length === 1 ? 'delivery' : 'deliveries'}</span>
         </div>}
         empty={{ title: 'Nothing planned for this day.', body: 'Give deliveries this date in Delivery date arrangement, then assign them here.' }} />
     </>

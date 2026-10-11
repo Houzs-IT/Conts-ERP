@@ -74,7 +74,7 @@ export default function DpOrdersPage() {
         noun={['delivery', 'deliveries']} exportName="dp-orders" pageSize={0} filtered={!!q || statusFilter !== 'all'}
         onClearFilters={() => { setSearch(''); setStatusFilter('all'); }}
         empty={{ title: 'Nothing in the queue.', body: 'Add a sales order to the schedule, then arrange its date, time and driver.' }} />
-      {drawer?.mode === 'new' && <NewDrawer openSos={openSos} onClose={() => setDrawer(null)} onCreated={created} />}
+      {drawer?.mode === 'new' && <NewDrawer openSos={openSos.filter((s: { id: string }) => !all.some(r => r.salesOrderId === s.id))} onClose={() => setDrawer(null)} onCreated={created} />}
       {drawer?.mode === 'edit' && <EditDrawer row={drawer.row} onClose={() => setDrawer(null)} onSaved={saved} onDelete={() => remove(drawer.row)} />}
     </>
   );

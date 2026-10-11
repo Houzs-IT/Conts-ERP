@@ -116,7 +116,8 @@ function CardDrawer({ card, isNew, carriers, onClose, onSave, onDelete }: { card
   const [f, setF] = useState<RateCard>(card);
   const [rules, setRules] = useState<Rule[]>(card.rules ?? []);
   const set = <K extends keyof RateCard>(k: K, v: RateCard[K]) => setF(s => ({ ...s, [k]: v }));
-  const canSave = f.name.trim() !== '';
+  const capBelowMin = f.capSen != null && f.minChargeSen != null && f.capSen < f.minChargeSen;
+  const canSave = f.name.trim() !== '' && !capBelowMin;
 
   const addRule = () => setRules(rs => [...rs, { ruleType: 'POSITIONAL_TIER', tierPosition: rs.length + 1, bracketMin: null, bracketMax: null, zone: '', amountSen: 0 }]);
   const setRule = (i: number, patch: Partial<Rule>) => setRules(rs => rs.map((r, j) => j === i ? { ...r, ...patch } : r));
@@ -139,7 +140,7 @@ function CardDrawer({ card, isNew, carriers, onClose, onSave, onDelete }: { card
           <Sel label="Unit basis" value={f.basis} onChange={v => set('basis', v as Basis)} options={[{ value: 'SET', label: 'Set' }, { value: 'ITEM', label: 'Item' }]} />
           <Sel label="Rounding" value={f.rounding} onChange={v => set('rounding', v as Rounding)} options={(Object.keys(ROUND_LABEL) as Rounding[]).map(r => ({ value: r, label: ROUND_LABEL[r] }))} />
           <MoneyInput label="Minimum charge (RM)" placeholder="Optional" valueSen={f.minChargeSen} onChangeSen={n => set('minChargeSen', n)} />
-          <MoneyInput label="Charge cap (RM)" placeholder="Optional" valueSen={f.capSen} onChangeSen={n => set('capSen', n)} />
+          <MoneyInput label="Charge cap (RM)" placeholder="Optional" valueSen={f.capSen} onChangeSen={n => set('capSen', n)} error={capBelowMin ? 'Cannot be below the minimum charge.' : undefined} />
         </div>
 
         <div className="flex flex-col gap-2">
@@ -182,7 +183,7 @@ function CardDrawer({ card, isNew, carriers, onClose, onSave, onDelete }: { card
         <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete rate card ${card.name}?`, body: 'The card and all its rates are deleted for good.', confirmLabel: 'Delete rate card', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" disabled={!canSave} disabledReason="Enter a card name first" onClick={() => onSave({ ...f, rules }, isNew)}>{isNew ? 'Create card' : 'Save'}</Button>
+          <Button size="sm" variant="primary" disabled={!canSave} disabledReason={capBelowMin ? 'Fix the charge cap first' : 'Enter a card name first'} onClick={() => onSave({ ...f, rules }, isNew)}>{isNew ? 'Create card' : 'Save'}</Button>
         </div>
       </div>
     </Drawer>

@@ -14,7 +14,7 @@ export function persist(request: Promise<unknown>, opts: { reload: () => void; o
 
 /** The form is already closed when a refusal comes back, so the notice names the field rather than "some fields". */
 function failed(e: unknown) {
-  const field = e instanceof ApiFailure && e.fields ? Object.values(e.fields)[0] : undefined;
+  const field = e instanceof ApiFailure && e.code === 'VALIDATION' && e.fields ? Object.values(e.fields)[0] : undefined;
   notifyFailure(field && e instanceof ApiFailure ? new ApiFailure(e.status, e.code, field, e.fields) : e);
 }
 
