@@ -190,7 +190,8 @@ export function AddOwnerModal({ onClose, onSubmit }: { onClose: () => void; onSu
       onSubmit={() => onSubmit({ displayName: f.displayName.trim(), email: f.email.trim(), phone: f.phone.trim() || null, ic: f.ic.trim() || null, bankName: f.bankName.trim() || null, bankAccount: f.bankAccount.trim() || null, accountHolder: f.accountHolder.trim() || f.displayName.trim() })}>
       <Field label="Owner name" placeholder="e.g. Lim Chee Keong" value={f.displayName} onChange={set('displayName')} />
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Email" type="email" placeholder="owner@email.com" value={f.email} onChange={set('email')} />
+        <Field label="Email" type="email" placeholder="owner@email.com" value={f.email} onChange={set('email')}
+          error={f.email.trim() && !/.+@.+\..+/.test(f.email) ? 'Enter an email like name@example.com, or leave it empty.' : undefined} />
         <PhoneInput label="Phone" value={f.phone} onChange={v => setF(s => ({ ...s, phone: v }))} />
       </div>
       <Field label="IC / passport" placeholder="Accepts both formats" value={f.ic} onChange={set('ic')} />

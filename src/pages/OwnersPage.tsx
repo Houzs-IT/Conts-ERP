@@ -9,6 +9,7 @@ import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api, errorMessage } from '../lib/api';
 import { rmShort, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
+import { TERMS } from '../lib/statementTerms';
 import { MoneyText } from '../components/MoneyText';
 import { Select } from '../components/Select';
 import { cx } from '../lib/design-tokens';
@@ -20,6 +21,8 @@ import {
 import { useUrlState, usePhone, SearchBox, Chip, MonthStepper, shiftMonth, useFinanceFilters } from './finance/listKit';
 import { MODELS, type RevenueModel } from '../lib/revenueModel';
 import { ModelChip } from './units/ContractTab';
+
+const wholeRm = (sen: number) => Math.round(sen / 100) * 100;
 
 /**
  * Owners list. Each row opens the full owner profile at `#/owners/:id`
@@ -81,7 +84,6 @@ export default function OwnersPage() {
 
   const unitCount = all.reduce((s, o) => s + o.units.length, 0);
   // Portfolio rollup — pure client compute over loaded owners, reusing the same per-owner net the profile shows.
-  const portfolioNet = all.reduce((s, o) => s + netOf(o), 0);
   const portfolioGuaranteed = all.reduce((s, o) => s + guaranteedOf(o), 0);
   const portfolioManagedNet = all.reduce((s, o) => s + managedNetOf(o), 0);
   const portfolioManagedGross = all.reduce((s, o) => s + managedGrossOf(o), 0);
@@ -142,7 +144,7 @@ export default function OwnersPage() {
       ) : <span className="text-copy text-muted-ink truncate block" title={ownerTerms(o)}>{ownerTerms(o)}</span> },
     { key: 'gross', label: `Booking revenue, ${monthCol}`, type: 'money', value: o => grossOf(o), width: 150, filter: false,
       render: o => <MoneyText sen={grossOf(o)} mode="exact" tone="muted" className="text-copy" /> },
-    { key: 'net', label: `Owner payout, ${monthCol}`, type: 'money', value: o => netOf(o), width: 150, filter: false,
+    { key: 'net', label: `${TERMS.netPayout}, ${monthCol}`, type: 'money', value: o => netOf(o), width: 150, filter: false,
       render: o => <MoneyText sen={netOf(o)} mode="exact" tone="auto" className="text-copy font-medium" /> },
     { key: 'guaranteed', label: `Guaranteed rent, ${monthCol}`, type: 'money', value: o => guaranteedOf(o), hidden: true, filter: false, width: 150 },
     { key: 'defaultFee', label: 'Default fee %', type: 'number', value: o => o.defaultManagementFeePct, hidden: true, filter: false, width: 110 },
@@ -157,9 +159,10 @@ export default function OwnersPage() {
 
       <Card>
         <div className="flex gap-[30px] gap-y-3 flex-wrap items-center py-4 px-[22px]">
-          <Roll label={`Owner payouts, ${monthText} (estimate)`} value={rmShort(portfolioNet)} strong />
-          <Roll label="from managed units" value={rmShort(portfolioManagedNet)} />
-          <Roll label="guaranteed rent (GRR units)" value={rmShort(portfolioGuaranteed)} />
+          {/* The parts are shown to the ringgit, so the total is their sum to the ringgit and the three always add up. */}
+          <Roll label={`${TERMS.netPayout}, ${monthText} (estimate)`} value={rmShort(wholeRm(portfolioManagedNet) + wholeRm(portfolioGuaranteed))} strong />
+          <Roll label="from managed units" value={rmShort(wholeRm(portfolioManagedNet))} />
+          <Roll label="guaranteed rent (GRR units)" value={rmShort(wholeRm(portfolioGuaranteed))} />
           <Roll label={`Booking revenue, managed units`} value={rmShort(portfolioManagedGross)} />
           <div className="ml-auto"><MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} /></div>
         </div>

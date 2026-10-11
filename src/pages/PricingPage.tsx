@@ -440,7 +440,7 @@ export default function PricingPage() {
                 <div className="flex gap-[14px] flex-wrap items-end">
                   <label className="flex flex-col gap-[5px] text-meta text-muted-ink">
                     From
-                    <DateField aria-label="From" value={from} min={TODAY()} onChange={setFrom}
+                    <DateField aria-label="From" value={from} min={TODAY()} onChange={v => { setFrom(v); if (v && to && to < v) setTo(v); }}
                       className={cx(INPUT_CLASS, 'w-[160px] text-left border-line')} />
                   </label>
                   <label className="flex flex-col gap-[5px] text-meta text-muted-ink">
