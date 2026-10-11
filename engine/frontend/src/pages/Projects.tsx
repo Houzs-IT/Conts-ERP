@@ -128,7 +128,7 @@ import { OrganizerPicker, VenuePicker } from "./projects/ProjectPickers";
 import { CreateProjectPanel } from "./projects/CreateProjectPanel";
 import { DateRangeFilter, MultiSelectFilter, SectionTaskBadges, ImportCsvPanel } from "./projects/ProjectsListParts";
 import { ProjectsCalendarView } from "./projects/ProjectsCalendarView";
-import { ByProjectsMode, RenovationCalendarView, RenovationListView, RenovationMonitorView, RenovationProjectRoute } from "./projects/renovation/RenovationRoutes";
+import { ByProjectsMode, RenovationCalendarView, RenovationListView, RenovationProjectRoute } from "./projects/renovation/RenovationRoutes";
 export { buildCalendarWindow, buildProjectsCalendarModel } from "./projects/calendarModel";
 import { SPEC_INPUT_CLASS, QuickRentalField, SpecTextField, SpecCell, SpecValue } from "./projects/specFields";
 import { LogisticsDateTimeField, GrabHelperBox, type CrewMember } from "./projects/logisticsParts";
@@ -512,8 +512,8 @@ export function Projects() {
   return (
     <div>
       {view === "list" && <ByProjectsMode renovation={() => <RenovationListView />} exhibition={() => <ProjectsListView />} />}
-      {view === "monitor" && <ByProjectsMode renovation={() => <RenovationMonitorView />} exhibition={() => <ProjectsListView />} />}
-      {view === "calendar" && <ByProjectsMode renovation={() => <RenovationCalendarView />} exhibition={() => <ProjectsCalendarView />} />}
+      {/* Project monitor was dropped from the menus (owner, 11 Oct 2026); an old monitor link opens the Schedule. */}
+      {(view === "calendar" || view === "monitor") && <ByProjectsMode renovation={() => <RenovationCalendarView />} exhibition={() => <ProjectsCalendarView />} />}
       {view === "finances" &&
         (canProjectFinance ? (
           <ProjectsFinancesView />

@@ -351,12 +351,6 @@ export const ALL_NAV_TABS: NavTab[] = [
         pageAccess: "projects.list",
       },
       {
-        to: "/projects?view=monitor",
-        label: "Project Monitor",
-        icon: Activity,
-        pageAccess: "projects.list",
-      },
-      {
         to: "/projects?view=calendar",
         label: "Calendar",
         icon: Calendar,
