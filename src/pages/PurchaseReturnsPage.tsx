@@ -84,7 +84,7 @@ export default function PurchaseReturnsPage() {
 
   return (
     <>
-      <PageHeader title="Purchase returns" sub={`${all.length} returns · to suppliers`}
+      <PageHeader title="Purchase returns" sub={`${all.length} ${all.length === 1 ? 'return' : 'returns'} · to suppliers`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New return</Button> : undefined} />
 
       <DataTable<Pret>

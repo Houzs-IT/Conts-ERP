@@ -118,7 +118,7 @@ export default function PurchaseOrdersPage() {
 
   return (
     <>
-      <PageHeader title="Purchase orders" sub={`${all.length} orders · buy-side documents`}
+      <PageHeader title="Purchase orders" sub={`${all.length} ${all.length === 1 ? 'order' : 'orders'} · buy-side documents`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={openNew}>New PO</Button> : undefined} />
 
       <DataTable<Po>

@@ -60,7 +60,7 @@ export default function VehiclesPage() {
 
   return (
     <>
-      <PageHeader title="Vehicles" sub={`${rows.length} vehicles · ${rows.filter(v => v.active).length} active`}
+      <PageHeader title="Vehicles" sub={`${rows.length} ${rows.length === 1 ? 'vehicle' : 'vehicles'} · ${rows.filter(v => v.active).length} active`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(emptyDraft())}>New vehicle</Button> : undefined} />
       <DataTable<Vehicle>
         id="scm.vehicles" columns={columns} rows={data ? rows : null} rowKey={v => v.id}

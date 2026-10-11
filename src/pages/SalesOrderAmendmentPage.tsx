@@ -78,7 +78,7 @@ export default function SalesOrderAmendmentPage() {
 
   return (
     <>
-      <PageHeader title="Sales order amendment" sub={`${all.length} amendments`}
+      <PageHeader title="Sales order amendment" sub={`${all.length} ${all.length === 1 ? 'amendment' : 'amendments'}`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New amendment</Button> : undefined} />
       <DataTable<Amd>
         id="scm.so-amendments" columns={columns} rows={data ? rows : null} rowKey={a => a.id}

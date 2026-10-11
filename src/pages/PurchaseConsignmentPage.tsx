@@ -88,7 +88,7 @@ export default function PurchaseConsignmentPage() {
 
   return (
     <>
-      <PageHeader title="Consignment orders" sub={`${all.length} orders · consigned stock`}
+      <PageHeader title="Consignment orders" sub={`${all.length} ${all.length === 1 ? 'order' : 'orders'} · consigned stock`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={openNew}>New consignment</Button> : undefined} />
       <DataTable<Pc>
         id="scm.purchase-consignment" columns={columns} rows={data ? rows : null} rowKey={p => p.id}

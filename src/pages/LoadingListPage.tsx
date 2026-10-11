@@ -49,7 +49,7 @@ export default function LoadingListPage() {
 
   return (
     <>
-      <PageHeader title="Loading list" sub={`${all.length} delivery orders ready to load`} />
+      <PageHeader title="Loading list" sub={`${all.length} ${all.length === 1 ? 'delivery order' : 'delivery orders'} ready to load`} />
       <DataTable<Row>
         id="scm.loading-list" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
         loading={loading} error={error} onRetry={reload} pageSize={0}

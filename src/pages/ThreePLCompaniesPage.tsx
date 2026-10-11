@@ -66,7 +66,7 @@ export default function ThreePLCompaniesPage() {
 
   return (
     <>
-      <PageHeader title="3PL companies" sub={`${all.length} providers · ${all.filter(c => c.isActive).length} active`}
+      <PageHeader title="3PL companies" sub={`${all.length} ${all.length === 1 ? 'provider' : 'providers'} · ${all.filter(c => c.isActive).length} active`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: T({ id: '', code: '', name: '' }), isNew: true })}>New company</Button> : undefined} />
       <DataTable<ThreePl>
         id="scm.threepl-companies" columns={columns} rows={data ? rows : null} rowKey={c => c.id}

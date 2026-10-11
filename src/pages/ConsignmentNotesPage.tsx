@@ -73,7 +73,7 @@ export default function ConsignmentNotesPage() {
 
   return (
     <>
-      <PageHeader title="Consignment notes" sub={`${all.length} notes · stock consigned out`}
+      <PageHeader title="Consignment notes" sub={`${all.length} ${all.length === 1 ? 'note' : 'notes'} · stock consigned out`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New consignment note</Button> : undefined} />
       <DataTable<Cn>
         id="scm.consignment-notes" columns={columns} rows={data ? rows : null} rowKey={r => r.id}

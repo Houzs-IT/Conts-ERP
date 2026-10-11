@@ -66,7 +66,7 @@ export default function DriverLeavePage() {
 
   return (
     <>
-      <PageHeader title="Driver leave" sub={`${all.length} leave periods on record`}
+      <PageHeader title="Driver leave" sub={`${all.length} ${all.length === 1 ? 'leave period' : 'leave periods'} on record`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(true)}>New leave</Button> : undefined} />
       <DataTable<Leave>
         id="scm.driver-leave" columns={columns} rows={data ? rows : null} rowKey={l => l.id}

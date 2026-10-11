@@ -66,7 +66,7 @@ export default function DeliveryResidenceRulesPage() {
 
   return (
     <>
-      <PageHeader title="Residence rules" sub={`${all.length} building-type rules`}
+      <PageHeader title="Residence rules" sub={`${all.length} ${all.length === 1 ? 'building-type rule' : 'building-type rules'}`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: R({ id: '', buildingType: '' }), isNew: true })}>New rule</Button> : undefined} />
       <DataTable<Rule>
         id="scm.residence-rules" columns={columns} rows={data ? rows : null} rowKey={r => r.id}

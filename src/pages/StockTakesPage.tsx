@@ -61,7 +61,7 @@ export default function StockTakesPage() {
 
   return (
     <>
-      <PageHeader title="Stock takes" sub={`${rows.length} counts`}
+      <PageHeader title="Stock takes" sub={`${rows.length} ${rows.length === 1 ? 'count' : 'counts'}`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New stock take</Button> : undefined} />
       <DataTable<Take>
         id="scm.stock-takes" columns={columns} rows={data ? rows : null} rowKey={k => k.id}

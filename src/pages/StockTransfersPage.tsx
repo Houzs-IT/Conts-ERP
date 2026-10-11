@@ -55,7 +55,7 @@ export default function StockTransfersPage() {
 
   return (
     <>
-      <PageHeader title="Stock transfers" sub={`${rows.length} transfers · between warehouses`}
+      <PageHeader title="Stock transfers" sub={`${rows.length} ${rows.length === 1 ? 'transfer' : 'transfers'} · between warehouses`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New transfer</Button> : undefined} />
       <DataTable<Transfer>
         id="scm.stock-transfers" columns={columns} rows={data ? rows : null} rowKey={t => t.id}

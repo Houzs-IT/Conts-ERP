@@ -70,7 +70,7 @@ export default function FabricsPage() {
 
   return (
     <>
-      <PageHeader title="Fabric library" sub={`${rows.length} fabrics · upholstery catalogue`}
+      <PageHeader title="Fabric library" sub={`${rows.length} ${rows.length === 1 ? 'fabric' : 'fabrics'} · upholstery catalogue`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer(emptyDraft())}>New fabric</Button> : undefined} />
       <DataTable<Fabric>
         id="scm.fabrics" columns={columns} rows={data ? rows : null} rowKey={f => f.id}

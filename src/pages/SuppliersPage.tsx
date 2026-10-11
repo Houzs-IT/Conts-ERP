@@ -115,7 +115,7 @@ export default function SuppliersPage() {
     <>
       <PageHeader
         title="Suppliers"
-        sub={`${all.length} suppliers · ${activeCount} active`}
+        sub={`${all.length} ${all.length === 1 ? 'supplier' : 'suppliers'} · ${activeCount} active`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyDraft(), isNew: true })}>New supplier</Button> : undefined}
       />
 

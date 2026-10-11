@@ -105,7 +105,7 @@ export default function ProductModelsPage() {
     <>
       <PageHeader
         title="Product models"
-        sub={`${all.length} models · groups SKUs of one design`}
+        sub={`${all.length} ${all.length === 1 ? 'model' : 'models'} · groups SKUs of one design`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ draft: emptyDraft(), isNew: true })}>New model</Button> : undefined}
       />
 

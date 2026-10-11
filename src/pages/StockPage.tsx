@@ -98,7 +98,7 @@ export default function StockPage() {
 
   return (
     <>
-      <PageHeader title="Stock" sub={`${onhand.length} lines · ${totalUnits} units on hand`}
+      <PageHeader title="Stock" sub={`${onhand.length} ${onhand.length === 1 ? 'line' : 'lines'} · ${totalUnits} units on hand`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setAdjusting(true)}>Stock adjustment</Button> : undefined} />
 
       {tab === 'onhand' ? (

@@ -91,7 +91,7 @@ export default function RateCardsPage() {
 
   return (
     <>
-      <PageHeader title="Carriers & rates" sub={`${all.length} rate cards`}
+      <PageHeader title="Carriers & rates" sub={`${all.length} ${all.length === 1 ? 'rate card' : 'rate cards'}`}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={openNew}>New rate card</Button> : undefined} />
       <DataTable<RateCard>
         id="scm.rate-cards" columns={columns} rows={data ? rows : null} rowKey={c => c.id}
